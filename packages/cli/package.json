@@ -1,0 +1,36 @@
+{
+  "name": "@pp/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "bin": {
+    "pp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --dts --format esm,cjs --clean",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@pp/analysis": "workspace:*",
+    "@pp/auth": "workspace:*",
+    "@pp/artifacts": "workspace:*",
+    "@pp/config": "workspace:*",
+    "@pp/dataverse": "workspace:*",
+    "@pp/deploy": "workspace:*",
+    "@pp/diagnostics": "workspace:*",
+    "@pp/project": "workspace:*",
+    "@pp/solution": "workspace:*"
+  }
+}

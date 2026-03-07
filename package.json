@@ -1,0 +1,22 @@
+{
+  "name": "pp",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.6.5",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "clean": "pnpm -r --if-present clean",
+    "dev:cli": "pnpm --filter @pp/cli dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}

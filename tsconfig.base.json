@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUncheckedIndexedAccess": true,
+    "useDefineForClassFields": true,
+    "types": ["node"],
+    "paths": {
+      "@pp/auth": ["packages/auth/src/index.ts"],
+      "@pp/http": ["packages/http/src/index.ts"],
+      "@pp/diagnostics": ["packages/diagnostics/src/index.ts"],
+      "@pp/cache": ["packages/cache/src/index.ts"],
+      "@pp/config": ["packages/config/src/index.ts"],
+      "@pp/project": ["packages/project/src/index.ts"],
+      "@pp/dataverse": ["packages/dataverse/src/index.ts"],
+      "@pp/solution": ["packages/solution/src/index.ts"],
+      "@pp/model": ["packages/model/src/index.ts"],
+      "@pp/artifacts": ["packages/artifacts/src/index.ts"],
+      "@pp/canvas": ["packages/canvas/src/index.ts"],
+      "@pp/flow": ["packages/flow/src/index.ts"],
+      "@pp/analysis": ["packages/analysis/src/index.ts"],
+      "@pp/sharepoint": ["packages/sharepoint/src/index.ts"],
+      "@pp/powerbi": ["packages/powerbi/src/index.ts"],
+      "@pp/deploy": ["packages/deploy/src/index.ts"],
+      "@pp/mcp": ["packages/mcp/src/index.ts"],
+      "@pp/cli": ["packages/cli/src/index.ts"]
+    }
+  }
+}
