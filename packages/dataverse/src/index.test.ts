@@ -3,17 +3,59 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { saveAuthProfile, saveEnvironmentAlias } from '@pp/config';
-import { buildQueryPath, resolveDataverseClient } from './index';
+import { ok, type OperationResult } from '@pp/diagnostics';
+import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http';
+import { DataverseClient, buildQueryPath, resolveDataverseClient } from './index';
+
+class FakeHttpClient extends HttpClient {
+  readonly requests: HttpRequestOptions[] = [];
+
+  constructor(private readonly responses: Array<OperationResult<HttpResponse<unknown>>>) {
+    super();
+  }
+
+  override async request<T>(request: HttpRequestOptions): Promise<OperationResult<HttpResponse<T>>> {
+    this.requests.push(request);
+    const response = this.responses.shift();
+
+    if (!response) {
+      throw new Error('No fake response queued');
+    }
+
+    return response as OperationResult<HttpResponse<T>>;
+  }
+
+  override async requestJson<T>(request: HttpRequestOptions): Promise<OperationResult<T>> {
+    const response = await this.request<T>(request);
+
+    if (!response.success) {
+      return response as unknown as OperationResult<T>;
+    }
+
+    return ok(response.data?.data as T, {
+      supportTier: response.supportTier,
+      diagnostics: response.diagnostics,
+      warnings: response.warnings,
+    });
+  }
+}
 
 describe('buildQueryPath', () => {
-  it('builds odata query strings', () => {
-    expect(
-      buildQueryPath({
-        table: 'accounts',
-        select: ['name', 'accountnumber'],
-        top: 10,
-      })
-    ).toContain('%24select=name%2Caccountnumber');
+  it('builds extended odata query strings', () => {
+    const path = buildQueryPath({
+      table: 'accounts',
+      select: ['name', 'accountnumber'],
+      top: 10,
+      filter: 'statecode eq 0',
+      expand: ['primarycontactid($select=fullname)'],
+      orderBy: ['name asc'],
+      count: true,
+    });
+
+    expect(path).toContain('%24select=name%2Caccountnumber');
+    expect(path).toContain('%24expand=primarycontactid%28%24select%3Dfullname%29');
+    expect(path).toContain('%24orderby=name+asc');
+    expect(path).toContain('%24count=true');
   });
 
   it('resolves a configured environment and auth profile', async () => {
@@ -42,5 +84,64 @@ describe('buildQueryPath', () => {
     expect(resolved.success).toBe(true);
     expect(resolved.data?.environment.alias).toBe('dev');
     expect(resolved.data?.authProfile.name).toBe('env-profile');
+  });
+});
+
+describe('DataverseClient', () => {
+  it('follows paging links when querying all records', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ accountid: '1' }],
+          '@odata.nextLink': 'https://example.crm.dynamics.com/api/data/v9.2/accounts?$skiptoken=abc',
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ accountid: '2' }],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.queryAll<{ accountid: string }>({
+      table: 'accounts',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([{ accountid: '1' }, { accountid: '2' }]);
+    expect(httpClient.requests).toHaveLength(2);
+    expect(httpClient.requests[1]?.path).toBe('https://example.crm.dynamics.com/api/data/v9.2/accounts?$skiptoken=abc');
+  });
+
+  it('extracts entity ids from write responses', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 201,
+        headers: {
+          location: 'https://example.crm.dynamics.com/api/data/v9.2/accounts(00000000-0000-0000-0000-000000000001)',
+        },
+        data: {
+          accountid: '00000000-0000-0000-0000-000000000001',
+          name: 'Acme',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.create('accounts', { name: 'Acme' }, { returnRepresentation: true });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.entityId).toBe('00000000-0000-0000-0000-000000000001');
+    expect(result.data?.entity).toEqual({
+      accountid: '00000000-0000-0000-0000-000000000001',
+      name: 'Acme',
+    });
+    expect(httpClient.requests[0]?.method).toBe('POST');
+    expect(httpClient.requests[0]?.headers?.prefer).toContain('return=representation');
   });
 });

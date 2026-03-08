@@ -10,7 +10,7 @@ Implemented today:
 
 - auth profiles for browser user login, device code, environment tokens, client secret, and static tokens
 - environment aliases that bind a Dataverse URL to an auth profile
-- Dataverse commands: `whoami`, `query`, `get`
+- Dataverse commands: `whoami`, generic Web API requests, query/get, create/update/delete, metadata inspection
 - solution commands: `list`, `inspect`
 - project discovery from `pp.config.json|yaml|yml`
 - analysis outputs for agent context and markdown reports
@@ -90,6 +90,8 @@ pp env inspect dev
 pp dv whoami --env dev
 pp dv query accounts --env dev --select name,accountnumber --top 10
 pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
+pp dv request --env dev --path "EntityDefinitions?\$select=LogicalName&\$top=5"
+pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 pp solution list --env dev
 ```
 

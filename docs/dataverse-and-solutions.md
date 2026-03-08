@@ -1,6 +1,6 @@
 # Dataverse and solutions
 
-The current Dataverse surface is read-oriented and environment-alias driven.
+The current Dataverse surface is environment-alias driven and exposes both generic Web API access and a first useful layer of typed helpers.
 
 You authenticate once through an auth profile, bind an environment alias to that profile, and then run `dv` or `solution` commands against the alias.
 
@@ -24,23 +24,61 @@ Calls Dataverse `WhoAmI()` and returns:
 - `UserId`
 - the resolved environment alias and auth profile
 
+## `dv request`
+
+For raw Web API access, use:
+
+```bash
+pp dv request --env dev --path "EntityDefinitions?\$select=LogicalName&\$top=5"
+```
+
+You can also send arbitrary methods and request bodies:
+
+```bash
+pp dv request \
+  --env dev \
+  --method POST \
+  --path "accounts" \
+  --body '{"name":"Acme"}'
+```
+
+Supported flags:
+
+- `--method`
+- `--path`
+- `--body`
+- `--body-file`
+- `--response-type json|text|void`
+- repeated `--header "Name: value"`
+- `--format`
+
 ## `dv query`
 
 ```bash
 pp dv query accounts --env dev
 pp dv query accounts --env dev --select name,accountnumber --top 10
 pp dv query solutions --env dev --filter "uniquename eq 'Core'"
+pp dv query accounts --env dev --expand primarycontactid($select=fullname) --orderby name asc --count
+pp dv query accounts --env dev --all
+pp dv query accounts --env dev --page-info
 ```
 
 Supported flags today:
 
 - `--env`
 - `--select a,b,c`
+- `--expand x,y`
+- `--orderby expr`
 - `--top N`
 - `--filter "<odata filter>"`
+- `--count`
+- `--all`
+- `--page-info`
+- `--max-page-size`
+- `--annotations`
 - `--format`
 
-The command builds a basic Dataverse Web API query against the resolved environment’s API path.
+`--all` follows `@odata.nextLink` until the full result set is collected. `--page-info` returns the first page together with `count` and `nextLink`.
 
 ## `dv get`
 
@@ -49,6 +87,74 @@ pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
 ```
 
 This fetches a single row by logical table name and GUID.
+
+Supported row options today:
+
+- `--select`
+- `--expand`
+- `--annotations`
+
+## `dv create`
+
+```bash
+pp dv create accounts --env dev --body '{"name":"Acme"}'
+pp dv create accounts --env dev --body-file ./account.json --return-representation
+```
+
+Supported flags:
+
+- `--body`
+- `--body-file`
+- `--return-representation`
+- `--select`
+- `--expand`
+- `--if-match`
+- `--if-none-match`
+- `--annotations`
+
+## `dv update`
+
+```bash
+pp dv update accounts 00000000-0000-0000-0000-000000000001 \
+  --env dev \
+  --body '{"name":"Renamed"}'
+```
+
+Supported flags:
+
+- `--body`
+- `--body-file`
+- `--return-representation`
+- `--if-match`
+- `--if-none-match`
+- `--select`
+- `--expand`
+- `--annotations`
+
+## `dv delete`
+
+```bash
+pp dv delete accounts 00000000-0000-0000-0000-000000000001 --env dev
+```
+
+Supported flags:
+
+- `--if-match`
+
+## `dv metadata`
+
+List tables:
+
+```bash
+pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
+pp dv metadata tables --env dev --all
+```
+
+Inspect a specific table definition:
+
+```bash
+pp dv metadata table account --env dev --select LogicalName,SchemaName,ObjectTypeCode
+```
 
 ## Solution commands
 
@@ -104,14 +210,17 @@ Most current commands default to JSON output. Some project and analysis commands
 Implemented today:
 
 - Dataverse `WhoAmI`
-- table query with select/top/filter
+- generic Web API request execution
+ - table query with select/top/filter/expand/orderby/count
+- query paging with `--all`
 - row-by-ID fetch
+- create/update/delete primitives
+- metadata table listing and inspection
 - solution list
 - solution inspect by unique name
 
 Not implemented yet:
 
-- Dataverse create/update/delete
-- metadata browsing
+ - deeper metadata browsing beyond basic table listing and single-table inspection
 - solution import/export
 - richer diagnostics for dependency graphs

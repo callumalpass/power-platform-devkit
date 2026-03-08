@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFile } from 'node:fs/promises';
 import { renderMarkdownReport, generateContextPack } from '@pp/analysis';
 import { stableStringify } from '@pp/artifacts';
 import { AuthService, summarizeProfile, type AuthProfile, type UserAuthProfile } from '@pp/auth';
@@ -122,10 +123,20 @@ async function runDataverse(command: string | undefined, args: string[]): Promis
   switch (command) {
     case 'whoami':
       return runDataverseWhoAmI(args);
+    case 'request':
+      return runDataverseRequest(args);
     case 'query':
       return runDataverseQuery(args);
     case 'get':
       return runDataverseGet(args);
+    case 'create':
+      return runDataverseCreate(args);
+    case 'update':
+      return runDataverseUpdate(args);
+    case 'delete':
+      return runDataverseDelete(args);
+    case 'metadata':
+      return runDataverseMetadata(args);
     default:
       printHelp();
       return 1;
@@ -623,6 +634,49 @@ async function runDataverseWhoAmI(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runDataverseRequest(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const path = readFlag(args, '--path');
+
+  if (!path) {
+    return printFailure(argumentFailure('DV_REQUEST_PATH_REQUIRED', '--path is required.'));
+  }
+
+  const responseType = (readFlag(args, '--response-type') ?? 'json') as 'json' | 'text' | 'void';
+  const body = await readJsonBodyArgument(args);
+
+  if (!body.success) {
+    return printFailure(body);
+  }
+
+  const response = await resolution.data.client.request<unknown>({
+    path,
+    method: readFlag(args, '--method') ?? 'GET',
+    body: body.data,
+    responseType,
+    headers: readHeaderFlags(args),
+  });
+
+  if (!response.success || !response.data) {
+    return printFailure(response);
+  }
+
+  printByFormat(
+    {
+      status: response.data.status,
+      headers: response.data.headers,
+      body: response.data.data,
+    },
+    (readFlag(args, '--format') ?? 'json') as OutputFormat
+  );
+  return 0;
+}
+
 async function runDataverseQuery(args: string[]): Promise<number> {
   const table = positionalArgs(args)[0];
 
@@ -636,12 +690,32 @@ async function runDataverseQuery(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
-  const result = await resolution.data.client.query<Record<string, unknown>>({
+  const queryOptions = {
     table,
     select: readListFlag(args, '--select'),
     top: readNumberFlag(args, '--top'),
     filter: readFlag(args, '--filter'),
-  });
+    expand: readListFlag(args, '--expand'),
+    orderBy: readListFlag(args, '--orderby'),
+    count: hasFlag(args, '--count'),
+    maxPageSize: readNumberFlag(args, '--max-page-size'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+  };
+
+  if (hasFlag(args, '--page-info')) {
+    const page = await resolution.data.client.queryPage<Record<string, unknown>>(queryOptions);
+
+    if (!page.success) {
+      return printFailure(page);
+    }
+
+    printByFormat(page.data ?? { records: [] }, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+    return 0;
+  }
+
+  const result = hasFlag(args, '--all')
+    ? await resolution.data.client.queryAll<Record<string, unknown>>(queryOptions)
+    : await resolution.data.client.query<Record<string, unknown>>(queryOptions);
 
   if (!result.success) {
     return printFailure(result);
@@ -666,7 +740,198 @@ async function runDataverseGet(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
-  const result = await resolution.data.client.getById<Record<string, unknown>>(table, id, readListFlag(args, '--select'));
+  const result = await resolution.data.client.getById<Record<string, unknown>>(table, id, {
+    select: readListFlag(args, '--select'),
+    expand: readListFlag(args, '--expand'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseCreate(args: string[]): Promise<number> {
+  const table = positionalArgs(args)[0];
+
+  if (!table) {
+    return printFailure(argumentFailure('DV_TABLE_REQUIRED', 'Table logical name is required.'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const body = await readJsonBodyArgument(args);
+
+  if (!body.success) {
+    return printFailure(body);
+  }
+
+  if (!body.data || typeof body.data !== 'object' || Array.isArray(body.data)) {
+    return printFailure(argumentFailure('DV_BODY_REQUIRED', '--body or --body-file must contain a JSON object.'));
+  }
+
+  const result = await resolution.data.client.create<Record<string, unknown>, Record<string, unknown>>(table, body.data as Record<string, unknown>, {
+    select: readListFlag(args, '--select'),
+    expand: readListFlag(args, '--expand'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+    returnRepresentation: hasFlag(args, '--return-representation'),
+    ifNoneMatch: readFlag(args, '--if-none-match'),
+    ifMatch: readFlag(args, '--if-match'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseUpdate(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const table = positional[0];
+  const id = positional[1];
+
+  if (!table || !id) {
+    return printFailure(argumentFailure('DV_UPDATE_ARGS_REQUIRED', 'Usage: dv update <table> <id> --env <alias> --body <json>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const body = await readJsonBodyArgument(args);
+
+  if (!body.success) {
+    return printFailure(body);
+  }
+
+  if (!body.data || typeof body.data !== 'object' || Array.isArray(body.data)) {
+    return printFailure(argumentFailure('DV_BODY_REQUIRED', '--body or --body-file must contain a JSON object.'));
+  }
+
+  const result = await resolution.data.client.update<Record<string, unknown>, Record<string, unknown>>(
+    table,
+    id,
+    body.data as Record<string, unknown>,
+    {
+      select: readListFlag(args, '--select'),
+      expand: readListFlag(args, '--expand'),
+      includeAnnotations: readListFlag(args, '--annotations'),
+      returnRepresentation: hasFlag(args, '--return-representation'),
+      ifMatch: readFlag(args, '--if-match'),
+      ifNoneMatch: readFlag(args, '--if-none-match'),
+    }
+  );
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseDelete(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const table = positional[0];
+  const id = positional[1];
+
+  if (!table || !id) {
+    return printFailure(argumentFailure('DV_DELETE_ARGS_REQUIRED', 'Usage: dv delete <table> <id> --env <alias>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await resolution.data.client.delete(table, id, {
+    ifMatch: readFlag(args, '--if-match'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseMetadata(args: string[]): Promise<number> {
+  const [action] = positionalArgs(args);
+
+  if (!action) {
+    return printFailure(argumentFailure('DV_METADATA_ACTION_REQUIRED', 'Use `dv metadata tables` or `dv metadata table <logicalName>`.'));
+  }
+
+  if (action === 'tables') {
+    return runDataverseMetadataTables(args);
+  }
+
+  if (action === 'table') {
+    return runDataverseMetadataTable(args);
+  }
+
+  return printFailure(argumentFailure('DV_METADATA_ACTION_INVALID', `Unsupported metadata action ${action}.`));
+}
+
+async function runDataverseMetadataTables(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await resolution.data.client.listTables({
+    select: readListFlag(args, '--select'),
+    top: readNumberFlag(args, '--top'),
+    filter: readFlag(args, '--filter'),
+    expand: readListFlag(args, '--expand'),
+    orderBy: readListFlag(args, '--orderby'),
+    count: hasFlag(args, '--count'),
+    maxPageSize: readNumberFlag(args, '--max-page-size'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+    all: hasFlag(args, '--all'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseMetadataTable(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const logicalName = positional[1];
+
+  if (!logicalName) {
+    return printFailure(argumentFailure('DV_METADATA_TABLE_REQUIRED', 'Usage: dv metadata table <logicalName> --env <alias>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await resolution.data.client.getTable(logicalName, {
+    select: readListFlag(args, '--select'),
+    expand: readListFlag(args, '--expand'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+  });
 
   if (!result.success || !result.data) {
     return printFailure(result);
@@ -834,6 +1099,19 @@ function hasFlag(args: string[], name: string): boolean {
   return args.includes(name);
 }
 
+function readRepeatedFlags(args: string[], name: string): string[] {
+  const values: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name && args[index + 1]) {
+      values.push(args[index + 1] as string);
+      index += 1;
+    }
+  }
+
+  return values;
+}
+
 function readListFlag(args: string[], name: string): string[] | undefined {
   const value = readFlag(args, name);
   return value ? value.split(',').map((item) => item.trim()).filter(Boolean) : undefined;
@@ -842,6 +1120,73 @@ function readListFlag(args: string[], name: string): string[] | undefined {
 function readNumberFlag(args: string[], name: string): number | undefined {
   const value = readFlag(args, name);
   return value ? Number(value) : undefined;
+}
+
+async function readJsonBodyArgument(args: string[]): Promise<OperationResult<unknown | undefined>> {
+  try {
+    const inlineBody = readFlag(args, '--body');
+
+    if (inlineBody) {
+      return {
+        success: true,
+        data: JSON.parse(inlineBody),
+        diagnostics: [],
+        warnings: [],
+        supportTier: 'preview',
+      };
+    }
+
+    const bodyFile = readFlag(args, '--body-file');
+
+    if (!bodyFile) {
+      return {
+        success: true,
+        data: undefined,
+        diagnostics: [],
+        warnings: [],
+        supportTier: 'preview',
+      };
+    }
+
+    const contents = await readFile(bodyFile, 'utf8');
+    return {
+      success: true,
+      data: JSON.parse(contents),
+      diagnostics: [],
+      warnings: [],
+      supportTier: 'preview',
+    };
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'CLI_BODY_INVALID', 'Failed to parse JSON request body.', {
+        source: '@pp/cli',
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    );
+  }
+}
+
+function readHeaderFlags(args: string[]): Record<string, string> | undefined {
+  const entries = readRepeatedFlags(args, '--header')
+    .map((value) => {
+      const separatorIndex = value.indexOf(':');
+
+      if (separatorIndex === -1) {
+        return undefined;
+      }
+
+      const key = value.slice(0, separatorIndex).trim();
+      const headerValue = value.slice(separatorIndex + 1).trim();
+
+      if (!key || !headerValue) {
+        return undefined;
+      }
+
+      return [key, headerValue] as const;
+    })
+    .filter((entry): entry is readonly [string, string] => Boolean(entry));
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 function positionalArgs(args: string[]): string[] {
@@ -900,8 +1245,14 @@ function printHelp(): void {
       '  env remove <alias> [--config-dir path]',
       '',
       '  dv whoami --env ALIAS [--config-dir path]',
-      '  dv query <table> --env ALIAS [--select a,b] [--top N] [--filter expr] [--config-dir path]',
-      '  dv get <table> <id> --env ALIAS [--select a,b] [--config-dir path]',
+      '  dv request --env ALIAS --path PATH [--method GET] [--body JSON|--body-file FILE] [--response-type json|text|void] [--header "Name: value"] [--config-dir path]',
+      '  dv query <table> --env ALIAS [--select a,b] [--expand x,y] [--orderby expr] [--top N] [--filter expr] [--count] [--all|--page-info] [--config-dir path]',
+      '  dv get <table> <id> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv create <table> --env ALIAS --body JSON|--body-file FILE [--return-representation] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv update <table> <id> --env ALIAS --body JSON|--body-file FILE [--return-representation] [--if-match etag] [--config-dir path]',
+      '  dv delete <table> <id> --env ALIAS [--if-match etag] [--config-dir path]',
+      '  dv metadata tables --env ALIAS [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
+      '  dv metadata table <logicalName> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
       '',
       '  solution list --env ALIAS [--config-dir path]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',

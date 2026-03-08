@@ -62,6 +62,7 @@ The alias is what the Dataverse and solution commands use. You do not need to re
 pp dv whoami --env dev
 pp dv query accounts --env dev --select name,accountnumber --top 5
 pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
+pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 ```
 
 ## 5. Inspect solutions
