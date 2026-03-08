@@ -13,6 +13,10 @@ import {
   type EnvironmentAlias,
 } from '@pp/config';
 import {
+  parseColumnCreateSpec,
+  parseGlobalOptionSetCreateSpec,
+  parseOneToManyRelationshipCreateSpec,
+  parseTableCreateSpec,
   normalizeAttributeDefinition,
   normalizeAttributeDefinitions,
   resolveDataverseClient,
@@ -22,6 +26,7 @@ import { buildDeployPlan } from '@pp/deploy';
 import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
 import { discoverProject, summarizeProject } from '@pp/project';
 import { SolutionService } from '@pp/solution';
+import YAML from 'yaml';
 
 type OutputFormat = 'json' | 'markdown' | 'table' | 'raw';
 type AttributeListView = Extract<AttributeMetadataView, 'common' | 'raw'>;
@@ -903,7 +908,12 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
   const [action] = positionalArgs(args);
 
   if (!action) {
-    return printFailure(argumentFailure('DV_METADATA_ACTION_REQUIRED', 'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, or `dv metadata column <table> <column>`.'));
+    return printFailure(
+      argumentFailure(
+        'DV_METADATA_ACTION_REQUIRED',
+        'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata create-table`, `dv metadata add-column`, `dv metadata create-option-set`, or `dv metadata create-relationship`.'
+      )
+    );
   }
 
   if (action === 'tables') {
@@ -920,6 +930,22 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
 
   if (action === 'column') {
     return runDataverseMetadataColumn(args);
+  }
+
+  if (action === 'create-table') {
+    return runDataverseMetadataCreateTable(args);
+  }
+
+  if (action === 'add-column') {
+    return runDataverseMetadataAddColumn(args);
+  }
+
+  if (action === 'create-option-set') {
+    return runDataverseMetadataCreateOptionSet(args);
+  }
+
+  if (action === 'create-relationship') {
+    return runDataverseMetadataCreateRelationship(args);
   }
 
   return printFailure(argumentFailure('DV_METADATA_ACTION_INVALID', `Unsupported metadata action ${action}.`));
@@ -1066,6 +1092,169 @@ async function runDataverseMetadataColumn(args: string[]): Promise<number> {
   printWarnings(result);
   const payload = view.data === 'raw' ? result.data : normalizeAttributeDefinition(result.data, view.data);
   printByFormat(payload, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseMetadataCreateTable(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const specInput = await readStructuredSpecArgument(args, '--file', 'DV_METADATA_CREATE_TABLE_FILE_REQUIRED', 'Usage: dv metadata create-table --file FILE --env <alias>');
+
+  if (!specInput.success || specInput.data === undefined) {
+    return printFailure(specInput);
+  }
+
+  const spec = parseTableCreateSpec(specInput.data);
+
+  if (!spec.success || !spec.data) {
+    return printFailure(spec);
+  }
+
+  const writeOptions = readMetadataCreateOptions(args);
+
+  if (!writeOptions.success || !writeOptions.data) {
+    return printFailure(writeOptions);
+  }
+
+  const result = await resolution.data.client.createTable(spec.data, writeOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseMetadataAddColumn(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const tableLogicalName = positional[1];
+
+  if (!tableLogicalName) {
+    return printFailure(
+      argumentFailure('DV_METADATA_ADD_COLUMN_TABLE_REQUIRED', 'Usage: dv metadata add-column <tableLogicalName> --file FILE --env <alias>')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const specInput = await readStructuredSpecArgument(args, '--file', 'DV_METADATA_ADD_COLUMN_FILE_REQUIRED', 'Usage: dv metadata add-column <tableLogicalName> --file FILE --env <alias>');
+
+  if (!specInput.success || specInput.data === undefined) {
+    return printFailure(specInput);
+  }
+
+  const spec = parseColumnCreateSpec(specInput.data);
+
+  if (!spec.success || !spec.data) {
+    return printFailure(spec);
+  }
+
+  const writeOptions = readMetadataCreateOptions(args);
+
+  if (!writeOptions.success || !writeOptions.data) {
+    return printFailure(writeOptions);
+  }
+
+  const result = await resolution.data.client.createColumn(tableLogicalName, spec.data, writeOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseMetadataCreateOptionSet(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const specInput = await readStructuredSpecArgument(
+    args,
+    '--file',
+    'DV_METADATA_CREATE_OPTION_SET_FILE_REQUIRED',
+    'Usage: dv metadata create-option-set --file FILE --env <alias>'
+  );
+
+  if (!specInput.success || specInput.data === undefined) {
+    return printFailure(specInput);
+  }
+
+  const spec = parseGlobalOptionSetCreateSpec(specInput.data);
+
+  if (!spec.success || !spec.data) {
+    return printFailure(spec);
+  }
+
+  const writeOptions = readMetadataCreateOptions(args);
+
+  if (!writeOptions.success || !writeOptions.data) {
+    return printFailure(writeOptions);
+  }
+
+  const result = await resolution.data.client.createGlobalOptionSet(spec.data, writeOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseMetadataCreateRelationship(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const specInput = await readStructuredSpecArgument(
+    args,
+    '--file',
+    'DV_METADATA_CREATE_RELATIONSHIP_FILE_REQUIRED',
+    'Usage: dv metadata create-relationship --file FILE --env <alias>'
+  );
+
+  if (!specInput.success || specInput.data === undefined) {
+    return printFailure(specInput);
+  }
+
+  const spec = parseOneToManyRelationshipCreateSpec(specInput.data);
+
+  if (!spec.success || !spec.data) {
+    return printFailure(spec);
+  }
+
+  const writeOptions = readMetadataCreateOptions(args);
+
+  if (!writeOptions.success || !writeOptions.data) {
+    return printFailure(writeOptions);
+  }
+
+  const result = await resolution.data.client.createOneToManyRelationship(spec.data, writeOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
   return 0;
 }
 
@@ -1256,6 +1445,33 @@ function readNumberFlag(args: string[], name: string): number | undefined {
   return value ? Number(value) : undefined;
 }
 
+function readMetadataCreateOptions(
+  args: string[]
+): OperationResult<{
+  solutionUniqueName?: string;
+  languageCode?: number;
+  publish?: boolean;
+  includeAnnotations?: string[];
+}> {
+  const languageCode = readNumberFlag(args, '--language-code');
+
+  if (languageCode !== undefined && (!Number.isInteger(languageCode) || languageCode <= 0)) {
+    return argumentFailure('DV_METADATA_LANGUAGE_CODE_INVALID', '--language-code must be a positive integer.');
+  }
+
+  return ok(
+    {
+      solutionUniqueName: readFlag(args, '--solution'),
+      languageCode,
+      publish: hasFlag(args, '--no-publish') ? false : true,
+      includeAnnotations: readListFlag(args, '--annotations'),
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
 function readAttributeListView(args: string[]): OperationResult<AttributeListView> {
   const view = readFlag(args, '--view') ?? 'common';
 
@@ -1328,6 +1544,82 @@ async function readJsonBodyArgument(args: string[]): Promise<OperationResult<unk
   }
 }
 
+async function readStructuredSpecArgument(
+  args: string[],
+  flagName: string,
+  missingCode: string,
+  missingMessage: string
+): Promise<OperationResult<unknown>> {
+  const file = readFlag(args, flagName);
+
+  if (!file) {
+    return argumentFailure(missingCode, missingMessage);
+  }
+
+  try {
+    const contents = await readFile(file, 'utf8');
+    const parsed = parseStructuredText(contents, file);
+
+    if (!parsed.success || parsed.data === undefined) {
+      return parsed;
+    }
+
+    if (!parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
+      return fail(
+        createDiagnostic('error', 'CLI_SPEC_INVALID', 'Structured spec files must parse to an object.', {
+          source: '@pp/cli',
+          path: file,
+        })
+      );
+    }
+
+    return parsed;
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'CLI_SPEC_READ_FAILED', 'Failed to read structured spec file.', {
+        source: '@pp/cli',
+        path: file,
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    );
+  }
+}
+
+function parseStructuredText(contents: string, sourcePath: string): OperationResult<unknown> {
+  try {
+    const trimmed = contents.trim();
+    const lowerPath = sourcePath.toLowerCase();
+    const data =
+      lowerPath.endsWith('.json')
+        ? JSON.parse(trimmed)
+        : lowerPath.endsWith('.yaml') || lowerPath.endsWith('.yml')
+          ? YAML.parse(contents)
+          : tryParseJsonOrYaml(contents);
+
+    return ok(data, {
+      supportTier: 'preview',
+    });
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'CLI_SPEC_PARSE_FAILED', 'Failed to parse structured spec file as JSON or YAML.', {
+        source: '@pp/cli',
+        path: sourcePath,
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    );
+  }
+}
+
+function tryParseJsonOrYaml(contents: string): unknown {
+  const trimmed = contents.trim();
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return YAML.parse(contents);
+  }
+}
+
 function readHeaderFlags(args: string[]): Record<string, string> | undefined {
   const entries = readRepeatedFlags(args, '--header')
     .map((value) => {
@@ -1362,7 +1654,9 @@ function positionalArgs(args: string[]): string[] {
     }
 
     if (current.startsWith('--')) {
-      index += 1;
+      if (!BOOLEAN_FLAGS.has(current)) {
+        index += 1;
+      }
       continue;
     }
 
@@ -1371,6 +1665,18 @@ function positionalArgs(args: string[]): string[] {
 
   return positional;
 }
+
+const BOOLEAN_FLAGS = new Set([
+  '--all',
+  '--count',
+  '--device-code',
+  '--device-code-fallback',
+  '--force-prompt',
+  '--no-device-code-fallback',
+  '--no-publish',
+  '--page-info',
+  '--return-representation',
+]);
 
 function argumentFailure(code: string, message: string): OperationResult<never> {
   return fail(
@@ -1417,6 +1723,10 @@ function printHelp(): void {
       '  dv metadata table <logicalName> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
       '  dv metadata columns <tableLogicalName> --env ALIAS [--view common|raw] [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
       '  dv metadata column <tableLogicalName> <columnLogicalName> --env ALIAS [--view common|detailed|raw] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata create-table --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata add-column <tableLogicalName> --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata create-option-set --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata create-relationship --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '',
       '  solution list --env ALIAS [--config-dir path]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',

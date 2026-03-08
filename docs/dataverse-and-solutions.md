@@ -185,6 +185,85 @@ Notes:
 - `--top` is applied client-side.
 - `--orderby` and `--count` are not supported.
 
+Create metadata from structured spec files:
+
+```bash
+pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
+pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
+pp dv metadata create-option-set --env dev --file ./specs/status.optionset.yaml --solution Core
+pp dv metadata create-relationship --env dev --file ./specs/project-account.relationship.yaml --solution Core
+```
+
+Supported creation scope today:
+
+- custom tables with a primary-name column
+- column kinds: `string`, `memo`, `integer`, `decimal`, `money`, `datetime`, `boolean`, `choice`
+- global option sets
+- one-to-many relationships with lookup creation
+
+Common flags:
+
+- `--file` accepts JSON, YAML, or YML
+- `--solution` adds `MSCRM.SolutionUniqueName` to the metadata request
+- `--language-code` defaults to `1033`
+- publish happens by default after create; use `--no-publish` to skip it
+
+Example table spec:
+
+```yaml
+schemaName: pp_Project
+displayName: Project
+pluralDisplayName: Projects
+description: Project records
+ownership: userOwned
+hasNotes: true
+primaryName:
+  schemaName: pp_Name
+  displayName: Name
+  maxLength: 200
+```
+
+Example column spec:
+
+```yaml
+kind: string
+schemaName: pp_ClientCode
+displayName: Client Code
+description: External client code
+requiredLevel: recommended
+maxLength: 50
+format: text
+```
+
+Example global option set spec:
+
+```yaml
+name: pp_projectstatus
+displayName: Project Status
+options:
+  - label: New
+    value: 100000000
+  - label: Active
+    value: 100000001
+```
+
+Example one-to-many relationship spec:
+
+```yaml
+schemaName: pp_project_account
+referencedEntity: account
+referencingEntity: pp_project
+lookup:
+  schemaName: pp_AccountId
+  displayName: Account
+```
+
+Notes:
+
+- create commands return the initial Dataverse response plus the fetched definition when read-back succeeds
+- read-back or publish problems are reported as warnings when the underlying create call has already succeeded
+- the authoring surface is intentionally smaller than raw Dataverse metadata JSON so `pp` can validate and shape payloads consistently
+
 ## Solution commands
 
 List the first 100 solutions:
@@ -240,16 +319,18 @@ Implemented today:
 
 - Dataverse `WhoAmI`
 - generic Web API request execution
- - table query with select/top/filter/expand/orderby/count
+- table query with select/top/filter/expand/orderby/count
 - query paging with `--all`
 - row-by-ID fetch
 - create/update/delete primitives
 - metadata table listing and inspection
+- metadata create for phase 1 and 2 assets
 - solution list
 - solution inspect by unique name
 
 Not implemented yet:
 
- - deeper metadata browsing beyond basic table listing and single-table inspection
+- deeper metadata browsing beyond basic table listing and single-table inspection
+- many-to-many relationships, state/status metadata, file/image columns, and other phase 3 metadata assets
 - solution import/export
 - richer diagnostics for dependency graphs

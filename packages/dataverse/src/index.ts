@@ -2,6 +2,18 @@ import { createTokenProvider, type AuthProfile } from '@pp/auth';
 import { getAuthProfile, getEnvironmentAlias, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpQueryValue, type HttpRequestOptions, type HttpResponse } from '@pp/http';
+import {
+  buildColumnCreatePayload,
+  buildGlobalOptionSetCreatePayload,
+  buildOneToManyRelationshipCreatePayload,
+  buildTableCreatePayload,
+  resolveLogicalName,
+  type ColumnCreateSpec,
+  type GlobalOptionSetCreateSpec,
+  type MetadataBuildOptions,
+  type OneToManyRelationshipCreateSpec,
+  type TableCreateSpec,
+} from './metadata-create';
 
 export interface DataverseEnvironment {
   url: string;
@@ -88,6 +100,17 @@ export interface DataverseWriteResult<T = unknown> {
   entity?: T;
   entityId?: string;
   location?: string;
+}
+
+export interface DataverseMetadataWriteOptions extends MetadataBuildOptions {
+  solutionUniqueName?: string;
+  publish?: boolean;
+  includeAnnotations?: string[];
+}
+
+export interface DataverseMetadataWriteResult<T = unknown> extends DataverseWriteResult<T> {
+  published?: boolean;
+  publishTargets?: string[];
 }
 
 export type EntityDefinition = Record<string, unknown>;
@@ -353,6 +376,180 @@ export class DataverseClient {
       responseType: 'json',
       includeAnnotations: options.includeAnnotations,
     });
+  }
+
+  async getGlobalOptionSet(
+    name: string,
+    options: EntityReadOptions = {}
+  ): Promise<OperationResult<Record<string, unknown>>> {
+    return this.requestJson<Record<string, unknown>>({
+      path: buildGlobalOptionSetPath(name, options),
+      method: 'GET',
+      responseType: 'json',
+      includeAnnotations: options.includeAnnotations,
+    });
+  }
+
+  async getRelationship(
+    schemaName: string,
+    options: EntityReadOptions = {}
+  ): Promise<OperationResult<Record<string, unknown>>> {
+    return this.requestJson<Record<string, unknown>>({
+      path: buildRelationshipPath(schemaName, options),
+      method: 'GET',
+      responseType: 'json',
+      includeAnnotations: options.includeAnnotations,
+    });
+  }
+
+  async createTable(
+    spec: TableCreateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<EntityDefinition>>> {
+    const logicalName = resolveLogicalName(spec.schemaName, spec.logicalName);
+    const response = await this.request<void>({
+      path: 'EntityDefinitions',
+      method: 'POST',
+      body: buildTableCreatePayload(spec, options),
+      responseType: 'void',
+      headers: buildMetadataWriteHeaders(options),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseMetadataWriteResult<EntityDefinition>>;
+    }
+
+    const entity = await this.getTable(logicalName, {
+      includeAnnotations: options.includeAnnotations,
+    });
+    const publish = options.publish
+      ? await this.publishEntities([logicalName], options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(response, entity, publish, [logicalName]);
+  }
+
+  async createColumn(
+    tableLogicalName: string,
+    spec: ColumnCreateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<AttributeDefinition>>> {
+    const logicalName = resolveLogicalName(spec.schemaName, spec.logicalName);
+    const response = await this.request<void>({
+      path: buildAttributeCollectionPath(tableLogicalName),
+      method: 'POST',
+      body: buildColumnCreatePayload(spec, options),
+      responseType: 'void',
+      headers: buildMetadataWriteHeaders(options),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseMetadataWriteResult<AttributeDefinition>>;
+    }
+
+    const entity = await this.getColumn(tableLogicalName, logicalName, {
+      includeAnnotations: options.includeAnnotations,
+    });
+    const publish = options.publish
+      ? await this.publishEntities([tableLogicalName], options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(response, entity, publish, [tableLogicalName]);
+  }
+
+  async createGlobalOptionSet(
+    spec: GlobalOptionSetCreateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>> {
+    const response = await this.request<void>({
+      path: 'GlobalOptionSetDefinitions',
+      method: 'POST',
+      body: buildGlobalOptionSetCreatePayload(spec, options),
+      responseType: 'void',
+      headers: buildMetadataWriteHeaders(options),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>;
+    }
+
+    const entity = await this.getGlobalOptionSet(spec.name, {
+      includeAnnotations: options.includeAnnotations,
+    });
+    const publish = options.publish
+      ? await this.publishOptionSets([spec.name], options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(response, entity, publish, [spec.name]);
+  }
+
+  async createOneToManyRelationship(
+    spec: OneToManyRelationshipCreateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>> {
+    const response = await this.request<void>({
+      path: 'RelationshipDefinitions',
+      method: 'POST',
+      body: buildOneToManyRelationshipCreatePayload(spec, options),
+      responseType: 'void',
+      headers: buildMetadataWriteHeaders(options),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>;
+    }
+
+    const entity = await this.getRelationship(spec.schemaName, {
+      includeAnnotations: options.includeAnnotations,
+    });
+    const publishTargets = uniqueStrings([spec.referencedEntity, spec.referencingEntity]);
+    const publish = options.publish
+      ? await this.publishEntities(publishTargets, options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(response, entity, publish, publishTargets);
+  }
+
+  async publishXml(parameterXml: string, solutionUniqueName?: string): Promise<OperationResult<DataverseWriteResult>> {
+    const response = await this.request<void>({
+      path: 'PublishXml',
+      method: 'POST',
+      body: {
+        ParameterXml: parameterXml,
+      },
+      responseType: 'void',
+      headers: buildMetadataWriteHeaders({
+        solutionUniqueName,
+      }),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseWriteResult>;
+    }
+
+    return ok(
+      {
+        status: response.data?.status ?? 204,
+        headers: response.data?.headers ?? {},
+        entityId: extractEntityId(response.data?.headers),
+        location: extractLocation(response.data?.headers),
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: response.diagnostics,
+        warnings: response.warnings,
+      }
+    );
+  }
+
+  async publishEntities(logicalNames: string[], solutionUniqueName?: string): Promise<OperationResult<DataverseWriteResult>> {
+    const entities = uniqueStrings(logicalNames).map((logicalName) => `<entity>${escapeXml(logicalName)}</entity>`).join('');
+    return this.publishXml(`<importexportxml><entities>${entities}</entities></importexportxml>`, solutionUniqueName);
+  }
+
+  async publishOptionSets(names: string[], solutionUniqueName?: string): Promise<OperationResult<DataverseWriteResult>> {
+    const optionSets = uniqueStrings(names).map((name) => `<optionset>${escapeXml(name)}</optionset>`).join('');
+    return this.publishXml(`<importexportxml><optionsets>${optionSets}</optionsets></importexportxml>`, solutionUniqueName);
   }
 
   private async metadataQuery<T>(
@@ -626,6 +823,23 @@ export function buildAttributeCollectionPath(logicalName: string): string {
   return `${buildMetadataEntityPath(logicalName)}/Attributes`;
 }
 
+export function buildGlobalOptionSetPath(
+  name: string,
+  options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
+): string {
+  return buildODataPath(`GlobalOptionSetDefinitions(Name='${escapeODataLiteral(name)}')`, options);
+}
+
+export function buildRelationshipPath(
+  schemaName: string,
+  options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
+): string {
+  return buildODataPath(
+    `RelationshipDefinitions(SchemaName='${escapeODataLiteral(schemaName)}')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata`,
+    options
+  );
+}
+
 export function buildMetadataAttributePath(
   tableLogicalName: string,
   columnLogicalName: string,
@@ -770,6 +984,16 @@ function buildDataverseHeaders(options: DataverseRequestOptions): Record<string,
   return headers;
 }
 
+function buildMetadataWriteHeaders(options: Pick<DataverseMetadataWriteOptions, 'solutionUniqueName'>): Record<string, string> {
+  const headers: Record<string, string> = {};
+
+  if (options.solutionUniqueName) {
+    headers['MSCRM.SolutionUniqueName'] = options.solutionUniqueName;
+  }
+
+  return headers;
+}
+
 function buildAnnotationPrefer(includeAnnotations: string[] | undefined): string[] | undefined {
   if (!includeAnnotations || includeAnnotations.length === 0) {
     return undefined;
@@ -806,8 +1030,79 @@ function extractLocation(headers: Record<string, string> | undefined): string | 
   return headers['odata-entityid'] ?? headers.location;
 }
 
+function buildMetadataWriteResult<T>(
+  writeResponse: OperationResult<HttpResponse<void>>,
+  readBack: OperationResult<T>,
+  publishResponse: OperationResult<DataverseWriteResult> | undefined,
+  publishTargets: string[]
+): OperationResult<DataverseMetadataWriteResult<T>> {
+  const writeHeaders = writeResponse.data?.headers ?? {};
+  const warnings = [...writeResponse.warnings];
+  const diagnostics = [...writeResponse.diagnostics];
+  let entity: T | undefined;
+
+  if (readBack.success) {
+    entity = readBack.data;
+    warnings.push(...readBack.warnings);
+  } else {
+    warnings.push(
+      createDiagnostic('warning', 'DATAVERSE_METADATA_READBACK_FAILED', 'Metadata was created, but the follow-up read did not succeed.', {
+        source: '@pp/dataverse',
+        detail: readBack.diagnostics.map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`).join('; '),
+      }),
+      ...demoteDiagnostics(readBack.diagnostics),
+      ...readBack.warnings
+    );
+  }
+
+  let published: boolean | undefined;
+
+  if (publishResponse) {
+    if (publishResponse.success) {
+      published = true;
+      warnings.push(...publishResponse.warnings);
+    } else {
+      published = false;
+      warnings.push(
+        createDiagnostic('warning', 'DATAVERSE_METADATA_PUBLISH_FAILED', 'Metadata was created, but publish did not complete successfully.', {
+          source: '@pp/dataverse',
+          detail: publishResponse.diagnostics.map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`).join('; '),
+        }),
+        ...demoteDiagnostics(publishResponse.diagnostics),
+        ...publishResponse.warnings
+      );
+    }
+  }
+
+  return ok(
+    compactObject({
+      status: writeResponse.data?.status ?? 204,
+      headers: writeHeaders,
+      entity,
+      entityId: extractEntityId(writeHeaders) ?? readMetadataId(entity),
+      location: extractLocation(writeHeaders),
+      published,
+      publishTargets: publishResponse ? publishTargets : undefined,
+    }),
+    {
+      supportTier: 'preview',
+      diagnostics,
+      warnings,
+    }
+  );
+}
+
 function escapeODataLiteral(value: string): string {
   return value.replaceAll("'", "''");
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
 }
 
 function normalizeAttributeTypeDetails(attribute: AttributeDefinition): Record<string, unknown> {
@@ -865,6 +1160,42 @@ function normalizeOptionSet(value: unknown): Record<string, unknown> | undefined
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
+
+function readMetadataId(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return readString((value as Record<string, unknown>).MetadataId);
+}
+
+function demoteDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
+  return diagnostics.map((diagnostic) => ({
+    ...diagnostic,
+    level: 'warning',
+  }));
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+export {
+  buildColumnCreatePayload,
+  buildGlobalOptionSetCreatePayload,
+  buildOneToManyRelationshipCreatePayload,
+  buildTableCreatePayload,
+  parseColumnCreateSpec,
+  parseGlobalOptionSetCreateSpec,
+  parseOneToManyRelationshipCreateSpec,
+  parseTableCreateSpec,
+  resolveLogicalName,
+  type ColumnCreateSpec,
+  type GlobalOptionSetCreateSpec,
+  type MetadataBuildOptions,
+  type OneToManyRelationshipCreateSpec,
+  type TableCreateSpec,
+} from './metadata-create';
 
 function readManagedPrimitive<T extends string | number | boolean>(value: unknown): T | undefined {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {

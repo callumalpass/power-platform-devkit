@@ -69,6 +69,13 @@ pp dv metadata column account name --env dev
 
 For metadata listing, `--top` is applied locally after retrieval because Dataverse metadata endpoints do not support server-side `$top`.
 
+You can also create supported schema metadata from YAML or JSON specs:
+
+```bash
+pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
+pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
+```
+
 ## 5. Inspect solutions
 
 ```bash

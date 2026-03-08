@@ -8,6 +8,8 @@ import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http
 import {
   DataverseClient,
   buildMetadataAttributePath,
+  buildGlobalOptionSetPath,
+  buildRelationshipPath,
   buildQueryPath,
   normalizeAttributeDefinition,
   normalizeAttributeDefinitions,
@@ -240,6 +242,160 @@ describe('DataverseClient', () => {
       "EntityDefinitions(LogicalName='account')/Attributes(LogicalName='name')?%24select=LogicalName%2CSchemaName%2CAttributeType"
     );
   });
+
+  it('creates a table, reads it back, and publishes it', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 204,
+        headers: {
+          location: 'https://example.crm.dynamics.com/api/data/v9.2/EntityDefinitions(00000000-0000-0000-0000-000000000010)',
+        },
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'pp_project',
+          SchemaName: 'pp_Project',
+          MetadataId: '00000000-0000-0000-0000-000000000010',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.createTable(
+      {
+        schemaName: 'pp_Project',
+        displayName: 'Project',
+        pluralDisplayName: 'Projects',
+        primaryName: {
+          schemaName: 'pp_Name',
+          displayName: 'Name',
+          maxLength: 200,
+        },
+        hasActivities: false,
+        hasNotes: true,
+        isActivity: false,
+        ownership: 'userOwned',
+      },
+      {
+        solutionUniqueName: 'Core',
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.published).toBe(true);
+    expect(result.data?.publishTargets).toEqual(['pp_project']);
+    expect(result.data?.entity).toMatchObject({
+      LogicalName: 'pp_project',
+      SchemaName: 'pp_Project',
+    });
+    expect(httpClient.requests[0]?.path).toBe('EntityDefinitions');
+    expect(httpClient.requests[0]?.headers?.['MSCRM.SolutionUniqueName']).toBe('Core');
+    expect(httpClient.requests[1]?.path).toBe("EntityDefinitions(LogicalName='pp_project')");
+    expect(httpClient.requests[2]?.path).toBe('PublishXml');
+    expect(httpClient.requests[2]?.body).toEqual({
+      ParameterXml: '<importexportxml><entities><entity>pp_project</entity></entities></importexportxml>',
+    });
+  });
+
+  it('creates a global option set and publishes the option set definition', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          Name: 'pp_status',
+          MetadataId: '00000000-0000-0000-0000-000000000020',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.createGlobalOptionSet(
+      {
+        name: 'pp_status',
+        displayName: 'Status',
+        options: [{ label: 'New', value: 100000000 }],
+      },
+      {
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.published).toBe(true);
+    expect(httpClient.requests[0]?.path).toBe('GlobalOptionSetDefinitions');
+    expect(httpClient.requests[1]?.path).toBe("GlobalOptionSetDefinitions(Name='pp_status')");
+    expect(httpClient.requests[2]?.body).toEqual({
+      ParameterXml: '<importexportxml><optionsets><optionset>pp_status</optionset></optionsets></importexportxml>',
+    });
+  });
+
+  it('creates a one-to-many relationship and publishes both affected entities', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          SchemaName: 'pp_project_account',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.createOneToManyRelationship(
+      {
+        schemaName: 'pp_project_account',
+        referencedEntity: 'account',
+        referencingEntity: 'pp_project',
+        lookup: {
+          schemaName: 'pp_AccountId',
+          displayName: 'Account',
+        },
+      },
+      {
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.publishTargets).toEqual(['account', 'pp_project']);
+    expect(httpClient.requests[0]?.path).toBe('RelationshipDefinitions');
+    expect(httpClient.requests[1]?.path).toBe(
+      "RelationshipDefinitions(SchemaName='pp_project_account')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata"
+    );
+    expect(httpClient.requests[2]?.body).toEqual({
+      ParameterXml: '<importexportxml><entities><entity>account</entity><entity>pp_project</entity></entities></importexportxml>',
+    });
+  });
 });
 
 describe('normalizeMetadataQueryOptions', () => {
@@ -272,6 +428,18 @@ describe('buildMetadataAttributePath', () => {
     });
 
     expect(path).toBe("EntityDefinitions(LogicalName='account')/Attributes(LogicalName='name')?%24select=LogicalName%2CSchemaName");
+  });
+});
+
+describe('metadata definition paths', () => {
+  it('builds a global option set metadata path', () => {
+    expect(buildGlobalOptionSetPath('pp_status')).toBe("GlobalOptionSetDefinitions(Name='pp_status')");
+  });
+
+  it('builds a one-to-many relationship metadata path', () => {
+    expect(buildRelationshipPath('pp_project_account')).toBe(
+      "RelationshipDefinitions(SchemaName='pp_project_account')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata"
+    );
   });
 });
 

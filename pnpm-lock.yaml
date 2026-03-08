@@ -93,6 +93,9 @@ importers:
       '@pp/solution':
         specifier: workspace:*
         version: link:../solution
+      yaml:
+        specifier: ^2.7.1
+        version: 2.8.2
 
   packages/config:
     dependencies:
@@ -120,6 +123,9 @@ importers:
       '@pp/http':
         specifier: workspace:*
         version: link:../http
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
 
   packages/deploy:
     dependencies:

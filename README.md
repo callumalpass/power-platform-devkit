@@ -2,7 +2,7 @@
 
 TypeScript monorepo for an agent-oriented Power Platform toolkit.
 
-The repository is structured around small workspace packages rather than a single CLI application. The CLI currently exposes the first useful slice of that architecture: auth profile management, Dataverse environment aliases, Dataverse read operations, solution inspection, project discovery, analysis context generation, and deploy-plan generation.
+The repository is structured around small workspace packages rather than a single CLI application. The CLI currently exposes the first useful slice of that architecture: auth profile management, Dataverse environment aliases, Dataverse read operations, metadata authoring, solution inspection, project discovery, analysis context generation, and deploy-plan generation.
 
 ## Current scope
 
@@ -10,7 +10,7 @@ Implemented today:
 
 - auth profiles for browser user login, device code, environment tokens, client secret, and static tokens
 - environment aliases that bind a Dataverse URL to an auth profile
-- Dataverse commands: `whoami`, generic Web API requests, query/get, create/update/delete, metadata inspection
+- Dataverse commands: `whoami`, generic Web API requests, query/get, create/update/delete, metadata inspection, metadata create for phase 1 and 2 schema assets
 - solution commands: `list`, `inspect`
 - project discovery from `pp.config.json|yaml|yml`
 - analysis outputs for agent context and markdown reports
@@ -95,8 +95,14 @@ pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
 pp dv metadata column account name --env dev --select LogicalName,SchemaName,AttributeType
 pp dv metadata column account name --env dev --view raw
+pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
+pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
+pp dv metadata create-option-set --env dev --file ./specs/status.optionset.yaml --solution Core
+pp dv metadata create-relationship --env dev --file ./specs/project-account.relationship.yaml --solution Core
 pp solution list --env dev
 ```
+
+Metadata create commands consume JSON or YAML spec files rather than raw Dataverse metadata JSON. Publish is on by default; use `--no-publish` when you want to stage changes without publishing.
 
 ### 5. Add a local project config
 
