@@ -873,7 +873,7 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
   const [action] = positionalArgs(args);
 
   if (!action) {
-    return printFailure(argumentFailure('DV_METADATA_ACTION_REQUIRED', 'Use `dv metadata tables` or `dv metadata table <logicalName>`.'));
+    return printFailure(argumentFailure('DV_METADATA_ACTION_REQUIRED', 'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, or `dv metadata column <table> <column>`.'));
   }
 
   if (action === 'tables') {
@@ -882,6 +882,14 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
 
   if (action === 'table') {
     return runDataverseMetadataTable(args);
+  }
+
+  if (action === 'columns') {
+    return runDataverseMetadataColumns(args);
+  }
+
+  if (action === 'column') {
+    return runDataverseMetadataColumn(args);
   }
 
   return printFailure(argumentFailure('DV_METADATA_ACTION_INVALID', `Unsupported metadata action ${action}.`));
@@ -930,6 +938,72 @@ async function runDataverseMetadataTable(args: string[]): Promise<number> {
   }
 
   const result = await resolution.data.client.getTable(logicalName, {
+    select: readListFlag(args, '--select'),
+    expand: readListFlag(args, '--expand'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseMetadataColumns(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const logicalName = positional[1];
+
+  if (!logicalName) {
+    return printFailure(argumentFailure('DV_METADATA_COLUMNS_TABLE_REQUIRED', 'Usage: dv metadata columns <tableLogicalName> --env <alias>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await resolution.data.client.listColumns(logicalName, {
+    select: readListFlag(args, '--select'),
+    top: readNumberFlag(args, '--top'),
+    filter: readFlag(args, '--filter'),
+    expand: readListFlag(args, '--expand'),
+    orderBy: readListFlag(args, '--orderby'),
+    count: hasFlag(args, '--count'),
+    maxPageSize: readNumberFlag(args, '--max-page-size'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+    all: hasFlag(args, '--all'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data ?? [], (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  return 0;
+}
+
+async function runDataverseMetadataColumn(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const tableLogicalName = positional[1];
+  const columnLogicalName = positional[2];
+
+  if (!tableLogicalName || !columnLogicalName) {
+    return printFailure(
+      argumentFailure('DV_METADATA_COLUMN_REQUIRED', 'Usage: dv metadata column <tableLogicalName> <columnLogicalName> --env <alias>')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await resolution.data.client.getColumn(tableLogicalName, columnLogicalName, {
     select: readListFlag(args, '--select'),
     expand: readListFlag(args, '--expand'),
     includeAnnotations: readListFlag(args, '--annotations'),
@@ -1261,6 +1335,8 @@ function printHelp(): void {
       '  dv delete <table> <id> --env ALIAS [--if-match etag] [--config-dir path]',
       '  dv metadata tables --env ALIAS [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
       '  dv metadata table <logicalName> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata columns <tableLogicalName> --env ALIAS [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
+      '  dv metadata column <tableLogicalName> <columnLogicalName> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
       '',
       '  solution list --env ALIAS [--config-dir path]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',

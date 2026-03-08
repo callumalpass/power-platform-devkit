@@ -5,7 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { saveAuthProfile, saveEnvironmentAlias } from '@pp/config';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http';
-import { DataverseClient, buildQueryPath, normalizeMetadataQueryOptions, resolveDataverseClient } from './index';
+import {
+  DataverseClient,
+  buildMetadataAttributePath,
+  buildQueryPath,
+  normalizeMetadataQueryOptions,
+  resolveDataverseClient,
+} from './index';
 
 class FakeHttpClient extends HttpClient {
   readonly requests: HttpRequestOptions[] = [];
@@ -180,15 +186,89 @@ describe('DataverseClient', () => {
     expect(result.diagnostics[0]?.code).toBe('DATAVERSE_METADATA_ORDERBY_UNSUPPORTED');
     expect(httpClient.requests).toHaveLength(0);
   });
+
+  it('lists columns for a table from metadata endpoints', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ LogicalName: 'name' }, { LogicalName: 'accountnumber' }],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.listColumns('account', {
+      select: ['LogicalName'],
+      top: 1,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([{ LogicalName: 'name' }]);
+    expect(httpClient.requests[0]?.path).toBe("EntityDefinitions(LogicalName='account')/Attributes?%24select=LogicalName");
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_METADATA_TOP_CLIENT_SIDE');
+  });
+
+  it('gets a specific column from table metadata', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'name',
+          SchemaName: 'Name',
+          AttributeType: 'String',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.getColumn('account', 'name', {
+      select: ['LogicalName', 'SchemaName', 'AttributeType'],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      LogicalName: 'name',
+      SchemaName: 'Name',
+      AttributeType: 'String',
+    });
+    expect(httpClient.requests[0]?.path).toBe(
+      "EntityDefinitions(LogicalName='account')/Attributes(LogicalName='name')?%24select=LogicalName%2CSchemaName%2CAttributeType"
+    );
+  });
 });
 
 describe('normalizeMetadataQueryOptions', () => {
   it('rejects unsupported metadata count requests', () => {
-    const result = normalizeMetadataQueryOptions({
+    const result = normalizeMetadataQueryOptions('EntityDefinitions', {
       count: true,
     });
 
     expect(result.success).toBe(false);
     expect(result.diagnostics[0]?.code).toBe('DATAVERSE_METADATA_COUNT_UNSUPPORTED');
+  });
+
+  it('builds metadata query paths against arbitrary metadata collections', () => {
+    const result = normalizeMetadataQueryOptions("EntityDefinitions(LogicalName='account')/Attributes", {
+      select: ['LogicalName', 'AttributeType'],
+      filter: "AttributeType eq Microsoft.Dynamics.CRM.AttributeTypeCode'String'",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.path).toBe(
+      "EntityDefinitions(LogicalName='account')/Attributes?%24select=LogicalName%2CAttributeType&%24filter=AttributeType+eq+Microsoft.Dynamics.CRM.AttributeTypeCode%27String%27"
+    );
+  });
+});
+
+describe('buildMetadataAttributePath', () => {
+  it('builds a logical-name addressable metadata column path', () => {
+    const path = buildMetadataAttributePath('account', 'name', {
+      select: ['LogicalName', 'SchemaName'],
+    });
+
+    expect(path).toBe("EntityDefinitions(LogicalName='account')/Attributes(LogicalName='name')?%24select=LogicalName%2CSchemaName");
   });
 });

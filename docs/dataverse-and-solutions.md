@@ -162,6 +162,25 @@ Inspect a specific table definition:
 pp dv metadata table account --env dev --select LogicalName,SchemaName,ObjectTypeCode
 ```
 
+List columns for a table:
+
+```bash
+pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
+pp dv metadata columns account --env dev --filter "AttributeType eq Microsoft.Dynamics.CRM.AttributeTypeCode'String'"
+```
+
+Inspect a specific column definition:
+
+```bash
+pp dv metadata column account name --env dev --select LogicalName,SchemaName,AttributeType
+```
+
+Notes:
+
+- `dv metadata columns` follows the same query rules as `dv metadata tables`.
+- `--top` is applied client-side.
+- `--orderby` and `--count` are not supported.
+
 ## Solution commands
 
 List the first 100 solutions:

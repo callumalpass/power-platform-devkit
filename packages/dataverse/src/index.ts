@@ -91,6 +91,7 @@ export interface DataverseWriteResult<T = unknown> {
 }
 
 export type EntityDefinition = Record<string, unknown>;
+export type AttributeDefinition = Record<string, unknown>;
 
 export class DataverseClient {
   private readonly httpClient: HttpClient;
@@ -280,37 +281,29 @@ export class DataverseClient {
   }
 
   async listTables(options: MetadataQueryOptions = {}): Promise<OperationResult<EntityDefinition[]>> {
-    const normalized = normalizeMetadataQueryOptions(options);
-
-    if (!normalized.success || !normalized.data) {
-      return normalized as unknown as OperationResult<EntityDefinition[]>;
-    }
-
-    const path = normalized.data.path;
-
-    const query = normalized.data.fetchAll
-      ? await this.metadataQueryAll<EntityDefinition>(path, options.maxPageSize, options.includeAnnotations)
-      : await this.metadataQuery<EntityDefinition>(path, options.maxPageSize, options.includeAnnotations);
-
-    if (!query.success) {
-      return {
-        ...query,
-        warnings: [...normalized.data.warnings, ...query.warnings],
-      } as OperationResult<EntityDefinition[]>;
-    }
-
-    const records = normalized.data.top !== undefined ? (query.data ?? []).slice(0, normalized.data.top) : (query.data ?? []);
-
-    return ok(records, {
-      supportTier: 'preview',
-      diagnostics: query.diagnostics,
-      warnings: [...normalized.data.warnings, ...query.warnings],
-    });
+    return this.listMetadataCollection<EntityDefinition>('EntityDefinitions', options);
   }
 
   async getTable(logicalName: string, options: EntityReadOptions = {}): Promise<OperationResult<EntityDefinition>> {
     return this.requestJson<EntityDefinition>({
       path: buildMetadataEntityPath(logicalName, options),
+      method: 'GET',
+      responseType: 'json',
+      includeAnnotations: options.includeAnnotations,
+    });
+  }
+
+  async listColumns(logicalName: string, options: MetadataQueryOptions = {}): Promise<OperationResult<AttributeDefinition[]>> {
+    return this.listMetadataCollection<AttributeDefinition>(buildAttributeCollectionPath(logicalName), options);
+  }
+
+  async getColumn(
+    tableLogicalName: string,
+    columnLogicalName: string,
+    options: EntityReadOptions = {}
+  ): Promise<OperationResult<AttributeDefinition>> {
+    return this.requestJson<AttributeDefinition>({
+      path: buildMetadataAttributePath(tableLogicalName, columnLogicalName, options),
       method: 'GET',
       responseType: 'json',
       includeAnnotations: options.includeAnnotations,
@@ -381,6 +374,33 @@ export class DataverseClient {
     return ok(records, {
       supportTier: 'preview',
       warnings,
+    });
+  }
+
+  private async listMetadataCollection<T>(basePath: string, options: MetadataQueryOptions): Promise<OperationResult<T[]>> {
+    const normalized = normalizeMetadataQueryOptions(basePath, options);
+
+    if (!normalized.success || !normalized.data) {
+      return normalized as unknown as OperationResult<T[]>;
+    }
+
+    const query = normalized.data.fetchAll
+      ? await this.metadataQueryAll<T>(normalized.data.path, options.maxPageSize, options.includeAnnotations)
+      : await this.metadataQuery<T>(normalized.data.path, options.maxPageSize, options.includeAnnotations);
+
+    if (!query.success) {
+      return {
+        ...query,
+        warnings: [...normalized.data.warnings, ...query.warnings],
+      } as OperationResult<T[]>;
+    }
+
+    const records = normalized.data.top !== undefined ? (query.data ?? []).slice(0, normalized.data.top) : (query.data ?? []);
+
+    return ok(records, {
+      supportTier: 'preview',
+      diagnostics: query.diagnostics,
+      warnings: [...normalized.data.warnings, ...query.warnings],
     });
   }
 
@@ -557,7 +577,22 @@ export function buildMetadataEntityPath(
   return buildODataPath(`EntityDefinitions(LogicalName='${escapeODataLiteral(logicalName)}')`, options);
 }
 
-export function normalizeMetadataQueryOptions(options: MetadataQueryOptions): OperationResult<NormalizedMetadataQuery> {
+export function buildAttributeCollectionPath(logicalName: string): string {
+  return `${buildMetadataEntityPath(logicalName)}/Attributes`;
+}
+
+export function buildMetadataAttributePath(
+  tableLogicalName: string,
+  columnLogicalName: string,
+  options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
+): string {
+  return buildODataPath(
+    `${buildAttributeCollectionPath(tableLogicalName)}(LogicalName='${escapeODataLiteral(columnLogicalName)}')`,
+    options
+  );
+}
+
+export function normalizeMetadataQueryOptions(basePath: string, options: MetadataQueryOptions): OperationResult<NormalizedMetadataQuery> {
   if (options.orderBy && options.orderBy.length > 0) {
     return fail(
       createDiagnostic('error', 'DATAVERSE_METADATA_ORDERBY_UNSUPPORTED', 'Dataverse metadata queries do not support $orderby. Remove --orderby.', {
@@ -592,7 +627,7 @@ export function normalizeMetadataQueryOptions(options: MetadataQueryOptions): Op
 
   return ok(
     {
-      path: buildODataPath('EntityDefinitions', {
+      path: buildODataPath(basePath, {
         select: options.select,
         filter: options.filter,
         expand: options.expand,
