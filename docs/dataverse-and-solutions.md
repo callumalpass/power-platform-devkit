@@ -173,11 +173,15 @@ Inspect a specific column definition:
 
 ```bash
 pp dv metadata column account name --env dev --select LogicalName,SchemaName,AttributeType
+pp dv metadata column account name --env dev --view raw
 ```
 
 Notes:
 
 - `dv metadata columns` follows the same query rules as `dv metadata tables`.
+- `dv metadata columns` defaults to a normalized `common` view.
+- `dv metadata column` defaults to a normalized `detailed` view.
+- use `--view raw` to return the original Dataverse metadata payload.
 - `--top` is applied client-side.
 - `--orderby` and `--count` are not supported.
 

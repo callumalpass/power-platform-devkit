@@ -9,6 +9,8 @@ import {
   DataverseClient,
   buildMetadataAttributePath,
   buildQueryPath,
+  normalizeAttributeDefinition,
+  normalizeAttributeDefinitions,
   normalizeMetadataQueryOptions,
   resolveDataverseClient,
 } from './index';
@@ -270,5 +272,118 @@ describe('buildMetadataAttributePath', () => {
     });
 
     expect(path).toBe("EntityDefinitions(LogicalName='account')/Attributes(LogicalName='name')?%24select=LogicalName%2CSchemaName");
+  });
+});
+
+describe('normalizeAttributeDefinition', () => {
+  const rawAttribute = {
+    '@odata.type': '#Microsoft.Dynamics.CRM.StringAttributeMetadata',
+    LogicalName: 'name',
+    SchemaName: 'Name',
+    EntityLogicalName: 'account',
+    MetadataId: '00000000-0000-0000-0000-000000000001',
+    AttributeType: 'String',
+    AttributeTypeName: { Value: 'StringType' },
+    DisplayName: {
+      UserLocalizedLabel: {
+        Label: 'Account Name',
+      },
+    },
+    Description: {
+      UserLocalizedLabel: {
+        Label: 'Type the company or business name.',
+      },
+    },
+    RequiredLevel: { Value: 'ApplicationRequired' },
+    IsPrimaryId: false,
+    IsPrimaryName: true,
+    IsCustomAttribute: false,
+    IsManaged: true,
+    IsLogical: false,
+    IsValidForCreate: true,
+    IsValidForRead: true,
+    IsValidForUpdate: true,
+    IsFilterable: false,
+    IsSearchable: true,
+    IsValidForAdvancedFind: { Value: true },
+    IsSecured: false,
+    IsCustomizable: { Value: true },
+    IsRenameable: { Value: true },
+    IsAuditEnabled: { Value: true },
+    IsLocalizable: false,
+    IsRequiredForForm: true,
+    IsValidForForm: true,
+    IsValidForGrid: true,
+    IsValidODataAttribute: true,
+    CanBeSecuredForCreate: false,
+    CanBeSecuredForRead: false,
+    CanBeSecuredForUpdate: false,
+    IsSortableEnabled: { Value: true },
+    SourceType: 0,
+    SourceTypeMask: 0,
+    IntroducedVersion: '5.0.0.0',
+    Format: 'Text',
+    MaxLength: 160,
+    DatabaseLength: 320,
+    ImeMode: 'Active',
+  };
+
+  it('produces a stable common view', () => {
+    const normalized = normalizeAttributeDefinition(rawAttribute, 'common');
+
+    expect(normalized).toEqual({
+      logicalName: 'name',
+      schemaName: 'Name',
+      displayName: 'Account Name',
+      description: 'Type the company or business name.',
+      entityLogicalName: 'account',
+      metadataId: '00000000-0000-0000-0000-000000000001',
+      attributeType: 'String',
+      attributeTypeName: 'StringType',
+      odataType: '#Microsoft.Dynamics.CRM.StringAttributeMetadata',
+      requiredLevel: 'ApplicationRequired',
+      primaryId: false,
+      primaryName: true,
+      custom: false,
+      managed: true,
+      logical: false,
+      createable: true,
+      readable: true,
+      updateable: true,
+      filterable: false,
+      searchable: true,
+      advancedFind: true,
+      secured: false,
+    });
+  });
+
+  it('produces a richer detailed view', () => {
+    const normalized = normalizeAttributeDefinition(rawAttribute, 'detailed');
+
+    expect(normalized).toMatchObject({
+      logicalName: 'name',
+      attributeType: 'String',
+      customizable: true,
+      renameable: true,
+      auditable: true,
+      requiredForForm: true,
+      sortable: true,
+      typeDetails: {
+        format: 'Text',
+        maxLength: 160,
+        databaseLength: 320,
+        imeMode: 'Active',
+      },
+    });
+  });
+
+  it('normalizes collections of attributes', () => {
+    const normalized = normalizeAttributeDefinitions([rawAttribute], 'common');
+
+    expect(normalized).toHaveLength(1);
+    expect(normalized[0]).toMatchObject({
+      logicalName: 'name',
+      attributeType: 'String',
+    });
   });
 });

@@ -92,6 +92,51 @@ export interface DataverseWriteResult<T = unknown> {
 
 export type EntityDefinition = Record<string, unknown>;
 export type AttributeDefinition = Record<string, unknown>;
+export type AttributeMetadataView = 'common' | 'detailed' | 'raw';
+
+export interface NormalizedAttributeDefinition {
+  logicalName?: string;
+  schemaName?: string;
+  displayName?: string;
+  description?: string;
+  entityLogicalName?: string;
+  metadataId?: string;
+  attributeType?: string;
+  attributeTypeName?: string;
+  odataType?: string;
+  requiredLevel?: string;
+  primaryId?: boolean;
+  primaryName?: boolean;
+  custom?: boolean;
+  managed?: boolean;
+  logical?: boolean;
+  createable?: boolean;
+  readable?: boolean;
+  updateable?: boolean;
+  filterable?: boolean;
+  searchable?: boolean;
+  advancedFind?: boolean;
+  secured?: boolean;
+}
+
+export interface DetailedAttributeDefinition extends NormalizedAttributeDefinition {
+  customizable?: boolean;
+  renameable?: boolean;
+  auditable?: boolean;
+  localizable?: boolean;
+  requiredForForm?: boolean;
+  validForForm?: boolean;
+  validForGrid?: boolean;
+  validODataAttribute?: boolean;
+  secureCreate?: boolean;
+  secureRead?: boolean;
+  secureUpdate?: boolean;
+  sortable?: boolean;
+  sourceType?: number;
+  sourceTypeMask?: number;
+  introducedVersion?: string;
+  typeDetails: Record<string, unknown>;
+}
 
 export class DataverseClient {
   private readonly httpClient: HttpClient;
@@ -592,6 +637,67 @@ export function buildMetadataAttributePath(
   );
 }
 
+export function normalizeAttributeDefinition(
+  attribute: AttributeDefinition,
+  view: Exclude<AttributeMetadataView, 'raw'> = 'common'
+): NormalizedAttributeDefinition | DetailedAttributeDefinition {
+  const common: NormalizedAttributeDefinition = compactObject({
+    logicalName: readString(attribute.LogicalName),
+    schemaName: readString(attribute.SchemaName),
+    displayName: readLocalizedLabel(attribute.DisplayName),
+    description: readLocalizedLabel(attribute.Description),
+    entityLogicalName: readString(attribute.EntityLogicalName),
+    metadataId: readString(attribute.MetadataId),
+    attributeType: readString(attribute.AttributeType),
+    attributeTypeName: readManagedPrimitive<string>(attribute.AttributeTypeName),
+    odataType: readString(attribute['@odata.type']),
+    requiredLevel: readManagedPrimitive<string>(attribute.RequiredLevel),
+    primaryId: readBoolean(attribute.IsPrimaryId),
+    primaryName: readBoolean(attribute.IsPrimaryName),
+    custom: readBoolean(attribute.IsCustomAttribute),
+    managed: readBoolean(attribute.IsManaged),
+    logical: readBoolean(attribute.IsLogical),
+    createable: readBoolean(attribute.IsValidForCreate),
+    readable: readBoolean(attribute.IsValidForRead),
+    updateable: readBoolean(attribute.IsValidForUpdate),
+    filterable: readBoolean(attribute.IsFilterable),
+    searchable: readBoolean(attribute.IsSearchable),
+    advancedFind: readManagedPrimitive<boolean>(attribute.IsValidForAdvancedFind),
+    secured: readBoolean(attribute.IsSecured),
+  });
+
+  if (view === 'common') {
+    return common;
+  }
+
+  return compactObject({
+    ...common,
+    customizable: readManagedPrimitive<boolean>(attribute.IsCustomizable),
+    renameable: readManagedPrimitive<boolean>(attribute.IsRenameable),
+    auditable: readManagedPrimitive<boolean>(attribute.IsAuditEnabled),
+    localizable: readBoolean(attribute.IsLocalizable),
+    requiredForForm: readBoolean(attribute.IsRequiredForForm),
+    validForForm: readBoolean(attribute.IsValidForForm),
+    validForGrid: readBoolean(attribute.IsValidForGrid),
+    validODataAttribute: readBoolean(attribute.IsValidODataAttribute),
+    secureCreate: readBoolean(attribute.CanBeSecuredForCreate),
+    secureRead: readBoolean(attribute.CanBeSecuredForRead),
+    secureUpdate: readBoolean(attribute.CanBeSecuredForUpdate),
+    sortable: readManagedPrimitive<boolean>(attribute.IsSortableEnabled),
+    sourceType: readNumber(attribute.SourceType),
+    sourceTypeMask: readNumber(attribute.SourceTypeMask),
+    introducedVersion: readString(attribute.IntroducedVersion),
+    typeDetails: normalizeAttributeTypeDetails(attribute),
+  }) as DetailedAttributeDefinition;
+}
+
+export function normalizeAttributeDefinitions(
+  attributes: AttributeDefinition[],
+  view: Exclude<AttributeMetadataView, 'raw'> = 'common'
+): Array<NormalizedAttributeDefinition | DetailedAttributeDefinition> {
+  return attributes.map((attribute) => normalizeAttributeDefinition(attribute, view));
+}
+
 export function normalizeMetadataQueryOptions(basePath: string, options: MetadataQueryOptions): OperationResult<NormalizedMetadataQuery> {
   if (options.orderBy && options.orderBy.length > 0) {
     return fail(
@@ -702,4 +808,142 @@ function extractLocation(headers: Record<string, string> | undefined): string | 
 
 function escapeODataLiteral(value: string): string {
   return value.replaceAll("'", "''");
+}
+
+function normalizeAttributeTypeDetails(attribute: AttributeDefinition): Record<string, unknown> {
+  const optionSet = normalizeOptionSet(attribute.OptionSet);
+
+  return compactObject({
+    format: readString(attribute.Format) ?? readManagedPrimitive<string>(attribute.FormatName),
+    maxLength: readNumber(attribute.MaxLength),
+    databaseLength: readNumber(attribute.DatabaseLength),
+    minValue: readNumber(attribute.MinValue),
+    maxValue: readNumber(attribute.MaxValue),
+    precision: readNumber(attribute.Precision),
+    precisionSource: readNumber(attribute.PrecisionSource),
+    autoNumberFormat: readString(attribute.AutoNumberFormat),
+    imeMode: readString(attribute.ImeMode),
+    targets: readStringArray(attribute.Targets),
+    defaultFormValue: readPrimitive(attribute.DefaultFormValue),
+    formulaDefinition: readString(attribute.FormulaDefinition),
+    optionSet,
+  });
+}
+
+function normalizeOptionSet(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const optionSet = value as Record<string, unknown>;
+  const options = Array.isArray(optionSet.Options)
+    ? optionSet.Options.flatMap((option) => {
+        if (!option || typeof option !== 'object' || Array.isArray(option)) {
+          return [];
+        }
+
+        const entry = option as Record<string, unknown>;
+        return [
+          compactObject({
+            value: readNumber(entry.Value),
+            label: readLocalizedLabel(entry.Label),
+            description: readLocalizedLabel(entry.Description),
+            color: readString(entry.Color),
+            isManaged: readBoolean(entry.IsManaged),
+          }),
+        ];
+      })
+    : undefined;
+
+  const normalized = compactObject({
+    name: readString(optionSet.Name),
+    displayName: readLocalizedLabel(optionSet.DisplayName),
+    isGlobal: readBoolean(optionSet.IsGlobal),
+    optionSetType: readString(optionSet.OptionSetType),
+    options,
+  });
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function readManagedPrimitive<T extends string | number | boolean>(value: unknown): T | undefined {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value as T;
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return readPrimitive((value as Record<string, unknown>).Value) as T | undefined;
+}
+
+function readLocalizedLabel(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const userLabel = record.UserLocalizedLabel;
+
+  if (userLabel && typeof userLabel === 'object' && !Array.isArray(userLabel)) {
+    const label = readString((userLabel as Record<string, unknown>).Label);
+
+    if (label) {
+      return label;
+    }
+  }
+
+  const labels = record.LocalizedLabels;
+
+  if (!Array.isArray(labels)) {
+    return undefined;
+  }
+
+  for (const entry of labels) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      continue;
+    }
+
+    const label = readString((entry as Record<string, unknown>).Label);
+
+    if (label) {
+      return label;
+    }
+  }
+
+  return undefined;
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items = value.map((entry) => readString(entry)).filter((entry): entry is string => Boolean(entry));
+  return items.length > 0 ? items : undefined;
+}
+
+function readPrimitive(value: unknown): string | number | boolean | undefined {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+
+  return undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
 }

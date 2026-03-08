@@ -12,13 +12,43 @@ import {
   type ConfigStoreOptions,
   type EnvironmentAlias,
 } from '@pp/config';
-import { resolveDataverseClient } from '@pp/dataverse';
+import {
+  normalizeAttributeDefinition,
+  normalizeAttributeDefinitions,
+  resolveDataverseClient,
+  type AttributeMetadataView,
+} from '@pp/dataverse';
 import { buildDeployPlan } from '@pp/deploy';
-import { fail, createDiagnostic, type OperationResult } from '@pp/diagnostics';
+import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
 import { discoverProject, summarizeProject } from '@pp/project';
 import { SolutionService } from '@pp/solution';
 
 type OutputFormat = 'json' | 'markdown' | 'table' | 'raw';
+type AttributeListView = Extract<AttributeMetadataView, 'common' | 'raw'>;
+
+const ATTRIBUTE_COMMON_SELECT_FIELDS = [
+  'LogicalName',
+  'SchemaName',
+  'DisplayName',
+  'Description',
+  'EntityLogicalName',
+  'MetadataId',
+  'AttributeType',
+  'AttributeTypeName',
+  'RequiredLevel',
+  'IsPrimaryId',
+  'IsPrimaryName',
+  'IsCustomAttribute',
+  'IsManaged',
+  'IsLogical',
+  'IsValidForCreate',
+  'IsValidForRead',
+  'IsValidForUpdate',
+  'IsFilterable',
+  'IsSearchable',
+  'IsValidForAdvancedFind',
+  'IsSecured',
+] as const;
 
 async function main(argv: string[]): Promise<number> {
   const [group, command, ...rest] = argv;
@@ -965,11 +995,17 @@ async function runDataverseMetadataColumns(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
+  const view = readAttributeListView(args);
+
+  if (!view.success || !view.data) {
+    return printFailure(view);
+  }
+
   const result = await resolution.data.client.listColumns(logicalName, {
-    select: readListFlag(args, '--select'),
+    select: view.data === 'raw' ? readListFlag(args, '--select') : mergeUniqueStrings(ATTRIBUTE_COMMON_SELECT_FIELDS, readListFlag(args, '--select')),
     top: readNumberFlag(args, '--top'),
     filter: readFlag(args, '--filter'),
-    expand: readListFlag(args, '--expand'),
+    expand: view.data === 'raw' ? readListFlag(args, '--expand') : undefined,
     orderBy: readListFlag(args, '--orderby'),
     count: hasFlag(args, '--count'),
     maxPageSize: readNumberFlag(args, '--max-page-size'),
@@ -982,7 +1018,8 @@ async function runDataverseMetadataColumns(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data ?? [], (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  const payload = view.data === 'raw' ? result.data ?? [] : normalizeAttributeDefinitions(result.data ?? [], 'common');
+  printByFormat(payload, (readFlag(args, '--format') ?? 'json') as OutputFormat);
   return 0;
 }
 
@@ -1003,9 +1040,22 @@ async function runDataverseMetadataColumn(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
+  const view = readAttributeDetailView(args);
+
+  if (!view.success || !view.data) {
+    return printFailure(view);
+  }
+
   const result = await resolution.data.client.getColumn(tableLogicalName, columnLogicalName, {
-    select: readListFlag(args, '--select'),
-    expand: readListFlag(args, '--expand'),
+    select:
+      view.data === 'raw'
+        ? readListFlag(args, '--select')
+        : view.data === 'common'
+          ? mergeUniqueStrings(ATTRIBUTE_COMMON_SELECT_FIELDS, readListFlag(args, '--select'))
+          : readListFlag(args, '--select')
+            ? mergeUniqueStrings(ATTRIBUTE_COMMON_SELECT_FIELDS, readListFlag(args, '--select'))
+            : undefined,
+    expand: view.data === 'raw' ? readListFlag(args, '--expand') : undefined,
     includeAnnotations: readListFlag(args, '--annotations'),
   });
 
@@ -1013,7 +1063,9 @@ async function runDataverseMetadataColumn(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printWarnings(result);
+  const payload = view.data === 'raw' ? result.data : normalizeAttributeDefinition(result.data, view.data);
+  printByFormat(payload, (readFlag(args, '--format') ?? 'json') as OutputFormat);
   return 0;
 }
 
@@ -1204,6 +1256,34 @@ function readNumberFlag(args: string[], name: string): number | undefined {
   return value ? Number(value) : undefined;
 }
 
+function readAttributeListView(args: string[]): OperationResult<AttributeListView> {
+  const view = readFlag(args, '--view') ?? 'common';
+
+  if (view === 'common' || view === 'raw') {
+    return ok(view, {
+      supportTier: 'preview',
+    });
+  }
+
+  return argumentFailure('DV_METADATA_COLUMNS_VIEW_INVALID', 'Unsupported --view for `dv metadata columns`. Use `common` or `raw`.');
+}
+
+function readAttributeDetailView(args: string[]): OperationResult<AttributeMetadataView> {
+  const view = readFlag(args, '--view') ?? 'detailed';
+
+  if (view === 'common' || view === 'detailed' || view === 'raw') {
+    return ok(view, {
+      supportTier: 'preview',
+    });
+  }
+
+  return argumentFailure('DV_METADATA_COLUMN_VIEW_INVALID', 'Unsupported --view for `dv metadata column`. Use `common`, `detailed`, or `raw`.');
+}
+
+function mergeUniqueStrings(base: readonly string[], extra: string[] | undefined): string[] {
+  return [...new Set([...base, ...(extra ?? [])])];
+}
+
 async function readJsonBodyArgument(args: string[]): Promise<OperationResult<unknown | undefined>> {
   try {
     const inlineBody = readFlag(args, '--body');
@@ -1335,8 +1415,8 @@ function printHelp(): void {
       '  dv delete <table> <id> --env ALIAS [--if-match etag] [--config-dir path]',
       '  dv metadata tables --env ALIAS [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
       '  dv metadata table <logicalName> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv metadata columns <tableLogicalName> --env ALIAS [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
-      '  dv metadata column <tableLogicalName> <columnLogicalName> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata columns <tableLogicalName> --env ALIAS [--view common|raw] [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
+      '  dv metadata column <tableLogicalName> <columnLogicalName> --env ALIAS [--view common|detailed|raw] [--select a,b] [--expand x,y] [--config-dir path]',
       '',
       '  solution list --env ALIAS [--config-dir path]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',

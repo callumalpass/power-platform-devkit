@@ -94,6 +94,7 @@ pp dv request --env dev --path "EntityDefinitions?\$select=LogicalName,SchemaNam
 pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
 pp dv metadata column account name --env dev --select LogicalName,SchemaName,AttributeType
+pp dv metadata column account name --env dev --view raw
 pp solution list --env dev
 ```
 

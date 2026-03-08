@@ -64,6 +64,7 @@ pp dv query accounts --env dev --select name,accountnumber --top 5
 pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
 pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
+pp dv metadata column account name --env dev
 ```
 
 For metadata listing, `--top` is applied locally after retrieval because Dataverse metadata endpoints do not support server-side `$top`.
