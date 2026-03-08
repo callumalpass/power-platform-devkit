@@ -422,6 +422,11 @@ async function acquirePublicClientToken(
     return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
   }
 
+  if (!canAttemptInteractiveAuth()) {
+    process.stderr.write('Interactive authentication is unavailable in this shell because no graphical desktop session was detected. Falling back to device code.\n');
+    return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
+  }
+
   try {
     return await acquireTokenInteractively(app, profile, scopes, cachePath);
   } catch (error) {
@@ -429,7 +434,9 @@ async function acquirePublicClientToken(
       throw error;
     }
 
-    process.stderr.write(`Interactive authentication failed for profile ${profile.name}. Falling back to device code.\n`);
+    process.stderr.write(
+      `Interactive authentication failed for profile ${profile.name}: ${error instanceof Error ? error.message : String(error)}. Falling back to device code.\n`
+    );
     return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
   }
 }
@@ -606,7 +613,15 @@ async function openSystemBrowser(url: string): Promise<void> {
     });
 
     child.once('error', reject);
+    child.once('spawn', resolve);
     child.unref();
-    resolve();
   });
+}
+
+function canAttemptInteractiveAuth(): boolean {
+  if (process.platform === 'linux') {
+    return Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+  }
+
+  return true;
 }
