@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { saveAuthProfile, saveEnvironmentAlias } from '@pp/config';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http';
-import { DataverseClient, buildQueryPath, resolveDataverseClient } from './index';
+import { DataverseClient, buildQueryPath, normalizeMetadataQueryOptions, resolveDataverseClient } from './index';
 
 class FakeHttpClient extends HttpClient {
   readonly requests: HttpRequestOptions[] = [];
@@ -143,5 +143,52 @@ describe('DataverseClient', () => {
     });
     expect(httpClient.requests[0]?.method).toBe('POST');
     expect(httpClient.requests[0]?.headers?.prefer).toContain('return=representation');
+  });
+
+  it('applies metadata top client-side without sending $top to Dataverse', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ LogicalName: 'account' }, { LogicalName: 'contact' }, { LogicalName: 'lead' }],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.listTables({
+      select: ['LogicalName'],
+      top: 2,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([{ LogicalName: 'account' }, { LogicalName: 'contact' }]);
+    expect(httpClient.requests[0]?.path).toBe('EntityDefinitions?%24select=LogicalName');
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_METADATA_TOP_CLIENT_SIDE');
+  });
+
+  it('rejects unsupported metadata orderBy requests before calling Dataverse', async () => {
+    const httpClient = new FakeHttpClient([]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.listTables({
+      orderBy: ['LogicalName asc'],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe('DATAVERSE_METADATA_ORDERBY_UNSUPPORTED');
+    expect(httpClient.requests).toHaveLength(0);
+  });
+});
+
+describe('normalizeMetadataQueryOptions', () => {
+  it('rejects unsupported metadata count requests', () => {
+    const result = normalizeMetadataQueryOptions({
+      count: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe('DATAVERSE_METADATA_COUNT_UNSUPPORTED');
   });
 });

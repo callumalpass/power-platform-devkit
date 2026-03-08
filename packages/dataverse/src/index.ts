@@ -1,6 +1,6 @@
 import { createTokenProvider, type AuthProfile } from '@pp/auth';
 import { getAuthProfile, getEnvironmentAlias, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
-import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpQueryValue, type HttpRequestOptions, type HttpResponse } from '@pp/http';
 
 export interface DataverseEnvironment {
@@ -49,6 +49,13 @@ export interface MetadataQueryOptions extends ODataQueryOptions {
   maxPageSize?: number;
   includeAnnotations?: string[];
   all?: boolean;
+}
+
+export interface NormalizedMetadataQuery {
+  path: string;
+  top?: number;
+  fetchAll: boolean;
+  warnings: Diagnostic[];
 }
 
 export interface DataverseResolution {
@@ -273,23 +280,32 @@ export class DataverseClient {
   }
 
   async listTables(options: MetadataQueryOptions = {}): Promise<OperationResult<EntityDefinition[]>> {
-    const path = buildODataPath('EntityDefinitions', options);
+    const normalized = normalizeMetadataQueryOptions(options);
 
-    if (options.all) {
-      const all = await this.metadataQueryAll<EntityDefinition>(path, options.maxPageSize, options.includeAnnotations);
-
-      if (!all.success) {
-        return all as unknown as OperationResult<EntityDefinition[]>;
-      }
-
-      return ok(all.data ?? [], {
-        supportTier: 'preview',
-        diagnostics: all.diagnostics,
-        warnings: all.warnings,
-      });
+    if (!normalized.success || !normalized.data) {
+      return normalized as unknown as OperationResult<EntityDefinition[]>;
     }
 
-    return this.metadataQuery<EntityDefinition>(path, options.maxPageSize, options.includeAnnotations);
+    const path = normalized.data.path;
+
+    const query = normalized.data.fetchAll
+      ? await this.metadataQueryAll<EntityDefinition>(path, options.maxPageSize, options.includeAnnotations)
+      : await this.metadataQuery<EntityDefinition>(path, options.maxPageSize, options.includeAnnotations);
+
+    if (!query.success) {
+      return {
+        ...query,
+        warnings: [...normalized.data.warnings, ...query.warnings],
+      } as OperationResult<EntityDefinition[]>;
+    }
+
+    const records = normalized.data.top !== undefined ? (query.data ?? []).slice(0, normalized.data.top) : (query.data ?? []);
+
+    return ok(records, {
+      supportTier: 'preview',
+      diagnostics: query.diagnostics,
+      warnings: [...normalized.data.warnings, ...query.warnings],
+    });
   }
 
   async getTable(logicalName: string, options: EntityReadOptions = {}): Promise<OperationResult<EntityDefinition>> {
@@ -331,6 +347,7 @@ export class DataverseClient {
     includeAnnotations?: string[]
   ): Promise<OperationResult<T[]>> {
     const records: T[] = [];
+    const warnings: Diagnostic[] = [];
     let continuationPath: string | undefined = path;
     let attempts = 0;
 
@@ -348,6 +365,7 @@ export class DataverseClient {
       }
 
       records.push(...(page.data?.data.value ?? []));
+      warnings.push(...page.warnings);
       continuationPath = page.data?.data['@odata.nextLink'];
       attempts += 1;
     }
@@ -362,6 +380,7 @@ export class DataverseClient {
 
     return ok(records, {
       supportTier: 'preview',
+      warnings,
     });
   }
 
@@ -536,6 +555,57 @@ export function buildMetadataEntityPath(
   options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
 ): string {
   return buildODataPath(`EntityDefinitions(LogicalName='${escapeODataLiteral(logicalName)}')`, options);
+}
+
+export function normalizeMetadataQueryOptions(options: MetadataQueryOptions): OperationResult<NormalizedMetadataQuery> {
+  if (options.orderBy && options.orderBy.length > 0) {
+    return fail(
+      createDiagnostic('error', 'DATAVERSE_METADATA_ORDERBY_UNSUPPORTED', 'Dataverse metadata queries do not support $orderby. Remove --orderby.', {
+        source: '@pp/dataverse',
+      })
+    );
+  }
+
+  if (options.count) {
+    return fail(
+      createDiagnostic('error', 'DATAVERSE_METADATA_COUNT_UNSUPPORTED', 'Dataverse metadata queries do not support $count. Remove --count.', {
+        source: '@pp/dataverse',
+      })
+    );
+  }
+
+  const warnings: Diagnostic[] = [];
+
+  if (options.top !== undefined) {
+    warnings.push(
+      createDiagnostic(
+        'warning',
+        'DATAVERSE_METADATA_TOP_CLIENT_SIDE',
+        'Dataverse metadata queries do not support $top. The limit was applied client-side after retrieval.',
+        {
+          source: '@pp/dataverse',
+          hint: 'This may require reading more metadata than the final result count.',
+        }
+      )
+    );
+  }
+
+  return ok(
+    {
+      path: buildODataPath('EntityDefinitions', {
+        select: options.select,
+        filter: options.filter,
+        expand: options.expand,
+      }),
+      top: options.top,
+      fetchAll: Boolean(options.all || options.top !== undefined),
+      warnings,
+    },
+    {
+      supportTier: 'preview',
+      warnings,
+    }
+  );
 }
 
 function buildDataverseHeaders(options: DataverseRequestOptions): Record<string, string> {

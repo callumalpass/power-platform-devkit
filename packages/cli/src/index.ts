@@ -721,6 +721,7 @@ async function runDataverseQuery(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
+  printWarnings(result);
   printByFormat(result.data ?? [], (readFlag(args, '--format') ?? 'json') as OutputFormat);
   return 0;
 }
@@ -909,6 +910,7 @@ async function runDataverseMetadataTables(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
+  printWarnings(result);
   printByFormat(result.data ?? [], (readFlag(args, '--format') ?? 'json') as OutputFormat);
   return 0;
 }
@@ -1078,6 +1080,12 @@ function printFailure(result: OperationResult<unknown>): number {
   }
 
   return 1;
+}
+
+function printWarnings(result: OperationResult<unknown>): void {
+  for (const warning of result.warnings) {
+    process.stderr.write(`${warning.level.toUpperCase()} ${warning.code}: ${warning.message}\n`);
+  }
 }
 
 function readConfigOptions(args: string[]): ConfigStoreOptions {

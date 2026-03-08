@@ -29,7 +29,7 @@ Calls Dataverse `WhoAmI()` and returns:
 For raw Web API access, use:
 
 ```bash
-pp dv request --env dev --path "EntityDefinitions?\$select=LogicalName&\$top=5"
+pp dv request --env dev --path "EntityDefinitions?\$select=LogicalName,SchemaName"
 ```
 
 You can also send arbitrary methods and request bodies:
@@ -149,6 +149,12 @@ List tables:
 pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 pp dv metadata tables --env dev --all
 ```
+
+Notes:
+
+- `--select`, `--filter`, and `--expand` are sent to the metadata endpoint.
+- `--top` is applied client-side because `EntityDefinitions` does not support `$top`.
+- `--orderby` and `--count` are not supported for `dv metadata tables`.
 
 Inspect a specific table definition:
 

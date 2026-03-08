@@ -65,6 +65,8 @@ pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
 pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 ```
 
+For metadata listing, `--top` is applied locally after retrieval because Dataverse metadata endpoints do not support server-side `$top`.
+
 ## 5. Inspect solutions
 
 ```bash
