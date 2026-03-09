@@ -1,7 +1,46 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-03-09T10:00:00.000Z",
+  "generatedAt": "2026-03-09T12:20:36.000Z",
   "prototypes": [
+    {
+      "family": "classic",
+      "catalogName": "Icon",
+      "constructor": "Classic/Icon",
+      "properties": {
+        "Height": "=32",
+        "Width": "=32",
+        "Icon": "=Icon.Add"
+      },
+      "notes": [
+        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
+      ]
+    },
+    {
+      "family": "classic",
+      "catalogName": "Image",
+      "constructor": "Image",
+      "properties": {
+        "Height": "=40",
+        "Width": "=40",
+        "Image": "=SampleImage",
+        "ImagePosition": "=ImagePosition.Fit"
+      },
+      "notes": [
+        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
+      ]
+    },
+    {
+      "family": "classic",
+      "catalogName": "Label",
+      "constructor": "Label",
+      "properties": {
+        "Height": "=40",
+        "Text": "=\"Classic Label fixture\""
+      },
+      "notes": [
+        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
+      ]
+    },
     {
       "family": "modern",
       "catalogName": "Text",
