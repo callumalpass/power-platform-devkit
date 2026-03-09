@@ -1,0 +1,14 @@
+{
+  "action": "dv.create",
+  "confirmed": true,
+  "input": {
+    "displayName": "PP Accounts",
+    "schemaName": "pp_accounts"
+  },
+  "mode": "dry-run",
+  "target": {
+    "environment": "test",
+    "table": "accounts"
+  },
+  "willMutate": false
+}

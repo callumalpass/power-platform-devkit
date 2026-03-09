@@ -3,7 +3,7 @@
 `pp` currently uses three practical test lanes:
 
 - `pnpm test`: the normal fast suite for package tests, including fixture-backed CLI integration tests
-- `pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/cli/src/integration.test.ts`: the focused fixture/golden lane for canvas, flow, analysis, and representative CLI workflows
+- `pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/cli/src/integration.test.ts packages/cli/src/contract.test.ts`: the focused fixture/golden lane for canvas, flow, analysis, representative CLI workflows, and the shipped CLI contract surface
 - `pnpm smoke:live`: the gated live smoke lane that builds the workspace and runs the read-only external-environment checks
 
 The repository now wires that split into GitHub Actions:
@@ -20,21 +20,22 @@ The committed fixtures currently cover:
 - flow unpack, validate, patch, and normalize outputs
 - flow remote inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures
 - project analysis context and markdown reporting
+- CLI contract rendering for structured outputs, machine-friendly failures, warning streams, and mutation previews
 - CLI workflows that drive those same local fixture paths end to end
 
 Run the focused lane:
 
 ```bash
-pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/cli/src/integration.test.ts
+pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/cli/src/integration.test.ts packages/cli/src/contract.test.ts
 ```
 
 Refresh committed goldens deterministically:
 
 ```bash
-PP_UPDATE_GOLDENS=1 pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/cli/src/integration.test.ts
+PP_UPDATE_GOLDENS=1 pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/cli/src/integration.test.ts packages/cli/src/contract.test.ts
 ```
 
-The fixture outputs live under `fixtures/canvas/golden/`, `fixtures/flow/golden/`, and `fixtures/analysis/golden/`. Refreshes should come from commands, not hand-edited snapshots.
+The fixture outputs live under `fixtures/canvas/golden/`, `fixtures/flow/golden/`, `fixtures/analysis/golden/`, and `fixtures/cli/golden/`. Refreshes should come from commands, not hand-edited snapshots.
 
 ## Live smoke
 

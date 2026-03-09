@@ -1,0 +1,4 @@
+level    code          message                         source    path
+-------  ------------  ------------------------------  --------  -----------------------
+error    TEST_FAILURE  Something went wrong            @pp/test  fixtures/cli/input.json
+warning  TEST_WARNING  This is only a preview warning  @pp/test

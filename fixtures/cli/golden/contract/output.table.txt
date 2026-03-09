@@ -1,0 +1,4 @@
+alias  url                        healthy
+-----  -------------------------  -------
+dev    https://example.test       true
+prod   https://prod.example.test  false

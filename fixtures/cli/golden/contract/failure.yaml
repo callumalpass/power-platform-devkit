@@ -1,0 +1,24 @@
+success: false
+diagnostics:
+  - level: error
+    code: TEST_FAILURE
+    message: Something went wrong
+    source: "@pp/test"
+    path: fixtures/cli/input.json
+    hint: Check the committed fixture payload.
+warnings:
+  - level: warning
+    code: TEST_WARNING
+    message: This is only a preview warning
+    source: "@pp/test"
+    hint: Warnings should stay visible in the rendered contract.
+supportTier: experimental
+suggestedNextActions:
+  - Retry with --format json
+  - Refresh the committed fixture if the contract changed intentionally
+provenance:
+  - kind: inferred
+    source: contract-test-fixture
+    detail: fixture-backed golden coverage
+knownLimitations:
+  - Fixture-backed protocol checks do not replace live environment validation.
