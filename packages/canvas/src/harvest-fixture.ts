@@ -104,6 +104,9 @@ export interface CanvasHarvestFixturePrototypeSuggestion {
   constructor?: string;
 }
 
+export type CanvasHarvestFixturePrototypeValidationStatus = 'validated' | 'pending' | 'unknown';
+export type CanvasHarvestFixturePrototypeValidationPlanAlignment = 'aligned' | 'stale' | 'prototype-only';
+
 export interface CanvasHarvestFixtureCatalogSummary {
   path?: string;
   generatedAt?: string;
@@ -166,6 +169,41 @@ export interface CanvasHarvestFixturePrototypeDraftDocument {
   skipped: CanvasHarvestFixturePrototypeDraftSkippedControl[];
 }
 
+export interface CanvasHarvestFixturePrototypeValidationBacklogEntry {
+  family: 'classic' | 'modern';
+  catalogName: string;
+  constructor: string;
+  suggestedInsertQueries: string[];
+  validationStatus: CanvasHarvestFixturePrototypeValidationStatus;
+  planAlignment: CanvasHarvestFixturePrototypeValidationPlanAlignment;
+  planStatus?: CanvasHarvestFixtureControlStatus;
+  planReason?: string;
+  templateName?: string;
+  templateVersion?: string;
+  latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
+  prototypeNotes: string[];
+  notes: string[];
+}
+
+export interface CanvasHarvestFixturePrototypeValidationBacklogDocument {
+  schemaVersion: 1;
+  generatedAt: string;
+  sourcePlanGeneratedAt: string;
+  sourcePrototypeGeneratedAt?: string;
+  sourceRegistryGeneratedAt?: string;
+  counts: {
+    prototypeControls: number;
+    validatedControls: number;
+    pendingValidationControls: number;
+    unknownValidationControls: number;
+    alignedPlanControls: number;
+    stalePlanControls: number;
+    prototypeOnlyControls: number;
+    registryMissingControls: number;
+  };
+  controls: CanvasHarvestFixturePrototypeValidationBacklogEntry[];
+}
+
 export interface AssertCanvasHarvestFixtureCatalogWriteOptions {
   catalog: CanvasControlCatalogDocument;
   catalogPath: string;
@@ -187,6 +225,13 @@ export interface BuildCanvasHarvestFixturePlanOptions {
 }
 
 export interface BuildCanvasHarvestFixturePrototypeDraftDocumentOptions {
+  plan: CanvasHarvestFixturePlan;
+  registry: CanvasTemplateRegistryDocument;
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  generatedAt?: string;
+}
+
+export interface BuildCanvasHarvestFixturePrototypeValidationBacklogDocumentOptions {
   plan: CanvasHarvestFixturePlan;
   registry: CanvasTemplateRegistryDocument;
   prototypes: CanvasHarvestFixturePrototypeDocument;
@@ -242,6 +287,8 @@ export interface RenderedCanvasHarvestFixture {
 export const DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH = 'fixtures/canvas-harvest/generated/fixture-plan.json';
 export const DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH =
   'fixtures/canvas-harvest/generated/HarvestFixtureContainer.pa.yaml';
+export const DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BACKLOG_PATH =
+  'fixtures/canvas-harvest/generated/prototype-validation-backlog.json';
 
 const CONTROL_SEARCH_ALIASES: Record<string, string[]> = {
   'classic:gallery': ['Vertical gallery'],
@@ -465,6 +512,83 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
     },
     drafts,
     skipped,
+  };
+}
+
+export function buildCanvasHarvestFixturePrototypeValidationBacklogDocument(
+  options: BuildCanvasHarvestFixturePrototypeValidationBacklogDocumentOptions
+): CanvasHarvestFixturePrototypeValidationBacklogDocument {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const planByKey = new Map(
+    options.plan.controls.map((control) => [makeCatalogKey(control.family, control.catalogName), control] as const)
+  );
+  const controls = [...options.prototypes.prototypes]
+    .map((prototype) => {
+      const key = makeCatalogKey(prototype.family, prototype.catalogName);
+      const planControl = planByKey.get(key);
+      const resolvedTemplate = resolveTemplateForConstructor(options.registry, prototype.constructor);
+      const suggestedInsertQueries =
+        planControl?.suggestedInsertQueries ??
+        buildCanvasControlSearchTerms({
+          family: prototype.family,
+          name: prototype.catalogName,
+        });
+      const validationStatus = determinePrototypeValidationStatus(prototype);
+      const planAlignment = determinePrototypeValidationPlanAlignment({
+        prototype,
+        planControl,
+        resolvedTemplate,
+      });
+
+      return {
+        family: prototype.family,
+        catalogName: prototype.catalogName,
+        constructor: prototype.constructor,
+        suggestedInsertQueries,
+        validationStatus,
+        planAlignment,
+        ...(planControl?.status ? { planStatus: planControl.status } : {}),
+        ...(planControl?.reason ? { planReason: planControl.reason } : {}),
+        ...(resolvedTemplate
+          ? {
+              templateName: resolvedTemplate.templateName,
+              templateVersion: resolvedTemplate.templateVersion,
+            }
+          : {}),
+        ...(planControl?.latestInsertObservation
+          ? {
+              latestInsertObservation: planControl.latestInsertObservation,
+            }
+          : {}),
+        prototypeNotes: prototype.notes ?? [],
+        notes: buildPrototypeValidationBacklogNotes({
+          prototype,
+          planControl,
+          resolvedTemplate,
+          validationStatus,
+          planAlignment,
+        }),
+      } satisfies CanvasHarvestFixturePrototypeValidationBacklogEntry;
+    })
+    .sort(comparePrototypeValidationBacklogEntries);
+
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    sourcePlanGeneratedAt: options.plan.generatedAt,
+    sourcePrototypeGeneratedAt: options.prototypes.generatedAt,
+    sourceRegistryGeneratedAt: options.registry.generatedAt,
+    counts: {
+      prototypeControls: controls.length,
+      validatedControls: controls.filter((control) => control.validationStatus === 'validated').length,
+      pendingValidationControls: controls.filter((control) => control.validationStatus === 'pending').length,
+      unknownValidationControls: controls.filter((control) => control.validationStatus === 'unknown').length,
+      alignedPlanControls: controls.filter((control) => control.planAlignment === 'aligned').length,
+      stalePlanControls: controls.filter((control) => control.planAlignment === 'stale').length,
+      prototypeOnlyControls: controls.filter((control) => control.planAlignment === 'prototype-only').length,
+      registryMissingControls: controls.filter((control) => !control.templateVersion).length,
+    },
+    controls,
   };
 }
 
@@ -818,6 +942,60 @@ function buildPrototypeDraftNotes(options: {
   return notes;
 }
 
+function buildPrototypeValidationBacklogNotes(options: {
+  prototype: CanvasHarvestFixturePrototype;
+  planControl: CanvasHarvestFixturePlanEntry | undefined;
+  resolvedTemplate: CanvasTemplateRecord | undefined;
+  validationStatus: CanvasHarvestFixturePrototypeValidationStatus;
+  planAlignment: CanvasHarvestFixturePrototypeValidationPlanAlignment;
+}): string[] {
+  const notes: string[] = [];
+
+  switch (options.planAlignment) {
+    case 'prototype-only':
+      notes.push('No matching control exists in the source fixture plan; this pinned prototype sits outside the preserved plan snapshot.');
+      break;
+    case 'stale':
+      notes.push(buildStalePrototypePlanNote(options.planControl, options.prototype));
+      break;
+    default:
+      if (options.planControl?.status === 'registry-missing') {
+        notes.push('The source fixture plan already tracks this prototype, but the harvested registry still lacks a matching constructor alias.');
+      } else {
+        notes.push('The source fixture plan already resolves this pinned prototype.');
+      }
+      break;
+  }
+
+  if (options.resolvedTemplate) {
+    notes.push(
+      `Constructor ${options.prototype.constructor} resolves to ${options.resolvedTemplate.templateName}@${options.resolvedTemplate.templateVersion}.`
+    );
+  } else {
+    notes.push(
+      `The pinned harvested registry does not currently resolve constructor ${options.prototype.constructor}; keep registry refresh work separate from live validation.`
+    );
+  }
+
+  switch (options.validationStatus) {
+    case 'validated':
+      notes.push('Prototype notes indicate this control has already been live validated.');
+      break;
+    case 'pending':
+      notes.push('Prototype notes still mark live paste validation as pending.');
+      break;
+    default:
+      notes.push('Prototype notes do not yet say whether live paste validation has happened.');
+      break;
+  }
+
+  if (options.planControl?.latestInsertObservation) {
+    notes.push(...buildInsertObservationNotes(options.planControl.latestInsertObservation));
+  }
+
+  return dedupeStrings(notes);
+}
+
 function buildPromotedPrototypeNotes(options: {
   draft: CanvasHarvestFixturePrototype;
   draftDocument: CanvasHarvestFixturePrototypeDraftDocument;
@@ -836,6 +1014,105 @@ function buildPromotedPrototypeNotes(options: {
   ];
 
   return dedupeStrings(notes);
+}
+
+function determinePrototypeValidationStatus(
+  prototype: Pick<CanvasHarvestFixturePrototype, 'notes'>
+): CanvasHarvestFixturePrototypeValidationStatus {
+  const notes = prototype.notes ?? [];
+
+  if (
+    notes.some((note) =>
+      /(?:live paste validation|live-validate|validation).*\bpending\b|\bpending\b.*(?:live paste validation|live-validate|validation)/i.test(
+        note
+      )
+    )
+  ) {
+    return 'pending';
+  }
+
+  if (notes.some((note) => /\bvalidated\b|\blive-validated\b/i.test(note))) {
+    return 'validated';
+  }
+
+  return 'unknown';
+}
+
+function determinePrototypeValidationPlanAlignment(options: {
+  prototype: CanvasHarvestFixturePrototype;
+  planControl: CanvasHarvestFixturePlanEntry | undefined;
+  resolvedTemplate: CanvasTemplateRecord | undefined;
+}): CanvasHarvestFixturePrototypeValidationPlanAlignment {
+  if (!options.planControl) {
+    return 'prototype-only';
+  }
+
+  if (options.planControl.status === 'prototype-missing') {
+    return 'stale';
+  }
+
+  if (
+    options.planControl.fixtureConstructor &&
+    normalizeToken(options.planControl.fixtureConstructor) !== normalizeToken(options.prototype.constructor)
+  ) {
+    return 'stale';
+  }
+
+  if (options.planControl.status === 'registry-missing') {
+    return options.resolvedTemplate ? 'stale' : 'aligned';
+  }
+
+  if (!options.resolvedTemplate) {
+    return 'stale';
+  }
+
+  return options.planControl.templateName === options.resolvedTemplate.templateName &&
+    options.planControl.templateVersion === options.resolvedTemplate.templateVersion
+    ? 'aligned'
+    : 'stale';
+}
+
+function buildStalePrototypePlanNote(
+  planControl: CanvasHarvestFixturePlanEntry | undefined,
+  prototype: Pick<CanvasHarvestFixturePrototype, 'constructor'>
+): string {
+  if (!planControl) {
+    return 'The preserved fixture plan is stale relative to the pinned prototypes.';
+  }
+
+  switch (planControl.status) {
+    case 'prototype-missing':
+      return 'The source fixture plan still marks this control as prototype missing; regenerate the plan to reflect the pinned prototype.';
+    case 'registry-missing':
+      return `The source fixture plan still marks ${prototype.constructor} as registry missing; regenerate the plan against the current pinned registry.`;
+    default:
+      return planControl.fixtureConstructor
+        ? `The source fixture plan resolves this control via ${planControl.fixtureConstructor}, which differs from the pinned prototype ${prototype.constructor}.`
+        : `The source fixture plan does not record constructor ${prototype.constructor}; regenerate the plan to realign it with the pinned prototypes.`;
+  }
+}
+
+function comparePrototypeValidationBacklogEntries(
+  left: CanvasHarvestFixturePrototypeValidationBacklogEntry,
+  right: CanvasHarvestFixturePrototypeValidationBacklogEntry
+): number {
+  const validationPriority: Record<CanvasHarvestFixturePrototypeValidationStatus, number> = {
+    pending: 0,
+    unknown: 1,
+    validated: 2,
+  };
+  const alignmentPriority: Record<CanvasHarvestFixturePrototypeValidationPlanAlignment, number> = {
+    stale: 0,
+    'prototype-only': 1,
+    aligned: 2,
+  };
+
+  return (
+    validationPriority[left.validationStatus] - validationPriority[right.validationStatus] ||
+    alignmentPriority[left.planAlignment] - alignmentPriority[right.planAlignment] ||
+    left.family.localeCompare(right.family) ||
+    left.catalogName.localeCompare(right.catalogName)
+  );
 }
 
 function summarizeInsertReport(options: {

@@ -6,6 +6,7 @@ import {
   buildCanvasControlSearchTerms,
   buildCanvasHarvestFixturePlan,
   buildCanvasHarvestFixturePrototypeDraftDocument,
+  buildCanvasHarvestFixturePrototypeValidationBacklogDocument,
   promoteCanvasHarvestFixturePrototypeDraft,
   renderCanvasHarvestFixture,
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
@@ -650,6 +651,152 @@ describe('canvas harvest fixture planning', () => {
         catalogName: 'Button',
       })
     ).toThrow(/A pinned fixture prototype already exists for Classic\/Button/);
+  });
+
+  it('builds a prototype validation backlog from pinned prototypes, the preserved plan, and the current registry', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-09T09:30:00.000Z',
+    });
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:00:00.000Z',
+    });
+    const promoted = promoteCanvasHarvestFixturePrototypeDraft({
+      drafts,
+      registry,
+      prototypes,
+      family: 'classic',
+      catalogName: 'Button',
+      generatedAt: '2026-03-10T00:10:00.000Z',
+      notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+    });
+    const validationRegistry: CanvasTemplateRegistryDocument = {
+      ...registry,
+      templates: [
+        ...registry.templates,
+        {
+          templateName: 'image',
+          templateVersion: '2.2.3',
+          aliases: {
+            constructors: ['Image'],
+          },
+          contentHash: 'classic-image',
+          provenance: {
+            kind: 'harvested',
+            source: 'test',
+          },
+        },
+      ],
+    };
+    const validationPrototypes: CanvasHarvestFixturePrototypeDocument = {
+      ...promoted.prototypes,
+      prototypes: promoted.prototypes.prototypes
+        .map((prototype) => {
+          if (
+            prototype.family === 'classic' &&
+            (prototype.catalogName === 'Icon' || prototype.catalogName === 'Label')
+          ) {
+            return {
+              ...prototype,
+              notes: ['Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending.'],
+            };
+          }
+
+          return prototype;
+        })
+        .concat({
+          family: 'classic',
+          catalogName: 'Image',
+          constructor: 'Image',
+          properties: {
+            Height: '=40',
+            Width: '=40',
+            Image: '=SampleImage',
+          },
+          notes: ['Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending.'],
+        }),
+    };
+
+    const backlog = buildCanvasHarvestFixturePrototypeValidationBacklogDocument({
+      plan,
+      registry: validationRegistry,
+      prototypes: validationPrototypes,
+      generatedAt: '2026-03-10T00:20:00.000Z',
+    });
+
+    expect(backlog.counts).toEqual({
+      prototypeControls: 6,
+      validatedControls: 1,
+      pendingValidationControls: 4,
+      unknownValidationControls: 1,
+      alignedPlanControls: 4,
+      stalePlanControls: 1,
+      prototypeOnlyControls: 1,
+      registryMissingControls: 1,
+    });
+    expect(backlog.controls.find((control) => control.family === 'classic' && control.catalogName === 'Button')).toEqual(
+      expect.objectContaining({
+        constructor: 'Classic/Button',
+        suggestedInsertQueries: ['Button'],
+        validationStatus: 'pending',
+        planAlignment: 'stale',
+        planStatus: 'prototype-missing',
+        templateName: 'button',
+        templateVersion: '2.2.0',
+        notes: expect.arrayContaining([
+          'The source fixture plan still marks this control as prototype missing; regenerate the plan to reflect the pinned prototype.',
+          'Constructor Classic/Button resolves to button@2.2.0.',
+          'Prototype notes still mark live paste validation as pending.',
+        ]),
+      })
+    );
+    expect(backlog.controls.find((control) => control.family === 'modern' && control.catalogName === 'Button')).toEqual(
+      expect.objectContaining({
+        constructor: 'ModernButton',
+        suggestedInsertQueries: ['Button'],
+        validationStatus: 'unknown',
+        planAlignment: 'aligned',
+        planStatus: 'registry-missing',
+        notes: expect.arrayContaining([
+          'The source fixture plan already tracks this prototype, but the harvested registry still lacks a matching constructor alias.',
+          'The pinned harvested registry does not currently resolve constructor ModernButton; keep registry refresh work separate from live validation.',
+          'Prototype notes do not yet say whether live paste validation has happened.',
+        ]),
+      })
+    );
+    expect(backlog.controls.find((control) => control.family === 'classic' && control.catalogName === 'Image')).toEqual(
+      expect.objectContaining({
+        constructor: 'Image',
+        suggestedInsertQueries: ['Image'],
+        validationStatus: 'pending',
+        planAlignment: 'prototype-only',
+        templateName: 'image',
+        templateVersion: '2.2.3',
+        notes: expect.arrayContaining([
+          'No matching control exists in the source fixture plan; this pinned prototype sits outside the preserved plan snapshot.',
+          'Prototype notes still mark live paste validation as pending.',
+        ]),
+      })
+    );
+    expect(backlog.controls.find((control) => control.family === 'modern' && control.catalogName === 'Text')).toEqual(
+      expect.objectContaining({
+        constructor: 'ModernText',
+        validationStatus: 'validated',
+        planAlignment: 'aligned',
+        planStatus: 'resolved',
+        templateName: 'modernText',
+        templateVersion: '1.0.0',
+        notes: expect.arrayContaining([
+          'The source fixture plan already resolves this pinned prototype.',
+          'Prototype notes indicate this control has already been live validated.',
+        ]),
+      })
+    );
   });
 
   it('flags insert reports that no longer match the current catalog slice', () => {

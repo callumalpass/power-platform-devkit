@@ -1,0 +1,128 @@
+{
+  "controls": [
+    {
+      "catalogName": "Button",
+      "constructor": "Classic/Button",
+      "family": "classic",
+      "notes": [
+        "The source fixture plan still marks this control as prototype missing; regenerate the plan to reflect the pinned prototype.",
+        "Constructor Classic/Button resolves to button@2.2.0.",
+        "Prototype notes still mark live paste validation as pending."
+      ],
+      "planAlignment": "stale",
+      "planReason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "planStatus": "prototype-missing",
+      "prototypeNotes": [
+        "Promoted from generated draft artifact 2026-03-09T13:23:07.191Z (fixture plan 2026-03-09T12:21:27.948Z).",
+        "Constructor Classic/Button resolves to button@2.2.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: Align, DisplayMode, Height, Text, VerticalAlign, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending.",
+        "Manual review completed on 2026-03-10; live paste validation still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Button"
+      ],
+      "templateName": "button",
+      "templateVersion": "2.2.0",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Icon",
+      "constructor": "Classic/Icon",
+      "family": "classic",
+      "notes": [
+        "No matching control exists in the source fixture plan; this pinned prototype sits outside the preserved plan snapshot.",
+        "Constructor Classic/Icon resolves to icon@2.5.0.",
+        "Prototype notes still mark live paste validation as pending."
+      ],
+      "planAlignment": "prototype-only",
+      "prototypeNotes": [
+        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Icon"
+      ],
+      "templateName": "icon",
+      "templateVersion": "2.5.0",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Image",
+      "constructor": "Image",
+      "family": "classic",
+      "notes": [
+        "No matching control exists in the source fixture plan; this pinned prototype sits outside the preserved plan snapshot.",
+        "Constructor Image resolves to image@2.2.3.",
+        "Prototype notes still mark live paste validation as pending."
+      ],
+      "planAlignment": "prototype-only",
+      "prototypeNotes": [
+        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Image"
+      ],
+      "templateName": "image",
+      "templateVersion": "2.2.3",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Label",
+      "constructor": "Label",
+      "family": "classic",
+      "notes": [
+        "The source fixture plan already resolves this pinned prototype.",
+        "Constructor Label resolves to label@2.5.1.",
+        "Prototype notes still mark live paste validation as pending."
+      ],
+      "planAlignment": "aligned",
+      "planReason": "Fixture prototype Label resolves to label@2.5.1.",
+      "planStatus": "resolved",
+      "prototypeNotes": [
+        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Label",
+        "Text label"
+      ],
+      "templateName": "label",
+      "templateVersion": "2.5.1",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Text",
+      "constructor": "ModernText",
+      "family": "modern",
+      "notes": [
+        "No matching control exists in the source fixture plan; this pinned prototype sits outside the preserved plan snapshot.",
+        "Constructor ModernText resolves to modernText@1.0.0.",
+        "Prototype notes indicate this control has already been live validated."
+      ],
+      "planAlignment": "prototype-only",
+      "prototypeNotes": [
+        "Validated as a top-level pasted control inside HarvestFixtureContainer."
+      ],
+      "suggestedInsertQueries": [
+        "Text"
+      ],
+      "templateName": "modernText",
+      "templateVersion": "1.0.0",
+      "validationStatus": "validated"
+    }
+  ],
+  "counts": {
+    "alignedPlanControls": 1,
+    "pendingValidationControls": 4,
+    "prototypeControls": 5,
+    "prototypeOnlyControls": 3,
+    "registryMissingControls": 0,
+    "stalePlanControls": 1,
+    "unknownValidationControls": 0,
+    "validatedControls": 1
+  },
+  "generatedAt": "2026-03-09T13:48:46.900Z",
+  "schemaVersion": 1,
+  "sourcePlanGeneratedAt": "2026-03-09T12:21:27.948Z",
+  "sourcePrototypeGeneratedAt": "2026-03-09T13:37:25.835Z",
+  "sourceRegistryGeneratedAt": "2026-03-09T13:47:04.820Z"
+}
