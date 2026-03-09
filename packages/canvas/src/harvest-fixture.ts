@@ -144,6 +144,28 @@ export interface CanvasHarvestFixturePlan {
   controls: CanvasHarvestFixturePlanEntry[];
 }
 
+export interface CanvasHarvestFixturePrototypeDraftSkippedControl {
+  family: 'classic' | 'modern';
+  catalogName: string;
+  status: CanvasHarvestFixtureControlStatus;
+  reason: string;
+  suggestedInsertQueries: string[];
+  prototypeSuggestions?: CanvasHarvestFixturePrototypeSuggestion[];
+}
+
+export interface CanvasHarvestFixturePrototypeDraftDocument {
+  schemaVersion: 1;
+  generatedAt: string;
+  sourcePlanGeneratedAt: string;
+  sourcePrototypeGeneratedAt?: string;
+  counts: {
+    draftControls: number;
+    skippedControls: number;
+  };
+  drafts: CanvasHarvestFixturePrototype[];
+  skipped: CanvasHarvestFixturePrototypeDraftSkippedControl[];
+}
+
 export interface AssertCanvasHarvestFixtureCatalogWriteOptions {
   catalog: CanvasControlCatalogDocument;
   catalogPath: string;
@@ -161,6 +183,13 @@ export interface BuildCanvasHarvestFixturePlanOptions {
   prototypes: CanvasHarvestFixturePrototypeDocument;
   insertReport?: CanvasControlInsertReportDocument;
   insertReportPath?: string;
+  generatedAt?: string;
+}
+
+export interface BuildCanvasHarvestFixturePrototypeDraftDocumentOptions {
+  plan: CanvasHarvestFixturePlan;
+  registry: CanvasTemplateRegistryDocument;
+  prototypes: CanvasHarvestFixturePrototypeDocument;
   generatedAt?: string;
 }
 
@@ -342,6 +371,84 @@ export function buildCanvasControlSearchTerms(entry: Pick<CanvasControlCatalogEn
   return dedupeSearchTerms(terms.filter((value) => value.length > 0));
 }
 
+export function buildCanvasHarvestFixturePrototypeDraftDocument(
+  options: BuildCanvasHarvestFixturePrototypeDraftDocumentOptions
+): CanvasHarvestFixturePrototypeDraftDocument {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const existingPrototypeKeys = new Set(
+    options.prototypes.prototypes.map((prototype) => makeCatalogKey(prototype.family, prototype.catalogName))
+  );
+  const drafts: CanvasHarvestFixturePrototype[] = [];
+  const skipped: CanvasHarvestFixturePrototypeDraftSkippedControl[] = [];
+
+  for (const control of options.plan.controls) {
+    if (control.status !== 'prototype-missing') {
+      continue;
+    }
+
+    const key = makeCatalogKey(control.family, control.catalogName);
+    const controlLookup = {
+      family: control.family,
+      name: control.catalogName,
+    } satisfies Pick<CanvasControlCatalogEntry, 'family' | 'name'>;
+    const suggestedInsertQueries = control.suggestedInsertQueries ?? buildCanvasControlSearchTerms(controlLookup);
+    const prototypeSuggestions =
+      control.prototypeSuggestions && control.prototypeSuggestions.length > 0
+        ? control.prototypeSuggestions
+        : buildPrototypeSuggestions(options.registry, controlLookup);
+
+    if (existingPrototypeKeys.has(key)) {
+      skipped.push({
+        family: control.family,
+        catalogName: control.catalogName,
+        status: control.status,
+        reason: 'A pinned fixture prototype already exists for this control.',
+        suggestedInsertQueries,
+        ...(prototypeSuggestions.length > 0 ? { prototypeSuggestions } : {}),
+      });
+      continue;
+    }
+
+    const selectedSuggestion = prototypeSuggestions.find((suggestion) => suggestion.constructor);
+    if (!selectedSuggestion?.constructor) {
+      skipped.push({
+        family: control.family,
+        catalogName: control.catalogName,
+        status: control.status,
+        reason: 'The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.',
+        suggestedInsertQueries,
+        ...(prototypeSuggestions.length > 0 ? { prototypeSuggestions } : {}),
+      });
+      continue;
+    }
+
+    drafts.push({
+      family: control.family,
+      catalogName: control.catalogName,
+      constructor: selectedSuggestion.constructor,
+      notes: buildPrototypeDraftNotes({
+        control,
+        suggestion: selectedSuggestion,
+        planGeneratedAt: options.plan.generatedAt,
+        suggestedInsertQueries,
+      }),
+    });
+  }
+
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    sourcePlanGeneratedAt: options.plan.generatedAt,
+    sourcePrototypeGeneratedAt: options.prototypes.generatedAt,
+    counts: {
+      draftControls: drafts.length,
+      skippedControls: skipped.length,
+    },
+    drafts,
+    skipped,
+  };
+}
+
 export function renderCanvasHarvestFixture(options: RenderCanvasHarvestFixtureOptions): RenderedCanvasHarvestFixture {
   const containerConstructor = options.containerConstructor ?? 'GroupContainer';
   const markerConstructor = options.markerConstructor ?? 'ModernText';
@@ -516,6 +623,28 @@ function buildPrototypeSuggestionNotes(suggestions: CanvasHarvestFixturePrototyp
 function formatPrototypeSuggestion(suggestion: CanvasHarvestFixturePrototypeSuggestion): string {
   const target = suggestion.constructor ? `${suggestion.constructor} -> ` : '';
   return `${target}${suggestion.templateName}@${suggestion.templateVersion}`;
+}
+
+function buildPrototypeDraftNotes(options: {
+  control: Pick<CanvasHarvestFixturePlanEntry, 'family' | 'catalogName' | 'latestInsertObservation'>;
+  suggestion: CanvasHarvestFixturePrototypeSuggestion;
+  planGeneratedAt: string;
+  suggestedInsertQueries: string[];
+}): string[] {
+  const notes = [
+    `Draft scaffold generated from fixture plan ${options.planGeneratedAt}.`,
+    `Registry suggestion selected: ${formatPrototypeSuggestion(options.suggestion)} (${options.suggestion.matchType} match).`,
+    options.suggestedInsertQueries.length > 0
+      ? `Suggested Insert-pane queries: ${options.suggestedInsertQueries.join(', ')}.`
+      : 'Suggested Insert-pane queries were unavailable in the source plan.',
+    'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
+  ];
+
+  if (options.control.latestInsertObservation) {
+    notes.push(...buildInsertObservationNotes(options.control.latestInsertObservation));
+  }
+
+  return notes;
 }
 
 function summarizeInsertReport(options: {

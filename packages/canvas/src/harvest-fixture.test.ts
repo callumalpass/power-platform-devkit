@@ -5,6 +5,7 @@ import {
   assertCanvasHarvestFixtureCatalogCanWriteOutputs,
   buildCanvasControlSearchTerms,
   buildCanvasHarvestFixturePlan,
+  buildCanvasHarvestFixturePrototypeDraftDocument,
   renderCanvasHarvestFixture,
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
   DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH,
@@ -459,6 +460,82 @@ describe('canvas harvest fixture planning', () => {
         ]),
       })
     );
+  });
+
+  it('builds draft prototype scaffolds from a persisted legacy plan shape', () => {
+    const legacyPlan = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-09T12:21:27.948Z',
+      controls: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+        {
+          family: 'modern',
+          catalogName: 'Info button',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+          latestInsertObservation: {
+            generatedAt: '2026-03-09T09:15:00.000Z',
+            outcome: 'not-found',
+            strategy: 'search-miss',
+            attemptedQueries: ['Information button'],
+          },
+        },
+        {
+          family: 'classic',
+          catalogName: 'Label',
+          status: 'resolved',
+          reason: 'Fixture prototype Label resolves to label@2.5.1.',
+          notes: [],
+        },
+      ],
+    } as unknown as Parameters<typeof buildCanvasHarvestFixturePrototypeDraftDocument>[0]['plan'];
+
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan: legacyPlan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:00:00.000Z',
+    });
+
+    expect(drafts).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:00:00.000Z',
+      sourcePlanGeneratedAt: '2026-03-09T12:21:27.948Z',
+      sourcePrototypeGeneratedAt: '2026-03-09T09:00:00.000Z',
+      counts: {
+        draftControls: 1,
+        skippedControls: 1,
+      },
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          constructor: 'Classic/Button',
+          notes: [
+            'Draft scaffold generated from fixture plan 2026-03-09T12:21:27.948Z.',
+            'Registry suggestion selected: Classic/Button -> button@2.2.0 (constructor match).',
+            'Suggested Insert-pane queries: Button.',
+            'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
+          ],
+        },
+      ],
+      skipped: [
+        {
+          family: 'modern',
+          catalogName: 'Info button',
+          status: 'prototype-missing',
+          reason: 'The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.',
+          suggestedInsertQueries: ['Info button', 'Information button'],
+        },
+      ],
+    });
   });
 
   it('flags insert reports that no longer match the current catalog slice', () => {

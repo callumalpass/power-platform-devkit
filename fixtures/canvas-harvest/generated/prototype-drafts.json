@@ -1,0 +1,83 @@
+{
+  "counts": {
+    "draftControls": 1,
+    "skippedControls": 6
+  },
+  "drafts": [
+    {
+      "catalogName": "Button",
+      "constructor": "Classic/Button",
+      "family": "classic",
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T12:21:27.948Z.",
+        "Registry suggestion selected: Classic/Button -> button@2.2.0 (constructor match).",
+        "Suggested Insert-pane queries: Button.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ]
+    }
+  ],
+  "generatedAt": "2026-03-09T13:16:11.036Z",
+  "schemaVersion": 1,
+  "skipped": [
+    {
+      "catalogName": "Date picker",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Date picker"
+      ]
+    },
+    {
+      "catalogName": "Button",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Button"
+      ]
+    },
+    {
+      "catalogName": "Date picker",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Date picker"
+      ]
+    },
+    {
+      "catalogName": "Info button",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Info button",
+        "Information button"
+      ]
+    },
+    {
+      "catalogName": "Radio group",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Radio group",
+        "Radio"
+      ]
+    },
+    {
+      "catalogName": "Tabs or tab list",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Tabs or tab list",
+        "Tab list",
+        "Tabs"
+      ]
+    }
+  ],
+  "sourcePlanGeneratedAt": "2026-03-09T12:21:27.948Z",
+  "sourcePrototypeGeneratedAt": "2026-03-09T12:20:36.000Z"
+}
