@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-03-10T00:00:00.000Z",
+  "templates": [
+    {
+      "templateName": "LegacyBadge",
+      "templateVersion": "1.0.0",
+      "aliases": {
+        "constructors": [
+          "LegacyBadge"
+        ],
+        "yamlNames": [
+          "legacyBadge"
+        ]
+      },
+      "files": {
+        "Controls/LegacyBadge.json": {
+          "kind": "legacy-badge",
+          "defaults": {
+            "Text": "\"Legacy\""
+          }
+        }
+      },
+      "provenance": {
+        "kind": "official-artifact",
+        "source": "CanvasSemanticFixtureRegistry",
+        "acquiredAt": "2026-03-10T00:00:00.000Z"
+      }
+    }
+  ],
+  "supportMatrix": [
+    {
+      "templateName": "LegacyBadge",
+      "version": "1.*",
+      "status": "partial",
+      "modes": [
+        "registry"
+      ],
+      "notes": [
+        "Legacy badge controls are only partially supported while semantic coverage expands."
+      ]
+    }
+  ]
+}

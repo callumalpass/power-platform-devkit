@@ -1,0 +1,28 @@
+{
+  "diagnostics": [
+    {
+      "code": "CANVAS_FORMULA_PROPERTY_INVALID",
+      "level": "error",
+      "message": "Formula property OnSelectFormula on Home/Layout/BrokenButton must be a string in the supported canvas slice.",
+      "source": "@pp/canvas"
+    },
+    {
+      "code": "CANVAS_TEMPLATE_METADATA_MISSING",
+      "hint": "Provide seeded metadata or load a matching template registry.",
+      "level": "error",
+      "message": "Template metadata for GhostCard@1.0.0 was not resolved for Home/Layout/GhostCard.",
+      "source": "@pp/canvas"
+    },
+    {
+      "code": "CANVAS_TEMPLATE_UNSUPPORTED",
+      "detail": "Supported modes: registry",
+      "level": "warning",
+      "message": "Template LegacyBadge@1.0.0 for Home/Layout/LegacyBadge is partial in strict mode.",
+      "source": "@pp/canvas"
+    }
+  ],
+  "success": false,
+  "suggestedNextActions": [],
+  "supportTier": "preview",
+  "warnings": []
+}

@@ -201,6 +201,73 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('covers invalid canvas semantic diagnostics and build failures through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'diagnostic-app');
+    const runtimeRegistryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'runtime-registry.json');
+    const semanticRegistryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'semantic-registry.json');
+    const outPath = join(tempDir, 'DiagnosticCanvas.msapp');
+
+    const inspect = await runCli([
+      'canvas',
+      'inspect',
+      appPath,
+      '--mode',
+      'strict',
+      '--registry',
+      runtimeRegistryPath,
+      '--registry',
+      semanticRegistryPath,
+      '--format',
+      'json',
+    ]);
+    const validate = await runCli([
+      'canvas',
+      'validate',
+      appPath,
+      '--mode',
+      'strict',
+      '--registry',
+      runtimeRegistryPath,
+      '--registry',
+      semanticRegistryPath,
+      '--format',
+      'json',
+    ]);
+    const build = await runCli([
+      'canvas',
+      'build',
+      appPath,
+      '--mode',
+      'strict',
+      '--registry',
+      runtimeRegistryPath,
+      '--registry',
+      semanticRegistryPath,
+      '--out',
+      outPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(validate.code).toBe(1);
+    expect(validate.stderr).toBe('');
+    expect(build.code).toBe(1);
+    expect(build.stdout).toBe('');
+
+    await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/canvas/golden/semantic/cli-inspect-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/canvas/golden/semantic/cli-validation-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(build.stderr), 'fixtures/canvas/golden/semantic/cli-build-failure.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+  });
+
   it('covers flow unpack, validate, patch, and normalize through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');

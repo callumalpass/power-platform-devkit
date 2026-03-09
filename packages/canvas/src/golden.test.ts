@@ -40,6 +40,28 @@ function normalizeImportedRegistryRoundTrip<T>(value: T, ...tempPaths: string[])
   return mapSnapshotStrings(normalized, (entry) => (entry === '<TMP_DIR>/normalized.json' ? '<REPO_ROOT>/fixtures/canvas/registries/import-source.json' : entry));
 }
 
+function snapshotCanvasResult<T>(result: {
+  success: boolean;
+  data?: T;
+  diagnostics: unknown[];
+  warnings: unknown[];
+  supportTier: string;
+}): {
+  success: boolean;
+  data?: T;
+  diagnostics: unknown[];
+  warnings: unknown[];
+  supportTier: string;
+} {
+  return {
+    success: result.success,
+    data: result.data,
+    diagnostics: result.diagnostics,
+    warnings: result.warnings,
+    supportTier: result.supportTier,
+  };
+}
+
 describe('canvas fixture-backed goldens', () => {
   it('captures normalized template imports and preserves re-import semantics', async () => {
     const tempDir = await createTempDir();
@@ -120,6 +142,43 @@ describe('canvas fixture-backed goldens', () => {
       normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
     });
     await expectGoldenJson(diff.data, 'fixtures/canvas/golden/diff-report.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+  });
+
+  it('captures semantic validation diagnostics and build failures for invalid canvas fixtures', async () => {
+    const tempDir = await createTempDir();
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'diagnostic-app');
+    const runtimeRegistryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'runtime-registry.json');
+    const semanticRegistryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'semantic-registry.json');
+    const outPath = join(tempDir, 'DiagnosticCanvas.msapp');
+
+    const inspect = await inspectCanvasApp(appPath, {
+      mode: 'strict',
+      registries: [runtimeRegistryPath, semanticRegistryPath],
+    });
+    const validation = await validateCanvasApp(appPath, {
+      mode: 'strict',
+      registries: [runtimeRegistryPath, semanticRegistryPath],
+    });
+    const build = await buildCanvasApp(appPath, {
+      mode: 'strict',
+      registries: [runtimeRegistryPath, semanticRegistryPath],
+      outPath,
+    });
+
+    expect(inspect.success).toBe(true);
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(build.success).toBe(false);
+
+    await expectGoldenJson(snapshotCanvasResult(inspect), 'fixtures/canvas/golden/semantic/inspect-report.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(snapshotCanvasResult(validation), 'fixtures/canvas/golden/semantic/validation-report.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(snapshotCanvasResult(build), 'fixtures/canvas/golden/semantic/build-failure.json', {
       normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
     });
   });

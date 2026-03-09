@@ -1,0 +1,64 @@
+{
+  "name": "Home",
+  "controls": [
+    {
+      "name": "Layout",
+      "templateName": "groupContainer",
+      "templateVersion": "1.0.0",
+      "properties": {
+        "Width": 320,
+        "Height": 480
+      },
+      "children": [
+        {
+          "name": "StatusLabel",
+          "templateName": "Label",
+          "templateVersion": "1.0.0",
+          "properties": {
+            "TextFormula": "\"Ready\"",
+            "X": 12,
+            "Y": 12
+          },
+          "children": []
+        },
+        {
+          "name": "BrokenButton",
+          "templateName": "Button",
+          "templateVersion": "1.0.0",
+          "properties": {
+            "TextFormula": "\"Deploy\"",
+            "OnSelectFormula": {
+              "kind": "expression",
+              "value": "Set(varStatus, \"Broken\")"
+            },
+            "X": 12,
+            "Y": 56
+          },
+          "children": []
+        },
+        {
+          "name": "LegacyBadge",
+          "templateName": "LegacyBadge",
+          "templateVersion": "1.0.0",
+          "properties": {
+            "TextFormula": "\"Legacy warning\"",
+            "X": 12,
+            "Y": 108
+          },
+          "children": []
+        },
+        {
+          "name": "GhostCard",
+          "templateName": "GhostCard",
+          "templateVersion": "1.0.0",
+          "properties": {
+            "TextFormula": "\"Missing metadata\"",
+            "X": 12,
+            "Y": 156
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

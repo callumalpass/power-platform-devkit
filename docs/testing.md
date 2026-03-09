@@ -16,6 +16,7 @@ The repository now wires that split into GitHub Actions:
 The committed fixtures currently cover:
 
 - canvas template import, inspect, validate, build, and diff outputs
+- canvas semantic diagnostics for invalid formula properties, missing template metadata, partial template support, and invalid-build failure payloads
 - flow unpack, validate, patch, and normalize outputs
 - flow remote inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures
 - project analysis context and markdown reporting
