@@ -10,6 +10,7 @@ Start here:
 - [Project config](project-config.md): `pp.config.*` structure, parameter resolution, and local analysis commands
 - [Dataverse and solutions](dataverse-and-solutions.md): `dv` and `solution` commands, query options, and environment setup
 - [Canvas registries](canvas.md): template registry schema, provenance rules, support matrix resolution, and project wiring
+- [Flow artifacts](flow.md): remote flow discovery plus unpack/normalize/validate/patch workflows for canonical `flow.json` artifacts
 
 The docs intentionally describe the current implemented surface, not the full long-term architecture in the external spec.
 

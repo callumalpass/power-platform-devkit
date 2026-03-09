@@ -40,6 +40,7 @@ import {
 } from '@pp/dataverse';
 import { buildDeployPlan } from '@pp/deploy';
 import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
+import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { discoverProject, summarizeProject, summarizeResolvedParameter } from '@pp/project';
 import { SolutionService } from '@pp/solution';
 import YAML from 'yaml';
@@ -105,6 +106,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (group === 'canvas') {
     return runCanvas(command, rest);
+  }
+
+  if (group === 'flow') {
+    return runFlow(command, rest);
   }
 
   switch (`${group} ${command ?? ''}`.trim()) {
@@ -282,6 +287,26 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
       return runCanvasBuild(args);
     case 'diff':
       return runCanvasDiff(args);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runFlow(command: string | undefined, args: string[]): Promise<number> {
+  switch (command) {
+    case 'list':
+      return runFlowList(args);
+    case 'inspect':
+      return runFlowInspect(args);
+    case 'unpack':
+      return runFlowUnpack(args);
+    case 'normalize':
+      return runFlowNormalize(args);
+    case 'validate':
+      return runFlowValidate(args);
+    case 'patch':
+      return runFlowPatch(args);
     default:
       printHelp();
       return 1;
@@ -2217,6 +2242,163 @@ async function runCanvasDiff(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runFlowList(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new FlowService(resolution.data.client).list({
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowInspect(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow inspect <name|id|uniqueName|path> [--env ALIAS]'));
+  }
+
+  if (readFlag(args, '--env')) {
+    const resolution = await resolveDataverseClientForCli(args);
+
+    if (!resolution.success || !resolution.data) {
+      return printFailure(resolution);
+    }
+
+    const result = await new FlowService(resolution.data.client).inspect(identifier, {
+      solutionUniqueName: readFlag(args, '--solution'),
+    });
+
+    if (!result.success) {
+      return printFailure(result);
+    }
+
+    if (!result.data) {
+      return printFailure(fail(createDiagnostic('error', 'FLOW_NOT_FOUND', `Flow ${identifier} was not found.`)));
+    }
+
+    printByFormat(result.data, outputFormat(args, 'json'));
+    return 0;
+  }
+
+  const result = await new FlowService().inspectArtifact(identifier);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowUnpack(args: string[]): Promise<number> {
+  const inputPath = positionalArgs(args)[0];
+  const outPath = readFlag(args, '--out');
+
+  if (!inputPath || !outPath) {
+    return printFailure(argumentFailure('FLOW_UNPACK_ARGS_REQUIRED', 'Usage: flow unpack <path> --out <dir>'));
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'flow.unpack', { inputPath, outPath });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new FlowService().unpack(inputPath, outPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowNormalize(args: string[]): Promise<number> {
+  const inputPath = positionalArgs(args)[0];
+
+  if (!inputPath) {
+    return printFailure(argumentFailure('FLOW_NORMALIZE_PATH_REQUIRED', 'Usage: flow normalize <path> [--out PATH]'));
+  }
+
+  const outPath = readFlag(args, '--out');
+  const preview = maybeHandleMutationPreview(args, 'json', 'flow.normalize', {
+    inputPath,
+    outPath: outPath ?? 'in-place',
+  });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new FlowService().normalize(inputPath, outPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowValidate(args: string[]): Promise<number> {
+  const inputPath = positionalArgs(args)[0];
+
+  if (!inputPath) {
+    return printFailure(argumentFailure('FLOW_VALIDATE_PATH_REQUIRED', 'Usage: flow validate <path>'));
+  }
+
+  const result = await new FlowService().validate(inputPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return result.data.valid ? 0 : 1;
+}
+
+async function runFlowPatch(args: string[]): Promise<number> {
+  const inputPath = positionalArgs(args)[0];
+  const patchFile = readFlag(args, '--file');
+
+  if (!inputPath || !patchFile) {
+    return printFailure(argumentFailure('FLOW_PATCH_ARGS_REQUIRED', 'Usage: flow patch <path> --file PATCH.json [--out PATH]'));
+  }
+
+  const patch = await readJsonFileForCli(patchFile, 'FLOW_PATCH_FILE_INVALID', '--file must point to a JSON patch document.');
+
+  if (!patch.success || patch.data === undefined) {
+    return printFailure(patch);
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'flow.patch', { inputPath, patchFile, outPath: readFlag(args, '--out') ?? 'in-place' }, patch.data);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new FlowService().patch(inputPath, patch.data as FlowPatchDocument, readFlag(args, '--out'));
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 function buildPublicClientProfile(
   baseProfile: UserAuthProfile,
   args: string[]
@@ -2602,6 +2784,25 @@ async function readJsonBodyArgument(args: string[]): Promise<OperationResult<unk
   }
 }
 
+async function readJsonFileForCli(
+  path: string,
+  code: string,
+  message: string
+): Promise<OperationResult<unknown>> {
+  try {
+    return ok(JSON.parse(await readFile(path, 'utf8')), {
+      supportTier: 'preview',
+    });
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', code, message, {
+        source: '@pp/cli',
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    );
+  }
+}
+
 async function readStructuredSpecArgument(
   args: string[],
   flagName: string,
@@ -2818,6 +3019,12 @@ function printHelp(): void {
       '  canvas inspect <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas build <path> [--project path] [--out FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas diff <leftPath> <rightPath> [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow inspect <name|id|uniqueName|path> [--env ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow normalize <path> [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow validate <path> [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow patch <path> --file PATCH.json [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
