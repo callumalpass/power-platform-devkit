@@ -3,72 +3,628 @@
     Variant: ManualLayout
     Properties:
       DropShadow: =DropShadow.None
-      Height: =212
+      Height: =1592
       Width: =928
       X: =40
       Y: =220
     Children:
-      - HarvestClassicButtonMarker:
+      - HarvestClassic3DObjectMarker:
           Control: ModernText@1.0.0
           Properties:
             Height: =44
             Width: =280
             X: =24
             Y: =24
-            Text: ="Classic: Button [prototype missing]"
+            Text: ="Classic: 3D object [prototype missing]"
+      - HarvestClassicAddPictureMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =24
+            Text: ="Classic: Add picture [prototype missing]"
+      - HarvestClassicAddressInputMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =24
+            Text: ="Classic: Address input [prototype missing]"
+      - HarvestClassicAttachmentsMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =84
+            Text: ="Classic: Attachments [prototype missing]"
+      - HarvestClassicAudioMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =84
+            Text: ="Classic: Audio [prototype missing]"
+      - HarvestClassicBarcodeReaderMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =84
+            Text: ="Classic: Barcode reader [prototype missing]"
+      - HarvestClassicBarcodeScannerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =144
+            Text: ="Classic: Barcode scanner [prototype missing]"
+      - HarvestClassicButton:
+          Control: Classic/Button@2.2.0
+          Properties:
+            Height: =40
+            Width: =160
+            X: =324
+            Y: =144
+            Align: =Align.Center
+            DisplayMode: =DisplayMode.Edit
+            Text: ="Button"
+            VerticalAlign: =VerticalAlign.Middle
+      - HarvestClassicCameraMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =144
+            Text: ="Classic: Camera [prototype missing]"
+      - HarvestClassicCardMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =204
+            Text: ="Classic: Card [prototype missing]"
+      - HarvestClassicCheckBoxMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =204
+            Text: ="Classic: Check box [prototype missing]"
+      - HarvestClassicColumnMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =204
+            Text: ="Classic: Column [prototype missing]"
+      - HarvestClassicColumnChartMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =264
+            Text: ="Classic: Column chart [prototype missing]"
+      - HarvestClassicComboBoxMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =264
+            Text: ="Classic: Combo box [prototype missing]"
+      - HarvestClassicContainerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =264
+            Text: ="Classic: Container [prototype missing]"
+      - HarvestClassicDataTableMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =324
+            Text: ="Classic: Data table [prototype missing]"
       - HarvestClassicDatePickerMarker:
           Control: ModernText@1.0.0
           Properties:
             Height: =44
             Width: =280
             X: =324
-            Y: =24
+            Y: =324
             Text: ="Classic: Date picker [prototype missing]"
+      - HarvestClassicDisplayAndEditFormMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =324
+            Text: ="Classic: Display and Edit form [prototype missing]"
+      - HarvestClassicDisplayFormMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =384
+            Text: ="Classic: Display form [prototype missing]"
+      - HarvestClassicDropDownMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =384
+            Text: ="Classic: Drop down [prototype missing]"
+      - HarvestClassicEditFormMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =384
+            Text: ="Classic: Edit form [prototype missing]"
+      - HarvestClassicExportMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =444
+            Text: ="Classic: Export [prototype missing]"
+      - HarvestClassicGalleryMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =444
+            Text: ="Classic: Gallery [prototype missing]"
+      - HarvestClassicGridContainerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =444
+            Text: ="Classic: Grid container [prototype missing]"
+      - HarvestClassicHorizontalContainerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =504
+            Text: ="Classic: Horizontal container [prototype missing]"
+      - HarvestClassicHTMLTextMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =504
+            Text: ="Classic: HTML text [prototype missing]"
+      - HarvestClassicIcon:
+          Control: Classic/Icon@2.5.0
+          Properties:
+            Height: =32
+            Width: =32
+            X: =624
+            Y: =504
+            Icon: =Icon.Add
+      - HarvestClassicImage:
+          Control: Image@2.2.3
+          Properties:
+            Height: =40
+            Width: =40
+            X: =24
+            Y: =564
+            Image: =SampleImage
+            ImagePosition: =ImagePosition.Fit
+      - HarvestClassicImportMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =564
+            Text: ="Classic: Import [prototype missing]"
       - HarvestClassicLabel:
           Control: Label@2.5.1
           Properties:
             Height: =40
             Width: =280
             X: =624
-            Y: =24
+            Y: =564
             Text: ="Classic Label fixture"
-      - HarvestModernButtonMarker:
+      - HarvestClassicLineChartMarker:
           Control: ModernText@1.0.0
           Properties:
             Height: =44
             Width: =280
             X: =24
-            Y: =84
+            Y: =624
+            Text: ="Classic: Line chart [prototype missing]"
+      - HarvestClassicListBoxMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =624
+            Text: ="Classic: List box [prototype missing]"
+      - HarvestClassicMapMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =624
+            Text: ="Classic: Map [prototype missing]"
+      - HarvestClassicMeasuringCameraMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =684
+            Text: ="Classic: Measuring Camera [prototype missing]"
+      - HarvestClassicMicrophoneMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =684
+            Text: ="Classic: Microphone [prototype missing]"
+      - HarvestClassicPDFViewerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =684
+            Text: ="Classic: PDF viewer [prototype missing]"
+      - HarvestClassicPenInputMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =744
+            Text: ="Classic: Pen input [prototype missing]"
+      - HarvestClassicPieChartMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =744
+            Text: ="Classic: Pie chart [prototype missing]"
+      - HarvestClassicPowerBITileMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =744
+            Text: ="Classic: Power BI tile [prototype missing]"
+      - HarvestClassicRadioMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =804
+            Text: ="Classic: Radio [prototype missing]"
+      - HarvestClassicRatingMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =804
+            Text: ="Classic: Rating [prototype missing]"
+      - HarvestClassicRichTextEditorMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =804
+            Text: ="Classic: Rich text editor [prototype missing]"
+      - HarvestClassicScreenMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =864
+            Text: ="Classic: Screen [prototype missing]"
+      - HarvestClassicShapeMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =864
+            Text: ="Classic: Shape [prototype missing]"
+      - HarvestClassicSliderMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =864
+            Text: ="Classic: Slider [prototype missing]"
+      - HarvestClassicStreamVideoMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =924
+            Text: ="Classic: Stream Video [prototype missing]"
+      - HarvestClassicTextInputMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =924
+            Text: ="Classic: Text input [prototype missing]"
+      - HarvestClassicTimerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =924
+            Text: ="Classic: Timer [prototype missing]"
+      - HarvestClassicToggleMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =984
+            Text: ="Classic: Toggle [prototype missing]"
+      - HarvestClassicVerticalContainerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =984
+            Text: ="Classic: Vertical container [prototype missing]"
+      - HarvestClassicVideoMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =984
+            Text: ="Classic: Video [prototype missing]"
+      - HarvestClassicViewInMRMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =1044
+            Text: ="Classic: View in MR [prototype missing]"
+      - HarvestClassicViewShapeInMRMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =1044
+            Text: ="Classic: View shape in MR [prototype missing]"
+      - HarvestClassicWebBarcodeScannerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =1044
+            Text: ="Classic: Web barcode scanner [prototype missing]"
+      - HarvestModernAvatarMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =1104
+            Text: ="Modern: Avatar [prototype missing]"
+      - HarvestModernBadgeMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =1104
+            Text: ="Modern: Badge [prototype missing]"
+      - HarvestModernButtonMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =1104
             Text: ="Modern: Button [prototype missing]"
+      - HarvestModernCardMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =1164
+            Text: ="Modern: Card [prototype missing]"
+      - HarvestModernCheckboxMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =1164
+            Text: ="Modern: Checkbox [prototype missing]"
+      - HarvestModernComboboxMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =1164
+            Text: ="Modern: Combobox [prototype missing]"
+      - HarvestModernCopilotAnswerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =1224
+            Text: ="Modern: Copilot answer [prototype missing]"
       - HarvestModernDatePickerMarker:
           Control: ModernText@1.0.0
           Properties:
             Height: =44
             Width: =280
             X: =324
-            Y: =84
+            Y: =1224
             Text: ="Modern: Date picker [prototype missing]"
-      - HarvestModernInfoButtonMarker:
+      - HarvestModernDropdownMarker:
           Control: ModernText@1.0.0
           Properties:
             Height: =44
             Width: =280
             X: =624
-            Y: =84
-            Text: ="Modern: Info button [prototype missing]"
-      - HarvestModernRadioGroupMarker:
+            Y: =1224
+            Text: ="Modern: Dropdown [prototype missing]"
+      - HarvestModernHeaderMarker:
           Control: ModernText@1.0.0
           Properties:
             Height: =44
             Width: =280
             X: =24
-            Y: =144
+            Y: =1284
+            Text: ="Modern: Header [prototype missing]"
+      - HarvestModernInfoButtonMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =1284
+            Text: ="Modern: Info button [prototype missing]"
+      - HarvestModernLinkMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =1284
+            Text: ="Modern: Link [prototype missing]"
+      - HarvestModernNumberInputMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =1344
+            Text: ="Modern: Number input [prototype missing]"
+      - HarvestModernProgressBarMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =1344
+            Text: ="Modern: Progress bar [prototype missing]"
+      - HarvestModernRadioGroupMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =1344
             Text: ="Modern: Radio group [prototype missing]"
+      - HarvestModernSliderMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =1404
+            Text: ="Modern: Slider [prototype missing]"
+      - HarvestModernSpinnerMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =1404
+            Text: ="Modern: Spinner [prototype missing]"
+      - HarvestModernStreamMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =624
+            Y: =1404
+            Text: ="Modern: Stream [prototype missing]"
+      - HarvestModernTableMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =1464
+            Text: ="Modern: Table [prototype missing]"
       - HarvestModernTabsOrTabListMarker:
           Control: ModernText@1.0.0
           Properties:
             Height: =44
             Width: =280
             X: =324
-            Y: =144
+            Y: =1464
             Text: ="Modern: Tabs or tab list [prototype missing]"
+      - HarvestModernText:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =40
+            Width: =260
+            X: =624
+            Y: =1464
+            Text: ="Modern Text fixture"
+      - HarvestModernTextInputMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =24
+            Y: =1524
+            Text: ="Modern: Text input [prototype missing]"
+      - HarvestModernToggleMarker:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =44
+            Width: =280
+            X: =324
+            Y: =1524
+            Text: ="Modern: Toggle [prototype missing]"

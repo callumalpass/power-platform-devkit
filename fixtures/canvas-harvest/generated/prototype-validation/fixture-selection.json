@@ -12,7 +12,7 @@
       "unknown"
     ]
   },
-  "generatedAt": "2026-03-09T14:16:50.868Z",
+  "generatedAt": "2026-03-09T15:44:22.055Z",
   "paths": {
     "backlog": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-validation-backlog.json",
     "prototypes": "/home/calluma/projects/pp/fixtures/canvas-harvest/prototypes.json",
@@ -25,7 +25,7 @@
       "catalogName": "Button",
       "constructor": "Classic/Button",
       "family": "classic",
-      "planAlignment": "stale",
+      "planAlignment": "aligned",
       "templateName": "button",
       "templateVersion": "2.2.0",
       "validationStatus": "pending"
@@ -34,7 +34,7 @@
       "catalogName": "Icon",
       "constructor": "Classic/Icon",
       "family": "classic",
-      "planAlignment": "prototype-only",
+      "planAlignment": "aligned",
       "templateName": "icon",
       "templateVersion": "2.5.0",
       "validationStatus": "pending"
@@ -43,7 +43,7 @@
       "catalogName": "Image",
       "constructor": "Image",
       "family": "classic",
-      "planAlignment": "prototype-only",
+      "planAlignment": "aligned",
       "templateName": "image",
       "templateVersion": "2.2.3",
       "validationStatus": "pending"
@@ -59,7 +59,7 @@
     }
   ],
   "skippedControls": [],
-  "sourceBacklogGeneratedAt": "2026-03-09T13:58:35.573Z",
+  "sourceBacklogGeneratedAt": "2026-03-09T15:44:21.941Z",
   "sourcePrototypeGeneratedAt": "2026-03-09T13:58:32.687Z",
-  "sourceRegistryGeneratedAt": "2026-03-09T13:52:45.428Z"
+  "sourceRegistryGeneratedAt": "2026-03-09T14:29:42.064Z"
 }

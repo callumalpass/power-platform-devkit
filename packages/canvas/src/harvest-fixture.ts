@@ -1,6 +1,10 @@
 import { resolve } from 'node:path';
 import {
   assertCanvasControlCatalogLooksComplete,
+  buildCanvasControlCatalogSelectionCheckpoint,
+  type CanvasControlCatalogResumeSelection,
+  type CanvasControlCatalogSelectionCheckpoint,
+  type CanvasControlCatalogSelectionSummary,
   summarizeCanvasControlCatalogDocument,
   type CanvasControlCatalogCounts,
   type CanvasControlCatalogDocument,
@@ -9,7 +13,15 @@ import {
 } from './control-catalog';
 import type { CanvasJsonValue, CanvasTemplateMatchType, CanvasTemplateRecord, CanvasTemplateRegistryDocument } from './index';
 
-export type { CanvasControlCatalogCounts, CanvasControlCatalogDocument, CanvasControlCatalogEntry, CanvasControlCatalogSource };
+export type {
+  CanvasControlCatalogCounts,
+  CanvasControlCatalogDocument,
+  CanvasControlCatalogEntry,
+  CanvasControlCatalogResumeSelection,
+  CanvasControlCatalogSelectionCheckpoint,
+  CanvasControlCatalogSelectionSummary,
+  CanvasControlCatalogSource,
+};
 
 export interface CanvasHarvestFixturePrototype {
   family: 'classic' | 'modern';
@@ -48,6 +60,18 @@ export interface CanvasControlInsertReportCandidate {
   iconName?: string;
 }
 
+export type CanvasControlInsertWaitProfileTier = 'standard' | 'modern' | 'complex' | 'heavy';
+
+export interface CanvasControlInsertWaitProfile {
+  tier: CanvasControlInsertWaitProfileTier;
+  searchSettleMs: number;
+  searchStablePasses: number;
+  postInsertSettleMs: number;
+  readyPollMs: number;
+  readyTimeoutMs: number;
+  reasons: string[];
+}
+
 export interface CanvasControlInsertReportAttempt {
   query: string;
   candidates: CanvasControlInsertReportCandidate[];
@@ -61,6 +85,7 @@ export interface CanvasControlInsertReportEntry {
   outcome: CanvasControlInsertReportOutcome;
   strategy: string;
   attempts: CanvasControlInsertReportAttempt[];
+  waitProfile?: CanvasControlInsertWaitProfile;
   chosenCandidate?: CanvasControlInsertReportCandidate;
   error?: string;
 }
@@ -71,6 +96,9 @@ export interface CanvasControlInsertReportDocument {
   catalogPath: string;
   catalogGeneratedAt?: string;
   catalogCounts?: CanvasControlCatalogCounts;
+  selection?: CanvasControlCatalogSelectionSummary;
+  selectionCheckpoint?: CanvasControlCatalogSelectionCheckpoint;
+  resumedFromReportPath?: string;
   fixtureContainerName: string;
   entries: CanvasControlInsertReportEntry[];
   totals: {
@@ -287,6 +315,10 @@ export interface BuildCanvasHarvestFixturePlanOptions {
   generatedAt?: string;
 }
 
+export interface BuildCanvasControlInsertWaitProfileOptions {
+  baseSettleMs?: number;
+}
+
 export interface BuildCanvasHarvestFixturePrototypeDraftDocumentOptions {
   plan: CanvasHarvestFixturePlan;
   registry: CanvasTemplateRegistryDocument;
@@ -453,6 +485,39 @@ const CONTROL_SEARCH_ALIASES: Record<string, string[]> = {
   'modern:tabsortablist': ['Tab list'],
 };
 
+const CONTROL_PROTOTYPE_MATCH_ALIASES: Record<string, string[]> = {
+  'classic:container': ['GroupContainer'],
+  'classic:gridcontainer': ['GroupContainer'],
+  'classic:horizontalcontainer': ['GroupContainer'],
+  'classic:verticalcontainer': ['GroupContainer'],
+};
+
+const COMPLEX_INSERT_WAIT_KEYWORDS = [
+  'attachment',
+  'barcode',
+  'camera',
+  'chart',
+  'combo',
+  'copilot',
+  'date',
+  'form',
+  'gallery',
+  'list',
+  'map',
+  'microphone',
+  'pdf',
+  'people',
+  'pen',
+  'picker',
+  'scanner',
+  'tab',
+  'table',
+  'timer',
+  'video',
+] as const;
+
+const CONTEXTUAL_INSERT_WAIT_KEYWORDS = ['card', 'container', 'form', 'gallery', 'list', 'tab', 'table'] as const;
+
 export function assertCanvasHarvestFixtureCatalogCanWriteOutputs(
   options: AssertCanvasHarvestFixtureCatalogWriteOptions
 ): void {
@@ -584,6 +649,106 @@ export function buildCanvasControlSearchTerms(entry: Pick<CanvasControlCatalogEn
   }
 
   return dedupeSearchTerms(terms.filter((value) => value.length > 0));
+}
+
+export function buildCanvasControlInsertWaitProfile(
+  entry: Pick<CanvasControlCatalogEntry, 'family' | 'name' | 'status'>,
+  options: BuildCanvasControlInsertWaitProfileOptions = {}
+): CanvasControlInsertWaitProfile {
+  const normalizedName = normalizeLabel(entry.name);
+  const normalizedStatus = entry.status.map((value) => normalizeLabel(value));
+  const baseSettleMs = Math.max(options.baseSettleMs ?? 4000, 1000);
+  const isModernFamily = entry.family === 'modern';
+  const hasPreviewStatus = normalizedStatus.some((value) => value.includes('preview'));
+  const hasComplexName = COMPLEX_INSERT_WAIT_KEYWORDS.some((keyword) => normalizedName.includes(keyword));
+  const hasContextualHost = CONTEXTUAL_INSERT_WAIT_KEYWORDS.some((keyword) => normalizedName.includes(keyword));
+  const reasons: string[] = [];
+
+  if (isModernFamily) {
+    reasons.push('modern-family');
+  }
+  if (hasPreviewStatus) {
+    reasons.push('preview-status');
+  }
+  if (hasComplexName) {
+    reasons.push('complex-name');
+  }
+  if (hasContextualHost) {
+    reasons.push('contextual-host');
+  }
+
+  const tier: CanvasControlInsertWaitProfileTier = hasContextualHost || hasPreviewStatus || (isModernFamily && hasComplexName)
+    ? 'heavy'
+    : isModernFamily
+      ? 'modern'
+      : hasComplexName
+        ? 'complex'
+        : 'standard';
+
+  switch (tier) {
+    case 'modern':
+      return {
+        tier,
+        searchSettleMs: 1000,
+        searchStablePasses: 2,
+        postInsertSettleMs: Math.max(baseSettleMs + 1000, 5000),
+        readyPollMs: 750,
+        readyTimeoutMs: Math.max(baseSettleMs * 3, 12000),
+        reasons,
+      };
+    case 'complex':
+      return {
+        tier,
+        searchSettleMs: 1200,
+        searchStablePasses: 3,
+        postInsertSettleMs: Math.max(baseSettleMs + 2000, 6000),
+        readyPollMs: 750,
+        readyTimeoutMs: Math.max(baseSettleMs * 3, 12000),
+        reasons,
+      };
+    case 'heavy':
+      return {
+        tier,
+        searchSettleMs: 1600,
+        searchStablePasses: 3,
+        postInsertSettleMs: Math.max(baseSettleMs + 4000, 8000),
+        readyPollMs: 1000,
+        readyTimeoutMs: Math.max(baseSettleMs * 4, 16000),
+        reasons,
+      };
+    case 'standard':
+    default:
+      return {
+        tier: 'standard',
+        searchSettleMs: 800,
+        searchStablePasses: 2,
+        postInsertSettleMs: Math.max(baseSettleMs, 4000),
+        readyPollMs: 500,
+        readyTimeoutMs: Math.max(baseSettleMs * 2, 8000),
+        reasons,
+      };
+  }
+}
+
+export function resolveCanvasControlInsertReportResumeSelection(
+  catalog: CanvasControlCatalogDocument,
+  insertReport: CanvasControlInsertReportDocument
+): CanvasControlCatalogResumeSelection {
+  const checkpoint =
+    insertReport.selectionCheckpoint ??
+    (insertReport.selection ? buildCanvasControlCatalogSelectionCheckpoint(catalog, insertReport.selection) : undefined);
+
+  if (!checkpoint) {
+    throw new Error(
+      'Insert report does not include selection metadata. Pass --catalog-start-at manually or regenerate the report with the current chunk-selection tooling.'
+    );
+  }
+
+  if (!checkpoint.resumeSelection || !checkpoint.nextControl || checkpoint.remainingControls < 1) {
+    throw new Error('Insert report does not have a remaining catalog chunk to resume.');
+  }
+
+  return checkpoint.resumeSelection;
 }
 
 export function buildCanvasHarvestFixturePrototypeDraftDocument(
@@ -1254,11 +1419,11 @@ function buildPrototypeSuggestions(
     score: number;
   }
 
-  const controlTokens = new Set(buildControlMatchTokens(control));
+  const controlMatch = buildControlMatchIndex(control);
   const suggestions: ScoredPrototypeSuggestion[] = [];
 
   for (const template of registry.templates) {
-    const bestMatch = findBestTemplateMatch(template, controlTokens);
+    const bestMatch = findBestTemplateMatch(template, controlMatch);
     if (!bestMatch || !isTemplateCompatibleWithControlFamily(template, control.family)) {
       continue;
     }
@@ -1284,8 +1449,42 @@ function buildPrototypeSuggestions(
   return suggestions.map(({ score: _score, ...suggestion }) => suggestion);
 }
 
-function buildControlMatchTokens(control: Pick<CanvasControlCatalogEntry, 'family' | 'name'>): string[] {
-  return [...new Set(buildCanvasControlSearchTerms(control).flatMap((term) => buildComparableTokens(term)))];
+interface ComparableMatchParts {
+  combined: string;
+  familyStrippedCombined: string;
+  rawTokens: string[];
+  familyStrippedRawTokens: string[];
+}
+
+interface ControlMatchIndex {
+  exactTokens: Set<string>;
+  rawTokens: Set<string>;
+}
+
+function buildControlMatchIndex(control: Pick<CanvasControlCatalogEntry, 'family' | 'name'>): ControlMatchIndex {
+  const key = makeCatalogKey(control.family, control.name);
+  const terms = buildCanvasControlSearchTerms(control).concat(CONTROL_PROTOTYPE_MATCH_ALIASES[key] ?? []);
+  const exactTokens = new Set<string>();
+  const rawTokens = new Set<string>();
+
+  for (const term of terms) {
+    const parts = buildComparableMatchParts(term);
+    for (const token of [parts.combined, parts.familyStrippedCombined]) {
+      if (token.length > 0) {
+        exactTokens.add(token);
+      }
+    }
+    for (const token of parts.rawTokens.concat(parts.familyStrippedRawTokens)) {
+      if (token.length > 0) {
+        rawTokens.add(token);
+      }
+    }
+  }
+
+  return {
+    exactTokens,
+    rawTokens,
+  };
 }
 
 function buildPrototypeSuggestionNotes(suggestions: CanvasHarvestFixturePrototypeSuggestion[]): string[] {
@@ -1709,6 +1908,11 @@ function summarizeInsertReport(options: {
     notes.push(`${unmatchedReportEntryCount} insert report entries do not exist in the current catalog input.`);
   }
 
+  const selectionNote = buildInsertReportSelectionNote(options.insertReport.selection);
+  if (selectionNote) {
+    notes.push(selectionNote);
+  }
+
   return {
     path: options.insertReportPath,
     generatedAt: options.insertReport.generatedAt,
@@ -1781,6 +1985,45 @@ function buildInsertObservation(
   };
 }
 
+function buildInsertReportSelectionNote(selection: CanvasControlCatalogSelectionSummary | undefined): string | undefined {
+  if (!selection) {
+    return undefined;
+  }
+
+  const scoped =
+    Boolean(selection.family) ||
+    Boolean(selection.startAt) ||
+    Boolean(selection.limit) ||
+    selection.startIndex > 0 ||
+    selection.remainingControls > 0 ||
+    selection.matchingControls !== selection.selectedControls;
+
+  if (!scoped) {
+    return undefined;
+  }
+
+  const parts = [`Insert report selection covered ${selection.selectedControls} of ${selection.matchingControls} matching catalog controls`];
+  if (selection.family) {
+    parts.push(`for the ${selection.family} family`);
+  }
+  if (selection.startAt) {
+    parts.push(`starting at ${JSON.stringify(selection.startAt)}`);
+  }
+  if (selection.limit) {
+    parts.push(`with limit ${selection.limit}`);
+  }
+  if (selection.firstSelectedControl || selection.lastSelectedControl) {
+    parts.push(
+      `(range ${describeSelectionControl(selection.firstSelectedControl)} -> ${describeSelectionControl(selection.lastSelectedControl)})`
+    );
+  }
+  if (selection.remainingControls > 0) {
+    parts.push(`${selection.remainingControls} controls remain after this chunk`);
+  }
+
+  return `${parts.join(' ')}.`;
+}
+
 function buildInsertObservationNotes(observation: CanvasHarvestFixtureInsertObservation | undefined): string[] {
   if (!observation) {
     return [];
@@ -1825,12 +2068,12 @@ function resolveTemplateForConstructor(
 
 function findBestTemplateMatch(
   template: CanvasTemplateRecord,
-  controlTokens: Set<string>
+  controlMatch: ControlMatchIndex
 ): { matchType: CanvasTemplateMatchType; constructor?: string; score: number } | undefined {
-  const displayNameMatch = findTemplateAliasMatch(controlTokens, template.aliases?.displayNames, 'displayName', 90);
-  const yamlNameMatch = findTemplateAliasMatch(controlTokens, template.aliases?.yamlNames, 'yamlName', 90);
-  const constructorMatch = findTemplateAliasMatch(controlTokens, template.aliases?.constructors, 'constructor', 100);
-  const templateNameMatch = findTemplateAliasMatch(controlTokens, [template.templateName], 'templateName', 80);
+  const displayNameMatch = findTemplateAliasMatch(controlMatch, template.aliases?.displayNames, 'displayName', 90);
+  const yamlNameMatch = findTemplateAliasMatch(controlMatch, template.aliases?.yamlNames, 'yamlName', 90);
+  const constructorMatch = findTemplateAliasMatch(controlMatch, template.aliases?.constructors, 'constructor', 100);
+  const templateNameMatch = findTemplateAliasMatch(controlMatch, [template.templateName], 'templateName', 80);
   const matches = [constructorMatch, displayNameMatch, yamlNameMatch, templateNameMatch].filter(
     (
       match
@@ -1845,18 +2088,30 @@ function findBestTemplateMatch(
 }
 
 function findTemplateAliasMatch(
-  controlTokens: Set<string>,
+  controlMatch: ControlMatchIndex,
   values: string[] | undefined,
   matchType: CanvasTemplateMatchType,
   baseScore: number
 ): { matchType: CanvasTemplateMatchType; constructor?: string; score: number } | undefined {
   for (const value of values ?? []) {
-    const tokens = buildComparableTokens(value);
-    if (tokens.some((token) => controlTokens.has(token))) {
+    const parts = buildComparableMatchParts(value);
+    const exactMatch =
+      (parts.familyStrippedCombined.length > 0 && controlMatch.exactTokens.has(parts.familyStrippedCombined)) ||
+      (parts.combined.length > 0 && controlMatch.exactTokens.has(parts.combined));
+    if (exactMatch) {
       return {
         matchType,
         constructor: matchType === 'constructor' ? value : undefined,
-        score: baseScore,
+        score: baseScore + 10,
+      };
+    }
+
+    const subsetTokens = parts.familyStrippedRawTokens.length > 0 ? parts.familyStrippedRawTokens : parts.rawTokens;
+    if (subsetTokens.length > 0 && subsetTokens.every((token) => controlMatch.rawTokens.has(token))) {
+      return {
+        matchType,
+        constructor: matchType === 'constructor' ? value : undefined,
+        score: baseScore + Math.min(5, subsetTokens.length),
       };
     }
   }
@@ -1904,30 +2159,40 @@ function normalizeToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-function buildComparableTokens(value: string): string[] {
+function normalizeLabel(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function buildComparableMatchParts(value: string): ComparableMatchParts {
   const expanded = value.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
   const rawTokens = expanded
     .split(/[^A-Za-z0-9]+/)
-    .map((token) => token.trim())
+    .map((token) => normalizeToken(token))
     .filter((token) => token.length > 0);
-  const tokens = new Set<string>();
   const combined = normalizeToken(expanded);
+  const familyStrippedCombined = combined.length > 0 ? stripKnownFamilyPrefix(combined) : '';
+  const familyStrippedRawTokens = rawTokens.filter((token) => token !== 'classic' && token !== 'modern');
 
-  if (combined.length > 0) {
-    tokens.add(combined);
-    const familyStripped = stripKnownFamilyPrefix(combined);
-    if (familyStripped.length > 0) {
-      tokens.add(familyStripped);
-    }
+  return {
+    combined,
+    familyStrippedCombined,
+    rawTokens,
+    familyStrippedRawTokens,
+  };
+}
+
+function buildComparableTokens(value: string): string[] {
+  const parts = buildComparableMatchParts(value);
+  const tokens = new Set<string>();
+
+  if (parts.combined.length > 0) {
+    tokens.add(parts.combined);
   }
-
-  for (const token of rawTokens) {
-    const normalized = normalizeToken(token);
-    if (normalized.length === 0) {
-      continue;
-    }
-
-    tokens.add(normalized);
+  if (parts.familyStrippedCombined.length > 0) {
+    tokens.add(parts.familyStrippedCombined);
+  }
+  for (const token of parts.rawTokens) {
+    tokens.add(token);
   }
 
   return [...tokens];
@@ -2060,6 +2325,14 @@ function describeInsertCandidate(candidate: CanvasControlInsertReportCandidate |
   }
 
   return candidate.category ? `${candidate.title} (${candidate.category})` : candidate.title;
+}
+
+function describeSelectionControl(control: { family: 'classic' | 'modern'; name: string } | undefined): string {
+  if (!control) {
+    return 'n/a';
+  }
+
+  return `${control.family}/${control.name}`;
 }
 
 function mergeProperties(

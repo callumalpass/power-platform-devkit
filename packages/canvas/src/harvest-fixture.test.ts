@@ -4,6 +4,7 @@ import type { CanvasTemplateRegistryDocument } from './index';
 import {
   assertCanvasHarvestFixtureCatalogCanWriteOutputs,
   buildCanvasControlSearchTerms,
+  buildCanvasControlInsertWaitProfile,
   buildCanvasHarvestFixturePlan,
   buildCanvasHarvestFixturePrototypeDraftDocument,
   buildCanvasHarvestPrototypeValidationFixtureDocument,
@@ -11,6 +12,7 @@ import {
   promoteCanvasHarvestFixturePrototypeDraft,
   recordCanvasHarvestFixturePrototypeValidation,
   recordCanvasHarvestFixturePrototypeValidations,
+  resolveCanvasControlInsertReportResumeSelection,
   renderCanvasHarvestFixture,
   renderCanvasHarvestPrototypeValidationFixture,
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
@@ -332,6 +334,96 @@ describe('canvas harvest fixture planning', () => {
     ]);
   });
 
+  it('uses the standard wait profile for simple classic controls', () => {
+    expect(
+      buildCanvasControlInsertWaitProfile(
+        {
+          family: 'classic',
+          name: 'Label',
+          status: [],
+        },
+        {
+          baseSettleMs: 3000,
+        }
+      )
+    ).toEqual({
+      tier: 'standard',
+      searchSettleMs: 800,
+      searchStablePasses: 2,
+      postInsertSettleMs: 4000,
+      readyPollMs: 500,
+      readyTimeoutMs: 8000,
+      reasons: [],
+    });
+  });
+
+  it('uses a modern wait profile for simple fluent controls', () => {
+    expect(
+      buildCanvasControlInsertWaitProfile(
+        {
+          family: 'modern',
+          name: 'Text',
+          status: [],
+        },
+        {
+          baseSettleMs: 4000,
+        }
+      )
+    ).toEqual({
+      tier: 'modern',
+      searchSettleMs: 1000,
+      searchStablePasses: 2,
+      postInsertSettleMs: 5000,
+      readyPollMs: 750,
+      readyTimeoutMs: 12000,
+      reasons: ['modern-family'],
+    });
+  });
+
+  it('escalates to heavy wait profiles for preview or contextual controls', () => {
+    expect(
+      buildCanvasControlInsertWaitProfile(
+        {
+          family: 'modern',
+          name: 'Date picker',
+          status: ['preview'],
+        },
+        {
+          baseSettleMs: 4000,
+        }
+      )
+    ).toEqual({
+      tier: 'heavy',
+      searchSettleMs: 1600,
+      searchStablePasses: 3,
+      postInsertSettleMs: 8000,
+      readyPollMs: 1000,
+      readyTimeoutMs: 16000,
+      reasons: ['modern-family', 'preview-status', 'complex-name'],
+    });
+
+    expect(
+      buildCanvasControlInsertWaitProfile(
+        {
+          family: 'classic',
+          name: 'Display and edit form',
+          status: [],
+        },
+        {
+          baseSettleMs: 4000,
+        }
+      )
+    ).toEqual({
+      tier: 'heavy',
+      searchSettleMs: 1600,
+      searchStablePasses: 3,
+      postInsertSettleMs: 8000,
+      readyPollMs: 1000,
+      readyTimeoutMs: 16000,
+      reasons: ['complex-name', 'contextual-host'],
+    });
+  });
+
   it('tracks prototype and registry coverage against the pinned catalog', () => {
     const plan = buildCanvasHarvestFixturePlan({
       catalog,
@@ -486,6 +578,82 @@ describe('canvas harvest fixture planning', () => {
     );
   });
 
+  it('records intentional insert-report chunk selection in the plan summary', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      catalogPath: resolve('registries/canvas-control-catalog.json'),
+      registry,
+      prototypes,
+      insertReport: {
+        ...insertReport,
+        selection: {
+          includeRetired: false,
+          family: 'modern',
+          startAt: 'Button',
+          limit: 1,
+          matchingControls: 2,
+          selectedControls: 1,
+          remainingControls: 1,
+          startIndex: 0,
+          firstSelectedControl: {
+            family: 'modern',
+            name: 'Button',
+          },
+          lastSelectedControl: {
+            family: 'modern',
+            name: 'Button',
+          },
+        },
+        entries: [insertReport.entries[1]!],
+        totals: {
+          attempted: 1,
+          inserted: 1,
+          covered: 0,
+          notFound: 0,
+          failed: 0,
+        },
+      },
+      insertReportPath: resolve('/tmp/canvas-control-insert-report-chunk.json'),
+      generatedAt: '2026-03-10T02:00:00.000Z',
+    });
+
+    expect(plan.insertReportSummary?.alignment).toBe('partial');
+    expect(plan.insertReportSummary?.notes).toContain(
+      'Insert report selection covered 1 of 2 matching catalog controls for the modern family starting at "Button" with limit 1 (range modern/Button -> modern/Button) 1 controls remain after this chunk.'
+    );
+  });
+
+  it('derives the next chunk selection from a prior insert report', () => {
+    expect(
+      resolveCanvasControlInsertReportResumeSelection(catalog, {
+        ...insertReport,
+        selection: {
+          includeRetired: false,
+          family: 'modern',
+          startAt: 'Button',
+          limit: 1,
+          matchingControls: 2,
+          selectedControls: 1,
+          remainingControls: 1,
+          startIndex: 0,
+          firstSelectedControl: {
+            family: 'modern',
+            name: 'Button',
+          },
+          lastSelectedControl: {
+            family: 'modern',
+            name: 'Button',
+          },
+        },
+      })
+    ).toEqual({
+      includeRetired: false,
+      family: 'modern',
+      startAt: 'modern/Text',
+      limit: 1,
+    });
+  });
+
   it('builds draft prototype scaffolds from a persisted legacy plan shape', () => {
     const legacyPlan = {
       schemaVersion: 1,
@@ -566,6 +734,99 @@ describe('canvas harvest fixture planning', () => {
         },
       ],
     });
+  });
+
+  it('rejects generic token overlaps that would mis-suggest a different modern constructor', () => {
+    const registryWithModernInfoButton: CanvasTemplateRegistryDocument = {
+      ...registry,
+      templates: registry.templates.concat({
+        templateName: 'modernInformationButton',
+        templateVersion: '1.0.0',
+        aliases: {
+          constructors: ['ModernInformationButton'],
+        },
+        contentHash: 'modern-information-button',
+        provenance: {
+          kind: 'harvested',
+          source: 'test',
+        },
+      }),
+    };
+    const prototypesWithoutModernButton: CanvasHarvestFixturePrototypeDocument = {
+      ...prototypes,
+      prototypes: prototypes.prototypes.filter(
+        (prototype) => !(prototype.family === 'modern' && prototype.catalogName === 'Button')
+      ),
+    };
+    const plan = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:05:00.000Z',
+      controls: [
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+      ],
+    } as unknown as Parameters<typeof buildCanvasHarvestFixturePrototypeDraftDocument>[0]['plan'];
+
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan,
+      registry: registryWithModernInfoButton,
+      prototypes: prototypesWithoutModernButton,
+      generatedAt: '2026-03-10T00:06:00.000Z',
+    });
+
+    expect(drafts.counts).toEqual({
+      draftControls: 0,
+      skippedControls: 1,
+    });
+    expect(drafts.skipped).toEqual([
+      {
+        family: 'modern',
+        catalogName: 'Button',
+        status: 'prototype-missing',
+        reason: 'The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.',
+        suggestedInsertQueries: ['Button'],
+      },
+    ]);
+  });
+
+  it('uses explicit prototype-match hints for known container variants', () => {
+    const plan = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:10:00.000Z',
+      controls: [
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+      ],
+    } as unknown as Parameters<typeof buildCanvasHarvestFixturePrototypeDraftDocument>[0]['plan'];
+
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:11:00.000Z',
+    });
+
+    expect(drafts.counts).toEqual({
+      draftControls: 1,
+      skippedControls: 0,
+    });
+    expect(drafts.drafts).toEqual([
+      expect.objectContaining({
+        family: 'classic',
+        catalogName: 'Container',
+        constructor: 'GroupContainer',
+      }),
+    ]);
   });
 
   it('promotes a generated draft into the pinned prototype document with harvested provenance notes', () => {

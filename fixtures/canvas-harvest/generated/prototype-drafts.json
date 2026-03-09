@@ -1,88 +1,777 @@
 {
   "counts": {
-    "draftControls": 0,
-    "skippedControls": 7
+    "draftControls": 12,
+    "skippedControls": 60
   },
-  "drafts": [],
-  "generatedAt": "2026-03-09T13:37:27.949Z",
-  "schemaVersion": 1,
-  "skipped": [
+  "drafts": [
     {
-      "catalogName": "Button",
+      "catalogName": "Container",
+      "constructor": "GroupContainer",
       "family": "classic",
-      "prototypeSuggestions": [
-        {
-          "constructor": "Classic/Button",
-          "matchType": "constructor",
-          "templateName": "button",
-          "templateVersion": "2.2.0"
-        }
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
+        "Suggested Insert-pane queries: Container.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
       ],
-      "reason": "A pinned fixture prototype already exists for this control.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Button"
-      ]
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=320",
+        "Visible": "=true",
+        "Width": "=600"
+      }
     },
     {
       "catalogName": "Date picker",
+      "constructor": "Classic/DatePicker",
       "family": "classic",
-      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Date picker"
-      ]
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: Classic/DatePicker -> datepicker@2.6.0 (constructor match).",
+        "Suggested Insert-pane queries: Date picker.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Classic) using insert-pane-search. Queries: Date picker."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=40",
+        "Width": "=328"
+      }
     },
     {
-      "catalogName": "Button",
-      "family": "modern",
-      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Button"
-      ]
+      "catalogName": "Gallery",
+      "constructor": "Gallery",
+      "family": "classic",
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: Gallery -> gallery@2.15.0 (constructor match).",
+        "Suggested Insert-pane queries: Gallery, Vertical gallery.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=575",
+        "Width": "=640"
+      }
+    },
+    {
+      "catalogName": "Grid container",
+      "constructor": "GroupContainer",
+      "family": "classic",
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
+        "Suggested Insert-pane queries: Grid container.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=320",
+        "Visible": "=true",
+        "Width": "=600"
+      }
+    },
+    {
+      "catalogName": "Horizontal container",
+      "constructor": "GroupContainer",
+      "family": "classic",
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
+        "Suggested Insert-pane queries: Horizontal container.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=320",
+        "Visible": "=true",
+        "Width": "=600"
+      }
+    },
+    {
+      "catalogName": "Shape",
+      "constructor": "Rectangle",
+      "family": "classic",
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).",
+        "Suggested Insert-pane queries: Shape, Rectangle.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=8",
+        "Visible": "=ThisItem.IsSelected",
+        "Width": "=4"
+      }
+    },
+    {
+      "catalogName": "Vertical container",
+      "constructor": "GroupContainer",
+      "family": "classic",
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
+        "Suggested Insert-pane queries: Vertical container.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=320",
+        "Visible": "=true",
+        "Width": "=600"
+      }
     },
     {
       "catalogName": "Date picker",
+      "constructor": "ModernDatePicker",
       "family": "modern",
-      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Date picker"
-      ]
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: ModernDatePicker -> modernDatePicker@1.0.0 (constructor match).",
+        "Suggested Insert-pane queries: Date picker.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Input) using insert-pane-search. Queries: Date picker."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=32",
+        "Width": "=320"
+      }
     },
     {
       "catalogName": "Info button",
+      "constructor": "ModernInformationButton",
       "family": "modern",
-      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Info button",
-        "Information button"
-      ]
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: ModernInformationButton -> modernInformationButton@1.0.0 (constructor match).",
+        "Suggested Insert-pane queries: Info button, Information button.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Information button (Display) using insert-pane-search. Queries: Info button, Information button."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=32",
+        "Width": "=32"
+      }
     },
     {
       "catalogName": "Radio group",
+      "constructor": "ModernRadio",
       "family": "modern",
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: ModernRadio -> modernRadio@1.0.0 (constructor match).",
+        "Suggested Insert-pane queries: Radio group, Radio.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Radio (Input) using insert-pane-search. Queries: Radio group, Radio."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=100",
+        "Width": "=320"
+      }
+    },
+    {
+      "catalogName": "Tabs or tab list",
+      "constructor": "ModernTabList",
+      "family": "modern",
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: ModernTabList -> modernTabList@1.0.0 (constructor match).",
+        "Suggested Insert-pane queries: Tabs or tab list, Tab list, Tabs.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Align.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Tab list (Input) using insert-pane-search. Queries: Tabs or tab list, Tab list."
+      ],
+      "properties": {
+        "Align": "=Align.Left",
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=60",
+        "Width": "=300"
+      }
+    },
+    {
+      "catalogName": "Text input",
+      "constructor": "ModernText",
+      "family": "modern",
+      "notes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Registry suggestion selected: ModernText -> modernText@1.0.0 (constructor match).",
+        "Suggested Insert-pane queries: Text input.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, Text, AutoHeight, Wrap, DisplayMode, Align, VerticalAlign, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
+      "properties": {
+        "Align": "=Align.Left",
+        "AutoHeight": "=false",
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=137",
+        "Text": "=\"Text\"",
+        "VerticalAlign": "=VerticalAlign.Middle",
+        "Visible": "=true",
+        "Width": "=150",
+        "Wrap": "=true"
+      }
+    }
+  ],
+  "generatedAt": "2026-03-09T15:44:21.817Z",
+  "schemaVersion": 1,
+  "skipped": [
+    {
+      "catalogName": "3D object",
+      "family": "classic",
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
-        "Radio group",
+        "3D object"
+      ]
+    },
+    {
+      "catalogName": "Add picture",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Add picture"
+      ]
+    },
+    {
+      "catalogName": "Address input",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Address input"
+      ]
+    },
+    {
+      "catalogName": "Attachments",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Attachments"
+      ]
+    },
+    {
+      "catalogName": "Audio",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Audio"
+      ]
+    },
+    {
+      "catalogName": "Barcode reader",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Barcode reader"
+      ]
+    },
+    {
+      "catalogName": "Barcode scanner",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Barcode scanner"
+      ]
+    },
+    {
+      "catalogName": "Camera",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Camera"
+      ]
+    },
+    {
+      "catalogName": "Card",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Card"
+      ]
+    },
+    {
+      "catalogName": "Check box",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Check box"
+      ]
+    },
+    {
+      "catalogName": "Column",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Column"
+      ]
+    },
+    {
+      "catalogName": "Column chart",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Column chart"
+      ]
+    },
+    {
+      "catalogName": "Combo box",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Combo box"
+      ]
+    },
+    {
+      "catalogName": "Data table",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Data table"
+      ]
+    },
+    {
+      "catalogName": "Display and Edit form",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Display and Edit form"
+      ]
+    },
+    {
+      "catalogName": "Display form",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Display form"
+      ]
+    },
+    {
+      "catalogName": "Drop down",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Drop down"
+      ]
+    },
+    {
+      "catalogName": "Edit form",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Edit form"
+      ]
+    },
+    {
+      "catalogName": "Export",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Export"
+      ]
+    },
+    {
+      "catalogName": "HTML text",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "HTML text"
+      ]
+    },
+    {
+      "catalogName": "Import",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Import"
+      ]
+    },
+    {
+      "catalogName": "Line chart",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Line chart"
+      ]
+    },
+    {
+      "catalogName": "List box",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "List box"
+      ]
+    },
+    {
+      "catalogName": "Map",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Map"
+      ]
+    },
+    {
+      "catalogName": "Measuring Camera",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Measuring Camera"
+      ]
+    },
+    {
+      "catalogName": "Microphone",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Microphone"
+      ]
+    },
+    {
+      "catalogName": "PDF viewer",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "PDF viewer"
+      ]
+    },
+    {
+      "catalogName": "Pen input",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Pen input"
+      ]
+    },
+    {
+      "catalogName": "Pie chart",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Pie chart"
+      ]
+    },
+    {
+      "catalogName": "Power BI tile",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Power BI tile"
+      ]
+    },
+    {
+      "catalogName": "Radio",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
         "Radio"
       ]
     },
     {
-      "catalogName": "Tabs or tab list",
+      "catalogName": "Rating",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Rating"
+      ]
+    },
+    {
+      "catalogName": "Rich text editor",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Rich text editor"
+      ]
+    },
+    {
+      "catalogName": "Screen",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Screen"
+      ]
+    },
+    {
+      "catalogName": "Slider",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Slider"
+      ]
+    },
+    {
+      "catalogName": "Stream Video",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Stream Video",
+        "Video"
+      ]
+    },
+    {
+      "catalogName": "Text input",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Text input"
+      ]
+    },
+    {
+      "catalogName": "Timer",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Timer"
+      ]
+    },
+    {
+      "catalogName": "Toggle",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Toggle"
+      ]
+    },
+    {
+      "catalogName": "Video",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Video"
+      ]
+    },
+    {
+      "catalogName": "View in MR",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "View in MR"
+      ]
+    },
+    {
+      "catalogName": "View shape in MR",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "View shape in MR"
+      ]
+    },
+    {
+      "catalogName": "Web barcode scanner",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Web barcode scanner",
+        "Barcode reader"
+      ]
+    },
+    {
+      "catalogName": "Avatar",
       "family": "modern",
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
-        "Tabs or tab list",
-        "Tab list",
-        "Tabs"
+        "Avatar"
+      ]
+    },
+    {
+      "catalogName": "Badge",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Badge"
+      ]
+    },
+    {
+      "catalogName": "Button",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Button"
+      ]
+    },
+    {
+      "catalogName": "Card",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Card"
+      ]
+    },
+    {
+      "catalogName": "Checkbox",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Checkbox"
+      ]
+    },
+    {
+      "catalogName": "Combobox",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Combobox"
+      ]
+    },
+    {
+      "catalogName": "Copilot answer",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Copilot answer"
+      ]
+    },
+    {
+      "catalogName": "Dropdown",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Dropdown"
+      ]
+    },
+    {
+      "catalogName": "Header",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Header"
+      ]
+    },
+    {
+      "catalogName": "Link",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Link"
+      ]
+    },
+    {
+      "catalogName": "Number input",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Number input"
+      ]
+    },
+    {
+      "catalogName": "Progress bar",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Progress bar"
+      ]
+    },
+    {
+      "catalogName": "Slider",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Slider"
+      ]
+    },
+    {
+      "catalogName": "Spinner",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Spinner"
+      ]
+    },
+    {
+      "catalogName": "Stream",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Stream"
+      ]
+    },
+    {
+      "catalogName": "Table",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Table"
+      ]
+    },
+    {
+      "catalogName": "Toggle",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Toggle"
       ]
     }
   ],
-  "sourcePlanGeneratedAt": "2026-03-09T12:21:27.948Z",
-  "sourcePrototypeGeneratedAt": "2026-03-09T13:37:25.835Z"
+  "sourcePlanGeneratedAt": "2026-03-09T15:44:21.694Z",
+  "sourcePrototypeGeneratedAt": "2026-03-09T13:58:32.687Z"
 }
