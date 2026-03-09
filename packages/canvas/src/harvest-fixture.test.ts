@@ -734,6 +734,11 @@ describe('canvas harvest fixture planning', () => {
             Width: '=160',
             Text: '="Button"',
           },
+          scaffoldProperties: {
+            Height: '=40',
+            Width: '=160',
+            Text: '="Button"',
+          },
           notes: [
             'Draft scaffold generated from fixture plan 2026-03-09T12:21:27.948Z.',
             'Registry suggestion selected: Classic/Button -> button@2.2.0 (constructor match).',
@@ -852,6 +857,205 @@ describe('canvas harvest fixture planning', () => {
         constructor: 'GroupContainer',
       }),
     ]);
+  });
+
+  it('omits non-portable runtime sample formulas from draft property scaffolds and records them for review', () => {
+    const registryWithShape: CanvasTemplateRegistryDocument = {
+      ...registry,
+      templates: registry.templates.concat({
+        templateName: 'rectangle',
+        templateVersion: '2.3.0',
+        aliases: {
+          constructors: ['Rectangle'],
+        },
+        files: {
+          'Harvest/Runtime.json': {
+            rules: {
+              Height: {
+                sampleScripts: ['8'],
+              },
+              Width: {
+                sampleScripts: ['4'],
+              },
+              Visible: {
+                sampleScripts: ['ThisItem.IsSelected'],
+              },
+            },
+          },
+        },
+        contentHash: 'classic-rectangle',
+        provenance: {
+          kind: 'harvested',
+          source: 'test',
+        },
+      }),
+    };
+    const plan = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:10:00.000Z',
+      controls: [
+        {
+          family: 'classic',
+          catalogName: 'Shape',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+      ],
+    } as unknown as Parameters<typeof buildCanvasHarvestFixturePrototypeDraftDocument>[0]['plan'];
+
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan,
+      registry: registryWithShape,
+      prototypes,
+      generatedAt: '2026-03-10T00:11:00.000Z',
+    });
+
+    expect(drafts.counts).toEqual({
+      draftControls: 1,
+      skippedControls: 0,
+    });
+    expect(drafts.drafts).toEqual([
+      {
+        family: 'classic',
+        catalogName: 'Shape',
+        constructor: 'Rectangle',
+        suggestedInsertQueries: ['Shape', 'Rectangle'],
+        suggestion: {
+          matchType: 'constructor',
+          constructor: 'Rectangle',
+          templateName: 'rectangle',
+          templateVersion: '2.3.0',
+        },
+        properties: {
+          Height: '=8',
+          Width: '=4',
+        },
+        scaffoldProperties: {
+          Height: '=8',
+          Width: '=4',
+        },
+        skippedPropertyScaffolds: [
+          {
+            propertyName: 'Visible',
+            script: '=ThisItem.IsSelected',
+            reason: 'non-portable-formula',
+          },
+        ],
+        notes: [
+          'Draft scaffold generated from fixture plan 2026-03-10T00:10:00.000Z.',
+          'Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).',
+          'Suggested Insert-pane queries: Shape, Rectangle.',
+          'Scaffold properties derived from harvested runtime metadata: Height, Width.',
+          'Skipped non-portable runtime sample formulas while scaffolding properties: Visible (=ThisItem.IsSelected).',
+          'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
+        ],
+      },
+    ]);
+  });
+
+  it('drops stale generated scaffold properties and notes during a merge refresh while preserving manual review notes', () => {
+    const built: CanvasHarvestFixturePrototypeDraftDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:12:00.000Z',
+      sourcePlanGeneratedAt: '2026-03-10T00:11:00.000Z',
+      sourcePrototypeGeneratedAt: '2026-03-10T00:10:00.000Z',
+      counts: {
+        draftControls: 1,
+        skippedControls: 0,
+      },
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Shape',
+          constructor: 'Rectangle',
+          suggestedInsertQueries: ['Shape', 'Rectangle'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'Rectangle',
+            templateName: 'rectangle',
+            templateVersion: '2.3.0',
+          },
+          properties: {
+            Height: '=8',
+            Width: '=4',
+          },
+          scaffoldProperties: {
+            Height: '=8',
+            Width: '=4',
+          },
+          skippedPropertyScaffolds: [
+            {
+              propertyName: 'Visible',
+              script: '=ThisItem.IsSelected',
+              reason: 'non-portable-formula',
+            },
+          ],
+          notes: [
+            'Draft scaffold generated from fixture plan 2026-03-10T00:11:00.000Z.',
+            'Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).',
+            'Suggested Insert-pane queries: Shape, Rectangle.',
+            'Scaffold properties derived from harvested runtime metadata: Height, Width.',
+            'Skipped non-portable runtime sample formulas while scaffolding properties: Visible (=ThisItem.IsSelected).',
+            'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
+          ],
+        },
+      ],
+      skipped: [],
+    };
+    const existing: CanvasHarvestFixturePrototypeDraftDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:05:00.000Z',
+      sourcePlanGeneratedAt: '2026-03-10T00:04:00.000Z',
+      sourcePrototypeGeneratedAt: '2026-03-10T00:03:00.000Z',
+      counts: {
+        draftControls: 1,
+        skippedControls: 0,
+      },
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Shape',
+          constructor: 'Rectangle',
+          suggestedInsertQueries: ['Shape', 'Rectangle'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'Rectangle',
+            templateName: 'rectangle',
+            templateVersion: '2.3.0',
+          },
+          properties: {
+            Height: '=8',
+            Width: '=4',
+            Visible: '=ThisItem.IsSelected',
+          },
+          notes: [
+            'Draft scaffold generated from fixture plan 2026-03-10T00:04:00.000Z.',
+            'Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).',
+            'Suggested Insert-pane queries: Shape, Rectangle.',
+            'Scaffold properties derived from harvested runtime metadata: Height, Width, Visible.',
+            'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
+            'Manual review note',
+          ],
+        },
+      ],
+      skipped: [],
+    };
+
+    const merged = mergeCanvasHarvestFixturePrototypeDraftDocument(built, existing);
+
+    expect(merged.preservedEntries).toBe(1);
+    expect(merged.preservedPropertyKeys).toBe(0);
+    expect(merged.preservedNotesEntries).toBe(1);
+    expect(merged.drafts).toEqual({
+      ...built,
+      drafts: [
+        {
+          ...built.drafts[0]!,
+          notes: [...built.drafts[0]!.notes!, 'Manual review note'],
+        },
+      ],
+    });
   });
 
   it('merges refreshed prototype drafts with existing manual review edits', () => {

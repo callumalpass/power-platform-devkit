@@ -200,7 +200,7 @@
       "family": "modern"
     }
   ],
-  "generatedAt": "2026-03-09T16:57:41.514Z",
+  "generatedAt": "2026-03-09T17:38:35.798Z",
   "paths": {
     "drafts": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-drafts.json"
   },
@@ -248,5 +248,5 @@
     "skippedDrafts": 2,
     "startIndex": 0
   },
-  "sourceDraftGeneratedAt": "2026-03-09T16:57:30.662Z"
+  "sourceDraftGeneratedAt": "2026-03-09T17:38:14.569Z"
 }

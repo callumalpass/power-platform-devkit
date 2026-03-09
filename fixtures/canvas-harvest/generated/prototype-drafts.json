@@ -21,6 +21,12 @@
         "Visible": "=true",
         "Width": "=600"
       },
+      "scaffoldProperties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=320",
+        "Visible": "=true",
+        "Width": "=600"
+      },
       "suggestedInsertQueries": [
         "Container"
       ],
@@ -43,6 +49,11 @@
         "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
       ],
       "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=575",
+        "Width": "=640"
+      },
+      "scaffoldProperties": {
         "DisplayMode": "=DisplayMode.Edit",
         "Height": "=575",
         "Width": "=640"
@@ -75,6 +86,12 @@
         "Visible": "=true",
         "Width": "=600"
       },
+      "scaffoldProperties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=320",
+        "Visible": "=true",
+        "Width": "=600"
+      },
       "suggestedInsertQueries": [
         "Grid container"
       ],
@@ -102,6 +119,12 @@
         "Visible": "=true",
         "Width": "=600"
       },
+      "scaffoldProperties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=320",
+        "Visible": "=true",
+        "Width": "=600"
+      },
       "suggestedInsertQueries": [
         "Horizontal container"
       ],
@@ -120,15 +143,27 @@
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).",
         "Suggested Insert-pane queries: Shape, Rectangle.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Skipped non-portable runtime sample formulas while scaffolding properties: Visible (=ThisItem.IsSelected).",
         "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
       ],
       "properties": {
         "DisplayMode": "=DisplayMode.Edit",
         "Height": "=8",
-        "Visible": "=ThisItem.IsSelected",
         "Width": "=4"
       },
+      "scaffoldProperties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=8",
+        "Width": "=4"
+      },
+      "skippedPropertyScaffolds": [
+        {
+          "propertyName": "Visible",
+          "reason": "non-portable-formula",
+          "script": "=ThisItem.IsSelected"
+        }
+      ],
       "suggestedInsertQueries": [
         "Shape",
         "Rectangle"
@@ -152,6 +187,12 @@
         "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
       ],
       "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=320",
+        "Visible": "=true",
+        "Width": "=600"
+      },
+      "scaffoldProperties": {
         "DisplayMode": "=DisplayMode.Edit",
         "Height": "=320",
         "Visible": "=true",
@@ -197,6 +238,11 @@
         "Height": "=32",
         "Width": "=320"
       },
+      "scaffoldProperties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=32",
+        "Width": "=320"
+      },
       "suggestedInsertQueries": [
         "Date picker"
       ],
@@ -234,6 +280,11 @@
         "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Radio (Input) using insert-pane-search. Queries: Radio group, Radio."
       ],
       "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=100",
+        "Width": "=320"
+      },
+      "scaffoldProperties": {
         "DisplayMode": "=DisplayMode.Edit",
         "Height": "=100",
         "Width": "=320"
@@ -281,6 +332,12 @@
         "Height": "=60",
         "Width": "=300"
       },
+      "scaffoldProperties": {
+        "Align": "=Align.Left",
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=60",
+        "Width": "=300"
+      },
       "suggestedInsertQueries": [
         "Tabs or tab list",
         "Tab list",
@@ -315,6 +372,17 @@
         "Width": "=150",
         "Wrap": "=true"
       },
+      "scaffoldProperties": {
+        "Align": "=Align.Left",
+        "AutoHeight": "=false",
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=137",
+        "Text": "=\"Text\"",
+        "VerticalAlign": "=VerticalAlign.Middle",
+        "Visible": "=true",
+        "Width": "=150",
+        "Wrap": "=true"
+      },
       "suggestedInsertQueries": [
         "Text input"
       ],
@@ -326,7 +394,7 @@
       }
     }
   ],
-  "generatedAt": "2026-03-09T17:24:45.425Z",
+  "generatedAt": "2026-03-09T17:38:14.569Z",
   "schemaVersion": 1,
   "skipped": [
     {

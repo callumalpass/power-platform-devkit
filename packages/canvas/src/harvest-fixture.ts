@@ -199,12 +199,22 @@ export interface CanvasHarvestFixturePrototypeDraftSkippedControl {
   notes?: string[];
 }
 
+export type CanvasHarvestFixturePrototypeDraftSkippedPropertyReason = 'non-portable-formula';
+
+export interface CanvasHarvestFixturePrototypeDraftSkippedProperty {
+  propertyName: string;
+  script: string;
+  reason: CanvasHarvestFixturePrototypeDraftSkippedPropertyReason;
+}
+
 export interface CanvasHarvestFixturePrototypeDraftEntry {
   family: 'classic' | 'modern';
   catalogName: string;
   constructor: string;
   variant?: string;
   properties?: Record<string, string>;
+  scaffoldProperties?: Record<string, string>;
+  skippedPropertyScaffolds?: CanvasHarvestFixturePrototypeDraftSkippedProperty[];
   notes?: string[];
   suggestedInsertQueries: string[];
   suggestion: CanvasHarvestFixturePrototypeSuggestion & { constructor: string };
@@ -406,6 +416,7 @@ export interface CanvasHarvestFixturePrototypePromotionBatchEntryDraftContext {
   templateVersion: string;
   propertyKeys: string[];
   suggestedInsertQueries: string[];
+  skippedPropertyScaffolds?: CanvasHarvestFixturePrototypeDraftSkippedProperty[];
   latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
 }
 
@@ -995,7 +1006,7 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
       continue;
     }
 
-    const draftProperties = buildPrototypeDraftProperties(options.registry, selectedSuggestion);
+    const draftPropertyScaffold = buildPrototypeDraftPropertyScaffold(options.registry, selectedSuggestion);
     drafts.push({
       family: control.family,
       catalogName: control.catalogName,
@@ -1010,13 +1021,20 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
             latestInsertObservation: control.latestInsertObservation,
           }
         : {}),
-      ...(draftProperties ? { properties: draftProperties } : {}),
+      ...(draftPropertyScaffold.properties ? { properties: draftPropertyScaffold.properties } : {}),
+      ...(draftPropertyScaffold.properties ? { scaffoldProperties: draftPropertyScaffold.properties } : {}),
+      ...(draftPropertyScaffold.skippedPropertyScaffolds
+        ? {
+            skippedPropertyScaffolds: draftPropertyScaffold.skippedPropertyScaffolds,
+          }
+        : {}),
       notes: buildPrototypeDraftNotes({
         control,
         suggestion: selectedSuggestion,
         planGeneratedAt: options.plan.generatedAt,
         suggestedInsertQueries,
-        draftProperties,
+        draftProperties: draftPropertyScaffold.properties,
+        skippedPropertyScaffolds: draftPropertyScaffold.skippedPropertyScaffolds,
       }),
     });
   }
@@ -1069,24 +1087,51 @@ export function mergeCanvasHarvestFixturePrototypeDraftDocument(
     if (existingEntry.properties) {
       const mergedProperties = {
         ...(entry.properties ?? {}),
-        ...existingEntry.properties,
       };
-      const preservedPropertyCount = Object.entries(existingEntry.properties).filter(
-        ([propertyName, propertyValue]) => entry.properties?.[propertyName] !== propertyValue
-      ).length;
+      const builtScaffoldProperties = entry.scaffoldProperties ?? entry.properties ?? {};
+      const existingScaffoldProperties = resolveExistingPrototypeDraftScaffoldProperties(existingEntry);
+      const skippedPropertyNames = new Set((entry.skippedPropertyScaffolds ?? []).map((property) => property.propertyName));
+      let preservedPropertyCount = 0;
+
+      for (const [propertyName, propertyValue] of Object.entries(existingEntry.properties)) {
+        if (skippedPropertyNames.has(propertyName)) {
+          continue;
+        }
+
+        const builtScaffoldValue = builtScaffoldProperties[propertyName];
+        const existingScaffoldValue = existingScaffoldProperties[propertyName];
+        const preserveProperty =
+          builtScaffoldValue !== undefined ||
+          existingScaffoldValue === undefined ||
+          existingScaffoldValue !== propertyValue;
+
+        if (!preserveProperty) {
+          continue;
+        }
+
+        mergedProperties[propertyName] = propertyValue;
+        if (entry.properties?.[propertyName] !== propertyValue) {
+          preservedPropertyCount += 1;
+        }
+      }
+
       if (preservedPropertyCount > 0) {
         properties = mergedProperties;
         preservedPropertyKeys += preservedPropertyCount;
         changed = true;
       } else if (!properties && Object.keys(mergedProperties).length > 0) {
         properties = mergedProperties;
+      } else if (Object.keys(mergedProperties).length !== Object.keys(entry.properties ?? {}).length) {
+        properties = Object.keys(mergedProperties).length > 0 ? mergedProperties : undefined;
       }
     }
 
     const draftNotes = entry.notes ?? [];
     const existingNotes = existingEntry.notes ?? [];
-    const preservedNotes = existingNotes.filter((note) => !draftNotes.includes(note));
-    const notes = dedupeStrings(draftNotes.concat(existingNotes));
+    const preservedNotes = existingNotes.filter(
+      (note) => !draftNotes.includes(note) && !isGeneratedPrototypeDraftNote(note)
+    );
+    const notes = dedupeStrings(draftNotes.concat(preservedNotes));
     if (preservedNotes.length > 0) {
       preservedNotesEntries += 1;
       changed = true;
@@ -1237,6 +1282,11 @@ export function buildCanvasHarvestFixturePrototypePromotionBatchDocument(
             templateVersion: draft.suggestion.templateVersion,
             propertyKeys: Object.keys(draft.properties ?? {}).sort(),
             suggestedInsertQueries: draft.suggestedInsertQueries,
+            ...(draft.skippedPropertyScaffolds
+              ? {
+                  skippedPropertyScaffolds: draft.skippedPropertyScaffolds,
+                }
+              : {}),
             ...(draft.latestInsertObservation
               ? {
                   latestInsertObservation: draft.latestInsertObservation,
@@ -1294,6 +1344,11 @@ export function buildCanvasHarvestFixturePrototypePromotionBatchDocument(
         templateVersion: draft.suggestion.templateVersion,
         propertyKeys: Object.keys(draft.properties ?? {}).sort(),
         suggestedInsertQueries: draft.suggestedInsertQueries,
+        ...(draft.skippedPropertyScaffolds
+          ? {
+              skippedPropertyScaffolds: draft.skippedPropertyScaffolds,
+            }
+          : {}),
         ...(draft.latestInsertObservation
           ? {
               latestInsertObservation: draft.latestInsertObservation,
@@ -2450,10 +2505,35 @@ const DRAFT_PROPERTY_PRIORITY = [
   'Visible',
 ] as const;
 
-function buildPrototypeDraftProperties(
+type DraftPropertyName = (typeof DRAFT_PROPERTY_PRIORITY)[number];
+
+interface PrototypeDraftPropertyScaffold {
+  properties?: Record<string, string>;
+  skippedPropertyScaffolds?: CanvasHarvestFixturePrototypeDraftSkippedProperty[];
+}
+
+interface PrototypeDraftPropertySelection {
+  script?: string;
+  skippedPropertyScaffold?: CanvasHarvestFixturePrototypeDraftSkippedProperty;
+}
+
+const DRAFT_ENUM_PROPERTY_ROOTS: Partial<Record<DraftPropertyName, string>> = {
+  Icon: 'Icon',
+  ImagePosition: 'ImagePosition',
+  DisplayMode: 'DisplayMode',
+  Align: 'Align',
+  VerticalAlign: 'VerticalAlign',
+};
+
+const DRAFT_BOOLEAN_PROPERTIES = new Set<DraftPropertyName>(['AutoHeight', 'Wrap', 'Visible']);
+const DRAFT_NUMERIC_PROPERTIES = new Set<DraftPropertyName>(['Height', 'Width']);
+const DRAFT_STRING_PROPERTIES = new Set<DraftPropertyName>(['Text', 'Image']);
+const PORTABLE_IDENTIFIER_PATH_PATTERN = /^[A-Za-z_][A-Za-z0-9_']*(\.[A-Za-z_][A-Za-z0-9_']*)*$/;
+
+function buildPrototypeDraftPropertyScaffold(
   registry: CanvasTemplateRegistryDocument,
   suggestion: CanvasHarvestFixturePrototypeSuggestion
-): Record<string, string> | undefined {
+): PrototypeDraftPropertyScaffold {
   const template = registry.templates.find(
     (candidate) =>
       candidate.templateName === suggestion.templateName && candidate.templateVersion === suggestion.templateVersion
@@ -2462,54 +2542,94 @@ function buildPrototypeDraftProperties(
   const rules = asJsonObject(runtime?.rules);
 
   if (!rules) {
-    return undefined;
+    return {};
   }
 
   const properties: Record<string, string> = {};
+  const skippedPropertyScaffolds: CanvasHarvestFixturePrototypeDraftSkippedProperty[] = [];
 
   for (const propertyName of DRAFT_PROPERTY_PRIORITY) {
     const rule = asJsonObject(rules[propertyName]);
     const sampleScripts = asStringArray(rule?.sampleScripts);
-    const script = selectPrototypeDraftScript(sampleScripts);
-    if (!script) {
+    const selection = selectPrototypeDraftScript(propertyName, sampleScripts);
+    if (!selection.script) {
+      if (selection.skippedPropertyScaffold) {
+        skippedPropertyScaffolds.push(selection.skippedPropertyScaffold);
+      }
       continue;
     }
 
-    properties[propertyName] = script.startsWith('=') ? script : `=${script}`;
+    properties[propertyName] = ensureFormulaPrefix(selection.script);
   }
 
-  return Object.keys(properties).length > 0 ? properties : undefined;
+  return {
+    ...(Object.keys(properties).length > 0 ? { properties } : {}),
+    ...(skippedPropertyScaffolds.length > 0 ? { skippedPropertyScaffolds } : {}),
+  };
 }
 
-function selectPrototypeDraftScript(sampleScripts: string[] | undefined): string | undefined {
+function selectPrototypeDraftScript(
+  propertyName: DraftPropertyName,
+  sampleScripts: string[] | undefined
+): PrototypeDraftPropertySelection {
+  let skippedPropertyScaffold: CanvasHarvestFixturePrototypeDraftSkippedProperty | undefined;
+
   for (const script of sampleScripts ?? []) {
-    if (isSafePrototypeDraftScript(script)) {
-      return script;
+    const trimmed = script.trim();
+    const bareScript = stripFormulaPrefix(trimmed);
+    if (bareScript.length === 0) {
+      continue;
+    }
+
+    if (isSafePrototypeDraftScript(propertyName, bareScript)) {
+      return {
+        script: bareScript,
+      };
+    }
+
+    if (!skippedPropertyScaffold && looksLikeNonPortablePrototypeDraftScript(bareScript)) {
+      skippedPropertyScaffold = {
+        propertyName,
+        script: ensureFormulaPrefix(trimmed),
+        reason: 'non-portable-formula',
+      };
     }
   }
 
-  return undefined;
+  return skippedPropertyScaffold ? { skippedPropertyScaffold } : {};
 }
 
-function isSafePrototypeDraftScript(script: string): boolean {
-  const trimmed = script.trim();
-  if (trimmed.length === 0) {
-    return false;
+function isSafePrototypeDraftScript(propertyName: DraftPropertyName, script: string): boolean {
+  if (DRAFT_NUMERIC_PROPERTIES.has(propertyName)) {
+    return /^-?\d+(\.\d+)?$/.test(script);
   }
 
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
-    return true;
+  if (DRAFT_BOOLEAN_PROPERTIES.has(propertyName)) {
+    return /^(true|false)$/i.test(script);
   }
 
-  if (/^(true|false)$/i.test(trimmed)) {
-    return true;
+  if (DRAFT_STRING_PROPERTIES.has(propertyName)) {
+    return /^"(?:[^"]|"")*"$/.test(script);
   }
 
-  if (/^"(?:[^"]|"")*"$/.test(trimmed)) {
-    return true;
+  const expectedEnumRoot = DRAFT_ENUM_PROPERTY_ROOTS[propertyName];
+  if (expectedEnumRoot) {
+    return new RegExp(`^${expectedEnumRoot}\\.[A-Za-z_][A-Za-z0-9_']*$`).test(script);
   }
 
-  return /^[A-Za-z_][A-Za-z0-9_']*(\.[A-Za-z_][A-Za-z0-9_']*)*$/.test(trimmed);
+  return false;
+}
+
+function looksLikeNonPortablePrototypeDraftScript(script: string): boolean {
+  return PORTABLE_IDENTIFIER_PATH_PATTERN.test(script);
+}
+
+function stripFormulaPrefix(script: string): string {
+  return script.startsWith('=') ? script.slice(1).trim() : script;
+}
+
+function ensureFormulaPrefix(script: string): string {
+  return script.startsWith('=') ? script : `=${script}`;
 }
 
 function asJsonObject(value: CanvasJsonValue | undefined): Record<string, CanvasJsonValue> | undefined {
@@ -2534,6 +2654,7 @@ function buildPrototypeDraftNotes(options: {
   planGeneratedAt: string;
   suggestedInsertQueries: string[];
   draftProperties?: Record<string, string>;
+  skippedPropertyScaffolds?: CanvasHarvestFixturePrototypeDraftSkippedProperty[];
 }): string[] {
   const notes = [
     `Draft scaffold generated from fixture plan ${options.planGeneratedAt}.`,
@@ -2544,6 +2665,13 @@ function buildPrototypeDraftNotes(options: {
     options.draftProperties && Object.keys(options.draftProperties).length > 0
       ? `Scaffold properties derived from harvested runtime metadata: ${Object.keys(options.draftProperties).join(', ')}.`
       : 'No simple scaffold properties were derived from the harvested runtime metadata.',
+    ...(options.skippedPropertyScaffolds && options.skippedPropertyScaffolds.length > 0
+      ? [
+          `Skipped non-portable runtime sample formulas while scaffolding properties: ${options.skippedPropertyScaffolds
+            .map((property) => `${property.propertyName} (${property.script})`)
+            .join(', ')}.`,
+        ]
+      : []),
     'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
   ];
 
@@ -2552,6 +2680,53 @@ function buildPrototypeDraftNotes(options: {
   }
 
   return notes;
+}
+
+function resolveExistingPrototypeDraftScaffoldProperties(
+  entry: CanvasHarvestFixturePrototypeDraftEntry
+): Record<string, string> {
+  if (entry.scaffoldProperties) {
+    return entry.scaffoldProperties;
+  }
+
+  const scaffoldPropertyNote = (entry.notes ?? []).find((note) =>
+    note.startsWith('Scaffold properties derived from harvested runtime metadata: ')
+  );
+  if (!scaffoldPropertyNote) {
+    return {};
+  }
+
+  const propertyList = scaffoldPropertyNote
+    .replace('Scaffold properties derived from harvested runtime metadata: ', '')
+    .replace(/\.$/, '');
+  const propertyNames = propertyList
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+
+  const resolved: Record<string, string> = {};
+  for (const propertyName of propertyNames) {
+    const propertyValue = entry.properties?.[propertyName];
+    if (propertyValue !== undefined) {
+      resolved[propertyName] = propertyValue;
+    }
+  }
+
+  return resolved;
+}
+
+function isGeneratedPrototypeDraftNote(note: string): boolean {
+  return (
+    note.startsWith('Draft scaffold generated from fixture plan ') ||
+    note.startsWith('Registry suggestion selected: ') ||
+    note === 'Suggested Insert-pane queries were unavailable in the source plan.' ||
+    note.startsWith('Suggested Insert-pane queries: ') ||
+    note === 'No simple scaffold properties were derived from the harvested runtime metadata.' ||
+    note.startsWith('Scaffold properties derived from harvested runtime metadata: ') ||
+    note.startsWith('Skipped non-portable runtime sample formulas while scaffolding properties: ') ||
+    note === 'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.' ||
+    note.startsWith('Latest Studio insert attempt (')
+  );
 }
 
 function buildPrototypeValidationBacklogNotes(options: {
