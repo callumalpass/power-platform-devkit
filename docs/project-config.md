@@ -72,6 +72,7 @@ secrets:
       prefix: PP_SECRET_
 templateRegistries:
   - ./registries/canvas-controls.json
+  - cache:seeded-controls
 build:
   canvas:
     mode: seeded
@@ -176,6 +177,23 @@ providerBindings:
 ```
 
 ## Project commands
+
+## Template registries
+
+`templateRegistries` declares pinned canvas metadata catalogs used by the
+canvas package.
+
+Resolution rules today:
+
+- relative paths resolve from the project root
+- `cache:NAME` resolves to `NAME.json` under the cache directory selected by
+  the canvas registry loader
+- later files override earlier ones when they define the same
+  `templateName@templateVersion`
+
+The canvas support matrix lives inside those registry files rather than inside
+`pp.config.*`, which keeps project intent separate from imported template
+metadata and provenance.
 
 ### Inspect
 
