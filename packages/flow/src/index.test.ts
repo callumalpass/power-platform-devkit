@@ -404,13 +404,13 @@ describe('FlowService', () => {
 
     const document = JSON.parse(await readFile(join(dir, 'patched', 'flow.json'), 'utf8')) as {
       metadata: {
-        connectionReferences: Array<{ name: string }>;
+        connectionReferences: Array<{ name: string; connectionReferenceLogicalName?: string }>;
         parameters: Record<string, string>;
       };
       definition: {
         parameters: {
           '$connections': {
-            value: Record<string, unknown>;
+            value: Record<string, { connectionReferenceLogicalName?: string; name?: string }>;
           };
           ApiBaseUrl: {
             defaultValue: string;
@@ -434,8 +434,13 @@ describe('FlowService', () => {
     };
 
     expect(document.metadata.connectionReferences[0]?.name).toBe('shared_exchangeonline');
+    expect(document.metadata.connectionReferences[0]?.connectionReferenceLogicalName).toBe('shared_exchangeonline');
     expect(document.metadata.parameters.ApiBaseUrl).toBe('https://next.example.test');
     expect(document.definition.parameters['$connections'].value.shared_exchangeonline).toBeDefined();
+    expect(document.definition.parameters['$connections'].value.shared_exchangeonline?.connectionReferenceLogicalName).toBe(
+      'shared_exchangeonline'
+    );
+    expect(document.definition.parameters['$connections'].value.shared_office365).toBeUndefined();
     expect(document.definition.parameters.ApiBaseUrl.defaultValue).toBe('https://next.example.test');
     expect(document.definition.actions.SendMail.inputs.subject).toBe("@{parameters('ApiBaseUrl')}");
     expect(document.definition.actions.SendMail.inputs.priority).toBe('High');

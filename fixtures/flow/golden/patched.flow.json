@@ -19,7 +19,7 @@
           "shared_exchangeonline": {
             "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
             "connectionId": "/connections/office365",
-            "connectionReferenceLogicalName": "shared_office365"
+            "connectionReferenceLogicalName": "shared_exchangeonline"
           }
         }
       },

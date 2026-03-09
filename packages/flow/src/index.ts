@@ -1199,8 +1199,31 @@ function renameConnectionReference(artifact: FlowArtifact, from: string, to: str
   if (connectionValues && connectionValues[from] !== undefined) {
     const value = connectionValues[from];
     delete connectionValues[from];
-    connectionValues[to] = value as FlowJsonValue;
+    connectionValues[to] = renameConnectionReferenceValue(value as FlowJsonValue, from, to);
   }
+}
+
+function renameConnectionReferenceValue(value: FlowJsonValue, from: string, to: string): FlowJsonValue {
+  if (Array.isArray(value)) {
+    return value.map((item) => renameConnectionReferenceValue(item, from, to));
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => {
+        if (
+          ['name', 'connectionReferenceLogicalName', 'connectionreferencelogicalname', 'logicalName'].includes(key) &&
+          nested === from
+        ) {
+          return [key, to];
+        }
+
+        return [key, renameConnectionReferenceValue(nested, from, to)];
+      })
+    );
+  }
+
+  return value;
 }
 
 function setFlowPathValue(root: Record<string, FlowJsonValue>, path: string[], value: FlowJsonValue): void {

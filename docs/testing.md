@@ -20,7 +20,8 @@ The committed fixtures currently cover:
   column-, and option-set-like Power Fx strings through inspect, validate, and
   build snapshots
 - canvas semantic diagnostics for invalid formula properties, missing template metadata, partial template support, and invalid-build failure payloads
-- flow unpack, validate, patch, and normalize outputs
+- flow unpack, validate, patch, and normalize outputs, including round-trip
+  connection-reference rename consistency inside patched artifacts
 - flow invalid-artifact validation diagnostics, including package-level
   diagnostic envelopes and CLI validation exit behavior
 - flow remote inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures

@@ -3,7 +3,7 @@
   "outPath": "<TMP_DIR>/normalized/flow.json",
   "summary": {
     "connectionReferenceCount": 1,
-    "definitionHash": "5ed686d5831e6ad49eb793ae325ae627bf0c5b9ad0e1e43cfb4c93798057b975",
+    "definitionHash": "bd3eadc0b9fabef56f4cea597fa2dad57f3f46870bf358004be350daf530156e",
     "environmentVariableCount": 1,
     "name": "Invoice Flow",
     "normalized": true,
