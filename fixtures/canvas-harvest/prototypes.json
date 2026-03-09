@@ -1,58 +1,78 @@
 {
-  "schemaVersion": 1,
-  "generatedAt": "2026-03-09T12:20:36.000Z",
+  "generatedAt": "2026-03-09T13:37:25.835Z",
   "prototypes": [
     {
-      "family": "classic",
       "catalogName": "Icon",
       "constructor": "Classic/Icon",
+      "family": "classic",
+      "notes": [
+        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
+      ],
       "properties": {
         "Height": "=32",
-        "Width": "=32",
-        "Icon": "=Icon.Add"
-      },
-      "notes": [
-        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
-      ]
+        "Icon": "=Icon.Add",
+        "Width": "=32"
+      }
     },
     {
-      "family": "classic",
       "catalogName": "Image",
       "constructor": "Image",
-      "properties": {
-        "Height": "=40",
-        "Width": "=40",
-        "Image": "=SampleImage",
-        "ImagePosition": "=ImagePosition.Fit"
-      },
+      "family": "classic",
       "notes": [
         "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
-      ]
+      ],
+      "properties": {
+        "Height": "=40",
+        "Image": "=SampleImage",
+        "ImagePosition": "=ImagePosition.Fit",
+        "Width": "=40"
+      }
     },
     {
-      "family": "classic",
       "catalogName": "Label",
       "constructor": "Label",
+      "family": "classic",
+      "notes": [
+        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
+      ],
       "properties": {
         "Height": "=40",
         "Text": "=\"Classic Label fixture\""
-      },
-      "notes": [
-        "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
-      ]
+      }
     },
     {
-      "family": "modern",
       "catalogName": "Text",
       "constructor": "ModernText",
-      "properties": {
-        "Height": "=40",
-        "Width": "=260",
-        "Text": "=\"Modern Text fixture\""
-      },
+      "family": "modern",
       "notes": [
         "Validated as a top-level pasted control inside HarvestFixtureContainer."
-      ]
+      ],
+      "properties": {
+        "Height": "=40",
+        "Text": "=\"Modern Text fixture\"",
+        "Width": "=260"
+      }
+    },
+    {
+      "catalogName": "Button",
+      "constructor": "Classic/Button",
+      "family": "classic",
+      "notes": [
+        "Promoted from generated draft artifact 2026-03-09T13:23:07.191Z (fixture plan 2026-03-09T12:21:27.948Z).",
+        "Constructor Classic/Button resolves to button@2.2.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: Align, DisplayMode, Height, Text, VerticalAlign, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending.",
+        "Manual review completed on 2026-03-10; live paste validation still pending."
+      ],
+      "properties": {
+        "Align": "=Align.Center",
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=40",
+        "Text": "=\"Button\"",
+        "VerticalAlign": "=VerticalAlign.Middle",
+        "Width": "=160"
+      }
     }
-  ]
+  ],
+  "schemaVersion": 1
 }
