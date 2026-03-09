@@ -1,0 +1,46 @@
+- HarvestFixtureContainer:
+    Control: GroupContainer@1.5.0
+    Variant: ManualLayout
+    Properties:
+      DropShadow: =DropShadow.None
+      Height: =152
+      Width: =628
+      X: =40
+      Y: =220
+    Children:
+      - HarvestClassicButton:
+          Control: Classic/Button@2.2.0
+          Properties:
+            Height: =40
+            Width: =160
+            X: =24
+            Y: =24
+            Align: =Align.Center
+            DisplayMode: =DisplayMode.Edit
+            Text: ="Button"
+            VerticalAlign: =VerticalAlign.Middle
+      - HarvestClassicIcon:
+          Control: Classic/Icon@2.5.0
+          Properties:
+            Height: =32
+            Width: =32
+            X: =324
+            Y: =24
+            Icon: =Icon.Add
+      - HarvestClassicImage:
+          Control: Image@2.2.3
+          Properties:
+            Height: =40
+            Width: =40
+            X: =24
+            Y: =84
+            Image: =SampleImage
+            ImagePosition: =ImagePosition.Fit
+      - HarvestClassicLabel:
+          Control: Label@2.5.1
+          Properties:
+            Height: =40
+            Width: =280
+            X: =324
+            Y: =84
+            Text: ="Classic Label fixture"

@@ -219,6 +219,25 @@ export interface CanvasHarvestFixturePrototypeValidationBacklogDocument {
   controls: CanvasHarvestFixturePrototypeValidationBacklogEntry[];
 }
 
+export interface CanvasHarvestPrototypeValidationFixtureSelectionEntry {
+  family: 'classic' | 'modern';
+  catalogName: string;
+  constructor: string;
+  validationStatus: CanvasHarvestFixturePrototypeValidationStatus;
+  planAlignment: CanvasHarvestFixturePrototypeValidationPlanAlignment;
+  templateName: string;
+  templateVersion: string;
+}
+
+export interface CanvasHarvestPrototypeValidationFixtureSkippedEntry {
+  family: 'classic' | 'modern';
+  catalogName: string;
+  constructor: string;
+  validationStatus: CanvasHarvestFixturePrototypeValidationStatus;
+  planAlignment: CanvasHarvestFixturePrototypeValidationPlanAlignment;
+  reason: string;
+}
+
 export interface AssertCanvasHarvestFixtureCatalogWriteOptions {
   catalog: CanvasControlCatalogDocument;
   catalogPath: string;
@@ -305,6 +324,14 @@ export interface RenderCanvasHarvestFixtureOptions {
   markerConstructor?: string;
 }
 
+export interface RenderCanvasHarvestPrototypeValidationFixtureOptions
+  extends Omit<RenderCanvasHarvestFixtureOptions, 'plan'> {
+  backlog: CanvasHarvestFixturePrototypeValidationBacklogDocument;
+  statuses?: CanvasHarvestFixturePrototypeValidationStatus[];
+  family?: 'classic' | 'modern';
+  limit?: number;
+}
+
 export interface RenderedCanvasHarvestFixture {
   yaml: string;
   renderedControlCount: number;
@@ -315,11 +342,18 @@ export interface RenderedCanvasHarvestFixture {
   markerTemplateVersion?: string;
 }
 
+export interface RenderedCanvasHarvestPrototypeValidationFixture extends RenderedCanvasHarvestFixture {
+  selectedControls: CanvasHarvestPrototypeValidationFixtureSelectionEntry[];
+  skippedControls: CanvasHarvestPrototypeValidationFixtureSkippedEntry[];
+}
+
 export const DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH = 'fixtures/canvas-harvest/generated/fixture-plan.json';
 export const DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH =
   'fixtures/canvas-harvest/generated/HarvestFixtureContainer.pa.yaml';
 export const DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BACKLOG_PATH =
   'fixtures/canvas-harvest/generated/prototype-validation-backlog.json';
+export const DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_YAML_PATH =
+  'fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml';
 
 const CONTROL_SEARCH_ALIASES: Record<string, string[]> = {
   'classic:gallery': ['Vertical gallery'],
@@ -623,6 +657,144 @@ export function buildCanvasHarvestFixturePrototypeValidationBacklogDocument(
       registryMissingControls: controls.filter((control) => !control.templateVersion).length,
     },
     controls,
+  };
+}
+
+export function renderCanvasHarvestPrototypeValidationFixture(
+  options: RenderCanvasHarvestPrototypeValidationFixtureOptions
+): RenderedCanvasHarvestPrototypeValidationFixture {
+  const statuses = normalizePrototypeValidationStatuses(options.statuses);
+  const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : undefined;
+  const prototypesByKey = new Map(
+    options.prototypes.prototypes.map((prototype) => [makeCatalogKey(prototype.family, prototype.catalogName), prototype] as const)
+  );
+  const controls: CanvasHarvestFixturePlanEntry[] = [];
+  const selectedControls: CanvasHarvestPrototypeValidationFixtureSelectionEntry[] = [];
+  const skippedControls: CanvasHarvestPrototypeValidationFixtureSkippedEntry[] = [];
+
+  for (const backlogControl of options.backlog.controls) {
+    if (!statuses.includes(backlogControl.validationStatus)) {
+      continue;
+    }
+
+    if (options.family && backlogControl.family !== options.family) {
+      continue;
+    }
+
+    const key = makeCatalogKey(backlogControl.family, backlogControl.catalogName);
+    const prototype = prototypesByKey.get(key);
+    if (!prototype) {
+      skippedControls.push({
+        family: backlogControl.family,
+        catalogName: backlogControl.catalogName,
+        constructor: backlogControl.constructor,
+        validationStatus: backlogControl.validationStatus,
+        planAlignment: backlogControl.planAlignment,
+        reason: 'The pinned prototype document no longer contains this backlog entry.',
+      });
+      continue;
+    }
+
+    const resolvedTemplate = resolveTemplateForConstructor(options.registry, prototype.constructor);
+    if (!resolvedTemplate) {
+      skippedControls.push({
+        family: backlogControl.family,
+        catalogName: backlogControl.catalogName,
+        constructor: prototype.constructor,
+        validationStatus: backlogControl.validationStatus,
+        planAlignment: backlogControl.planAlignment,
+        reason: `The pinned harvested registry does not currently resolve constructor ${prototype.constructor}.`,
+      });
+      continue;
+    }
+
+    selectedControls.push({
+      family: backlogControl.family,
+      catalogName: backlogControl.catalogName,
+      constructor: prototype.constructor,
+      validationStatus: backlogControl.validationStatus,
+      planAlignment: backlogControl.planAlignment,
+      templateName: resolvedTemplate.templateName,
+      templateVersion: resolvedTemplate.templateVersion,
+    });
+    controls.push({
+      family: backlogControl.family,
+      catalogName: backlogControl.catalogName,
+      description: `Prototype validation candidate (${backlogControl.validationStatus}, ${backlogControl.planAlignment}).`,
+      docPath: backlogControl.planStatus ? `prototype-validation/${backlogControl.planStatus}` : 'prototype-validation/backlog',
+      learnUrl: 'https://learn.microsoft.com/',
+      catalogStatus: [],
+      suggestedInsertQueries: backlogControl.suggestedInsertQueries,
+      status: 'resolved',
+      reason: `Pinned prototype ${prototype.constructor} selected from the prototype validation backlog.`,
+      fixtureConstructor: prototype.constructor,
+      templateName: resolvedTemplate.templateName,
+      templateVersion: resolvedTemplate.templateVersion,
+      notes: dedupeStrings([...backlogControl.notes, ...(prototype.notes ?? [])]),
+      ...(backlogControl.latestInsertObservation
+        ? {
+            latestInsertObservation: backlogControl.latestInsertObservation,
+          }
+        : {}),
+    });
+
+    if (limit && selectedControls.length >= limit) {
+      break;
+    }
+  }
+
+  if (selectedControls.length === 0) {
+    const familyNote = options.family ? ` family ${familyLabel(options.family)}` : '';
+    const skippedNote =
+      skippedControls.length > 0
+        ? ` ${skippedControls.length} matching controls were skipped because they no longer resolve in the pinned registry.`
+        : '';
+    throw new Error(
+      `No prototype validation controls matched the requested${familyNote} filters for statuses ${statuses.join(', ')}.${skippedNote}`
+    );
+  }
+
+  const plan: CanvasHarvestFixturePlan = {
+    schemaVersion: 1,
+    generatedAt: options.backlog.generatedAt,
+    catalogGeneratedAt: options.backlog.sourcePlanGeneratedAt,
+    registryGeneratedAt: options.registry.generatedAt,
+    prototypeGeneratedAt: options.prototypes.generatedAt,
+    catalogCounts: summarizePrototypeValidationSelectionCounts(selectedControls),
+    registryTemplateCount: options.registry.templates.length,
+    prototypeCount: options.prototypes.prototypes.length,
+    counts: {
+      catalogControls: controls.length,
+      resolvedControls: controls.length,
+      prototypeMissingControls: 0,
+      registryMissingControls: 0,
+    },
+    controls,
+  };
+  const rendered = renderCanvasHarvestFixture({
+    plan,
+    registry: options.registry,
+    prototypes: options.prototypes,
+    containerName: options.containerName,
+    containerConstructor: options.containerConstructor,
+    containerVariant: options.containerVariant,
+    containerX: options.containerX,
+    containerY: options.containerY,
+    columns: options.columns,
+    cellWidth: options.cellWidth,
+    cellHeight: options.cellHeight,
+    gutterX: options.gutterX,
+    gutterY: options.gutterY,
+    paddingX: options.paddingX,
+    paddingY: options.paddingY,
+    includePendingMarkers: false,
+    markerConstructor: options.markerConstructor,
+  });
+
+  return {
+    ...rendered,
+    selectedControls,
+    skippedControls,
   };
 }
 
@@ -1215,6 +1387,23 @@ function comparePrototypeValidationBacklogEntries(
     left.family.localeCompare(right.family) ||
     left.catalogName.localeCompare(right.catalogName)
   );
+}
+
+function normalizePrototypeValidationStatuses(
+  statuses: CanvasHarvestFixturePrototypeValidationStatus[] | undefined
+): CanvasHarvestFixturePrototypeValidationStatus[] {
+  const normalized = statuses && statuses.length > 0 ? statuses : ['failed', 'pending', 'unknown'];
+  return [...new Set(normalized)] as CanvasHarvestFixturePrototypeValidationStatus[];
+}
+
+function summarizePrototypeValidationSelectionCounts(
+  controls: CanvasHarvestPrototypeValidationFixtureSelectionEntry[]
+): CanvasControlCatalogCounts {
+  return {
+    total: controls.length,
+    classic: controls.filter((control) => control.family === 'classic').length,
+    modern: controls.filter((control) => control.family === 'modern').length,
+  };
 }
 
 function buildPrototypeValidationStatusNote(

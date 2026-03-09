@@ -10,6 +10,7 @@ import {
   promoteCanvasHarvestFixturePrototypeDraft,
   recordCanvasHarvestFixturePrototypeValidation,
   renderCanvasHarvestFixture,
+  renderCanvasHarvestPrototypeValidationFixture,
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
   DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH,
   type CanvasControlCatalogDocument,
@@ -914,6 +915,201 @@ describe('canvas harvest fixture planning', () => {
           'Recorded live validation marks this control failed via container-paste on 2026-03-10T00:25:00.000Z.',
         ]),
       })
+    );
+  });
+
+  it('renders a validation-only fixture from the pinned prototype backlog and skips unresolved entries', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-09T09:30:00.000Z',
+    });
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:00:00.000Z',
+    });
+    const promoted = promoteCanvasHarvestFixturePrototypeDraft({
+      drafts,
+      registry,
+      prototypes,
+      family: 'classic',
+      catalogName: 'Button',
+      generatedAt: '2026-03-10T00:10:00.000Z',
+      notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+    });
+    const validationRegistry: CanvasTemplateRegistryDocument = {
+      ...registry,
+      templates: [
+        ...registry.templates,
+        {
+          templateName: 'image',
+          templateVersion: '2.2.3',
+          aliases: {
+            constructors: ['Image'],
+          },
+          contentHash: 'classic-image',
+          provenance: {
+            kind: 'harvested',
+            source: 'test',
+          },
+        },
+      ],
+    };
+    const validationPrototypes: CanvasHarvestFixturePrototypeDocument = {
+      ...promoted.prototypes,
+      prototypes: promoted.prototypes.prototypes
+        .map((prototype) => {
+          if (
+            prototype.family === 'classic' &&
+            (prototype.catalogName === 'Icon' || prototype.catalogName === 'Label')
+          ) {
+            return {
+              ...prototype,
+              liveValidation: {
+                status: 'pending' as const,
+                recordedAt: '2026-03-10T00:18:00.000Z',
+                method: 'container-paste',
+              },
+              notes: ['Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending.'],
+            };
+          }
+
+          if (prototype.family === 'modern' && prototype.catalogName === 'Text') {
+            return {
+              ...prototype,
+              liveValidation: {
+                status: 'validated' as const,
+                recordedAt: '2026-03-10T00:19:00.000Z',
+                method: 'top-level-paste',
+              },
+            };
+          }
+
+          return prototype;
+        })
+        .concat({
+          family: 'classic',
+          catalogName: 'Image',
+          constructor: 'Image',
+          properties: {
+            Height: '=40',
+            Width: '=40',
+            Image: '=SampleImage',
+          },
+          liveValidation: {
+            status: 'pending' as const,
+            recordedAt: '2026-03-10T00:18:00.000Z',
+            method: 'container-paste',
+          },
+          notes: ['Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending.'],
+        }),
+    };
+    const backlog = buildCanvasHarvestFixturePrototypeValidationBacklogDocument({
+      plan,
+      registry: validationRegistry,
+      prototypes: validationPrototypes,
+      generatedAt: '2026-03-10T00:20:00.000Z',
+    });
+
+    const rendered = renderCanvasHarvestPrototypeValidationFixture({
+      backlog,
+      registry: validationRegistry,
+      prototypes: validationPrototypes,
+      columns: 2,
+      cellWidth: 240,
+      cellHeight: 40,
+      gutterX: 16,
+      gutterY: 12,
+    });
+
+    expect(rendered.renderedControlCount).toBe(4);
+    expect(rendered.pendingMarkerCount).toBe(0);
+    expect(rendered.selectedControls).toEqual([
+      {
+        family: 'classic',
+        catalogName: 'Button',
+        constructor: 'Classic/Button',
+        validationStatus: 'pending',
+        planAlignment: 'stale',
+        templateName: 'button',
+        templateVersion: '2.2.0',
+      },
+      {
+        family: 'classic',
+        catalogName: 'Image',
+        constructor: 'Image',
+        validationStatus: 'pending',
+        planAlignment: 'prototype-only',
+        templateName: 'image',
+        templateVersion: '2.2.3',
+      },
+      {
+        family: 'classic',
+        catalogName: 'Icon',
+        constructor: 'Classic/Icon',
+        validationStatus: 'pending',
+        planAlignment: 'aligned',
+        templateName: 'icon',
+        templateVersion: '2.5.0',
+      },
+      {
+        family: 'classic',
+        catalogName: 'Label',
+        constructor: 'Label',
+        validationStatus: 'pending',
+        planAlignment: 'aligned',
+        templateName: 'label',
+        templateVersion: '2.5.1',
+      },
+    ]);
+    expect(rendered.skippedControls).toEqual([
+      {
+        family: 'modern',
+        catalogName: 'Button',
+        constructor: 'ModernButton',
+        validationStatus: 'unknown',
+        planAlignment: 'aligned',
+        reason: 'The pinned harvested registry does not currently resolve constructor ModernButton.',
+      },
+    ]);
+    expect(rendered.yaml).toContain('- HarvestFixtureContainer:');
+    expect(rendered.yaml).toContain('- HarvestClassicButton:');
+    expect(rendered.yaml).toContain('Control: Classic/Button@2.2.0');
+    expect(rendered.yaml).toContain('- HarvestClassicImage:');
+    expect(rendered.yaml).toContain('Control: Image@2.2.3');
+    expect(rendered.yaml).toContain('- HarvestClassicIcon:');
+    expect(rendered.yaml).toContain('Control: Classic/Icon@2.5.0');
+    expect(rendered.yaml).toContain('- HarvestClassicLabel:');
+    expect(rendered.yaml).toContain('Control: Label@2.5.1');
+    expect(rendered.yaml).not.toContain('Marker');
+  });
+
+  it('fails when the requested validation slice has no renderable controls', () => {
+    const backlog = buildCanvasHarvestFixturePrototypeValidationBacklogDocument({
+      plan: buildCanvasHarvestFixturePlan({
+        catalog,
+        registry,
+        prototypes,
+        generatedAt: '2026-03-09T09:30:00.000Z',
+      }),
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:26:00.000Z',
+    });
+
+    expect(() =>
+      renderCanvasHarvestPrototypeValidationFixture({
+        backlog,
+        registry,
+        prototypes,
+        family: 'modern',
+        statuses: ['unknown'],
+      })
+    ).toThrow(
+      'No prototype validation controls matched the requested family Modern filters for statuses unknown. 1 matching controls were skipped because they no longer resolve in the pinned registry.'
     );
   });
 
