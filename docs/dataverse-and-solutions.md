@@ -249,6 +249,14 @@ pp dv metadata relationship pp_project_account --env dev
 pp dv metadata relationship pp_project_contact --env dev --kind many-to-many
 ```
 
+Normalized inspection defaults:
+
+- `dv metadata option-set` returns `name`, `displayName`, `description`, `metadataId`, `optionSetType`, `isGlobal`, `introducedVersion`, and normalized `options` entries with `value`, `label`, optional `description`, `color`, and `isManaged`
+- `dv metadata relationship` returns a normalized relationship summary instead of raw Dataverse metadata
+- one-to-many relationship output includes `referencedEntity`, `referencedAttribute`, `referencingEntity`, lookup identity/display labels, and cascade configuration when present
+- many-to-many relationship output includes `entity1LogicalName`, `entity2LogicalName`, `intersectEntityName`, and navigation property names when Dataverse exposes them
+- use `--view raw` on either command when you need the original Dataverse payload
+
 Common flags:
 
 - `--file` accepts JSON, YAML, or YML
@@ -283,6 +291,35 @@ maxLength: 50
 format: text
 ```
 
+Example autonumber column spec:
+
+```yaml
+kind: autonumber
+schemaName: pp_ProjectNumber
+displayName: Project Number
+autoNumberFormat: PROJ-{SEQNUM:6}
+maxLength: 20
+```
+
+Example file column spec:
+
+```yaml
+kind: file
+schemaName: pp_Specification
+displayName: Specification
+maxSizeInKB: 10240
+```
+
+Example image column spec:
+
+```yaml
+kind: image
+schemaName: pp_Thumbnail
+displayName: Thumbnail
+maxSizeInKB: 5120
+canStoreFullImage: true
+```
+
 Example global option set spec:
 
 ```yaml
@@ -312,6 +349,12 @@ orderValues:
   - 100000001
 ```
 
+Update semantics:
+
+- `add` inserts new options and can omit `value` to let Dataverse assign one
+- `update` targets existing options by numeric `value`; `mergeLabels` defaults to `true` when omitted
+- `removeValues` and `orderValues` both operate on numeric option values
+
 Example one-to-many relationship spec:
 
 ```yaml
@@ -333,6 +376,9 @@ entity1Menu:
   label: Contacts
 ```
 
+Optional `entity1Menu` and `entity2Menu` blocks let you control the associated
+menu label, behavior, group, and order for many-to-many navigation.
+
 Example customer relationship spec:
 
 ```yaml
@@ -343,6 +389,11 @@ lookup:
 accountReferencedAttribute: id
 contactReferencedAttribute: id
 ```
+
+Customer relationship creation uses the Dataverse customer-relationship action
+to create the complex lookup plus the paired account and contact one-to-many
+relationships. Optional `accountMenu` and `contactMenu` blocks customize the
+associated menu metadata for those generated relationships.
 
 Notes:
 
