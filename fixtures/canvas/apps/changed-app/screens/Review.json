@@ -1,0 +1,27 @@
+{
+  "name": "Review",
+  "controls": [
+    {
+      "name": "Checklist",
+      "templateName": "groupContainer",
+      "templateVersion": "1.0.0",
+      "properties": {
+        "Width": 320,
+        "Height": 240
+      },
+      "children": [
+        {
+          "name": "Status",
+          "templateName": "modernText",
+          "templateVersion": "1.0.0",
+          "properties": {
+            "TextFormula": "\"Review pending\"",
+            "X": 16,
+            "Y": 16
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}

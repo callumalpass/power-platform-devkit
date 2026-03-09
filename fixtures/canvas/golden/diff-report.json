@@ -1,0 +1,42 @@
+{
+  "appChanged": true,
+  "controls": [
+    {
+      "changedProperties": [
+        "properties"
+      ],
+      "controlPath": "Home/Layout/Submit",
+      "kind": "changed"
+    },
+    {
+      "controlPath": "Home/Layout/Summary",
+      "kind": "added"
+    },
+    {
+      "controlPath": "Home/Layout/Title",
+      "kind": "removed"
+    },
+    {
+      "controlPath": "Review/Checklist",
+      "kind": "added"
+    },
+    {
+      "controlPath": "Review/Checklist/Status",
+      "kind": "added"
+    }
+  ],
+  "left": "<REPO_ROOT>/fixtures/canvas/apps/base-app",
+  "right": "<REPO_ROOT>/fixtures/canvas/apps/changed-app",
+  "screensAdded": [
+    "Review"
+  ],
+  "screensRemoved": [],
+  "templateChanges": {
+    "added": [
+      "modernText@1.0.0"
+    ],
+    "removed": [
+      "Label@1.0.0"
+    ]
+  }
+}

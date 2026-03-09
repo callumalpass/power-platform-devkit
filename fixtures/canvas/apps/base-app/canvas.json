@@ -1,0 +1,11 @@
+{
+  "name": "FixtureCanvas",
+  "displayName": "Fixture Canvas",
+  "version": "1.0.0",
+  "screens": [
+    {
+      "name": "Home",
+      "file": "screens/Home.json"
+    }
+  ]
+}
