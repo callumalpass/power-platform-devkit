@@ -8,8 +8,32 @@
       ],
       "selection": {
         "constructor": "Classic/Button",
+        "latestInsertObservation": {
+          "attemptedQueries": [
+            "Button"
+          ],
+          "chosenCandidate": {
+            "category": "Classic",
+            "iconName": "#icon-button",
+            "title": "Button"
+          },
+          "generatedAt": "2026-03-09T14:29:09.702Z",
+          "outcome": "inserted",
+          "strategy": "insert-pane-search"
+        },
+        "liveValidation": {
+          "method": "promoted-draft",
+          "notes": [
+            "Backfilled from the promotion-time pending note on 2026-03-10."
+          ],
+          "recordedAt": "2026-03-10T00:54:16+11:00",
+          "status": "pending"
+        },
         "planAlignment": "aligned",
         "status": "pending",
+        "suggestedInsertQueries": [
+          "Button"
+        ],
         "templateName": "button",
         "templateVersion": "2.2.0"
       },
@@ -23,8 +47,28 @@
       ],
       "selection": {
         "constructor": "Classic/DatePicker",
+        "latestInsertObservation": {
+          "attemptedQueries": [
+            "Date picker"
+          ],
+          "chosenCandidate": {
+            "category": "Classic",
+            "iconName": "#icon-datepicker",
+            "title": "Date picker"
+          },
+          "generatedAt": "2026-03-09T14:29:09.702Z",
+          "outcome": "inserted",
+          "strategy": "insert-pane-search"
+        },
+        "liveValidation": {
+          "recordedAt": "2026-03-09T16:03:57.912Z",
+          "status": "pending"
+        },
         "planAlignment": "aligned",
         "status": "pending",
+        "suggestedInsertQueries": [
+          "Date picker"
+        ],
         "templateName": "datepicker",
         "templateVersion": "2.6.0"
       },
@@ -38,8 +82,19 @@
       ],
       "selection": {
         "constructor": "Classic/Icon",
+        "liveValidation": {
+          "method": "migrated-note-state",
+          "notes": [
+            "Backfilled from the pre-structured pending note on 2026-03-10."
+          ],
+          "recordedAt": "2026-03-10T00:54:16+11:00",
+          "status": "pending"
+        },
         "planAlignment": "aligned",
         "status": "pending",
+        "suggestedInsertQueries": [
+          "Icon"
+        ],
         "templateName": "icon",
         "templateVersion": "2.5.0"
       },
@@ -53,8 +108,19 @@
       ],
       "selection": {
         "constructor": "Image",
+        "liveValidation": {
+          "method": "migrated-note-state",
+          "notes": [
+            "Backfilled from the pre-structured pending note on 2026-03-10."
+          ],
+          "recordedAt": "2026-03-10T00:54:16+11:00",
+          "status": "pending"
+        },
         "planAlignment": "aligned",
         "status": "pending",
+        "suggestedInsertQueries": [
+          "Image"
+        ],
         "templateName": "image",
         "templateVersion": "2.2.3"
       },
@@ -68,8 +134,33 @@
       ],
       "selection": {
         "constructor": "Label",
+        "latestInsertObservation": {
+          "attemptedQueries": [
+            "Label"
+          ],
+          "chosenCandidate": {
+            "category": "Classic",
+            "iconName": "#icon-label",
+            "title": "Text label"
+          },
+          "generatedAt": "2026-03-09T14:29:09.702Z",
+          "outcome": "inserted",
+          "strategy": "insert-pane-search"
+        },
+        "liveValidation": {
+          "method": "migrated-note-state",
+          "notes": [
+            "Backfilled from the pre-structured pending note on 2026-03-10."
+          ],
+          "recordedAt": "2026-03-10T00:54:16+11:00",
+          "status": "pending"
+        },
         "planAlignment": "aligned",
         "status": "pending",
+        "suggestedInsertQueries": [
+          "Label",
+          "Text label"
+        ],
         "templateName": "label",
         "templateVersion": "2.5.1"
       },
@@ -83,15 +174,37 @@
       ],
       "selection": {
         "constructor": "ModernInformationButton",
+        "latestInsertObservation": {
+          "attemptedQueries": [
+            "Info button",
+            "Information button"
+          ],
+          "chosenCandidate": {
+            "category": "Display",
+            "iconName": "#fluent-infobutton",
+            "title": "Information button"
+          },
+          "generatedAt": "2026-03-09T14:29:09.702Z",
+          "outcome": "inserted",
+          "strategy": "insert-pane-search"
+        },
+        "liveValidation": {
+          "recordedAt": "2026-03-09T16:03:57.912Z",
+          "status": "pending"
+        },
         "planAlignment": "aligned",
         "status": "pending",
+        "suggestedInsertQueries": [
+          "Info button",
+          "Information button"
+        ],
         "templateName": "modernInformationButton",
         "templateVersion": "1.0.0"
       },
       "status": "pending"
     }
   ],
-  "generatedAt": "2026-03-09T16:45:21.658Z",
+  "generatedAt": "2026-03-09T16:57:41.513Z",
   "paths": {
     "selection": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-validation/fixture-selection.json"
   },
@@ -105,5 +218,5 @@
     "skippedControls": 0,
     "startIndex": 0
   },
-  "sourceSelectionGeneratedAt": "2026-03-09T16:04:31.461Z"
+  "sourceSelectionGeneratedAt": "2026-03-09T16:57:30.676Z"
 }

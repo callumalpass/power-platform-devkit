@@ -197,6 +197,18 @@ export interface CanvasHarvestFixturePrototypeDraftSkippedControl {
   prototypeSuggestions?: CanvasHarvestFixturePrototypeSuggestion[];
 }
 
+export interface CanvasHarvestFixturePrototypeDraftEntry {
+  family: 'classic' | 'modern';
+  catalogName: string;
+  constructor: string;
+  variant?: string;
+  properties?: Record<string, string>;
+  notes?: string[];
+  suggestedInsertQueries: string[];
+  suggestion: CanvasHarvestFixturePrototypeSuggestion & { constructor: string };
+  latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
+}
+
 export interface CanvasHarvestFixturePrototypeDraftDocument {
   schemaVersion: 1;
   generatedAt: string;
@@ -206,7 +218,7 @@ export interface CanvasHarvestFixturePrototypeDraftDocument {
     draftControls: number;
     skippedControls: number;
   };
-  drafts: CanvasHarvestFixturePrototype[];
+  drafts: CanvasHarvestFixturePrototypeDraftEntry[];
   skipped: CanvasHarvestFixturePrototypeDraftSkippedControl[];
 }
 
@@ -255,6 +267,9 @@ export interface CanvasHarvestPrototypeValidationFixtureSelectionEntry {
   planAlignment: CanvasHarvestFixturePrototypeValidationPlanAlignment;
   templateName: string;
   templateVersion: string;
+  suggestedInsertQueries: string[];
+  latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
+  liveValidation?: CanvasHarvestFixturePrototypeValidationRecord;
 }
 
 export interface CanvasHarvestPrototypeValidationFixtureSkippedEntry {
@@ -375,7 +390,12 @@ export interface CanvasHarvestFixturePrototypePromotion {
 
 export interface CanvasHarvestFixturePrototypePromotionBatchEntryDraftContext {
   constructor: string;
+  matchType: CanvasTemplateMatchType;
+  templateName: string;
+  templateVersion: string;
   propertyKeys: string[];
+  suggestedInsertQueries: string[];
+  latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
 }
 
 export interface CanvasHarvestFixturePrototypePromotionBatchEntry extends CanvasHarvestFixturePrototypePromotion {
@@ -453,6 +473,9 @@ export interface CanvasHarvestFixturePrototypeValidationBatchEntrySelectionConte
   planAlignment: CanvasHarvestFixturePrototypeValidationPlanAlignment;
   templateName: string;
   templateVersion: string;
+  suggestedInsertQueries: string[];
+  latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
+  liveValidation?: CanvasHarvestFixturePrototypeValidationRecord;
 }
 
 export interface CanvasHarvestFixturePrototypeValidationBatchEntry extends CanvasHarvestFixturePrototypeValidationUpdate {
@@ -892,7 +915,7 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
   const existingPrototypeKeys = new Set(
     options.prototypes.prototypes.map((prototype) => makeCatalogKey(prototype.family, prototype.catalogName))
   );
-  const drafts: CanvasHarvestFixturePrototype[] = [];
+  const drafts: CanvasHarvestFixturePrototypeDraftEntry[] = [];
   const skipped: CanvasHarvestFixturePrototypeDraftSkippedControl[] = [];
 
   for (const control of options.plan.controls) {
@@ -941,6 +964,16 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
       family: control.family,
       catalogName: control.catalogName,
       constructor: selectedSuggestion.constructor,
+      suggestedInsertQueries,
+      suggestion: {
+        ...selectedSuggestion,
+        constructor: selectedSuggestion.constructor,
+      },
+      ...(control.latestInsertObservation
+        ? {
+            latestInsertObservation: control.latestInsertObservation,
+          }
+        : {}),
       ...(draftProperties ? { properties: draftProperties } : {}),
       notes: buildPrototypeDraftNotes({
         control,
@@ -1058,7 +1091,16 @@ export function buildCanvasHarvestFixturePrototypePromotionBatchDocument(
           ...(notes.length > 0 ? { notes } : {}),
           draft: {
             constructor: draft.constructor,
+            matchType: draft.suggestion.matchType,
+            templateName: draft.suggestion.templateName,
+            templateVersion: draft.suggestion.templateVersion,
             propertyKeys: Object.keys(draft.properties ?? {}).sort(),
+            suggestedInsertQueries: draft.suggestedInsertQueries,
+            ...(draft.latestInsertObservation
+              ? {
+                  latestInsertObservation: draft.latestInsertObservation,
+                }
+              : {}),
           },
         };
       }),
@@ -1106,7 +1148,16 @@ export function buildCanvasHarvestFixturePrototypePromotionBatchDocument(
       ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
       draft: {
         constructor: draft.constructor,
+        matchType: draft.suggestion.matchType,
+        templateName: draft.suggestion.templateName,
+        templateVersion: draft.suggestion.templateVersion,
         propertyKeys: Object.keys(draft.properties ?? {}).sort(),
+        suggestedInsertQueries: draft.suggestedInsertQueries,
+        ...(draft.latestInsertObservation
+          ? {
+              latestInsertObservation: draft.latestInsertObservation,
+            }
+          : {}),
       },
     })),
   };
@@ -1341,6 +1392,17 @@ export function renderCanvasHarvestPrototypeValidationFixture(
       planAlignment: backlogControl.planAlignment,
       templateName: resolvedTemplate.templateName,
       templateVersion: resolvedTemplate.templateVersion,
+      suggestedInsertQueries: backlogControl.suggestedInsertQueries,
+      ...(backlogControl.latestInsertObservation
+        ? {
+            latestInsertObservation: backlogControl.latestInsertObservation,
+          }
+        : {}),
+      ...(backlogControl.liveValidation
+        ? {
+            liveValidation: backlogControl.liveValidation,
+          }
+        : {}),
     });
     controls.push({
       family: backlogControl.family,
@@ -1554,6 +1616,17 @@ export function buildCanvasHarvestFixturePrototypeValidationBatchDocument(
             planAlignment: control.planAlignment,
             templateName: control.templateName,
             templateVersion: control.templateVersion,
+            suggestedInsertQueries: control.suggestedInsertQueries,
+            ...(control.latestInsertObservation
+              ? {
+                  latestInsertObservation: control.latestInsertObservation,
+                }
+              : {}),
+            ...(control.liveValidation
+              ? {
+                  liveValidation: control.liveValidation,
+                }
+              : {}),
           },
         };
       }),
@@ -1580,8 +1653,8 @@ export function buildCanvasHarvestFixturePrototypeValidationBatchDocument(
     generatedAt,
     sourceSelectionGeneratedAt: options.selection.generatedAt,
     ...(options.paths ? { paths: options.paths } : {}),
-    selection: {
-      mode: options.family || options.startAt || boundedLimit ? 'window' : 'all',
+      selection: {
+        mode: options.family || options.startAt || boundedLimit ? 'window' : 'all',
       ...(options.family ? { family: options.family } : {}),
       ...(options.startAt ? { startAt: options.startAt } : {}),
       startIndex,
@@ -1595,21 +1668,32 @@ export function buildCanvasHarvestFixturePrototypeValidationBatchDocument(
         selectedControls[selectedControls.length - 1]!.catalogName
       ),
     },
-    entries: selectedControls.map((control) => ({
-      family: control.family,
-      catalogName: control.catalogName,
-      status: resolvePrototypeValidationBatchEntryStatus(control, options.status),
-      ...(options.method ? { method: options.method } : {}),
-      ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
-      selection: {
-        status: control.validationStatus,
-        constructor: control.constructor,
-        planAlignment: control.planAlignment,
-        templateName: control.templateName,
-        templateVersion: control.templateVersion,
-      },
-    })),
-  };
+      entries: selectedControls.map((control) => ({
+        family: control.family,
+        catalogName: control.catalogName,
+        status: resolvePrototypeValidationBatchEntryStatus(control, options.status),
+        ...(options.method ? { method: options.method } : {}),
+        ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
+        selection: {
+          status: control.validationStatus,
+          constructor: control.constructor,
+          planAlignment: control.planAlignment,
+          templateName: control.templateName,
+          templateVersion: control.templateVersion,
+          suggestedInsertQueries: control.suggestedInsertQueries,
+          ...(control.latestInsertObservation
+            ? {
+                latestInsertObservation: control.latestInsertObservation,
+              }
+            : {}),
+          ...(control.liveValidation
+            ? {
+                liveValidation: control.liveValidation,
+              }
+            : {}),
+        },
+      })),
+    };
 }
 
 export function refreshCanvasHarvestPrototypeValidationArtifacts(
@@ -1729,9 +1813,12 @@ export function promoteCanvasHarvestFixturePrototypeDrafts(
       );
     }
 
-    const { notes: _draftNotes, ...draftWithoutNotes } = selectedDraft;
     const promoted: CanvasHarvestFixturePrototype = {
-      ...draftWithoutNotes,
+      family: selectedDraft.family,
+      catalogName: selectedDraft.catalogName,
+      constructor: selectedDraft.constructor,
+      ...(selectedDraft.variant ? { variant: selectedDraft.variant } : {}),
+      ...(selectedDraft.properties ? { properties: selectedDraft.properties } : {}),
       liveValidation: {
         status: 'pending',
         recordedAt: generatedAt,
@@ -2743,7 +2830,7 @@ function makeCatalogKey(family: 'classic' | 'modern', catalogName: string): stri
 }
 
 function resolvePrototypeDraftBatchStartIndex(
-  drafts: CanvasHarvestFixturePrototype[],
+  drafts: CanvasHarvestFixturePrototypeDraftEntry[],
   startAt: string | undefined,
   family: 'classic' | 'modern' | undefined
 ): number {

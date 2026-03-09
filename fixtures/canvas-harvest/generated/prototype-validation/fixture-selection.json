@@ -12,7 +12,7 @@
       "unknown"
     ]
   },
-  "generatedAt": "2026-03-09T16:04:31.461Z",
+  "generatedAt": "2026-03-09T16:57:30.676Z",
   "paths": {
     "backlog": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-validation-backlog.json",
     "prototypes": "/home/calluma/projects/pp/fixtures/canvas-harvest/prototypes.json",
@@ -25,7 +25,31 @@
       "catalogName": "Button",
       "constructor": "Classic/Button",
       "family": "classic",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Button"
+        ],
+        "chosenCandidate": {
+          "category": "Classic",
+          "iconName": "#icon-button",
+          "title": "Button"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
+      "liveValidation": {
+        "method": "promoted-draft",
+        "notes": [
+          "Backfilled from the promotion-time pending note on 2026-03-10."
+        ],
+        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "status": "pending"
+      },
       "planAlignment": "aligned",
+      "suggestedInsertQueries": [
+        "Button"
+      ],
       "templateName": "button",
       "templateVersion": "2.2.0",
       "validationStatus": "pending"
@@ -34,7 +58,27 @@
       "catalogName": "Date picker",
       "constructor": "Classic/DatePicker",
       "family": "classic",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Date picker"
+        ],
+        "chosenCandidate": {
+          "category": "Classic",
+          "iconName": "#icon-datepicker",
+          "title": "Date picker"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
+      "liveValidation": {
+        "recordedAt": "2026-03-09T16:03:57.912Z",
+        "status": "pending"
+      },
       "planAlignment": "aligned",
+      "suggestedInsertQueries": [
+        "Date picker"
+      ],
       "templateName": "datepicker",
       "templateVersion": "2.6.0",
       "validationStatus": "pending"
@@ -43,7 +87,18 @@
       "catalogName": "Icon",
       "constructor": "Classic/Icon",
       "family": "classic",
+      "liveValidation": {
+        "method": "migrated-note-state",
+        "notes": [
+          "Backfilled from the pre-structured pending note on 2026-03-10."
+        ],
+        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "status": "pending"
+      },
       "planAlignment": "aligned",
+      "suggestedInsertQueries": [
+        "Icon"
+      ],
       "templateName": "icon",
       "templateVersion": "2.5.0",
       "validationStatus": "pending"
@@ -52,7 +107,18 @@
       "catalogName": "Image",
       "constructor": "Image",
       "family": "classic",
+      "liveValidation": {
+        "method": "migrated-note-state",
+        "notes": [
+          "Backfilled from the pre-structured pending note on 2026-03-10."
+        ],
+        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "status": "pending"
+      },
       "planAlignment": "aligned",
+      "suggestedInsertQueries": [
+        "Image"
+      ],
       "templateName": "image",
       "templateVersion": "2.2.3",
       "validationStatus": "pending"
@@ -61,7 +127,32 @@
       "catalogName": "Label",
       "constructor": "Label",
       "family": "classic",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Label"
+        ],
+        "chosenCandidate": {
+          "category": "Classic",
+          "iconName": "#icon-label",
+          "title": "Text label"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
+      "liveValidation": {
+        "method": "migrated-note-state",
+        "notes": [
+          "Backfilled from the pre-structured pending note on 2026-03-10."
+        ],
+        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "status": "pending"
+      },
       "planAlignment": "aligned",
+      "suggestedInsertQueries": [
+        "Label",
+        "Text label"
+      ],
       "templateName": "label",
       "templateVersion": "2.5.1",
       "validationStatus": "pending"
@@ -70,7 +161,29 @@
       "catalogName": "Info button",
       "constructor": "ModernInformationButton",
       "family": "modern",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Info button",
+          "Information button"
+        ],
+        "chosenCandidate": {
+          "category": "Display",
+          "iconName": "#fluent-infobutton",
+          "title": "Information button"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
+      "liveValidation": {
+        "recordedAt": "2026-03-09T16:03:57.912Z",
+        "status": "pending"
+      },
       "planAlignment": "aligned",
+      "suggestedInsertQueries": [
+        "Info button",
+        "Information button"
+      ],
       "templateName": "modernInformationButton",
       "templateVersion": "1.0.0",
       "validationStatus": "pending"

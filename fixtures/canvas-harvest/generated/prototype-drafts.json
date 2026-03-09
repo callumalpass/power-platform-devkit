@@ -20,6 +20,15 @@
         "Height": "=320",
         "Visible": "=true",
         "Width": "=600"
+      },
+      "suggestedInsertQueries": [
+        "Container"
+      ],
+      "suggestion": {
+        "constructor": "GroupContainer",
+        "matchType": "constructor",
+        "templateName": "groupContainer",
+        "templateVersion": "1.5.0"
       }
     },
     {
@@ -37,6 +46,16 @@
         "DisplayMode": "=DisplayMode.Edit",
         "Height": "=575",
         "Width": "=640"
+      },
+      "suggestedInsertQueries": [
+        "Gallery",
+        "Vertical gallery"
+      ],
+      "suggestion": {
+        "constructor": "Gallery",
+        "matchType": "constructor",
+        "templateName": "gallery",
+        "templateVersion": "2.15.0"
       }
     },
     {
@@ -55,6 +74,15 @@
         "Height": "=320",
         "Visible": "=true",
         "Width": "=600"
+      },
+      "suggestedInsertQueries": [
+        "Grid container"
+      ],
+      "suggestion": {
+        "constructor": "GroupContainer",
+        "matchType": "constructor",
+        "templateName": "groupContainer",
+        "templateVersion": "1.5.0"
       }
     },
     {
@@ -73,6 +101,15 @@
         "Height": "=320",
         "Visible": "=true",
         "Width": "=600"
+      },
+      "suggestedInsertQueries": [
+        "Horizontal container"
+      ],
+      "suggestion": {
+        "constructor": "GroupContainer",
+        "matchType": "constructor",
+        "templateName": "groupContainer",
+        "templateVersion": "1.5.0"
       }
     },
     {
@@ -91,6 +128,16 @@
         "Height": "=8",
         "Visible": "=ThisItem.IsSelected",
         "Width": "=4"
+      },
+      "suggestedInsertQueries": [
+        "Shape",
+        "Rectangle"
+      ],
+      "suggestion": {
+        "constructor": "Rectangle",
+        "matchType": "constructor",
+        "templateName": "rectangle",
+        "templateVersion": "2.3.0"
       }
     },
     {
@@ -109,12 +156,34 @@
         "Height": "=320",
         "Visible": "=true",
         "Width": "=600"
+      },
+      "suggestedInsertQueries": [
+        "Vertical container"
+      ],
+      "suggestion": {
+        "constructor": "GroupContainer",
+        "matchType": "constructor",
+        "templateName": "groupContainer",
+        "templateVersion": "1.5.0"
       }
     },
     {
       "catalogName": "Date picker",
       "constructor": "ModernDatePicker",
       "family": "modern",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Date picker"
+        ],
+        "chosenCandidate": {
+          "category": "Input",
+          "iconName": "#fluent-datepicker",
+          "title": "Date picker"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: ModernDatePicker -> modernDatePicker@1.0.0 (constructor match).",
@@ -127,12 +196,35 @@
         "DisplayMode": "=DisplayMode.Edit",
         "Height": "=32",
         "Width": "=320"
+      },
+      "suggestedInsertQueries": [
+        "Date picker"
+      ],
+      "suggestion": {
+        "constructor": "ModernDatePicker",
+        "matchType": "constructor",
+        "templateName": "modernDatePicker",
+        "templateVersion": "1.0.0"
       }
     },
     {
       "catalogName": "Radio group",
       "constructor": "ModernRadio",
       "family": "modern",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Radio group",
+          "Radio"
+        ],
+        "chosenCandidate": {
+          "category": "Input",
+          "iconName": "#fluent-radiogroup",
+          "title": "Radio"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: ModernRadio -> modernRadio@1.0.0 (constructor match).",
@@ -145,12 +237,36 @@
         "DisplayMode": "=DisplayMode.Edit",
         "Height": "=100",
         "Width": "=320"
+      },
+      "suggestedInsertQueries": [
+        "Radio group",
+        "Radio"
+      ],
+      "suggestion": {
+        "constructor": "ModernRadio",
+        "matchType": "constructor",
+        "templateName": "modernRadio",
+        "templateVersion": "1.0.0"
       }
     },
     {
       "catalogName": "Tabs or tab list",
       "constructor": "ModernTabList",
       "family": "modern",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Tabs or tab list",
+          "Tab list"
+        ],
+        "chosenCandidate": {
+          "category": "Input",
+          "iconName": "#fluent-tablist",
+          "title": "Tab list"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: ModernTabList -> modernTabList@1.0.0 (constructor match).",
@@ -164,6 +280,17 @@
         "DisplayMode": "=DisplayMode.Edit",
         "Height": "=60",
         "Width": "=300"
+      },
+      "suggestedInsertQueries": [
+        "Tabs or tab list",
+        "Tab list",
+        "Tabs"
+      ],
+      "suggestion": {
+        "constructor": "ModernTabList",
+        "matchType": "constructor",
+        "templateName": "modernTabList",
+        "templateVersion": "1.0.0"
       }
     },
     {
@@ -187,10 +314,19 @@
         "Visible": "=true",
         "Width": "=150",
         "Wrap": "=true"
+      },
+      "suggestedInsertQueries": [
+        "Text input"
+      ],
+      "suggestion": {
+        "constructor": "ModernText",
+        "matchType": "constructor",
+        "templateName": "modernText",
+        "templateVersion": "1.0.0"
       }
     }
   ],
-  "generatedAt": "2026-03-09T16:04:21.224Z",
+  "generatedAt": "2026-03-09T16:57:30.662Z",
   "schemaVersion": 1,
   "skipped": [
     {
