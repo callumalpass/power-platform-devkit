@@ -8,6 +8,13 @@
       "catalogName": "Container",
       "constructor": "GroupContainer",
       "family": "classic",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
+        "Suggested Insert-pane queries: Container.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
@@ -41,6 +48,13 @@
       "catalogName": "Gallery",
       "constructor": "Gallery",
       "family": "classic",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: Gallery -> gallery@2.15.0 (constructor match).",
+        "Suggested Insert-pane queries: Gallery, Vertical gallery.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: Gallery -> gallery@2.15.0 (constructor match).",
@@ -73,6 +87,13 @@
       "catalogName": "Grid container",
       "constructor": "GroupContainer",
       "family": "classic",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
+        "Suggested Insert-pane queries: Grid container.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
@@ -106,6 +127,13 @@
       "catalogName": "Horizontal container",
       "constructor": "GroupContainer",
       "family": "classic",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
+        "Suggested Insert-pane queries: Horizontal container.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
@@ -139,6 +167,14 @@
       "catalogName": "Shape",
       "constructor": "Rectangle",
       "family": "classic",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).",
+        "Suggested Insert-pane queries: Shape, Rectangle.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Skipped non-portable runtime sample formulas while scaffolding properties: Visible (=ThisItem.IsSelected).",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).",
@@ -179,6 +215,13 @@
       "catalogName": "Vertical container",
       "constructor": "GroupContainer",
       "family": "classic",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
+        "Suggested Insert-pane queries: Vertical container.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
@@ -212,6 +255,14 @@
       "catalogName": "Date picker",
       "constructor": "ModernDatePicker",
       "family": "modern",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: ModernDatePicker -> modernDatePicker@1.0.0 (constructor match).",
+        "Suggested Insert-pane queries: Date picker.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Input) using insert-pane-search. Queries: Date picker."
+      ],
       "latestInsertObservation": {
         "attemptedQueries": [
           "Date picker"
@@ -257,6 +308,14 @@
       "catalogName": "Radio group",
       "constructor": "ModernRadio",
       "family": "modern",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: ModernRadio -> modernRadio@1.0.0 (constructor match).",
+        "Suggested Insert-pane queries: Radio group, Radio.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Radio (Input) using insert-pane-search. Queries: Radio group, Radio."
+      ],
       "latestInsertObservation": {
         "attemptedQueries": [
           "Radio group",
@@ -304,6 +363,14 @@
       "catalogName": "Tabs or tab list",
       "constructor": "ModernTabList",
       "family": "modern",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: ModernTabList -> modernTabList@1.0.0 (constructor match).",
+        "Suggested Insert-pane queries: Tabs or tab list, Tab list, Tabs.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Align.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Tab list (Input) using insert-pane-search. Queries: Tabs or tab list, Tab list."
+      ],
       "latestInsertObservation": {
         "attemptedQueries": [
           "Tabs or tab list",
@@ -354,6 +421,13 @@
       "catalogName": "Text input",
       "constructor": "ModernText",
       "family": "modern",
+      "generatedNotes": [
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
+        "Registry suggestion selected: ModernText -> modernText@1.0.0 (constructor match).",
+        "Suggested Insert-pane queries: Text input.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, Text, AutoHeight, Wrap, DisplayMode, Align, VerticalAlign, Visible.",
+        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
+      ],
       "notes": [
         "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: ModernText -> modernText@1.0.0 (constructor match).",
@@ -394,7 +468,7 @@
       }
     }
   ],
-  "generatedAt": "2026-03-09T17:38:14.569Z",
+  "generatedAt": "2026-03-09T17:58:01.851Z",
   "schemaVersion": 1,
   "skipped": [
     {

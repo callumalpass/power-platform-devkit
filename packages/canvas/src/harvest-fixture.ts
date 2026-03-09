@@ -216,6 +216,7 @@ export interface CanvasHarvestFixturePrototypeDraftEntry {
   scaffoldProperties?: Record<string, string>;
   skippedPropertyScaffolds?: CanvasHarvestFixturePrototypeDraftSkippedProperty[];
   notes?: string[];
+  generatedNotes?: string[];
   suggestedInsertQueries: string[];
   suggestion: CanvasHarvestFixturePrototypeSuggestion & { constructor: string };
   latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
@@ -1009,6 +1010,14 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
     }
 
     const draftPropertyScaffold = buildPrototypeDraftPropertyScaffold(options.registry, selectedSuggestion);
+    const generatedDraftNotes = buildPrototypeDraftNotes({
+      control,
+      suggestion: selectedSuggestion,
+      planGeneratedAt: options.plan.generatedAt,
+      suggestedInsertQueries,
+      draftProperties: draftPropertyScaffold.properties,
+      skippedPropertyScaffolds: draftPropertyScaffold.skippedPropertyScaffolds,
+    });
     drafts.push({
       family: control.family,
       catalogName: control.catalogName,
@@ -1030,14 +1039,7 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
             skippedPropertyScaffolds: draftPropertyScaffold.skippedPropertyScaffolds,
           }
         : {}),
-      notes: buildPrototypeDraftNotes({
-        control,
-        suggestion: selectedSuggestion,
-        planGeneratedAt: options.plan.generatedAt,
-        suggestedInsertQueries,
-        draftProperties: draftPropertyScaffold.properties,
-        skippedPropertyScaffolds: draftPropertyScaffold.skippedPropertyScaffolds,
-      }),
+      ...buildGeneratedDraftNoteFields(generatedDraftNotes),
     });
   }
 
@@ -1129,10 +1131,7 @@ export function mergeCanvasHarvestFixturePrototypeDraftDocument(
     }
 
     const draftNotes = entry.notes ?? [];
-    const existingNotes = existingEntry.notes ?? [];
-    const preservedNotes = existingNotes.filter(
-      (note) => !draftNotes.includes(note) && !isGeneratedPrototypeDraftNote(note)
-    );
+    const preservedNotes = extractManualPrototypeDraftNotes(existingEntry).filter((note) => !draftNotes.includes(note));
     const notes = dedupeStrings(draftNotes.concat(preservedNotes));
     if (preservedNotes.length > 0) {
       preservedNotesEntries += 1;
@@ -2725,6 +2724,25 @@ function isGeneratedPrototypeDraftNote(note: string): boolean {
     note === 'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.' ||
     note.startsWith('Latest Studio insert attempt (')
   );
+}
+
+function buildGeneratedDraftNoteFields(generatedNotes: string[]): {
+  notes?: string[];
+  generatedNotes?: string[];
+} {
+  return buildGeneratedBatchNoteFields(generatedNotes);
+}
+
+function extractManualPrototypeDraftNotes(entry: {
+  notes?: string[];
+  generatedNotes?: string[];
+}): string[] {
+  const generatedNotes = dedupeStrings(entry.generatedNotes ?? []);
+  if (generatedNotes.length > 0) {
+    return extractManualBatchEntryNotes(entry);
+  }
+
+  return (entry.notes ?? []).filter((note) => !isGeneratedPrototypeDraftNote(note));
 }
 
 function buildPrototypeValidationBacklogNotes(options: {

@@ -746,6 +746,13 @@ describe('canvas harvest fixture planning', () => {
             'Scaffold properties derived from harvested runtime metadata: Height, Width, Text.',
             'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
           ],
+          generatedNotes: [
+            'Draft scaffold generated from fixture plan 2026-03-09T12:21:27.948Z.',
+            'Registry suggestion selected: Classic/Button -> button@2.2.0 (constructor match).',
+            'Suggested Insert-pane queries: Button.',
+            'Scaffold properties derived from harvested runtime metadata: Height, Width, Text.',
+            'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
+          ],
         },
       ],
       skipped: [
@@ -950,6 +957,14 @@ describe('canvas harvest fixture planning', () => {
           'Skipped non-portable runtime sample formulas while scaffolding properties: Visible (=ThisItem.IsSelected).',
           'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
         ],
+        generatedNotes: [
+          'Draft scaffold generated from fixture plan 2026-03-10T00:10:00.000Z.',
+          'Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).',
+          'Suggested Insert-pane queries: Shape, Rectangle.',
+          'Scaffold properties derived from harvested runtime metadata: Height, Width.',
+          'Skipped non-portable runtime sample formulas while scaffolding properties: Visible (=ThisItem.IsSelected).',
+          'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
+        ],
       },
     ]);
   });
@@ -992,6 +1007,14 @@ describe('canvas harvest fixture planning', () => {
             },
           ],
           notes: [
+            'Draft scaffold generated from fixture plan 2026-03-10T00:11:00.000Z.',
+            'Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).',
+            'Suggested Insert-pane queries: Shape, Rectangle.',
+            'Scaffold properties derived from harvested runtime metadata: Height, Width.',
+            'Skipped non-portable runtime sample formulas while scaffolding properties: Visible (=ThisItem.IsSelected).',
+            'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
+          ],
+          generatedNotes: [
             'Draft scaffold generated from fixture plan 2026-03-10T00:11:00.000Z.',
             'Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).',
             'Suggested Insert-pane queries: Shape, Rectangle.',
@@ -1085,6 +1108,7 @@ describe('canvas harvest fixture planning', () => {
             Width: '=600',
           },
           notes: ['Generated note'],
+          generatedNotes: ['Generated note'],
           latestInsertObservation: {
             generatedAt: '2026-03-10T00:11:30.000Z',
             outcome: 'inserted',
@@ -1152,6 +1176,7 @@ describe('canvas harvest fixture planning', () => {
             CustomFlag: '=true',
           },
           notes: ['Generated note', 'Manual review note'],
+          generatedNotes: ['Generated note'],
         },
         {
           family: 'classic',
@@ -1206,6 +1231,7 @@ describe('canvas harvest fixture planning', () => {
             CustomFlag: '=true',
           },
           notes: ['Generated note', 'Manual review note'],
+          generatedNotes: ['Generated note'],
           latestInsertObservation: {
             generatedAt: '2026-03-10T00:11:30.000Z',
             outcome: 'inserted',
