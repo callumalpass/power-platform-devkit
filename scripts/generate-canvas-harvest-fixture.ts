@@ -2,7 +2,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { readJsonFile, writeJsonFile } from '../packages/artifacts/src/index';
 import {
+  assertCanvasHarvestFixtureCatalogCanWriteOutputs,
   buildCanvasHarvestFixturePlan,
+  DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
+  DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH,
   renderCanvasHarvestFixture,
   type CanvasControlCatalogDocument,
   type CanvasControlInsertReportDocument,
@@ -15,8 +18,9 @@ async function main(): Promise<void> {
   const registryPath = resolve(readArg('--registry') ?? 'registries/canvas-controls.json');
   const prototypePath = resolve(readArg('--prototypes') ?? 'fixtures/canvas-harvest/prototypes.json');
   const insertReportPath = readArg('--insert-report');
-  const planPath = resolve(readArg('--plan-out') ?? 'fixtures/canvas-harvest/generated/fixture-plan.json');
-  const yamlPath = resolve(readArg('--yaml-out') ?? 'fixtures/canvas-harvest/generated/HarvestFixtureContainer.pa.yaml');
+  const planPath = resolve(readArg('--plan-out') ?? DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH);
+  const yamlPath = resolve(readArg('--yaml-out') ?? DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH);
+  const allowIncompleteCatalog = readFlag('--allow-incomplete-catalog');
   const generatedAt = new Date().toISOString();
   const [catalog, registry, prototypes, insertReport] = await Promise.all([
     readJsonFile<CanvasControlCatalogDocument>(catalogPath),
@@ -24,6 +28,17 @@ async function main(): Promise<void> {
     readJsonFile<CanvasHarvestFixturePrototypeDocument>(prototypePath),
     insertReportPath ? readJsonFile<CanvasControlInsertReportDocument>(resolve(insertReportPath)) : Promise.resolve(undefined),
   ]);
+
+  assertCanvasHarvestFixtureCatalogCanWriteOutputs({
+    catalog,
+    catalogPath,
+    planPath,
+    yamlPath,
+    trackedPlanPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH),
+    trackedYamlPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH),
+    allowIncompleteCatalog,
+  });
+
   const plan = buildCanvasHarvestFixturePlan({
     catalog,
     registry,
@@ -66,6 +81,10 @@ async function main(): Promise<void> {
 function readArg(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
   return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+function readFlag(flag: string): boolean {
+  return process.argv.includes(flag);
 }
 
 void main().catch((error) => {

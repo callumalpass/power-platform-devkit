@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+import { assertCanvasControlCatalogLooksComplete } from './control-catalog';
 import type { CanvasTemplateRecord, CanvasTemplateRegistryDocument } from './index';
 
 export interface CanvasControlCatalogSource {
@@ -120,6 +122,16 @@ export interface CanvasHarvestFixturePlan {
   controls: CanvasHarvestFixturePlanEntry[];
 }
 
+export interface AssertCanvasHarvestFixtureCatalogWriteOptions {
+  catalog: CanvasControlCatalogDocument;
+  catalogPath: string;
+  planPath: string;
+  yamlPath: string;
+  trackedPlanPath: string;
+  trackedYamlPath: string;
+  allowIncompleteCatalog?: boolean;
+}
+
 export interface BuildCanvasHarvestFixturePlanOptions {
   catalog: CanvasControlCatalogDocument;
   registry: CanvasTemplateRegistryDocument;
@@ -156,6 +168,30 @@ export interface RenderedCanvasHarvestFixture {
   containerTemplateVersion: string;
   markerTemplateName?: string;
   markerTemplateVersion?: string;
+}
+
+export const DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH = 'fixtures/canvas-harvest/generated/fixture-plan.json';
+export const DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH =
+  'fixtures/canvas-harvest/generated/HarvestFixtureContainer.pa.yaml';
+
+export function assertCanvasHarvestFixtureCatalogCanWriteOutputs(
+  options: AssertCanvasHarvestFixtureCatalogWriteOptions
+): void {
+  if (options.allowIncompleteCatalog || !writesTrackedCanvasHarvestFixtureOutput(options)) {
+    return;
+  }
+
+  try {
+    assertCanvasControlCatalogLooksComplete(options.catalog, {
+      context: `Canvas harvest fixture catalog (${options.catalogPath})`,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${message} Refusing to overwrite tracked harvest fixture outputs (${options.trackedPlanPath}, ${options.trackedYamlPath}). ` +
+        'Write to alternate --plan-out/--yaml-out paths for subset or investigative runs, or pass --allow-incomplete-catalog if the shrink is intentional.'
+    );
+  }
 }
 
 export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixturePlanOptions): CanvasHarvestFixturePlan {
@@ -356,6 +392,15 @@ export function renderCanvasHarvestFixture(options: RenderCanvasHarvestFixtureOp
 
 function buildCatalogNotes(control: CanvasControlCatalogEntry): string[] {
   return control.status.length > 0 ? [`Catalog status: ${control.status.join(', ')}.`] : [];
+}
+
+function writesTrackedCanvasHarvestFixtureOutput(options: AssertCanvasHarvestFixtureCatalogWriteOptions): boolean {
+  const trackedPaths = new Set([normalizePath(options.trackedPlanPath), normalizePath(options.trackedYamlPath)]);
+  return [options.planPath, options.yamlPath].some((path) => trackedPaths.has(normalizePath(path)));
+}
+
+function normalizePath(path: string): string {
+  return resolve(path);
 }
 
 function buildInsertObservation(

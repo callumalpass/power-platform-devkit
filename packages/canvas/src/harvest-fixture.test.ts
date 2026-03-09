@@ -1,8 +1,12 @@
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CanvasTemplateRegistryDocument } from './index';
 import {
+  assertCanvasHarvestFixtureCatalogCanWriteOutputs,
   buildCanvasHarvestFixturePlan,
   renderCanvasHarvestFixture,
+  DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
+  DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH,
   type CanvasControlCatalogDocument,
   type CanvasControlInsertReportDocument,
   type CanvasHarvestFixturePrototypeDocument,
@@ -217,7 +221,64 @@ const insertReport: CanvasControlInsertReportDocument = {
   },
 };
 
+const incompleteCatalog: CanvasControlCatalogDocument = {
+  schemaVersion: 1,
+  generatedAt: '2026-03-09T11:47:50.759Z',
+  sources: [],
+  controls: [
+    {
+      family: 'classic',
+      name: 'Button',
+      description: 'Interact with the app by clicking or tapping.',
+      docPath: 'controls/control-button.md',
+      learnUrl: 'https://learn.microsoft.com/example/control-button',
+      markdownUrl: 'https://raw.example/reference-properties.md',
+      status: [],
+    },
+  ],
+};
+
 describe('canvas harvest fixture planning', () => {
+  it('refuses to overwrite tracked fixture outputs from an incomplete catalog snapshot', () => {
+    expect(() =>
+      assertCanvasHarvestFixtureCatalogCanWriteOutputs({
+        catalog: incompleteCatalog,
+        catalogPath: resolve('registries/canvas-control-catalog.json'),
+        planPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH),
+        yamlPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH),
+        trackedPlanPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH),
+        trackedYamlPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH),
+      })
+    ).toThrow(/Refusing to overwrite tracked harvest fixture outputs/);
+  });
+
+  it('allows incomplete catalogs when writing alternate outputs for subset experiments', () => {
+    expect(() =>
+      assertCanvasHarvestFixtureCatalogCanWriteOutputs({
+        catalog: incompleteCatalog,
+        catalogPath: resolve('/tmp/canvas-control-catalog-subset.json'),
+        planPath: resolve('/tmp/fixture-plan.json'),
+        yamlPath: resolve('/tmp/HarvestFixtureContainer.pa.yaml'),
+        trackedPlanPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH),
+        trackedYamlPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH),
+      })
+    ).not.toThrow();
+  });
+
+  it('allows explicit override when an incomplete catalog shrink is intentional', () => {
+    expect(() =>
+      assertCanvasHarvestFixtureCatalogCanWriteOutputs({
+        catalog: incompleteCatalog,
+        catalogPath: resolve('registries/canvas-control-catalog.json'),
+        planPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH),
+        yamlPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH),
+        trackedPlanPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH),
+        trackedYamlPath: resolve(DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH),
+        allowIncompleteCatalog: true,
+      })
+    ).not.toThrow();
+  });
+
   it('tracks prototype and registry coverage against the pinned catalog', () => {
     const plan = buildCanvasHarvestFixturePlan({
       catalog,
