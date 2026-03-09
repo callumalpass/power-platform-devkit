@@ -10,6 +10,7 @@ import {
   buildCanvasHarvestFixturePrototypeValidationBacklogDocument,
   promoteCanvasHarvestFixturePrototypeDraft,
   recordCanvasHarvestFixturePrototypeValidation,
+  recordCanvasHarvestFixturePrototypeValidations,
   renderCanvasHarvestFixture,
   renderCanvasHarvestPrototypeValidationFixture,
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
@@ -657,6 +658,114 @@ describe('canvas harvest fixture planning', () => {
     });
   });
 
+  it('records multiple prototype validation updates in one pass', () => {
+    const recorded = recordCanvasHarvestFixturePrototypeValidations({
+      prototypes,
+      updates: [
+        {
+          family: 'classic',
+          catalogName: 'Label',
+          status: 'failed',
+          recordedAt: '2026-03-10T00:15:00.000Z',
+          method: 'container-paste',
+          notes: ['Studio paste succeeded, but the exported artifact was missing the control.'],
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text',
+          status: 'validated',
+          recordedAt: '2026-03-10T00:19:00.000Z',
+          method: 'top-level-paste',
+          notes: ['Validated via the backlog-driven fixture tranche.'],
+        },
+      ],
+      generatedAt: '2026-03-10T00:20:00.000Z',
+    });
+
+    expect(recorded.updates).toEqual([
+      {
+        update: {
+          family: 'classic',
+          catalogName: 'Label',
+          status: 'failed',
+          recordedAt: '2026-03-10T00:15:00.000Z',
+          method: 'container-paste',
+          notes: ['Studio paste succeeded, but the exported artifact was missing the control.'],
+        },
+        prototype: {
+          family: 'classic',
+          catalogName: 'Label',
+          constructor: 'Label',
+          properties: {
+            Text: '="Classic label fixture"',
+          },
+          liveValidation: {
+            status: 'failed',
+            recordedAt: '2026-03-10T00:15:00.000Z',
+            method: 'container-paste',
+            notes: ['Studio paste succeeded, but the exported artifact was missing the control.'],
+          },
+          notes: ['Harvested alias from the TEST export.'],
+        },
+      },
+      {
+        update: {
+          family: 'modern',
+          catalogName: 'Text',
+          status: 'validated',
+          recordedAt: '2026-03-10T00:19:00.000Z',
+          method: 'top-level-paste',
+          notes: ['Validated via the backlog-driven fixture tranche.'],
+        },
+        prototype: {
+          family: 'modern',
+          catalogName: 'Text',
+          constructor: 'ModernText',
+          properties: {
+            Text: '="Modern text fixture"',
+          },
+          liveValidation: {
+            status: 'validated',
+            recordedAt: '2026-03-10T00:19:00.000Z',
+            method: 'top-level-paste',
+            notes: ['Validated via the backlog-driven fixture tranche.'],
+          },
+          notes: ['Validated as a top-level pasted control.'],
+        },
+      },
+    ]);
+    expect(recorded.prototypes).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:20:00.000Z',
+      prototypes: [
+        prototypes.prototypes[0],
+        recorded.updates[0]!.prototype,
+        prototypes.prototypes[2],
+        recorded.updates[1]!.prototype,
+      ],
+    });
+  });
+
+  it('rejects duplicate prototype validation updates inside one batch', () => {
+    expect(() =>
+      recordCanvasHarvestFixturePrototypeValidations({
+        prototypes,
+        updates: [
+          {
+            family: 'classic',
+            catalogName: 'Label',
+            status: 'failed',
+          },
+          {
+            family: 'classic',
+            catalogName: 'Label',
+            status: 'validated',
+          },
+        ],
+      })
+    ).toThrow('Duplicate prototype validation update specified for Classic/Label.');
+  });
+
   it('records validation and refreshes the backlog plus next fixture selection in one pass', () => {
     const plan = buildCanvasHarvestFixturePlan({
       catalog,
@@ -749,6 +858,121 @@ describe('canvas harvest fixture planning', () => {
     });
     expect(recorded.refresh?.rendered.yaml).toContain('- HarvestClassicLabel:');
     expect(recorded.refresh?.rendered.yaml).toContain('Control: Label@2.5.1');
+  });
+
+  it('records a batch of validations and refreshes downstream artifacts once', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-09T09:30:00.000Z',
+    });
+
+    const recorded = recordCanvasHarvestFixturePrototypeValidations({
+      prototypes,
+      updates: [
+        {
+          family: 'classic',
+          catalogName: 'Label',
+          status: 'failed',
+          recordedAt: '2026-03-10T00:15:00.000Z',
+          method: 'container-paste',
+          notes: ['Studio paste succeeded, but the exported artifact was missing the control.'],
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text',
+          status: 'validated',
+          recordedAt: '2026-03-10T00:19:00.000Z',
+          method: 'top-level-paste',
+          notes: ['Validated via the backlog-driven fixture tranche.'],
+        },
+      ],
+      generatedAt: '2026-03-10T00:20:00.000Z',
+      refresh: {
+        plan,
+        registry,
+        statuses: ['failed', 'validated'],
+        limit: 2,
+        columns: 2,
+        cellWidth: 240,
+        cellHeight: 40,
+        gutterX: 16,
+        gutterY: 12,
+        paddingX: 24,
+        paddingY: 24,
+        paths: {
+          backlog: resolve('fixtures/canvas-harvest/generated/prototype-validation-backlog.json'),
+          registry: resolve('registries/canvas-controls.json'),
+          prototypes: resolve('fixtures/canvas-harvest/prototypes.json'),
+          yaml: resolve('fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml'),
+        },
+      },
+    });
+
+    expect(recorded.refresh).toEqual({
+      backlog: expect.objectContaining({
+        counts: expect.objectContaining({
+          prototypeControls: 4,
+          failedValidationControls: 1,
+          pendingValidationControls: 0,
+          unknownValidationControls: 2,
+          validatedControls: 1,
+        }),
+      }),
+      rendered: expect.objectContaining({
+        renderedControlCount: 2,
+        pendingMarkerCount: 0,
+      }),
+      selection: {
+        schemaVersion: 1,
+        generatedAt: '2026-03-10T00:20:00.000Z',
+        sourceBacklogGeneratedAt: '2026-03-10T00:20:00.000Z',
+        sourcePrototypeGeneratedAt: '2026-03-10T00:20:00.000Z',
+        sourceRegistryGeneratedAt: '2026-03-09T08:30:00.000Z',
+        filters: {
+          statuses: ['failed', 'validated'],
+          limit: 2,
+        },
+        counts: {
+          selectedControls: 2,
+          skippedControls: 0,
+          renderedControls: 2,
+          pendingMarkers: 0,
+        },
+        paths: {
+          backlog: resolve('fixtures/canvas-harvest/generated/prototype-validation-backlog.json'),
+          registry: resolve('registries/canvas-controls.json'),
+          prototypes: resolve('fixtures/canvas-harvest/prototypes.json'),
+          yaml: resolve('fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml'),
+        },
+        selectedControls: [
+          {
+            family: 'classic',
+            catalogName: 'Label',
+            constructor: 'Label',
+            validationStatus: 'failed',
+            planAlignment: 'aligned',
+            templateName: 'label',
+            templateVersion: '2.5.1',
+          },
+          {
+            family: 'modern',
+            catalogName: 'Text',
+            constructor: 'ModernText',
+            validationStatus: 'validated',
+            planAlignment: 'aligned',
+            templateName: 'modernText',
+            templateVersion: '1.0.0',
+          },
+        ],
+        skippedControls: [],
+      },
+    });
+    expect(recorded.refresh?.rendered.yaml).toContain('- HarvestClassicLabel:');
+    expect(recorded.refresh?.rendered.yaml).toContain('Control: Label@2.5.1');
+    expect(recorded.refresh?.rendered.yaml).toContain('- HarvestModernText:');
+    expect(recorded.refresh?.rendered.yaml).toContain('Control: ModernText@1.0.0');
   });
 
   it('allows a refreshed validation fixture to render an empty next tranche when requested', () => {

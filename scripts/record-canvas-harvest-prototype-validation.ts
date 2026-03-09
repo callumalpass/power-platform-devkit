@@ -6,9 +6,10 @@ import {
   DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BACKLOG_PATH,
   DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_SELECTION_PATH,
   DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_YAML_PATH,
-  recordCanvasHarvestFixturePrototypeValidation,
+  recordCanvasHarvestFixturePrototypeValidations,
+  type CanvasHarvestFixturePrototypeValidationBatchDocument,
   type CanvasHarvestFixturePrototypeDocument,
-  type CanvasHarvestFixtureRecordedPrototypeValidationStatus,
+  type CanvasHarvestFixturePrototypeValidationUpdate,
   type CanvasHarvestFixturePlan,
   type CanvasHarvestFixturePrototypeValidationStatus,
 } from '../packages/canvas/src/harvest-fixture';
@@ -17,17 +18,12 @@ import type { CanvasTemplateRegistryDocument } from '../packages/canvas/src/inde
 const DEFAULT_CANVAS_HARVEST_PROTOTYPE_PATH = 'fixtures/canvas-harvest/prototypes.json';
 
 async function main(): Promise<void> {
-  const family = readRequiredFamilyArg('--family');
-  const catalogName = readRequiredArg('--name');
-  const status = readRequiredStatusArg('--status');
   const prototypePath = resolve(readArg('--prototypes') ?? DEFAULT_CANVAS_HARVEST_PROTOTYPE_PATH);
   const outPath = resolve(readArg('--out') ?? prototypePath);
   const generatedAt = new Date().toISOString();
-  const recordedAt = readArg('--recorded-at') ?? generatedAt;
-  const method = readArg('--method');
-  const notes = readArgs('--note');
   const dryRun = process.argv.includes('--dry-run');
   const refreshValidationFixture = process.argv.includes('--refresh-validation-fixture');
+  const batchPath = readArg('--batch');
   const planPath = resolve(readArg('--plan') ?? DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH);
   const registryPath = resolve(readArg('--registry') ?? 'registries/canvas-controls.json');
   const backlogOutPath = resolve(readArg('--backlog-out') ?? DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BACKLOG_PATH);
@@ -38,19 +34,16 @@ async function main(): Promise<void> {
   const nextFamily = readFamilyArg('--next-family');
   const nextStatuses = parseStatuses(readArg('--next-status'));
   const nextLimit = readPositiveIntegerArg('--next-limit');
-  const [prototypes, plan, registry] = await Promise.all([
+  const [prototypes, plan, registry, batch] = await Promise.all([
     readJsonFile<CanvasHarvestFixturePrototypeDocument>(prototypePath),
     refreshValidationFixture ? readJsonFile<CanvasHarvestFixturePlan>(planPath) : Promise.resolve(undefined),
     refreshValidationFixture ? readJsonFile<CanvasTemplateRegistryDocument>(registryPath) : Promise.resolve(undefined),
+    batchPath ? readJsonFile<CanvasHarvestFixturePrototypeValidationBatchDocument>(resolve(batchPath)) : Promise.resolve(undefined),
   ]);
-  const recorded = recordCanvasHarvestFixturePrototypeValidation({
+  const updates = resolveValidationUpdates(batch);
+  const recorded = recordCanvasHarvestFixturePrototypeValidations({
     prototypes,
-    family,
-    catalogName,
-    status,
-    recordedAt,
-    method,
-    notes,
+    updates,
     generatedAt,
     ...(refreshValidationFixture && plan && registry
       ? {
@@ -98,16 +91,21 @@ async function main(): Promise<void> {
     ]);
   }
 
-  process.stdout.write(
-    `${dryRun ? 'Dry run:' : 'Wrote'} prototype validation ${family}/${catalogName} -> ${recorded.prototype.constructor} (${status})\n`
-  );
+  process.stdout.write(`${dryRun ? 'Dry run:' : 'Wrote'} ${recorded.updates.length} prototype validation update(s)\n`);
+  if (batchPath) {
+    process.stdout.write(`Batch input: ${resolve(batchPath)}\n`);
+  }
   process.stdout.write(`Prototype input: ${prototypePath}\n`);
   process.stdout.write(`${dryRun ? 'Prototype output (not written)' : 'Prototype output'}: ${outPath}\n`);
-  process.stdout.write(`Recorded at: ${recordedAt}\n`);
-  if (method) {
-    process.stdout.write(`Method: ${method}\n`);
-  }
   process.stdout.write(`Pinned prototype count: ${recorded.prototypes.prototypes.length}\n`);
+  for (const entry of recorded.updates) {
+    process.stdout.write(
+      `Recorded: ${labelControl(entry.update.family, entry.update.catalogName)} -> ${entry.prototype.constructor} (${entry.update.status}) at ${entry.update.recordedAt}\n`
+    );
+    if (entry.update.method) {
+      process.stdout.write(`Method: ${entry.update.method}\n`);
+    }
+  }
 
   if (recorded.refresh) {
     process.stdout.write(
@@ -132,6 +130,46 @@ async function main(): Promise<void> {
       `Next validation order: ${formatSelectedControls(recorded.refresh.selection.selectedControls)}\n`
     );
   }
+}
+
+function resolveValidationUpdates(
+  batch: CanvasHarvestFixturePrototypeValidationBatchDocument | undefined
+): CanvasHarvestFixturePrototypeValidationUpdate[] {
+  const defaultRecordedAt = readArg('--recorded-at');
+  const defaultMethod = readArg('--method');
+  const defaultNotes = readArgs('--note');
+
+  if (batch) {
+    assertNoSingleRecordArgsWithBatch();
+
+    if (!Array.isArray(batch.entries)) {
+      throw new Error('Invalid --batch document: expected an entries array.');
+    }
+
+    const batchRecordedAt =
+      typeof batch.generatedAt === 'string' && batch.generatedAt.length > 0
+        ? batch.generatedAt
+        : undefined;
+
+    return batch.entries.map((entry, index) =>
+      normalizeBatchEntry(entry, index, {
+        recordedAt: defaultRecordedAt ?? batchRecordedAt,
+        method: defaultMethod,
+        notes: defaultNotes,
+      })
+    );
+  }
+
+  return [
+    {
+      family: readRequiredFamilyArg('--family'),
+      catalogName: readRequiredArg('--name'),
+      status: readRequiredStatusArg('--status'),
+      ...(defaultRecordedAt ? { recordedAt: defaultRecordedAt } : {}),
+      ...(defaultMethod ? { method: defaultMethod } : {}),
+      ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
+    },
+  ];
 }
 
 function readArg(flag: string): string | undefined {
@@ -174,9 +212,9 @@ function readRequiredFamilyArg(flag: string): 'classic' | 'modern' {
   throw new Error(`Invalid ${flag} value: ${value}. Expected classic or modern.`);
 }
 
-function readRequiredStatusArg(flag: string): CanvasHarvestFixtureRecordedPrototypeValidationStatus {
+function readRequiredStatusArg(flag: string): CanvasHarvestFixturePrototypeValidationUpdate['status'] {
   const value = readRequiredArg(flag);
-  if (value === 'validated' || value === 'pending' || value === 'failed') {
+  if (isRecordedPrototypeValidationStatus(value)) {
     return value;
   }
 
@@ -234,12 +272,118 @@ function parseStatuses(raw: string | undefined): CanvasHarvestFixturePrototypeVa
   return statuses as CanvasHarvestFixturePrototypeValidationStatus[];
 }
 
+function normalizeBatchEntry(
+  entry: unknown,
+  index: number,
+  defaults: {
+    recordedAt?: string;
+    method?: string;
+    notes?: string[];
+  }
+): CanvasHarvestFixturePrototypeValidationUpdate {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error(`Invalid --batch entry ${index + 1}: expected an object.`);
+  }
+
+  const family = readBatchFamilyArg(entry, index);
+  const catalogName = readBatchStringArg(entry, 'catalogName', index);
+  const statusValue = readBatchStringArg(entry, 'status', index);
+  if (!isRecordedPrototypeValidationStatus(statusValue)) {
+    throw new Error(
+      `Invalid --batch entry ${index + 1} field "status": ${statusValue}. Expected validated, pending, or failed.`
+    );
+  }
+
+  const recordedAt = readOptionalBatchStringField(entry, 'recordedAt', index) ?? defaults.recordedAt;
+  const method = readOptionalBatchStringField(entry, 'method', index) ?? defaults.method;
+  const notes = readOptionalBatchStringArrayField(entry, 'notes', index) ?? defaults.notes;
+
+  return {
+    family,
+    catalogName,
+    status: statusValue,
+    ...(recordedAt ? { recordedAt } : {}),
+    ...(method ? { method } : {}),
+    ...(notes && notes.length > 0 ? { notes } : {}),
+  };
+}
+
+function assertNoSingleRecordArgsWithBatch(): void {
+  const conflictingFlags = ['--family', '--name', '--status'].filter((flag) => readArg(flag));
+  if (conflictingFlags.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    `Cannot combine --batch with ${conflictingFlags.join(', ')}. Use either --batch or the single-record flags.`
+  );
+}
+
+function readBatchFamilyArg(entry: object, index: number): 'classic' | 'modern' {
+  const value = readBatchStringArg(entry, 'family', index);
+  if (value === 'classic' || value === 'modern') {
+    return value;
+  }
+
+  throw new Error(`Invalid --batch entry ${index + 1} field "family": ${value}. Expected classic or modern.`);
+}
+
+function readBatchStringArg(entry: object, field: string, index: number): string {
+  const value = (entry as Record<string, unknown>)[field];
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
+  }
+
+  throw new Error(`Invalid --batch entry ${index + 1} field "${field}": expected a non-empty string.`);
+}
+
+function readOptionalBatchStringField(entry: object, field: string, index: number): string | undefined {
+  const value = (entry as Record<string, unknown>)[field];
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
+  }
+
+  throw new Error(`Invalid --batch entry ${index + 1} field "${field}": expected a non-empty string.`);
+}
+
+function readOptionalBatchStringArrayField(entry: object, field: string, index: number): string[] | undefined {
+  const value = (entry as Record<string, unknown>)[field];
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid --batch entry ${index + 1} field "${field}": expected an array of strings.`);
+  }
+
+  const invalid = value.filter((item) => typeof item !== 'string' || item.length === 0);
+  if (invalid.length > 0) {
+    throw new Error(`Invalid --batch entry ${index + 1} field "${field}": expected an array of non-empty strings.`);
+  }
+
+  return value as string[];
+}
+
 function isPrototypeValidationStatus(value: string): value is CanvasHarvestFixturePrototypeValidationStatus {
   return value === 'failed' || value === 'pending' || value === 'unknown' || value === 'validated';
 }
 
+function isRecordedPrototypeValidationStatus(
+  value: string
+): value is CanvasHarvestFixturePrototypeValidationUpdate['status'] {
+  return value === 'failed' || value === 'pending' || value === 'validated';
+}
+
 function formatStatuses(statuses: CanvasHarvestFixturePrototypeValidationStatus[] | undefined): string {
   return (statuses ?? ['failed', 'pending', 'unknown']).join(', ');
+}
+
+function labelControl(family: 'classic' | 'modern', catalogName: string): string {
+  return `${family === 'classic' ? 'Classic' : 'Modern'}/${catalogName}`;
 }
 
 function formatSelectedControls(

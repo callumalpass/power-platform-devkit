@@ -317,20 +317,48 @@ export interface PromotedCanvasHarvestFixturePrototypeDraftResult {
   prototypes: CanvasHarvestFixturePrototypeDocument;
 }
 
-export interface RecordCanvasHarvestFixturePrototypeValidationOptions {
-  prototypes: CanvasHarvestFixturePrototypeDocument;
+export interface CanvasHarvestFixturePrototypeValidationUpdate {
   family: 'classic' | 'modern';
   catalogName: string;
   status: CanvasHarvestFixtureRecordedPrototypeValidationStatus;
   recordedAt?: string;
   method?: string;
   notes?: string[];
+}
+
+export interface CanvasHarvestFixturePrototypeValidationBatchDocument {
+  schemaVersion: 1;
+  generatedAt?: string;
+  entries: CanvasHarvestFixturePrototypeValidationUpdate[];
+}
+
+export interface RecordCanvasHarvestFixturePrototypeValidationOptions
+  extends CanvasHarvestFixturePrototypeValidationUpdate {
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  generatedAt?: string;
+  refresh?: Omit<RefreshCanvasHarvestPrototypeValidationArtifactsOptions, 'generatedAt' | 'prototypes'>;
+}
+
+export interface RecordCanvasHarvestFixturePrototypeValidationsOptions {
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  updates: CanvasHarvestFixturePrototypeValidationUpdate[];
   generatedAt?: string;
   refresh?: Omit<RefreshCanvasHarvestPrototypeValidationArtifactsOptions, 'generatedAt' | 'prototypes'>;
 }
 
 export interface RecordedCanvasHarvestFixturePrototypeValidationResult {
   prototype: CanvasHarvestFixturePrototype;
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  refresh?: RefreshedCanvasHarvestPrototypeValidationArtifacts;
+}
+
+export interface RecordedCanvasHarvestFixturePrototypeValidationUpdate {
+  update: CanvasHarvestFixturePrototypeValidationUpdate & { recordedAt: string };
+  prototype: CanvasHarvestFixturePrototype;
+}
+
+export interface RecordedCanvasHarvestFixturePrototypeValidationsResult {
+  updates: RecordedCanvasHarvestFixturePrototypeValidationUpdate[];
   prototypes: CanvasHarvestFixturePrototypeDocument;
   refresh?: RefreshedCanvasHarvestPrototypeValidationArtifacts;
 }
@@ -999,38 +1027,85 @@ export function promoteCanvasHarvestFixturePrototypeDraft(
 export function recordCanvasHarvestFixturePrototypeValidation(
   options: RecordCanvasHarvestFixturePrototypeValidationOptions
 ): RecordedCanvasHarvestFixturePrototypeValidationResult {
-  const generatedAt = options.generatedAt ?? new Date().toISOString();
-  const recordedAt = options.recordedAt ?? generatedAt;
-  const key = makeCatalogKey(options.family, options.catalogName);
-  const prototypeIndex = options.prototypes.prototypes.findIndex(
-    (prototype) => makeCatalogKey(prototype.family, prototype.catalogName) === key
-  );
+  const recorded = recordCanvasHarvestFixturePrototypeValidations({
+    prototypes: options.prototypes,
+    updates: [
+      {
+        family: options.family,
+        catalogName: options.catalogName,
+        status: options.status,
+        recordedAt: options.recordedAt,
+        method: options.method,
+        notes: options.notes,
+      },
+    ],
+    generatedAt: options.generatedAt,
+    refresh: options.refresh,
+  });
 
-  if (prototypeIndex < 0) {
-    const availablePrototypes = options.prototypes.prototypes.map(
-      (prototype) => `${familyLabel(prototype.family)}/${prototype.catalogName}`
-    );
-    const availabilityNote =
-      availablePrototypes.length > 0
-        ? ` Available pinned prototypes: ${availablePrototypes.join(', ')}.`
-        : ' No pinned prototypes are available.';
-    throw new Error(
-      `No pinned fixture prototype exists for ${familyLabel(options.family)}/${options.catalogName}.${availabilityNote}`
-    );
+  return {
+    prototype: recorded.updates[0]!.prototype,
+    prototypes: recorded.prototypes,
+    ...(recorded.refresh
+      ? {
+          refresh: recorded.refresh,
+        }
+      : {}),
+  };
+}
+
+export function recordCanvasHarvestFixturePrototypeValidations(
+  options: RecordCanvasHarvestFixturePrototypeValidationsOptions
+): RecordedCanvasHarvestFixturePrototypeValidationsResult {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  if (options.updates.length === 0) {
+    throw new Error('Expected at least one prototype validation update.');
   }
 
-  const prototype = options.prototypes.prototypes[prototypeIndex]!;
-  const updatedPrototype: CanvasHarvestFixturePrototype = {
-    ...prototype,
-    liveValidation: {
-      status: options.status,
-      recordedAt,
-      ...(options.method ? { method: options.method } : {}),
-      ...(options.notes && options.notes.length > 0 ? { notes: dedupeStrings(options.notes) } : {}),
-    },
-  };
   const updatedPrototypes = [...options.prototypes.prototypes];
-  updatedPrototypes[prototypeIndex] = updatedPrototype;
+  const seenKeys = new Set<string>();
+  const updates = options.updates.map((update) => {
+    const key = makeCatalogKey(update.family, update.catalogName);
+    if (seenKeys.has(key)) {
+      throw new Error(
+        `Duplicate prototype validation update specified for ${familyLabel(update.family)}/${update.catalogName}.`
+      );
+    }
+    seenKeys.add(key);
+
+    const prototypeIndex = updatedPrototypes.findIndex(
+      (prototype) => makeCatalogKey(prototype.family, prototype.catalogName) === key
+    );
+    if (prototypeIndex < 0) {
+      throw buildMissingPinnedPrototypeError({
+        prototypes: options.prototypes,
+        family: update.family,
+        catalogName: update.catalogName,
+      });
+    }
+
+    const recordedAt = update.recordedAt ?? generatedAt;
+    const prototype = updatedPrototypes[prototypeIndex]!;
+    const updatedPrototype: CanvasHarvestFixturePrototype = {
+      ...prototype,
+      liveValidation: {
+        status: update.status,
+        recordedAt,
+        ...(update.method ? { method: update.method } : {}),
+        ...(update.notes && update.notes.length > 0 ? { notes: dedupeStrings(update.notes) } : {}),
+      },
+    };
+    updatedPrototypes[prototypeIndex] = updatedPrototype;
+
+    return {
+      update: {
+        ...update,
+        recordedAt,
+      },
+      prototype: updatedPrototype,
+    } satisfies RecordedCanvasHarvestFixturePrototypeValidationUpdate;
+  });
+
   const updatedPrototypeDocument: CanvasHarvestFixturePrototypeDocument = {
     schemaVersion: 1,
     generatedAt,
@@ -1038,7 +1113,7 @@ export function recordCanvasHarvestFixturePrototypeValidation(
   };
 
   return {
-    prototype: updatedPrototype,
+    updates,
     prototypes: updatedPrototypeDocument,
     ...(options.refresh
       ? {
@@ -1944,6 +2019,24 @@ function summarizeInsertReportEntries(entries: CanvasControlInsertReportEntry[])
 
 function familyLabel(value: 'classic' | 'modern'): string {
   return value === 'classic' ? 'Classic' : 'Modern';
+}
+
+function buildMissingPinnedPrototypeError(options: {
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  family: 'classic' | 'modern';
+  catalogName: string;
+}): Error {
+  const availablePrototypes = options.prototypes.prototypes.map(
+    (prototype) => `${familyLabel(prototype.family)}/${prototype.catalogName}`
+  );
+  const availabilityNote =
+    availablePrototypes.length > 0
+      ? ` Available pinned prototypes: ${availablePrototypes.join(', ')}.`
+      : ' No pinned prototypes are available.';
+
+  return new Error(
+    `No pinned fixture prototype exists for ${familyLabel(options.family)}/${options.catalogName}.${availabilityNote}`
+  );
 }
 
 function statusLabel(value: CanvasHarvestFixtureControlStatus): string {
