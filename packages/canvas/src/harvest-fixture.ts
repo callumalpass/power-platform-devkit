@@ -7,7 +7,7 @@ import {
   type CanvasControlCatalogEntry,
   type CanvasControlCatalogSource,
 } from './control-catalog';
-import type { CanvasTemplateMatchType, CanvasTemplateRecord, CanvasTemplateRegistryDocument } from './index';
+import type { CanvasJsonValue, CanvasTemplateMatchType, CanvasTemplateRecord, CanvasTemplateRegistryDocument } from './index';
 
 export type { CanvasControlCatalogCounts, CanvasControlCatalogDocument, CanvasControlCatalogEntry, CanvasControlCatalogSource };
 
@@ -422,15 +422,18 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
       continue;
     }
 
+    const draftProperties = buildPrototypeDraftProperties(options.registry, selectedSuggestion);
     drafts.push({
       family: control.family,
       catalogName: control.catalogName,
       constructor: selectedSuggestion.constructor,
+      ...(draftProperties ? { properties: draftProperties } : {}),
       notes: buildPrototypeDraftNotes({
         control,
         suggestion: selectedSuggestion,
         planGeneratedAt: options.plan.generatedAt,
         suggestedInsertQueries,
+        draftProperties,
       }),
     });
   }
@@ -625,11 +628,105 @@ function formatPrototypeSuggestion(suggestion: CanvasHarvestFixturePrototypeSugg
   return `${target}${suggestion.templateName}@${suggestion.templateVersion}`;
 }
 
+const DRAFT_PROPERTY_PRIORITY = [
+  'Height',
+  'Width',
+  'Text',
+  'Icon',
+  'Image',
+  'ImagePosition',
+  'AutoHeight',
+  'Wrap',
+  'DisplayMode',
+  'Align',
+  'VerticalAlign',
+  'Visible',
+] as const;
+
+function buildPrototypeDraftProperties(
+  registry: CanvasTemplateRegistryDocument,
+  suggestion: CanvasHarvestFixturePrototypeSuggestion
+): Record<string, string> | undefined {
+  const template = registry.templates.find(
+    (candidate) =>
+      candidate.templateName === suggestion.templateName && candidate.templateVersion === suggestion.templateVersion
+  );
+  const runtime = asJsonObject(template?.files?.['Harvest/Runtime.json']);
+  const rules = asJsonObject(runtime?.rules);
+
+  if (!rules) {
+    return undefined;
+  }
+
+  const properties: Record<string, string> = {};
+
+  for (const propertyName of DRAFT_PROPERTY_PRIORITY) {
+    const rule = asJsonObject(rules[propertyName]);
+    const sampleScripts = asStringArray(rule?.sampleScripts);
+    const script = selectPrototypeDraftScript(sampleScripts);
+    if (!script) {
+      continue;
+    }
+
+    properties[propertyName] = script.startsWith('=') ? script : `=${script}`;
+  }
+
+  return Object.keys(properties).length > 0 ? properties : undefined;
+}
+
+function selectPrototypeDraftScript(sampleScripts: string[] | undefined): string | undefined {
+  for (const script of sampleScripts ?? []) {
+    if (isSafePrototypeDraftScript(script)) {
+      return script;
+    }
+  }
+
+  return undefined;
+}
+
+function isSafePrototypeDraftScript(script: string): boolean {
+  const trimmed = script.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    return true;
+  }
+
+  if (/^(true|false)$/i.test(trimmed)) {
+    return true;
+  }
+
+  if (/^"(?:[^"]|"")*"$/.test(trimmed)) {
+    return true;
+  }
+
+  return /^[A-Za-z_][A-Za-z0-9_']*(\.[A-Za-z_][A-Za-z0-9_']*)*$/.test(trimmed);
+}
+
+function asJsonObject(value: CanvasJsonValue | undefined): Record<string, CanvasJsonValue> | undefined {
+  if (!value || Array.isArray(value) || typeof value !== 'object') {
+    return undefined;
+  }
+
+  return value as Record<string, CanvasJsonValue>;
+}
+
+function asStringArray(value: CanvasJsonValue | undefined): string[] | undefined {
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === 'string')) {
+    return undefined;
+  }
+
+  return value as string[];
+}
+
 function buildPrototypeDraftNotes(options: {
   control: Pick<CanvasHarvestFixturePlanEntry, 'family' | 'catalogName' | 'latestInsertObservation'>;
   suggestion: CanvasHarvestFixturePrototypeSuggestion;
   planGeneratedAt: string;
   suggestedInsertQueries: string[];
+  draftProperties?: Record<string, string>;
 }): string[] {
   const notes = [
     `Draft scaffold generated from fixture plan ${options.planGeneratedAt}.`,
@@ -637,6 +734,9 @@ function buildPrototypeDraftNotes(options: {
     options.suggestedInsertQueries.length > 0
       ? `Suggested Insert-pane queries: ${options.suggestedInsertQueries.join(', ')}.`
       : 'Suggested Insert-pane queries were unavailable in the source plan.',
+    options.draftProperties && Object.keys(options.draftProperties).length > 0
+      ? `Scaffold properties derived from harvested runtime metadata: ${Object.keys(options.draftProperties).join(', ')}.`
+      : 'No simple scaffold properties were derived from the harvested runtime metadata.',
     'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
   ];
 

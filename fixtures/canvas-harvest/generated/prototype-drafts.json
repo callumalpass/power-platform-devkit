@@ -12,11 +12,20 @@
         "Draft scaffold generated from fixture plan 2026-03-09T12:21:27.948Z.",
         "Registry suggestion selected: Classic/Button -> button@2.2.0 (constructor match).",
         "Suggested Insert-pane queries: Button.",
+        "Scaffold properties derived from harvested runtime metadata: Height, Width, Text, DisplayMode, Align, VerticalAlign.",
         "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ]
+      ],
+      "properties": {
+        "Align": "=Align.Center",
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=40",
+        "Text": "=\"Button\"",
+        "VerticalAlign": "=VerticalAlign.Middle",
+        "Width": "=160"
+      }
     }
   ],
-  "generatedAt": "2026-03-09T13:16:11.036Z",
+  "generatedAt": "2026-03-09T13:23:07.191Z",
   "schemaVersion": 1,
   "skipped": [
     {

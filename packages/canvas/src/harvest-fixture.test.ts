@@ -77,6 +77,24 @@ const registry: CanvasTemplateRegistryDocument = {
       aliases: {
         constructors: ['Classic/Button'],
       },
+      files: {
+        'Harvest/Runtime.json': {
+          rules: {
+            Height: {
+              sampleScripts: ['40'],
+            },
+            Width: {
+              sampleScripts: ['160'],
+            },
+            Text: {
+              sampleScripts: ['"Button"'],
+            },
+            X: {
+              sampleScripts: ['40'],
+            },
+          },
+        },
+      },
       contentHash: 'classic-button',
       provenance: {
         kind: 'harvested',
@@ -518,10 +536,16 @@ describe('canvas harvest fixture planning', () => {
           family: 'classic',
           catalogName: 'Button',
           constructor: 'Classic/Button',
+          properties: {
+            Height: '=40',
+            Width: '=160',
+            Text: '="Button"',
+          },
           notes: [
             'Draft scaffold generated from fixture plan 2026-03-09T12:21:27.948Z.',
             'Registry suggestion selected: Classic/Button -> button@2.2.0 (constructor match).',
             'Suggested Insert-pane queries: Button.',
+            'Scaffold properties derived from harvested runtime metadata: Height, Width, Text.',
             'Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.',
           ],
         },
