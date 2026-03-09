@@ -74,6 +74,19 @@ function createFixtureDataverseClient(fixture: FlowRuntimeFixture): DataverseCli
 }
 
 describe('flow fixture-backed goldens', () => {
+  it('captures local flow artifact inspect summaries as stable goldens', async () => {
+    const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');
+    const service = new FlowService();
+    const inspect = await service.inspectArtifact(rawPath);
+
+    expect(inspect.success).toBe(true);
+    expect(inspect.data).toBeDefined();
+
+    await expectGoldenJson(inspect.data, 'fixtures/flow/golden/inspect-summary.json', {
+      normalize: (value) => normalizeFlowSnapshot(value),
+    });
+  });
+
   it('captures unpacked and validated flow artifacts as stable goldens', async () => {
     const tempDir = await createTempDir();
     const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');

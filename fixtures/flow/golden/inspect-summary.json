@@ -1,0 +1,9 @@
+{
+  "connectionReferenceCount": 1,
+  "definitionHash": "4dd289c8045350cdc371d6a3f59efd6ec648c062d88ef1976c41e38e5e9e2b16",
+  "environmentVariableCount": 1,
+  "name": "Invoice Flow",
+  "normalized": true,
+  "parameterCount": 2,
+  "path": "<REPO_ROOT>/fixtures/flow/raw/invoice-flow.raw.json"
+}

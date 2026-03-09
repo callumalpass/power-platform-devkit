@@ -23,8 +23,9 @@ The committed fixtures currently cover:
 - canvas mode-specific seeded-only and registry-only failures when fixture
   template metadata is intentionally split between seeded sources and external
   registries
-- flow unpack, validate, patch, and normalize outputs, including round-trip
-  connection-reference rename consistency inside patched artifacts
+- flow local artifact inspect, unpack, validate, patch, and normalize outputs,
+  including round-trip connection-reference rename consistency inside patched
+  artifacts
 - flow invalid-artifact validation diagnostics, including package-level
   diagnostic envelopes and CLI validation exit behavior
 - flow remote list, inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures
