@@ -195,6 +195,8 @@ export interface CanvasHarvestFixturePrototypeDraftSkippedControl {
   reason: string;
   suggestedInsertQueries: string[];
   prototypeSuggestions?: CanvasHarvestFixturePrototypeSuggestion[];
+  latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
+  notes?: string[];
 }
 
 export interface CanvasHarvestFixturePrototypeDraftEntry {
@@ -228,6 +230,7 @@ export interface MergeCanvasHarvestFixturePrototypeDraftDocumentResult {
   preservedVariantEntries: number;
   preservedPropertyKeys: number;
   preservedNotesEntries: number;
+  preservedSkippedNotesEntries: number;
 }
 
 export interface CanvasHarvestFixturePrototypeValidationBacklogEntry {
@@ -965,6 +968,11 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
         reason: 'A pinned fixture prototype already exists for this control.',
         suggestedInsertQueries,
         ...(prototypeSuggestions.length > 0 ? { prototypeSuggestions } : {}),
+        ...(control.latestInsertObservation
+          ? {
+              latestInsertObservation: control.latestInsertObservation,
+            }
+          : {}),
       });
       continue;
     }
@@ -978,6 +986,11 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
         reason: 'The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.',
         suggestedInsertQueries,
         ...(prototypeSuggestions.length > 0 ? { prototypeSuggestions } : {}),
+        ...(control.latestInsertObservation
+          ? {
+              latestInsertObservation: control.latestInsertObservation,
+            }
+          : {}),
       });
       continue;
     }
@@ -1029,10 +1042,14 @@ export function mergeCanvasHarvestFixturePrototypeDraftDocument(
   const existingByKey = new Map(
     existing.drafts.map((entry) => [makeCatalogKey(entry.family, entry.catalogName), entry] as const)
   );
+  const existingSkippedByKey = new Map(
+    existing.skipped.map((entry) => [makeCatalogKey(entry.family, entry.catalogName), entry] as const)
+  );
   let preservedEntries = 0;
   let preservedVariantEntries = 0;
   let preservedPropertyKeys = 0;
   let preservedNotesEntries = 0;
+  let preservedSkippedNotesEntries = 0;
 
   const mergedDrafts = drafts.drafts.map((entry) => {
     const existingEntry = existingByKey.get(makeCatalogKey(entry.family, entry.catalogName));
@@ -1087,15 +1104,39 @@ export function mergeCanvasHarvestFixturePrototypeDraftDocument(
     };
   });
 
+  const mergedSkipped = drafts.skipped.map((entry) => {
+    const existingEntry = existingSkippedByKey.get(makeCatalogKey(entry.family, entry.catalogName));
+    if (!existingEntry) {
+      return entry;
+    }
+
+    const skippedNotes = entry.notes ?? [];
+    const existingNotes = existingEntry.notes ?? [];
+    const preservedNotes = existingNotes.filter((note) => !skippedNotes.includes(note));
+    const notes = dedupeStrings(skippedNotes.concat(existingNotes));
+
+    if (preservedNotes.length > 0) {
+      preservedEntries += 1;
+      preservedSkippedNotesEntries += 1;
+    }
+
+    return {
+      ...entry,
+      ...(notes.length > 0 ? { notes } : {}),
+    };
+  });
+
   return {
     drafts: {
       ...drafts,
       drafts: mergedDrafts,
+      skipped: mergedSkipped,
     },
     preservedEntries,
     preservedVariantEntries,
     preservedPropertyKeys,
     preservedNotesEntries,
+    preservedSkippedNotesEntries,
   };
 }
 

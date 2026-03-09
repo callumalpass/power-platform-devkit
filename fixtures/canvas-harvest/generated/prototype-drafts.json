@@ -326,7 +326,7 @@
       }
     }
   ],
-  "generatedAt": "2026-03-09T16:57:30.662Z",
+  "generatedAt": "2026-03-09T17:24:45.425Z",
   "schemaVersion": 1,
   "skipped": [
     {
@@ -739,6 +739,19 @@
     {
       "catalogName": "Button",
       "family": "modern",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Button"
+        ],
+        "chosenCandidate": {
+          "category": "Input",
+          "iconName": "#fluent-button",
+          "title": "Button"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [

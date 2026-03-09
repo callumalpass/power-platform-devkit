@@ -750,6 +750,12 @@ describe('canvas harvest fixture planning', () => {
           status: 'prototype-missing',
           reason: 'The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.',
           suggestedInsertQueries: ['Info button', 'Information button'],
+          latestInsertObservation: {
+            generatedAt: '2026-03-09T09:15:00.000Z',
+            outcome: 'not-found',
+            strategy: 'search-miss',
+            attemptedQueries: ['Information button'],
+          },
         },
       ],
     });
@@ -906,6 +912,12 @@ describe('canvas harvest fixture planning', () => {
           status: 'prototype-missing',
           reason: 'No constructor-backed suggestion is pinned yet.',
           suggestedInsertQueries: ['Button'],
+          latestInsertObservation: {
+            generatedAt: '2026-03-10T00:11:45.000Z',
+            outcome: 'not-found',
+            strategy: 'search-miss',
+            attemptedQueries: ['Button'],
+          },
         },
       ],
     };
@@ -916,7 +928,7 @@ describe('canvas harvest fixture planning', () => {
       sourcePrototypeGeneratedAt: '2026-03-10T00:03:00.000Z',
       counts: {
         draftControls: 3,
-        skippedControls: 0,
+        skippedControls: 1,
       },
       drafts: [
         {
@@ -950,15 +962,25 @@ describe('canvas harvest fixture planning', () => {
           },
         },
       ],
-      skipped: [],
+      skipped: [
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No constructor-backed suggestion is pinned yet.',
+          suggestedInsertQueries: ['Button'],
+          notes: ['Manual skipped-control review note'],
+        },
+      ],
     };
 
     const merged = mergeCanvasHarvestFixturePrototypeDraftDocument(built, existing);
 
-    expect(merged.preservedEntries).toBe(1);
+    expect(merged.preservedEntries).toBe(2);
     expect(merged.preservedVariantEntries).toBe(1);
     expect(merged.preservedPropertyKeys).toBe(2);
     expect(merged.preservedNotesEntries).toBe(1);
+    expect(merged.preservedSkippedNotesEntries).toBe(1);
     expect(merged.drafts).toEqual({
       ...built,
       drafts: [
@@ -988,6 +1010,22 @@ describe('canvas harvest fixture planning', () => {
           },
         },
         built.drafts[1]!,
+      ],
+      skipped: [
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No constructor-backed suggestion is pinned yet.',
+          suggestedInsertQueries: ['Button'],
+          latestInsertObservation: {
+            generatedAt: '2026-03-10T00:11:45.000Z',
+            outcome: 'not-found',
+            strategy: 'search-miss',
+            attemptedQueries: ['Button'],
+          },
+          notes: ['Manual skipped-control review note'],
+        },
       ],
     });
   });

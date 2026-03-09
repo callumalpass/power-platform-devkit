@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   if (mergeExistingPath) {
     process.stdout.write(`Merged existing drafts: ${resolve(mergeExistingPath)}\n`);
     process.stdout.write(
-      `Preserved edits: entries ${merged?.preservedEntries ?? 0}; variants ${merged?.preservedVariantEntries ?? 0}; property keys ${merged?.preservedPropertyKeys ?? 0}; notes ${merged?.preservedNotesEntries ?? 0}\n`
+      `Preserved edits: entries ${merged?.preservedEntries ?? 0}; variants ${merged?.preservedVariantEntries ?? 0}; property keys ${merged?.preservedPropertyKeys ?? 0}; draft notes ${merged?.preservedNotesEntries ?? 0}; skipped notes ${merged?.preservedSkippedNotesEntries ?? 0}\n`
     );
   }
   process.stdout.write(
