@@ -38,7 +38,56 @@ export interface CanvasHarvestFixturePrototypeDocument {
   prototypes: CanvasHarvestFixturePrototype[];
 }
 
+export type CanvasControlInsertReportOutcome = 'inserted' | 'covered' | 'not-found' | 'failed';
+
+export interface CanvasControlInsertReportCandidate {
+  title: string;
+  category?: string;
+  iconName?: string;
+}
+
+export interface CanvasControlInsertReportAttempt {
+  query: string;
+  candidates: CanvasControlInsertReportCandidate[];
+}
+
+export interface CanvasControlInsertReportEntry {
+  family: 'classic' | 'modern';
+  name: string;
+  docPath: string;
+  status: string[];
+  outcome: CanvasControlInsertReportOutcome;
+  strategy: string;
+  attempts: CanvasControlInsertReportAttempt[];
+  chosenCandidate?: CanvasControlInsertReportCandidate;
+  error?: string;
+}
+
+export interface CanvasControlInsertReportDocument {
+  schemaVersion: 1;
+  generatedAt: string;
+  catalogPath: string;
+  fixtureContainerName: string;
+  entries: CanvasControlInsertReportEntry[];
+  totals: {
+    attempted: number;
+    inserted: number;
+    covered: number;
+    notFound: number;
+    failed: number;
+  };
+}
+
 export type CanvasHarvestFixtureControlStatus = 'resolved' | 'prototype-missing' | 'registry-missing';
+
+export interface CanvasHarvestFixtureInsertObservation {
+  generatedAt: string;
+  outcome: CanvasControlInsertReportOutcome;
+  strategy: string;
+  attemptedQueries: string[];
+  chosenCandidate?: CanvasControlInsertReportCandidate;
+  error?: string;
+}
 
 export interface CanvasHarvestFixturePlanEntry {
   family: 'classic' | 'modern';
@@ -53,6 +102,7 @@ export interface CanvasHarvestFixturePlanEntry {
   templateName?: string;
   templateVersion?: string;
   notes: string[];
+  latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
 }
 
 export interface CanvasHarvestFixturePlan {
@@ -74,6 +124,7 @@ export interface BuildCanvasHarvestFixturePlanOptions {
   catalog: CanvasControlCatalogDocument;
   registry: CanvasTemplateRegistryDocument;
   prototypes: CanvasHarvestFixturePrototypeDocument;
+  insertReport?: CanvasControlInsertReportDocument;
   generatedAt?: string;
 }
 
@@ -112,9 +163,16 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
   const prototypesByKey = new Map(
     options.prototypes.prototypes.map((prototype) => [makeCatalogKey(prototype.family, prototype.catalogName), prototype] as const)
   );
+  const insertObservationsByKey = new Map(
+    (options.insertReport?.entries ?? []).map((entry) => [
+      makeCatalogKey(entry.family, entry.name),
+      buildInsertObservation(options.insertReport!.generatedAt, entry),
+    ])
+  );
   const controls = options.catalog.controls.map((control) => {
     const prototype = prototypesByKey.get(makeCatalogKey(control.family, control.name));
-    const notes = buildCatalogNotes(control);
+    const latestInsertObservation = insertObservationsByKey.get(makeCatalogKey(control.family, control.name));
+    const notes = [...buildCatalogNotes(control), ...buildInsertObservationNotes(latestInsertObservation)];
 
     if (!prototype) {
       return {
@@ -127,6 +185,7 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
         status: 'prototype-missing',
         reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
         notes,
+        ...(latestInsertObservation ? { latestInsertObservation } : {}),
       } satisfies CanvasHarvestFixturePlanEntry;
     }
 
@@ -143,6 +202,7 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
         reason: `Fixture prototype ${prototype.constructor} exists, but the pinned harvested registry does not expose a matching constructor alias yet.`,
         fixtureConstructor: prototype.constructor,
         notes: [...notes, ...(prototype.notes ?? [])],
+        ...(latestInsertObservation ? { latestInsertObservation } : {}),
       } satisfies CanvasHarvestFixturePlanEntry;
     }
 
@@ -159,6 +219,7 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
       templateName: resolvedTemplate.templateName,
       templateVersion: resolvedTemplate.templateVersion,
       notes: [...notes, ...(prototype.notes ?? [])],
+      ...(latestInsertObservation ? { latestInsertObservation } : {}),
     } satisfies CanvasHarvestFixturePlanEntry;
   });
 
@@ -297,6 +358,46 @@ function buildCatalogNotes(control: CanvasControlCatalogEntry): string[] {
   return control.status.length > 0 ? [`Catalog status: ${control.status.join(', ')}.`] : [];
 }
 
+function buildInsertObservation(
+  generatedAt: string,
+  entry: CanvasControlInsertReportEntry
+): CanvasHarvestFixtureInsertObservation {
+  return {
+    generatedAt,
+    outcome: entry.outcome,
+    strategy: entry.strategy,
+    attemptedQueries: dedupeStrings(entry.attempts.map((attempt) => attempt.query).filter((query) => query.length > 0)),
+    chosenCandidate: entry.chosenCandidate,
+    error: entry.error,
+  };
+}
+
+function buildInsertObservationNotes(observation: CanvasHarvestFixtureInsertObservation | undefined): string[] {
+  if (!observation) {
+    return [];
+  }
+
+  const queryNote =
+    observation.attemptedQueries.length > 0 ? ` Queries: ${observation.attemptedQueries.join(', ')}.` : '';
+
+  switch (observation.outcome) {
+    case 'inserted':
+      return [
+        `Latest Studio insert attempt (${observation.generatedAt}) inserted this control via ${describeInsertCandidate(observation.chosenCandidate)} using ${observation.strategy}.${queryNote}`,
+      ];
+    case 'covered':
+      return [`Latest Studio insert attempt (${observation.generatedAt}) marked this control as covered via ${observation.strategy}.${queryNote}`];
+    case 'failed':
+      return [
+        `Latest Studio insert attempt (${observation.generatedAt}) selected ${describeInsertCandidate(observation.chosenCandidate)} but failed via ${observation.strategy}: ${observation.error ?? 'unknown error'}.${queryNote}`,
+      ];
+    default:
+      return [
+        `Latest Studio insert attempt (${observation.generatedAt}) found no insert/search candidates via ${observation.strategy}.${queryNote}`,
+      ];
+  }
+}
+
 function resolveTemplateForConstructor(
   registry: CanvasTemplateRegistryDocument,
   constructorName: string
@@ -353,6 +454,22 @@ function normalizeToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
+function dedupeStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const value of values) {
+    if (seen.has(value)) {
+      continue;
+    }
+
+    seen.add(value);
+    deduped.push(value);
+  }
+
+  return deduped;
+}
+
 function familyLabel(value: 'classic' | 'modern'): string {
   return value === 'classic' ? 'Classic' : 'Modern';
 }
@@ -370,6 +487,14 @@ function statusLabel(value: CanvasHarvestFixtureControlStatus): string {
 
 function stringLiteral(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
+}
+
+function describeInsertCandidate(candidate: CanvasControlInsertReportCandidate | undefined): string {
+  if (!candidate) {
+    return 'an unnamed candidate';
+  }
+
+  return candidate.category ? `${candidate.title} (${candidate.category})` : candidate.title;
 }
 
 function mergeProperties(

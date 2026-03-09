@@ -4,6 +4,7 @@ import {
   buildCanvasHarvestFixturePlan,
   renderCanvasHarvestFixture,
   type CanvasControlCatalogDocument,
+  type CanvasControlInsertReportDocument,
   type CanvasHarvestFixturePrototypeDocument,
 } from './harvest-fixture';
 
@@ -161,6 +162,61 @@ const prototypes: CanvasHarvestFixturePrototypeDocument = {
   ],
 };
 
+const insertReport: CanvasControlInsertReportDocument = {
+  schemaVersion: 1,
+  generatedAt: '2026-03-09T09:15:00.000Z',
+  catalogPath: '/tmp/canvas-control-catalog-subset.json',
+  fixtureContainerName: 'HarvestFixtureContainer',
+  entries: [
+    {
+      family: 'classic',
+      name: 'Button',
+      docPath: 'controls/control-button.md',
+      status: [],
+      outcome: 'not-found',
+      strategy: 'search-miss',
+      attempts: [
+        {
+          query: 'Button',
+          candidates: [],
+        },
+      ],
+    },
+    {
+      family: 'modern',
+      name: 'Button',
+      docPath: 'modern-control-button.md',
+      status: ['preview'],
+      outcome: 'inserted',
+      strategy: 'insert-pane-search',
+      attempts: [
+        {
+          query: 'Button',
+          candidates: [
+            {
+              title: 'Button',
+              category: 'Modern',
+              iconName: '#fluent-button',
+            },
+          ],
+        },
+      ],
+      chosenCandidate: {
+        title: 'Button',
+        category: 'Modern',
+        iconName: '#fluent-button',
+      },
+    },
+  ],
+  totals: {
+    attempted: 2,
+    inserted: 1,
+    covered: 0,
+    notFound: 1,
+    failed: 0,
+  },
+};
+
 describe('canvas harvest fixture planning', () => {
   it('tracks prototype and registry coverage against the pinned catalog', () => {
     const plan = buildCanvasHarvestFixturePlan({
@@ -214,6 +270,53 @@ describe('canvas harvest fixture planning', () => {
         templateVersion: '1.0.0',
       }),
     ]);
+  });
+
+  it('annotates the plan with the latest Studio insert outcomes when provided', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry,
+      prototypes,
+      insertReport,
+      generatedAt: '2026-03-09T09:30:00.000Z',
+    });
+
+    expect(plan.controls[0]).toEqual(
+      expect.objectContaining({
+        family: 'classic',
+        catalogName: 'Button',
+        latestInsertObservation: expect.objectContaining({
+          generatedAt: '2026-03-09T09:15:00.000Z',
+          outcome: 'not-found',
+          strategy: 'search-miss',
+          attemptedQueries: ['Button'],
+        }),
+        notes: expect.arrayContaining([
+          'Latest Studio insert attempt (2026-03-09T09:15:00.000Z) found no insert/search candidates via search-miss. Queries: Button.',
+        ]),
+      })
+    );
+    expect(plan.controls[3]).toEqual(
+      expect.objectContaining({
+        family: 'modern',
+        catalogName: 'Button',
+        latestInsertObservation: expect.objectContaining({
+          generatedAt: '2026-03-09T09:15:00.000Z',
+          outcome: 'inserted',
+          strategy: 'insert-pane-search',
+          attemptedQueries: ['Button'],
+          chosenCandidate: expect.objectContaining({
+            title: 'Button',
+            category: 'Modern',
+          }),
+        }),
+        notes: expect.arrayContaining([
+          'Latest Studio insert attempt (2026-03-09T09:15:00.000Z) inserted this control via Button (Modern) using insert-pane-search. Queries: Button.',
+          'Catalog status: preview.',
+          'Awaiting pinned registry coverage.',
+        ]),
+      })
+    );
   });
 
   it('renders a planning container with resolved controls and pending markers', () => {
