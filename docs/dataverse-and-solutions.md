@@ -364,12 +364,26 @@ Inspect a solution by unique name:
 pp solution inspect Core --env dev
 ```
 
-Current solution output is a lightweight summary:
+Inspect solution inventory and preflight facts:
+
+```bash
+pp solution components Core --env dev
+pp solution dependencies Core --env dev
+pp solution analyze Core --env dev
+pp solution compare Core --source-env dev --target-env prod
+```
+
+Current solution output includes:
 
 - `solutionid`
 - `uniquename`
 - `friendlyname`
 - `version`
+- normalized component inventory
+- dependency edges with missing-required-component flags
+- connection-reference validation failures
+- environment variables with missing effective values
+- source/target drift summaries for compare output
 
 ## Environment alias fields that matter here
 
@@ -415,10 +429,12 @@ Implemented today:
 - gated live smoke runner through `pnpm smoke:live`
 - solution list
 - solution inspect by unique name
+- solution component inventory
+- solution dependency and preflight analysis
+- environment-to-environment solution comparison
 
 Not implemented yet:
 
 - deeper metadata browsing beyond basic table listing and single-table inspection
 - state/status metadata, owner-style lookups, formula-column edge cases, and other remaining phase 3 metadata assets
 - solution import/export
-- richer diagnostics for dependency graphs

@@ -225,6 +225,14 @@ async function runSolution(command: string | undefined, args: string[]): Promise
       return runSolutionList(args);
     case 'inspect':
       return runSolutionInspect(args);
+    case 'components':
+      return runSolutionComponents(args);
+    case 'dependencies':
+      return runSolutionDependencies(args);
+    case 'analyze':
+      return runSolutionAnalyze(args);
+    case 'compare':
+      return runSolutionCompare(args);
     default:
       printHelp();
       return 1;
@@ -1819,6 +1827,117 @@ async function runSolutionInspect(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runSolutionComponents(args: string[]): Promise<number> {
+  const uniqueName = positionalArgs(args)[0];
+
+  if (!uniqueName) {
+    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new SolutionService(resolution.data.client);
+  const result = await service.components(uniqueName);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSolutionDependencies(args: string[]): Promise<number> {
+  const uniqueName = positionalArgs(args)[0];
+
+  if (!uniqueName) {
+    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new SolutionService(resolution.data.client);
+  const result = await service.dependencies(uniqueName);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSolutionAnalyze(args: string[]): Promise<number> {
+  const uniqueName = positionalArgs(args)[0];
+
+  if (!uniqueName) {
+    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new SolutionService(resolution.data.client);
+  const result = await service.analyze(uniqueName);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSolutionCompare(args: string[]): Promise<number> {
+  const uniqueName = positionalArgs(args)[0];
+
+  if (!uniqueName) {
+    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
+  }
+
+  const sourceResolution = await resolveDataverseClientByFlag(args, '--source-env');
+
+  if (!sourceResolution.success || !sourceResolution.data) {
+    return printFailure(sourceResolution);
+  }
+
+  const targetResolution = await resolveDataverseClientByFlag(args, '--target-env');
+
+  if (!targetResolution.success || !targetResolution.data) {
+    return printFailure(targetResolution);
+  }
+
+  const sourceService = new SolutionService(sourceResolution.data.client);
+  const targetService = new SolutionService(targetResolution.data.client);
+  const result = await sourceService.compare(uniqueName, targetService);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found in the source environment.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runConnectionReferenceList(args: string[]): Promise<number> {
   const resolution = await resolveDataverseClientForCli(args);
 
@@ -2029,10 +2148,14 @@ function resolveRequestedResource(profile: AuthProfile, requestedResource: strin
 }
 
 async function resolveDataverseClientForCli(args: string[]) {
-  const environmentAlias = readFlag(args, '--env');
+  return resolveDataverseClientByFlag(args, '--env');
+}
+
+async function resolveDataverseClientByFlag(args: string[], flag: string) {
+  const environmentAlias = readFlag(args, flag);
 
   if (!environmentAlias) {
-    return argumentFailure('DV_ENV_REQUIRED', '--env is required.');
+    return argumentFailure('DV_ENV_REQUIRED', `${flag} is required.`);
   }
 
   return resolveDataverseClient(environmentAlias, readConfigOptions(args));
@@ -2486,6 +2609,10 @@ function printHelp(): void {
       '',
       '  solution list --env ALIAS [--config-dir path]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',
+      '  solution components <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution dependencies <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution analyze <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution compare <uniqueName> --source-env ALIAS --target-env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
       '  connref list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  connref inspect <logicalName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  connref validate --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
