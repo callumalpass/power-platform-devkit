@@ -168,72 +168,101 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
-  it('covers dry-run previews for canvas and flow mutation commands without side effects', async () => {
+  it('covers dry-run and plan previews for canvas and flow mutation commands without side effects', async () => {
     const tempDir = await createTempDir();
     const baseAppPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'base-app');
     const registryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'runtime-registry.json');
     const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');
     const patchPath = resolveRepoPath('fixtures', 'flow', 'patches', 'invoice-flow.patch.json');
-    const canvasOutPath = join(tempDir, 'FixtureCanvas.msapp');
-    const unpackedPath = join(tempDir, 'unpacked');
-    const normalizedPath = join(tempDir, 'normalized');
-    const patchedPath = join(tempDir, 'patched');
+    for (const previewCase of [
+      {
+        flag: '--dry-run',
+        name: 'dry-run',
+      },
+      {
+        flag: '--plan',
+        name: 'plan',
+      },
+    ] as const) {
+      const canvasOutPath = join(tempDir, `FixtureCanvas.${previewCase.name}.msapp`);
+      const unpackedPath = join(tempDir, `unpacked-${previewCase.name}`);
+      const normalizedPath = join(tempDir, `normalized-${previewCase.name}`);
+      const patchedPath = join(tempDir, `patched-${previewCase.name}`);
 
-    const canvasBuild = await runCli([
-      'canvas',
-      'build',
-      baseAppPath,
-      '--mode',
-      'strict',
-      '--registry',
-      registryPath,
-      '--out',
-      canvasOutPath,
-      '--dry-run',
-      '--format',
-      'json',
-    ]);
-    const flowUnpack = await runCli(['flow', 'unpack', rawPath, '--out', unpackedPath, '--dry-run', '--format', 'json']);
-    const flowNormalize = await runCli(['flow', 'normalize', unpackedPath, '--out', normalizedPath, '--dry-run', '--format', 'json']);
-    const flowPatch = await runCli([
-      'flow',
-      'patch',
-      unpackedPath,
-      '--file',
-      patchPath,
-      '--out',
-      patchedPath,
-      '--dry-run',
-      '--format',
-      'json',
-    ]);
+      const canvasBuild = await runCli([
+        'canvas',
+        'build',
+        baseAppPath,
+        '--mode',
+        'strict',
+        '--registry',
+        registryPath,
+        '--out',
+        canvasOutPath,
+        previewCase.flag,
+        '--format',
+        'json',
+      ]);
+      const flowUnpack = await runCli([
+        'flow',
+        'unpack',
+        rawPath,
+        '--out',
+        unpackedPath,
+        previewCase.flag,
+        '--format',
+        'json',
+      ]);
+      const flowNormalize = await runCli([
+        'flow',
+        'normalize',
+        unpackedPath,
+        '--out',
+        normalizedPath,
+        previewCase.flag,
+        '--format',
+        'json',
+      ]);
+      const flowPatch = await runCli([
+        'flow',
+        'patch',
+        unpackedPath,
+        '--file',
+        patchPath,
+        '--out',
+        patchedPath,
+        previewCase.flag,
+        '--format',
+        'json',
+      ]);
 
-    expect(canvasBuild.code).toBe(0);
-    expect(canvasBuild.stderr).toBe('');
-    expect(flowUnpack.code).toBe(0);
-    expect(flowUnpack.stderr).toBe('');
-    expect(flowNormalize.code).toBe(0);
-    expect(flowNormalize.stderr).toBe('');
-    expect(flowPatch.code).toBe(0);
-    expect(flowPatch.stderr).toBe('');
+      expect(canvasBuild.code).toBe(0);
+      expect(canvasBuild.stderr).toBe('');
+      expect(flowUnpack.code).toBe(0);
+      expect(flowUnpack.stderr).toBe('');
+      expect(flowNormalize.code).toBe(0);
+      expect(flowNormalize.stderr).toBe('');
+      expect(flowPatch.code).toBe(0);
+      expect(flowPatch.stderr).toBe('');
 
-    await expectGoldenJson(JSON.parse(canvasBuild.stdout), 'fixtures/cli/golden/mutation/canvas-build-dry-run.json', {
-      normalize: (value) => normalizeCliSnapshot(value, tempDir),
-    });
-    await expectGoldenJson(JSON.parse(flowUnpack.stdout), 'fixtures/cli/golden/mutation/flow-unpack-dry-run.json', {
-      normalize: (value) => normalizeCliSnapshot(value, tempDir),
-    });
-    await expectGoldenJson(JSON.parse(flowNormalize.stdout), 'fixtures/cli/golden/mutation/flow-normalize-dry-run.json', {
-      normalize: (value) => normalizeCliSnapshot(value, tempDir),
-    });
-    await expectGoldenJson(JSON.parse(flowPatch.stdout), 'fixtures/cli/golden/mutation/flow-patch-dry-run.json', {
-      normalize: (value) => normalizeCliSnapshot(value, tempDir),
-    });
+      await expectGoldenJson(JSON.parse(canvasBuild.stdout), `fixtures/cli/golden/mutation/canvas-build-${previewCase.name}.json`, {
+        normalize: (value) => normalizeCliSnapshot(value, tempDir),
+      });
+      await expectGoldenJson(JSON.parse(flowUnpack.stdout), `fixtures/cli/golden/mutation/flow-unpack-${previewCase.name}.json`, {
+        normalize: (value) => normalizeCliSnapshot(value, tempDir),
+      });
+      await expectGoldenJson(JSON.parse(flowNormalize.stdout), `fixtures/cli/golden/mutation/flow-normalize-${previewCase.name}.json`, {
+        normalize: (value) => normalizeCliSnapshot(value, tempDir),
+      });
+      await expectGoldenJson(JSON.parse(flowPatch.stdout), `fixtures/cli/golden/mutation/flow-patch-${previewCase.name}.json`, {
+        normalize: (value) => normalizeCliSnapshot(value, tempDir),
+      });
 
-    await expect(access(canvasOutPath)).rejects.toThrow();
-    await expect(access(unpackedPath)).rejects.toThrow();
-    await expect(access(normalizedPath)).rejects.toThrow();
-    await expect(access(patchedPath)).rejects.toThrow();
+      await expect(access(canvasOutPath)).rejects.toThrow();
+      await expect(access(unpackedPath)).rejects.toThrow();
+      await expect(access(normalizedPath)).rejects.toThrow();
+      await expect(access(patchedPath)).rejects.toThrow();
+    }
   });
 
   it('covers formula-heavy canvas fixtures through the CLI entrypoint', async () => {

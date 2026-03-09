@@ -31,8 +31,8 @@ The committed fixtures currently cover:
 - flow remote list, inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures
 - project analysis context and markdown reporting
 - solution list, inspect, components, dependencies, analysis, and source-vs-target comparison outputs from committed Dataverse-like fixtures
-- CLI contract rendering for structured outputs, machine-friendly failures, warning streams, and mutation previews
-- CLI workflows that drive those same local fixture paths end to end, including dry-run previews for supported canvas and flow mutation commands
+- CLI contract rendering for structured outputs, machine-friendly failures, warning streams, and dry-run/plan mutation previews
+- CLI workflows that drive those same local fixture paths end to end, including dry-run and plan previews for supported canvas and flow mutation commands
 
 Run the focused lane:
 

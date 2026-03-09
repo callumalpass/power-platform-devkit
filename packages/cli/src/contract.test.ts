@@ -56,19 +56,36 @@ describe('cli contract', () => {
   });
 
   it('parses consistent mutation flags and snapshots mutation previews', async () => {
-    const flags = readMutationFlags(['--dry-run', '--yes']);
+    const dryRunFlags = readMutationFlags(['--dry-run', '--yes']);
+    const planFlags = readMutationFlags(['--plan']);
 
-    expect(flags.success).toBe(true);
-    expect(flags.data).toEqual({
+    expect(dryRunFlags.success).toBe(true);
+    expect(dryRunFlags.data).toEqual({
       mode: 'dry-run',
       dryRun: true,
       plan: false,
       yes: true,
     });
+    expect(planFlags.success).toBe(true);
+    expect(planFlags.data).toEqual({
+      mode: 'plan',
+      dryRun: false,
+      plan: true,
+      yes: false,
+    });
 
-    const preview = createMutationPreview(
+    const dryRunPreview = createMutationPreview(
       'dv.create',
-      flags.data ?? { mode: 'apply', dryRun: false, plan: false, yes: false },
+      dryRunFlags.data ?? { mode: 'apply', dryRun: false, plan: false, yes: false },
+      { table: 'accounts', environment: 'test' },
+      {
+        schemaName: 'pp_accounts',
+        displayName: 'PP Accounts',
+      }
+    );
+    const planPreview = createMutationPreview(
+      'dv.create',
+      planFlags.data ?? { mode: 'apply', dryRun: false, plan: false, yes: false },
       { table: 'accounts', environment: 'test' },
       {
         schemaName: 'pp_accounts',
@@ -76,11 +93,17 @@ describe('cli contract', () => {
       }
     );
 
-    expect(preview).toMatchObject({
+    expect(dryRunPreview).toMatchObject({
       action: 'dv.create',
       mode: 'dry-run',
       willMutate: false,
     });
-    await expectGoldenJson(preview, 'fixtures/cli/golden/contract/mutation-preview.json');
+    expect(planPreview).toMatchObject({
+      action: 'dv.create',
+      mode: 'plan',
+      willMutate: false,
+    });
+    await expectGoldenJson(dryRunPreview, 'fixtures/cli/golden/contract/mutation-preview.json');
+    await expectGoldenJson(planPreview, 'fixtures/cli/golden/contract/mutation-plan-preview.json');
   });
 });

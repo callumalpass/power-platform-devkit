@@ -1,10 +1,10 @@
 {
   "action": "flow.unpack",
   "confirmed": false,
-  "mode": "dry-run",
+  "mode": "plan",
   "target": {
     "inputPath": "<REPO_ROOT>/fixtures/flow/raw/invoice-flow.raw.json",
-    "outPath": "<TMP_DIR>/unpacked-dry-run"
+    "outPath": "<TMP_DIR>/unpacked-plan"
   },
   "willMutate": false
 }

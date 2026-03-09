@@ -1,0 +1,10 @@
+{
+  "action": "flow.normalize",
+  "confirmed": false,
+  "mode": "plan",
+  "target": {
+    "inputPath": "<TMP_DIR>/unpacked-plan",
+    "outPath": "<TMP_DIR>/normalized-plan"
+  },
+  "willMutate": false
+}

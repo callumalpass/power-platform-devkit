@@ -3,8 +3,8 @@
   "confirmed": false,
   "mode": "dry-run",
   "target": {
-    "inputPath": "<TMP_DIR>/unpacked",
-    "outPath": "<TMP_DIR>/normalized"
+    "inputPath": "<TMP_DIR>/unpacked-dry-run",
+    "outPath": "<TMP_DIR>/normalized-dry-run"
   },
   "willMutate": false
 }
