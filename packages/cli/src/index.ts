@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
+import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { resolve as resolvePath } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderMarkdownReport, generateContextPack } from '@pp/analysis';
 import { AuthService, summarizeBrowserProfile, summarizeProfile, type AuthProfile, type BrowserProfile, type UserAuthProfile } from '@pp/auth';
 import { CanvasService, type CanvasBuildMode } from '@pp/canvas';
@@ -73,7 +76,7 @@ const ATTRIBUTE_COMMON_SELECT_FIELDS = [
   'IsSecured',
 ] as const;
 
-async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   const [group, command, ...rest] = argv;
 
   if (!group || group === 'help' || group === '--help') {
@@ -3350,6 +3353,22 @@ function printHelp(): void {
   );
 }
 
-main(process.argv.slice(2)).then((code) => {
-  process.exitCode = code;
-});
+function isDirectExecution(metaUrl: string): boolean {
+  const entryPath = process.argv[1];
+
+  if (!entryPath) {
+    return false;
+  }
+
+  try {
+    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(resolvePath(entryPath));
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution(import.meta.url)) {
+  main(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
+  });
+}

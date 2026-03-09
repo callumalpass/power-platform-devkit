@@ -12,6 +12,7 @@ Start here:
 - [Canvas registries](canvas.md): template registry schema, provenance rules, support matrix resolution, and project wiring
 - [Flow artifacts](flow.md): remote flow discovery plus unpack/normalize/validate/patch workflows for canonical `flow.json` artifacts
 - [Model-driven apps](model.md): model app composition inspection for sitemaps, forms, views, tables, and dependency tracing
+- [Testing](testing.md): fixture-backed golden lanes, refresh commands, and the manual live smoke path
 
 The docs intentionally describe the current implemented surface, not the full long-term architecture in the external spec.
 

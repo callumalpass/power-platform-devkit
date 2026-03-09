@@ -211,19 +211,25 @@ PP_CONFIG_DIR=./.tmp/pp-config pnpm smoke:live
 ## Fixture goldens
 
 Fixture-backed golden tests now cover the first canvas artifact slice, the first
-flow artifact mutation path, and project analysis outputs.
+flow artifact mutation path, project analysis outputs, and representative CLI
+workflows over those committed fixtures.
 
 Run them directly:
 
 ```bash
-pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts
+pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/cli/src/integration.test.ts
 ```
 
 Refresh the committed goldens deterministically:
 
 ```bash
-PP_UPDATE_GOLDENS=1 pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts
+PP_UPDATE_GOLDENS=1 pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/cli/src/integration.test.ts
 ```
+
+The lane split is:
+
+- fast/local CI: `pnpm test` and targeted fixture checks via the fixture command above
+- scheduled or manual live validation: `pnpm smoke:live`
 
 ## Documentation
 
@@ -233,6 +239,7 @@ PP_UPDATE_GOLDENS=1 pnpm exec vitest run packages/canvas/src/golden.test.ts pack
 - [Auth and environments](docs/auth-and-environments.md)
 - [Project config](docs/project-config.md)
 - [Dataverse and solutions](docs/dataverse-and-solutions.md)
+- [Testing](docs/testing.md)
 
 ## Notes
 
