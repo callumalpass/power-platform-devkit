@@ -657,6 +657,157 @@ describe('canvas harvest fixture planning', () => {
     });
   });
 
+  it('records validation and refreshes the backlog plus next fixture selection in one pass', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-09T09:30:00.000Z',
+    });
+
+    const recorded = recordCanvasHarvestFixturePrototypeValidation({
+      prototypes,
+      family: 'classic',
+      catalogName: 'Label',
+      status: 'failed',
+      recordedAt: '2026-03-10T00:15:00.000Z',
+      method: 'container-paste',
+      notes: ['Studio paste succeeded, but the exported artifact was missing the control.'],
+      generatedAt: '2026-03-10T00:16:00.000Z',
+      refresh: {
+        plan,
+        registry,
+        family: 'classic',
+        statuses: ['failed'],
+        limit: 1,
+        columns: 2,
+        cellWidth: 240,
+        cellHeight: 40,
+        gutterX: 16,
+        gutterY: 12,
+        paddingX: 24,
+        paddingY: 24,
+        paths: {
+          backlog: resolve('fixtures/canvas-harvest/generated/prototype-validation-backlog.json'),
+          registry: resolve('registries/canvas-controls.json'),
+          prototypes: resolve('fixtures/canvas-harvest/prototypes.json'),
+          yaml: resolve('fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml'),
+        },
+      },
+    });
+
+    expect(recorded.refresh).toEqual({
+      backlog: expect.objectContaining({
+        counts: expect.objectContaining({
+          prototypeControls: 4,
+          failedValidationControls: 1,
+          pendingValidationControls: 0,
+          unknownValidationControls: 2,
+          validatedControls: 1,
+        }),
+      }),
+      rendered: expect.objectContaining({
+        renderedControlCount: 1,
+        pendingMarkerCount: 0,
+      }),
+      selection: {
+        schemaVersion: 1,
+        generatedAt: '2026-03-10T00:16:00.000Z',
+        sourceBacklogGeneratedAt: '2026-03-10T00:16:00.000Z',
+        sourcePrototypeGeneratedAt: '2026-03-10T00:16:00.000Z',
+        sourceRegistryGeneratedAt: '2026-03-09T08:30:00.000Z',
+        filters: {
+          statuses: ['failed'],
+          family: 'classic',
+          limit: 1,
+        },
+        counts: {
+          selectedControls: 1,
+          skippedControls: 0,
+          renderedControls: 1,
+          pendingMarkers: 0,
+        },
+        paths: {
+          backlog: resolve('fixtures/canvas-harvest/generated/prototype-validation-backlog.json'),
+          registry: resolve('registries/canvas-controls.json'),
+          prototypes: resolve('fixtures/canvas-harvest/prototypes.json'),
+          yaml: resolve('fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml'),
+        },
+        selectedControls: [
+          {
+            family: 'classic',
+            catalogName: 'Label',
+            constructor: 'Label',
+            validationStatus: 'failed',
+            planAlignment: 'aligned',
+            templateName: 'label',
+            templateVersion: '2.5.1',
+          },
+        ],
+        skippedControls: [],
+      },
+    });
+    expect(recorded.refresh?.rendered.yaml).toContain('- HarvestClassicLabel:');
+    expect(recorded.refresh?.rendered.yaml).toContain('Control: Label@2.5.1');
+  });
+
+  it('allows a refreshed validation fixture to render an empty next tranche when requested', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-09T09:30:00.000Z',
+    });
+
+    const recorded = recordCanvasHarvestFixturePrototypeValidation({
+      prototypes,
+      family: 'modern',
+      catalogName: 'Text',
+      status: 'validated',
+      recordedAt: '2026-03-10T00:19:00.000Z',
+      method: 'top-level-paste',
+      generatedAt: '2026-03-10T00:20:00.000Z',
+      refresh: {
+        plan,
+        registry,
+        family: 'modern',
+        statuses: ['pending'],
+        allowEmpty: true,
+        columns: 2,
+        cellWidth: 240,
+        cellHeight: 40,
+        gutterX: 16,
+        gutterY: 12,
+        paddingX: 24,
+        paddingY: 24,
+      },
+    });
+
+    expect(recorded.refresh?.selection).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:20:00.000Z',
+      sourceBacklogGeneratedAt: '2026-03-10T00:20:00.000Z',
+      sourcePrototypeGeneratedAt: '2026-03-10T00:20:00.000Z',
+      sourceRegistryGeneratedAt: '2026-03-09T08:30:00.000Z',
+      filters: {
+        statuses: ['pending'],
+        family: 'modern',
+      },
+      counts: {
+        selectedControls: 0,
+        skippedControls: 0,
+        renderedControls: 0,
+        pendingMarkers: 0,
+      },
+      selectedControls: [],
+      skippedControls: [],
+    });
+    expect(recorded.refresh?.rendered.renderedControlCount).toBe(0);
+    expect(recorded.refresh?.rendered.pendingMarkerCount).toBe(0);
+    expect(recorded.refresh?.rendered.yaml).toContain('- HarvestFixtureContainer:');
+    expect(recorded.refresh?.rendered.yaml).toContain('Children:');
+  });
+
   it('refuses to promote a draft when a pinned prototype already exists for that control', () => {
     const plan = buildCanvasHarvestFixturePlan({
       catalog,

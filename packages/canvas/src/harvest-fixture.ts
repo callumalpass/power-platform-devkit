@@ -326,11 +326,13 @@ export interface RecordCanvasHarvestFixturePrototypeValidationOptions {
   method?: string;
   notes?: string[];
   generatedAt?: string;
+  refresh?: Omit<RefreshCanvasHarvestPrototypeValidationArtifactsOptions, 'generatedAt' | 'prototypes'>;
 }
 
 export interface RecordedCanvasHarvestFixturePrototypeValidationResult {
   prototype: CanvasHarvestFixturePrototype;
   prototypes: CanvasHarvestFixturePrototypeDocument;
+  refresh?: RefreshedCanvasHarvestPrototypeValidationArtifacts;
 }
 
 export interface RenderCanvasHarvestFixtureOptions {
@@ -359,6 +361,7 @@ export interface RenderCanvasHarvestPrototypeValidationFixtureOptions
   statuses?: CanvasHarvestFixturePrototypeValidationStatus[];
   family?: 'classic' | 'modern';
   limit?: number;
+  allowEmpty?: boolean;
 }
 
 export interface BuildCanvasHarvestPrototypeValidationFixtureDocumentOptions {
@@ -384,6 +387,21 @@ export interface RenderedCanvasHarvestFixture {
 export interface RenderedCanvasHarvestPrototypeValidationFixture extends RenderedCanvasHarvestFixture {
   selectedControls: CanvasHarvestPrototypeValidationFixtureSelectionEntry[];
   skippedControls: CanvasHarvestPrototypeValidationFixtureSkippedEntry[];
+}
+
+export interface RefreshCanvasHarvestPrototypeValidationArtifactsOptions
+  extends Omit<RenderCanvasHarvestPrototypeValidationFixtureOptions, 'backlog' | 'registry' | 'prototypes'> {
+  plan: CanvasHarvestFixturePlan;
+  registry: CanvasTemplateRegistryDocument;
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  generatedAt?: string;
+  paths?: CanvasHarvestPrototypeValidationFixtureDocumentPaths;
+}
+
+export interface RefreshedCanvasHarvestPrototypeValidationArtifacts {
+  backlog: CanvasHarvestFixturePrototypeValidationBacklogDocument;
+  rendered: RenderedCanvasHarvestPrototypeValidationFixture;
+  selection: CanvasHarvestPrototypeValidationFixtureDocument;
 }
 
 export const DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH = 'fixtures/canvas-harvest/generated/fixture-plan.json';
@@ -706,6 +724,7 @@ export function renderCanvasHarvestPrototypeValidationFixture(
 ): RenderedCanvasHarvestPrototypeValidationFixture {
   const statuses = normalizePrototypeValidationStatuses(options.statuses);
   const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : undefined;
+  const allowEmpty = options.allowEmpty ?? false;
   const prototypesByKey = new Map(
     options.prototypes.prototypes.map((prototype) => [makeCatalogKey(prototype.family, prototype.catalogName), prototype] as const)
   );
@@ -784,7 +803,7 @@ export function renderCanvasHarvestPrototypeValidationFixture(
     }
   }
 
-  if (selectedControls.length === 0) {
+  if (selectedControls.length === 0 && !allowEmpty) {
     const familyNote = options.family ? ` family ${familyLabel(options.family)}` : '';
     const skippedNote =
       skippedControls.length > 0
@@ -866,6 +885,55 @@ export function buildCanvasHarvestPrototypeValidationFixtureDocument(
     ...(options.paths ? { paths: options.paths } : {}),
     selectedControls: options.rendered.selectedControls,
     skippedControls: options.rendered.skippedControls,
+  };
+}
+
+export function refreshCanvasHarvestPrototypeValidationArtifacts(
+  options: RefreshCanvasHarvestPrototypeValidationArtifactsOptions
+): RefreshedCanvasHarvestPrototypeValidationArtifacts {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const backlog = buildCanvasHarvestFixturePrototypeValidationBacklogDocument({
+    plan: options.plan,
+    registry: options.registry,
+    prototypes: options.prototypes,
+    generatedAt,
+  });
+  const rendered = renderCanvasHarvestPrototypeValidationFixture({
+    backlog,
+    registry: options.registry,
+    prototypes: options.prototypes,
+    statuses: options.statuses,
+    family: options.family,
+    limit: options.limit,
+    allowEmpty: options.allowEmpty,
+    containerName: options.containerName,
+    containerConstructor: options.containerConstructor,
+    containerVariant: options.containerVariant,
+    containerX: options.containerX,
+    containerY: options.containerY,
+    columns: options.columns,
+    cellWidth: options.cellWidth,
+    cellHeight: options.cellHeight,
+    gutterX: options.gutterX,
+    gutterY: options.gutterY,
+    paddingX: options.paddingX,
+    paddingY: options.paddingY,
+    markerConstructor: options.markerConstructor,
+  });
+  const selection = buildCanvasHarvestPrototypeValidationFixtureDocument({
+    backlog,
+    rendered,
+    statuses: options.statuses,
+    family: options.family,
+    limit: options.limit,
+    generatedAt,
+    paths: options.paths,
+  });
+
+  return {
+    backlog,
+    rendered,
+    selection,
   };
 }
 
@@ -963,14 +1031,24 @@ export function recordCanvasHarvestFixturePrototypeValidation(
   };
   const updatedPrototypes = [...options.prototypes.prototypes];
   updatedPrototypes[prototypeIndex] = updatedPrototype;
+  const updatedPrototypeDocument: CanvasHarvestFixturePrototypeDocument = {
+    schemaVersion: 1,
+    generatedAt,
+    prototypes: updatedPrototypes,
+  };
 
   return {
     prototype: updatedPrototype,
-    prototypes: {
-      schemaVersion: 1,
-      generatedAt,
-      prototypes: updatedPrototypes,
-    },
+    prototypes: updatedPrototypeDocument,
+    ...(options.refresh
+      ? {
+          refresh: refreshCanvasHarvestPrototypeValidationArtifacts({
+            ...options.refresh,
+            prototypes: updatedPrototypeDocument,
+            generatedAt,
+          }),
+        }
+      : {}),
   };
 }
 
