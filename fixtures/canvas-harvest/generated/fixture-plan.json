@@ -1,0 +1,911 @@
+{
+  "catalogGeneratedAt": "2026-03-09T11:47:50.759Z",
+  "controls": [
+    {
+      "catalogName": "3D object",
+      "catalogStatus": [],
+      "description": "Rotate and zoom into the model with simple gestures in 3D.",
+      "docPath": "mixed-reality-component-view-3d.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/mixed-reality-component-view-3d.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Add picture",
+      "catalogStatus": [],
+      "description": "Load images from the local device, for upload to a data source.",
+      "docPath": "controls/control-add-picture.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-add-picture.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Address input",
+      "catalogStatus": [],
+      "description": "See dynamic address suggestions as you type.",
+      "docPath": "geospatial-component-input-address.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/geospatial-component-input-address.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Attachments",
+      "catalogStatus": [],
+      "description": "Download and upload files from the local device to a data source.",
+      "docPath": "controls/control-attachments.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-attachments.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Audio",
+      "catalogStatus": [],
+      "description": "Play an audio clip or the audio portion of a video clip.",
+      "docPath": "controls/control-audio-video.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-audio-video.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Barcode reader",
+      "catalogStatus": [],
+      "description": "Scans barcodes, QR codes, and data-matrix codes on an Android, iOS, or Windows device.",
+      "docPath": "controls/control-barcodereader.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-barcodereader.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Barcode scanner",
+      "catalogStatus": [
+        "retired"
+      ],
+      "description": "Scans barcodes, QR codes, and data-matrix codes on an Android or iOS device. Replaced by the [barcode reader](controls/control-barcodereader.md).",
+      "docPath": "controls/control-new-barcode-scanner.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-new-barcode-scanner.md",
+      "notes": [
+        "Catalog status: retired."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Button",
+      "catalogStatus": [],
+      "description": "Interact with the app by clicking or tapping.",
+      "docPath": "controls/control-button.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-button.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Camera",
+      "catalogStatus": [],
+      "description": "Take and save photos in the app or to a data source.",
+      "docPath": "controls/control-camera.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-camera.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Card",
+      "catalogStatus": [],
+      "description": "Display and edit an individual field of a record in a **[Edit form](controls/control-form-detail.md)** or **[Display form](controls/control-form-detail.md)** control.",
+      "docPath": "controls/control-card.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-card.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Check box",
+      "catalogStatus": [],
+      "description": "Select or clear an option to specify **true** or **false**.",
+      "docPath": "controls/control-check-box.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-check-box.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Column",
+      "catalogStatus": [],
+      "description": "Provides the display experience for a single field in a [**Data table**](controls/control-data-table.md) control.",
+      "docPath": "controls/control-column.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-column.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Column chart",
+      "catalogStatus": [],
+      "description": "Show values as vertical bars relative to two axes.",
+      "docPath": "controls/control-column-line-chart.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-column-line-chart.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Combo box",
+      "catalogStatus": [],
+      "description": "Allows users to make selections from provided choices. Supports search and multi-select.",
+      "docPath": "controls/control-combo-box.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-combo-box.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Container",
+      "catalogStatus": [
+        "experimental"
+      ],
+      "description": "Create nested hierarchy for accessibility and responsiveness.",
+      "docPath": "controls/control-container.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-container.md",
+      "notes": [
+        "Catalog status: experimental."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Data table",
+      "catalogStatus": [
+        "preview"
+      ],
+      "description": "Show data in a tabular format.",
+      "docPath": "controls/control-data-table.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-data-table.md",
+      "notes": [
+        "Catalog status: preview."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Date picker",
+      "catalogStatus": [],
+      "description": "Specify a date by clicking or tapping.",
+      "docPath": "controls/control-date-picker.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-date-picker.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Display and Edit form",
+      "catalogStatus": [],
+      "description": "Experimental feature: Add dynamic forms in which users can view, navigate, and edit relational data from the Microsoft Dataverse.",
+      "docPath": "./controls/control-form-detail.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-form-detail.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Display form",
+      "catalogStatus": [],
+      "description": "Display records in a data source using a form.",
+      "docPath": "controls/control-form-detail.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-form-detail.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Drop down",
+      "catalogStatus": [],
+      "description": "Show the first item in a list until a chevron is selected.",
+      "docPath": "controls/control-drop-down.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-drop-down.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Edit form",
+      "catalogStatus": [],
+      "description": "Edit and create records in a data source using a form.",
+      "docPath": "controls/control-form-detail.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-form-detail.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Export",
+      "catalogStatus": [],
+      "description": "Export data for use elsewhere in Power Apps.",
+      "docPath": "controls/control-export-import.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-export-import.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Gallery",
+      "catalogStatus": [],
+      "description": "Show a list of records that can contain multiple types of data.",
+      "docPath": "controls/control-gallery.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-gallery.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Grid container",
+      "catalogStatus": [
+        "prview"
+      ],
+      "description": "Allows you to layout child components anywhere in a grid pattern*, giving precise control over row and column placement.",
+      "docPath": "controls/control-grid-container.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-grid-container.md",
+      "notes": [
+        "Catalog status: prview."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Horizontal container",
+      "catalogStatus": [],
+      "description": "Determines the position of the child components so that you never have to set X, Y for a component inside the container.",
+      "docPath": "controls/control-horizontal-container.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-horizontal-container.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "HTML text",
+      "catalogStatus": [],
+      "description": "Convert HTML tags automatically.",
+      "docPath": "controls/control-html-text.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-html-text.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Icon",
+      "catalogStatus": [],
+      "description": "Add graphic appeal and visual interest.",
+      "docPath": "controls/control-shapes-icons.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-shapes-icons.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Image",
+      "catalogStatus": [],
+      "description": "Show an image from, for example, a local file or a data source.",
+      "docPath": "controls/control-image.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-image.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Import",
+      "catalogStatus": [],
+      "description": "Import data from elsewhere in Power Apps.",
+      "docPath": "controls/control-export-import.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-export-import.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Label",
+      "catalogStatus": [],
+      "description": "Shows data such as text, numbers, dates, or currency.",
+      "docPath": "controls/control-text-box.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-text-box.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Line chart",
+      "catalogStatus": [],
+      "description": "Show values as data points relative to two axes.",
+      "docPath": "controls/control-column-line-chart.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-column-line-chart.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "List box",
+      "catalogStatus": [],
+      "description": "Select one or more items in a list.",
+      "docPath": "controls/control-list-box.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-list-box.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Map",
+      "catalogStatus": [],
+      "description": "View the physical position of objects from a data source, or by inputting new physical locations.",
+      "docPath": "geospatial-component-map.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/geospatial-component-map.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Measuring Camera",
+      "catalogStatus": [],
+      "description": "Measure distance, area, and volume in mixed reality.",
+      "docPath": "mixed-reality-component-measure-distance.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/mixed-reality-component-measure-distance.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Microphone",
+      "catalogStatus": [],
+      "description": "Record and save sounds in the app or to a data source.",
+      "docPath": "controls/control-microphone.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-microphone.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "PDF viewer",
+      "catalogStatus": [
+        "experimental"
+      ],
+      "description": "Show the content of a PDF file on the Internet.",
+      "docPath": "controls/control-pdf-viewer.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-pdf-viewer.md",
+      "notes": [
+        "Catalog status: experimental."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Pen input",
+      "catalogStatus": [],
+      "description": "Draw an image or text, and save it in the app or to a data source.",
+      "docPath": "controls/control-pen-input.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-pen-input.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Pie chart",
+      "catalogStatus": [],
+      "description": "Show how values relate to each other.",
+      "docPath": "controls/control-pie-chart.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-pie-chart.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Power BI tile",
+      "catalogStatus": [],
+      "description": "Display a Power BI tile inside an app.",
+      "docPath": "controls/control-power-bi-tile.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-power-bi-tile.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Radio",
+      "catalogStatus": [],
+      "description": "Show options that are mutually exclusive.",
+      "docPath": "controls/control-radio.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-radio.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Rating",
+      "catalogStatus": [],
+      "description": "Indicate a value between 1 and a specified number.",
+      "docPath": "controls/control-rating.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-rating.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Rich text editor",
+      "catalogStatus": [],
+      "description": "Allows rich text formatting by app users.",
+      "docPath": "controls/control-richtexteditor.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-richtexteditor.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Screen",
+      "catalogStatus": [],
+      "description": "Show and update data about a specific task.",
+      "docPath": "controls/control-screen.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-screen.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Shape",
+      "catalogStatus": [],
+      "description": "Display arrows and geometric shapes, such as rectangles.",
+      "docPath": "controls/control-shapes-icons.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-shapes-icons.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Slider",
+      "catalogStatus": [],
+      "description": "Specify a value by dragging a handle.",
+      "docPath": "controls/control-slider.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-slider.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Stream Video",
+      "catalogStatus": [],
+      "description": "Play videos and browse through channels from the Microsoft Stream service.",
+      "docPath": "controls/control-stream-video.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-stream-video.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Text input",
+      "catalogStatus": [],
+      "description": "Type text, numbers, and other data.",
+      "docPath": "controls/control-text-input.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-text-input.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Timer",
+      "catalogStatus": [],
+      "description": "Configure your app to respond after a certain amount of time passes.",
+      "docPath": "controls/control-timer.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-timer.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Toggle",
+      "catalogStatus": [],
+      "description": "Drag a handle to specify **true** or **false**.",
+      "docPath": "controls/control-toggle.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-toggle.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Vertical container",
+      "catalogStatus": [],
+      "description": "Determines the position of the child components so that you never have to set X, Y for a component inside the container.",
+      "docPath": "controls/control-vertical-container.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-vertical-container.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Video",
+      "catalogStatus": [],
+      "description": "Play a video clip from a local file, a data source, or YouTube.",
+      "docPath": "controls/control-audio-video.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-audio-video.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "View in MR",
+      "catalogStatus": [],
+      "description": "See how a particular item might fit within a specified space in mixed reality.",
+      "docPath": "mixed-reality-component-view-mr.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/mixed-reality-component-view-mr.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "View shape in MR",
+      "catalogStatus": [],
+      "description": "See if a simple cube might fit within a specified space in mixed reality.",
+      "docPath": "mixed-reality-component-view-shape.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/mixed-reality-component-view-shape.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Web barcode scanner",
+      "catalogStatus": [
+        "experimental"
+      ],
+      "description": "The legacy barcode scanner, which is obsolete but might be useful for scanning codes in a web browser.",
+      "docPath": "controls/control-barcodescanner.md",
+      "family": "classic",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-barcodescanner.md",
+      "notes": [
+        "Catalog status: experimental."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Avatar",
+      "catalogStatus": [],
+      "description": "A control that shows a graphic representation of a user, team, or entity.",
+      "docPath": "modern-control-avatar.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-avatar.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Badge",
+      "catalogStatus": [],
+      "description": "A badge is a visual decoration for UI elements.",
+      "docPath": "modern-controls-badge.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-controls-badge.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Button",
+      "catalogStatus": [],
+      "description": "Interact with the app by clicking or tapping.",
+      "docPath": "modern-control-button.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-button.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Card",
+      "catalogStatus": [
+        "preview"
+      ],
+      "description": "Cards help makers create clean, responsive object summaries such as contact tiles, document previews, or product listings in either horizontal or vertical orientation.",
+      "docPath": "modern-control-card.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-card.md",
+      "notes": [
+        "Catalog status: preview."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Checkbox",
+      "catalogStatus": [],
+      "description": "Select or clear an option to specify **true** or **false**.",
+      "docPath": "modern-control-checkbox.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-checkbox.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Combobox",
+      "catalogStatus": [],
+      "description": "A control that users can use to make selections from provided choices and supports search and multiple selections.",
+      "docPath": "modern-control-combobox.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-combobox.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Copilot answer",
+      "catalogStatus": [
+        "preview"
+      ],
+      "description": "A control that makers can use to add predefined questions that end users can use to get generated answers.",
+      "docPath": "modern-control-copilot-answer.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-copilot-answer.md",
+      "notes": [
+        "Catalog status: preview."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Date picker",
+      "catalogStatus": [],
+      "description": "A control that the user can select to specify a date.",
+      "docPath": "modern-controls-date-picker.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-controls-date-picker.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Dropdown",
+      "catalogStatus": [
+        "preview"
+      ],
+      "description": "Select a value from the list of items.",
+      "docPath": "modern-control-dropdown.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-dropdown.md",
+      "notes": [
+        "Catalog status: preview."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Header",
+      "catalogStatus": [],
+      "description": "A control that creates a modern app header.",
+      "docPath": "modern-controls-header.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-controls-header.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Info button",
+      "catalogStatus": [],
+      "description": "Use this control to provide additional information to users.",
+      "docPath": "modern-control-info-button.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-info-button.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Link",
+      "catalogStatus": [],
+      "description": "Open hyperlinks in new tab.",
+      "docPath": "modern-control-link.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-link.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Number input",
+      "catalogStatus": [],
+      "description": "A number input control the user can modify.",
+      "docPath": "modern-control-number-input.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-number-input.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Progress bar",
+      "catalogStatus": [],
+      "description": "Displays the progress, can be configured as determinate showcasing exact progress or indeterminate for ongoing progress.",
+      "docPath": "modern-control-progress-bar.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-progress-bar.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Radio group",
+      "catalogStatus": [],
+      "description": "An input control that shows multiple options, of which users can select only one at a time.",
+      "docPath": "modern-controls-radio-group.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-controls-radio-group.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Slider",
+      "catalogStatus": [],
+      "description": "A control with which the user can specify a value by dragging a handle.",
+      "docPath": "modern-control-slider.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-slider.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Spinner",
+      "catalogStatus": [],
+      "description": "Displays state in motion, for example, loading a page or table.",
+      "docPath": "modern-control-spinner.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-spinner.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Stream",
+      "catalogStatus": [
+        "preview"
+      ],
+      "description": "A control that lets you add Steam videos in your app.",
+      "docPath": "new-stream-video-control.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/new-stream-video-control.md",
+      "notes": [
+        "Catalog status: preview."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Table",
+      "catalogStatus": [
+        "preview"
+      ],
+      "description": "A control that shows a set of data in a tabular or list format.",
+      "docPath": "modern-control-table.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-table.md",
+      "notes": [
+        "Catalog status: preview."
+      ],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Tabs or tab list",
+      "catalogStatus": [],
+      "description": "Select a tab to move screens or take action on app.",
+      "docPath": "modern-control-tabs-or-tabs-list.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-tabs-or-tabs-list.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Text",
+      "catalogStatus": [],
+      "description": "Display text on the app, can also be used as label for fields.",
+      "docPath": "modern-control-text.md",
+      "family": "modern",
+      "fixtureConstructor": "ModernText",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-text.md",
+      "notes": [
+        "Validated as a top-level pasted control inside HarvestFixtureContainer."
+      ],
+      "reason": "Fixture prototype ModernText resolves to modernText@1.0.0.",
+      "status": "resolved",
+      "templateName": "modernText",
+      "templateVersion": "1.0.0"
+    },
+    {
+      "catalogName": "Text input",
+      "catalogStatus": [],
+      "description": "A box in which the user can type text, numbers, and other data.",
+      "docPath": "modern-control-text-input.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-text-input.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    },
+    {
+      "catalogName": "Toggle",
+      "catalogStatus": [],
+      "description": "A control that the user can turn on or off by moving the handle.",
+      "docPath": "modern-control-toggle.md",
+      "family": "modern",
+      "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-toggle.md",
+      "notes": [],
+      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
+      "status": "prototype-missing"
+    }
+  ],
+  "counts": {
+    "catalogControls": 77,
+    "prototypeMissingControls": 76,
+    "registryMissingControls": 0,
+    "resolvedControls": 1
+  },
+  "generatedAt": "2026-03-09T12:15:06.690Z",
+  "prototypeGeneratedAt": "2026-03-09T10:00:00.000Z",
+  "registryGeneratedAt": "2026-03-09T11:47:42.617Z",
+  "schemaVersion": 1
+}
