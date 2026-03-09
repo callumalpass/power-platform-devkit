@@ -141,6 +141,41 @@ Supported flags:
 
 - `--if-match`
 
+## Connection references
+
+List, inspect, and validate connection references as first-class ALM objects:
+
+```bash
+pp connref list --env dev
+pp connref inspect pp_sharedconnector --env dev
+pp connref validate --env dev --solution Core
+```
+
+Validation is intentionally structured and focuses on deployment blockers such
+as:
+
+- missing connector bindings
+- missing active connection ids
+- solution-scoped filtering when `--solution` is supplied
+
+## Environment variables
+
+Inspect effective values and set current values through bounded commands:
+
+```bash
+pp envvar list --env dev
+pp envvar inspect pp_ApiUrl --env dev
+pp envvar set pp_ApiUrl --env dev --value https://next.example.test
+```
+
+The inspect and list outputs include:
+
+- schema name and display name
+- default value
+- current value, if present
+- effective value
+- value record id when a current value exists
+
 ## `dv metadata`
 
 List tables:
@@ -191,15 +226,28 @@ Create metadata from structured spec files:
 pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
 pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
 pp dv metadata create-option-set --env dev --file ./specs/status.optionset.yaml --solution Core
+pp dv metadata update-option-set --env dev --file ./specs/status.update.yaml --solution Core
 pp dv metadata create-relationship --env dev --file ./specs/project-account.relationship.yaml --solution Core
+pp dv metadata create-many-to-many --env dev --file ./specs/project-contact.m2m.yaml --solution Core
+pp dv metadata create-customer-relationship --env dev --file ./specs/project-customer.relationship.yaml --solution Core
 ```
 
 Supported creation scope today:
 
 - custom tables with a primary-name column
-- column kinds: `string`, `memo`, `integer`, `decimal`, `money`, `datetime`, `boolean`, `choice`
-- global option sets
+- column kinds: `string`, `memo`, `integer`, `decimal`, `money`, `datetime`, `boolean`, `choice`, `autonumber`, `file`, `image`
+- global option set create and option-value updates
 - one-to-many relationships with lookup creation
+- many-to-many relationship creation
+- customer lookup relationship creation through the Dataverse customer-relationship action
+
+Inspect richer metadata definitions:
+
+```bash
+pp dv metadata option-set pp_projectstatus --env dev
+pp dv metadata relationship pp_project_account --env dev
+pp dv metadata relationship pp_project_contact --env dev --kind many-to-many
+```
 
 Common flags:
 
@@ -247,6 +295,23 @@ options:
     value: 100000001
 ```
 
+Example global option set update spec:
+
+```yaml
+name: pp_projectstatus
+add:
+  - label: Paused
+update:
+  - value: 100000000
+    label: New
+    mergeLabels: true
+removeValues:
+  - 100000099
+orderValues:
+  - 100000000
+  - 100000001
+```
+
 Example one-to-many relationship spec:
 
 ```yaml
@@ -256,6 +321,27 @@ referencingEntity: pp_project
 lookup:
   schemaName: pp_AccountId
   displayName: Account
+```
+
+Example many-to-many relationship spec:
+
+```yaml
+schemaName: pp_project_contact
+entity1LogicalName: pp_project
+entity2LogicalName: contact
+entity1Menu:
+  label: Contacts
+```
+
+Example customer relationship spec:
+
+```yaml
+tableLogicalName: pp_project
+lookup:
+  schemaName: pp_CustomerId
+  displayName: Customer
+accountReferencedAttribute: id
+contactReferencedAttribute: id
 ```
 
 Notes:
@@ -324,13 +410,15 @@ Implemented today:
 - row-by-ID fetch
 - create/update/delete primitives
 - metadata table listing and inspection
-- metadata create for phase 1 and 2 assets
+- normalized option-set and relationship inspection
+- metadata create for phase 1, 2, and part of phase 3 assets
+- gated live smoke runner through `pnpm smoke:live`
 - solution list
 - solution inspect by unique name
 
 Not implemented yet:
 
 - deeper metadata browsing beyond basic table listing and single-table inspection
-- many-to-many relationships, state/status metadata, file/image columns, and other phase 3 metadata assets
+- state/status metadata, owner-style lookups, formula-column edge cases, and other remaining phase 3 metadata assets
 - solution import/export
 - richer diagnostics for dependency graphs

@@ -6,14 +6,18 @@ import { saveAuthProfile, saveEnvironmentAlias } from '@pp/config';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http';
 import {
+  ConnectionReferenceService,
   DataverseClient,
+  EnvironmentVariableService,
   buildMetadataAttributePath,
   buildGlobalOptionSetPath,
   buildRelationshipPath,
   buildQueryPath,
   normalizeAttributeDefinition,
   normalizeAttributeDefinitions,
+  normalizeGlobalOptionSetDefinition,
   normalizeMetadataQueryOptions,
+  normalizeRelationshipDefinition,
   resolveDataverseClient,
 } from './index';
 
@@ -375,11 +379,15 @@ describe('DataverseClient', () => {
       {
         schemaName: 'pp_project_account',
         referencedEntity: 'account',
+        referencedAttribute: 'id',
         referencingEntity: 'pp_project',
         lookup: {
           schemaName: 'pp_AccountId',
           displayName: 'Account',
         },
+        associatedMenuBehavior: 'useCollectionName',
+        associatedMenuGroup: 'details',
+        associatedMenuOrder: 10000,
       },
       {
         publish: true,
@@ -395,6 +403,383 @@ describe('DataverseClient', () => {
     expect(httpClient.requests[2]?.body).toEqual({
       ParameterXml: '<importexportxml><entities><entity>account</entity><entity>pp_project</entity></entities></importexportxml>',
     });
+  });
+
+  it('updates a global option set through action calls and publishes the option set', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          NewOptionValue: 100000002,
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          Name: 'pp_status',
+          MetadataId: '00000000-0000-0000-0000-000000000020',
+          Options: [{ Value: 100000000 }, { Value: 100000001 }, { Value: 100000002 }],
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.updateGlobalOptionSet(
+      {
+        name: 'pp_status',
+        add: [{ label: 'Paused' }],
+        update: [{ value: 100000000, label: 'New', mergeLabels: true }],
+        removeValues: [100000009],
+        orderValues: [100000000, 100000001, 100000002],
+      },
+      {
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.published).toBe(true);
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'InsertOptionValue',
+      'UpdateOptionValue',
+      'DeleteOptionValue',
+      'OrderOption',
+      "GlobalOptionSetDefinitions(Name='pp_status')",
+      'PublishXml',
+    ]);
+    expect(httpClient.requests[0]?.body).toMatchObject({
+      OptionSetName: 'pp_status',
+    });
+    expect(httpClient.requests[5]?.body).toEqual({
+      ParameterXml: '<importexportxml><optionsets><optionset>pp_status</optionset></optionsets></importexportxml>',
+    });
+  });
+
+  it('creates a many-to-many relationship and publishes both entities', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': '#Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata',
+          SchemaName: 'pp_project_contact',
+          Entity1LogicalName: 'pp_project',
+          Entity2LogicalName: 'contact',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.createManyToManyRelationship(
+      {
+        schemaName: 'pp_project_contact',
+        entity1LogicalName: 'pp_project',
+        entity2LogicalName: 'contact',
+      },
+      {
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.publishTargets).toEqual(['pp_project', 'contact']);
+    expect(httpClient.requests[1]?.path).toBe(
+      "RelationshipDefinitions(SchemaName='pp_project_contact')/Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata"
+    );
+    expect(httpClient.requests[2]?.body).toEqual({
+      ParameterXml: '<importexportxml><entities><entity>pp_project</entity><entity>contact</entity></entities></importexportxml>',
+    });
+  });
+
+  it('creates customer relationships and publishes all affected entities', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {},
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': '#Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata',
+          SchemaName: 'pp_project_pp_customerid_account',
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': '#Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata',
+          SchemaName: 'pp_project_pp_customerid_contact',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.createCustomerRelationship(
+      {
+        tableLogicalName: 'pp_project',
+        lookup: {
+          schemaName: 'pp_CustomerId',
+          displayName: 'Customer',
+        },
+        accountReferencedAttribute: 'id',
+        contactReferencedAttribute: 'id',
+      },
+      {
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(httpClient.requests[0]?.path).toBe('CreateCustomerRelationships');
+    expect(httpClient.requests[1]?.path).toBe(
+      "RelationshipDefinitions(SchemaName='pp_project_pp_customerid_account')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata"
+    );
+    expect(httpClient.requests[2]?.path).toBe(
+      "RelationshipDefinitions(SchemaName='pp_project_pp_customerid_contact')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata"
+    );
+    expect(httpClient.requests[3]?.body).toEqual({
+      ParameterXml: '<importexportxml><entities><entity>account</entity><entity>contact</entity><entity>pp_project</entity></entities></importexportxml>',
+    });
+  });
+
+  it('falls back across relationship kinds when reading a relationship', async () => {
+    const httpClient = new FakeHttpClient([
+      {
+        success: false,
+        diagnostics: [
+          {
+            level: 'error',
+            code: 'HTTP_REQUEST_FAILED',
+            message: 'Not found',
+          },
+        ],
+        warnings: [],
+        supportTier: 'preview',
+      },
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': '#Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata',
+          SchemaName: 'pp_project_contact',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.getRelationship('pp_project_contact');
+
+    expect(result.success).toBe(true);
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      "RelationshipDefinitions(SchemaName='pp_project_contact')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata",
+      "RelationshipDefinitions(SchemaName='pp_project_contact')/Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata",
+    ]);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_RELATIONSHIP_KIND_READ_FAILED');
+  });
+});
+
+describe('ALM services', () => {
+  it('lists and validates connection references', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              connectionreferenceid: 'ref-1',
+              connectionreferencelogicalname: 'pp_shared',
+              displayname: 'Shared Connector',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+              connectionid: 'conn-1',
+              statecode: 0,
+            },
+            {
+              connectionreferenceid: 'ref-2',
+              connectionreferencelogicalname: 'pp_missing',
+              displayname: 'Broken Connector',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              connectionreferenceid: 'ref-1',
+              connectionreferencelogicalname: 'pp_shared',
+              displayname: 'Shared Connector',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+              connectionid: 'conn-1',
+              statecode: 0,
+            },
+            {
+              connectionreferenceid: 'ref-2',
+              connectionreferencelogicalname: 'pp_missing',
+              displayname: 'Broken Connector',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const listed = await service.list();
+    const validated = await service.validate();
+
+    expect(listed.success).toBe(true);
+    expect(listed.data?.[0]).toMatchObject({
+      id: 'ref-1',
+      logicalName: 'pp_shared',
+      connected: true,
+    });
+    expect(validated.success).toBe(true);
+    expect(validated.data?.find((item) => item.reference.id === 'ref-2')).toMatchObject({
+      valid: false,
+    });
+  });
+
+  it('joins environment variable definitions with current values', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariabledefinitionid: 'def-1',
+              schemaname: 'pp_ApiUrl',
+              displayname: 'API URL',
+              defaultvalue: 'https://default.example.test',
+              type: 'String',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariablevalueid: 'val-1',
+              value: 'https://current.example.test',
+              _environmentvariabledefinitionid_value: 'def-1',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.list();
+
+    expect(result.success).toBe(true);
+    expect(result.data?.[0]).toMatchObject({
+      definitionId: 'def-1',
+      schemaName: 'pp_ApiUrl',
+      currentValue: 'https://current.example.test',
+      effectiveValue: 'https://current.example.test',
+      hasCurrentValue: true,
+    });
+  });
+
+  it('updates an existing environment variable value', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariabledefinitionid: 'def-1',
+              schemaname: 'pp_ApiUrl',
+              displayname: 'API URL',
+              defaultvalue: 'https://default.example.test',
+              type: 'String',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariablevalueid: 'val-1',
+              value: 'https://current.example.test',
+              _environmentvariabledefinitionid_value: 'def-1',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.setValue('pp_ApiUrl', 'https://next.example.test');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      definitionId: 'def-1',
+      currentValue: 'https://next.example.test',
+      valueId: 'val-1',
+      hasCurrentValue: true,
+    });
+    expect(httpClient.requests.at(-1)?.method).toBe('PATCH');
+    expect(httpClient.requests.at(-1)?.path).toBe('environmentvariablevalues(val-1)');
   });
 });
 
@@ -439,6 +824,12 @@ describe('metadata definition paths', () => {
   it('builds a one-to-many relationship metadata path', () => {
     expect(buildRelationshipPath('pp_project_account')).toBe(
       "RelationshipDefinitions(SchemaName='pp_project_account')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata"
+    );
+  });
+
+  it('builds a many-to-many relationship metadata path', () => {
+    expect(buildRelationshipPath('pp_project_contact', 'many-to-many')).toBe(
+      "RelationshipDefinitions(SchemaName='pp_project_contact')/Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata"
     );
   });
 });
@@ -552,6 +943,99 @@ describe('normalizeAttributeDefinition', () => {
     expect(normalized[0]).toMatchObject({
       logicalName: 'name',
       attributeType: 'String',
+    });
+  });
+});
+
+describe('metadata normalization helpers', () => {
+  it('normalizes global option set definitions', () => {
+    const normalized = normalizeGlobalOptionSetDefinition({
+      MetadataId: '00000000-0000-0000-0000-000000000020',
+      Name: 'pp_status',
+      DisplayName: {
+        UserLocalizedLabel: {
+          Label: 'Status',
+        },
+      },
+      Description: {
+        UserLocalizedLabel: {
+          Label: 'Project status values',
+        },
+      },
+      IsGlobal: true,
+      OptionSetType: 'Picklist',
+      Options: [
+        {
+          Value: 100000000,
+          Label: {
+            UserLocalizedLabel: {
+              Label: 'New',
+            },
+          },
+        },
+      ],
+    });
+
+    expect(normalized).toEqual({
+      metadataId: '00000000-0000-0000-0000-000000000020',
+      name: 'pp_status',
+      displayName: 'Status',
+      description: 'Project status values',
+      isGlobal: true,
+      optionSetType: 'Picklist',
+      options: [{ value: 100000000, label: 'New' }],
+    });
+  });
+
+  it('normalizes one-to-many and many-to-many relationships', () => {
+    const oneToMany = normalizeRelationshipDefinition({
+      '@odata.type': '#Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata',
+      SchemaName: 'pp_project_account',
+      ReferencedEntity: 'account',
+      ReferencedAttribute: 'accountid',
+      ReferencingEntity: 'pp_project',
+      Lookup: {
+        LogicalName: 'pp_accountid',
+        SchemaName: 'pp_AccountId',
+        DisplayName: {
+          UserLocalizedLabel: {
+            Label: 'Account',
+          },
+        },
+      },
+      CascadeConfiguration: {
+        Delete: 'RemoveLink',
+      },
+    });
+    const manyToMany = normalizeRelationshipDefinition({
+      '@odata.type': '#Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata',
+      SchemaName: 'pp_project_contact',
+      Entity1LogicalName: 'pp_project',
+      Entity2LogicalName: 'contact',
+      IntersectEntityName: 'pp_project_contact',
+    });
+
+    expect(oneToMany).toEqual({
+      schemaName: 'pp_project_account',
+      odataType: '#Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata',
+      relationshipType: 'one-to-many',
+      referencedEntity: 'account',
+      referencedAttribute: 'accountid',
+      referencingEntity: 'pp_project',
+      lookupLogicalName: 'pp_accountid',
+      lookupSchemaName: 'pp_AccountId',
+      lookupDisplayName: 'Account',
+      cascade: {
+        delete: 'RemoveLink',
+      },
+    });
+    expect(manyToMany).toEqual({
+      schemaName: 'pp_project_contact',
+      odataType: '#Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata',
+      relationshipType: 'many-to-many',
+      entity1LogicalName: 'pp_project',
+      entity2LogicalName: 'contact',
+      intersectEntityName: 'pp_project_contact',
     });
   });
 });

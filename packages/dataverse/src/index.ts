@@ -4,12 +4,17 @@ import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } fro
 import { HttpClient, type HttpQueryValue, type HttpRequestOptions, type HttpResponse } from '@pp/http';
 import {
   buildColumnCreatePayload,
+  buildCustomerRelationshipCreatePayload,
   buildGlobalOptionSetCreatePayload,
+  buildManyToManyRelationshipCreatePayload,
   buildOneToManyRelationshipCreatePayload,
   buildTableCreatePayload,
   resolveLogicalName,
   type ColumnCreateSpec,
+  type CustomerRelationshipCreateSpec,
   type GlobalOptionSetCreateSpec,
+  type GlobalOptionSetUpdateSpec,
+  type ManyToManyRelationshipCreateSpec,
   type MetadataBuildOptions,
   type OneToManyRelationshipCreateSpec,
   type TableCreateSpec,
@@ -115,7 +120,48 @@ export interface DataverseMetadataWriteResult<T = unknown> extends DataverseWrit
 
 export type EntityDefinition = Record<string, unknown>;
 export type AttributeDefinition = Record<string, unknown>;
+export type GlobalOptionSetDefinition = Record<string, unknown>;
+export type RelationshipDefinition = Record<string, unknown>;
 export type AttributeMetadataView = 'common' | 'detailed' | 'raw';
+export type RelationshipMetadataKind = 'auto' | 'one-to-many' | 'many-to-many';
+
+export interface NormalizedOptionDefinition {
+  value?: number;
+  label?: string;
+  description?: string;
+  color?: string;
+  isManaged?: boolean;
+}
+
+export interface NormalizedOptionSetDefinition {
+  name?: string;
+  displayName?: string;
+  description?: string;
+  metadataId?: string;
+  optionSetType?: string;
+  isGlobal?: boolean;
+  introducedVersion?: string;
+  options?: NormalizedOptionDefinition[];
+}
+
+export interface NormalizedRelationshipDefinition {
+  schemaName?: string;
+  metadataId?: string;
+  odataType?: string;
+  relationshipType: 'one-to-many' | 'many-to-many' | 'unknown';
+  referencedEntity?: string;
+  referencedAttribute?: string;
+  referencingEntity?: string;
+  lookupLogicalName?: string;
+  lookupSchemaName?: string;
+  lookupDisplayName?: string;
+  cascade?: Record<string, unknown>;
+  entity1LogicalName?: string;
+  entity2LogicalName?: string;
+  intersectEntityName?: string;
+  entity1NavigationPropertyName?: string;
+  entity2NavigationPropertyName?: string;
+}
 
 export interface NormalizedAttributeDefinition {
   logicalName?: string;
@@ -159,6 +205,69 @@ export interface DetailedAttributeDefinition extends NormalizedAttributeDefiniti
   sourceTypeMask?: number;
   introducedVersion?: string;
   typeDetails: Record<string, unknown>;
+}
+
+export interface ConnectionReferenceRecord {
+  connectionreferenceid: string;
+  connectionreferencelogicalname?: string;
+  displayname?: string;
+  connectorid?: string;
+  connectionid?: string;
+  customconnectorid?: string;
+  _solutionid_value?: string;
+  statecode?: number;
+}
+
+export interface ConnectionReferenceSummary {
+  id: string;
+  logicalName?: string;
+  displayName?: string;
+  connectorId?: string;
+  connectionId?: string;
+  customConnectorId?: string;
+  solutionId?: string;
+  stateCode?: number;
+  connected: boolean;
+}
+
+export interface ConnectionReferenceValidationResult {
+  reference: ConnectionReferenceSummary;
+  valid: boolean;
+  diagnostics: Diagnostic[];
+  suggestedNextActions: string[];
+}
+
+export interface EnvironmentVariableDefinitionRecord {
+  environmentvariabledefinitionid: string;
+  schemaname?: string;
+  displayname?: string;
+  defaultvalue?: string;
+  type?: string;
+  valueschema?: string;
+  secretstore?: number;
+  _solutionid_value?: string;
+}
+
+export interface EnvironmentVariableValueRecord {
+  environmentvariablevalueid: string;
+  value?: string;
+  _environmentvariabledefinitionid_value?: string;
+  statecode?: number;
+}
+
+export interface EnvironmentVariableSummary {
+  definitionId: string;
+  schemaName?: string;
+  displayName?: string;
+  type?: string;
+  defaultValue?: string;
+  currentValue?: string;
+  effectiveValue?: string;
+  valueId?: string;
+  valueSchema?: string;
+  secretStore?: number;
+  solutionId?: string;
+  hasCurrentValue: boolean;
 }
 
 export class DataverseClient {
@@ -381,8 +490,8 @@ export class DataverseClient {
   async getGlobalOptionSet(
     name: string,
     options: EntityReadOptions = {}
-  ): Promise<OperationResult<Record<string, unknown>>> {
-    return this.requestJson<Record<string, unknown>>({
+  ): Promise<OperationResult<GlobalOptionSetDefinition>> {
+    return this.requestJson<GlobalOptionSetDefinition>({
       path: buildGlobalOptionSetPath(name, options),
       method: 'GET',
       responseType: 'json',
@@ -392,14 +501,51 @@ export class DataverseClient {
 
   async getRelationship(
     schemaName: string,
-    options: EntityReadOptions = {}
-  ): Promise<OperationResult<Record<string, unknown>>> {
-    return this.requestJson<Record<string, unknown>>({
-      path: buildRelationshipPath(schemaName, options),
-      method: 'GET',
-      responseType: 'json',
-      includeAnnotations: options.includeAnnotations,
-    });
+    options: EntityReadOptions & { kind?: RelationshipMetadataKind } = {}
+  ): Promise<OperationResult<RelationshipDefinition>> {
+    const kinds = resolveRelationshipReadKinds(options.kind);
+    const warnings: Diagnostic[] = [];
+
+    for (const kind of kinds) {
+      const response = await this.requestJson<RelationshipDefinition>({
+        path: buildRelationshipPath(schemaName, kind, options),
+        method: 'GET',
+        responseType: 'json',
+        includeAnnotations: options.includeAnnotations,
+      });
+
+      if (response.success) {
+        return ok(response.data ?? {}, {
+          supportTier: 'preview',
+          diagnostics: response.diagnostics,
+          warnings: [...warnings, ...response.warnings],
+        });
+      }
+
+      warnings.push(
+        createDiagnostic(
+          'warning',
+          'DATAVERSE_RELATIONSHIP_KIND_READ_FAILED',
+          `Relationship ${schemaName} could not be read as ${kind}.`,
+          {
+            source: '@pp/dataverse',
+            detail: response.diagnostics.map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`).join('; '),
+          }
+        ),
+        ...demoteDiagnostics(response.diagnostics),
+        ...response.warnings
+      );
+    }
+
+    return fail(
+      createDiagnostic('error', 'DATAVERSE_RELATIONSHIP_NOT_FOUND', `Relationship ${schemaName} could not be resolved.`, {
+        source: '@pp/dataverse',
+      }),
+      {
+        supportTier: 'preview',
+        warnings,
+      }
+    );
   }
 
   async createTable(
@@ -460,7 +606,7 @@ export class DataverseClient {
   async createGlobalOptionSet(
     spec: GlobalOptionSetCreateSpec,
     options: DataverseMetadataWriteOptions = {}
-  ): Promise<OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>> {
+  ): Promise<OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>> {
     const response = await this.request<void>({
       path: 'GlobalOptionSetDefinitions',
       method: 'POST',
@@ -483,10 +629,121 @@ export class DataverseClient {
     return buildMetadataWriteResult(response, entity, publish, [spec.name]);
   }
 
+  async updateGlobalOptionSet(
+    spec: GlobalOptionSetUpdateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>> {
+    const hasChanges = Boolean(spec.add?.length || spec.update?.length || spec.removeValues?.length || spec.orderValues?.length);
+
+    if (!hasChanges) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'DATAVERSE_METADATA_OPTIONSET_UPDATE_EMPTY',
+          'Global option set updates require at least one add, update, removeValues, or orderValues operation.',
+          {
+            source: '@pp/dataverse',
+          }
+        )
+      );
+    }
+
+    let lastResponse: OperationResult<HttpResponse<unknown>> | undefined;
+
+    for (const option of spec.add ?? []) {
+      lastResponse = await this.request({
+        path: 'InsertOptionValue',
+        method: 'POST',
+        body: compactObject({
+          OptionSetName: spec.name,
+          Label: buildDataverseLabel(option.label, options.languageCode),
+          Description: option.description ? buildDataverseLabel(option.description, options.languageCode) : undefined,
+          Color: option.color,
+          Value: option.value,
+        }),
+        responseType: 'json',
+        headers: buildMetadataWriteHeaders(options),
+      });
+
+      if (!lastResponse.success) {
+        return lastResponse as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
+      }
+    }
+
+    for (const option of spec.update ?? []) {
+      lastResponse = await this.request({
+        path: 'UpdateOptionValue',
+        method: 'POST',
+        body: compactObject({
+          OptionSetName: spec.name,
+          Value: option.value,
+          Label: option.label ? buildDataverseLabel(option.label, options.languageCode) : undefined,
+          Description: option.description ? buildDataverseLabel(option.description, options.languageCode) : undefined,
+          Color: option.color,
+          MergeLabels: option.mergeLabels,
+        }),
+        responseType: 'void',
+        headers: buildMetadataWriteHeaders(options),
+      });
+
+      if (!lastResponse.success) {
+        return lastResponse as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
+      }
+    }
+
+    for (const value of spec.removeValues ?? []) {
+      lastResponse = await this.request({
+        path: 'DeleteOptionValue',
+        method: 'POST',
+        body: {
+          OptionSetName: spec.name,
+          Value: value,
+        },
+        responseType: 'void',
+        headers: buildMetadataWriteHeaders(options),
+      });
+
+      if (!lastResponse.success) {
+        return lastResponse as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
+      }
+    }
+
+    if (spec.orderValues && spec.orderValues.length > 0) {
+      lastResponse = await this.request({
+        path: 'OrderOption',
+        method: 'POST',
+        body: {
+          OptionSetName: spec.name,
+          Values: spec.orderValues,
+        },
+        responseType: 'void',
+        headers: buildMetadataWriteHeaders(options),
+      });
+
+      if (!lastResponse.success) {
+        return lastResponse as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
+      }
+    }
+
+    const entity = await this.getGlobalOptionSet(spec.name, {
+      includeAnnotations: options.includeAnnotations,
+    });
+    const publish = options.publish
+      ? await this.publishOptionSets([spec.name], options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(
+      lastResponse ?? ok({ status: 204, headers: {}, data: undefined }, { supportTier: 'preview' }),
+      entity,
+      publish,
+      [spec.name]
+    );
+  }
+
   async createOneToManyRelationship(
     spec: OneToManyRelationshipCreateSpec,
     options: DataverseMetadataWriteOptions = {}
-  ): Promise<OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>> {
+  ): Promise<OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>> {
     const response = await this.request<void>({
       path: 'RelationshipDefinitions',
       method: 'POST',
@@ -508,6 +765,84 @@ export class DataverseClient {
       : undefined;
 
     return buildMetadataWriteResult(response, entity, publish, publishTargets);
+  }
+
+  async createManyToManyRelationship(
+    spec: ManyToManyRelationshipCreateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>> {
+    const response = await this.request<void>({
+      path: 'RelationshipDefinitions',
+      method: 'POST',
+      body: buildManyToManyRelationshipCreatePayload(spec, options),
+      responseType: 'void',
+      headers: buildMetadataWriteHeaders(options),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>;
+    }
+
+    const entity = await this.getRelationship(spec.schemaName, {
+      kind: 'many-to-many',
+      includeAnnotations: options.includeAnnotations,
+    });
+    const publishTargets = uniqueStrings([spec.entity1LogicalName, spec.entity2LogicalName]);
+    const publish = options.publish
+      ? await this.publishEntities(publishTargets, options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(response, entity, publish, publishTargets);
+  }
+
+  async createCustomerRelationship(
+    spec: CustomerRelationshipCreateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>> {
+    const response = await this.request<Record<string, unknown>>({
+      path: 'CreateCustomerRelationships',
+      method: 'POST',
+      body: buildCustomerRelationshipCreatePayload(spec, options),
+      responseType: 'json',
+      headers: buildMetadataWriteHeaders(options),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>;
+    }
+
+    const lookupLogicalName = resolveLogicalName(spec.lookup.schemaName, spec.lookup.logicalName);
+    const relationshipSchemaNames = [
+      spec.accountRelationshipSchemaName ?? `${spec.tableLogicalName}_${lookupLogicalName}_account`,
+      spec.contactRelationshipSchemaName ?? `${spec.tableLogicalName}_${lookupLogicalName}_contact`,
+    ];
+
+    const relationshipReads = await Promise.all(
+      relationshipSchemaNames.map((schemaName) =>
+        this.getRelationship(schemaName, {
+          kind: 'one-to-many',
+          includeAnnotations: options.includeAnnotations,
+        })
+      )
+    );
+
+    const readBack = combineReadResults(
+      relationshipReads,
+      {
+        lookupLogicalName,
+        relationships: relationshipReads.filter((result): result is OperationResult<RelationshipDefinition> & { success: true; data: RelationshipDefinition } => result.success && Boolean(result.data)).map((result) => result.data),
+      },
+      '@pp/dataverse',
+      'DATAVERSE_METADATA_READBACK_FAILED',
+      'Customer relationships were created, but relationship read-back did not fully succeed.'
+    );
+
+    const publishTargets = uniqueStrings(['account', 'contact', spec.tableLogicalName]);
+    const publish = options.publish
+      ? await this.publishEntities(publishTargets, options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(response, readBack, publish, publishTargets);
   }
 
   async publishXml(parameterXml: string, solutionUniqueName?: string): Promise<OperationResult<DataverseWriteResult>> {
@@ -685,6 +1020,226 @@ export class DataverseClient {
   }
 }
 
+export class ConnectionReferenceService {
+  constructor(private readonly dataverseClient: DataverseClient) {}
+
+  async list(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<ConnectionReferenceSummary[]>> {
+    const [records, solutionId] = await Promise.all([
+      this.dataverseClient.queryAll<ConnectionReferenceRecord>({
+        table: 'connectionreferences',
+        select: [
+          'connectionreferenceid',
+          'connectionreferencelogicalname',
+          'displayname',
+          'connectorid',
+          'connectionid',
+          'customconnectorid',
+          '_solutionid_value',
+          'statecode',
+        ],
+      }),
+      options.solutionUniqueName ? resolveSolutionId(this.dataverseClient, options.solutionUniqueName) : Promise.resolve(ok(undefined, { supportTier: 'preview' })),
+    ]);
+
+    if (!records.success) {
+      return records as unknown as OperationResult<ConnectionReferenceSummary[]>;
+    }
+
+    if (!solutionId.success) {
+      return solutionId as unknown as OperationResult<ConnectionReferenceSummary[]>;
+    }
+
+    const summaries = (records.data ?? [])
+      .filter((record) => !solutionId.data || record._solutionid_value === solutionId.data)
+      .map(normalizeConnectionReference);
+
+    return ok(summaries, {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(records.diagnostics, solutionId.diagnostics),
+      warnings: mergeDiagnosticLists(records.warnings, solutionId.warnings),
+    });
+  }
+
+  async inspect(identifier: string, options: { solutionUniqueName?: string } = {}): Promise<OperationResult<ConnectionReferenceSummary | undefined>> {
+    const references = await this.list(options);
+
+    if (!references.success) {
+      return references as unknown as OperationResult<ConnectionReferenceSummary | undefined>;
+    }
+
+    return ok(
+      (references.data ?? []).find((reference) => matchesConnectionReference(reference, identifier)),
+      {
+        supportTier: 'preview',
+        diagnostics: references.diagnostics,
+        warnings: references.warnings,
+      }
+    );
+  }
+
+  async validate(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<ConnectionReferenceValidationResult[]>> {
+    const references = await this.list(options);
+
+    if (!references.success) {
+      return references as unknown as OperationResult<ConnectionReferenceValidationResult[]>;
+    }
+
+    return ok(
+      (references.data ?? []).map((reference) => {
+        const diagnostics: Diagnostic[] = [];
+        const suggestedNextActions: string[] = [];
+
+        if (!reference.connectorId && !reference.customConnectorId) {
+          diagnostics.push(
+            createDiagnostic('error', 'DATAVERSE_CONNREF_CONNECTOR_MISSING', `Connection reference ${reference.displayName ?? reference.logicalName ?? reference.id} does not declare a connector id.`, {
+              source: '@pp/dataverse',
+            })
+          );
+          suggestedNextActions.push('Recreate or repair the connection reference so it binds to a connector.');
+        }
+
+        if (!reference.connectionId) {
+          diagnostics.push(
+            createDiagnostic('warning', 'DATAVERSE_CONNREF_CONNECTION_MISSING', `Connection reference ${reference.displayName ?? reference.logicalName ?? reference.id} has no active connection binding.`, {
+              source: '@pp/dataverse',
+            })
+          );
+          suggestedNextActions.push('Bind the connection reference to an active connection before deployment.');
+        }
+
+        return {
+          reference,
+          valid: diagnostics.every((diagnostic) => diagnostic.level !== 'error'),
+          diagnostics,
+          suggestedNextActions,
+        };
+      }),
+      {
+        supportTier: 'preview',
+        diagnostics: references.diagnostics,
+        warnings: references.warnings,
+      }
+    );
+  }
+}
+
+export class EnvironmentVariableService {
+  constructor(private readonly dataverseClient: DataverseClient) {}
+
+  async list(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<EnvironmentVariableSummary[]>> {
+    const [definitions, values, solutionId] = await Promise.all([
+      this.dataverseClient.queryAll<EnvironmentVariableDefinitionRecord>({
+        table: 'environmentvariabledefinitions',
+        select: [
+          'environmentvariabledefinitionid',
+          'schemaname',
+          'displayname',
+          'defaultvalue',
+          'type',
+          'valueschema',
+          'secretstore',
+          '_solutionid_value',
+        ],
+      }),
+      this.dataverseClient.queryAll<EnvironmentVariableValueRecord>({
+        table: 'environmentvariablevalues',
+        select: ['environmentvariablevalueid', 'value', '_environmentvariabledefinitionid_value', 'statecode'],
+      }),
+      options.solutionUniqueName ? resolveSolutionId(this.dataverseClient, options.solutionUniqueName) : Promise.resolve(ok(undefined, { supportTier: 'preview' })),
+    ]);
+
+    if (!definitions.success) {
+      return definitions as unknown as OperationResult<EnvironmentVariableSummary[]>;
+    }
+
+    if (!values.success) {
+      return values as unknown as OperationResult<EnvironmentVariableSummary[]>;
+    }
+
+    if (!solutionId.success) {
+      return solutionId as unknown as OperationResult<EnvironmentVariableSummary[]>;
+    }
+
+    const valueMap = new Map<string, EnvironmentVariableValueRecord>();
+
+    for (const value of values.data ?? []) {
+      if (value._environmentvariabledefinitionid_value && !valueMap.has(value._environmentvariabledefinitionid_value)) {
+        valueMap.set(value._environmentvariabledefinitionid_value, value);
+      }
+    }
+
+    return ok(
+      (definitions.data ?? [])
+        .filter((definition) => !solutionId.data || definition._solutionid_value === solutionId.data)
+        .map((definition) => normalizeEnvironmentVariable(definition, valueMap.get(definition.environmentvariabledefinitionid))),
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(definitions.diagnostics, values.diagnostics, solutionId.diagnostics),
+        warnings: mergeDiagnosticLists(definitions.warnings, values.warnings, solutionId.warnings),
+      }
+    );
+  }
+
+  async inspect(identifier: string, options: { solutionUniqueName?: string } = {}): Promise<OperationResult<EnvironmentVariableSummary | undefined>> {
+    const variables = await this.list(options);
+
+    if (!variables.success) {
+      return variables as unknown as OperationResult<EnvironmentVariableSummary | undefined>;
+    }
+
+    return ok(
+      (variables.data ?? []).find((variable) => matchesEnvironmentVariable(variable, identifier)),
+      {
+        supportTier: 'preview',
+        diagnostics: variables.diagnostics,
+        warnings: variables.warnings,
+      }
+    );
+  }
+
+  async setValue(identifier: string, value: string, options: { solutionUniqueName?: string } = {}): Promise<OperationResult<EnvironmentVariableSummary>> {
+    const variable = await this.inspect(identifier, options);
+
+    if (!variable.success) {
+      return variable as unknown as OperationResult<EnvironmentVariableSummary>;
+    }
+
+    if (!variable.data) {
+      return fail(
+        createDiagnostic('error', 'DATAVERSE_ENVVAR_NOT_FOUND', `Environment variable ${identifier} was not found.`, {
+          source: '@pp/dataverse',
+        })
+      );
+    }
+
+    const writeResult = variable.data.valueId
+      ? await this.dataverseClient.update('environmentvariablevalues', variable.data.valueId, { value })
+      : await this.dataverseClient.create('environmentvariablevalues', {
+          value,
+          'environmentvariabledefinitionid@odata.bind': `/environmentvariabledefinitions(${variable.data.definitionId})`,
+        });
+
+    if (!writeResult.success) {
+      return writeResult as unknown as OperationResult<EnvironmentVariableSummary>;
+    }
+
+    return ok(
+      {
+        ...variable.data,
+        currentValue: value,
+        effectiveValue: value,
+        valueId: variable.data.valueId ?? writeResult.data?.entityId,
+        hasCurrentValue: true,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(variable.diagnostics, writeResult.diagnostics),
+        warnings: mergeDiagnosticLists(variable.warnings, writeResult.warnings),
+      }
+    );
+  }
+}
+
 export async function resolveDataverseClient(
   environmentAlias: string,
   options: ConfigStoreOptions = {}
@@ -832,10 +1387,16 @@ export function buildGlobalOptionSetPath(
 
 export function buildRelationshipPath(
   schemaName: string,
+  kind: Exclude<RelationshipMetadataKind, 'auto'> = 'one-to-many',
   options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
 ): string {
+  const suffix =
+    kind === 'many-to-many'
+      ? '/Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata'
+      : '/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata';
+
   return buildODataPath(
-    `RelationshipDefinitions(SchemaName='${escapeODataLiteral(schemaName)}')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata`,
+    `RelationshipDefinitions(SchemaName='${escapeODataLiteral(schemaName)}')${suffix}`,
     options
   );
 }
@@ -912,6 +1473,54 @@ export function normalizeAttributeDefinitions(
   return attributes.map((attribute) => normalizeAttributeDefinition(attribute, view));
 }
 
+export function normalizeGlobalOptionSetDefinition(optionSet: GlobalOptionSetDefinition): NormalizedOptionSetDefinition {
+  const normalizedOptions = normalizeOptionSet(optionSet);
+
+  return compactObject({
+    ...(normalizedOptions ?? {}),
+    description: readLocalizedLabel(optionSet.Description),
+    metadataId: readString(optionSet.MetadataId),
+    introducedVersion: readString(optionSet.IntroducedVersion),
+  });
+}
+
+export function normalizeRelationshipDefinition(relationship: RelationshipDefinition): NormalizedRelationshipDefinition {
+  const odataType = readString(relationship['@odata.type']);
+  const relationshipType: NormalizedRelationshipDefinition['relationshipType'] = odataType?.includes('ManyToManyRelationshipMetadata')
+    ? 'many-to-many'
+    : odataType?.includes('OneToManyRelationshipMetadata')
+      ? 'one-to-many'
+      : 'unknown';
+
+  if (relationshipType === 'many-to-many') {
+    return compactObject({
+      schemaName: readString(relationship.SchemaName),
+      metadataId: readString(relationship.MetadataId),
+      odataType,
+      relationshipType,
+      entity1LogicalName: readString(relationship.Entity1LogicalName),
+      entity2LogicalName: readString(relationship.Entity2LogicalName),
+      intersectEntityName: readString(relationship.IntersectEntityName),
+      entity1NavigationPropertyName: readString(relationship.Entity1NavigationPropertyName),
+      entity2NavigationPropertyName: readString(relationship.Entity2NavigationPropertyName),
+    });
+  }
+
+  return compactObject({
+    schemaName: readString(relationship.SchemaName),
+    metadataId: readString(relationship.MetadataId),
+    odataType,
+    relationshipType,
+    referencedEntity: readString(relationship.ReferencedEntity),
+    referencedAttribute: readString(relationship.ReferencedAttribute),
+    referencingEntity: readString(relationship.ReferencingEntity),
+    lookupLogicalName: readString((relationship.Lookup as Record<string, unknown> | undefined)?.LogicalName),
+    lookupSchemaName: readString((relationship.Lookup as Record<string, unknown> | undefined)?.SchemaName),
+    lookupDisplayName: readLocalizedLabel((relationship.Lookup as Record<string, unknown> | undefined)?.DisplayName),
+    cascade: normalizeCascadeConfiguration(relationship.CascadeConfiguration),
+  });
+}
+
 export function normalizeMetadataQueryOptions(basePath: string, options: MetadataQueryOptions): OperationResult<NormalizedMetadataQuery> {
   if (options.orderBy && options.orderBy.length > 0) {
     return fail(
@@ -961,6 +1570,81 @@ export function normalizeMetadataQueryOptions(basePath: string, options: Metadat
       warnings,
     }
   );
+}
+
+function normalizeConnectionReference(record: ConnectionReferenceRecord): ConnectionReferenceSummary {
+  return {
+    id: record.connectionreferenceid,
+    logicalName: record.connectionreferencelogicalname,
+    displayName: record.displayname,
+    connectorId: record.connectorid,
+    connectionId: record.connectionid,
+    customConnectorId: record.customconnectorid,
+    solutionId: record._solutionid_value,
+    stateCode: record.statecode,
+    connected: Boolean(record.connectionid),
+  };
+}
+
+function normalizeEnvironmentVariable(
+  definition: EnvironmentVariableDefinitionRecord,
+  valueRecord?: EnvironmentVariableValueRecord
+): EnvironmentVariableSummary {
+  return {
+    definitionId: definition.environmentvariabledefinitionid,
+    schemaName: definition.schemaname,
+    displayName: definition.displayname,
+    type: definition.type,
+    defaultValue: definition.defaultvalue,
+    currentValue: valueRecord?.value,
+    effectiveValue: valueRecord?.value ?? definition.defaultvalue,
+    valueId: valueRecord?.environmentvariablevalueid,
+    valueSchema: definition.valueschema,
+    secretStore: definition.secretstore,
+    solutionId: definition._solutionid_value,
+    hasCurrentValue: valueRecord?.value !== undefined,
+  };
+}
+
+function matchesConnectionReference(reference: ConnectionReferenceSummary, identifier: string): boolean {
+  const normalized = identifier.toLowerCase();
+  return (
+    reference.id.toLowerCase() === normalized ||
+    reference.logicalName?.toLowerCase() === normalized ||
+    reference.displayName?.toLowerCase() === normalized
+  );
+}
+
+function matchesEnvironmentVariable(variable: EnvironmentVariableSummary, identifier: string): boolean {
+  const normalized = identifier.toLowerCase();
+  return (
+    variable.definitionId.toLowerCase() === normalized ||
+    variable.schemaName?.toLowerCase() === normalized ||
+    variable.displayName?.toLowerCase() === normalized
+  );
+}
+
+async function resolveSolutionId(client: DataverseClient, uniqueName: string): Promise<OperationResult<string | undefined>> {
+  const solutions = await client.query<{ solutionid: string; uniquename: string }>({
+    table: 'solutions',
+    select: ['solutionid', 'uniquename'],
+    filter: `uniquename eq '${escapeODataLiteral(uniqueName)}'`,
+    top: 1,
+  });
+
+  if (!solutions.success) {
+    return solutions as unknown as OperationResult<string | undefined>;
+  }
+
+  return ok(solutions.data?.[0]?.solutionid, {
+    supportTier: 'preview',
+    diagnostics: solutions.diagnostics,
+    warnings: solutions.warnings,
+  });
+}
+
+function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagnostic[] {
+  return lists.flatMap((list) => list ?? []);
 }
 
 function buildDataverseHeaders(options: DataverseRequestOptions): Record<string, string> {
@@ -1031,7 +1715,7 @@ function extractLocation(headers: Record<string, string> | undefined): string | 
 }
 
 function buildMetadataWriteResult<T>(
-  writeResponse: OperationResult<HttpResponse<void>>,
+  writeResponse: OperationResult<HttpResponse<unknown>>,
   readBack: OperationResult<T>,
   publishResponse: OperationResult<DataverseWriteResult> | undefined,
   publishTargets: string[]
@@ -1090,6 +1774,37 @@ function buildMetadataWriteResult<T>(
       warnings,
     }
   );
+}
+
+function combineReadResults<T>(
+  results: Array<OperationResult<unknown>>,
+  entity: T,
+  source: string,
+  warningCode: string,
+  warningMessage: string
+): OperationResult<T> {
+  const warnings: Diagnostic[] = [];
+
+  for (const result of results) {
+    if (result.success) {
+      warnings.push(...result.warnings);
+      continue;
+    }
+
+    warnings.push(
+      createDiagnostic('warning', warningCode, warningMessage, {
+        source,
+        detail: result.diagnostics.map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`).join('; '),
+      }),
+      ...demoteDiagnostics(result.diagnostics),
+      ...result.warnings
+    );
+  }
+
+  return ok(entity, {
+    supportTier: 'preview',
+    warnings,
+  });
 }
 
 function escapeODataLiteral(value: string): string {
@@ -1161,6 +1876,24 @@ function normalizeOptionSet(value: unknown): Record<string, unknown> | undefined
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
+function normalizeCascadeConfiguration(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const cascade = value as Record<string, unknown>;
+  const normalized = compactObject({
+    assign: readString(cascade.Assign),
+    delete: readString(cascade.Delete),
+    merge: readString(cascade.Merge),
+    reparent: readString(cascade.Reparent),
+    share: readString(cascade.Share),
+    unshare: readString(cascade.Unshare),
+  });
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
 function readMetadataId(value: unknown): string | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
@@ -1180,18 +1913,54 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
+function resolveRelationshipReadKinds(kind: RelationshipMetadataKind | undefined): Array<Exclude<RelationshipMetadataKind, 'auto'>> {
+  if (kind === 'one-to-many' || kind === 'many-to-many') {
+    return [kind];
+  }
+
+  return ['one-to-many', 'many-to-many'];
+}
+
+function buildDataverseLabel(text: string, languageCode = 1033): Record<string, unknown> {
+  return {
+    '@odata.type': 'Microsoft.Dynamics.CRM.Label',
+    LocalizedLabels: [
+      {
+        '@odata.type': 'Microsoft.Dynamics.CRM.LocalizedLabel',
+        Label: text,
+        LanguageCode: languageCode,
+        IsManaged: false,
+      },
+    ],
+    UserLocalizedLabel: {
+      '@odata.type': 'Microsoft.Dynamics.CRM.LocalizedLabel',
+      Label: text,
+      LanguageCode: languageCode,
+      IsManaged: false,
+    },
+  };
+}
+
 export {
   buildColumnCreatePayload,
+  buildCustomerRelationshipCreatePayload,
   buildGlobalOptionSetCreatePayload,
+  buildManyToManyRelationshipCreatePayload,
   buildOneToManyRelationshipCreatePayload,
   buildTableCreatePayload,
+  parseCustomerRelationshipCreateSpec,
   parseColumnCreateSpec,
   parseGlobalOptionSetCreateSpec,
+  parseGlobalOptionSetUpdateSpec,
+  parseManyToManyRelationshipCreateSpec,
   parseOneToManyRelationshipCreateSpec,
   parseTableCreateSpec,
   resolveLogicalName,
   type ColumnCreateSpec,
+  type CustomerRelationshipCreateSpec,
   type GlobalOptionSetCreateSpec,
+  type GlobalOptionSetUpdateSpec,
+  type ManyToManyRelationshipCreateSpec,
   type MetadataBuildOptions,
   type OneToManyRelationshipCreateSpec,
   type TableCreateSpec,

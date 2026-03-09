@@ -21,6 +21,8 @@ import {
 } from '@pp/config';
 import {
   parseColumnCreateSpec,
+  ConnectionReferenceService,
+  EnvironmentVariableService,
   parseCustomerRelationshipCreateSpec,
   parseGlobalOptionSetCreateSpec,
   parseGlobalOptionSetUpdateSpec,
@@ -90,6 +92,14 @@ async function main(argv: string[]): Promise<number> {
 
   if (group === 'solution') {
     return runSolution(command, rest);
+  }
+
+  if (group === 'connref') {
+    return runConnectionReference(command, rest);
+  }
+
+  if (group === 'envvar') {
+    return runEnvironmentVariable(command, rest);
   }
 
   switch (`${group} ${command ?? ''}`.trim()) {
@@ -215,6 +225,34 @@ async function runSolution(command: string | undefined, args: string[]): Promise
       return runSolutionList(args);
     case 'inspect':
       return runSolutionInspect(args);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runConnectionReference(command: string | undefined, args: string[]): Promise<number> {
+  switch (command) {
+    case 'list':
+      return runConnectionReferenceList(args);
+    case 'inspect':
+      return runConnectionReferenceInspect(args);
+    case 'validate':
+      return runConnectionReferenceValidate(args);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runEnvironmentVariable(command: string | undefined, args: string[]): Promise<number> {
+  switch (command) {
+    case 'list':
+      return runEnvironmentVariableList(args);
+    case 'inspect':
+      return runEnvironmentVariableInspect(args);
+    case 'set':
+      return runEnvironmentVariableSet(args);
     default:
       printHelp();
       return 1;
@@ -1781,6 +1819,159 @@ async function runSolutionInspect(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runConnectionReferenceList(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new ConnectionReferenceService(resolution.data.client);
+  const result = await service.list({
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runConnectionReferenceInspect(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('CONNREF_IDENTIFIER_REQUIRED', 'Usage: connref inspect <logicalName|displayName|id> --env <alias>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new ConnectionReferenceService(resolution.data.client);
+  const result = await service.inspect(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'CONNREF_NOT_FOUND', `Connection reference ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runConnectionReferenceValidate(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new ConnectionReferenceService(resolution.data.client);
+  const result = await service.validate({
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runEnvironmentVariableList(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new EnvironmentVariableService(resolution.data.client);
+  const result = await service.list({
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runEnvironmentVariableInspect(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('ENVVAR_IDENTIFIER_REQUIRED', 'Usage: envvar inspect <schemaName|displayName|id> --env <alias>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new EnvironmentVariableService(resolution.data.client);
+  const result = await service.inspect(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'ENVVAR_NOT_FOUND', `Environment variable ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runEnvironmentVariableSet(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+  const value = readFlag(args, '--value');
+
+  if (!identifier || value === undefined) {
+    return printFailure(argumentFailure('ENVVAR_SET_ARGS_REQUIRED', 'Usage: envvar set <schemaName|displayName|id> --env <alias> --value VALUE'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'envvar.set', { identifier, solution: readFlag(args, '--solution') }, { value });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = new EnvironmentVariableService(resolution.data.client);
+  const result = await service.setValue(identifier, value, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 function buildPublicClientProfile(
   baseProfile: UserAuthProfile,
   args: string[]
@@ -2295,6 +2486,12 @@ function printHelp(): void {
       '',
       '  solution list --env ALIAS [--config-dir path]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',
+      '  connref list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  connref inspect <logicalName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  connref validate --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar inspect <schemaName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar set <schemaName|displayName|id> --env ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
