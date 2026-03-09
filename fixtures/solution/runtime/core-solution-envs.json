@@ -1,0 +1,163 @@
+{
+  "source": {
+    "query": {
+      "solutions": [
+        {
+          "friendlyname": "Core Solution",
+          "solutionid": "sol-source",
+          "uniquename": "Core",
+          "version": "1.2.0.0"
+        }
+      ]
+    },
+    "queryAll": {
+      "connectionreferences": [
+        {
+          "_solutionid_value": "sol-source",
+          "connectionid": "conn-sql",
+          "connectionreferenceid": "connref-source-valid",
+          "connectionreferencelogicalname": "pp_shared_sql",
+          "connectorid": "/providers/Microsoft.PowerApps/apis/shared_sql",
+          "displayname": "SQL",
+          "statecode": 0
+        },
+        {
+          "_solutionid_value": "sol-source",
+          "connectionreferenceid": "connref-source-broken",
+          "connectionreferencelogicalname": "pp_shared_sharepoint",
+          "displayname": "SharePoint",
+          "statecode": 0
+        }
+      ],
+      "dependencies": [
+        {
+          "dependencyid": "dep-source-missing-form",
+          "dependentcomponentobjectid": "obj-flow",
+          "dependentcomponenttype": 29,
+          "dependencytype": 2,
+          "requiredcomponentobjectid": "obj-form",
+          "requiredcomponenttype": 24
+        },
+        {
+          "dependencyid": "dep-source-satisfied-site",
+          "dependentcomponentobjectid": "obj-app",
+          "dependentcomponenttype": 80,
+          "dependencytype": 1,
+          "requiredcomponentobjectid": "obj-site",
+          "requiredcomponenttype": 62
+        }
+      ],
+      "environmentvariabledefinitions": [
+        {
+          "_solutionid_value": "sol-source",
+          "displayname": "API Base URL",
+          "environmentvariabledefinitionid": "envdef-source-api-url",
+          "schemaname": "pp_ApiBaseUrl",
+          "type": "text"
+        },
+        {
+          "_solutionid_value": "sol-source",
+          "defaultvalue": "test",
+          "displayname": "Execution Mode",
+          "environmentvariabledefinitionid": "envdef-source-execution-mode",
+          "schemaname": "pp_ExecutionMode",
+          "type": "text"
+        }
+      ],
+      "environmentvariablevalues": [
+        {
+          "_environmentvariabledefinitionid_value": "envdef-source-execution-mode",
+          "environmentvariablevalueid": "envval-source-execution-mode",
+          "statecode": 0,
+          "value": "prod"
+        }
+      ],
+      "solutioncomponents": [
+        {
+          "componenttype": 80,
+          "objectid": "obj-app",
+          "solutioncomponentid": "comp-source-app"
+        },
+        {
+          "componenttype": 62,
+          "objectid": "obj-site",
+          "solutioncomponentid": "comp-source-sitemap"
+        },
+        {
+          "componenttype": 29,
+          "objectid": "obj-flow",
+          "solutioncomponentid": "comp-source-flow"
+        }
+      ]
+    }
+  },
+  "target": {
+    "query": {
+      "solutions": [
+        {
+          "friendlyname": "Core Solution",
+          "solutionid": "sol-target",
+          "uniquename": "Core",
+          "version": "1.3.0.0"
+        }
+      ]
+    },
+    "queryAll": {
+      "connectionreferences": [
+        {
+          "_solutionid_value": "sol-target",
+          "connectionid": "conn-target-sharepoint",
+          "connectionreferenceid": "connref-target-sharepoint",
+          "connectionreferencelogicalname": "pp_shared_sharepoint",
+          "connectorid": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+          "displayname": "SharePoint",
+          "statecode": 0
+        }
+      ],
+      "dependencies": [],
+      "environmentvariabledefinitions": [
+        {
+          "_solutionid_value": "sol-target",
+          "displayname": "API Base URL",
+          "environmentvariabledefinitionid": "envdef-target-api-url",
+          "schemaname": "pp_ApiBaseUrl",
+          "type": "text"
+        },
+        {
+          "_solutionid_value": "sol-target",
+          "defaultvalue": "test",
+          "displayname": "Execution Mode",
+          "environmentvariabledefinitionid": "envdef-target-execution-mode",
+          "schemaname": "pp_ExecutionMode",
+          "type": "text"
+        }
+      ],
+      "environmentvariablevalues": [
+        {
+          "_environmentvariabledefinitionid_value": "envdef-target-api-url",
+          "environmentvariablevalueid": "envval-target-api-url",
+          "statecode": 0,
+          "value": "https://api.contoso.example"
+        },
+        {
+          "_environmentvariabledefinitionid_value": "envdef-target-execution-mode",
+          "environmentvariablevalueid": "envval-target-execution-mode",
+          "statecode": 0,
+          "value": "prod"
+        }
+      ],
+      "solutioncomponents": [
+        {
+          "componenttype": 80,
+          "objectid": "obj-app",
+          "solutioncomponentid": "comp-target-app"
+        },
+        {
+          "componenttype": 24,
+          "objectid": "obj-form",
+          "solutioncomponentid": "comp-target-form"
+        }
+      ]
+    }
+  }
+}

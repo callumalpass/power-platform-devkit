@@ -3,9 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readJsonFile } from '@pp/artifacts';
-import type { DataverseClient } from '@pp/dataverse';
-import * as dataverseModule from '@pp/dataverse';
-import { ok, type OperationResult } from '@pp/diagnostics';
+import { type DataverseFixture, createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
 import { expectGoldenJson, expectGoldenText, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
 import { main } from './index';
 
@@ -42,44 +40,13 @@ function normalizeCliAnalysisSnapshot<T>(value: T): T {
 }
 
 interface FlowRuntimeFixture {
-  query?: Record<string, unknown[]>;
-  queryAll?: Record<string, unknown[]>;
+  query?: DataverseFixture['query'];
+  queryAll?: DataverseFixture['queryAll'];
 }
 
-function createFixtureDataverseClient(fixture: FlowRuntimeFixture): DataverseClient {
-  return {
-    query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
-      ok(((fixture.query?.[options.table] ?? []) as T[]), {
-        supportTier: 'preview',
-      }),
-    queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
-      ok(((fixture.queryAll?.[options.table] ?? []) as T[]), {
-        supportTier: 'preview',
-      }),
-  } as unknown as DataverseClient;
-}
-
-function mockDataverseResolution(client: DataverseClient) {
-  vi.spyOn(dataverseModule, 'resolveDataverseClient').mockResolvedValue(
-    ok(
-      {
-        environment: {
-          name: 'fixture',
-          url: 'https://example.crm.dynamics.com',
-          authProfile: 'fixture-profile',
-        } as never,
-        authProfile: {
-          name: 'fixture-profile',
-          kind: 'static-token',
-          token: 'fixture-token',
-        } as never,
-        client,
-      },
-      {
-        supportTier: 'preview',
-      }
-    )
-  );
+interface SolutionFixtureEnvironments {
+  source: DataverseFixture;
+  target: DataverseFixture;
 }
 
 async function runCli(
@@ -318,7 +285,9 @@ describe('cli fixture-backed workflows', () => {
       resolveRepoPath('fixtures', 'flow', 'runtime', 'invoice-sync-runtime.json')
     )) as FlowRuntimeFixture;
 
-    mockDataverseResolution(createFixtureDataverseClient(runtimeFixture));
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient(runtimeFixture),
+    });
 
     const inspect = await runCli(['flow', 'inspect', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--format', 'json']);
     const runs = await runCli(['flow', 'runs', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--since', '7d', '--format', 'json']);
@@ -356,5 +325,27 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(errors.stdout), 'fixtures/flow/golden/runtime/error-groups.json');
     await expectGoldenJson(JSON.parse(connrefs.stdout), 'fixtures/flow/golden/runtime/connection-health.json');
     await expectGoldenJson(JSON.parse(doctor.stdout), 'fixtures/flow/golden/runtime/doctor-report.json');
+  });
+
+  it('covers solution analysis and environment comparison through the CLI entrypoint', async () => {
+    const fixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(fixture.source),
+      target: createFixtureDataverseClient(fixture.target),
+    });
+
+    const analyze = await runCli(['solution', 'analyze', 'Core', '--env', 'source', '--format', 'json']);
+    const compare = await runCli(['solution', 'compare', 'Core', '--source-env', 'source', '--target-env', 'target', '--format', 'json']);
+
+    expect(analyze.code).toBe(0);
+    expect(analyze.stderr).toBe('');
+    expect(compare.code).toBe(0);
+    expect(compare.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(analyze.stdout), 'fixtures/solution/golden/analyze-report.json');
+    await expectGoldenJson(JSON.parse(compare.stdout), 'fixtures/solution/golden/compare-report.json');
   });
 });
