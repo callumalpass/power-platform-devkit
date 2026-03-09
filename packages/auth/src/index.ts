@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   ConfidentialClientApplication,
   PromptValue,
@@ -9,11 +9,18 @@ import {
   type AuthenticationResult,
 } from '@azure/msal-node';
 import {
+  getBrowserProfile,
+  getGlobalConfigDir,
   getAuthProfile,
   getMsalCacheDir,
+  listBrowserProfiles,
   listAuthProfiles,
+  removeBrowserProfile,
   removeAuthProfile,
+  saveBrowserProfile,
   saveAuthProfile,
+  type BrowserProfile as StoredBrowserProfile,
+  type BrowserProfileKind,
   type ConfigStoreOptions,
   type StoredAuthProfile,
 } from '@pp/config';
@@ -23,9 +30,18 @@ export const DEFAULT_PUBLIC_CLIENT_ID = '51f81489-12ee-4a9e-aaae-a2591f45987d';
 export const DEFAULT_USER_TENANT = 'common';
 
 export type AuthProfile = StoredAuthProfile;
+export type BrowserProfile = StoredBrowserProfile;
 export type AuthProfileType = AuthProfile['type'];
 export type UserAuthProfile = Extract<AuthProfile, { type: 'user' | 'device-code' }>;
 export type PublicClientFlow = 'interactive' | 'device-code';
+
+export interface BrowserLaunchSpec {
+  profile: BrowserProfile;
+  url: string;
+  command: string;
+  args: string[];
+  profileDir: string;
+}
 
 export interface TokenProvider {
   getAccessToken(resource: string): Promise<string>;
@@ -106,12 +122,24 @@ export class AuthService {
     return listAuthProfiles(this.options);
   }
 
+  async listBrowserProfiles(): Promise<OperationResult<BrowserProfile[]>> {
+    return listBrowserProfiles(this.options);
+  }
+
   async getProfile(name: string): Promise<OperationResult<AuthProfile | undefined>> {
     return getAuthProfile(name, this.options);
   }
 
+  async getBrowserProfile(name: string): Promise<OperationResult<BrowserProfile | undefined>> {
+    return getBrowserProfile(name, this.options);
+  }
+
   async saveProfile(profile: AuthProfile): Promise<OperationResult<AuthProfile>> {
     return saveAuthProfile(profile, this.options);
+  }
+
+  async saveBrowserProfile(profile: BrowserProfile): Promise<OperationResult<BrowserProfile>> {
+    return saveBrowserProfile(profile, this.options);
   }
 
   async removeProfile(name: string): Promise<OperationResult<boolean>> {
@@ -127,6 +155,10 @@ export class AuthService {
     }
 
     return removed;
+  }
+
+  async removeBrowserProfile(name: string): Promise<OperationResult<boolean>> {
+    return removeBrowserProfile(name, this.options);
   }
 
   async loginProfile(
@@ -306,6 +338,7 @@ export function summarizeProfile(profile: AuthProfile): Record<string, unknown> 
         accountUsername: profile.accountUsername,
         homeAccountId: profile.homeAccountId,
         localAccountId: profile.localAccountId,
+        browserProfile: profile.browserProfile,
         prompt: profile.prompt ?? 'select_account',
         fallbackToDeviceCode: profile.fallbackToDeviceCode ?? true,
         defaultResource: profile.defaultResource,
@@ -324,6 +357,19 @@ export function summarizeProfile(profile: AuthProfile): Record<string, unknown> 
         defaultResource: profile.defaultResource,
       };
   }
+}
+
+export function summarizeBrowserProfile(
+  profile: BrowserProfile,
+  options: ConfigStoreOptions = {}
+): Record<string, unknown> {
+  return {
+    name: profile.name,
+    kind: profile.kind,
+    command: profile.command ?? (profile.kind === 'custom' ? undefined : resolveBrowserCommand(profile, process.platform)),
+    args: profile.args ?? [],
+    profileDir: resolveBrowserProfileDirectory(profile, options),
+  };
 }
 
 function resolveScopes(profile: AuthProfile, resource: string): string[] {
@@ -427,8 +473,13 @@ async function acquirePublicClientToken(
     return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
   }
 
+  const browserProfile =
+    profile.type === 'user' && profile.browserProfile
+      ? await loadNamedBrowserProfile(profile.browserProfile, options)
+      : undefined;
+
   try {
-    return await acquireTokenInteractively(app, profile, scopes, cachePath);
+    return await acquireTokenInteractively(app, profile, scopes, cachePath, browserProfile, options);
   } catch (error) {
     if (profile.type === 'user' && profile.fallbackToDeviceCode === false) {
       throw error;
@@ -445,16 +496,22 @@ async function acquireTokenInteractively(
   app: PublicClientApplication,
   profile: UserAuthProfile,
   scopes: string[],
-  cachePath: string
+  cachePath: string,
+  browserProfile: BrowserProfile | undefined,
+  options: ConfigStoreOptions
 ): Promise<{ accessToken: string; profile: UserAuthProfile }> {
-  process.stderr.write('Opening browser for authentication...\n');
+  process.stderr.write(
+    browserProfile
+      ? `Opening browser for authentication with browser profile ${browserProfile.name}...\n`
+      : 'Opening browser for authentication...\n'
+  );
 
   const result = await app.acquireTokenInteractive({
     scopes,
     redirectUri: 'http://localhost',
     prompt: resolvePrompt(profile.type === 'user' ? profile.prompt : undefined),
     loginHint: profile.loginHint,
-    openBrowser: openSystemBrowser,
+    openBrowser: browserProfile ? async (url) => openManagedBrowser(url, browserProfile, options) : openSystemBrowser,
     successTemplate: 'Authentication complete. You can close this window.',
     errorTemplate: 'Authentication failed. You can close this window.',
   });
@@ -570,6 +627,35 @@ function resolveTokenCachePath(profile: UserAuthProfile, options: ConfigStoreOpt
   return join(getMsalCacheDir(options), `${resolveTokenCacheKey(profile)}.json`);
 }
 
+export function resolveBrowserProfileDirectory(profile: BrowserProfile, options: ConfigStoreOptions = {}): string {
+  const configured = profile.directory;
+
+  if (!configured) {
+    return join(getGlobalConfigDir(options), 'browser-profiles', profile.name);
+  }
+
+  return isAbsolute(configured) ? configured : resolve(getGlobalConfigDir(options), configured);
+}
+
+export function buildBrowserLaunchSpec(
+  profile: BrowserProfile,
+  url: string,
+  options: ConfigStoreOptions = {},
+  platform: NodeJS.Platform = process.platform
+): BrowserLaunchSpec {
+  const profileDir = resolveBrowserProfileDirectory(profile, options);
+  const command = resolveBrowserCommand(profile, platform);
+  const baseArgs = buildBrowserArgs(profile, profileDir, url, platform);
+
+  return {
+    profile,
+    url,
+    command,
+    args: baseArgs,
+    profileDir,
+  };
+}
+
 function isPublicClientProfile(profile: AuthProfile): profile is UserAuthProfile {
   return profile.type === 'user' || profile.type === 'device-code';
 }
@@ -597,6 +683,26 @@ async function removeTokenCache(profile: UserAuthProfile, options: ConfigStoreOp
   }
 }
 
+async function loadNamedBrowserProfile(name: string, options: ConfigStoreOptions): Promise<BrowserProfile> {
+  const profile = await getBrowserProfile(name, options);
+
+  if (!profile.success) {
+    throw new Error(profile.diagnostics.map((diagnostic) => diagnostic.message).join('; '));
+  }
+
+  if (!profile.data) {
+    throw new Error(`Browser profile ${name} was not found`);
+  }
+
+  return profile.data;
+}
+
+async function openManagedBrowser(url: string, profile: BrowserProfile, options: ConfigStoreOptions): Promise<void> {
+  const spec = buildBrowserLaunchSpec(profile, url, options);
+  await mkdir(spec.profileDir, { recursive: true });
+  await spawnDetached(spec.command, spec.args);
+}
+
 async function openSystemBrowser(url: string): Promise<void> {
   const [command, args] =
     process.platform === 'darwin'
@@ -605,6 +711,10 @@ async function openSystemBrowser(url: string): Promise<void> {
         ? ['cmd', ['/c', 'start', '', url]]
         : ['xdg-open', [url]];
 
+  await spawnDetached(command, args);
+}
+
+async function spawnDetached(command: string, args: string[]): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
       detached: true,
@@ -616,6 +726,54 @@ async function openSystemBrowser(url: string): Promise<void> {
     child.once('spawn', resolve);
     child.unref();
   });
+}
+
+function resolveBrowserCommand(profile: BrowserProfile, platform: NodeJS.Platform): string {
+  if (profile.command) {
+    return profile.command;
+  }
+
+  switch (profile.kind) {
+    case 'custom':
+      throw new Error(`Browser profile ${profile.name} requires an explicit command because kind=custom`);
+    case 'chrome':
+      return platform === 'darwin' ? 'open' : platform === 'win32' ? 'chrome' : 'google-chrome';
+    case 'chromium':
+      return platform === 'darwin' ? 'open' : platform === 'win32' ? 'chromium' : 'chromium';
+    case 'edge':
+    default:
+      return platform === 'darwin' ? 'open' : platform === 'win32' ? 'msedge' : 'microsoft-edge';
+  }
+}
+
+function buildBrowserArgs(
+  profile: BrowserProfile,
+  profileDir: string,
+  url: string,
+  platform: NodeJS.Platform
+): string[] {
+  const managedArgs = [`--user-data-dir=${profileDir}`, '--no-first-run', '--new-window'];
+  const extraArgs = profile.args ?? [];
+
+  if (platform === 'darwin' && profile.kind !== 'custom' && !profile.command) {
+    return ['-na', resolveMacAppName(profile.kind), '--args', ...managedArgs, ...extraArgs, url];
+  }
+
+  return [...managedArgs, ...extraArgs, url];
+}
+
+function resolveMacAppName(kind: BrowserProfileKind): string {
+  switch (kind) {
+    case 'chrome':
+      return 'Google Chrome';
+    case 'chromium':
+      return 'Chromium';
+    case 'edge':
+      return 'Microsoft Edge';
+    case 'custom':
+    default:
+      return 'Microsoft Edge';
+  }
 }
 
 function canAttemptInteractiveAuth(): boolean {

@@ -36,6 +36,7 @@ Notes:
 - uses Microsoft’s public client by default
 - defaults to tenant `common` unless `--tenant-id` is supplied
 - stores a separate MSAL cache per profile name unless `--cache-key` is supplied
+- can target a named browser profile for isolated interactive sessions
 - reuses cached tokens silently before prompting again
 - can fall back to device code if interactive login fails
 
@@ -45,6 +46,7 @@ Useful options:
 pp auth login \
   --name dev-user \
   --resource https://example.crm.dynamics.com \
+  --browser-profile tenant-a \
   --login-hint user@contoso.com \
   --force-prompt
 ```
@@ -52,7 +54,7 @@ pp auth login \
 You can also store a user profile without authenticating immediately:
 
 ```bash
-pp auth profile add-user --name dev-user --resource https://example.crm.dynamics.com
+pp auth profile add-user --name dev-user --resource https://example.crm.dynamics.com --browser-profile tenant-a
 ```
 
 ### `device-code`
@@ -105,6 +107,46 @@ pp auth profile remove temp
 ```
 
 The profile summary includes the effective client ID, tenant, cache key, and stored account identifiers for user-style profiles. That matters when several named identities live on the same machine.
+
+## Browser profiles
+
+Browser profiles let interactive auth launch a dedicated persistent browser
+context instead of the generic system browser flow.
+
+Create one:
+
+```bash
+pp auth browser-profile add --name tenant-a --kind edge
+pp auth browser-profile inspect tenant-a
+```
+
+Supported kinds:
+
+- `edge`
+- `chrome`
+- `chromium`
+- `custom`
+
+Useful options:
+
+```bash
+pp auth browser-profile add \
+  --name customer-b \
+  --kind custom \
+  --command /usr/bin/google-chrome \
+  --arg '--disable-sync' \
+  --directory ./browser-profiles/customer-b
+```
+
+Behavior:
+
+- managed browser data is stored separately from the MSAL token cache
+- if `--config-dir` points at a repo-local directory, browser profiles become
+  repo-scoped
+- otherwise they live under the user config root, typically
+  `~/.config/pp/browser-profiles/<name>`
+- browser-backed auth still falls back safely to normal behavior when no
+  browser profile is configured
 
 ## Getting tokens directly
 

@@ -8,6 +8,7 @@ import { z } from 'zod';
 export type OutputMode = 'table' | 'json' | 'yaml' | 'ndjson' | 'markdown' | 'raw';
 export type ParameterType = 'string' | 'number' | 'boolean';
 export type AuthProfileType = 'static-token' | 'environment-token' | 'client-secret' | 'user' | 'device-code';
+export type BrowserProfileKind = 'chrome' | 'edge' | 'chromium' | 'custom';
 
 const primitiveValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 
@@ -136,11 +137,22 @@ const deviceCodeProfileSchema = authProfileBaseSchema.extend({
   ...publicClientProfileFields,
 });
 
+const browserProfileSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  kind: z.enum(['chrome', 'edge', 'chromium', 'custom']).default('edge'),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  directory: z.string().optional(),
+});
+
 const storedAuthProfileSchema = z.discriminatedUnion('type', [
   staticTokenProfileSchema,
   environmentTokenProfileSchema,
   clientSecretProfileSchema,
-  userProfileSchema,
+  userProfileSchema.extend({
+    browserProfile: z.string().optional(),
+  }),
   deviceCodeProfileSchema,
 ]);
 
@@ -157,6 +169,7 @@ const environmentAliasSchema = z.object({
 const globalConfigSchema = z.object({
   defaultOutputMode: z.enum(['table', 'json', 'yaml', 'ndjson', 'markdown', 'raw']).optional(),
   authProfiles: z.record(z.string(), storedAuthProfileSchema).default({}),
+  browserProfiles: z.record(z.string(), browserProfileSchema).default({}),
   environments: z.record(z.string(), environmentAliasSchema).default({}),
   preferences: z.record(z.string(), z.unknown()).default({}),
 });
@@ -170,6 +183,7 @@ export type ProjectTopologyStage = z.infer<typeof topologyStageSchema>;
 export type ProjectSecretProvider = z.infer<typeof secretProviderSchema>;
 export type ProjectSecretsConfig = z.infer<typeof projectSecretsSchema>;
 export type ProjectConfig = z.infer<typeof projectConfigSchema>;
+export type BrowserProfile = z.infer<typeof browserProfileSchema>;
 export type StoredAuthProfile = z.infer<typeof storedAuthProfileSchema>;
 export type EnvironmentAlias = z.infer<typeof environmentAliasSchema>;
 export type GlobalConfig = z.output<typeof globalConfigSchema>;
@@ -201,6 +215,7 @@ export function getMsalCacheDir(options: ConfigStoreOptions = {}): string {
 export function createEmptyGlobalConfig(): GlobalConfig {
   return {
     authProfiles: {},
+    browserProfiles: {},
     environments: {},
     preferences: {},
   };
@@ -338,6 +353,22 @@ export async function listAuthProfiles(options: ConfigStoreOptions = {}): Promis
   });
 }
 
+export async function listBrowserProfiles(options: ConfigStoreOptions = {}): Promise<OperationResult<BrowserProfile[]>> {
+  const config = await loadGlobalConfigOrDefault(options);
+
+  if (!config.success || !config.data) {
+    return config as unknown as OperationResult<BrowserProfile[]>;
+  }
+
+  const current = config.data.config;
+
+  return ok(Object.values(current.browserProfiles), {
+    supportTier: 'preview',
+    diagnostics: config.diagnostics,
+    warnings: config.warnings,
+  });
+}
+
 export async function getAuthProfile(
   name: string,
   options: ConfigStoreOptions = {}
@@ -351,6 +382,25 @@ export async function getAuthProfile(
   const current = config.data.config;
 
   return ok(current.authProfiles[name], {
+    supportTier: 'preview',
+    diagnostics: config.diagnostics,
+    warnings: config.warnings,
+  });
+}
+
+export async function getBrowserProfile(
+  name: string,
+  options: ConfigStoreOptions = {}
+): Promise<OperationResult<BrowserProfile | undefined>> {
+  const config = await loadGlobalConfigOrDefault(options);
+
+  if (!config.success || !config.data) {
+    return config as unknown as OperationResult<BrowserProfile | undefined>;
+  }
+
+  const current = config.data.config;
+
+  return ok(current.browserProfiles[name], {
     supportTier: 'preview',
     diagnostics: config.diagnostics,
     warnings: config.warnings,
@@ -389,6 +439,38 @@ export async function saveAuthProfile(
   });
 }
 
+export async function saveBrowserProfile(
+  profile: BrowserProfile,
+  options: ConfigStoreOptions = {}
+): Promise<OperationResult<BrowserProfile>> {
+  const config = await loadGlobalConfigOrDefault(options);
+
+  if (!config.success || !config.data) {
+    return config as unknown as OperationResult<BrowserProfile>;
+  }
+
+  const current = config.data.config;
+  const nextConfig: GlobalConfig = {
+    ...current,
+    browserProfiles: {
+      ...current.browserProfiles,
+      [profile.name]: profile,
+    },
+  };
+
+  const written = await writeGlobalConfig(nextConfig, options);
+
+  if (!written.success) {
+    return written as unknown as OperationResult<BrowserProfile>;
+  }
+
+  return ok(profile, {
+    supportTier: 'preview',
+    diagnostics: written.diagnostics,
+    warnings: written.warnings,
+  });
+}
+
 export async function removeAuthProfile(
   name: string,
   options: ConfigStoreOptions = {}
@@ -418,6 +500,53 @@ export async function removeAuthProfile(
       ...current,
       authProfiles: nextProfiles,
       environments: nextEnvironments,
+    },
+    options
+  );
+
+  if (!written.success) {
+    return written as unknown as OperationResult<boolean>;
+  }
+
+  return ok(true, { supportTier: 'preview' });
+}
+
+export async function removeBrowserProfile(
+  name: string,
+  options: ConfigStoreOptions = {}
+): Promise<OperationResult<boolean>> {
+  const config = await loadGlobalConfigOrDefault(options);
+
+  if (!config.success || !config.data) {
+    return config as unknown as OperationResult<boolean>;
+  }
+
+  const current = config.data.config;
+
+  if (!current.browserProfiles[name]) {
+    return ok(false, {
+      supportTier: 'preview',
+    });
+  }
+
+  const nextBrowserProfiles = { ...current.browserProfiles };
+  delete nextBrowserProfiles[name];
+  const nextAuthProfiles = Object.fromEntries(
+    Object.entries(current.authProfiles).map(([profileName, profile]) => {
+      if (profile.type !== 'user' || profile.browserProfile !== name) {
+        return [profileName, profile];
+      }
+
+      const { browserProfile, ...rest } = profile;
+      return [profileName, rest];
+    })
+  );
+
+  const written = await writeGlobalConfig(
+    {
+      ...current,
+      authProfiles: nextAuthProfiles,
+      browserProfiles: nextBrowserProfiles,
     },
     options
   );

@@ -2,7 +2,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { renderMarkdownReport, generateContextPack } from '@pp/analysis';
-import { AuthService, summarizeProfile, type AuthProfile, type UserAuthProfile } from '@pp/auth';
+import { AuthService, summarizeBrowserProfile, summarizeProfile, type AuthProfile, type BrowserProfile, type UserAuthProfile } from '@pp/auth';
 import {
   createMutationPreview,
   readMutationFlags,
@@ -131,6 +131,24 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
         return runAuthProfileSave(auth, rest, 'device-code');
       case 'remove':
         return runAuthProfileRemove(auth, rest);
+      default:
+        printHelp();
+        return 1;
+    }
+  }
+
+  if (command === 'browser-profile') {
+    const [action, ...rest] = args;
+
+    switch (action) {
+      case 'list':
+        return runAuthBrowserProfileList(auth, rest);
+      case 'inspect':
+        return runAuthBrowserProfileInspect(auth, rest);
+      case 'add':
+        return runAuthBrowserProfileSave(auth, rest);
+      case 'remove':
+        return runAuthBrowserProfileRemove(auth, rest);
       default:
         printHelp();
         return 1;
@@ -347,6 +365,108 @@ async function runAuthProfileInspect(auth: AuthService, args: string[]): Promise
   }
 
   printByFormat(summarizeProfile(profile.data), format);
+  return 0;
+}
+
+async function runAuthBrowserProfileList(auth: AuthService, args: string[]): Promise<number> {
+  const format = outputFormat(args, 'json');
+  const profiles = await auth.listBrowserProfiles();
+
+  if (!profiles.success) {
+    return printFailure(profiles);
+  }
+
+  printByFormat((profiles.data ?? []).map((profile) => summarizeBrowserProfile(profile, readConfigOptions(args))), format);
+  return 0;
+}
+
+async function runAuthBrowserProfileInspect(auth: AuthService, args: string[]): Promise<number> {
+  const name = positionalArgs(args)[0];
+
+  if (!name) {
+    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_NAME_REQUIRED', 'Browser profile name is required.'));
+  }
+
+  const profile = await auth.getBrowserProfile(name);
+
+  if (!profile.success) {
+    return printFailure(profile);
+  }
+
+  if (!profile.data) {
+    return printFailure(fail(createDiagnostic('error', 'AUTH_BROWSER_PROFILE_NOT_FOUND', `Browser profile ${name} was not found.`)));
+  }
+
+  printByFormat(summarizeBrowserProfile(profile.data, readConfigOptions(args)), outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runAuthBrowserProfileSave(auth: AuthService, args: string[]): Promise<number> {
+  const name = readFlag(args, '--name');
+
+  if (!name) {
+    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_NAME_REQUIRED', '--name is required for browser profile add.'));
+  }
+
+  const kind = (readFlag(args, '--kind') ?? 'edge') as BrowserProfile['kind'];
+
+  if (!isBrowserProfileKind(kind)) {
+    return printFailure(
+      argumentFailure('AUTH_BROWSER_PROFILE_KIND_INVALID', 'Unsupported browser profile kind. Use `edge`, `chrome`, `chromium`, or `custom`.')
+    );
+  }
+
+  if (kind === 'custom' && !readFlag(args, '--command')) {
+    return printFailure(
+      argumentFailure('AUTH_BROWSER_PROFILE_COMMAND_REQUIRED', '--command is required when browser profile kind is `custom`.')
+    );
+  }
+
+  const profile: BrowserProfile = {
+    name,
+    kind,
+    description: readFlag(args, '--description'),
+    command: readFlag(args, '--command'),
+    args: readRepeatedFlags(args, '--arg'),
+    directory: readFlag(args, '--directory'),
+  };
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'auth.browser-profile.add', { name, kind }, summarizeBrowserProfile(profile, readConfigOptions(args)));
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const saved = await auth.saveBrowserProfile(profile);
+
+  if (!saved.success || !saved.data) {
+    return printFailure(saved);
+  }
+
+  printByFormat(summarizeBrowserProfile(saved.data, readConfigOptions(args)), outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runAuthBrowserProfileRemove(auth: AuthService, args: string[]): Promise<number> {
+  const name = positionalArgs(args)[0];
+
+  if (!name) {
+    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_NAME_REQUIRED', 'Browser profile name is required.'));
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'auth.browser-profile.remove', { name });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const removed = await auth.removeBrowserProfile(name);
+
+  if (!removed.success) {
+    return printFailure(removed);
+  }
+
+  printByFormat({ removed: removed.data ?? false, name }, 'json');
   return 0;
 }
 
@@ -1695,6 +1815,7 @@ function buildPublicClientProfile(
     scopes: scopes ?? baseProfile.scopes,
     tokenCacheKey: readFlag(args, '--cache-key') ?? baseProfile.tokenCacheKey,
     loginHint: readFlag(args, '--login-hint') ?? baseProfile.loginHint,
+    browserProfile: readFlag(args, '--browser-profile') ?? baseProfile.browserProfile,
     prompt: isPromptValue(prompt) ? prompt : baseProfile.prompt,
     fallbackToDeviceCode: explicitFallback ?? baseProfile.fallbackToDeviceCode,
   };
@@ -2121,6 +2242,10 @@ function isPromptValue(value: string | undefined): value is Extract<UserAuthProf
   return value === 'select_account' || value === 'login' || value === 'consent' || value === 'none';
 }
 
+function isBrowserProfileKind(value: string): value is BrowserProfile['kind'] {
+  return value === 'edge' || value === 'chrome' || value === 'chromium' || value === 'custom';
+}
+
 function printHelp(): void {
   process.stdout.write(
     [
@@ -2129,13 +2254,17 @@ function printHelp(): void {
       'Commands:',
       '  auth profile list [--config-dir path]',
       '  auth profile inspect <name> [--config-dir path]',
-      '  auth profile add-user --name NAME [--resource URL] [--login-hint user@contoso.com] [--config-dir path]',
+      '  auth profile add-user --name NAME [--resource URL] [--login-hint user@contoso.com] [--browser-profile NAME] [--config-dir path]',
       '  auth profile add-static --name NAME --token TOKEN [--resource URL]',
       '  auth profile add-env --name NAME --env-var ENV_VAR [--resource URL]',
       '  auth profile add-client-secret --name NAME --tenant-id TENANT --client-id CLIENT --secret-env ENV_VAR [--resource URL] [--scope s1,s2]',
       '  auth profile add-device-code --name NAME [--resource URL] [--login-hint user@contoso.com] [--config-dir path]',
       '  auth profile remove <name> [--config-dir path]',
-      '  auth login --name NAME --resource URL [--login-hint user@contoso.com] [--force-prompt] [--device-code] [--config-dir path]',
+      '  auth browser-profile list [--config-dir path]',
+      '  auth browser-profile inspect <name> [--config-dir path]',
+      '  auth browser-profile add --name NAME [--kind edge|chrome|chromium|custom] [--command PATH] [--arg ARG] [--directory PATH] [--config-dir path]',
+      '  auth browser-profile remove <name> [--config-dir path]',
+      '  auth login --name NAME --resource URL [--login-hint user@contoso.com] [--browser-profile NAME] [--force-prompt] [--device-code] [--config-dir path]',
       '  auth token --profile NAME [--resource URL] [--format raw|json]',
       '',
       '  env list [--config-dir path]',

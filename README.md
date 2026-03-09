@@ -9,6 +9,7 @@ The repository is structured around small workspace packages rather than a singl
 Implemented today:
 
 - auth profiles for browser user login, device code, environment tokens, client secret, and static tokens
+- named browser profiles for isolated interactive auth contexts
 - environment aliases that bind a Dataverse URL to an auth profile
 - Dataverse commands: `whoami`, generic Web API requests, query/get, create/update/delete, normalized metadata inspection, metadata create for phase 1/2 plus a phase-3 slice (`autonumber`, `file`, `image`, many-to-many, customer relationships, option-set updates)
 - solution commands: `list`, `inspect`
@@ -78,6 +79,13 @@ pp auth login --name dev-user --resource https://example.crm.dynamics.com
 ```
 
 That creates or updates a named auth profile, tries silent token reuse if a cache already exists, and otherwise opens a browser for sign-in. If interactive sign-in fails, the profile can fall back to device code.
+
+When you need isolated interactive sessions per customer or tenant:
+
+```bash
+pp auth browser-profile add --name tenant-a --kind edge
+pp auth login --name dev-user --resource https://example.crm.dynamics.com --browser-profile tenant-a
+```
 
 ### 3. Bind an environment alias
 

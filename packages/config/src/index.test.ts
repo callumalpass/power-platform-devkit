@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   loadGlobalConfigOrDefault,
+  saveBrowserProfile,
   saveAuthProfile,
   saveEnvironmentAlias,
   type ConfigStoreOptions,
@@ -14,11 +15,20 @@ describe('global config store', () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-config-'));
     const options: ConfigStoreOptions = { configDir };
 
+    await saveBrowserProfile(
+      {
+        name: 'tenant-a',
+        kind: 'edge',
+      },
+      options
+    );
+
     await saveAuthProfile(
       {
         name: 'dev-profile',
         type: 'user',
         loginHint: 'user@example.com',
+        browserProfile: 'tenant-a',
         fallbackToDeviceCode: true,
       },
       options
@@ -34,10 +44,13 @@ describe('global config store', () => {
     );
 
     const config = await loadGlobalConfigOrDefault(options);
+    const profile = config.data?.config.authProfiles['dev-profile'];
 
     expect(config.success).toBe(true);
-    expect(config.data?.config.authProfiles['dev-profile']?.type).toBe('user');
-    expect(config.data?.config.authProfiles['dev-profile']?.loginHint).toBe('user@example.com');
+    expect(config.data?.config.browserProfiles['tenant-a']?.kind).toBe('edge');
+    expect(profile?.type).toBe('user');
+    expect(profile && profile.type === 'user' ? profile.loginHint : undefined).toBe('user@example.com');
+    expect(profile && profile.type === 'user' ? profile.browserProfile : undefined).toBe('tenant-a');
     expect(config.data?.config.environments.dev?.url).toBe('https://example.crm.dynamics.com');
   });
 });
