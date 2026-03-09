@@ -7,12 +7,14 @@ import {
   buildCanvasControlInsertWaitProfile,
   buildCanvasHarvestFixturePlan,
   buildCanvasHarvestFixturePrototypeDraftDocument,
+  buildCanvasHarvestFixturePrototypePromotionBatchDocument,
   buildCanvasHarvestPrototypeValidationFixtureDocument,
   buildCanvasHarvestFixturePrototypeValidationBacklogDocument,
   promoteCanvasHarvestFixturePrototypeDraft,
   promoteCanvasHarvestFixturePrototypeDrafts,
   recordCanvasHarvestFixturePrototypeValidation,
   recordCanvasHarvestFixturePrototypeValidations,
+  resolveCanvasHarvestFixturePrototypeDraftPromotion,
   resolveCanvasControlInsertReportResumeSelection,
   renderCanvasHarvestFixture,
   renderCanvasHarvestPrototypeValidationFixture,
@@ -20,6 +22,7 @@ import {
   DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH,
   type CanvasControlCatalogDocument,
   type CanvasControlInsertReportDocument,
+  type CanvasHarvestFixturePrototypeDraftDocument,
   type CanvasHarvestFixturePrototypeDocument,
 } from './harvest-fixture';
 
@@ -828,6 +831,214 @@ describe('canvas harvest fixture planning', () => {
         constructor: 'GroupContainer',
       }),
     ]);
+  });
+
+  it('resolves prototype draft selectors with family-aware ambiguity checks', () => {
+    const drafts: CanvasHarvestFixturePrototypeDraftDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:12:00.000Z',
+      sourcePlanGeneratedAt: '2026-03-10T00:11:00.000Z',
+      counts: {
+        draftControls: 4,
+        skippedControls: 0,
+      },
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          constructor: 'Classic/Button',
+        },
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          constructor: 'GroupContainer',
+        },
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          constructor: 'ModernButton',
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text input',
+          constructor: 'ModernText',
+        },
+      ],
+      skipped: [],
+    };
+
+    expect(resolveCanvasHarvestFixturePrototypeDraftPromotion(drafts, 'classic/Button')).toEqual({
+      family: 'classic',
+      catalogName: 'Button',
+    });
+    expect(resolveCanvasHarvestFixturePrototypeDraftPromotion(drafts, 'Button', 'modern')).toEqual({
+      family: 'modern',
+      catalogName: 'Button',
+    });
+    expect(() => resolveCanvasHarvestFixturePrototypeDraftPromotion(drafts, 'Button')).toThrow(
+      'Prototype draft selector "Button" is ambiguous. Matching drafts: Classic/Button, Modern/Button.'
+    );
+  });
+
+  it('builds a windowed prototype promotion batch from the generated draft queue', () => {
+    const drafts: CanvasHarvestFixturePrototypeDraftDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:13:00.000Z',
+      sourcePlanGeneratedAt: '2026-03-10T00:11:00.000Z',
+      counts: {
+        draftControls: 4,
+        skippedControls: 0,
+      },
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          constructor: 'Classic/Button',
+        },
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          constructor: 'GroupContainer',
+        },
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          constructor: 'ModernButton',
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text input',
+          constructor: 'ModernText',
+        },
+      ],
+      skipped: [],
+    };
+
+    const batch = buildCanvasHarvestFixturePrototypePromotionBatchDocument({
+      drafts,
+      family: 'classic',
+      startAt: 'Container',
+      limit: 1,
+      generatedAt: '2026-03-10T00:14:00.000Z',
+      notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+    });
+
+    expect(batch).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:14:00.000Z',
+      sourceDraftGeneratedAt: '2026-03-10T00:13:00.000Z',
+      selection: {
+        mode: 'window',
+        family: 'classic',
+        startAt: 'Container',
+        startIndex: 1,
+        limit: 1,
+        matchingDrafts: 2,
+        selectedDrafts: 1,
+        skippedDrafts: 1,
+        firstSelectedControl: 'Classic/Container',
+        lastSelectedControl: 'Classic/Container',
+      },
+      entries: [
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+        },
+      ],
+    });
+  });
+
+  it('builds an explicit prototype promotion batch in draft order', () => {
+    const drafts: CanvasHarvestFixturePrototypeDraftDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:15:00.000Z',
+      sourcePlanGeneratedAt: '2026-03-10T00:11:00.000Z',
+      counts: {
+        draftControls: 4,
+        skippedControls: 0,
+      },
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          constructor: 'Classic/Button',
+        },
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          constructor: 'GroupContainer',
+        },
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          constructor: 'ModernButton',
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text input',
+          constructor: 'ModernText',
+        },
+      ],
+      skipped: [],
+    };
+
+    const batch = buildCanvasHarvestFixturePrototypePromotionBatchDocument({
+      drafts,
+      promotions: [
+        {
+          family: 'modern',
+          catalogName: 'Text input',
+          notes: ['Inserted successfully in the modern-reset subset run on 2026-03-09.'],
+        },
+        {
+          family: 'classic',
+          catalogName: 'Container',
+        },
+      ],
+      generatedAt: '2026-03-10T00:16:00.000Z',
+      notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+    });
+
+    expect(batch).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:16:00.000Z',
+      sourceDraftGeneratedAt: '2026-03-10T00:15:00.000Z',
+      selection: {
+        mode: 'explicit',
+        startIndex: 1,
+        matchingDrafts: 4,
+        selectedDrafts: 2,
+        skippedDrafts: 2,
+        firstSelectedControl: 'Classic/Container',
+        lastSelectedControl: 'Modern/Text input',
+        requestedPromotions: [
+          {
+            family: 'modern',
+            catalogName: 'Text input',
+          },
+          {
+            family: 'classic',
+            catalogName: 'Container',
+          },
+        ],
+      },
+      entries: [
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text input',
+          notes: [
+            'Manual review completed on 2026-03-10; live paste validation still pending.',
+            'Inserted successfully in the modern-reset subset run on 2026-03-09.',
+          ],
+        },
+      ],
+    });
   });
 
   it('promotes a generated draft into the pinned prototype document with harvested provenance notes', () => {

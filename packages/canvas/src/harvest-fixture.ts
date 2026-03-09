@@ -333,6 +333,16 @@ export interface BuildCanvasHarvestFixturePrototypeValidationBacklogDocumentOpti
   generatedAt?: string;
 }
 
+export interface BuildCanvasHarvestFixturePrototypePromotionBatchDocumentOptions {
+  drafts: CanvasHarvestFixturePrototypeDraftDocument;
+  family?: 'classic' | 'modern';
+  startAt?: string;
+  limit?: number;
+  promotions?: CanvasHarvestFixturePrototypePromotion[];
+  generatedAt?: string;
+  notes?: string[];
+}
+
 export interface PromoteCanvasHarvestFixturePrototypeDraftOptions {
   drafts: CanvasHarvestFixturePrototypeDraftDocument;
   registry: CanvasTemplateRegistryDocument;
@@ -352,7 +362,25 @@ export interface CanvasHarvestFixturePrototypePromotion {
 export interface CanvasHarvestFixturePrototypePromotionBatchDocument {
   schemaVersion: 1;
   generatedAt?: string;
+  sourceDraftGeneratedAt?: string;
+  selection?: CanvasHarvestFixturePrototypePromotionBatchSelectionSummary;
   entries: CanvasHarvestFixturePrototypePromotion[];
+}
+
+export type CanvasHarvestFixturePrototypePromotionBatchSelectionMode = 'all' | 'window' | 'explicit';
+
+export interface CanvasHarvestFixturePrototypePromotionBatchSelectionSummary {
+  mode: CanvasHarvestFixturePrototypePromotionBatchSelectionMode;
+  family?: 'classic' | 'modern';
+  startAt?: string;
+  startIndex: number;
+  limit?: number;
+  matchingDrafts: number;
+  selectedDrafts: number;
+  skippedDrafts: number;
+  firstSelectedControl?: string;
+  lastSelectedControl?: string;
+  requestedPromotions?: Array<Pick<CanvasHarvestFixturePrototypePromotion, 'family' | 'catalogName'>>;
 }
 
 export interface PromotedCanvasHarvestFixturePrototypeDraftResult {
@@ -863,6 +891,188 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
     drafts,
     skipped,
   };
+}
+
+export function buildCanvasHarvestFixturePrototypePromotionBatchDocument(
+  options: BuildCanvasHarvestFixturePrototypePromotionBatchDocumentOptions
+): CanvasHarvestFixturePrototypePromotionBatchDocument {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const defaultNotes = dedupeStrings(options.notes ?? []);
+
+  if (options.promotions && options.promotions.length > 0) {
+    if (options.family || options.startAt || options.limit) {
+      throw new Error(
+        'Cannot combine explicit prototype draft promotions with family/start-at/limit selection.'
+      );
+    }
+
+    const requestedByKey = new Map<string, CanvasHarvestFixturePrototypePromotion>();
+    for (const promotion of options.promotions) {
+      const key = makeCatalogKey(promotion.family, promotion.catalogName);
+      if (requestedByKey.has(key)) {
+        throw new Error(
+          `Duplicate prototype draft promotion specified for ${familyLabel(promotion.family)}/${promotion.catalogName}.`
+        );
+      }
+
+      requestedByKey.set(key, promotion);
+    }
+
+    const selectedDrafts = options.drafts.drafts.filter((draft) =>
+      requestedByKey.has(makeCatalogKey(draft.family, draft.catalogName))
+    );
+
+    if (selectedDrafts.length !== requestedByKey.size) {
+      const missingPromotion = options.promotions.find(
+        (promotion) =>
+          !selectedDrafts.some(
+            (draft) => makeCatalogKey(draft.family, draft.catalogName) === makeCatalogKey(promotion.family, promotion.catalogName)
+          )
+      );
+
+      if (missingPromotion) {
+        throw buildMissingGeneratedPrototypeDraftError({
+          drafts: options.drafts,
+          family: missingPromotion.family,
+          catalogName: missingPromotion.catalogName,
+        });
+      }
+    }
+
+    const firstSelectedDraft = selectedDrafts[0];
+    return {
+      schemaVersion: 1,
+      generatedAt,
+      sourceDraftGeneratedAt: options.drafts.generatedAt,
+      selection: {
+        mode: 'explicit',
+        startIndex: firstSelectedDraft
+          ? options.drafts.drafts.findIndex(
+              (draft) =>
+                makeCatalogKey(draft.family, draft.catalogName) ===
+                makeCatalogKey(firstSelectedDraft.family, firstSelectedDraft.catalogName)
+            )
+          : 0,
+        matchingDrafts: options.drafts.drafts.length,
+        selectedDrafts: selectedDrafts.length,
+        skippedDrafts: Math.max(0, options.drafts.drafts.length - selectedDrafts.length),
+        ...(firstSelectedDraft
+          ? {
+              firstSelectedControl: formatPrototypeDraftLabel(firstSelectedDraft.family, firstSelectedDraft.catalogName),
+            }
+          : {}),
+        ...(selectedDrafts.length > 0
+          ? {
+              lastSelectedControl: formatPrototypeDraftLabel(
+                selectedDrafts[selectedDrafts.length - 1]!.family,
+                selectedDrafts[selectedDrafts.length - 1]!.catalogName
+              ),
+            }
+          : {}),
+        requestedPromotions: options.promotions.map((promotion) => ({
+          family: promotion.family,
+          catalogName: promotion.catalogName,
+        })),
+      },
+      entries: selectedDrafts.map((draft) => {
+        const key = makeCatalogKey(draft.family, draft.catalogName);
+        const requested = requestedByKey.get(key);
+        const notes = dedupeStrings(defaultNotes.concat(requested?.notes ?? []));
+        return {
+          family: draft.family,
+          catalogName: draft.catalogName,
+          ...(notes.length > 0 ? { notes } : {}),
+        };
+      }),
+    };
+  }
+
+  const matchingDrafts = options.family
+    ? options.drafts.drafts.filter((draft) => draft.family === options.family)
+    : [...options.drafts.drafts];
+  if (matchingDrafts.length === 0) {
+    const familyNote = options.family ? ` for ${familyLabel(options.family)}` : '';
+    throw new Error(`No generated prototype drafts are available${familyNote}.`);
+  }
+
+  const startIndex = resolvePrototypeDraftBatchStartIndex(matchingDrafts, options.startAt, options.family);
+  const boundedLimit = options.limit && options.limit > 0 ? Math.floor(options.limit) : undefined;
+  const selectedDrafts = matchingDrafts.slice(startIndex, boundedLimit ? startIndex + boundedLimit : undefined);
+  if (selectedDrafts.length === 0) {
+    throw new Error('Prototype draft batch selection did not include any drafts.');
+  }
+
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    sourceDraftGeneratedAt: options.drafts.generatedAt,
+    selection: {
+      mode: options.family || options.startAt || boundedLimit ? 'window' : 'all',
+      ...(options.family ? { family: options.family } : {}),
+      ...(options.startAt ? { startAt: options.startAt } : {}),
+      startIndex,
+      ...(boundedLimit ? { limit: boundedLimit } : {}),
+      matchingDrafts: matchingDrafts.length,
+      selectedDrafts: selectedDrafts.length,
+      skippedDrafts: Math.max(0, matchingDrafts.length - selectedDrafts.length),
+      firstSelectedControl: formatPrototypeDraftLabel(selectedDrafts[0]!.family, selectedDrafts[0]!.catalogName),
+      lastSelectedControl: formatPrototypeDraftLabel(
+        selectedDrafts[selectedDrafts.length - 1]!.family,
+        selectedDrafts[selectedDrafts.length - 1]!.catalogName
+      ),
+    },
+    entries: selectedDrafts.map((draft) => ({
+      family: draft.family,
+      catalogName: draft.catalogName,
+      ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
+    })),
+  };
+}
+
+export function resolveCanvasHarvestFixturePrototypeDraftPromotion(
+  drafts: CanvasHarvestFixturePrototypeDraftDocument,
+  selector: string,
+  family?: 'classic' | 'modern'
+): Pick<CanvasHarvestFixturePrototypePromotion, 'family' | 'catalogName'> {
+  const parsed = parseFamilyQualifiedPrototypeDraftSelector(selector);
+  if (parsed.family && family && parsed.family !== family) {
+    throw new Error(
+      `Prototype draft selector ${JSON.stringify(selector)} conflicts with the ${familyLabel(family)} family filter.`
+    );
+  }
+
+  const matchingDrafts = drafts.drafts.filter((draft) => {
+    if ((parsed.family ?? family) && draft.family !== (parsed.family ?? family)) {
+      return false;
+    }
+
+    return normalizeLabel(draft.catalogName) === normalizeLabel(parsed.catalogName);
+  });
+
+  if (matchingDrafts.length === 1) {
+    return {
+      family: matchingDrafts[0]!.family,
+      catalogName: matchingDrafts[0]!.catalogName,
+    };
+  }
+
+  if (matchingDrafts.length > 1) {
+    throw new Error(
+      `Prototype draft selector ${JSON.stringify(selector)} is ambiguous. Matching drafts: ${matchingDrafts
+        .map((draft) => formatPrototypeDraftLabel(draft.family, draft.catalogName))
+        .join(', ')}.`
+    );
+  }
+
+  if (!parsed.family && !family) {
+    throw new Error(`No generated prototype draft matches selector ${JSON.stringify(selector)}.`);
+  }
+
+  throw buildMissingGeneratedPrototypeDraftError({
+    drafts,
+    family: parsed.family ?? family!,
+    catalogName: parsed.catalogName,
+  });
 }
 
 export function buildCanvasHarvestFixturePrototypeValidationBacklogDocument(
@@ -2244,6 +2454,95 @@ function makeCatalogKey(family: 'classic' | 'modern', catalogName: string): stri
   return `${family}:${normalizeToken(catalogName)}`;
 }
 
+function resolvePrototypeDraftBatchStartIndex(
+  drafts: CanvasHarvestFixturePrototype[],
+  startAt: string | undefined,
+  family: 'classic' | 'modern' | undefined
+): number {
+  if (!startAt) {
+    return 0;
+  }
+
+  const parsed = parseFamilyQualifiedPrototypeDraftSelector(startAt);
+  if (parsed.family && family && parsed.family !== family) {
+    throw new Error(
+      `Prototype draft selector ${JSON.stringify(startAt)} conflicts with the ${familyLabel(family)} family filter.`
+    );
+  }
+
+  if (parsed.family) {
+    const index = drafts.findIndex(
+      (draft) => draft.family === parsed.family && normalizeLabel(draft.catalogName) === normalizeLabel(parsed.catalogName)
+    );
+    if (index >= 0) {
+      return index;
+    }
+
+    throw buildMissingGeneratedPrototypeDraftError({
+      drafts: {
+        ...emptyPrototypeDraftDocument(),
+        drafts,
+      },
+      family: parsed.family,
+      catalogName: parsed.catalogName,
+    });
+  }
+
+  const matchingIndexes = drafts
+    .map((draft, index) =>
+      normalizeLabel(draft.catalogName) === normalizeLabel(parsed.catalogName) ? index : undefined
+    )
+    .filter((index): index is number => index !== undefined);
+
+  if (matchingIndexes.length === 1) {
+    return matchingIndexes[0]!;
+  }
+
+  if (matchingIndexes.length > 1) {
+    const matchingDrafts = matchingIndexes.map((index) => {
+      const draft = drafts[index]!;
+      return formatPrototypeDraftLabel(draft.family, draft.catalogName);
+    });
+    throw new Error(
+      `Prototype draft selector ${JSON.stringify(startAt)} is ambiguous. Matching drafts: ${matchingDrafts.join(', ')}.`
+    );
+  }
+
+  throw new Error(`No generated prototype draft matches selector ${JSON.stringify(startAt)}.`);
+}
+
+function parseFamilyQualifiedPrototypeDraftSelector(
+  value: string
+): { family?: 'classic' | 'modern'; catalogName: string } {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error('Prototype draft selectors must not be empty.');
+  }
+
+  const slashIndex = trimmed.indexOf('/');
+  if (slashIndex < 0) {
+    return {
+      catalogName: trimmed,
+    };
+  }
+
+  const family = trimmed.slice(0, slashIndex).trim().toLowerCase();
+  const catalogName = trimmed.slice(slashIndex + 1).trim();
+  if (family !== 'classic' && family !== 'modern') {
+    throw new Error(
+      `Invalid prototype draft selector ${JSON.stringify(value)}. Expected family/name with classic or modern.`
+    );
+  }
+  if (catalogName.length === 0) {
+    throw new Error(`Invalid prototype draft selector ${JSON.stringify(value)}. Expected a catalog name after the slash.`);
+  }
+
+  return {
+    family,
+    catalogName,
+  };
+}
+
 function normalizeToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
@@ -2373,6 +2672,24 @@ function summarizeInsertReportEntries(entries: CanvasControlInsertReportEntry[])
 
 function familyLabel(value: 'classic' | 'modern'): string {
   return value === 'classic' ? 'Classic' : 'Modern';
+}
+
+function formatPrototypeDraftLabel(family: 'classic' | 'modern', catalogName: string): string {
+  return `${familyLabel(family)}/${catalogName}`;
+}
+
+function emptyPrototypeDraftDocument(): CanvasHarvestFixturePrototypeDraftDocument {
+  return {
+    schemaVersion: 1,
+    generatedAt: '',
+    sourcePlanGeneratedAt: '',
+    counts: {
+      draftControls: 0,
+      skippedControls: 0,
+    },
+    drafts: [],
+    skipped: [],
+  };
 }
 
 function buildMissingGeneratedPrototypeDraftError(options: {
