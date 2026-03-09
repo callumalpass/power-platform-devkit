@@ -32,6 +32,7 @@
     "@pp/deploy": "workspace:*",
     "@pp/diagnostics": "workspace:*",
     "@pp/flow": "workspace:*",
+    "@pp/model": "workspace:*",
     "@pp/project": "workspace:*",
     "@pp/solution": "workspace:*",
     "yaml": "^2.7.1"

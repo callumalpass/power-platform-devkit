@@ -17,5 +17,10 @@
     "build": "tsup src/index.ts --dts --format esm,cjs --clean",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pp/dataverse": "workspace:*",
+    "@pp/diagnostics": "workspace:*",
+    "@pp/solution": "workspace:*"
   }
 }

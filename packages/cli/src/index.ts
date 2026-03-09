@@ -41,6 +41,7 @@ import {
 import { buildDeployPlan } from '@pp/deploy';
 import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
+import { ModelService } from '@pp/model';
 import { discoverProject, summarizeProject, summarizeResolvedParameter } from '@pp/project';
 import { SolutionService } from '@pp/solution';
 import YAML from 'yaml';
@@ -110,6 +111,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (group === 'flow') {
     return runFlow(command, rest);
+  }
+
+  if (group === 'model') {
+    return runModel(command, rest);
   }
 
   switch (`${group} ${command ?? ''}`.trim()) {
@@ -315,6 +320,26 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
       return runFlowConnrefs(args);
     case 'doctor':
       return runFlowDoctor(args);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runModel(command: string | undefined, args: string[]): Promise<number> {
+  switch (command) {
+    case 'list':
+      return runModelList(args);
+    case 'inspect':
+      return runModelInspect(args);
+    case 'sitemap':
+      return runModelSitemap(args);
+    case 'forms':
+      return runModelForms(args);
+    case 'views':
+      return runModelViews(args);
+    case 'dependencies':
+      return runModelDependencies(args);
     default:
       printHelp();
       return 1;
@@ -2524,6 +2549,154 @@ async function runFlowDoctor(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runModelList(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelService(resolution.data.client).list({
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runModelInspect(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model inspect <name|id|uniqueName> --env ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelService(resolution.data.client).inspect(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runModelSitemap(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model sitemap <name|id|uniqueName> --env ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelService(resolution.data.client).sitemap(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runModelForms(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model forms <name|id|uniqueName> --env ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelService(resolution.data.client).forms(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runModelViews(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model views <name|id|uniqueName> --env ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelService(resolution.data.client).views(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runModelDependencies(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model dependencies <name|id|uniqueName> --env ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelService(resolution.data.client).dependencies(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
 function buildPublicClientProfile(
   baseProfile: UserAuthProfile,
   args: string[]
@@ -3154,6 +3327,12 @@ function printHelp(): void {
       '  flow errors <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow connrefs <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow doctor <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model inspect <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model sitemap <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model forms <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model views <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model dependencies <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
