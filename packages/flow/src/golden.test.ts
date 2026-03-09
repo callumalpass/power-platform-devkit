@@ -135,6 +135,9 @@ describe('flow fixture-backed goldens', () => {
     )) as FlowRuntimeFixture;
     const service = new FlowService(createFixtureDataverseClient(runtimeFixture));
 
+    const list = await service.list({
+      solutionUniqueName: 'Core',
+    });
     const inspect = await service.inspect('Invoice Sync', {
       solutionUniqueName: 'Core',
     });
@@ -156,12 +159,14 @@ describe('flow fixture-backed goldens', () => {
       since: '7d',
     });
 
+    expect(list.success).toBe(true);
     expect(inspect.success).toBe(true);
     expect(runs.success).toBe(true);
     expect(errors.success).toBe(true);
     expect(connrefs.success).toBe(true);
     expect(doctor.success).toBe(true);
 
+    await expectGoldenJson(list.data, 'fixtures/flow/golden/runtime/list-report.json');
     await expectGoldenJson(inspect.data, 'fixtures/flow/golden/runtime/inspect-report.json');
     await expectGoldenJson(runs.data, 'fixtures/flow/golden/runtime/runs.json');
     await expectGoldenJson(errors.data, 'fixtures/flow/golden/runtime/error-groups.json');

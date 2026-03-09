@@ -1,0 +1,49 @@
+[
+  {
+    "category": 5,
+    "clientData": {
+      "definition": {
+        "actions": {
+          "SendMail": {
+            "inputs": {
+              "body": "@{environmentVariables('pp_ApiUrl')}",
+              "subject": "@{parameters('ApiBaseUrl')}"
+            }
+          }
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "shared_office365": {
+                "connectionId": "/connections/office365",
+                "connectionReferenceLogicalName": "shared_office365"
+              }
+            }
+          },
+          "ApiBaseUrl": {
+            "defaultValue": "https://example.test"
+          }
+        }
+      }
+    },
+    "connectionReferences": [
+      {
+        "connectionId": "/connections/office365",
+        "connectionReferenceLogicalName": "shared_office365",
+        "name": "shared_office365"
+      }
+    ],
+    "definitionAvailable": true,
+    "environmentVariables": [
+      "pp_ApiUrl"
+    ],
+    "id": "flow-1",
+    "name": "Invoice Sync",
+    "parameters": [
+      "ApiBaseUrl"
+    ],
+    "stateCode": 1,
+    "statusCode": 2,
+    "uniqueName": "crd_InvoiceSync"
+  }
+]

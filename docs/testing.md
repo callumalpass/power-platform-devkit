@@ -27,7 +27,7 @@ The committed fixtures currently cover:
   connection-reference rename consistency inside patched artifacts
 - flow invalid-artifact validation diagnostics, including package-level
   diagnostic envelopes and CLI validation exit behavior
-- flow remote inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures
+- flow remote list, inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures
 - project analysis context and markdown reporting
 - solution list, inspect, components, dependencies, analysis, and source-vs-target comparison outputs from committed Dataverse-like fixtures
 - CLI contract rendering for structured outputs, machine-friendly failures, warning streams, and mutation previews

@@ -514,6 +514,7 @@ describe('cli fixture-backed workflows', () => {
       fixture: createFixtureDataverseClient(runtimeFixture),
     });
 
+    const list = await runCli(['flow', 'list', '--env', 'fixture', '--solution', 'Core', '--format', 'json']);
     const inspect = await runCli(['flow', 'inspect', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--format', 'json']);
     const runs = await runCli(['flow', 'runs', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--since', '7d', '--format', 'json']);
     const errors = await runCli([
@@ -534,6 +535,8 @@ describe('cli fixture-backed workflows', () => {
     const connrefs = await runCli(['flow', 'connrefs', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--since', '7d', '--format', 'json']);
     const doctor = await runCli(['flow', 'doctor', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--since', '7d', '--format', 'json']);
 
+    expect(list.code).toBe(0);
+    expect(list.stderr).toBe('');
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
     expect(runs.code).toBe(0);
@@ -545,6 +548,7 @@ describe('cli fixture-backed workflows', () => {
     expect(doctor.code).toBe(0);
     expect(doctor.stderr).toBe('');
 
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/flow/golden/runtime/list-report.json');
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/flow/golden/runtime/inspect-report.json');
     await expectGoldenJson(JSON.parse(runs.stdout), 'fixtures/flow/golden/runtime/runs.json');
     await expectGoldenJson(JSON.parse(errors.stdout), 'fixtures/flow/golden/runtime/error-groups.json');
