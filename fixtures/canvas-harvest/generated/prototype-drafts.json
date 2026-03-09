@@ -1,6 +1,6 @@
 {
   "counts": {
-    "draftControls": 12,
+    "draftControls": 10,
     "skippedControls": 60
   },
   "drafts": [
@@ -9,7 +9,7 @@
       "constructor": "GroupContainer",
       "family": "classic",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
         "Suggested Insert-pane queries: Container.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
@@ -23,29 +23,11 @@
       }
     },
     {
-      "catalogName": "Date picker",
-      "constructor": "Classic/DatePicker",
-      "family": "classic",
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
-        "Registry suggestion selected: Classic/DatePicker -> datepicker@2.6.0 (constructor match).",
-        "Suggested Insert-pane queries: Date picker.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Classic) using insert-pane-search. Queries: Date picker."
-      ],
-      "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=40",
-        "Width": "=328"
-      }
-    },
-    {
       "catalogName": "Gallery",
       "constructor": "Gallery",
       "family": "classic",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: Gallery -> gallery@2.15.0 (constructor match).",
         "Suggested Insert-pane queries: Gallery, Vertical gallery.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
@@ -62,7 +44,7 @@
       "constructor": "GroupContainer",
       "family": "classic",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
         "Suggested Insert-pane queries: Grid container.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
@@ -80,7 +62,7 @@
       "constructor": "GroupContainer",
       "family": "classic",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
         "Suggested Insert-pane queries: Horizontal container.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
@@ -98,7 +80,7 @@
       "constructor": "Rectangle",
       "family": "classic",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).",
         "Suggested Insert-pane queries: Shape, Rectangle.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
@@ -116,7 +98,7 @@
       "constructor": "GroupContainer",
       "family": "classic",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
         "Suggested Insert-pane queries: Vertical container.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
@@ -134,7 +116,7 @@
       "constructor": "ModernDatePicker",
       "family": "modern",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: ModernDatePicker -> modernDatePicker@1.0.0 (constructor match).",
         "Suggested Insert-pane queries: Date picker.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
@@ -148,29 +130,11 @@
       }
     },
     {
-      "catalogName": "Info button",
-      "constructor": "ModernInformationButton",
-      "family": "modern",
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
-        "Registry suggestion selected: ModernInformationButton -> modernInformationButton@1.0.0 (constructor match).",
-        "Suggested Insert-pane queries: Info button, Information button.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Information button (Display) using insert-pane-search. Queries: Info button, Information button."
-      ],
-      "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=32",
-        "Width": "=32"
-      }
-    },
-    {
       "catalogName": "Radio group",
       "constructor": "ModernRadio",
       "family": "modern",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: ModernRadio -> modernRadio@1.0.0 (constructor match).",
         "Suggested Insert-pane queries: Radio group, Radio.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
@@ -188,7 +152,7 @@
       "constructor": "ModernTabList",
       "family": "modern",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: ModernTabList -> modernTabList@1.0.0 (constructor match).",
         "Suggested Insert-pane queries: Tabs or tab list, Tab list, Tabs.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Align.",
@@ -207,7 +171,7 @@
       "constructor": "ModernText",
       "family": "modern",
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T15:44:21.694Z.",
+        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
         "Registry suggestion selected: ModernText -> modernText@1.0.0 (constructor match).",
         "Suggested Insert-pane queries: Text input.",
         "Scaffold properties derived from harvested runtime metadata: Height, Width, Text, AutoHeight, Wrap, DisplayMode, Align, VerticalAlign, Visible.",
@@ -226,7 +190,7 @@
       }
     }
   ],
-  "generatedAt": "2026-03-09T15:44:21.817Z",
+  "generatedAt": "2026-03-09T16:04:21.224Z",
   "schemaVersion": 1,
   "skipped": [
     {
@@ -772,6 +736,6 @@
       ]
     }
   ],
-  "sourcePlanGeneratedAt": "2026-03-09T15:44:21.694Z",
-  "sourcePrototypeGeneratedAt": "2026-03-09T13:58:32.687Z"
+  "sourcePlanGeneratedAt": "2026-03-09T16:04:13.450Z",
+  "sourcePrototypeGeneratedAt": "2026-03-09T16:03:57.912Z"
 }

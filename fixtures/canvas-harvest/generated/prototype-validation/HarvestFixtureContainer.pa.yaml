@@ -3,7 +3,7 @@
     Variant: ManualLayout
     Properties:
       DropShadow: =DropShadow.None
-      Height: =152
+      Height: =212
       Width: =628
       X: =40
       Y: =220
@@ -19,20 +19,28 @@
             DisplayMode: =DisplayMode.Edit
             Text: ="Button"
             VerticalAlign: =VerticalAlign.Middle
+      - HarvestClassicDatePicker:
+          Control: Classic/DatePicker@2.6.0
+          Properties:
+            Height: =40
+            Width: =328
+            X: =324
+            Y: =24
+            DisplayMode: =DisplayMode.Edit
       - HarvestClassicIcon:
           Control: Classic/Icon@2.5.0
           Properties:
             Height: =32
             Width: =32
-            X: =324
-            Y: =24
+            X: =24
+            Y: =84
             Icon: =Icon.Add
       - HarvestClassicImage:
           Control: Image@2.2.3
           Properties:
             Height: =40
             Width: =40
-            X: =24
+            X: =324
             Y: =84
             Image: =SampleImage
             ImagePosition: =ImagePosition.Fit
@@ -41,6 +49,14 @@
           Properties:
             Height: =40
             Width: =280
-            X: =324
-            Y: =84
+            X: =24
+            Y: =144
             Text: ="Classic Label fixture"
+      - HarvestModernInfoButton:
+          Control: ModernInformationButton@1.0.0
+          Properties:
+            Height: =32
+            Width: =32
+            X: =324
+            Y: =144
+            DisplayMode: =DisplayMode.Edit

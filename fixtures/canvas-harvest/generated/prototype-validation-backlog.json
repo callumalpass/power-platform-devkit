@@ -49,6 +49,50 @@
       "validationStatus": "pending"
     },
     {
+      "catalogName": "Date picker",
+      "constructor": "Classic/DatePicker",
+      "family": "classic",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Date picker"
+        ],
+        "chosenCandidate": {
+          "category": "Classic",
+          "iconName": "#icon-datepicker",
+          "title": "Date picker"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
+      "liveValidation": {
+        "recordedAt": "2026-03-09T16:03:57.912Z",
+        "status": "pending"
+      },
+      "notes": [
+        "The source fixture plan already resolves this pinned prototype.",
+        "Constructor Classic/DatePicker resolves to datepicker@2.6.0.",
+        "Recorded live validation keeps this control pending as of 2026-03-09T16:03:57.912Z.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Classic) using insert-pane-search. Queries: Date picker."
+      ],
+      "planAlignment": "aligned",
+      "planReason": "Fixture prototype Classic/DatePicker resolves to datepicker@2.6.0.",
+      "planStatus": "resolved",
+      "prototypeNotes": [
+        "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
+        "Constructor Classic/DatePicker resolves to datepicker@2.6.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending.",
+        "Manual review completed on 2026-03-10; insert-pane search succeeded in the modern-reset subset run and live paste validation is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Date picker"
+      ],
+      "templateName": "datepicker",
+      "templateVersion": "2.6.0",
+      "validationStatus": "pending"
+    },
+    {
       "catalogName": "Icon",
       "constructor": "Classic/Icon",
       "family": "classic",
@@ -154,6 +198,52 @@
       "validationStatus": "pending"
     },
     {
+      "catalogName": "Info button",
+      "constructor": "ModernInformationButton",
+      "family": "modern",
+      "latestInsertObservation": {
+        "attemptedQueries": [
+          "Info button",
+          "Information button"
+        ],
+        "chosenCandidate": {
+          "category": "Display",
+          "iconName": "#fluent-infobutton",
+          "title": "Information button"
+        },
+        "generatedAt": "2026-03-09T14:29:09.702Z",
+        "outcome": "inserted",
+        "strategy": "insert-pane-search"
+      },
+      "liveValidation": {
+        "recordedAt": "2026-03-09T16:03:57.912Z",
+        "status": "pending"
+      },
+      "notes": [
+        "The source fixture plan already resolves this pinned prototype.",
+        "Constructor ModernInformationButton resolves to modernInformationButton@1.0.0.",
+        "Recorded live validation keeps this control pending as of 2026-03-09T16:03:57.912Z.",
+        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Information button (Display) using insert-pane-search. Queries: Info button, Information button."
+      ],
+      "planAlignment": "aligned",
+      "planReason": "Fixture prototype ModernInformationButton resolves to modernInformationButton@1.0.0.",
+      "planStatus": "resolved",
+      "prototypeNotes": [
+        "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
+        "Constructor ModernInformationButton resolves to modernInformationButton@1.0.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending.",
+        "Manual review completed on 2026-03-10; insert-pane search succeeded in the modern-reset subset run and live paste validation is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Info button",
+        "Information button"
+      ],
+      "templateName": "modernInformationButton",
+      "templateVersion": "1.0.0",
+      "validationStatus": "pending"
+    },
+    {
       "catalogName": "Text",
       "constructor": "ModernText",
       "family": "modern",
@@ -185,19 +275,19 @@
     }
   ],
   "counts": {
-    "alignedPlanControls": 5,
+    "alignedPlanControls": 7,
     "failedValidationControls": 0,
-    "pendingValidationControls": 4,
-    "prototypeControls": 5,
+    "pendingValidationControls": 6,
+    "prototypeControls": 7,
     "prototypeOnlyControls": 0,
     "registryMissingControls": 0,
     "stalePlanControls": 0,
     "unknownValidationControls": 0,
     "validatedControls": 1
   },
-  "generatedAt": "2026-03-09T15:44:21.941Z",
+  "generatedAt": "2026-03-09T16:04:21.224Z",
   "schemaVersion": 1,
-  "sourcePlanGeneratedAt": "2026-03-09T15:44:21.694Z",
-  "sourcePrototypeGeneratedAt": "2026-03-09T13:58:32.687Z",
+  "sourcePlanGeneratedAt": "2026-03-09T16:04:13.450Z",
+  "sourcePrototypeGeneratedAt": "2026-03-09T16:03:57.912Z",
   "sourceRegistryGeneratedAt": "2026-03-09T14:29:42.064Z"
 }

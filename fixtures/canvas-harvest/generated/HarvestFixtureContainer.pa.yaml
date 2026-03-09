@@ -139,14 +139,14 @@
             X: =24
             Y: =324
             Text: ="Classic: Data table [prototype missing]"
-      - HarvestClassicDatePickerMarker:
-          Control: ModernText@1.0.0
+      - HarvestClassicDatePicker:
+          Control: Classic/DatePicker@2.6.0
           Properties:
-            Height: =44
-            Width: =280
+            Height: =40
+            Width: =328
             X: =324
             Y: =324
-            Text: ="Classic: Date picker [prototype missing]"
+            DisplayMode: =DisplayMode.Edit
       - HarvestClassicDisplayAndEditFormMarker:
           Control: ModernText@1.0.0
           Properties:
@@ -524,14 +524,14 @@
             X: =24
             Y: =1284
             Text: ="Modern: Header [prototype missing]"
-      - HarvestModernInfoButtonMarker:
-          Control: ModernText@1.0.0
+      - HarvestModernInfoButton:
+          Control: ModernInformationButton@1.0.0
           Properties:
-            Height: =44
-            Width: =280
+            Height: =32
+            Width: =32
             X: =324
             Y: =1284
-            Text: ="Modern: Info button [prototype missing]"
+            DisplayMode: =DisplayMode.Edit
       - HarvestModernLinkMarker:
           Control: ModernText@1.0.0
           Properties:

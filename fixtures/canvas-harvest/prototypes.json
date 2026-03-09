@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-03-09T13:58:32.687Z",
+  "generatedAt": "2026-03-09T16:03:57.912Z",
   "prototypes": [
     {
       "catalogName": "Icon",
@@ -111,6 +111,48 @@
         "Text": "=\"Button\"",
         "VerticalAlign": "=VerticalAlign.Middle",
         "Width": "=160"
+      }
+    },
+    {
+      "catalogName": "Date picker",
+      "constructor": "Classic/DatePicker",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-09T16:03:57.912Z",
+        "status": "pending"
+      },
+      "notes": [
+        "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
+        "Constructor Classic/DatePicker resolves to datepicker@2.6.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending.",
+        "Manual review completed on 2026-03-10; insert-pane search succeeded in the modern-reset subset run and live paste validation is still pending."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=40",
+        "Width": "=328"
+      }
+    },
+    {
+      "catalogName": "Info button",
+      "constructor": "ModernInformationButton",
+      "family": "modern",
+      "liveValidation": {
+        "recordedAt": "2026-03-09T16:03:57.912Z",
+        "status": "pending"
+      },
+      "notes": [
+        "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
+        "Constructor ModernInformationButton resolves to modernInformationButton@1.0.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending.",
+        "Manual review completed on 2026-03-10; insert-pane search succeeded in the modern-reset subset run and live paste validation is still pending."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=32",
+        "Width": "=32"
       }
     }
   ],

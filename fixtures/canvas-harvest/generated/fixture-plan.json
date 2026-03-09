@@ -280,6 +280,7 @@
       "description": "Specify a date by clicking or tapping.",
       "docPath": "controls/control-date-picker.md",
       "family": "classic",
+      "fixtureConstructor": "Classic/DatePicker",
       "latestInsertObservation": {
         "attemptedQueries": [
           "Date picker"
@@ -296,21 +297,19 @@
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-date-picker.md",
       "notes": [
         "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Classic) using insert-pane-search. Queries: Date picker.",
-        "Pinned registry suggests future fixture prototypes: Classic/DatePicker -> datepicker@2.6.0."
+        "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
+        "Constructor Classic/DatePicker resolves to datepicker@2.6.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending.",
+        "Manual review completed on 2026-03-10; insert-pane search succeeded in the modern-reset subset run and live paste validation is still pending."
       ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "Classic/DatePicker",
-          "matchType": "constructor",
-          "templateName": "datepicker",
-          "templateVersion": "2.6.0"
-        }
-      ],
-      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
-      "status": "prototype-missing",
+      "reason": "Fixture prototype Classic/DatePicker resolves to datepicker@2.6.0.",
+      "status": "resolved",
       "suggestedInsertQueries": [
         "Date picker"
-      ]
+      ],
+      "templateName": "datepicker",
+      "templateVersion": "2.6.0"
     },
     {
       "catalogName": "Display and Edit form",
@@ -1122,6 +1121,7 @@
       "description": "Use this control to provide additional information to users.",
       "docPath": "modern-control-info-button.md",
       "family": "modern",
+      "fixtureConstructor": "ModernInformationButton",
       "latestInsertObservation": {
         "attemptedQueries": [
           "Info button",
@@ -1139,22 +1139,20 @@
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-info-button.md",
       "notes": [
         "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Information button (Display) using insert-pane-search. Queries: Info button, Information button.",
-        "Pinned registry suggests future fixture prototypes: ModernInformationButton -> modernInformationButton@1.0.0."
+        "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
+        "Constructor ModernInformationButton resolves to modernInformationButton@1.0.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending.",
+        "Manual review completed on 2026-03-10; insert-pane search succeeded in the modern-reset subset run and live paste validation is still pending."
       ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "ModernInformationButton",
-          "matchType": "constructor",
-          "templateName": "modernInformationButton",
-          "templateVersion": "1.0.0"
-        }
-      ],
-      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
-      "status": "prototype-missing",
+      "reason": "Fixture prototype ModernInformationButton resolves to modernInformationButton@1.0.0.",
+      "status": "resolved",
       "suggestedInsertQueries": [
         "Info button",
         "Information button"
-      ]
+      ],
+      "templateName": "modernInformationButton",
+      "templateVersion": "1.0.0"
     },
     {
       "catalogName": "Link",
@@ -1403,11 +1401,11 @@
   ],
   "counts": {
     "catalogControls": 77,
-    "prototypeMissingControls": 72,
+    "prototypeMissingControls": 70,
     "registryMissingControls": 0,
-    "resolvedControls": 5
+    "resolvedControls": 7
   },
-  "generatedAt": "2026-03-09T15:44:21.694Z",
+  "generatedAt": "2026-03-09T16:04:13.450Z",
   "insertReportSummary": {
     "alignment": "partial",
     "catalog": {
@@ -1438,8 +1436,8 @@
     "unmatchedCatalogControlCount": 69,
     "unmatchedReportEntryCount": 0
   },
-  "prototypeCount": 5,
-  "prototypeGeneratedAt": "2026-03-09T13:58:32.687Z",
+  "prototypeCount": 7,
+  "prototypeGeneratedAt": "2026-03-09T16:03:57.912Z",
   "registryGeneratedAt": "2026-03-09T14:29:42.064Z",
   "registryTemplateCount": 13,
   "schemaVersion": 1
