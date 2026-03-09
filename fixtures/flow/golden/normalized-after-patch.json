@@ -1,0 +1,13 @@
+{
+  "inputPath": "<TMP_DIR>/patched",
+  "outPath": "<TMP_DIR>/normalized/flow.json",
+  "summary": {
+    "connectionReferenceCount": 1,
+    "definitionHash": "5ed686d5831e6ad49eb793ae325ae627bf0c5b9ad0e1e43cfb4c93798057b975",
+    "environmentVariableCount": 1,
+    "name": "Invoice Flow",
+    "normalized": true,
+    "parameterCount": 2,
+    "path": "<TMP_DIR>/normalized/flow.json"
+  }
+}

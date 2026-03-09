@@ -1,0 +1,14 @@
+{
+  "connectionReferences": {
+    "shared_office365": "shared_exchangeonline"
+  },
+  "expressions": {
+    "actions.ComposePayload.inputs.message": "@{parameters('ApiBaseUrl')}"
+  },
+  "parameters": {
+    "ApiBaseUrl": "https://api.contoso.example"
+  },
+  "values": {
+    "actions.ComposePayload.inputs.priority": "High"
+  }
+}

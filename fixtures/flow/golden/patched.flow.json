@@ -1,0 +1,65 @@
+{
+  "definition": {
+    "actions": {
+      "ComposePayload": {
+        "inputs": {
+          "details": {
+            "channel": "email"
+          },
+          "message": "@{parameters('ApiBaseUrl')}",
+          "priority": "High",
+          "target": "@{environmentVariables('pp_ApiUrl')}"
+        },
+        "type": "Compose"
+      }
+    },
+    "parameters": {
+      "$connections": {
+        "value": {
+          "shared_exchangeonline": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+            "connectionId": "/connections/office365",
+            "connectionReferenceLogicalName": "shared_office365"
+          }
+        }
+      },
+      "ApiBaseUrl": {
+        "defaultValue": "https://api.contoso.example"
+      },
+      "RetryCount": {
+        "defaultValue": 3
+      }
+    }
+  },
+  "kind": "pp.flow.artifact",
+  "metadata": {
+    "connectionReferences": [
+      {
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+        "connectionId": "/connections/office365",
+        "connectionReferenceLogicalName": "shared_exchangeonline",
+        "name": "shared_exchangeonline"
+      }
+    ],
+    "displayName": "Invoice Flow",
+    "environmentVariables": [
+      "pp_ApiUrl"
+    ],
+    "name": "Invoice Flow",
+    "parameters": {
+      "ApiBaseUrl": "https://api.contoso.example",
+      "RetryCount": null
+    },
+    "sourcePath": "<REPO_ROOT>/fixtures/flow/raw/invoice-flow.raw.json",
+    "stateCode": 1,
+    "statusCode": 2,
+    "uniqueName": "crd_InvoiceFlow"
+  },
+  "schemaVersion": 1,
+  "unknown": {
+    "extraTopLevel": {
+      "preserve": true,
+      "source": "fixture"
+    }
+  }
+}

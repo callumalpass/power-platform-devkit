@@ -1,0 +1,78 @@
+name: fixture-analysis
+defaults:
+  stage: prod
+  environment: dev
+  solution: core
+solutions:
+  core:
+    environment: dev
+    uniqueName: CoreDev
+assets:
+  apps: apps
+  flows: flows
+  solutionBundle: solutions/Core.zip
+  docs: docs
+providerBindings:
+  primaryDataverse:
+    kind: dataverse
+    target: dev
+  financeSharePoint:
+    kind: sharepoint-site
+    target: https://example.sharepoint.com/sites/finance
+parameters:
+  tenantDomain:
+    type: string
+    fromEnv: PP_TENANT_DOMAIN
+    required: true
+    mapsTo:
+      - kind: dataverse-envvar
+        target: pp_TenantDomain
+  apiToken:
+    type: string
+    secretRef: app_token
+    required: true
+    mapsTo:
+      - kind: deploy-secret
+        target: api-token
+  sqlEndpoint:
+    type: string
+    fromEnv: PP_SQL_ENDPOINT
+    required: true
+    mapsTo:
+      - kind: deploy-input
+        target: sql-endpoint
+  releaseName:
+    type: string
+    value: preview
+  useManagedIdentity:
+    type: boolean
+    value: false
+topology:
+  defaultStage: prod
+  stages:
+    dev:
+      environment: dev
+      solution: core
+    prod:
+      environment: prod
+      solution: core
+      solutions:
+        core:
+          uniqueName: CoreManaged
+      parameters:
+        releaseName: production
+templateRegistries:
+  - ./registries/canvas-controls.json
+build:
+  canvas:
+    mode: seeded
+docs:
+  owner: platform-team
+  paths:
+    - docs
+secrets:
+  defaultProvider: pipeline
+  providers:
+    pipeline:
+      kind: env
+      prefix: PP_SECRET_

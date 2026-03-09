@@ -208,6 +208,23 @@ PP_SMOKE_PROFILE=test-user pnpm smoke:live
 PP_CONFIG_DIR=./.tmp/pp-config pnpm smoke:live
 ```
 
+## Fixture goldens
+
+Fixture-backed golden tests now cover the first flow artifact mutation path plus
+project analysis outputs.
+
+Run them directly:
+
+```bash
+pnpm exec vitest run packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts
+```
+
+Refresh the committed goldens deterministically:
+
+```bash
+PP_UPDATE_GOLDENS=1 pnpm exec vitest run packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts
+```
+
 ## Documentation
 
 - [Documentation index](docs/README.md)

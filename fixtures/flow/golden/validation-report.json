@@ -1,0 +1,20 @@
+{
+  "connectionReferences": [
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "connectionId": "/connections/office365",
+      "connectionReferenceLogicalName": "shared_office365",
+      "name": "shared_office365"
+    }
+  ],
+  "environmentVariables": [
+    "pp_ApiUrl"
+  ],
+  "name": "Invoice Flow",
+  "parameters": [
+    "ApiBaseUrl",
+    "RetryCount"
+  ],
+  "path": "<TMP_DIR>/unpacked",
+  "valid": true
+}
