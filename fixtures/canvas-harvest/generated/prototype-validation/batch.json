@@ -1,0 +1,64 @@
+{
+  "entries": [
+    {
+      "catalogName": "Button",
+      "family": "classic",
+      "notes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
+      "status": "pending"
+    },
+    {
+      "catalogName": "Date picker",
+      "family": "classic",
+      "notes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
+      "status": "pending"
+    },
+    {
+      "catalogName": "Icon",
+      "family": "classic",
+      "notes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
+      "status": "pending"
+    },
+    {
+      "catalogName": "Image",
+      "family": "classic",
+      "notes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
+      "status": "pending"
+    },
+    {
+      "catalogName": "Label",
+      "family": "classic",
+      "notes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
+      "status": "pending"
+    },
+    {
+      "catalogName": "Info button",
+      "family": "modern",
+      "notes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
+      "status": "pending"
+    }
+  ],
+  "generatedAt": "2026-03-09T16:30:48.030Z",
+  "schemaVersion": 1,
+  "selection": {
+    "firstSelectedControl": "Classic/Button",
+    "lastSelectedControl": "Modern/Info button",
+    "matchingControls": 6,
+    "mode": "all",
+    "selectedControls": 6,
+    "skippedControls": 0,
+    "startIndex": 0
+  },
+  "sourceSelectionGeneratedAt": "2026-03-09T16:04:31.461Z"
+}

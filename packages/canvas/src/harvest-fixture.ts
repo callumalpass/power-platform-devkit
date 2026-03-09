@@ -343,6 +343,18 @@ export interface BuildCanvasHarvestFixturePrototypePromotionBatchDocumentOptions
   notes?: string[];
 }
 
+export interface BuildCanvasHarvestFixturePrototypeValidationBatchDocumentOptions {
+  selection: CanvasHarvestPrototypeValidationFixtureDocument;
+  family?: 'classic' | 'modern';
+  startAt?: string;
+  limit?: number;
+  updates?: CanvasHarvestFixturePrototypeValidationBatchSelectionUpdate[];
+  status?: CanvasHarvestFixtureRecordedPrototypeValidationStatus;
+  method?: string;
+  generatedAt?: string;
+  notes?: string[];
+}
+
 export interface PromoteCanvasHarvestFixturePrototypeDraftOptions {
   drafts: CanvasHarvestFixturePrototypeDraftDocument;
   registry: CanvasTemplateRegistryDocument;
@@ -422,7 +434,33 @@ export interface CanvasHarvestFixturePrototypeValidationUpdate {
 export interface CanvasHarvestFixturePrototypeValidationBatchDocument {
   schemaVersion: 1;
   generatedAt?: string;
+  sourceSelectionGeneratedAt?: string;
+  selection?: CanvasHarvestFixturePrototypeValidationBatchSelectionSummary;
   entries: CanvasHarvestFixturePrototypeValidationUpdate[];
+}
+
+export type CanvasHarvestFixturePrototypeValidationBatchSelectionMode = 'all' | 'window' | 'explicit';
+
+export interface CanvasHarvestFixturePrototypeValidationBatchSelectionUpdate {
+  family: 'classic' | 'modern';
+  catalogName: string;
+  status?: CanvasHarvestFixtureRecordedPrototypeValidationStatus;
+  method?: string;
+  notes?: string[];
+}
+
+export interface CanvasHarvestFixturePrototypeValidationBatchSelectionSummary {
+  mode: CanvasHarvestFixturePrototypeValidationBatchSelectionMode;
+  family?: 'classic' | 'modern';
+  startAt?: string;
+  startIndex: number;
+  limit?: number;
+  matchingControls: number;
+  selectedControls: number;
+  skippedControls: number;
+  firstSelectedControl?: string;
+  lastSelectedControl?: string;
+  requestedUpdates?: Array<Pick<CanvasHarvestFixturePrototypeValidationBatchSelectionUpdate, 'family' | 'catalogName'>>;
 }
 
 export interface RecordCanvasHarvestFixturePrototypeValidationOptions
@@ -534,6 +572,8 @@ export const DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_YAML_PATH =
   'fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml';
 export const DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_SELECTION_PATH =
   'fixtures/canvas-harvest/generated/prototype-validation/fixture-selection.json';
+export const DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BATCH_PATH =
+  'fixtures/canvas-harvest/generated/prototype-validation/batch.json';
 
 const CONTROL_SEARCH_ALIASES: Record<string, string[]> = {
   'classic:gallery': ['Vertical gallery'],
@@ -1034,7 +1074,7 @@ export function resolveCanvasHarvestFixturePrototypeDraftPromotion(
   selector: string,
   family?: 'classic' | 'modern'
 ): Pick<CanvasHarvestFixturePrototypePromotion, 'family' | 'catalogName'> {
-  const parsed = parseFamilyQualifiedPrototypeDraftSelector(selector);
+  const parsed = parseFamilyQualifiedCatalogSelector(selector, 'Prototype draft');
   if (parsed.family && family && parsed.family !== family) {
     throw new Error(
       `Prototype draft selector ${JSON.stringify(selector)} conflicts with the ${familyLabel(family)} family filter.`
@@ -1070,6 +1110,52 @@ export function resolveCanvasHarvestFixturePrototypeDraftPromotion(
 
   throw buildMissingGeneratedPrototypeDraftError({
     drafts,
+    family: parsed.family ?? family!,
+    catalogName: parsed.catalogName,
+  });
+}
+
+export function resolveCanvasHarvestFixturePrototypeValidationSelectionUpdate(
+  selection: CanvasHarvestPrototypeValidationFixtureDocument,
+  selector: string,
+  family?: 'classic' | 'modern'
+): Pick<CanvasHarvestFixturePrototypeValidationBatchSelectionUpdate, 'family' | 'catalogName'> {
+  const parsed = parseFamilyQualifiedCatalogSelector(selector, 'Prototype validation');
+  if (parsed.family && family && parsed.family !== family) {
+    throw new Error(
+      `Prototype validation selector ${JSON.stringify(selector)} conflicts with the ${familyLabel(family)} family filter.`
+    );
+  }
+
+  const matchingControls = selection.selectedControls.filter((control) => {
+    if ((parsed.family ?? family) && control.family !== (parsed.family ?? family)) {
+      return false;
+    }
+
+    return normalizeLabel(control.catalogName) === normalizeLabel(parsed.catalogName);
+  });
+
+  if (matchingControls.length === 1) {
+    return {
+      family: matchingControls[0]!.family,
+      catalogName: matchingControls[0]!.catalogName,
+    };
+  }
+
+  if (matchingControls.length > 1) {
+    throw new Error(
+      `Prototype validation selector ${JSON.stringify(selector)} is ambiguous. Matching controls: ${matchingControls
+        .map((control) => formatPrototypeDraftLabel(control.family, control.catalogName))
+        .join(', ')}.`
+    );
+  }
+
+  if (!parsed.family && !family) {
+    throw new Error(`No selected prototype validation control matches selector ${JSON.stringify(selector)}.`);
+  }
+
+  throw buildMissingPrototypeValidationSelectionControlError({
+    selection,
     family: parsed.family ?? family!,
     catalogName: parsed.catalogName,
   });
@@ -1321,6 +1407,149 @@ export function buildCanvasHarvestPrototypeValidationFixtureDocument(
     ...(options.paths ? { paths: options.paths } : {}),
     selectedControls: options.rendered.selectedControls,
     skippedControls: options.rendered.skippedControls,
+  };
+}
+
+export function buildCanvasHarvestFixturePrototypeValidationBatchDocument(
+  options: BuildCanvasHarvestFixturePrototypeValidationBatchDocumentOptions
+): CanvasHarvestFixturePrototypeValidationBatchDocument {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const defaultNotes = dedupeStrings(options.notes ?? []);
+
+  if (options.updates && options.updates.length > 0) {
+    if (options.family || options.startAt || options.limit) {
+      throw new Error(
+        'Cannot combine explicit prototype validation batch updates with family/start-at/limit selection.'
+      );
+    }
+
+    const requestedByKey = new Map<string, CanvasHarvestFixturePrototypeValidationBatchSelectionUpdate>();
+    for (const update of options.updates) {
+      const key = makeCatalogKey(update.family, update.catalogName);
+      if (requestedByKey.has(key)) {
+        throw new Error(
+          `Duplicate prototype validation batch update specified for ${familyLabel(update.family)}/${update.catalogName}.`
+        );
+      }
+
+      requestedByKey.set(key, update);
+    }
+
+    const selectedControls = options.selection.selectedControls.filter((control) =>
+      requestedByKey.has(makeCatalogKey(control.family, control.catalogName))
+    );
+
+    if (selectedControls.length !== requestedByKey.size) {
+      const missingUpdate = options.updates.find(
+        (update) =>
+          !selectedControls.some(
+            (control) => makeCatalogKey(control.family, control.catalogName) === makeCatalogKey(update.family, update.catalogName)
+          )
+      );
+
+      if (missingUpdate) {
+        throw buildMissingPrototypeValidationSelectionControlError({
+          selection: options.selection,
+          family: missingUpdate.family,
+          catalogName: missingUpdate.catalogName,
+        });
+      }
+    }
+
+    const firstSelectedControl = selectedControls[0];
+    return {
+      schemaVersion: 1,
+      generatedAt,
+      sourceSelectionGeneratedAt: options.selection.generatedAt,
+      selection: {
+        mode: 'explicit',
+        startIndex: firstSelectedControl
+          ? options.selection.selectedControls.findIndex(
+              (control) =>
+                makeCatalogKey(control.family, control.catalogName) ===
+                makeCatalogKey(firstSelectedControl.family, firstSelectedControl.catalogName)
+            )
+          : 0,
+        matchingControls: options.selection.selectedControls.length,
+        selectedControls: selectedControls.length,
+        skippedControls: Math.max(0, options.selection.selectedControls.length - selectedControls.length),
+        ...(firstSelectedControl
+          ? {
+              firstSelectedControl: formatPrototypeDraftLabel(
+                firstSelectedControl.family,
+                firstSelectedControl.catalogName
+              ),
+            }
+          : {}),
+        ...(selectedControls.length > 0
+          ? {
+              lastSelectedControl: formatPrototypeDraftLabel(
+                selectedControls[selectedControls.length - 1]!.family,
+                selectedControls[selectedControls.length - 1]!.catalogName
+              ),
+            }
+          : {}),
+        requestedUpdates: options.updates.map((update) => ({
+          family: update.family,
+          catalogName: update.catalogName,
+        })),
+      },
+      entries: selectedControls.map((control) => {
+        const key = makeCatalogKey(control.family, control.catalogName);
+        const requested = requestedByKey.get(key);
+        const notes = dedupeStrings(defaultNotes.concat(requested?.notes ?? []));
+        return {
+          family: control.family,
+          catalogName: control.catalogName,
+          status: resolvePrototypeValidationBatchEntryStatus(control, requested?.status ?? options.status),
+          ...(requested?.method ?? options.method ? { method: requested?.method ?? options.method } : {}),
+          ...(notes.length > 0 ? { notes } : {}),
+        };
+      }),
+    };
+  }
+
+  const matchingControls = options.family
+    ? options.selection.selectedControls.filter((control) => control.family === options.family)
+    : [...options.selection.selectedControls];
+  if (matchingControls.length === 0) {
+    const familyNote = options.family ? ` for ${familyLabel(options.family)}` : '';
+    throw new Error(`No prototype validation selection controls are available${familyNote}.`);
+  }
+
+  const startIndex = resolvePrototypeValidationBatchStartIndex(matchingControls, options.startAt, options.family);
+  const boundedLimit = options.limit && options.limit > 0 ? Math.floor(options.limit) : undefined;
+  const selectedControls = matchingControls.slice(startIndex, boundedLimit ? startIndex + boundedLimit : undefined);
+  if (selectedControls.length === 0) {
+    throw new Error('Prototype validation batch selection did not include any controls.');
+  }
+
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    sourceSelectionGeneratedAt: options.selection.generatedAt,
+    selection: {
+      mode: options.family || options.startAt || boundedLimit ? 'window' : 'all',
+      ...(options.family ? { family: options.family } : {}),
+      ...(options.startAt ? { startAt: options.startAt } : {}),
+      startIndex,
+      ...(boundedLimit ? { limit: boundedLimit } : {}),
+      matchingControls: matchingControls.length,
+      selectedControls: selectedControls.length,
+      skippedControls: Math.max(0, matchingControls.length - selectedControls.length),
+      firstSelectedControl: formatPrototypeDraftLabel(selectedControls[0]!.family, selectedControls[0]!.catalogName),
+      lastSelectedControl: formatPrototypeDraftLabel(
+        selectedControls[selectedControls.length - 1]!.family,
+        selectedControls[selectedControls.length - 1]!.catalogName
+      ),
+    },
+    entries: selectedControls.map((control) => ({
+      family: control.family,
+      catalogName: control.catalogName,
+      status: resolvePrototypeValidationBatchEntryStatus(control, options.status),
+      ...(options.method ? { method: options.method } : {}),
+      ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
+    })),
   };
 }
 
@@ -2463,7 +2692,7 @@ function resolvePrototypeDraftBatchStartIndex(
     return 0;
   }
 
-  const parsed = parseFamilyQualifiedPrototypeDraftSelector(startAt);
+  const parsed = parseFamilyQualifiedCatalogSelector(startAt, 'Prototype draft');
   if (parsed.family && family && parsed.family !== family) {
     throw new Error(
       `Prototype draft selector ${JSON.stringify(startAt)} conflicts with the ${familyLabel(family)} family filter.`
@@ -2511,12 +2740,69 @@ function resolvePrototypeDraftBatchStartIndex(
   throw new Error(`No generated prototype draft matches selector ${JSON.stringify(startAt)}.`);
 }
 
-function parseFamilyQualifiedPrototypeDraftSelector(
-  value: string
+function resolvePrototypeValidationBatchStartIndex(
+  controls: CanvasHarvestPrototypeValidationFixtureSelectionEntry[],
+  startAt: string | undefined,
+  family: 'classic' | 'modern' | undefined
+): number {
+  if (!startAt) {
+    return 0;
+  }
+
+  const parsed = parseFamilyQualifiedCatalogSelector(startAt, 'Prototype validation');
+  if (parsed.family && family && parsed.family !== family) {
+    throw new Error(
+      `Prototype validation selector ${JSON.stringify(startAt)} conflicts with the ${familyLabel(family)} family filter.`
+    );
+  }
+
+  if (parsed.family) {
+    const index = controls.findIndex(
+      (control) =>
+        control.family === parsed.family && normalizeLabel(control.catalogName) === normalizeLabel(parsed.catalogName)
+    );
+    if (index >= 0) {
+      return index;
+    }
+
+    throw buildMissingPrototypeValidationSelectionControlError({
+      selection: emptyPrototypeValidationFixtureDocument(),
+      family: parsed.family,
+      catalogName: parsed.catalogName,
+      availableControls: controls,
+    });
+  }
+
+  const matchingIndexes = controls
+    .map((control, index) =>
+      normalizeLabel(control.catalogName) === normalizeLabel(parsed.catalogName) ? index : undefined
+    )
+    .filter((index): index is number => index !== undefined);
+
+  if (matchingIndexes.length === 1) {
+    return matchingIndexes[0]!;
+  }
+
+  if (matchingIndexes.length > 1) {
+    const matchingControls = matchingIndexes.map((index) => {
+      const control = controls[index]!;
+      return formatPrototypeDraftLabel(control.family, control.catalogName);
+    });
+    throw new Error(
+      `Prototype validation selector ${JSON.stringify(startAt)} is ambiguous. Matching controls: ${matchingControls.join(', ')}.`
+    );
+  }
+
+  throw new Error(`No selected prototype validation control matches selector ${JSON.stringify(startAt)}.`);
+}
+
+function parseFamilyQualifiedCatalogSelector(
+  value: string,
+  contextLabel: string
 ): { family?: 'classic' | 'modern'; catalogName: string } {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
-    throw new Error('Prototype draft selectors must not be empty.');
+    throw new Error(`${contextLabel} selectors must not be empty.`);
   }
 
   const slashIndex = trimmed.indexOf('/');
@@ -2530,11 +2816,13 @@ function parseFamilyQualifiedPrototypeDraftSelector(
   const catalogName = trimmed.slice(slashIndex + 1).trim();
   if (family !== 'classic' && family !== 'modern') {
     throw new Error(
-      `Invalid prototype draft selector ${JSON.stringify(value)}. Expected family/name with classic or modern.`
+      `Invalid ${contextLabel.toLowerCase()} selector ${JSON.stringify(value)}. Expected family/name with classic or modern.`
     );
   }
   if (catalogName.length === 0) {
-    throw new Error(`Invalid prototype draft selector ${JSON.stringify(value)}. Expected a catalog name after the slash.`);
+    throw new Error(
+      `Invalid ${contextLabel.toLowerCase()} selector ${JSON.stringify(value)}. Expected a catalog name after the slash.`
+    );
   }
 
   return {
@@ -2692,6 +2980,25 @@ function emptyPrototypeDraftDocument(): CanvasHarvestFixturePrototypeDraftDocume
   };
 }
 
+function emptyPrototypeValidationFixtureDocument(): CanvasHarvestPrototypeValidationFixtureDocument {
+  return {
+    schemaVersion: 1,
+    generatedAt: '',
+    sourceBacklogGeneratedAt: '',
+    filters: {
+      statuses: ['failed', 'pending', 'unknown'],
+    },
+    counts: {
+      selectedControls: 0,
+      skippedControls: 0,
+      renderedControls: 0,
+      pendingMarkers: 0,
+    },
+    selectedControls: [],
+    skippedControls: [],
+  };
+}
+
 function buildMissingGeneratedPrototypeDraftError(options: {
   drafts: CanvasHarvestFixturePrototypeDraftDocument;
   family: 'classic' | 'modern';
@@ -2721,6 +3028,42 @@ function buildMissingPinnedPrototypeError(options: {
 
   return new Error(
     `No pinned fixture prototype exists for ${familyLabel(options.family)}/${options.catalogName}.${availabilityNote}`
+  );
+}
+
+function buildMissingPrototypeValidationSelectionControlError(options: {
+  selection: CanvasHarvestPrototypeValidationFixtureDocument;
+  family: 'classic' | 'modern';
+  catalogName: string;
+  availableControls?: CanvasHarvestPrototypeValidationFixtureSelectionEntry[];
+}): Error {
+  const availableControls = (options.availableControls ?? options.selection.selectedControls).map(
+    (control) => `${familyLabel(control.family)}/${control.catalogName}`
+  );
+  const availabilityNote =
+    availableControls.length > 0
+      ? ` Available selected controls: ${availableControls.join(', ')}.`
+      : ' No selected prototype validation controls are available.';
+
+  return new Error(
+    `No selected prototype validation control exists for ${familyLabel(options.family)}/${options.catalogName}.${availabilityNote}`
+  );
+}
+
+function resolvePrototypeValidationBatchEntryStatus(
+  control: CanvasHarvestPrototypeValidationFixtureSelectionEntry,
+  overrideStatus: CanvasHarvestFixtureRecordedPrototypeValidationStatus | undefined
+): CanvasHarvestFixtureRecordedPrototypeValidationStatus {
+  if (overrideStatus) {
+    return overrideStatus;
+  }
+
+  if (control.validationStatus === 'validated' || control.validationStatus === 'pending' || control.validationStatus === 'failed') {
+    return control.validationStatus;
+  }
+
+  throw new Error(
+    `Cannot build a prototype validation batch entry for ${familyLabel(control.family)}/${control.catalogName} from selection status unknown without an explicit recorded status override.`
   );
 }
 
