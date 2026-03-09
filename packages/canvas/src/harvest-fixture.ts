@@ -343,10 +343,43 @@ export interface PromoteCanvasHarvestFixturePrototypeDraftOptions {
   notes?: string[];
 }
 
+export interface CanvasHarvestFixturePrototypePromotion {
+  family: 'classic' | 'modern';
+  catalogName: string;
+  notes?: string[];
+}
+
+export interface CanvasHarvestFixturePrototypePromotionBatchDocument {
+  schemaVersion: 1;
+  generatedAt?: string;
+  entries: CanvasHarvestFixturePrototypePromotion[];
+}
+
 export interface PromotedCanvasHarvestFixturePrototypeDraftResult {
   promoted: CanvasHarvestFixturePrototype;
   resolvedTemplate: Pick<CanvasTemplateRecord, 'templateName' | 'templateVersion'>;
   prototypes: CanvasHarvestFixturePrototypeDocument;
+}
+
+export interface PromoteCanvasHarvestFixturePrototypeDraftsOptions {
+  drafts: CanvasHarvestFixturePrototypeDraftDocument;
+  registry: CanvasTemplateRegistryDocument;
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  promotions: CanvasHarvestFixturePrototypePromotion[];
+  generatedAt?: string;
+  refresh?: Omit<RefreshCanvasHarvestPrototypeValidationArtifactsOptions, 'generatedAt' | 'prototypes'>;
+}
+
+export interface PromotedCanvasHarvestFixturePrototypeDraftUpdate {
+  promotion: CanvasHarvestFixturePrototypePromotion;
+  promoted: CanvasHarvestFixturePrototype;
+  resolvedTemplate: Pick<CanvasTemplateRecord, 'templateName' | 'templateVersion'>;
+}
+
+export interface PromotedCanvasHarvestFixturePrototypeDraftsResult {
+  updates: PromotedCanvasHarvestFixturePrototypeDraftUpdate[];
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  refresh?: RefreshedCanvasHarvestPrototypeValidationArtifacts;
 }
 
 export interface CanvasHarvestFixturePrototypeValidationUpdate {
@@ -1133,59 +1166,115 @@ export function refreshCanvasHarvestPrototypeValidationArtifacts(
 export function promoteCanvasHarvestFixturePrototypeDraft(
   options: PromoteCanvasHarvestFixturePrototypeDraftOptions
 ): PromotedCanvasHarvestFixturePrototypeDraftResult {
+  const promoted = promoteCanvasHarvestFixturePrototypeDrafts({
+    drafts: options.drafts,
+    registry: options.registry,
+    prototypes: options.prototypes,
+    promotions: [
+      {
+        family: options.family,
+        catalogName: options.catalogName,
+        ...(options.notes && options.notes.length > 0 ? { notes: options.notes } : {}),
+      },
+    ],
+    generatedAt: options.generatedAt,
+  });
+
+  return {
+    promoted: promoted.updates[0]!.promoted,
+    resolvedTemplate: promoted.updates[0]!.resolvedTemplate,
+    prototypes: promoted.prototypes,
+  };
+}
+
+export function promoteCanvasHarvestFixturePrototypeDrafts(
+  options: PromoteCanvasHarvestFixturePrototypeDraftsOptions
+): PromotedCanvasHarvestFixturePrototypeDraftsResult {
   const generatedAt = options.generatedAt ?? new Date().toISOString();
-  const key = makeCatalogKey(options.family, options.catalogName);
-  const selectedDraft = options.drafts.drafts.find(
-    (draft) => makeCatalogKey(draft.family, draft.catalogName) === key
-  );
+  if (options.promotions.length === 0) {
+    throw new Error('Expected at least one prototype draft promotion.');
+  }
 
-  if (!selectedDraft) {
-    const availableDrafts = options.drafts.drafts.map((draft) => `${familyLabel(draft.family)}/${draft.catalogName}`);
-    const availabilityNote =
-      availableDrafts.length > 0 ? ` Available drafts: ${availableDrafts.join(', ')}.` : ' No generated drafts are available.';
-    throw new Error(
-      `No generated prototype draft exists for ${familyLabel(options.family)}/${options.catalogName}.${availabilityNote}`
+  const updatedPrototypes = [...options.prototypes.prototypes];
+  const seenKeys = new Set<string>();
+  const updates = options.promotions.map((promotion) => {
+    const key = makeCatalogKey(promotion.family, promotion.catalogName);
+    if (seenKeys.has(key)) {
+      throw new Error(
+        `Duplicate prototype draft promotion specified for ${familyLabel(promotion.family)}/${promotion.catalogName}.`
+      );
+    }
+    seenKeys.add(key);
+
+    const selectedDraft = options.drafts.drafts.find(
+      (draft) => makeCatalogKey(draft.family, draft.catalogName) === key
     );
-  }
+    if (!selectedDraft) {
+      throw buildMissingGeneratedPrototypeDraftError({
+        drafts: options.drafts,
+        family: promotion.family,
+        catalogName: promotion.catalogName,
+      });
+    }
 
-  if (options.prototypes.prototypes.some((prototype) => makeCatalogKey(prototype.family, prototype.catalogName) === key)) {
-    throw new Error(`A pinned fixture prototype already exists for ${familyLabel(options.family)}/${options.catalogName}.`);
-  }
+    if (updatedPrototypes.some((prototype) => makeCatalogKey(prototype.family, prototype.catalogName) === key)) {
+      throw new Error(
+        `A pinned fixture prototype already exists for ${familyLabel(promotion.family)}/${promotion.catalogName}.`
+      );
+    }
 
-  const resolvedTemplate = resolveTemplateForConstructor(options.registry, selectedDraft.constructor);
-  if (!resolvedTemplate) {
-    throw new Error(
-      `The pinned harvested registry does not expose a constructor alias for ${selectedDraft.constructor}; ` +
-        'regenerate prototype drafts against a current registry snapshot before promoting this draft.'
-    );
-  }
+    const resolvedTemplate = resolveTemplateForConstructor(options.registry, selectedDraft.constructor);
+    if (!resolvedTemplate) {
+      throw new Error(
+        `The pinned harvested registry does not expose a constructor alias for ${selectedDraft.constructor}; ` +
+          'regenerate prototype drafts against a current registry snapshot before promoting this draft.'
+      );
+    }
 
-  const { notes: _draftNotes, ...draftWithoutNotes } = selectedDraft;
-  const promoted: CanvasHarvestFixturePrototype = {
-    ...draftWithoutNotes,
-    liveValidation: {
-      status: 'pending',
-      recordedAt: generatedAt,
-    },
-    notes: buildPromotedPrototypeNotes({
-      draft: selectedDraft,
-      draftDocument: options.drafts,
-      resolvedTemplate,
-      additionalNotes: options.notes,
-    }),
+    const { notes: _draftNotes, ...draftWithoutNotes } = selectedDraft;
+    const promoted: CanvasHarvestFixturePrototype = {
+      ...draftWithoutNotes,
+      liveValidation: {
+        status: 'pending',
+        recordedAt: generatedAt,
+      },
+      notes: buildPromotedPrototypeNotes({
+        draft: selectedDraft,
+        draftDocument: options.drafts,
+        resolvedTemplate,
+        additionalNotes: promotion.notes,
+      }),
+    };
+    updatedPrototypes.push(promoted);
+
+    return {
+      promotion,
+      promoted,
+      resolvedTemplate: {
+        templateName: resolvedTemplate.templateName,
+        templateVersion: resolvedTemplate.templateVersion,
+      },
+    } satisfies PromotedCanvasHarvestFixturePrototypeDraftUpdate;
+  });
+
+  const updatedPrototypeDocument: CanvasHarvestFixturePrototypeDocument = {
+    schemaVersion: 1,
+    generatedAt,
+    prototypes: updatedPrototypes,
   };
 
   return {
-    promoted,
-    resolvedTemplate: {
-      templateName: resolvedTemplate.templateName,
-      templateVersion: resolvedTemplate.templateVersion,
-    },
-    prototypes: {
-      schemaVersion: 1,
-      generatedAt,
-      prototypes: [...options.prototypes.prototypes, promoted],
-    },
+    updates,
+    prototypes: updatedPrototypeDocument,
+    ...(options.refresh
+      ? {
+          refresh: refreshCanvasHarvestPrototypeValidationArtifacts({
+            ...options.refresh,
+            prototypes: updatedPrototypeDocument,
+            generatedAt,
+          }),
+        }
+      : {}),
   };
 }
 
@@ -2284,6 +2373,20 @@ function summarizeInsertReportEntries(entries: CanvasControlInsertReportEntry[])
 
 function familyLabel(value: 'classic' | 'modern'): string {
   return value === 'classic' ? 'Classic' : 'Modern';
+}
+
+function buildMissingGeneratedPrototypeDraftError(options: {
+  drafts: CanvasHarvestFixturePrototypeDraftDocument;
+  family: 'classic' | 'modern';
+  catalogName: string;
+}): Error {
+  const availableDrafts = options.drafts.drafts.map((draft) => `${familyLabel(draft.family)}/${draft.catalogName}`);
+  const availabilityNote =
+    availableDrafts.length > 0 ? ` Available drafts: ${availableDrafts.join(', ')}.` : ' No generated drafts are available.';
+
+  return new Error(
+    `No generated prototype draft exists for ${familyLabel(options.family)}/${options.catalogName}.${availabilityNote}`
+  );
 }
 
 function buildMissingPinnedPrototypeError(options: {

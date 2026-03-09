@@ -10,6 +10,7 @@ import {
   buildCanvasHarvestPrototypeValidationFixtureDocument,
   buildCanvasHarvestFixturePrototypeValidationBacklogDocument,
   promoteCanvasHarvestFixturePrototypeDraft,
+  promoteCanvasHarvestFixturePrototypeDrafts,
   recordCanvasHarvestFixturePrototypeValidation,
   recordCanvasHarvestFixturePrototypeValidations,
   resolveCanvasControlInsertReportResumeSelection,
@@ -882,6 +883,270 @@ describe('canvas harvest fixture planning', () => {
       schemaVersion: 1,
       generatedAt: '2026-03-10T00:10:00.000Z',
       prototypes: [...prototypes.prototypes, promoted.promoted],
+    });
+  });
+
+  it('promotes multiple generated drafts in one pass', () => {
+    const batchPlan = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:21:00.000Z',
+      controls: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+      ],
+    } as unknown as Parameters<typeof buildCanvasHarvestFixturePrototypeDraftDocument>[0]['plan'];
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan: batchPlan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:22:00.000Z',
+    });
+
+    const promoted = promoteCanvasHarvestFixturePrototypeDrafts({
+      drafts,
+      registry,
+      prototypes,
+      promotions: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+        },
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+        },
+      ],
+      generatedAt: '2026-03-10T00:23:00.000Z',
+    });
+
+    expect(promoted.updates).toEqual([
+      expect.objectContaining({
+        promotion: {
+          family: 'classic',
+          catalogName: 'Button',
+          notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+        },
+        promoted: expect.objectContaining({
+          family: 'classic',
+          catalogName: 'Button',
+          constructor: 'Classic/Button',
+          liveValidation: {
+            status: 'pending',
+            recordedAt: '2026-03-10T00:23:00.000Z',
+          },
+          notes: expect.arrayContaining([
+            'Promoted from generated draft artifact 2026-03-10T00:22:00.000Z (fixture plan 2026-03-10T00:21:00.000Z).',
+            'Constructor Classic/Button resolves to button@2.2.0 in the pinned harvested registry.',
+            'Manual review completed on 2026-03-10; live paste validation still pending.',
+          ]),
+        }),
+        resolvedTemplate: {
+          templateName: 'button',
+          templateVersion: '2.2.0',
+        },
+      }),
+      expect.objectContaining({
+        promotion: {
+          family: 'classic',
+          catalogName: 'Container',
+          notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+        },
+        promoted: expect.objectContaining({
+          family: 'classic',
+          catalogName: 'Container',
+          constructor: 'GroupContainer',
+          liveValidation: {
+            status: 'pending',
+            recordedAt: '2026-03-10T00:23:00.000Z',
+          },
+        }),
+        resolvedTemplate: {
+          templateName: 'groupContainer',
+          templateVersion: '1.5.0',
+        },
+      }),
+    ]);
+    expect(promoted.prototypes).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:23:00.000Z',
+      prototypes: [...prototypes.prototypes, promoted.updates[0]!.promoted, promoted.updates[1]!.promoted],
+    });
+  });
+
+  it('rejects duplicate prototype draft promotions inside one batch', () => {
+    const plan = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:24:00.000Z',
+      controls: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+      ],
+    } as unknown as Parameters<typeof buildCanvasHarvestFixturePrototypeDraftDocument>[0]['plan'];
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:25:00.000Z',
+    });
+
+    expect(() =>
+      promoteCanvasHarvestFixturePrototypeDrafts({
+        drafts,
+        registry,
+        prototypes,
+        promotions: [
+          {
+            family: 'classic',
+            catalogName: 'Button',
+          },
+          {
+            family: 'classic',
+            catalogName: 'Button',
+          },
+        ],
+      })
+    ).toThrow('Duplicate prototype draft promotion specified for Classic/Button.');
+  });
+
+  it('promotes drafts and refreshes the validation backlog plus next fixture selection in one pass', () => {
+    const batchPlan = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:26:00.000Z',
+      controls: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text',
+          status: 'resolved',
+          reason: 'Fixture prototype ModernText resolves to modernText@1.0.0.',
+          fixtureConstructor: 'ModernText',
+          templateName: 'modernText',
+          templateVersion: '1.0.0',
+          notes: [],
+        },
+      ],
+    } as unknown as Parameters<typeof buildCanvasHarvestFixturePrototypeDraftDocument>[0]['plan'];
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan: batchPlan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:27:00.000Z',
+    });
+
+    const promoted = promoteCanvasHarvestFixturePrototypeDrafts({
+      drafts,
+      registry,
+      prototypes,
+      promotions: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+        },
+        {
+          family: 'classic',
+          catalogName: 'Container',
+        },
+      ],
+      generatedAt: '2026-03-10T00:28:00.000Z',
+      refresh: {
+        plan: batchPlan,
+        registry,
+        family: 'classic',
+        statuses: ['pending'],
+        limit: 2,
+        columns: 2,
+        cellWidth: 240,
+        cellHeight: 40,
+        gutterX: 16,
+        gutterY: 12,
+        paddingX: 24,
+        paddingY: 24,
+        paths: {
+          backlog: resolve('fixtures/canvas-harvest/generated/prototype-validation-backlog.json'),
+          registry: resolve('registries/canvas-controls.json'),
+          prototypes: resolve('fixtures/canvas-harvest/prototypes.json'),
+          yaml: resolve('fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml'),
+        },
+      },
+    });
+
+    expect(promoted.refresh).toEqual({
+      backlog: expect.objectContaining({
+        counts: expect.objectContaining({
+          prototypeControls: 6,
+          pendingValidationControls: 2,
+          failedValidationControls: 0,
+          validatedControls: 1,
+          unknownValidationControls: 3,
+        }),
+      }),
+      rendered: expect.objectContaining({
+        renderedControlCount: 2,
+        pendingMarkerCount: 0,
+      }),
+      selection: expect.objectContaining({
+        schemaVersion: 1,
+        generatedAt: '2026-03-10T00:28:00.000Z',
+        counts: {
+          selectedControls: 2,
+          skippedControls: 0,
+          renderedControls: 2,
+          pendingMarkers: 0,
+        },
+        filters: {
+          statuses: ['pending'],
+          family: 'classic',
+          limit: 2,
+        },
+        selectedControls: [
+          expect.objectContaining({
+            family: 'classic',
+            catalogName: 'Button',
+            constructor: 'Classic/Button',
+            validationStatus: 'pending',
+            planAlignment: 'stale',
+          }),
+          expect.objectContaining({
+            family: 'classic',
+            catalogName: 'Container',
+            constructor: 'GroupContainer',
+            validationStatus: 'pending',
+            planAlignment: 'stale',
+          }),
+        ],
+      }),
     });
   });
 
