@@ -238,6 +238,35 @@ export interface CanvasHarvestPrototypeValidationFixtureSkippedEntry {
   reason: string;
 }
 
+export interface CanvasHarvestPrototypeValidationFixtureDocumentPaths {
+  backlog?: string;
+  registry?: string;
+  prototypes?: string;
+  yaml?: string;
+}
+
+export interface CanvasHarvestPrototypeValidationFixtureDocument {
+  schemaVersion: 1;
+  generatedAt: string;
+  sourceBacklogGeneratedAt: string;
+  sourcePrototypeGeneratedAt?: string;
+  sourceRegistryGeneratedAt?: string;
+  filters: {
+    statuses: CanvasHarvestFixturePrototypeValidationStatus[];
+    family?: 'classic' | 'modern';
+    limit?: number;
+  };
+  counts: {
+    selectedControls: number;
+    skippedControls: number;
+    renderedControls: number;
+    pendingMarkers: number;
+  };
+  paths?: CanvasHarvestPrototypeValidationFixtureDocumentPaths;
+  selectedControls: CanvasHarvestPrototypeValidationFixtureSelectionEntry[];
+  skippedControls: CanvasHarvestPrototypeValidationFixtureSkippedEntry[];
+}
+
 export interface AssertCanvasHarvestFixtureCatalogWriteOptions {
   catalog: CanvasControlCatalogDocument;
   catalogPath: string;
@@ -332,6 +361,16 @@ export interface RenderCanvasHarvestPrototypeValidationFixtureOptions
   limit?: number;
 }
 
+export interface BuildCanvasHarvestPrototypeValidationFixtureDocumentOptions {
+  backlog: CanvasHarvestFixturePrototypeValidationBacklogDocument;
+  rendered: RenderedCanvasHarvestPrototypeValidationFixture;
+  statuses?: CanvasHarvestFixturePrototypeValidationStatus[];
+  family?: 'classic' | 'modern';
+  limit?: number;
+  generatedAt?: string;
+  paths?: CanvasHarvestPrototypeValidationFixtureDocumentPaths;
+}
+
 export interface RenderedCanvasHarvestFixture {
   yaml: string;
   renderedControlCount: number;
@@ -354,6 +393,8 @@ export const DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BACKLOG_PATH =
   'fixtures/canvas-harvest/generated/prototype-validation-backlog.json';
 export const DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_YAML_PATH =
   'fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml';
+export const DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_SELECTION_PATH =
+  'fixtures/canvas-harvest/generated/prototype-validation/fixture-selection.json';
 
 const CONTROL_SEARCH_ALIASES: Record<string, string[]> = {
   'classic:gallery': ['Vertical gallery'],
@@ -795,6 +836,36 @@ export function renderCanvasHarvestPrototypeValidationFixture(
     ...rendered,
     selectedControls,
     skippedControls,
+  };
+}
+
+export function buildCanvasHarvestPrototypeValidationFixtureDocument(
+  options: BuildCanvasHarvestPrototypeValidationFixtureDocumentOptions
+): CanvasHarvestPrototypeValidationFixtureDocument {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const statuses = normalizePrototypeValidationStatuses(options.statuses);
+  const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : undefined;
+
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    sourceBacklogGeneratedAt: options.backlog.generatedAt,
+    sourcePrototypeGeneratedAt: options.backlog.sourcePrototypeGeneratedAt,
+    sourceRegistryGeneratedAt: options.backlog.sourceRegistryGeneratedAt,
+    filters: {
+      statuses,
+      ...(options.family ? { family: options.family } : {}),
+      ...(limit ? { limit } : {}),
+    },
+    counts: {
+      selectedControls: options.rendered.selectedControls.length,
+      skippedControls: options.rendered.skippedControls.length,
+      renderedControls: options.rendered.renderedControlCount,
+      pendingMarkers: options.rendered.pendingMarkerCount,
+    },
+    ...(options.paths ? { paths: options.paths } : {}),
+    selectedControls: options.rendered.selectedControls,
+    skippedControls: options.rendered.skippedControls,
   };
 }
 

@@ -1,0 +1,65 @@
+{
+  "counts": {
+    "pendingMarkers": 0,
+    "renderedControls": 4,
+    "selectedControls": 4,
+    "skippedControls": 0
+  },
+  "filters": {
+    "statuses": [
+      "failed",
+      "pending",
+      "unknown"
+    ]
+  },
+  "generatedAt": "2026-03-09T14:16:50.868Z",
+  "paths": {
+    "backlog": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-validation-backlog.json",
+    "prototypes": "/home/calluma/projects/pp/fixtures/canvas-harvest/prototypes.json",
+    "registry": "/home/calluma/projects/pp/registries/canvas-controls.json",
+    "yaml": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml"
+  },
+  "schemaVersion": 1,
+  "selectedControls": [
+    {
+      "catalogName": "Button",
+      "constructor": "Classic/Button",
+      "family": "classic",
+      "planAlignment": "stale",
+      "templateName": "button",
+      "templateVersion": "2.2.0",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Icon",
+      "constructor": "Classic/Icon",
+      "family": "classic",
+      "planAlignment": "prototype-only",
+      "templateName": "icon",
+      "templateVersion": "2.5.0",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Image",
+      "constructor": "Image",
+      "family": "classic",
+      "planAlignment": "prototype-only",
+      "templateName": "image",
+      "templateVersion": "2.2.3",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Label",
+      "constructor": "Label",
+      "family": "classic",
+      "planAlignment": "aligned",
+      "templateName": "label",
+      "templateVersion": "2.5.1",
+      "validationStatus": "pending"
+    }
+  ],
+  "skippedControls": [],
+  "sourceBacklogGeneratedAt": "2026-03-09T13:58:35.573Z",
+  "sourcePrototypeGeneratedAt": "2026-03-09T13:58:32.687Z",
+  "sourceRegistryGeneratedAt": "2026-03-09T13:52:45.428Z"
+}

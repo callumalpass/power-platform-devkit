@@ -1,9 +1,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { readJsonFile } from '../packages/artifacts/src/index';
+import { readJsonFile, writeJsonFile } from '../packages/artifacts/src/index';
 import {
   DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BACKLOG_PATH,
+  DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_SELECTION_PATH,
   DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_YAML_PATH,
+  buildCanvasHarvestPrototypeValidationFixtureDocument,
   renderCanvasHarvestPrototypeValidationFixture,
   type CanvasHarvestFixturePrototypeDocument,
   type CanvasHarvestFixturePrototypeValidationBacklogDocument,
@@ -16,9 +18,13 @@ async function main(): Promise<void> {
   const registryPath = resolve(readArg('--registry') ?? 'registries/canvas-controls.json');
   const prototypePath = resolve(readArg('--prototypes') ?? 'fixtures/canvas-harvest/prototypes.json');
   const outPath = resolve(readArg('--out') ?? DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_YAML_PATH);
+  const selectionOutPath = resolve(
+    readArg('--selection-out') ?? DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_SELECTION_PATH
+  );
   const family = readFamilyArg('--family');
   const statuses = parseStatuses(readArg('--status'));
   const limit = readPositiveIntegerArg('--limit');
+  const generatedAt = new Date().toISOString();
   const [backlog, registry, prototypes] = await Promise.all([
     readJsonFile<CanvasHarvestFixturePrototypeValidationBacklogDocument>(backlogPath),
     readJsonFile<CanvasTemplateRegistryDocument>(registryPath),
@@ -40,11 +46,29 @@ async function main(): Promise<void> {
     paddingX: 24,
     paddingY: 24,
   });
+  const selection = buildCanvasHarvestPrototypeValidationFixtureDocument({
+    backlog,
+    rendered,
+    statuses,
+    family,
+    limit,
+    generatedAt,
+    paths: {
+      backlog: backlogPath,
+      registry: registryPath,
+      prototypes: prototypePath,
+      yaml: outPath,
+    },
+  });
 
   await mkdir(dirname(outPath), { recursive: true });
-  await writeFile(outPath, rendered.yaml, 'utf8');
+  await Promise.all([
+    writeFile(outPath, rendered.yaml, 'utf8'),
+    writeJsonFile(selectionOutPath, selection as unknown as Parameters<typeof writeJsonFile>[1]),
+  ]);
 
   process.stdout.write(`Wrote prototype validation fixture YAML: ${outPath}\n`);
+  process.stdout.write(`Wrote prototype validation fixture selection: ${selectionOutPath}\n`);
   process.stdout.write(`Source backlog: ${backlogPath}\n`);
   process.stdout.write(
     `Selected controls: ${rendered.selectedControls.length}; skipped unresolved: ${rendered.skippedControls.length}; rendered controls: ${rendered.renderedControlCount}\n`

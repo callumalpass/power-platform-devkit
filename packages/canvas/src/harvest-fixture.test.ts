@@ -6,6 +6,7 @@ import {
   buildCanvasControlSearchTerms,
   buildCanvasHarvestFixturePlan,
   buildCanvasHarvestFixturePrototypeDraftDocument,
+  buildCanvasHarvestPrototypeValidationFixtureDocument,
   buildCanvasHarvestFixturePrototypeValidationBacklogDocument,
   promoteCanvasHarvestFixturePrototypeDraft,
   recordCanvasHarvestFixturePrototypeValidation,
@@ -1085,6 +1086,185 @@ describe('canvas harvest fixture planning', () => {
     expect(rendered.yaml).toContain('- HarvestClassicLabel:');
     expect(rendered.yaml).toContain('Control: Label@2.5.1');
     expect(rendered.yaml).not.toContain('Marker');
+  });
+
+  it('persists validation fixture selection state as a durable JSON document', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-09T09:30:00.000Z',
+    });
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:00:00.000Z',
+    });
+    const promoted = promoteCanvasHarvestFixturePrototypeDraft({
+      drafts,
+      registry,
+      prototypes,
+      family: 'classic',
+      catalogName: 'Button',
+      generatedAt: '2026-03-10T00:10:00.000Z',
+      notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+    });
+    const validationRegistry: CanvasTemplateRegistryDocument = {
+      ...registry,
+      templates: [
+        ...registry.templates,
+        {
+          templateName: 'image',
+          templateVersion: '2.2.3',
+          aliases: {
+            constructors: ['Image'],
+          },
+          contentHash: 'classic-image',
+          provenance: {
+            kind: 'harvested',
+            source: 'test',
+          },
+        },
+      ],
+    };
+    const validationPrototypes: CanvasHarvestFixturePrototypeDocument = {
+      ...promoted.prototypes,
+      prototypes: promoted.prototypes.prototypes
+        .map((prototype) => {
+          if (
+            prototype.family === 'classic' &&
+            (prototype.catalogName === 'Icon' || prototype.catalogName === 'Label')
+          ) {
+            return {
+              ...prototype,
+              liveValidation: {
+                status: 'pending' as const,
+                recordedAt: '2026-03-10T00:18:00.000Z',
+                method: 'container-paste',
+              },
+            };
+          }
+
+          if (prototype.family === 'modern' && prototype.catalogName === 'Text') {
+            return {
+              ...prototype,
+              liveValidation: {
+                status: 'validated' as const,
+                recordedAt: '2026-03-10T00:19:00.000Z',
+                method: 'top-level-paste',
+              },
+            };
+          }
+
+          return prototype;
+        })
+        .concat({
+          family: 'classic',
+          catalogName: 'Image',
+          constructor: 'Image',
+          properties: {
+            Height: '=40',
+            Width: '=40',
+            Image: '=SampleImage',
+          },
+          liveValidation: {
+            status: 'pending' as const,
+            recordedAt: '2026-03-10T00:18:00.000Z',
+            method: 'container-paste',
+          },
+          notes: ['Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending.'],
+        }),
+    };
+    const backlog = buildCanvasHarvestFixturePrototypeValidationBacklogDocument({
+      plan,
+      registry: validationRegistry,
+      prototypes: validationPrototypes,
+      generatedAt: '2026-03-10T00:20:00.000Z',
+    });
+    const rendered = renderCanvasHarvestPrototypeValidationFixture({
+      backlog,
+      registry: validationRegistry,
+      prototypes: validationPrototypes,
+      family: 'classic',
+      statuses: ['pending'],
+      limit: 3,
+      columns: 2,
+      cellWidth: 240,
+      cellHeight: 40,
+      gutterX: 16,
+      gutterY: 12,
+    });
+
+    const document = buildCanvasHarvestPrototypeValidationFixtureDocument({
+      backlog,
+      rendered,
+      family: 'classic',
+      statuses: ['pending'],
+      limit: 3,
+      generatedAt: '2026-03-10T00:30:00.000Z',
+      paths: {
+        backlog: resolve('fixtures/canvas-harvest/generated/prototype-validation-backlog.json'),
+        registry: resolve('registries/canvas-controls.json'),
+        prototypes: resolve('fixtures/canvas-harvest/prototypes.json'),
+        yaml: resolve('fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml'),
+      },
+    });
+
+    expect(document).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:30:00.000Z',
+      sourceBacklogGeneratedAt: '2026-03-10T00:20:00.000Z',
+      sourcePrototypeGeneratedAt: '2026-03-10T00:10:00.000Z',
+      sourceRegistryGeneratedAt: '2026-03-09T08:30:00.000Z',
+      filters: {
+        statuses: ['pending'],
+        family: 'classic',
+        limit: 3,
+      },
+      counts: {
+        selectedControls: 3,
+        skippedControls: 0,
+        renderedControls: 3,
+        pendingMarkers: 0,
+      },
+      paths: {
+        backlog: resolve('fixtures/canvas-harvest/generated/prototype-validation-backlog.json'),
+        registry: resolve('registries/canvas-controls.json'),
+        prototypes: resolve('fixtures/canvas-harvest/prototypes.json'),
+        yaml: resolve('fixtures/canvas-harvest/generated/prototype-validation/HarvestFixtureContainer.pa.yaml'),
+      },
+      selectedControls: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          constructor: 'Classic/Button',
+          validationStatus: 'pending',
+          planAlignment: 'stale',
+          templateName: 'button',
+          templateVersion: '2.2.0',
+        },
+        {
+          family: 'classic',
+          catalogName: 'Image',
+          constructor: 'Image',
+          validationStatus: 'pending',
+          planAlignment: 'prototype-only',
+          templateName: 'image',
+          templateVersion: '2.2.3',
+        },
+        {
+          family: 'classic',
+          catalogName: 'Icon',
+          constructor: 'Classic/Icon',
+          validationStatus: 'pending',
+          planAlignment: 'aligned',
+          templateName: 'icon',
+          templateVersion: '2.5.0',
+        },
+      ],
+      skippedControls: [],
+    });
   });
 
   it('fails when the requested validation slice has no renderable controls', () => {
