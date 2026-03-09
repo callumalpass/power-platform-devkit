@@ -6,6 +6,13 @@
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
+      "selection": {
+        "constructor": "Classic/Button",
+        "planAlignment": "aligned",
+        "status": "pending",
+        "templateName": "button",
+        "templateVersion": "2.2.0"
+      },
       "status": "pending"
     },
     {
@@ -14,6 +21,13 @@
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
+      "selection": {
+        "constructor": "Classic/DatePicker",
+        "planAlignment": "aligned",
+        "status": "pending",
+        "templateName": "datepicker",
+        "templateVersion": "2.6.0"
+      },
       "status": "pending"
     },
     {
@@ -22,6 +36,13 @@
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
+      "selection": {
+        "constructor": "Classic/Icon",
+        "planAlignment": "aligned",
+        "status": "pending",
+        "templateName": "icon",
+        "templateVersion": "2.5.0"
+      },
       "status": "pending"
     },
     {
@@ -30,6 +51,13 @@
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
+      "selection": {
+        "constructor": "Image",
+        "planAlignment": "aligned",
+        "status": "pending",
+        "templateName": "image",
+        "templateVersion": "2.2.3"
+      },
       "status": "pending"
     },
     {
@@ -38,6 +66,13 @@
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
+      "selection": {
+        "constructor": "Label",
+        "planAlignment": "aligned",
+        "status": "pending",
+        "templateName": "label",
+        "templateVersion": "2.5.1"
+      },
       "status": "pending"
     },
     {
@@ -46,10 +81,20 @@
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
+      "selection": {
+        "constructor": "ModernInformationButton",
+        "planAlignment": "aligned",
+        "status": "pending",
+        "templateName": "modernInformationButton",
+        "templateVersion": "1.0.0"
+      },
       "status": "pending"
     }
   ],
-  "generatedAt": "2026-03-09T16:30:48.030Z",
+  "generatedAt": "2026-03-09T16:45:21.658Z",
+  "paths": {
+    "selection": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-validation/fixture-selection.json"
+  },
   "schemaVersion": 1,
   "selection": {
     "firstSelectedControl": "Classic/Button",

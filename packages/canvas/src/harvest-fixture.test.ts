@@ -924,12 +924,18 @@ describe('canvas harvest fixture planning', () => {
       limit: 1,
       generatedAt: '2026-03-10T00:14:00.000Z',
       notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+      paths: {
+        drafts: '/tmp/pp-canvas/prototype-drafts.json',
+      },
     });
 
     expect(batch).toEqual({
       schemaVersion: 1,
       generatedAt: '2026-03-10T00:14:00.000Z',
       sourceDraftGeneratedAt: '2026-03-10T00:13:00.000Z',
+      paths: {
+        drafts: '/tmp/pp-canvas/prototype-drafts.json',
+      },
       selection: {
         mode: 'window',
         family: 'classic',
@@ -947,6 +953,10 @@ describe('canvas harvest fixture planning', () => {
           family: 'classic',
           catalogName: 'Container',
           notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+          draft: {
+            constructor: 'GroupContainer',
+            propertyKeys: [],
+          },
         },
       ],
     });
@@ -1001,12 +1011,18 @@ describe('canvas harvest fixture planning', () => {
       ],
       generatedAt: '2026-03-10T00:16:00.000Z',
       notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+      paths: {
+        drafts: '/tmp/pp-canvas/prototype-drafts.json',
+      },
     });
 
     expect(batch).toEqual({
       schemaVersion: 1,
       generatedAt: '2026-03-10T00:16:00.000Z',
       sourceDraftGeneratedAt: '2026-03-10T00:15:00.000Z',
+      paths: {
+        drafts: '/tmp/pp-canvas/prototype-drafts.json',
+      },
       selection: {
         mode: 'explicit',
         startIndex: 1,
@@ -1031,6 +1047,10 @@ describe('canvas harvest fixture planning', () => {
           family: 'classic',
           catalogName: 'Container',
           notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+          draft: {
+            constructor: 'GroupContainer',
+            propertyKeys: [],
+          },
         },
         {
           family: 'modern',
@@ -1039,6 +1059,10 @@ describe('canvas harvest fixture planning', () => {
             'Manual review completed on 2026-03-10; live paste validation still pending.',
             'Inserted successfully in the modern-reset subset run on 2026-03-09.',
           ],
+          draft: {
+            constructor: 'ModernText',
+            propertyKeys: [],
+          },
         },
       ],
     });
@@ -1180,12 +1204,18 @@ describe('canvas harvest fixture planning', () => {
       method: 'container-paste',
       generatedAt: '2026-03-10T00:31:00.000Z',
       notes: ['Validated during the first modern prototype tranche on 2026-03-10.'],
+      paths: {
+        selection: '/tmp/pp-canvas/prototype-validation-selection.json',
+      },
     });
 
     expect(batch).toEqual({
       schemaVersion: 1,
       generatedAt: '2026-03-10T00:31:00.000Z',
       sourceSelectionGeneratedAt: '2026-03-10T00:30:00.000Z',
+      paths: {
+        selection: '/tmp/pp-canvas/prototype-validation-selection.json',
+      },
       selection: {
         mode: 'window',
         family: 'modern',
@@ -1205,6 +1235,13 @@ describe('canvas harvest fixture planning', () => {
           status: 'validated',
           method: 'container-paste',
           notes: ['Validated during the first modern prototype tranche on 2026-03-10.'],
+          selection: {
+            status: 'pending',
+            constructor: 'ModernButton',
+            planAlignment: 'aligned',
+            templateName: 'modernButton',
+            templateVersion: '1.0.0',
+          },
         },
       ],
     });
@@ -1283,12 +1320,18 @@ describe('canvas harvest fixture planning', () => {
       method: 'batch-review',
       generatedAt: '2026-03-10T00:32:00.000Z',
       notes: ['Live Studio tranche recorded on 2026-03-10.'],
+      paths: {
+        selection: '/tmp/pp-canvas/prototype-validation-selection.json',
+      },
     });
 
     expect(batch).toEqual({
       schemaVersion: 1,
       generatedAt: '2026-03-10T00:32:00.000Z',
       sourceSelectionGeneratedAt: '2026-03-10T00:30:00.000Z',
+      paths: {
+        selection: '/tmp/pp-canvas/prototype-validation-selection.json',
+      },
       selection: {
         mode: 'explicit',
         startIndex: 1,
@@ -1315,6 +1358,13 @@ describe('canvas harvest fixture planning', () => {
           status: 'failed',
           method: 'batch-review',
           notes: ['Live Studio tranche recorded on 2026-03-10.'],
+          selection: {
+            status: 'failed',
+            constructor: 'Label',
+            planAlignment: 'aligned',
+            templateName: 'label',
+            templateVersion: '2.5.1',
+          },
         },
         {
           family: 'modern',
@@ -1325,6 +1375,13 @@ describe('canvas harvest fixture planning', () => {
             'Live Studio tranche recorded on 2026-03-10.',
             'Validated via the backlog-driven modern fixture.',
           ],
+          selection: {
+            status: 'validated',
+            constructor: 'ModernText',
+            planAlignment: 'aligned',
+            templateName: 'modernText',
+            templateVersion: '1.0.0',
+          },
         },
       ],
     });

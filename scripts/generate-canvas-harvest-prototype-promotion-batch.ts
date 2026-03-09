@@ -37,6 +37,9 @@ async function main(): Promise<void> {
     ...(names.length === 0 && startAt ? { startAt } : {}),
     ...(names.length === 0 && limit ? { limit } : {}),
     ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
+    paths: {
+      drafts: draftPath,
+    },
     generatedAt,
   });
 

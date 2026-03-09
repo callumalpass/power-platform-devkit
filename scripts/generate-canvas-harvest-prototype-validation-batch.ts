@@ -43,6 +43,9 @@ async function main(): Promise<void> {
     ...(status ? { status } : {}),
     ...(method ? { method } : {}),
     ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
+    paths: {
+      selection: selectionPath,
+    },
     generatedAt,
   });
 

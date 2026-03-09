@@ -2,38 +2,116 @@
   "entries": [
     {
       "catalogName": "Container",
+      "draft": {
+        "constructor": "GroupContainer",
+        "propertyKeys": [
+          "DisplayMode",
+          "Height",
+          "Visible",
+          "Width"
+        ]
+      },
       "family": "classic"
     },
     {
       "catalogName": "Grid container",
+      "draft": {
+        "constructor": "GroupContainer",
+        "propertyKeys": [
+          "DisplayMode",
+          "Height",
+          "Visible",
+          "Width"
+        ]
+      },
       "family": "classic"
     },
     {
       "catalogName": "Horizontal container",
+      "draft": {
+        "constructor": "GroupContainer",
+        "propertyKeys": [
+          "DisplayMode",
+          "Height",
+          "Visible",
+          "Width"
+        ]
+      },
       "family": "classic"
     },
     {
       "catalogName": "Vertical container",
+      "draft": {
+        "constructor": "GroupContainer",
+        "propertyKeys": [
+          "DisplayMode",
+          "Height",
+          "Visible",
+          "Width"
+        ]
+      },
       "family": "classic"
     },
     {
       "catalogName": "Date picker",
+      "draft": {
+        "constructor": "ModernDatePicker",
+        "propertyKeys": [
+          "DisplayMode",
+          "Height",
+          "Width"
+        ]
+      },
       "family": "modern"
     },
     {
       "catalogName": "Radio group",
+      "draft": {
+        "constructor": "ModernRadio",
+        "propertyKeys": [
+          "DisplayMode",
+          "Height",
+          "Width"
+        ]
+      },
       "family": "modern"
     },
     {
       "catalogName": "Tabs or tab list",
+      "draft": {
+        "constructor": "ModernTabList",
+        "propertyKeys": [
+          "Align",
+          "DisplayMode",
+          "Height",
+          "Width"
+        ]
+      },
       "family": "modern"
     },
     {
       "catalogName": "Text input",
+      "draft": {
+        "constructor": "ModernText",
+        "propertyKeys": [
+          "Align",
+          "AutoHeight",
+          "DisplayMode",
+          "Height",
+          "Text",
+          "VerticalAlign",
+          "Visible",
+          "Width",
+          "Wrap"
+        ]
+      },
       "family": "modern"
     }
   ],
-  "generatedAt": "2026-03-09T16:37:29.015Z",
+  "generatedAt": "2026-03-09T16:45:21.660Z",
+  "paths": {
+    "drafts": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-drafts.json"
+  },
   "schemaVersion": 1,
   "selection": {
     "firstSelectedControl": "Classic/Container",
