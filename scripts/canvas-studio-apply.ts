@@ -11,6 +11,7 @@ import type {
   CanvasControlInsertReportDocument as InsertReport,
   CanvasControlInsertReportEntry as InsertReportEntry,
 } from '../packages/canvas/src/harvest-fixture';
+import { buildCanvasControlSearchTerms } from '../packages/canvas/src/harvest-fixture';
 
 interface Options {
   studioUrl: string;
@@ -46,17 +47,6 @@ const DIRECT_INSERT_SKIP_REASONS: Record<string, string> = {
   'classic:column': 'covered-by-data-table-columns',
   'classic:display and edit form': 'redundant-doc-alias',
   'classic:screen': 'covered-by-base-screen-template',
-};
-
-const SEARCH_ALIASES: Record<string, string[]> = {
-  'classic:gallery': ['Vertical gallery'],
-  'classic:label': ['Text label'],
-  'classic:shape': ['Rectangle'],
-  'classic:stream video': ['Video'],
-  'classic:web barcode scanner': ['Barcode reader'],
-  'modern:info button': ['Information button'],
-  'modern:radio group': ['Radio'],
-  'modern:tabs or tab list': ['Tab list'],
 };
 
 async function main(): Promise<void> {
@@ -327,15 +317,7 @@ async function insertCatalogControls(page: Page, studioFrame: Frame, options: Op
 }
 
 function buildSearchTerms(entry: CanvasControlCatalogEntry): string[] {
-  const key = makeCatalogKey(entry.family, entry.name);
-  const aliases = SEARCH_ALIASES[key] ?? [];
-  const terms = [entry.name, ...aliases];
-
-  if (entry.name.includes(' or ')) {
-    terms.push(...entry.name.split(/\s+or\s+/i).map((value) => value.trim()));
-  }
-
-  return dedupeStrings(terms.filter((value) => value.length > 0));
+  return buildCanvasControlSearchTerms(entry);
 }
 
 function chooseInsertCandidate(
@@ -708,10 +690,6 @@ function makeCatalogKey(family: CanvasControlCatalogEntry['family'], name: strin
 
 function normalizeLabel(value: string): string {
   return value.toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function dedupeStrings(values: string[]): string[] {
-  return [...new Set(values)];
 }
 
 void main().catch((error) => {

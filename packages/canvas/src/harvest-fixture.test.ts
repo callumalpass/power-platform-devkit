@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { CanvasTemplateRegistryDocument } from './index';
 import {
   assertCanvasHarvestFixtureCatalogCanWriteOutputs,
+  buildCanvasControlSearchTerms,
   buildCanvasHarvestFixturePlan,
   renderCanvasHarvestFixture,
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
@@ -69,6 +70,18 @@ const registry: CanvasTemplateRegistryDocument = {
   schemaVersion: 1,
   generatedAt: '2026-03-09T08:30:00.000Z',
   templates: [
+    {
+      templateName: 'button',
+      templateVersion: '2.2.0',
+      aliases: {
+        constructors: ['Classic/Button'],
+      },
+      contentHash: 'classic-button',
+      provenance: {
+        kind: 'harvested',
+        source: 'test',
+      },
+    },
     {
       templateName: 'groupContainer',
       templateVersion: '1.5.0',
@@ -285,6 +298,15 @@ describe('canvas harvest fixture planning', () => {
     ).not.toThrow();
   });
 
+  it('builds canonical insert-search terms with aliases and split variants', () => {
+    expect(buildCanvasControlSearchTerms({ family: 'classic', name: 'Label' })).toEqual(['Label', 'Text label']);
+    expect(buildCanvasControlSearchTerms({ family: 'modern', name: 'Tabs or tab list' })).toEqual([
+      'Tabs or tab list',
+      'Tab list',
+      'Tabs',
+    ]);
+  });
+
   it('tracks prototype and registry coverage against the pinned catalog', () => {
     const plan = buildCanvasHarvestFixturePlan({
       catalog,
@@ -304,13 +326,23 @@ describe('canvas harvest fixture planning', () => {
       classic: 3,
       modern: 2,
     });
-    expect(plan.registryTemplateCount).toBe(4);
+    expect(plan.registryTemplateCount).toBe(5);
     expect(plan.prototypeCount).toBe(4);
     expect(plan.controls).toEqual([
       expect.objectContaining({
         family: 'classic',
         catalogName: 'Button',
         status: 'prototype-missing',
+        suggestedInsertQueries: ['Button'],
+        prototypeSuggestions: [
+          {
+            constructor: 'Classic/Button',
+            matchType: 'constructor',
+            templateName: 'button',
+            templateVersion: '2.2.0',
+          },
+        ],
+        notes: expect.arrayContaining(['Pinned registry suggests future fixture prototypes: Classic/Button -> button@2.2.0.']),
       }),
       expect.objectContaining({
         family: 'classic',
@@ -319,6 +351,7 @@ describe('canvas harvest fixture planning', () => {
         fixtureConstructor: 'Classic/Icon',
         templateName: 'icon',
         templateVersion: '2.5.0',
+        suggestedInsertQueries: ['Icon'],
       }),
       expect.objectContaining({
         family: 'classic',
@@ -327,12 +360,14 @@ describe('canvas harvest fixture planning', () => {
         fixtureConstructor: 'Label',
         templateName: 'label',
         templateVersion: '2.5.1',
+        suggestedInsertQueries: ['Label', 'Text label'],
       }),
       expect.objectContaining({
         family: 'modern',
         catalogName: 'Button',
         status: 'registry-missing',
         fixtureConstructor: 'ModernButton',
+        suggestedInsertQueries: ['Button'],
         notes: expect.arrayContaining(['Catalog status: preview.', 'Awaiting pinned registry coverage.']),
       }),
       expect.objectContaining({
@@ -342,6 +377,7 @@ describe('canvas harvest fixture planning', () => {
         fixtureConstructor: 'ModernText',
         templateName: 'modernText',
         templateVersion: '1.0.0',
+        suggestedInsertQueries: ['Text'],
       }),
     ]);
   });

@@ -7,7 +7,7 @@ import {
   type CanvasControlCatalogEntry,
   type CanvasControlCatalogSource,
 } from './control-catalog';
-import type { CanvasTemplateRecord, CanvasTemplateRegistryDocument } from './index';
+import type { CanvasTemplateMatchType, CanvasTemplateRecord, CanvasTemplateRegistryDocument } from './index';
 
 export type { CanvasControlCatalogCounts, CanvasControlCatalogDocument, CanvasControlCatalogEntry, CanvasControlCatalogSource };
 
@@ -86,13 +86,22 @@ export interface CanvasHarvestFixturePlanEntry {
   docPath: string;
   learnUrl: string;
   catalogStatus: string[];
+  suggestedInsertQueries: string[];
   status: CanvasHarvestFixtureControlStatus;
   reason: string;
   fixtureConstructor?: string;
   templateName?: string;
   templateVersion?: string;
+  prototypeSuggestions?: CanvasHarvestFixturePrototypeSuggestion[];
   notes: string[];
   latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
+}
+
+export interface CanvasHarvestFixturePrototypeSuggestion {
+  matchType: CanvasTemplateMatchType;
+  templateName: string;
+  templateVersion: string;
+  constructor?: string;
 }
 
 export interface CanvasHarvestFixtureCatalogSummary {
@@ -189,6 +198,17 @@ export const DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH = 'fixtures/canvas-harvest
 export const DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH =
   'fixtures/canvas-harvest/generated/HarvestFixtureContainer.pa.yaml';
 
+const CONTROL_SEARCH_ALIASES: Record<string, string[]> = {
+  'classic:gallery': ['Vertical gallery'],
+  'classic:label': ['Text label'],
+  'classic:shape': ['Rectangle'],
+  'classic:streamvideo': ['Video'],
+  'classic:webbarcodescanner': ['Barcode reader'],
+  'modern:infobutton': ['Information button'],
+  'modern:radiogroup': ['Radio'],
+  'modern:tabsortablist': ['Tab list'],
+};
+
 export function assertCanvasHarvestFixtureCatalogCanWriteOutputs(
   options: AssertCanvasHarvestFixtureCatalogWriteOptions
 ): void {
@@ -224,6 +244,8 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
   const controls = options.catalog.controls.map((control) => {
     const prototype = prototypesByKey.get(makeCatalogKey(control.family, control.name));
     const latestInsertObservation = insertObservationsByKey.get(makeCatalogKey(control.family, control.name));
+    const suggestedInsertQueries = buildCanvasControlSearchTerms(control);
+    const prototypeSuggestions = buildPrototypeSuggestions(options.registry, control);
     const notes = [...buildCatalogNotes(control), ...buildInsertObservationNotes(latestInsertObservation)];
 
     if (!prototype) {
@@ -234,9 +256,11 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
         docPath: control.docPath,
         learnUrl: control.learnUrl,
         catalogStatus: control.status,
+        suggestedInsertQueries,
         status: 'prototype-missing',
         reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
-        notes,
+        notes: [...notes, ...buildPrototypeSuggestionNotes(prototypeSuggestions)],
+        ...(prototypeSuggestions.length > 0 ? { prototypeSuggestions } : {}),
         ...(latestInsertObservation ? { latestInsertObservation } : {}),
       } satisfies CanvasHarvestFixturePlanEntry;
     }
@@ -250,6 +274,7 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
         docPath: control.docPath,
         learnUrl: control.learnUrl,
         catalogStatus: control.status,
+        suggestedInsertQueries,
         status: 'registry-missing',
         reason: `Fixture prototype ${prototype.constructor} exists, but the pinned harvested registry does not expose a matching constructor alias yet.`,
         fixtureConstructor: prototype.constructor,
@@ -265,6 +290,7 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
       docPath: control.docPath,
       learnUrl: control.learnUrl,
       catalogStatus: control.status,
+      suggestedInsertQueries,
       status: 'resolved',
       reason: `Fixture prototype ${prototype.constructor} resolves to ${resolvedTemplate.templateName}@${resolvedTemplate.templateVersion}.`,
       fixtureConstructor: prototype.constructor,
@@ -302,6 +328,18 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
       : {}),
     controls,
   };
+}
+
+export function buildCanvasControlSearchTerms(entry: Pick<CanvasControlCatalogEntry, 'family' | 'name'>): string[] {
+  const key = makeCatalogKey(entry.family, entry.name);
+  const aliases = CONTROL_SEARCH_ALIASES[key] ?? [];
+  const terms = [entry.name, ...aliases];
+
+  if (entry.name.includes(' or ')) {
+    terms.push(...entry.name.split(/\s+or\s+/i).map((value) => value.trim()));
+  }
+
+  return dedupeSearchTerms(terms.filter((value) => value.length > 0));
 }
 
 export function renderCanvasHarvestFixture(options: RenderCanvasHarvestFixtureOptions): RenderedCanvasHarvestFixture {
@@ -421,6 +459,63 @@ export function renderCanvasHarvestFixture(options: RenderCanvasHarvestFixtureOp
 
 function buildCatalogNotes(control: CanvasControlCatalogEntry): string[] {
   return control.status.length > 0 ? [`Catalog status: ${control.status.join(', ')}.`] : [];
+}
+
+function buildPrototypeSuggestions(
+  registry: CanvasTemplateRegistryDocument,
+  control: Pick<CanvasControlCatalogEntry, 'family' | 'name'>
+): CanvasHarvestFixturePrototypeSuggestion[] {
+  interface ScoredPrototypeSuggestion extends CanvasHarvestFixturePrototypeSuggestion {
+    score: number;
+  }
+
+  const controlTokens = new Set(buildControlMatchTokens(control));
+  const suggestions: ScoredPrototypeSuggestion[] = [];
+
+  for (const template of registry.templates) {
+    const bestMatch = findBestTemplateMatch(template, controlTokens);
+    if (!bestMatch || !isTemplateCompatibleWithControlFamily(template, control.family)) {
+      continue;
+    }
+
+    suggestions.push({
+      matchType: bestMatch.matchType,
+      templateName: template.templateName,
+      templateVersion: template.templateVersion,
+      constructor: bestMatch.constructor,
+      score: bestMatch.score,
+    });
+  }
+
+  suggestions.sort((left, right) => {
+    return (
+      right.score - left.score ||
+      compareVersions(right.templateVersion, left.templateVersion) ||
+      (left.constructor ?? '').localeCompare(right.constructor ?? '') ||
+      left.templateName.localeCompare(right.templateName)
+    );
+  });
+
+  return suggestions.map(({ score: _score, ...suggestion }) => suggestion);
+}
+
+function buildControlMatchTokens(control: Pick<CanvasControlCatalogEntry, 'family' | 'name'>): string[] {
+  return [...new Set(buildCanvasControlSearchTerms(control).flatMap((term) => buildComparableTokens(term)))];
+}
+
+function buildPrototypeSuggestionNotes(suggestions: CanvasHarvestFixturePrototypeSuggestion[]): string[] {
+  if (suggestions.length === 0) {
+    return [];
+  }
+
+  const preview = suggestions.slice(0, 3).map((suggestion) => formatPrototypeSuggestion(suggestion));
+  const overflow = suggestions.length > preview.length ? ` (+${suggestions.length - preview.length} more)` : '';
+  return [`Pinned registry suggests future fixture prototypes: ${preview.join('; ')}${overflow}.`];
+}
+
+function formatPrototypeSuggestion(suggestion: CanvasHarvestFixturePrototypeSuggestion): string {
+  const target = suggestion.constructor ? `${suggestion.constructor} -> ` : '';
+  return `${target}${suggestion.templateName}@${suggestion.templateVersion}`;
 }
 
 function summarizeInsertReport(options: {
@@ -586,6 +681,47 @@ function resolveTemplateForConstructor(
   return [...matches].sort(compareTemplateRecords).at(0);
 }
 
+function findBestTemplateMatch(
+  template: CanvasTemplateRecord,
+  controlTokens: Set<string>
+): { matchType: CanvasTemplateMatchType; constructor?: string; score: number } | undefined {
+  const displayNameMatch = findTemplateAliasMatch(controlTokens, template.aliases?.displayNames, 'displayName', 90);
+  const yamlNameMatch = findTemplateAliasMatch(controlTokens, template.aliases?.yamlNames, 'yamlName', 90);
+  const constructorMatch = findTemplateAliasMatch(controlTokens, template.aliases?.constructors, 'constructor', 100);
+  const templateNameMatch = findTemplateAliasMatch(controlTokens, [template.templateName], 'templateName', 80);
+  const matches = [constructorMatch, displayNameMatch, yamlNameMatch, templateNameMatch].filter(
+    (
+      match
+    ): match is {
+      matchType: CanvasTemplateMatchType;
+      constructor?: string;
+      score: number;
+    } => Boolean(match)
+  );
+
+  return matches.sort((left, right) => right.score - left.score || (left.constructor ?? '').localeCompare(right.constructor ?? ''))[0];
+}
+
+function findTemplateAliasMatch(
+  controlTokens: Set<string>,
+  values: string[] | undefined,
+  matchType: CanvasTemplateMatchType,
+  baseScore: number
+): { matchType: CanvasTemplateMatchType; constructor?: string; score: number } | undefined {
+  for (const value of values ?? []) {
+    const tokens = buildComparableTokens(value);
+    if (tokens.some((token) => controlTokens.has(token))) {
+      return {
+        matchType,
+        constructor: matchType === 'constructor' ? value : undefined,
+        score: baseScore,
+      };
+    }
+  }
+
+  return undefined;
+}
+
 function compareTemplateRecords(left: CanvasTemplateRecord, right: CanvasTemplateRecord): number {
   return compareVersions(right.templateVersion, left.templateVersion) || left.templateName.localeCompare(right.templateName);
 }
@@ -626,6 +762,60 @@ function normalizeToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
+function buildComparableTokens(value: string): string[] {
+  const expanded = value.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  const rawTokens = expanded
+    .split(/[^A-Za-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+  const tokens = new Set<string>();
+  const combined = normalizeToken(expanded);
+
+  if (combined.length > 0) {
+    tokens.add(combined);
+    const familyStripped = stripKnownFamilyPrefix(combined);
+    if (familyStripped.length > 0) {
+      tokens.add(familyStripped);
+    }
+  }
+
+  for (const token of rawTokens) {
+    const normalized = normalizeToken(token);
+    if (normalized.length === 0) {
+      continue;
+    }
+
+    tokens.add(normalized);
+  }
+
+  return [...tokens];
+}
+
+function stripKnownFamilyPrefix(value: string): string {
+  if (value.startsWith('classic') && value.length > 'classic'.length) {
+    return value.slice('classic'.length);
+  }
+
+  if (value.startsWith('modern') && value.length > 'modern'.length) {
+    return value.slice('modern'.length);
+  }
+
+  return value;
+}
+
+function isTemplateCompatibleWithControlFamily(
+  template: CanvasTemplateRecord,
+  family: CanvasControlCatalogEntry['family']
+): boolean {
+  const likelyModern = [template.templateName]
+    .concat(template.aliases?.displayNames ?? [])
+    .concat(template.aliases?.yamlNames ?? [])
+    .concat(template.aliases?.constructors ?? [])
+    .some((value) => buildComparableTokens(value).includes('modern'));
+
+  return family === 'modern' ? likelyModern : !likelyModern;
+}
+
 function dedupeStrings(values: string[]): string[] {
   const seen = new Set<string>();
   const deduped: string[] = [];
@@ -636,6 +826,23 @@ function dedupeStrings(values: string[]): string[] {
     }
 
     seen.add(value);
+    deduped.push(value);
+  }
+
+  return deduped;
+}
+
+function dedupeSearchTerms(values: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const value of values) {
+    const normalized = value.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (normalized.length === 0 || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
     deduped.push(value);
   }
 
