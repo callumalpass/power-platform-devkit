@@ -2599,6 +2599,108 @@ describe('canvas harvest fixture planning', () => {
     });
   });
 
+  it('promotes drafts and refreshes the prototype draft queue from the updated pinned prototypes', () => {
+    const draftPlan = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:29:00.000Z',
+      controls: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+      ],
+    } as unknown as Parameters<typeof buildCanvasHarvestFixturePrototypeDraftDocument>[0]['plan'];
+    const builtDrafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan: draftPlan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:30:00.000Z',
+    });
+    const editedDrafts: CanvasHarvestFixturePrototypeDraftDocument = {
+      ...builtDrafts,
+      drafts: builtDrafts.drafts.map((entry) =>
+        entry.catalogName === 'Container'
+          ? {
+              ...entry,
+              variant: 'Horizontal',
+              properties: {
+                ...(entry.properties ?? {}),
+                Height: '=444',
+                ReviewOnly: '=true',
+              },
+              notes: [...(entry.notes ?? []), 'Manual review note for the container draft.'],
+            }
+          : entry
+      ),
+    };
+
+    const promoted = promoteCanvasHarvestFixturePrototypeDrafts({
+      drafts: editedDrafts,
+      registry,
+      prototypes,
+      promotions: [
+        {
+          family: 'classic',
+          catalogName: 'Button',
+        },
+      ],
+      generatedAt: '2026-03-10T00:31:00.000Z',
+      refreshDrafts: {
+        plan: draftPlan,
+        existingDrafts: editedDrafts,
+      },
+    });
+
+    expect(promoted.draftRefresh).toEqual(
+      expect.objectContaining({
+        preservedEntries: 1,
+        preservedVariantEntries: 1,
+        preservedPropertyKeys: 2,
+        preservedNotesEntries: 1,
+        preservedSkippedNotesEntries: 0,
+        drafts: expect.objectContaining({
+          schemaVersion: 1,
+          generatedAt: '2026-03-10T00:31:00.000Z',
+          sourcePlanGeneratedAt: '2026-03-10T00:29:00.000Z',
+          counts: {
+            draftControls: 1,
+            skippedControls: 1,
+          },
+          drafts: [
+            expect.objectContaining({
+              family: 'classic',
+              catalogName: 'Container',
+              constructor: 'GroupContainer',
+              variant: 'Horizontal',
+              properties: expect.objectContaining({
+                Height: '=444',
+                ReviewOnly: '=true',
+              }),
+              notes: expect.arrayContaining(['Manual review note for the container draft.']),
+            }),
+          ],
+          skipped: [
+            expect.objectContaining({
+              family: 'classic',
+              catalogName: 'Button',
+              reason: 'A pinned fixture prototype already exists for this control.',
+            }),
+          ],
+        }),
+      })
+    );
+  });
+
   it('records structured live validation metadata for an existing pinned prototype', () => {
     const recorded = recordCanvasHarvestFixturePrototypeValidation({
       prototypes,

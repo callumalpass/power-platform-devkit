@@ -244,6 +244,23 @@ export interface MergeCanvasHarvestFixturePrototypeDraftDocumentResult {
   preservedSkippedNotesEntries: number;
 }
 
+export interface RefreshCanvasHarvestPrototypeDraftArtifactsOptions {
+  plan: CanvasHarvestFixturePlan;
+  registry: CanvasTemplateRegistryDocument;
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  existingDrafts?: CanvasHarvestFixturePrototypeDraftDocument;
+  generatedAt?: string;
+}
+
+export interface RefreshedCanvasHarvestPrototypeDraftArtifacts {
+  drafts: CanvasHarvestFixturePrototypeDraftDocument;
+  preservedEntries: number;
+  preservedVariantEntries: number;
+  preservedPropertyKeys: number;
+  preservedNotesEntries: number;
+  preservedSkippedNotesEntries: number;
+}
+
 export interface CanvasHarvestFixturePrototypeValidationBacklogEntry {
   family: 'classic' | 'modern';
   catalogName: string;
@@ -473,6 +490,7 @@ export interface PromoteCanvasHarvestFixturePrototypeDraftsOptions {
   prototypes: CanvasHarvestFixturePrototypeDocument;
   promotions: CanvasHarvestFixturePrototypePromotion[];
   generatedAt?: string;
+  refreshDrafts?: Omit<RefreshCanvasHarvestPrototypeDraftArtifactsOptions, 'generatedAt' | 'registry' | 'prototypes'>;
   refresh?: Omit<RefreshCanvasHarvestPrototypeValidationArtifactsOptions, 'generatedAt' | 'prototypes'>;
 }
 
@@ -485,6 +503,7 @@ export interface PromotedCanvasHarvestFixturePrototypeDraftUpdate {
 export interface PromotedCanvasHarvestFixturePrototypeDraftsResult {
   updates: PromotedCanvasHarvestFixturePrototypeDraftUpdate[];
   prototypes: CanvasHarvestFixturePrototypeDocument;
+  draftRefresh?: RefreshedCanvasHarvestPrototypeDraftArtifacts;
   refresh?: RefreshedCanvasHarvestPrototypeValidationArtifacts;
 }
 
@@ -1184,6 +1203,29 @@ export function mergeCanvasHarvestFixturePrototypeDraftDocument(
     preservedNotesEntries,
     preservedSkippedNotesEntries,
   };
+}
+
+export function refreshCanvasHarvestPrototypeDraftArtifacts(
+  options: RefreshCanvasHarvestPrototypeDraftArtifactsOptions
+): RefreshedCanvasHarvestPrototypeDraftArtifacts {
+  const builtDrafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+    plan: options.plan,
+    registry: options.registry,
+    prototypes: options.prototypes,
+    generatedAt: options.generatedAt,
+  });
+  if (!options.existingDrafts) {
+    return {
+      drafts: builtDrafts,
+      preservedEntries: 0,
+      preservedVariantEntries: 0,
+      preservedPropertyKeys: 0,
+      preservedNotesEntries: 0,
+      preservedSkippedNotesEntries: 0,
+    };
+  }
+
+  return mergeCanvasHarvestFixturePrototypeDraftDocument(builtDrafts, options.existingDrafts);
 }
 
 export function buildCanvasHarvestFixturePrototypePromotionBatchDocument(
@@ -2162,6 +2204,16 @@ export function promoteCanvasHarvestFixturePrototypeDrafts(
   return {
     updates,
     prototypes: updatedPrototypeDocument,
+    ...(options.refreshDrafts
+      ? {
+          draftRefresh: refreshCanvasHarvestPrototypeDraftArtifacts({
+            ...options.refreshDrafts,
+            registry: options.registry,
+            prototypes: updatedPrototypeDocument,
+            generatedAt,
+          }),
+        }
+      : {}),
     ...(options.refresh
       ? {
           refresh: refreshCanvasHarvestPrototypeValidationArtifacts({

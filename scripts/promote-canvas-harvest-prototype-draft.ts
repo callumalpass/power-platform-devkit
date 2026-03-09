@@ -28,8 +28,10 @@ async function main(): Promise<void> {
   const generatedAt = new Date().toISOString();
   const dryRun = process.argv.includes('--dry-run');
   const refreshValidationFixture = process.argv.includes('--refresh-validation-fixture');
+  const refreshDrafts = process.argv.includes('--refresh-drafts');
   const batchPath = readArg('--batch');
   const planPath = resolve(readArg('--plan') ?? DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH);
+  const draftOutPath = resolve(readArg('--drafts-out') ?? draftPath);
   const backlogOutPath = resolve(readArg('--backlog-out') ?? DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BACKLOG_PATH);
   const yamlOutPath = resolve(readArg('--yaml-out') ?? DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_YAML_PATH);
   const selectionOutPath = resolve(
@@ -38,11 +40,12 @@ async function main(): Promise<void> {
   const nextFamily = readFamilyArg('--next-family');
   const nextStatuses = parseStatuses(readArg('--next-status'));
   const nextLimit = readPositiveIntegerArg('--next-limit');
+  const needsPlan = refreshValidationFixture || refreshDrafts;
   const [drafts, registry, prototypes, plan, batch] = await Promise.all([
     readJsonFile<CanvasHarvestFixturePrototypeDraftDocument>(draftPath),
     readJsonFile<CanvasTemplateRegistryDocument>(registryPath),
     readJsonFile<CanvasHarvestFixturePrototypeDocument>(prototypePath),
-    refreshValidationFixture ? readJsonFile<CanvasHarvestFixturePlan>(planPath) : Promise.resolve(undefined),
+    needsPlan ? readJsonFile<CanvasHarvestFixturePlan>(planPath) : Promise.resolve(undefined),
     batchPath ? readJsonFile<CanvasHarvestFixturePrototypePromotionBatchDocument>(resolve(batchPath)) : Promise.resolve(undefined),
   ]);
   const promotions = resolvePromotionRequests(batch);
@@ -52,6 +55,14 @@ async function main(): Promise<void> {
     prototypes,
     promotions,
     generatedAt,
+    ...(refreshDrafts && plan
+      ? {
+          refreshDrafts: {
+            plan,
+            existingDrafts: drafts,
+          },
+        }
+      : {}),
     ...(refreshValidationFixture && plan
       ? {
           refresh: {
@@ -82,12 +93,16 @@ async function main(): Promise<void> {
   if (!dryRun) {
     await Promise.all([
       mkdir(dirname(outPath), { recursive: true }),
+      promoted.draftRefresh ? mkdir(dirname(draftOutPath), { recursive: true }) : Promise.resolve(),
       promoted.refresh ? mkdir(dirname(backlogOutPath), { recursive: true }) : Promise.resolve(),
       promoted.refresh ? mkdir(dirname(yamlOutPath), { recursive: true }) : Promise.resolve(),
       promoted.refresh ? mkdir(dirname(selectionOutPath), { recursive: true }) : Promise.resolve(),
     ]);
     await Promise.all([
       writeJsonFile(outPath, promoted.prototypes as unknown as Parameters<typeof writeJsonFile>[1]),
+      promoted.draftRefresh
+        ? writeJsonFile(draftOutPath, promoted.draftRefresh.drafts as unknown as Parameters<typeof writeJsonFile>[1])
+        : Promise.resolve(),
       promoted.refresh
         ? writeJsonFile(backlogOutPath, promoted.refresh.backlog as unknown as Parameters<typeof writeJsonFile>[1])
         : Promise.resolve(),
@@ -109,6 +124,18 @@ async function main(): Promise<void> {
   for (const entry of promoted.updates) {
     process.stdout.write(
       `Promoted: ${labelControl(entry.promotion.family, entry.promotion.catalogName)} -> ${entry.promoted.constructor} (${entry.resolvedTemplate.templateName}@${entry.resolvedTemplate.templateVersion})\n`
+    );
+  }
+
+  if (promoted.draftRefresh) {
+    process.stdout.write(
+      `${dryRun ? 'Prototype draft output (not written)' : 'Prototype draft output'}: ${draftOutPath}\n`
+    );
+    process.stdout.write(
+      `Refreshed draft counts: drafts ${promoted.draftRefresh.drafts.counts.draftControls}; skipped ${promoted.draftRefresh.drafts.counts.skippedControls}\n`
+    );
+    process.stdout.write(
+      `Preserved draft edits: entries ${promoted.draftRefresh.preservedEntries}; variants ${promoted.draftRefresh.preservedVariantEntries}; property keys ${promoted.draftRefresh.preservedPropertyKeys}; draft notes ${promoted.draftRefresh.preservedNotesEntries}; skipped notes ${promoted.draftRefresh.preservedSkippedNotesEntries}\n`
     );
   }
 
