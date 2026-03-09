@@ -21,13 +21,38 @@ async function createTempDir(): Promise<string> {
   return path;
 }
 
-function normalizeFlowSnapshot<T>(value: T, tempDir: string): T {
-  return mapSnapshotStrings(value, (entry) =>
-    entry
-      .replaceAll(repoRoot, '<REPO_ROOT>')
-      .replaceAll(tempDir, '<TMP_DIR>')
-      .replaceAll('\\', '/')
-  );
+function normalizeFlowSnapshot<T>(value: T, ...tempPaths: string[]): T {
+  return mapSnapshotStrings(value, (entry) => {
+    let normalized = entry.replaceAll(repoRoot, '<REPO_ROOT>').replaceAll('\\', '/');
+
+    for (const tempPath of tempPaths) {
+      normalized = normalized.replaceAll(tempPath.replaceAll('\\', '/'), '<TMP_DIR>');
+    }
+
+    return normalized;
+  });
+}
+
+function snapshotFlowResult<T>(result: {
+  success: boolean;
+  data?: T;
+  diagnostics: unknown[];
+  warnings: unknown[];
+  supportTier: string;
+}): {
+  success: boolean;
+  data?: T;
+  diagnostics: unknown[];
+  warnings: unknown[];
+  supportTier: string;
+} {
+  return {
+    success: result.success,
+    data: result.data,
+    diagnostics: result.diagnostics,
+    warnings: result.warnings,
+    supportTier: result.supportTier,
+  };
 }
 
 interface FlowRuntimeFixture {
@@ -142,5 +167,17 @@ describe('flow fixture-backed goldens', () => {
     await expectGoldenJson(errors.data, 'fixtures/flow/golden/runtime/error-groups.json');
     await expectGoldenJson(connrefs.data, 'fixtures/flow/golden/runtime/connection-health.json');
     await expectGoldenJson(doctor.data, 'fixtures/flow/golden/runtime/doctor-report.json');
+  });
+
+  it('captures invalid flow validation diagnostics from committed fixtures', async () => {
+    const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow');
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+
+    await expectGoldenJson(snapshotFlowResult(validation), 'fixtures/flow/golden/semantic/validation-report.json', {
+      normalize: (value) => normalizeFlowSnapshot(value),
+    });
   });
 });

@@ -21,6 +21,8 @@ The committed fixtures currently cover:
   build snapshots
 - canvas semantic diagnostics for invalid formula properties, missing template metadata, partial template support, and invalid-build failure payloads
 - flow unpack, validate, patch, and normalize outputs
+- flow invalid-artifact validation diagnostics, including package-level
+  diagnostic envelopes and CLI validation exit behavior
 - flow remote inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures
 - project analysis context and markdown reporting
 - solution analysis and source-vs-target comparison outputs from committed Dataverse-like fixtures

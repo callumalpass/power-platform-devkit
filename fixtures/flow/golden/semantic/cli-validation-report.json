@@ -1,0 +1,22 @@
+{
+  "connectionReferences": [
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "connectionId": "/connections/office365",
+      "connectionReferenceLogicalName": "shared_office365",
+      "name": "shared_office365"
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "connectionId": "/connections/office365-alt",
+      "connectionReferenceLogicalName": "shared_office365_duplicate",
+      "name": "shared_office365"
+    }
+  ],
+  "environmentVariables": [],
+  "parameters": [
+    "ApiBaseUrl"
+  ],
+  "path": "<REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow",
+  "valid": false
+}

@@ -1,0 +1,47 @@
+{
+  "data": {
+    "connectionReferences": [
+      {
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+        "connectionId": "/connections/office365",
+        "connectionReferenceLogicalName": "shared_office365",
+        "name": "shared_office365"
+      },
+      {
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+        "connectionId": "/connections/office365-alt",
+        "connectionReferenceLogicalName": "shared_office365_duplicate",
+        "name": "shared_office365"
+      }
+    ],
+    "environmentVariables": [],
+    "parameters": [
+      "ApiBaseUrl"
+    ],
+    "path": "<REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow",
+    "valid": false
+  },
+  "diagnostics": [
+    {
+      "code": "FLOW_ARTIFACT_NAME_MISSING",
+      "level": "error",
+      "message": "Flow artifact <REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow does not define a name or displayName.",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_DEFINITION_MISSING",
+      "level": "error",
+      "message": "Flow artifact <REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow does not include a definition payload.",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_DUPLICATE",
+      "level": "error",
+      "message": "Flow artifact <REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow contains duplicate connection reference shared_office365.",
+      "source": "@pp/flow"
+    }
+  ],
+  "success": true,
+  "supportTier": "preview",
+  "warnings": []
+}

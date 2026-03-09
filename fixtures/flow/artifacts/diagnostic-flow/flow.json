@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "pp.flow.artifact",
+  "metadata": {
+    "id": "flow-diagnostic-1",
+    "connectionReferences": [
+      {
+        "name": "shared_office365",
+        "connectionReferenceLogicalName": "shared_office365",
+        "connectionId": "/connections/office365",
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365"
+      },
+      {
+        "name": "shared_office365",
+        "connectionReferenceLogicalName": "shared_office365_duplicate",
+        "connectionId": "/connections/office365-alt",
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365"
+      }
+    ],
+    "parameters": {
+      "ApiBaseUrl": "https://example.test"
+    }
+  },
+  "definition": {}
+}
