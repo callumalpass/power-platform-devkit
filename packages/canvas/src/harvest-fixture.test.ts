@@ -11,6 +11,8 @@ import {
   buildCanvasHarvestFixturePrototypeValidationBatchDocument,
   buildCanvasHarvestPrototypeValidationFixtureDocument,
   buildCanvasHarvestFixturePrototypeValidationBacklogDocument,
+  mergeCanvasHarvestFixturePrototypePromotionBatchDocument,
+  mergeCanvasHarvestFixturePrototypeValidationBatchDocument,
   promoteCanvasHarvestFixturePrototypeDraft,
   promoteCanvasHarvestFixturePrototypeDrafts,
   recordCanvasHarvestFixturePrototypeValidation,
@@ -24,8 +26,10 @@ import {
   DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH,
   type CanvasControlCatalogDocument,
   type CanvasControlInsertReportDocument,
+  type CanvasHarvestFixturePrototypePromotionBatchDocument,
   type CanvasHarvestFixturePrototypeDraftDocument,
   type CanvasHarvestFixturePrototypeDocument,
+  type CanvasHarvestFixturePrototypeValidationBatchDocument,
   type CanvasHarvestPrototypeValidationFixtureDocument,
 } from './harvest-fixture';
 
@@ -1171,6 +1175,151 @@ describe('canvas harvest fixture planning', () => {
     });
   });
 
+  it('merges an existing prototype promotion batch to preserve manual review notes', () => {
+    const drafts: CanvasHarvestFixturePrototypeDraftDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:15:00.000Z',
+      sourcePlanGeneratedAt: '2026-03-10T00:11:00.000Z',
+      counts: {
+        draftControls: 3,
+        skippedControls: 0,
+      },
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          constructor: 'GroupContainer',
+          suggestedInsertQueries: ['Container'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'GroupContainer',
+            templateName: 'groupContainer',
+            templateVersion: '1.5.0',
+          },
+        },
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          constructor: 'ModernButton',
+          suggestedInsertQueries: ['Button'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'ModernButton',
+            templateName: 'modernButton',
+            templateVersion: '1.0.0',
+          },
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text input',
+          constructor: 'ModernText',
+          suggestedInsertQueries: ['Text input'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'ModernText',
+            templateName: 'modernText',
+            templateVersion: '1.0.0',
+          },
+        },
+      ],
+      skipped: [],
+    };
+
+    const built = buildCanvasHarvestFixturePrototypePromotionBatchDocument({
+      drafts,
+      promotions: [
+        {
+          family: 'classic',
+          catalogName: 'Container',
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text input',
+        },
+      ],
+      generatedAt: '2026-03-10T00:16:00.000Z',
+      notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+      paths: {
+        drafts: '/tmp/pp-canvas/prototype-drafts.json',
+      },
+    });
+    const existing: CanvasHarvestFixturePrototypePromotionBatchDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:20:00.000Z',
+      sourceDraftGeneratedAt: '2026-03-10T00:15:00.000Z',
+      paths: {
+        drafts: '/tmp/pp-canvas/prototype-drafts.json',
+      },
+      entries: [
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          notes: [
+            'Manual review completed on 2026-03-10; live paste validation still pending.',
+            'Operator confirmed the container tranche is safe to promote after validation.',
+          ],
+          draft: {
+            constructor: 'GroupContainer',
+            matchType: 'constructor',
+            templateName: 'groupContainer',
+            templateVersion: '1.4.0',
+            propertyKeys: ['Height'],
+            suggestedInsertQueries: ['Container'],
+          },
+        },
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          notes: ['Stale entry from an older batch.'],
+          draft: {
+            constructor: 'ModernButton',
+            matchType: 'constructor',
+            templateName: 'modernButton',
+            templateVersion: '0.9.0',
+            propertyKeys: [],
+            suggestedInsertQueries: ['Button'],
+          },
+        },
+      ],
+    };
+
+    const merged = mergeCanvasHarvestFixturePrototypePromotionBatchDocument(built, existing);
+
+    expect(merged.preservedEntries).toBe(1);
+    expect(merged.preservedNotesEntries).toBe(1);
+    expect(merged.batch.entries).toEqual([
+      {
+        family: 'classic',
+        catalogName: 'Container',
+        notes: [
+          'Manual review completed on 2026-03-10; live paste validation still pending.',
+          'Operator confirmed the container tranche is safe to promote after validation.',
+        ],
+        draft: {
+          constructor: 'GroupContainer',
+          matchType: 'constructor',
+          templateName: 'groupContainer',
+          templateVersion: '1.5.0',
+          propertyKeys: [],
+          suggestedInsertQueries: ['Container'],
+        },
+      },
+      {
+        family: 'modern',
+        catalogName: 'Text input',
+        notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+        draft: {
+          constructor: 'ModernText',
+          matchType: 'constructor',
+          templateName: 'modernText',
+          templateVersion: '1.0.0',
+          propertyKeys: [],
+          suggestedInsertQueries: ['Text input'],
+        },
+      },
+    ]);
+  });
+
   it('resolves explicit prototype validation selectors against the rendered selection', () => {
     const selection: CanvasHarvestPrototypeValidationFixtureDocument = {
       schemaVersion: 1,
@@ -1503,6 +1652,153 @@ describe('canvas harvest fixture planning', () => {
         },
       ],
     });
+  });
+
+  it('merges an existing prototype validation batch to preserve recorded results and notes', () => {
+    const selection: CanvasHarvestPrototypeValidationFixtureDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:30:00.000Z',
+      sourceBacklogGeneratedAt: '2026-03-10T00:20:00.000Z',
+      sourcePrototypeGeneratedAt: '2026-03-10T00:10:00.000Z',
+      sourceRegistryGeneratedAt: '2026-03-09T08:30:00.000Z',
+      filters: {
+        statuses: ['failed', 'pending', 'unknown'],
+      },
+      counts: {
+        selectedControls: 2,
+        skippedControls: 0,
+        renderedControls: 2,
+        pendingMarkers: 0,
+      },
+      selectedControls: [
+        {
+          family: 'classic',
+          catalogName: 'Label',
+          constructor: 'Label',
+          validationStatus: 'failed',
+          planAlignment: 'aligned',
+          templateName: 'label',
+          templateVersion: '2.5.1',
+          suggestedInsertQueries: ['Label'],
+        },
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          constructor: 'ModernButton',
+          validationStatus: 'pending',
+          planAlignment: 'aligned',
+          templateName: 'modernButton',
+          templateVersion: '1.0.0',
+          suggestedInsertQueries: ['Button'],
+        },
+      ],
+      skippedControls: [],
+    };
+
+    const built = buildCanvasHarvestFixturePrototypeValidationBatchDocument({
+      selection,
+      updates: [
+        {
+          family: 'modern',
+          catalogName: 'Button',
+        },
+        {
+          family: 'classic',
+          catalogName: 'Label',
+        },
+      ],
+      generatedAt: '2026-03-10T00:32:00.000Z',
+      notes: ['Live Studio tranche recorded on 2026-03-10.'],
+      paths: {
+        selection: '/tmp/pp-canvas/prototype-validation-selection.json',
+      },
+    });
+    const existing: CanvasHarvestFixturePrototypeValidationBatchDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:40:00.000Z',
+      sourceSelectionGeneratedAt: '2026-03-10T00:30:00.000Z',
+      paths: {
+        selection: '/tmp/pp-canvas/prototype-validation-selection.json',
+      },
+      entries: [
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          status: 'validated',
+          recordedAt: '2026-03-10T00:38:00.000Z',
+          method: 'container-paste',
+          notes: [
+            'Live Studio tranche recorded on 2026-03-10.',
+            'Validation succeeded after a second paste attempt.',
+          ],
+          selection: {
+            status: 'pending',
+            constructor: 'ModernButton',
+            planAlignment: 'aligned',
+            templateName: 'modernButton',
+            templateVersion: '0.9.0',
+            suggestedInsertQueries: ['Button'],
+          },
+        },
+        {
+          family: 'modern',
+          catalogName: 'Text',
+          status: 'failed',
+          method: 'stale-entry',
+          selection: {
+            status: 'unknown',
+            constructor: 'ModernText',
+            planAlignment: 'aligned',
+            templateName: 'modernText',
+            templateVersion: '1.0.0',
+            suggestedInsertQueries: ['Text'],
+          },
+        },
+      ],
+    };
+
+    const merged = mergeCanvasHarvestFixturePrototypeValidationBatchDocument(built, existing);
+
+    expect(merged.preservedEntries).toBe(1);
+    expect(merged.preservedStatuses).toBe(1);
+    expect(merged.preservedRecordedAt).toBe(1);
+    expect(merged.preservedMethods).toBe(1);
+    expect(merged.preservedNotesEntries).toBe(1);
+    expect(merged.batch.entries).toEqual([
+      {
+        family: 'classic',
+        catalogName: 'Label',
+        status: 'failed',
+        notes: ['Live Studio tranche recorded on 2026-03-10.'],
+        selection: {
+          status: 'failed',
+          constructor: 'Label',
+          planAlignment: 'aligned',
+          templateName: 'label',
+          templateVersion: '2.5.1',
+          suggestedInsertQueries: ['Label'],
+        },
+      },
+      {
+        family: 'modern',
+        catalogName: 'Button',
+        status: 'validated',
+        recordedAt: '2026-03-10T00:38:00.000Z',
+        method: 'container-paste',
+        notes: [
+          'Live Studio tranche recorded on 2026-03-10.',
+          'Validation succeeded after a second paste attempt.',
+        ],
+        selection: {
+          status: 'pending',
+          constructor: 'ModernButton',
+          planAlignment: 'aligned',
+          templateName: 'modernButton',
+          templateVersion: '1.0.0',
+          suggestedInsertQueries: ['Button'],
+        },
+      },
+    ]);
   });
 
   it('requires an explicit recorded status when the selected control is still unknown', () => {

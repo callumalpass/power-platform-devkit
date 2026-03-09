@@ -415,6 +415,12 @@ export interface CanvasHarvestFixturePrototypePromotionBatchDocument {
   entries: CanvasHarvestFixturePrototypePromotionBatchEntry[];
 }
 
+export interface MergeCanvasHarvestFixturePrototypePromotionBatchDocumentResult {
+  batch: CanvasHarvestFixturePrototypePromotionBatchDocument;
+  preservedEntries: number;
+  preservedNotesEntries: number;
+}
+
 export type CanvasHarvestFixturePrototypePromotionBatchSelectionMode = 'all' | 'window' | 'explicit';
 
 export interface CanvasHarvestFixturePrototypePromotionBatchSelectionSummary {
@@ -489,6 +495,15 @@ export interface CanvasHarvestFixturePrototypeValidationBatchDocument {
   paths?: CanvasHarvestFixturePrototypeValidationBatchDocumentPaths;
   selection?: CanvasHarvestFixturePrototypeValidationBatchSelectionSummary;
   entries: CanvasHarvestFixturePrototypeValidationBatchEntry[];
+}
+
+export interface MergeCanvasHarvestFixturePrototypeValidationBatchDocumentResult {
+  batch: CanvasHarvestFixturePrototypeValidationBatchDocument;
+  preservedEntries: number;
+  preservedStatuses: number;
+  preservedRecordedAt: number;
+  preservedMethods: number;
+  preservedNotesEntries: number;
 }
 
 export type CanvasHarvestFixturePrototypeValidationBatchSelectionMode = 'all' | 'window' | 'explicit';
@@ -1163,6 +1178,48 @@ export function buildCanvasHarvestFixturePrototypePromotionBatchDocument(
   };
 }
 
+export function mergeCanvasHarvestFixturePrototypePromotionBatchDocument(
+  batch: CanvasHarvestFixturePrototypePromotionBatchDocument,
+  existing: CanvasHarvestFixturePrototypePromotionBatchDocument
+): MergeCanvasHarvestFixturePrototypePromotionBatchDocumentResult {
+  const existingByKey = new Map(
+    existing.entries.map((entry) => [makeCatalogKey(entry.family, entry.catalogName), entry] as const)
+  );
+  let preservedEntries = 0;
+  let preservedNotesEntries = 0;
+
+  const entries = batch.entries.map((entry) => {
+    const existingEntry = existingByKey.get(makeCatalogKey(entry.family, entry.catalogName));
+    if (!existingEntry) {
+      return entry;
+    }
+
+    const existingNotes = existingEntry.notes ?? [];
+    const batchNotes = entry.notes ?? [];
+    const preservedNotes = existingNotes.filter((note) => !batchNotes.includes(note));
+    const notes = dedupeStrings(batchNotes.concat(existingNotes));
+
+    if (preservedNotes.length > 0) {
+      preservedEntries += 1;
+      preservedNotesEntries += 1;
+    }
+
+    return {
+      ...entry,
+      ...(notes.length > 0 ? { notes } : {}),
+    };
+  });
+
+  return {
+    batch: {
+      ...batch,
+      entries,
+    },
+    preservedEntries,
+    preservedNotesEntries,
+  };
+}
+
 export function resolveCanvasHarvestFixturePrototypeDraftPromotion(
   drafts: CanvasHarvestFixturePrototypeDraftDocument,
   selector: string,
@@ -1694,6 +1751,82 @@ export function buildCanvasHarvestFixturePrototypeValidationBatchDocument(
         },
       })),
     };
+}
+
+export function mergeCanvasHarvestFixturePrototypeValidationBatchDocument(
+  batch: CanvasHarvestFixturePrototypeValidationBatchDocument,
+  existing: CanvasHarvestFixturePrototypeValidationBatchDocument
+): MergeCanvasHarvestFixturePrototypeValidationBatchDocumentResult {
+  const existingByKey = new Map(
+    existing.entries.map((entry) => [makeCatalogKey(entry.family, entry.catalogName), entry] as const)
+  );
+  let preservedEntries = 0;
+  let preservedStatuses = 0;
+  let preservedRecordedAt = 0;
+  let preservedMethods = 0;
+  let preservedNotesEntries = 0;
+
+  const entries = batch.entries.map((entry) => {
+    const existingEntry = existingByKey.get(makeCatalogKey(entry.family, entry.catalogName));
+    if (!existingEntry) {
+      return entry;
+    }
+
+    let changed = false;
+    let status = entry.status;
+    if (existingEntry.status !== entry.status) {
+      status = existingEntry.status;
+      preservedStatuses += 1;
+      changed = true;
+    }
+
+    let recordedAt = entry.recordedAt;
+    if (existingEntry.recordedAt && existingEntry.recordedAt !== entry.recordedAt) {
+      recordedAt = existingEntry.recordedAt;
+      preservedRecordedAt += 1;
+      changed = true;
+    }
+
+    let method = entry.method;
+    if (existingEntry.method && existingEntry.method !== entry.method) {
+      method = existingEntry.method;
+      preservedMethods += 1;
+      changed = true;
+    }
+
+    const batchNotes = entry.notes ?? [];
+    const existingNotes = existingEntry.notes ?? [];
+    const preservedNotes = existingNotes.filter((note) => !batchNotes.includes(note));
+    const notes = dedupeStrings(batchNotes.concat(existingNotes));
+    if (preservedNotes.length > 0) {
+      preservedNotesEntries += 1;
+      changed = true;
+    }
+
+    if (changed) {
+      preservedEntries += 1;
+    }
+
+    return {
+      ...entry,
+      status,
+      ...(recordedAt ? { recordedAt } : {}),
+      ...(method ? { method } : {}),
+      ...(notes.length > 0 ? { notes } : {}),
+    };
+  });
+
+  return {
+    batch: {
+      ...batch,
+      entries,
+    },
+    preservedEntries,
+    preservedStatuses,
+    preservedRecordedAt,
+    preservedMethods,
+    preservedNotesEntries,
+  };
 }
 
 export function refreshCanvasHarvestPrototypeValidationArtifacts(

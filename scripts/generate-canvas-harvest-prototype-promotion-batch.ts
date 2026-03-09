@@ -3,7 +3,9 @@ import { dirname, resolve } from 'node:path';
 import { readJsonFile, writeJsonFile } from '../packages/artifacts/src/index';
 import {
   buildCanvasHarvestFixturePrototypePromotionBatchDocument,
+  mergeCanvasHarvestFixturePrototypePromotionBatchDocument,
   resolveCanvasHarvestFixturePrototypeDraftPromotion,
+  type CanvasHarvestFixturePrototypePromotionBatchDocument,
   type CanvasHarvestFixturePrototypeDraftDocument,
 } from '../packages/canvas/src/harvest-fixture';
 
@@ -20,17 +22,23 @@ async function main(): Promise<void> {
   const limit = readPositiveIntegerArg('--limit');
   const defaultNotes = readArgs('--note');
   const names = readArgs('--name');
+  const mergeExistingPath = readArg('--merge-existing');
 
   if (names.length > 0 && (startAt || limit)) {
     throw new Error('Cannot combine explicit --name selectors with --start-at or --limit.');
   }
 
-  const drafts = await readJsonFile<CanvasHarvestFixturePrototypeDraftDocument>(draftPath);
+  const [drafts, existingBatch] = await Promise.all([
+    readJsonFile<CanvasHarvestFixturePrototypeDraftDocument>(draftPath),
+    mergeExistingPath
+      ? readJsonFile<CanvasHarvestFixturePrototypePromotionBatchDocument>(resolve(mergeExistingPath))
+      : Promise.resolve(undefined),
+  ]);
   const promotions =
     names.length > 0
       ? names.map((selector) => resolveCanvasHarvestFixturePrototypeDraftPromotion(drafts, selector, family))
       : undefined;
-  const batch = buildCanvasHarvestFixturePrototypePromotionBatchDocument({
+  const builtBatch = buildCanvasHarvestFixturePrototypePromotionBatchDocument({
     drafts,
     ...(names.length > 0 ? { promotions } : {}),
     ...(names.length === 0 && family ? { family } : {}),
@@ -42,12 +50,22 @@ async function main(): Promise<void> {
     },
     generatedAt,
   });
+  const merged = existingBatch
+    ? mergeCanvasHarvestFixturePrototypePromotionBatchDocument(builtBatch, existingBatch)
+    : undefined;
+  const batch = merged?.batch ?? builtBatch;
 
   await mkdir(dirname(outPath), { recursive: true });
   await writeJsonFile(outPath, batch as unknown as Parameters<typeof writeJsonFile>[1]);
 
   process.stdout.write(`Wrote prototype promotion batch: ${outPath}\n`);
   process.stdout.write(`Source drafts: ${draftPath}\n`);
+  if (mergeExistingPath) {
+    process.stdout.write(`Merged existing batch: ${resolve(mergeExistingPath)}\n`);
+    process.stdout.write(
+      `Preserved edits: entries ${merged?.preservedEntries ?? 0}; notes ${merged?.preservedNotesEntries ?? 0}\n`
+    );
+  }
   if (batch.selection) {
     process.stdout.write(
       `Selection: mode ${batch.selection.mode}; matching ${batch.selection.matchingDrafts}; selected ${batch.selection.selectedDrafts}; skipped ${batch.selection.skippedDrafts}\n`
