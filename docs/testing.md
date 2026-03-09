@@ -25,7 +25,7 @@ The committed fixtures currently cover:
 - project analysis context and markdown reporting
 - solution analysis and source-vs-target comparison outputs from committed Dataverse-like fixtures
 - CLI contract rendering for structured outputs, machine-friendly failures, warning streams, and mutation previews
-- CLI workflows that drive those same local fixture paths end to end
+- CLI workflows that drive those same local fixture paths end to end, including dry-run previews for supported canvas and flow mutation commands
 
 Run the focused lane:
 

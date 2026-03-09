@@ -1,0 +1,11 @@
+{
+  "action": "canvas.build",
+  "confirmed": false,
+  "mode": "dry-run",
+  "target": {
+    "mode": "strict",
+    "outPath": "<TMP_DIR>/FixtureCanvas.msapp",
+    "path": "<REPO_ROOT>/fixtures/canvas/apps/base-app"
+  },
+  "willMutate": false
+}

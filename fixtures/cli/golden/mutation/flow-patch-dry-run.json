@@ -1,0 +1,25 @@
+{
+  "action": "flow.patch",
+  "confirmed": false,
+  "input": {
+    "connectionReferences": {
+      "shared_office365": "shared_exchangeonline"
+    },
+    "expressions": {
+      "actions.ComposePayload.inputs.message": "@{parameters('ApiBaseUrl')}"
+    },
+    "parameters": {
+      "ApiBaseUrl": "https://api.contoso.example"
+    },
+    "values": {
+      "actions.ComposePayload.inputs.priority": "High"
+    }
+  },
+  "mode": "dry-run",
+  "target": {
+    "inputPath": "<TMP_DIR>/unpacked",
+    "outPath": "<TMP_DIR>/patched",
+    "patchFile": "<REPO_ROOT>/fixtures/flow/patches/invoice-flow.patch.json"
+  },
+  "willMutate": false
+}

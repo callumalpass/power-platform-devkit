@@ -52,6 +52,8 @@ Today this contract is wired through:
 
 - auth profile create/remove commands
 - environment add/remove commands
+- canvas build
+- flow unpack/normalize/patch
 - generic Dataverse requests when the method is not `GET`
 - Dataverse row create/update/delete
 - Dataverse metadata authoring commands

@@ -1,0 +1,10 @@
+{
+  "action": "flow.unpack",
+  "confirmed": false,
+  "mode": "dry-run",
+  "target": {
+    "inputPath": "<REPO_ROOT>/fixtures/flow/raw/invoice-flow.raw.json",
+    "outPath": "<TMP_DIR>/unpacked"
+  },
+  "willMutate": false
+}

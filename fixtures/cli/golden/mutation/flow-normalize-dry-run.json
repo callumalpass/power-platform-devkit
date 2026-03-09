@@ -1,0 +1,10 @@
+{
+  "action": "flow.normalize",
+  "confirmed": false,
+  "mode": "dry-run",
+  "target": {
+    "inputPath": "<TMP_DIR>/unpacked",
+    "outPath": "<TMP_DIR>/normalized"
+  },
+  "willMutate": false
+}
