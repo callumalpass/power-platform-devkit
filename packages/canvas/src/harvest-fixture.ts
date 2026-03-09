@@ -421,6 +421,7 @@ export interface CanvasHarvestFixturePrototypePromotionBatchEntryDraftContext {
 }
 
 export interface CanvasHarvestFixturePrototypePromotionBatchEntry extends CanvasHarvestFixturePrototypePromotion {
+  generatedNotes?: string[];
   draft?: CanvasHarvestFixturePrototypePromotionBatchEntryDraftContext;
 }
 
@@ -507,6 +508,7 @@ export interface CanvasHarvestFixturePrototypeValidationBatchEntrySelectionConte
 }
 
 export interface CanvasHarvestFixturePrototypeValidationBatchEntry extends CanvasHarvestFixturePrototypeValidationUpdate {
+  generatedNotes?: string[];
   selection?: CanvasHarvestFixturePrototypeValidationBatchEntrySelectionContext;
 }
 
@@ -1270,11 +1272,10 @@ export function buildCanvasHarvestFixturePrototypePromotionBatchDocument(
       entries: selectedDrafts.map((draft) => {
         const key = makeCatalogKey(draft.family, draft.catalogName);
         const requested = requestedByKey.get(key);
-        const notes = dedupeStrings(defaultNotes.concat(requested?.notes ?? []));
         return {
           family: draft.family,
           catalogName: draft.catalogName,
-          ...(notes.length > 0 ? { notes } : {}),
+          ...buildGeneratedBatchNoteFields(defaultNotes, requested?.notes ?? []),
           draft: {
             constructor: draft.constructor,
             matchType: draft.suggestion.matchType,
@@ -1336,7 +1337,7 @@ export function buildCanvasHarvestFixturePrototypePromotionBatchDocument(
     entries: selectedDrafts.map((draft) => ({
       family: draft.family,
       catalogName: draft.catalogName,
-      ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
+      ...buildGeneratedBatchNoteFields(defaultNotes),
       draft: {
         constructor: draft.constructor,
         matchType: draft.suggestion.matchType,
@@ -1375,10 +1376,9 @@ export function mergeCanvasHarvestFixturePrototypePromotionBatchDocument(
       return entry;
     }
 
-    const existingNotes = existingEntry.notes ?? [];
     const batchNotes = entry.notes ?? [];
-    const preservedNotes = existingNotes.filter((note) => !batchNotes.includes(note));
-    const notes = dedupeStrings(batchNotes.concat(existingNotes));
+    const preservedNotes = extractManualBatchEntryNotes(existingEntry).filter((note) => !batchNotes.includes(note));
+    const notes = dedupeStrings(batchNotes.concat(preservedNotes));
 
     if (preservedNotes.length > 0) {
       preservedEntries += 1;
@@ -1841,13 +1841,12 @@ export function buildCanvasHarvestFixturePrototypeValidationBatchDocument(
       entries: selectedControls.map((control) => {
         const key = makeCatalogKey(control.family, control.catalogName);
         const requested = requestedByKey.get(key);
-        const notes = dedupeStrings(defaultNotes.concat(requested?.notes ?? []));
         return {
           family: control.family,
           catalogName: control.catalogName,
           status: resolvePrototypeValidationBatchEntryStatus(control, requested?.status ?? options.status),
           ...(requested?.method ?? options.method ? { method: requested?.method ?? options.method } : {}),
-          ...(notes.length > 0 ? { notes } : {}),
+          ...buildGeneratedBatchNoteFields(defaultNotes, requested?.notes ?? []),
           selection: {
             status: control.validationStatus,
             constructor: control.constructor,
@@ -1911,7 +1910,7 @@ export function buildCanvasHarvestFixturePrototypeValidationBatchDocument(
         catalogName: control.catalogName,
         status: resolvePrototypeValidationBatchEntryStatus(control, options.status),
         ...(options.method ? { method: options.method } : {}),
-        ...(defaultNotes.length > 0 ? { notes: defaultNotes } : {}),
+        ...buildGeneratedBatchNoteFields(defaultNotes),
         selection: {
           status: control.validationStatus,
           constructor: control.constructor,
@@ -1976,9 +1975,8 @@ export function mergeCanvasHarvestFixturePrototypeValidationBatchDocument(
     }
 
     const batchNotes = entry.notes ?? [];
-    const existingNotes = existingEntry.notes ?? [];
-    const preservedNotes = existingNotes.filter((note) => !batchNotes.includes(note));
-    const notes = dedupeStrings(batchNotes.concat(existingNotes));
+    const preservedNotes = extractManualBatchEntryNotes(existingEntry).filter((note) => !batchNotes.includes(note));
+    const notes = dedupeStrings(batchNotes.concat(preservedNotes));
     if (preservedNotes.length > 0) {
       preservedNotesEntries += 1;
       changed = true;
@@ -3628,6 +3626,35 @@ function buildMissingPrototypeValidationSelectionControlError(options: {
   return new Error(
     `No selected prototype validation control exists for ${familyLabel(options.family)}/${options.catalogName}.${availabilityNote}`
   );
+}
+
+function buildGeneratedBatchNoteFields(
+  generatedNotes: string[],
+  entryNotes: string[] = []
+): {
+  notes?: string[];
+  generatedNotes?: string[];
+} {
+  const normalizedGeneratedNotes = dedupeStrings(generatedNotes);
+  const notes = dedupeStrings(normalizedGeneratedNotes.concat(entryNotes));
+
+  return {
+    ...(notes.length > 0 ? { notes } : {}),
+    ...(normalizedGeneratedNotes.length > 0 ? { generatedNotes: normalizedGeneratedNotes } : {}),
+  };
+}
+
+function extractManualBatchEntryNotes(entry: {
+  notes?: string[];
+  generatedNotes?: string[];
+}): string[] {
+  const notes = entry.notes ?? [];
+  const generatedNotes = dedupeStrings(entry.generatedNotes ?? []);
+  if (generatedNotes.length === 0) {
+    return notes;
+  }
+
+  return notes.filter((note) => !generatedNotes.includes(note));
 }
 
 function resolvePrototypeValidationBatchEntryStatus(

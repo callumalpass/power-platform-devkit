@@ -1407,6 +1407,7 @@ describe('canvas harvest fixture planning', () => {
           family: 'classic',
           catalogName: 'Container',
           notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+          generatedNotes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
           draft: {
             constructor: 'GroupContainer',
             matchType: 'constructor',
@@ -1533,6 +1534,7 @@ describe('canvas harvest fixture planning', () => {
           family: 'classic',
           catalogName: 'Container',
           notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+          generatedNotes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
           draft: {
             constructor: 'GroupContainer',
             matchType: 'constructor',
@@ -1549,6 +1551,7 @@ describe('canvas harvest fixture planning', () => {
             'Manual review completed on 2026-03-10; live paste validation still pending.',
             'Inserted successfully in the modern-reset subset run on 2026-03-09.',
           ],
+          generatedNotes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
           draft: {
             constructor: 'ModernText',
             matchType: 'constructor',
@@ -1642,9 +1645,10 @@ describe('canvas harvest fixture planning', () => {
           family: 'classic',
           catalogName: 'Container',
           notes: [
-            'Manual review completed on 2026-03-10; live paste validation still pending.',
+            'Manual review guidance from the prior draft snapshot.',
             'Operator confirmed the container tranche is safe to promote after validation.',
           ],
+          generatedNotes: ['Manual review guidance from the prior draft snapshot.'],
           draft: {
             constructor: 'GroupContainer',
             matchType: 'constructor',
@@ -1682,6 +1686,7 @@ describe('canvas harvest fixture planning', () => {
           'Manual review completed on 2026-03-10; live paste validation still pending.',
           'Operator confirmed the container tranche is safe to promote after validation.',
         ],
+        generatedNotes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
         draft: {
           constructor: 'GroupContainer',
           matchType: 'constructor',
@@ -1695,6 +1700,7 @@ describe('canvas harvest fixture planning', () => {
         family: 'modern',
         catalogName: 'Text input',
         notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+        generatedNotes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
         draft: {
           constructor: 'ModernText',
           matchType: 'constructor',
@@ -1882,6 +1888,7 @@ describe('canvas harvest fixture planning', () => {
           status: 'validated',
           method: 'container-paste',
           notes: ['Validated during the first modern prototype tranche on 2026-03-10.'],
+          generatedNotes: ['Validated during the first modern prototype tranche on 2026-03-10.'],
           selection: {
             status: 'pending',
             constructor: 'ModernButton',
@@ -2010,6 +2017,7 @@ describe('canvas harvest fixture planning', () => {
           status: 'failed',
           method: 'batch-review',
           notes: ['Live Studio tranche recorded on 2026-03-10.'],
+          generatedNotes: ['Live Studio tranche recorded on 2026-03-10.'],
           selection: {
             status: 'failed',
             constructor: 'Label',
@@ -2028,6 +2036,7 @@ describe('canvas harvest fixture planning', () => {
             'Live Studio tranche recorded on 2026-03-10.',
             'Validated via the backlog-driven modern fixture.',
           ],
+          generatedNotes: ['Live Studio tranche recorded on 2026-03-10.'],
           selection: {
             status: 'validated',
             constructor: 'ModernText',
@@ -2115,9 +2124,10 @@ describe('canvas harvest fixture planning', () => {
           recordedAt: '2026-03-10T00:38:00.000Z',
           method: 'container-paste',
           notes: [
-            'Live Studio tranche recorded on 2026-03-10.',
+            'Validation guidance from the prior selection snapshot.',
             'Validation succeeded after a second paste attempt.',
           ],
+          generatedNotes: ['Validation guidance from the prior selection snapshot.'],
           selection: {
             status: 'pending',
             constructor: 'ModernButton',
@@ -2157,6 +2167,7 @@ describe('canvas harvest fixture planning', () => {
         catalogName: 'Label',
         status: 'failed',
         notes: ['Live Studio tranche recorded on 2026-03-10.'],
+        generatedNotes: ['Live Studio tranche recorded on 2026-03-10.'],
         selection: {
           status: 'failed',
           constructor: 'Label',
@@ -2176,6 +2187,7 @@ describe('canvas harvest fixture planning', () => {
           'Live Studio tranche recorded on 2026-03-10.',
           'Validation succeeded after a second paste attempt.',
         ],
+        generatedNotes: ['Live Studio tranche recorded on 2026-03-10.'],
         selection: {
           status: 'pending',
           constructor: 'ModernButton',

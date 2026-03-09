@@ -3,6 +3,9 @@
     {
       "catalogName": "Button",
       "family": "classic",
+      "generatedNotes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
@@ -42,6 +45,9 @@
     {
       "catalogName": "Date picker",
       "family": "classic",
+      "generatedNotes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
@@ -77,6 +83,9 @@
     {
       "catalogName": "Icon",
       "family": "classic",
+      "generatedNotes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
@@ -103,6 +112,9 @@
     {
       "catalogName": "Image",
       "family": "classic",
+      "generatedNotes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
@@ -129,6 +141,9 @@
     {
       "catalogName": "Label",
       "family": "classic",
+      "generatedNotes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
@@ -169,6 +184,9 @@
     {
       "catalogName": "Info button",
       "family": "modern",
+      "generatedNotes": [
+        "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
+      ],
       "notes": [
         "Generated from the pending validation fixture selection on 2026-03-10; edit statuses, method, and notes after the next live Studio pass before feeding this batch into record-canvas-harvest-prototype-validation.ts."
       ],
@@ -204,7 +222,7 @@
       "status": "pending"
     }
   ],
-  "generatedAt": "2026-03-09T16:57:41.513Z",
+  "generatedAt": "2026-03-09T17:48:17.758Z",
   "paths": {
     "selection": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-validation/fixture-selection.json"
   },
