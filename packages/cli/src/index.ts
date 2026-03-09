@@ -3,6 +3,7 @@
 import { readFile } from 'node:fs/promises';
 import { renderMarkdownReport, generateContextPack } from '@pp/analysis';
 import { AuthService, summarizeBrowserProfile, summarizeProfile, type AuthProfile, type BrowserProfile, type UserAuthProfile } from '@pp/auth';
+import { CanvasService, type CanvasBuildMode } from '@pp/canvas';
 import {
   createMutationPreview,
   readMutationFlags,
@@ -100,6 +101,10 @@ async function main(argv: string[]): Promise<number> {
 
   if (group === 'envvar') {
     return runEnvironmentVariable(command, rest);
+  }
+
+  if (group === 'canvas') {
+    return runCanvas(command, rest);
   }
 
   switch (`${group} ${command ?? ''}`.trim()) {
@@ -261,6 +266,22 @@ async function runEnvironmentVariable(command: string | undefined, args: string[
       return runEnvironmentVariableInspect(args);
     case 'set':
       return runEnvironmentVariableSet(args);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runCanvas(command: string | undefined, args: string[]): Promise<number> {
+  switch (command) {
+    case 'validate':
+      return runCanvasValidate(args);
+    case 'inspect':
+      return runCanvasInspect(args);
+    case 'build':
+      return runCanvasBuild(args);
+    case 'diff':
+      return runCanvasDiff(args);
     default:
       printHelp();
       return 1;
@@ -2091,6 +2112,111 @@ async function runEnvironmentVariableSet(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runCanvasValidate(args: string[]): Promise<number> {
+  const canvasPath = positionalArgs(args)[0];
+
+  if (!canvasPath) {
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas validate <path> [--mode strict|seeded|registry]'));
+  }
+
+  const context = await resolveCanvasCliContext(args);
+
+  if (!context.success || !context.data) {
+    return printFailure(context);
+  }
+
+  const result = await new CanvasService().validate(canvasPath, context.data.options);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return result.data.valid ? 0 : 1;
+}
+
+async function runCanvasInspect(args: string[]): Promise<number> {
+  const canvasPath = positionalArgs(args)[0];
+
+  if (!canvasPath) {
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas inspect <path> [--mode strict|seeded|registry]'));
+  }
+
+  const context = await resolveCanvasCliContext(args);
+
+  if (!context.success || !context.data) {
+    return printFailure(context);
+  }
+
+  const result = await new CanvasService().inspect(canvasPath, context.data.options);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasBuild(args: string[]): Promise<number> {
+  const canvasPath = positionalArgs(args)[0];
+
+  if (!canvasPath) {
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas build <path> [--out FILE] [--mode strict|seeded|registry]'));
+  }
+
+  const context = await resolveCanvasCliContext(args);
+
+  if (!context.success || !context.data) {
+    return printFailure(context);
+  }
+
+  const outPath = readFlag(args, '--out');
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'canvas.build',
+    {
+      path: canvasPath,
+      mode: context.data.options.mode,
+      outPath: outPath ?? 'auto',
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new CanvasService().build(canvasPath, {
+    ...context.data.options,
+    outPath,
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasDiff(args: string[]): Promise<number> {
+  const [leftPath, rightPath] = positionalArgs(args);
+
+  if (!leftPath || !rightPath) {
+    return printFailure(argumentFailure('CANVAS_DIFF_ARGS_REQUIRED', 'Usage: canvas diff <leftPath> <rightPath>'));
+  }
+
+  const result = await new CanvasService().diff(leftPath, rightPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 function buildPublicClientProfile(
   baseProfile: UserAuthProfile,
   args: string[]
@@ -2159,6 +2285,75 @@ async function resolveDataverseClientByFlag(args: string[], flag: string) {
   }
 
   return resolveDataverseClient(environmentAlias, readConfigOptions(args));
+}
+
+async function resolveCanvasCliContext(args: string[]) {
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return discoveryOptions as unknown as OperationResult<{
+      options: {
+        root: string;
+        registries: string[];
+        cacheDir?: string;
+        mode: CanvasBuildMode;
+      };
+    }>;
+  }
+
+  const projectPath = readFlag(args, '--project') ?? process.cwd();
+  const project = await discoverProject(projectPath, discoveryOptions.data);
+
+  if (!project.success || !project.data) {
+    return project as unknown as OperationResult<{
+      options: {
+        root: string;
+        registries: string[];
+        cacheDir?: string;
+        mode: CanvasBuildMode;
+      };
+    }>;
+  }
+
+  const mode = readCanvasBuildMode(readFlag(args, '--mode') ?? readProjectCanvasBuildMode(project.data.build) ?? 'strict');
+
+  if (!mode) {
+    return argumentFailure('CANVAS_MODE_INVALID', 'Use --mode strict, seeded, or registry.');
+  }
+
+  const registries = readRepeatedFlags(args, '--registry');
+
+  return ok(
+    {
+      options: {
+        root: project.data.root,
+        registries: registries.length > 0 ? registries : project.data.templateRegistries,
+        cacheDir: readFlag(args, '--cache-dir'),
+        mode,
+      },
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: project.diagnostics,
+      warnings: project.warnings,
+    }
+  );
+}
+
+function readCanvasBuildMode(value: string | undefined): CanvasBuildMode | undefined {
+  return value === 'strict' || value === 'seeded' || value === 'registry' ? value : undefined;
+}
+
+function readProjectCanvasBuildMode(build: Record<string, unknown>): string | undefined {
+  const canvas = build.canvas;
+
+  if (typeof canvas !== 'object' || canvas === null || Array.isArray(canvas)) {
+    return undefined;
+  }
+
+  return typeof (canvas as Record<string, unknown>).mode === 'string'
+    ? ((canvas as Record<string, unknown>).mode as string)
+    : undefined;
 }
 
 function printByFormat(value: unknown, format: OutputFormat): void {
@@ -2619,6 +2814,10 @@ function printHelp(): void {
       '  envvar list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar inspect <schemaName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar set <schemaName|displayName|id> --env ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas validate <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas inspect <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas build <path> [--project path] [--out FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas diff <leftPath> <rightPath> [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',

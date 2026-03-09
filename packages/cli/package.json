@@ -26,6 +26,7 @@
     "@pp/analysis": "workspace:*",
     "@pp/auth": "workspace:*",
     "@pp/artifacts": "workspace:*",
+    "@pp/canvas": "workspace:*",
     "@pp/config": "workspace:*",
     "@pp/dataverse": "workspace:*",
     "@pp/deploy": "workspace:*",

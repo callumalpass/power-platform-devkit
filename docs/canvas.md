@@ -1,8 +1,14 @@
 # Canvas registries
 
 Canvas support starts with pinned template metadata. The current `@pp/canvas`
-surface defines the registry document, provenance model, support-matrix rules,
-and deterministic path resolution that later build commands consume.
+surface now includes:
+
+- template registry documents and support-matrix resolution
+- normalized source loading from a declared JSON source tree
+- `canvas validate`
+- `canvas inspect`
+- deterministic `canvas build`
+- structured `canvas diff`
 
 ## Why the registry exists
 
@@ -114,6 +120,80 @@ Current resolution rules are deterministic:
 - `strict`: seeded registries are checked first, then pinned registries, and
   missing metadata remains a hard failure
 
+## Supported source tree
+
+The first supported source slice is intentionally explicit and narrow:
+
+```text
+apps/MyCanvas/
+  canvas.json
+  seed.templates.json          # optional
+  screens/
+    Home.json
+    Settings.json
+```
+
+`canvas.json` declares app identity and screen file references:
+
+```json
+{
+  "name": "MyCanvas",
+  "version": "1.0.0",
+  "screens": [
+    {
+      "name": "Home",
+      "file": "screens/Home.json"
+    }
+  ]
+}
+```
+
+Each screen file contains normalized control definitions:
+
+```json
+{
+  "name": "Home",
+  "controls": [
+    {
+      "name": "SaveButton",
+      "templateName": "Button",
+      "templateVersion": "1.0.0",
+      "properties": {
+        "TextFormula": "\"Save\""
+      }
+    }
+  ]
+}
+```
+
+Current validation rules focus on the supported slice:
+
+- manifest must exist and declare at least one screen
+- each control must declare `name`, `templateName`, and `templateVersion`
+- template metadata must resolve in the selected build mode
+- `*Formula` properties must be strings
+
+## CLI commands
+
+```bash
+pp canvas validate ./apps/MyCanvas --project .
+pp canvas inspect ./apps/MyCanvas --project . --mode strict
+pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp
+pp canvas diff ./apps/MyCanvas ./apps/MyCanvas-next
+```
+
+Useful flags:
+
+- `--project` to resolve `templateRegistries` from `pp.config.*`
+- repeated `--registry FILE` to override project registries
+- `--mode strict|seeded|registry`
+- `--cache-dir` for `cache:NAME` registry references
+- `--out` for build output
+
+`canvas build` writes a deterministic JSON package payload to the requested
+`.msapp` path for the supported slice. That keeps fixture tests and diffs
+stable while the broader packaging surface matures.
+
 ## Project config wiring
 
 Project config still uses `templateRegistries`:
@@ -134,5 +214,7 @@ Rules:
 
 ## Current boundary
 
-This tranche establishes the registry contract and support evaluation helpers.
-The canvas validate/build/inspect/diff commands land in the next backlog item.
+This is still a deliberately narrow support matrix rather than a general canvas
+compiler. The implemented workflow is real, but it only claims support for the
+declared normalized source shape and the pinned control/template versions that
+the registry marks as supported.

@@ -1,14 +1,19 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  buildCanvasApp,
+  diffCanvasApps,
   importCanvasTemplateRegistry,
+  inspectCanvasApp,
+  loadCanvasSource,
   loadCanvasTemplateRegistryBundle,
   resolveCanvasSupport,
   resolveCanvasTemplate,
   resolveCanvasTemplateRegistryPaths,
   resolveCanvasTemplateRequirements,
+  validateCanvasApp,
   type CanvasRegistryBundle,
 } from './index';
 
@@ -24,6 +29,61 @@ async function createTempDir(): Promise<string> {
   const path = await mkdtemp(join(tmpdir(), 'pp-canvas-'));
   tempDirs.push(path);
   return path;
+}
+
+async function writeCanvasApp(
+  root: string,
+  definition: {
+    name: string;
+    version?: string;
+    screens: Array<{
+      name: string;
+      file: string;
+      controls: Array<Record<string, unknown>>;
+    }>;
+    seededTemplates?: Record<string, unknown>;
+  }
+): Promise<string> {
+  const appPath = join(root, definition.name);
+  await mkdir(join(appPath, 'screens'), { recursive: true });
+
+  await writeFile(
+    join(appPath, 'canvas.json'),
+    JSON.stringify(
+      {
+        name: definition.name,
+        version: definition.version,
+        screens: definition.screens.map((screen) => ({
+          name: screen.name,
+          file: screen.file,
+        })),
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+
+  for (const screen of definition.screens) {
+    await writeFile(
+      join(appPath, screen.file),
+      JSON.stringify(
+        {
+          name: screen.name,
+          controls: screen.controls,
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+  }
+
+  if (definition.seededTemplates) {
+    await writeFile(join(appPath, 'seed.templates.json'), JSON.stringify(definition.seededTemplates, null, 2), 'utf8');
+  }
+
+  return appPath;
 }
 
 describe('canvas template registries', () => {
@@ -288,5 +348,299 @@ describe('canvas template registries', () => {
       '/repo/registries/base.json',
       '/cache/canvas/seeded-controls.json',
     ]);
+  });
+});
+
+describe('canvas app workflows', () => {
+  it('loads, validates, and inspects a supported canvas source tree', async () => {
+    const dir = await createTempDir();
+    const registryPath = join(dir, 'controls.json');
+
+    await writeFile(
+      registryPath,
+      JSON.stringify(
+        {
+          templates: [
+            {
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              provenance: {
+                source: 'catalog',
+              },
+            },
+            {
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              provenance: {
+                source: 'catalog',
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Button',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict', 'registry'],
+            },
+            {
+              templateName: 'Label',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict', 'registry'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const appPath = await writeCanvasApp(dir, {
+      name: 'SalesCanvas',
+      version: '1.0.0',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'SaveButton',
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              properties: {
+                TextFormula: "\"Save\"",
+              },
+            },
+            {
+              name: 'SummaryLabel',
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              properties: {
+                Text: 'Ready',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const source = await loadCanvasSource(appPath);
+    const validation = await validateCanvasApp(appPath, {
+      root: dir,
+      registries: ['./controls.json'],
+      mode: 'strict',
+    });
+    const inspect = await inspectCanvasApp(appPath, {
+      root: dir,
+      registries: ['./controls.json'],
+      mode: 'strict',
+    });
+
+    expect(source.success).toBe(true);
+    expect(source.data?.controls).toHaveLength(2);
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(true);
+    expect(validation.data?.templateRequirements.supported).toBe(true);
+    expect(inspect.success).toBe(true);
+    expect(inspect.data?.controls.map((control) => control.path)).toEqual([
+      'Home/SaveButton',
+      'Home/SummaryLabel',
+    ]);
+    expect(inspect.data?.registries).toHaveLength(1);
+  });
+
+  it('reports invalid formula surfaces during validation', async () => {
+    const dir = await createTempDir();
+    const registryPath = join(dir, 'controls.json');
+
+    await writeFile(
+      registryPath,
+      JSON.stringify(
+        {
+          templates: [
+            {
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              provenance: {
+                source: 'catalog',
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Button',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const appPath = await writeCanvasApp(dir, {
+      name: 'BrokenCanvas',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'BadButton',
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              properties: {
+                TextFormula: 42,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const validation = await validateCanvasApp(appPath, {
+      root: dir,
+      registries: ['./controls.json'],
+      mode: 'strict',
+    });
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.data?.formulas).toEqual([
+      {
+        controlPath: 'Home/BadButton',
+        property: 'TextFormula',
+        valid: false,
+      },
+    ]);
+  });
+
+  it('builds a deterministic package and diffs canvas source trees', async () => {
+    const dir = await createTempDir();
+    const registryPath = join(dir, 'controls.json');
+
+    await writeFile(
+      registryPath,
+      JSON.stringify(
+        {
+          templates: [
+            {
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              provenance: {
+                source: 'catalog',
+              },
+            },
+            {
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              provenance: {
+                source: 'catalog',
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Button',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict', 'registry'],
+            },
+            {
+              templateName: 'Label',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict', 'registry'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const firstApp = await writeCanvasApp(dir, {
+      name: 'CanvasOne',
+      version: '1.0.0',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'SaveButton',
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              properties: {
+                TextFormula: "\"Save\"",
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const secondApp = await writeCanvasApp(dir, {
+      name: 'CanvasTwo',
+      version: '2.0.0',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'SaveButton',
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              properties: {
+                TextFormula: "\"Submit\"",
+              },
+            },
+            {
+              name: 'StatusLabel',
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              properties: {
+                Text: 'New',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const build = await buildCanvasApp(firstApp, {
+      root: dir,
+      registries: ['./controls.json'],
+      mode: 'strict',
+      outPath: join(dir, 'dist', 'CanvasOne.msapp'),
+    });
+    const diff = await diffCanvasApps(firstApp, secondApp);
+
+    expect(build.success).toBe(true);
+    expect(build.data?.outPath).toBe(join(dir, 'dist', 'CanvasOne.msapp'));
+    expect(build.data?.packageHash).toMatch(/[a-f0-9]{64}/);
+
+    const packageDocument = JSON.parse(await readFile(join(dir, 'dist', 'CanvasOne.msapp'), 'utf8')) as {
+      kind: string;
+      templates: Array<{ templateName: string }>;
+    };
+    expect(packageDocument.kind).toBe('pp.canvas.package');
+    expect(packageDocument.templates).toHaveLength(1);
+
+    expect(diff.success).toBe(true);
+    expect(diff.data?.appChanged).toBe(true);
+    expect(diff.data?.controls).toEqual([
+      {
+        controlPath: 'Home/StatusLabel',
+        kind: 'added',
+      },
+    ]);
+    expect(diff.data?.templateChanges.added).toEqual(['Label@1.0.0']);
   });
 });

@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
 import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type OperationResult, type ProvenanceClass } from '@pp/diagnostics';
 
@@ -109,6 +109,124 @@ export interface CanvasBuildSummary {
   registries: CanvasRegistrySourceSummary[];
 }
 
+export interface CanvasManifest {
+  name: string;
+  displayName?: string;
+  version?: string;
+  screens: CanvasScreenReference[];
+}
+
+export interface CanvasScreenReference {
+  name: string;
+  file: string;
+}
+
+export interface CanvasControlDefinition {
+  name: string;
+  templateName: string;
+  templateVersion: string;
+  properties: Record<string, CanvasJsonValue>;
+  children: CanvasControlDefinition[];
+}
+
+export interface CanvasScreenDefinition {
+  name: string;
+  file: string;
+  controls: CanvasControlDefinition[];
+}
+
+export interface CanvasControlSummary {
+  path: string;
+  screen: string;
+  templateName: string;
+  templateVersion: string;
+  propertyCount: number;
+  childCount: number;
+}
+
+export interface CanvasFormulaCheck {
+  controlPath: string;
+  property: string;
+  valid: boolean;
+}
+
+export interface CanvasTemplateUsageIssue {
+  controlPath: string;
+  templateName: string;
+  templateVersion: string;
+  status: CanvasSupportStatus;
+  modes: CanvasBuildMode[];
+}
+
+export interface CanvasSourceModel {
+  root: string;
+  manifestPath: string;
+  manifest: CanvasManifest;
+  screens: CanvasScreenDefinition[];
+  controls: CanvasControlSummary[];
+  templateRequirements: CanvasTemplateLookup[];
+  sourceHash: string;
+  seedRegistryPath?: string;
+}
+
+export interface CanvasValidationReport {
+  valid: boolean;
+  mode: CanvasBuildMode;
+  source: {
+    root: string;
+    manifestPath: string;
+    name: string;
+    displayName?: string;
+    version?: string;
+    screenCount: number;
+    controlCount: number;
+    sourceHash: string;
+    seedRegistryPath?: string;
+  };
+  templateRequirements: CanvasTemplateRequirementResolution;
+  unresolvedTemplates: CanvasTemplateUsageIssue[];
+  unsupportedTemplates: CanvasTemplateUsageIssue[];
+  formulas: CanvasFormulaCheck[];
+  registries: CanvasRegistrySourceSummary[];
+}
+
+export interface CanvasInspectReport extends CanvasValidationReport {
+  screens: Array<{
+    name: string;
+    file: string;
+    controlCount: number;
+  }>;
+  controls: CanvasControlSummary[];
+}
+
+export interface CanvasBuildResult {
+  outPath: string;
+  mode: CanvasBuildMode;
+  sourceHash: string;
+  templateHash: string;
+  packageHash: string;
+  supported: boolean;
+}
+
+export interface CanvasControlDiff {
+  controlPath: string;
+  kind: 'added' | 'removed' | 'changed';
+  changedProperties?: string[];
+}
+
+export interface CanvasDiffResult {
+  left: string;
+  right: string;
+  appChanged: boolean;
+  screensAdded: string[];
+  screensRemoved: string[];
+  controls: CanvasControlDiff[];
+  templateChanges: {
+    added: string[];
+    removed: string[];
+  };
+}
+
 interface CanvasTemplateCandidate {
   template: CanvasTemplateRecord;
   matchedBy: CanvasTemplateMatchType;
@@ -120,6 +238,18 @@ interface LoadedRegistryDocument {
   document: CanvasTemplateRegistryDocument;
 }
 
+interface CanvasComparable {
+  source: CanvasSourceModel;
+  packageKind: 'source';
+}
+
+interface PreparedCanvasValidation {
+  source: CanvasSourceModel;
+  report: CanvasValidationReport;
+  diagnostics: Diagnostic[];
+  warnings: Diagnostic[];
+}
+
 const DEFAULT_SUPPORTED_MODES: CanvasBuildMode[] = ['strict', 'seeded', 'registry'];
 
 export class CanvasService {
@@ -128,26 +258,31 @@ export class CanvasService {
     options: CanvasRegistryLoadOptions & {
       mode?: CanvasBuildMode;
     } = {}
-  ): Promise<OperationResult<CanvasBuildSummary>> {
-    const registries = await loadCanvasTemplateRegistryBundle(options);
+  ): Promise<OperationResult<CanvasInspectReport>> {
+    return inspectCanvasApp(path, options);
+  }
 
-    if (!registries.success || !registries.data) {
-      return registries as unknown as OperationResult<CanvasBuildSummary>;
-    }
+  async validate(
+    path: string,
+    options: CanvasRegistryLoadOptions & {
+      mode?: CanvasBuildMode;
+    } = {}
+  ): Promise<OperationResult<CanvasValidationReport>> {
+    return validateCanvasApp(path, options);
+  }
 
-    return ok(
-      {
-        path,
-        mode: options.mode ?? 'strict',
-        supported: registries.data.templates.length > 0,
-        registries: registries.data.sources,
-      },
-      {
-        supportTier: 'preview',
-        diagnostics: registries.diagnostics,
-        warnings: registries.warnings,
-      }
-    );
+  async build(
+    path: string,
+    options: CanvasRegistryLoadOptions & {
+      mode?: CanvasBuildMode;
+      outPath?: string;
+    } = {}
+  ): Promise<OperationResult<CanvasBuildResult>> {
+    return buildCanvasApp(path, options);
+  }
+
+  async diff(leftPath: string, rightPath: string): Promise<OperationResult<CanvasDiffResult>> {
+    return diffCanvasApps(leftPath, rightPath);
   }
 
   async loadRegistries(options: CanvasRegistryLoadOptions = {}): Promise<OperationResult<CanvasRegistryBundle>> {
@@ -243,8 +378,13 @@ export async function loadCanvasTemplateRegistryBundle(
 export async function importCanvasTemplateRegistry(
   request: CanvasRegistryImportRequest
 ): Promise<OperationResult<CanvasTemplateRegistryDocument>> {
-  const document = await readJsonFile<unknown>(request.sourcePath);
-  const normalized = normalizeCanvasTemplateRegistry(document, request.sourcePath, request.provenance);
+  const document = await readCanvasJsonFile(request.sourcePath);
+
+  if (!document.success || document.data === undefined) {
+    return document as unknown as OperationResult<CanvasTemplateRegistryDocument>;
+  }
+
+  const normalized = normalizeCanvasTemplateRegistry(document.data, request.sourcePath, request.provenance);
 
   if (!normalized.success || !normalized.data) {
     return normalized;
@@ -255,6 +395,300 @@ export async function importCanvasTemplateRegistry(
   }
 
   return normalized;
+}
+
+export async function inspectCanvasApp(
+  path: string,
+  options: CanvasRegistryLoadOptions & {
+    mode?: CanvasBuildMode;
+  } = {}
+): Promise<OperationResult<CanvasInspectReport>> {
+  const prepared = await prepareCanvasValidation(path, options);
+
+  if (!prepared.success || !prepared.data) {
+    return prepared as unknown as OperationResult<CanvasInspectReport>;
+  }
+
+  return ok(
+    {
+      ...prepared.data.report,
+      screens: prepared.data.source.screens.map((screen) => ({
+        name: screen.name,
+        file: screen.file,
+        controlCount: flattenControlDefinitions(screen.controls).length,
+      })),
+      controls: prepared.data.source.controls,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: prepared.data.diagnostics,
+      warnings: prepared.data.warnings,
+    }
+  );
+}
+
+export async function validateCanvasApp(
+  path: string,
+  options: CanvasRegistryLoadOptions & {
+    mode?: CanvasBuildMode;
+  } = {}
+): Promise<OperationResult<CanvasValidationReport>> {
+  const prepared = await prepareCanvasValidation(path, options);
+
+  if (!prepared.success || !prepared.data) {
+    return prepared as unknown as OperationResult<CanvasValidationReport>;
+  }
+
+  return ok(prepared.data.report, {
+    supportTier: 'preview',
+    diagnostics: prepared.data.diagnostics,
+    warnings: prepared.data.warnings,
+  });
+}
+
+export async function buildCanvasApp(
+  path: string,
+  options: CanvasRegistryLoadOptions & {
+    mode?: CanvasBuildMode;
+    outPath?: string;
+  } = {}
+): Promise<OperationResult<CanvasBuildResult>> {
+  const prepared = await prepareCanvasValidation(path, options);
+
+  if (!prepared.success || !prepared.data) {
+    return prepared as unknown as OperationResult<CanvasBuildResult>;
+  }
+
+  if (!prepared.data.report.valid) {
+    return fail(
+      prepared.data.diagnostics.length > 0
+        ? prepared.data.diagnostics
+        : createDiagnostic('error', 'CANVAS_BUILD_INVALID', `Canvas app ${prepared.data.source.manifest.name} is not valid for build.`, {
+            source: '@pp/canvas',
+          }),
+      {
+        supportTier: 'preview',
+        warnings: prepared.data.warnings,
+      }
+    );
+  }
+
+  const resolvedTemplates = prepared.data.report.templateRequirements.resolutions
+    .filter((resolution): resolution is CanvasTemplateResolution & { template: CanvasTemplateRecord } => Boolean(resolution.template))
+    .map((resolution) => ({
+      requested: resolution.requested,
+      templateName: resolution.template.templateName,
+      templateVersion: resolution.template.templateVersion,
+      contentHash: resolution.template.contentHash,
+      matchedBy: resolution.matchedBy,
+    }));
+  const packagePayload = {
+    schemaVersion: 1,
+    kind: 'pp.canvas.package',
+    mode: prepared.data.report.mode,
+    app: {
+      name: prepared.data.source.manifest.name,
+      displayName: prepared.data.source.manifest.displayName,
+      version: prepared.data.source.manifest.version,
+      screens: prepared.data.source.screens,
+    },
+    sourceHash: prepared.data.source.sourceHash,
+    registries: prepared.data.report.registries,
+    templates: resolvedTemplates,
+  };
+  const outPath =
+    options.outPath ?? resolve(prepared.data.source.root, 'dist', `${prepared.data.source.manifest.name}.msapp`);
+  const packageHash = sha256Hex(stringifyCanvasJson(packagePayload));
+
+  await writeJsonFile(outPath, packagePayload as unknown as Parameters<typeof writeJsonFile>[1]);
+
+  return ok(
+    {
+      outPath,
+      mode: prepared.data.report.mode,
+      sourceHash: prepared.data.source.sourceHash,
+      templateHash: sha256Hex(stringifyCanvasJson(resolvedTemplates)),
+      packageHash,
+      supported: true,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: prepared.data.diagnostics,
+      warnings: prepared.data.warnings,
+    }
+  );
+}
+
+export async function diffCanvasApps(leftPath: string, rightPath: string): Promise<OperationResult<CanvasDiffResult>> {
+  const [left, right] = await Promise.all([loadCanvasSource(leftPath), loadCanvasSource(rightPath)]);
+
+  if (!left.success || !left.data) {
+    return left as unknown as OperationResult<CanvasDiffResult>;
+  }
+
+  if (!right.success || !right.data) {
+    return right as unknown as OperationResult<CanvasDiffResult>;
+  }
+
+  const leftScreens = new Set(left.data.screens.map((screen) => screen.name));
+  const rightScreens = new Set(right.data.screens.map((screen) => screen.name));
+  const leftControls = new Map(left.data.controls.map((control) => [control.path, control]));
+  const rightControls = new Map(right.data.controls.map((control) => [control.path, control]));
+  const controlPaths = new Set([...leftControls.keys(), ...rightControls.keys()]);
+  const controls: CanvasControlDiff[] = [];
+
+  for (const controlPath of Array.from(controlPaths).sort()) {
+    const before = leftControls.get(controlPath);
+    const after = rightControls.get(controlPath);
+
+    if (before && !after) {
+      controls.push({
+        controlPath,
+        kind: 'removed',
+      });
+      continue;
+    }
+
+    if (!before && after) {
+      controls.push({
+        controlPath,
+        kind: 'added',
+      });
+      continue;
+    }
+
+    if (before && after) {
+      const changedProperties: string[] = [];
+
+      if (before.templateName !== after.templateName) {
+        changedProperties.push('templateName');
+      }
+
+      if (before.templateVersion !== after.templateVersion) {
+        changedProperties.push('templateVersion');
+      }
+
+      if (before.propertyCount !== after.propertyCount) {
+        changedProperties.push('properties');
+      }
+
+      if (before.childCount !== after.childCount) {
+        changedProperties.push('children');
+      }
+
+      if (changedProperties.length > 0) {
+        controls.push({
+          controlPath,
+          kind: 'changed',
+          changedProperties,
+        });
+      }
+    }
+  }
+
+  const leftTemplates = new Set(left.data.templateRequirements.map((item) => `${item.name}@${item.version ?? ''}`));
+  const rightTemplates = new Set(right.data.templateRequirements.map((item) => `${item.name}@${item.version ?? ''}`));
+
+  return ok(
+    {
+      left: leftPath,
+      right: rightPath,
+      appChanged:
+        left.data.manifest.name !== right.data.manifest.name ||
+        left.data.manifest.displayName !== right.data.manifest.displayName ||
+        left.data.manifest.version !== right.data.manifest.version,
+      screensAdded: Array.from(rightScreens).filter((screen) => !leftScreens.has(screen)).sort(),
+      screensRemoved: Array.from(leftScreens).filter((screen) => !rightScreens.has(screen)).sort(),
+      controls,
+      templateChanges: {
+        added: Array.from(rightTemplates).filter((item) => !leftTemplates.has(item)).sort(),
+        removed: Array.from(leftTemplates).filter((item) => !rightTemplates.has(item)).sort(),
+      },
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: [...left.diagnostics, ...right.diagnostics],
+      warnings: [...left.warnings, ...right.warnings],
+    }
+  );
+}
+
+export async function loadCanvasSource(path: string): Promise<OperationResult<CanvasSourceModel>> {
+  const manifestPath = await resolveCanvasManifestPath(path);
+
+  if (!manifestPath.success || !manifestPath.data) {
+    return manifestPath as unknown as OperationResult<CanvasSourceModel>;
+  }
+
+  const manifestDocument = await readCanvasJsonFile(manifestPath.data);
+
+  if (!manifestDocument.success || manifestDocument.data === undefined) {
+    return manifestDocument as unknown as OperationResult<CanvasSourceModel>;
+  }
+
+  const manifest = normalizeCanvasManifest(manifestDocument.data, manifestPath.data);
+
+  if (!manifest.success || !manifest.data) {
+    return manifest as unknown as OperationResult<CanvasSourceModel>;
+  }
+
+  const root = dirname(manifestPath.data);
+  const screens: CanvasScreenDefinition[] = [];
+
+  for (const screenReference of manifest.data.screens) {
+    const screenPath = resolve(root, screenReference.file);
+    const screenDocument = await readCanvasJsonFile(screenPath);
+
+    if (!screenDocument.success || screenDocument.data === undefined) {
+      return screenDocument as unknown as OperationResult<CanvasSourceModel>;
+    }
+
+    const screen = normalizeCanvasScreen(screenDocument.data, screenReference, screenPath);
+
+    if (!screen.success || !screen.data) {
+      return screen as unknown as OperationResult<CanvasSourceModel>;
+    }
+
+    screens.push(screen.data);
+  }
+
+  const controls = summarizeCanvasControls(screens);
+  const templateRequirements = Array.from(
+    new Map(
+      controls.map((control) => [
+        `${control.templateName}@${control.templateVersion}`,
+        {
+          name: control.templateName,
+          version: control.templateVersion,
+        },
+      ])
+    ).values()
+  ).sort((left, right) => left.name.localeCompare(right.name) || (left.version ?? '').localeCompare(right.version ?? ''));
+  const sourceHash = sha256Hex(
+    stringifyCanvasJson({
+      manifest: manifest.data,
+      screens,
+    })
+  );
+  const seedRegistryPath = await fileExists(resolve(root, 'seed.templates.json'))
+    ? resolve(root, 'seed.templates.json')
+    : undefined;
+
+  return ok(
+    {
+      root,
+      manifestPath: manifestPath.data,
+      manifest: manifest.data,
+      screens,
+      controls,
+      templateRequirements,
+      sourceHash,
+      seedRegistryPath,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
 }
 
 export function resolveCanvasTemplateRegistryPaths(
@@ -391,6 +825,120 @@ export function summarizeCanvasTemplateRegistry(bundle: CanvasRegistryBundle): {
   };
 }
 
+async function prepareCanvasValidation(
+  path: string,
+  options: CanvasRegistryLoadOptions & {
+    mode?: CanvasBuildMode;
+  }
+): Promise<OperationResult<PreparedCanvasValidation>> {
+  const source = await loadCanvasSource(path);
+
+  if (!source.success || !source.data) {
+    return source as unknown as OperationResult<PreparedCanvasValidation>;
+  }
+
+  const mode = options.mode ?? 'strict';
+  const [seeded, registry] = await Promise.all([
+    loadCanvasSeedRegistry(source.data),
+    loadCanvasTemplateRegistryBundle(options),
+  ]);
+
+  if (!seeded.success || !seeded.data) {
+    return seeded as unknown as OperationResult<PreparedCanvasValidation>;
+  }
+
+  if (!registry.success || !registry.data) {
+    return registry as unknown as OperationResult<PreparedCanvasValidation>;
+  }
+
+  const templateRequirements = resolveCanvasTemplateRequirements(source.data.templateRequirements, {
+    mode,
+    seeded: seeded.data,
+    registry: registry.data,
+  });
+  const formulas = collectFormulaChecks(source.data.screens);
+  const unresolvedTemplates = collectUnresolvedTemplateIssues(source.data, templateRequirements);
+  const unsupportedTemplates = collectUnsupportedTemplateIssues(source.data, templateRequirements, mode);
+  const diagnostics = [
+    ...source.diagnostics,
+    ...seeded.diagnostics,
+    ...registry.diagnostics,
+    ...formulas
+      .filter((formula) => !formula.valid)
+      .map((formula) =>
+        createDiagnostic(
+          'error',
+          'CANVAS_FORMULA_PROPERTY_INVALID',
+          `Formula property ${formula.property} on ${formula.controlPath} must be a string in the supported canvas slice.`,
+          {
+            source: '@pp/canvas',
+          }
+        )
+      ),
+    ...unresolvedTemplates.map((issue) =>
+      createDiagnostic(
+        'error',
+        'CANVAS_TEMPLATE_METADATA_MISSING',
+        `Template metadata for ${issue.templateName}@${issue.templateVersion} was not resolved for ${issue.controlPath}.`,
+        {
+          source: '@pp/canvas',
+          hint: 'Provide seeded metadata or load a matching template registry.',
+        }
+      )
+    ),
+    ...unsupportedTemplates.map((issue) =>
+      createDiagnostic(
+        issue.status === 'partial' ? 'warning' : 'error',
+        'CANVAS_TEMPLATE_UNSUPPORTED',
+        `Template ${issue.templateName}@${issue.templateVersion} for ${issue.controlPath} is ${issue.status} in ${mode} mode.`,
+        {
+          source: '@pp/canvas',
+          detail: issue.modes.length > 0 ? `Supported modes: ${issue.modes.join(', ')}` : undefined,
+        }
+      )
+    ),
+  ];
+  const warnings = [
+    ...source.warnings,
+    ...seeded.warnings,
+    ...registry.warnings,
+  ];
+  const valid = diagnostics.every((diagnostic) => diagnostic.level !== 'error');
+
+  return ok(
+    {
+      source: source.data,
+      report: {
+        valid,
+        mode,
+        source: {
+          root: source.data.root,
+          manifestPath: source.data.manifestPath,
+          name: source.data.manifest.name,
+          displayName: source.data.manifest.displayName,
+          version: source.data.manifest.version,
+          screenCount: source.data.screens.length,
+          controlCount: source.data.controls.length,
+          sourceHash: source.data.sourceHash,
+          seedRegistryPath: source.data.seedRegistryPath,
+        },
+        templateRequirements,
+        unresolvedTemplates,
+        unsupportedTemplates,
+        formulas,
+        registries: mergeRegistrySources(seeded.data.sources, registry.data.sources),
+      },
+      diagnostics,
+      warnings,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics,
+      warnings,
+    }
+  );
+}
+
 async function loadCanvasTemplateRegistryDocument(path: string): Promise<OperationResult<LoadedRegistryDocument>> {
   try {
     await stat(path);
@@ -402,8 +950,13 @@ async function loadCanvasTemplateRegistryDocument(path: string): Promise<Operati
     );
   }
 
-  const document = await readJsonFile<unknown>(path);
-  const normalized = normalizeCanvasTemplateRegistry(document, path);
+  const document = await readCanvasJsonFile(path);
+
+  if (!document.success || document.data === undefined) {
+    return document as unknown as OperationResult<LoadedRegistryDocument>;
+  }
+
+  const normalized = normalizeCanvasTemplateRegistry(document.data, path);
 
   if (!normalized.success || !normalized.data) {
     return normalized as unknown as OperationResult<LoadedRegistryDocument>;
@@ -421,6 +974,419 @@ async function loadCanvasTemplateRegistryDocument(path: string): Promise<Operati
       warnings: normalized.warnings,
     }
   );
+}
+
+async function resolveCanvasManifestPath(path: string): Promise<OperationResult<string>> {
+  const candidates = path.endsWith('.json')
+    ? [resolve(path)]
+    : [resolve(path, 'canvas.json'), resolve(path, 'app.canvas.json'), resolve(path, 'app.json')];
+
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) {
+      return ok(candidate, {
+        supportTier: 'preview',
+      });
+    }
+  }
+
+  return fail(
+    createDiagnostic(
+      'error',
+      'CANVAS_MANIFEST_NOT_FOUND',
+      `No supported canvas manifest was found at ${path}.`,
+      {
+        source: '@pp/canvas',
+        hint: 'Provide a canvas source directory with canvas.json or a direct manifest path.',
+      }
+    )
+  );
+}
+
+async function readCanvasJsonFile(path: string): Promise<OperationResult<unknown>> {
+  try {
+    const value = await readJsonFile<unknown>(path);
+
+    return ok(value, {
+      supportTier: 'preview',
+    });
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_JSON_READ_FAILED', `Failed to read JSON content from ${path}.`, {
+        source: '@pp/canvas',
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    );
+  }
+}
+
+async function loadCanvasSeedRegistry(source: CanvasSourceModel): Promise<OperationResult<CanvasRegistryBundle>> {
+  if (!source.seedRegistryPath) {
+    return ok(
+      {
+        sources: [],
+        templates: [],
+        supportMatrix: [],
+        hash: sha256Hex(stringifyCanvasJson({ templates: [], supportMatrix: [] })),
+      },
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  return loadCanvasTemplateRegistryBundle({
+    root: source.root,
+    registries: ['./seed.templates.json'],
+  });
+}
+
+function normalizeCanvasManifest(value: unknown, manifestPath: string): OperationResult<CanvasManifest> {
+  const manifest = asRecord(value);
+
+  if (!manifest) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_MANIFEST_INVALID', `Canvas manifest ${manifestPath} must be a JSON object.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const name = readString(manifest.name);
+  const rawScreens = Array.isArray(manifest.screens) ? manifest.screens : undefined;
+
+  if (!name || !rawScreens || rawScreens.length === 0) {
+    return fail(
+      createDiagnostic(
+        'error',
+        'CANVAS_MANIFEST_FIELDS_REQUIRED',
+        `Canvas manifest ${manifestPath} must include name and at least one screen reference.`,
+        {
+          source: '@pp/canvas',
+        }
+      )
+    );
+  }
+
+  const screens: CanvasScreenReference[] = [];
+  const screenNames = new Set<string>();
+
+  for (const [index, item] of rawScreens.entries()) {
+    const screen = normalizeCanvasScreenReference(item, index, manifestPath);
+
+    if (!screen.success || !screen.data) {
+      return screen as unknown as OperationResult<CanvasManifest>;
+    }
+
+    if (screenNames.has(screen.data.name)) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_SCREEN_DUPLICATE', `Canvas manifest ${manifestPath} defines duplicate screen ${screen.data.name}.`, {
+          source: '@pp/canvas',
+        })
+      );
+    }
+
+    screenNames.add(screen.data.name);
+    screens.push(screen.data);
+  }
+
+  return ok(
+    {
+      name,
+      displayName: readString(manifest.displayName),
+      version: readString(manifest.version),
+      screens,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+function normalizeCanvasScreenReference(
+  value: unknown,
+  index: number,
+  manifestPath: string
+): OperationResult<CanvasScreenReference> {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return ok(
+      {
+        name: basename(value, '.json'),
+        file: value,
+      },
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  const screen = asRecord(value);
+
+  if (!screen) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_SCREEN_REFERENCE_INVALID', `Screen reference #${index + 1} in ${manifestPath} must be a string or object.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const name = readString(screen.name);
+  const file = readString(screen.file);
+
+  if (!name || !file) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_SCREEN_REFERENCE_FIELDS_REQUIRED', `Screen references in ${manifestPath} must include name and file.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  return ok(
+    {
+      name,
+      file,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+function normalizeCanvasScreen(
+  value: unknown,
+  reference: CanvasScreenReference,
+  screenPath: string
+): OperationResult<CanvasScreenDefinition> {
+  const screen = asRecord(value);
+
+  if (!screen) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_SCREEN_INVALID', `Canvas screen ${screenPath} must be a JSON object.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const rawControls = Array.isArray(screen.controls) ? screen.controls : [];
+  const controls: CanvasControlDefinition[] = [];
+
+  for (const [index, item] of rawControls.entries()) {
+    const control = normalizeCanvasControl(item, `${reference.name}[${index}]`, screenPath);
+
+    if (!control.success || !control.data) {
+      return control as unknown as OperationResult<CanvasScreenDefinition>;
+    }
+
+    controls.push(control.data);
+  }
+
+  return ok(
+    {
+      name: readString(screen.name) ?? reference.name,
+      file: reference.file,
+      controls,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+function normalizeCanvasControl(
+  value: unknown,
+  location: string,
+  screenPath: string
+): OperationResult<CanvasControlDefinition> {
+  const control = asRecord(value);
+
+  if (!control) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_CONTROL_INVALID', `Control ${location} in ${screenPath} must be a JSON object.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const name = readString(control.name);
+  const templateName = readString(control.templateName) ?? readString(control.template);
+  const templateVersion = readString(control.templateVersion) ?? readString(control.version);
+
+  if (!name || !templateName || !templateVersion) {
+    return fail(
+      createDiagnostic(
+        'error',
+        'CANVAS_CONTROL_FIELDS_REQUIRED',
+        `Control ${location} in ${screenPath} must include name, templateName/template, and templateVersion/version.`,
+        {
+          source: '@pp/canvas',
+        }
+      )
+    );
+  }
+
+  const propertiesRecord = asRecord(control.properties);
+  const properties = propertiesRecord
+    ? Object.fromEntries(Object.entries(propertiesRecord).map(([key, nested]) => [key, normalizeJsonValue(nested)]))
+    : {};
+  const rawChildren = Array.isArray(control.children) ? control.children : [];
+  const children: CanvasControlDefinition[] = [];
+
+  for (const [index, child] of rawChildren.entries()) {
+    const normalizedChild = normalizeCanvasControl(child, `${location}/${name}[${index}]`, screenPath);
+
+    if (!normalizedChild.success || !normalizedChild.data) {
+      return normalizedChild as unknown as OperationResult<CanvasControlDefinition>;
+    }
+
+    children.push(normalizedChild.data);
+  }
+
+  return ok(
+    {
+      name,
+      templateName,
+      templateVersion,
+      properties,
+      children,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+function summarizeCanvasControls(screens: CanvasScreenDefinition[]): CanvasControlSummary[] {
+  const controls: CanvasControlSummary[] = [];
+
+  for (const screen of screens) {
+    appendControlSummaries(screen.name, screen.controls, `${screen.name}`, controls);
+  }
+
+  return controls.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function appendControlSummaries(
+  screenName: string,
+  controls: CanvasControlDefinition[],
+  prefix: string,
+  destination: CanvasControlSummary[]
+): void {
+  for (const control of controls) {
+    const path = `${prefix}/${control.name}`;
+
+    destination.push({
+      path,
+      screen: screenName,
+      templateName: control.templateName,
+      templateVersion: control.templateVersion,
+      propertyCount: Object.keys(control.properties).length,
+      childCount: control.children.length,
+    });
+
+    appendControlSummaries(screenName, control.children, path, destination);
+  }
+}
+
+function flattenControlDefinitions(controls: CanvasControlDefinition[]): CanvasControlDefinition[] {
+  const flattened: CanvasControlDefinition[] = [];
+
+  for (const control of controls) {
+    flattened.push(control, ...flattenControlDefinitions(control.children));
+  }
+
+  return flattened;
+}
+
+function collectFormulaChecks(screens: CanvasScreenDefinition[]): CanvasFormulaCheck[] {
+  const checks: CanvasFormulaCheck[] = [];
+
+  for (const screen of screens) {
+    appendFormulaChecks(screen.name, screen.controls, screen.name, checks);
+  }
+
+  return checks.sort((left, right) => left.controlPath.localeCompare(right.controlPath) || left.property.localeCompare(right.property));
+}
+
+function appendFormulaChecks(
+  screenName: string,
+  controls: CanvasControlDefinition[],
+  prefix: string,
+  destination: CanvasFormulaCheck[]
+): void {
+  for (const control of controls) {
+    const path = `${prefix}/${control.name}`;
+
+    for (const [property, value] of Object.entries(control.properties)) {
+      if (property.endsWith('Formula')) {
+        destination.push({
+          controlPath: path,
+          property,
+          valid: typeof value === 'string',
+        });
+      }
+    }
+
+    appendFormulaChecks(screenName, control.children, path, destination);
+  }
+}
+
+function collectUnresolvedTemplateIssues(
+  source: CanvasSourceModel,
+  requirements: CanvasTemplateRequirementResolution
+): CanvasTemplateUsageIssue[] {
+  const resolutions = new Map(
+    requirements.resolutions.map((resolution) => [`${resolution.requested.name}@${resolution.requested.version ?? ''}`, resolution])
+  );
+
+  return source.controls
+    .filter((control) => !resolutions.get(`${control.templateName}@${control.templateVersion}`)?.template)
+    .map((control) => ({
+      controlPath: control.path,
+      templateName: control.templateName,
+      templateVersion: control.templateVersion,
+      status: 'unsupported',
+      modes: [],
+    }));
+}
+
+function collectUnsupportedTemplateIssues(
+  source: CanvasSourceModel,
+  requirements: CanvasTemplateRequirementResolution,
+  mode: CanvasBuildMode
+): CanvasTemplateUsageIssue[] {
+  const resolutions = new Map(
+    requirements.resolutions.map((resolution) => [`${resolution.requested.name}@${resolution.requested.version ?? ''}`, resolution])
+  );
+
+  return source.controls
+    .map((control) => ({
+      control,
+      resolution: resolutions.get(`${control.templateName}@${control.templateVersion}`),
+    }))
+    .filter(
+      (item) =>
+        item.resolution?.template &&
+        (item.resolution.support.status !== 'supported' || !item.resolution.support.modes.includes(mode))
+    )
+    .map((item) => ({
+      controlPath: item.control.path,
+      templateName: item.control.templateName,
+      templateVersion: item.control.templateVersion,
+      status: item.resolution?.support.status ?? 'unsupported',
+      modes: item.resolution?.support.modes ?? [],
+    }));
+}
+
+function mergeRegistrySources(
+  left: CanvasRegistrySourceSummary[],
+  right: CanvasRegistrySourceSummary[]
+): CanvasRegistrySourceSummary[] {
+  const merged = new Map<string, CanvasRegistrySourceSummary>();
+
+  for (const source of [...left, ...right]) {
+    merged.set(source.path, source);
+  }
+
+  return Array.from(merged.values()).sort((a, b) => a.path.localeCompare(b.path));
 }
 
 function normalizeCanvasTemplateRegistry(
@@ -886,6 +1852,15 @@ function normalizeName(value: string): string {
 
 function stringifyCanvasJson(value: unknown): string {
   return stableStringify(value as Parameters<typeof stableStringify>[0]);
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function readString(value: unknown): string | undefined {
