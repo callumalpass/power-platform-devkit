@@ -334,6 +334,120 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('covers seeded-only and registry-only canvas mode failures through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'base-app');
+    const registryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'runtime-registry.json');
+    const seededOutPath = join(tempDir, 'FixtureCanvas.seeded.msapp');
+    const registryOutPath = join(tempDir, 'FixtureCanvas.registry.msapp');
+
+    const seededInspect = await runCli([
+      'canvas',
+      'inspect',
+      appPath,
+      '--mode',
+      'seeded',
+      '--registry',
+      registryPath,
+      '--format',
+      'json',
+    ]);
+    const seededValidate = await runCli([
+      'canvas',
+      'validate',
+      appPath,
+      '--mode',
+      'seeded',
+      '--registry',
+      registryPath,
+      '--format',
+      'json',
+    ]);
+    const seededBuild = await runCli([
+      'canvas',
+      'build',
+      appPath,
+      '--mode',
+      'seeded',
+      '--registry',
+      registryPath,
+      '--out',
+      seededOutPath,
+      '--format',
+      'json',
+    ]);
+
+    const registryInspect = await runCli([
+      'canvas',
+      'inspect',
+      appPath,
+      '--mode',
+      'registry',
+      '--registry',
+      registryPath,
+      '--format',
+      'json',
+    ]);
+    const registryValidate = await runCli([
+      'canvas',
+      'validate',
+      appPath,
+      '--mode',
+      'registry',
+      '--registry',
+      registryPath,
+      '--format',
+      'json',
+    ]);
+    const registryBuild = await runCli([
+      'canvas',
+      'build',
+      appPath,
+      '--mode',
+      'registry',
+      '--registry',
+      registryPath,
+      '--out',
+      registryOutPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(seededInspect.code).toBe(0);
+    expect(seededInspect.stderr).toBe('');
+    expect(seededValidate.code).toBe(1);
+    expect(seededValidate.stderr).toBe('');
+    expect(seededBuild.code).toBe(1);
+    expect(seededBuild.stdout).toBe('');
+
+    expect(registryInspect.code).toBe(0);
+    expect(registryInspect.stderr).toBe('');
+    expect(registryValidate.code).toBe(1);
+    expect(registryValidate.stderr).toBe('');
+    expect(registryBuild.code).toBe(1);
+    expect(registryBuild.stdout).toBe('');
+
+    await expectGoldenJson(JSON.parse(seededInspect.stdout), 'fixtures/canvas/golden/modes/cli-seeded-inspect-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(seededValidate.stdout), 'fixtures/canvas/golden/modes/cli-seeded-validation-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(seededBuild.stderr), 'fixtures/canvas/golden/modes/cli-seeded-build-failure.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+
+    await expectGoldenJson(JSON.parse(registryInspect.stdout), 'fixtures/canvas/golden/modes/cli-registry-inspect-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(registryValidate.stdout), 'fixtures/canvas/golden/modes/cli-registry-validation-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(registryBuild.stderr), 'fixtures/canvas/golden/modes/cli-registry-build-failure.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+  });
+
   it('covers flow unpack, validate, patch, and normalize through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');

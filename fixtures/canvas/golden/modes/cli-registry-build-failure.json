@@ -1,0 +1,15 @@
+{
+  "diagnostics": [
+    {
+      "code": "CANVAS_TEMPLATE_METADATA_MISSING",
+      "hint": "Provide seeded metadata or load a matching template registry.",
+      "level": "error",
+      "message": "Template metadata for Button@1.0.0 was not resolved for Home/Layout/Submit.",
+      "source": "@pp/canvas"
+    }
+  ],
+  "success": false,
+  "suggestedNextActions": [],
+  "supportTier": "preview",
+  "warnings": []
+}

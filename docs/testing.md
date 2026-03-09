@@ -20,6 +20,9 @@ The committed fixtures currently cover:
   column-, and option-set-like Power Fx strings through inspect, validate, and
   build snapshots
 - canvas semantic diagnostics for invalid formula properties, missing template metadata, partial template support, and invalid-build failure payloads
+- canvas mode-specific seeded-only and registry-only failures when fixture
+  template metadata is intentionally split between seeded sources and external
+  registries
 - flow unpack, validate, patch, and normalize outputs, including round-trip
   connection-reference rename consistency inside patched artifacts
 - flow invalid-artifact validation diagnostics, including package-level

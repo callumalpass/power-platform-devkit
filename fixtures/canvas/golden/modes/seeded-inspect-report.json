@@ -1,0 +1,219 @@
+{
+  "data": {
+    "controls": [
+      {
+        "childCount": 2,
+        "path": "Home/Layout",
+        "propertyCount": 2,
+        "screen": "Home",
+        "templateName": "groupContainer",
+        "templateVersion": "1.0.0"
+      },
+      {
+        "childCount": 0,
+        "path": "Home/Layout/Submit",
+        "propertyCount": 4,
+        "screen": "Home",
+        "templateName": "Button",
+        "templateVersion": "1.0.0"
+      },
+      {
+        "childCount": 0,
+        "path": "Home/Layout/Title",
+        "propertyCount": 3,
+        "screen": "Home",
+        "templateName": "Label",
+        "templateVersion": "1.0.0"
+      }
+    ],
+    "formulas": [
+      {
+        "controlPath": "Home/Layout/Submit",
+        "property": "OnSelectFormula",
+        "valid": true
+      },
+      {
+        "controlPath": "Home/Layout/Submit",
+        "property": "TextFormula",
+        "valid": true
+      },
+      {
+        "controlPath": "Home/Layout/Title",
+        "property": "TextFormula",
+        "valid": true
+      }
+    ],
+    "mode": "seeded",
+    "registries": [
+      {
+        "generatedAt": "2026-03-10T00:00:00.000Z",
+        "hash": "9a0c0a468fc53d9e52e4eff5b8459bbde9aa618b1734efd6a34238e41027ae2c",
+        "path": "<REPO_ROOT>/fixtures/canvas/apps/base-app/seed.templates.json",
+        "supportRuleCount": 1,
+        "templateCount": 1
+      },
+      {
+        "generatedAt": "2026-03-10T00:00:00.000Z",
+        "hash": "1c3d989a87e65875d8868b8f5c0f89056c6e6c86fe8aba52aa6d35f463b71efe",
+        "path": "<REPO_ROOT>/fixtures/canvas/registries/runtime-registry.json",
+        "supportRuleCount": 3,
+        "templateCount": 3
+      }
+    ],
+    "screens": [
+      {
+        "controlCount": 3,
+        "file": "screens/Home.json",
+        "name": "Home"
+      }
+    ],
+    "source": {
+      "controlCount": 3,
+      "displayName": "Fixture Canvas",
+      "manifestPath": "<REPO_ROOT>/fixtures/canvas/apps/base-app/canvas.json",
+      "name": "FixtureCanvas",
+      "root": "<REPO_ROOT>/fixtures/canvas/apps/base-app",
+      "screenCount": 1,
+      "seedRegistryPath": "<REPO_ROOT>/fixtures/canvas/apps/base-app/seed.templates.json",
+      "sourceHash": "fd037e682b8d5a9984da54fc061000d582ac5b5dd5da21796c532722419f020f",
+      "version": "1.0.0"
+    },
+    "templateRequirements": {
+      "missing": [
+        {
+          "name": "groupContainer",
+          "version": "1.0.0"
+        },
+        {
+          "name": "Label",
+          "version": "1.0.0"
+        }
+      ],
+      "mode": "seeded",
+      "resolutions": [
+        {
+          "matchedBy": "templateName",
+          "requested": {
+            "name": "Button",
+            "version": "1.0.0"
+          },
+          "support": {
+            "matchedRule": {
+              "modes": [
+                "strict",
+                "seeded",
+                "registry"
+              ],
+              "notes": [
+                "Seeded test fixture for deterministic build coverage."
+              ],
+              "status": "supported",
+              "templateName": "Button",
+              "version": "1.*"
+            },
+            "modes": [
+              "strict",
+              "seeded",
+              "registry"
+            ],
+            "notes": [
+              "Seeded test fixture for deterministic build coverage."
+            ],
+            "status": "supported"
+          },
+          "template": {
+            "aliases": {
+              "constructors": [
+                "Classic/Button"
+              ],
+              "yamlNames": [
+                "button"
+              ]
+            },
+            "contentHash": "df571778d09215de8132a20386290a5302d0c573c8afd93472a69cf670ca710c",
+            "files": {
+              "Controls/Button.json": {
+                "defaults": {
+                  "Text": "\"Button\""
+                },
+                "kind": "button"
+              }
+            },
+            "provenance": {
+              "acquiredAt": "2026-03-10T00:00:00.000Z",
+              "importedFrom": "<REPO_ROOT>/fixtures/canvas/apps/base-app/seed.templates.json",
+              "kind": "official-artifact",
+              "source": "FixtureCanvasSeed"
+            },
+            "templateName": "Button",
+            "templateVersion": "1.0.0"
+          }
+        },
+        {
+          "requested": {
+            "name": "groupContainer",
+            "version": "1.0.0"
+          },
+          "support": {
+            "modes": [],
+            "notes": [
+              "Template metadata for groupContainer@1.0.0 was not available for seeded mode."
+            ],
+            "status": "unsupported"
+          }
+        },
+        {
+          "requested": {
+            "name": "Label",
+            "version": "1.0.0"
+          },
+          "support": {
+            "modes": [],
+            "notes": [
+              "Template metadata for Label@1.0.0 was not available for seeded mode."
+            ],
+            "status": "unsupported"
+          }
+        }
+      ],
+      "supported": false
+    },
+    "unresolvedTemplates": [
+      {
+        "controlPath": "Home/Layout",
+        "modes": [],
+        "status": "unsupported",
+        "templateName": "groupContainer",
+        "templateVersion": "1.0.0"
+      },
+      {
+        "controlPath": "Home/Layout/Title",
+        "modes": [],
+        "status": "unsupported",
+        "templateName": "Label",
+        "templateVersion": "1.0.0"
+      }
+    ],
+    "unsupportedTemplates": [],
+    "valid": false
+  },
+  "diagnostics": [
+    {
+      "code": "CANVAS_TEMPLATE_METADATA_MISSING",
+      "hint": "Provide seeded metadata or load a matching template registry.",
+      "level": "error",
+      "message": "Template metadata for groupContainer@1.0.0 was not resolved for Home/Layout.",
+      "source": "@pp/canvas"
+    },
+    {
+      "code": "CANVAS_TEMPLATE_METADATA_MISSING",
+      "hint": "Provide seeded metadata or load a matching template registry.",
+      "level": "error",
+      "message": "Template metadata for Label@1.0.0 was not resolved for Home/Layout/Title.",
+      "source": "@pp/canvas"
+    }
+  ],
+  "success": true,
+  "supportTier": "preview",
+  "warnings": []
+}

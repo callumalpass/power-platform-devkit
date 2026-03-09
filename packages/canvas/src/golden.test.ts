@@ -221,4 +221,70 @@ describe('canvas fixture-backed goldens', () => {
       normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
     });
   });
+
+  it('captures seeded-only and registry-only canvas mode failures when required template metadata is split across fixture sources', async () => {
+    const tempDir = await createTempDir();
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'base-app');
+    const registryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'runtime-registry.json');
+    const seededOutPath = join(tempDir, 'FixtureCanvas.seeded.msapp');
+    const registryOutPath = join(tempDir, 'FixtureCanvas.registry.msapp');
+
+    const seededInspect = await inspectCanvasApp(appPath, {
+      mode: 'seeded',
+      registries: [registryPath],
+    });
+    const seededValidation = await validateCanvasApp(appPath, {
+      mode: 'seeded',
+      registries: [registryPath],
+    });
+    const seededBuild = await buildCanvasApp(appPath, {
+      mode: 'seeded',
+      registries: [registryPath],
+      outPath: seededOutPath,
+    });
+
+    const registryInspect = await inspectCanvasApp(appPath, {
+      mode: 'registry',
+      registries: [registryPath],
+    });
+    const registryValidation = await validateCanvasApp(appPath, {
+      mode: 'registry',
+      registries: [registryPath],
+    });
+    const registryBuild = await buildCanvasApp(appPath, {
+      mode: 'registry',
+      registries: [registryPath],
+      outPath: registryOutPath,
+    });
+
+    expect(seededInspect.success).toBe(true);
+    expect(seededValidation.success).toBe(true);
+    expect(seededValidation.data?.valid).toBe(false);
+    expect(seededBuild.success).toBe(false);
+
+    expect(registryInspect.success).toBe(true);
+    expect(registryValidation.success).toBe(true);
+    expect(registryValidation.data?.valid).toBe(false);
+    expect(registryBuild.success).toBe(false);
+
+    await expectGoldenJson(snapshotCanvasResult(seededInspect), 'fixtures/canvas/golden/modes/seeded-inspect-report.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(snapshotCanvasResult(seededValidation), 'fixtures/canvas/golden/modes/seeded-validation-report.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(snapshotCanvasResult(seededBuild), 'fixtures/canvas/golden/modes/seeded-build-failure.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+
+    await expectGoldenJson(snapshotCanvasResult(registryInspect), 'fixtures/canvas/golden/modes/registry-inspect-report.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(snapshotCanvasResult(registryValidation), 'fixtures/canvas/golden/modes/registry-validation-report.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(snapshotCanvasResult(registryBuild), 'fixtures/canvas/golden/modes/registry-build-failure.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+  });
 });

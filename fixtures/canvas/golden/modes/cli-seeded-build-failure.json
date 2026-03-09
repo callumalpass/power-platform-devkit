@@ -1,0 +1,22 @@
+{
+  "diagnostics": [
+    {
+      "code": "CANVAS_TEMPLATE_METADATA_MISSING",
+      "hint": "Provide seeded metadata or load a matching template registry.",
+      "level": "error",
+      "message": "Template metadata for groupContainer@1.0.0 was not resolved for Home/Layout.",
+      "source": "@pp/canvas"
+    },
+    {
+      "code": "CANVAS_TEMPLATE_METADATA_MISSING",
+      "hint": "Provide seeded metadata or load a matching template registry.",
+      "level": "error",
+      "message": "Template metadata for Label@1.0.0 was not resolved for Home/Layout/Title.",
+      "source": "@pp/canvas"
+    }
+  ],
+  "success": false,
+  "suggestedNextActions": [],
+  "supportTier": "preview",
+  "warnings": []
+}
