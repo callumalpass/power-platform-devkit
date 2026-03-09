@@ -6,6 +6,11 @@
 - `pnpm exec vitest run packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/cli/src/integration.test.ts`: the focused fixture/golden lane for canvas, flow, analysis, and representative CLI workflows
 - `pnpm smoke:live`: the gated live smoke lane that builds the workspace and runs the read-only external-environment checks
 
+The repository now wires that split into GitHub Actions:
+
+- `.github/workflows/fast-ci.yml`: normal fast CI on pull requests and pushes to `main`
+- `.github/workflows/live-smoke.yml`: isolated live smoke lane on manual trigger or schedule
+
 ## Fixture-backed goldens
 
 The committed fixtures currently cover:
@@ -46,3 +51,17 @@ PP_SMOKE_ENV=test pnpm smoke:live
 PP_SMOKE_PROFILE=test-user pnpm smoke:live
 PP_CONFIG_DIR=./.tmp/pp-config pnpm smoke:live
 ```
+
+The GitHub Actions workflow bootstraps a repo-local config directory before
+running `pnpm smoke:live`. Configure these repository secrets for
+`.github/workflows/live-smoke.yml`:
+
+- `PP_SMOKE_URL`
+- `PP_SMOKE_TENANT_ID`
+- `PP_SMOKE_CLIENT_ID`
+- `PP_SMOKE_CLIENT_SECRET`
+
+The workflow writes a client-secret auth profile plus a matching environment
+alias into `PP_CONFIG_DIR=./.tmp/pp-smoke-config`, then runs the same live
+smoke command documented above. That keeps external-environment validation out
+of pull-request CI while still making it schedulable and repeatable.
