@@ -146,6 +146,45 @@ describe('canvas fixture-backed goldens', () => {
     });
   });
 
+  it('captures formula-heavy canvas fixtures through inspect, validate, and build outputs', async () => {
+    const tempDir = await createTempDir();
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'formula-app');
+    const registryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'runtime-registry.json');
+    const outPath = join(tempDir, 'FormulaCanvas.msapp');
+
+    const inspect = await inspectCanvasApp(appPath, {
+      mode: 'strict',
+      registries: [registryPath],
+    });
+    const validation = await validateCanvasApp(appPath, {
+      mode: 'strict',
+      registries: [registryPath],
+    });
+    const build = await buildCanvasApp(appPath, {
+      mode: 'strict',
+      registries: [registryPath],
+      outPath,
+    });
+
+    expect(inspect.success).toBe(true);
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(true);
+    expect(build.success).toBe(true);
+
+    await expectGoldenJson(inspect.data, 'fixtures/canvas/golden/formula/inspect-report.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(validation.data, 'fixtures/canvas/golden/formula/validation-report.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(build.data, 'fixtures/canvas/golden/formula/build-result.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(await readJsonFile(outPath), 'fixtures/canvas/golden/formula/build-package.json', {
+      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+    });
+  });
+
   it('captures semantic validation diagnostics and build failures for invalid canvas fixtures', async () => {
     const tempDir = await createTempDir();
     const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'diagnostic-app');

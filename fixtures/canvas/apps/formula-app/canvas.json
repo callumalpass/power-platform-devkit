@@ -1,0 +1,15 @@
+{
+  "name": "FormulaCanvas",
+  "displayName": "Formula Canvas",
+  "version": "1.0.0",
+  "screens": [
+    {
+      "name": "Home",
+      "file": "screens/Home.json"
+    },
+    {
+      "name": "Review",
+      "file": "screens/Review.json"
+    }
+  ]
+}

@@ -168,6 +168,37 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('covers formula-heavy canvas fixtures through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'formula-app');
+    const registryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'runtime-registry.json');
+    const outPath = join(tempDir, 'FormulaCanvas.msapp');
+
+    const inspect = await runCli(['canvas', 'inspect', appPath, '--mode', 'strict', '--registry', registryPath, '--format', 'json']);
+    const validate = await runCli(['canvas', 'validate', appPath, '--mode', 'strict', '--registry', registryPath, '--format', 'json']);
+    const build = await runCli(['canvas', 'build', appPath, '--mode', 'strict', '--registry', registryPath, '--out', outPath, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(validate.code).toBe(0);
+    expect(validate.stderr).toBe('');
+    expect(build.code).toBe(0);
+    expect(build.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/canvas/golden/formula/inspect-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/canvas/golden/formula/validation-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(build.stdout), 'fixtures/canvas/golden/formula/build-result.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(await readJsonFile(outPath), 'fixtures/canvas/golden/formula/build-package.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+  });
+
   it('covers invalid canvas semantic diagnostics and build failures through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'diagnostic-app');
