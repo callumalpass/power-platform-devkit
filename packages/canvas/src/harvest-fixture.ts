@@ -193,6 +193,22 @@ export interface BuildCanvasHarvestFixturePrototypeDraftDocumentOptions {
   generatedAt?: string;
 }
 
+export interface PromoteCanvasHarvestFixturePrototypeDraftOptions {
+  drafts: CanvasHarvestFixturePrototypeDraftDocument;
+  registry: CanvasTemplateRegistryDocument;
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  family: 'classic' | 'modern';
+  catalogName: string;
+  generatedAt?: string;
+  notes?: string[];
+}
+
+export interface PromotedCanvasHarvestFixturePrototypeDraftResult {
+  promoted: CanvasHarvestFixturePrototype;
+  resolvedTemplate: Pick<CanvasTemplateRecord, 'templateName' | 'templateVersion'>;
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+}
+
 export interface RenderCanvasHarvestFixtureOptions {
   plan: CanvasHarvestFixturePlan;
   registry: CanvasTemplateRegistryDocument;
@@ -449,6 +465,61 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
     },
     drafts,
     skipped,
+  };
+}
+
+export function promoteCanvasHarvestFixturePrototypeDraft(
+  options: PromoteCanvasHarvestFixturePrototypeDraftOptions
+): PromotedCanvasHarvestFixturePrototypeDraftResult {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const key = makeCatalogKey(options.family, options.catalogName);
+  const selectedDraft = options.drafts.drafts.find(
+    (draft) => makeCatalogKey(draft.family, draft.catalogName) === key
+  );
+
+  if (!selectedDraft) {
+    const availableDrafts = options.drafts.drafts.map((draft) => `${familyLabel(draft.family)}/${draft.catalogName}`);
+    const availabilityNote =
+      availableDrafts.length > 0 ? ` Available drafts: ${availableDrafts.join(', ')}.` : ' No generated drafts are available.';
+    throw new Error(
+      `No generated prototype draft exists for ${familyLabel(options.family)}/${options.catalogName}.${availabilityNote}`
+    );
+  }
+
+  if (options.prototypes.prototypes.some((prototype) => makeCatalogKey(prototype.family, prototype.catalogName) === key)) {
+    throw new Error(`A pinned fixture prototype already exists for ${familyLabel(options.family)}/${options.catalogName}.`);
+  }
+
+  const resolvedTemplate = resolveTemplateForConstructor(options.registry, selectedDraft.constructor);
+  if (!resolvedTemplate) {
+    throw new Error(
+      `The pinned harvested registry does not expose a constructor alias for ${selectedDraft.constructor}; ` +
+        'regenerate prototype drafts against a current registry snapshot before promoting this draft.'
+    );
+  }
+
+  const { notes: _draftNotes, ...draftWithoutNotes } = selectedDraft;
+  const promoted: CanvasHarvestFixturePrototype = {
+    ...draftWithoutNotes,
+    notes: buildPromotedPrototypeNotes({
+      draft: selectedDraft,
+      draftDocument: options.drafts,
+      resolvedTemplate,
+      additionalNotes: options.notes,
+    }),
+  };
+
+  return {
+    promoted,
+    resolvedTemplate: {
+      templateName: resolvedTemplate.templateName,
+      templateVersion: resolvedTemplate.templateVersion,
+    },
+    prototypes: {
+      schemaVersion: 1,
+      generatedAt,
+      prototypes: [...options.prototypes.prototypes, promoted],
+    },
   };
 }
 
@@ -745,6 +816,26 @@ function buildPrototypeDraftNotes(options: {
   }
 
   return notes;
+}
+
+function buildPromotedPrototypeNotes(options: {
+  draft: CanvasHarvestFixturePrototype;
+  draftDocument: CanvasHarvestFixturePrototypeDraftDocument;
+  resolvedTemplate: CanvasTemplateRecord;
+  additionalNotes?: string[];
+}): string[] {
+  const propertyNames = Object.keys(options.draft.properties ?? {});
+  const notes = [
+    `Promoted from generated draft artifact ${options.draftDocument.generatedAt} (fixture plan ${options.draftDocument.sourcePlanGeneratedAt}).`,
+    `Constructor ${options.draft.constructor} resolves to ${options.resolvedTemplate.templateName}@${options.resolvedTemplate.templateVersion} in the pinned harvested registry.`,
+    propertyNames.length > 0
+      ? `Properties started from harvested runtime metadata: ${propertyNames.join(', ')}.`
+      : 'No harvested runtime property scaffold was available in the promoted draft.',
+    'Live paste validation inside HarvestFixtureContainer is still pending.',
+    ...(options.additionalNotes ?? []),
+  ];
+
+  return dedupeStrings(notes);
 }
 
 function summarizeInsertReport(options: {

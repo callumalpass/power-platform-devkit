@@ -6,6 +6,7 @@ import {
   buildCanvasControlSearchTerms,
   buildCanvasHarvestFixturePlan,
   buildCanvasHarvestFixturePrototypeDraftDocument,
+  promoteCanvasHarvestFixturePrototypeDraft,
   renderCanvasHarvestFixture,
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
   DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH,
@@ -560,6 +561,95 @@ describe('canvas harvest fixture planning', () => {
         },
       ],
     });
+  });
+
+  it('promotes a generated draft into the pinned prototype document with harvested provenance notes', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-09T09:30:00.000Z',
+    });
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:00:00.000Z',
+    });
+
+    const promoted = promoteCanvasHarvestFixturePrototypeDraft({
+      drafts,
+      registry,
+      prototypes,
+      family: 'classic',
+      catalogName: 'Button',
+      generatedAt: '2026-03-10T00:10:00.000Z',
+      notes: ['Manual review completed on 2026-03-10; live paste validation still pending.'],
+    });
+
+    expect(promoted.promoted).toEqual({
+      family: 'classic',
+      catalogName: 'Button',
+      constructor: 'Classic/Button',
+      properties: {
+        Height: '=40',
+        Width: '=160',
+        Text: '="Button"',
+      },
+      notes: [
+        'Promoted from generated draft artifact 2026-03-10T00:00:00.000Z (fixture plan 2026-03-09T09:30:00.000Z).',
+        'Constructor Classic/Button resolves to button@2.2.0 in the pinned harvested registry.',
+        'Properties started from harvested runtime metadata: Height, Width, Text.',
+        'Live paste validation inside HarvestFixtureContainer is still pending.',
+        'Manual review completed on 2026-03-10; live paste validation still pending.',
+      ],
+    });
+    expect(promoted.resolvedTemplate).toEqual({
+      templateName: 'button',
+      templateVersion: '2.2.0',
+    });
+    expect(promoted.prototypes).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:10:00.000Z',
+      prototypes: [...prototypes.prototypes, promoted.promoted],
+    });
+  });
+
+  it('refuses to promote a draft when a pinned prototype already exists for that control', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-09T09:30:00.000Z',
+    });
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:00:00.000Z',
+    });
+    const prototypesWithButton: CanvasHarvestFixturePrototypeDocument = {
+      ...prototypes,
+      prototypes: [
+        ...prototypes.prototypes,
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          constructor: 'Classic/Button',
+          notes: ['Already pinned.'],
+        },
+      ],
+    };
+
+    expect(() =>
+      promoteCanvasHarvestFixturePrototypeDraft({
+        drafts,
+        registry,
+        prototypes: prototypesWithButton,
+        family: 'classic',
+        catalogName: 'Button',
+      })
+    ).toThrow(/A pinned fixture prototype already exists for Classic\/Button/);
   });
 
   it('flags insert reports that no longer match the current catalog slice', () => {
