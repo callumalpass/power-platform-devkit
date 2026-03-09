@@ -3,12 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readJsonFile } from '@pp/artifacts';
+import type { DataverseClient } from '@pp/dataverse';
+import * as dataverseModule from '@pp/dataverse';
+import { ok, type OperationResult } from '@pp/diagnostics';
 import { expectGoldenJson, expectGoldenText, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
 import { main } from './index';
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   await Promise.all(tempDirs.splice(0, tempDirs.length).map((path) => rm(path, { recursive: true, force: true })));
 });
@@ -34,6 +38,47 @@ function normalizeCliSnapshot<T>(value: T, ...tempPaths: string[]): T {
 function normalizeCliAnalysisSnapshot<T>(value: T): T {
   return mapSnapshotStrings(normalizeCliSnapshot(value), (entry) =>
     entry.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, '<GENERATED_AT>')
+  );
+}
+
+interface FlowRuntimeFixture {
+  query?: Record<string, unknown[]>;
+  queryAll?: Record<string, unknown[]>;
+}
+
+function createFixtureDataverseClient(fixture: FlowRuntimeFixture): DataverseClient {
+  return {
+    query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
+      ok(((fixture.query?.[options.table] ?? []) as T[]), {
+        supportTier: 'preview',
+      }),
+    queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
+      ok(((fixture.queryAll?.[options.table] ?? []) as T[]), {
+        supportTier: 'preview',
+      }),
+  } as unknown as DataverseClient;
+}
+
+function mockDataverseResolution(client: DataverseClient) {
+  vi.spyOn(dataverseModule, 'resolveDataverseClient').mockResolvedValue(
+    ok(
+      {
+        environment: {
+          name: 'fixture',
+          url: 'https://example.crm.dynamics.com',
+          authProfile: 'fixture-profile',
+        } as never,
+        authProfile: {
+          name: 'fixture-profile',
+          kind: 'static-token',
+          token: 'fixture-token',
+        } as never,
+        client,
+      },
+      {
+        supportTier: 'preview',
+      }
+    )
   );
 }
 
@@ -196,5 +241,53 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(normalize.stdout), 'fixtures/flow/golden/normalized-after-patch.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
+  });
+
+  it('covers remote flow runtime diagnostics through the CLI entrypoint', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
+
+    const runtimeFixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'flow', 'runtime', 'invoice-sync-runtime.json')
+    )) as FlowRuntimeFixture;
+
+    mockDataverseResolution(createFixtureDataverseClient(runtimeFixture));
+
+    const inspect = await runCli(['flow', 'inspect', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--format', 'json']);
+    const runs = await runCli(['flow', 'runs', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--since', '7d', '--format', 'json']);
+    const errors = await runCli([
+      'flow',
+      'errors',
+      'Invoice Sync',
+      '--env',
+      'fixture',
+      '--solution',
+      'Core',
+      '--since',
+      '7d',
+      '--group-by',
+      'connectionReference',
+      '--format',
+      'json',
+    ]);
+    const connrefs = await runCli(['flow', 'connrefs', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--since', '7d', '--format', 'json']);
+    const doctor = await runCli(['flow', 'doctor', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--since', '7d', '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(runs.code).toBe(0);
+    expect(runs.stderr).toBe('');
+    expect(errors.code).toBe(0);
+    expect(errors.stderr).toBe('');
+    expect(connrefs.code).toBe(0);
+    expect(connrefs.stderr).toBe('');
+    expect(doctor.code).toBe(0);
+    expect(doctor.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/flow/golden/runtime/inspect-report.json');
+    await expectGoldenJson(JSON.parse(runs.stdout), 'fixtures/flow/golden/runtime/runs.json');
+    await expectGoldenJson(JSON.parse(errors.stdout), 'fixtures/flow/golden/runtime/error-groups.json');
+    await expectGoldenJson(JSON.parse(connrefs.stdout), 'fixtures/flow/golden/runtime/connection-health.json');
+    await expectGoldenJson(JSON.parse(doctor.stdout), 'fixtures/flow/golden/runtime/doctor-report.json');
   });
 });
