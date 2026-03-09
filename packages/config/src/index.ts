@@ -33,26 +33,53 @@ const providerBindingSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+const solutionTargetSchema = z.object({
+  environment: z.string().optional(),
+  uniqueName: z.string(),
+});
+
+const stageParameterOverrideSchema = z.union([primitiveValueSchema, projectParameterSchema.partial()]);
+
+const topologyStageSchema = z.object({
+  description: z.string().optional(),
+  environment: z.string().optional(),
+  solution: z.string().optional(),
+  solutions: z.record(z.string(), z.union([z.string(), solutionTargetSchema])).optional(),
+  parameters: z.record(z.string(), stageParameterOverrideSchema).optional(),
+});
+
+const secretProviderSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('env'),
+    prefix: z.string().optional(),
+  }),
+]);
+
+const projectSecretsSchema = z.object({
+  defaultProvider: z.string().optional(),
+  providers: z.record(z.string(), secretProviderSchema).optional(),
+});
+
 const projectConfigSchema = z.object({
   name: z.string().optional(),
   defaults: z
     .object({
       environment: z.string().optional(),
       solution: z.string().optional(),
+      stage: z.string().optional(),
     })
     .optional(),
-  solutions: z
-    .record(
-      z.string(),
-      z.object({
-        environment: z.string().optional(),
-        uniqueName: z.string(),
-      })
-    )
-    .optional(),
+  solutions: z.record(z.string(), solutionTargetSchema).optional(),
   assets: z.record(z.string(), z.string()).optional(),
   providerBindings: z.record(z.string(), providerBindingSchema).optional(),
   parameters: z.record(z.string(), projectParameterSchema).optional(),
+  topology: z
+    .object({
+      defaultStage: z.string().optional(),
+      stages: z.record(z.string(), topologyStageSchema),
+    })
+    .optional(),
+  secrets: projectSecretsSchema.optional(),
   templateRegistries: z.array(z.string()).optional(),
   build: z.record(z.string(), z.unknown()).optional(),
   docs: z
@@ -137,6 +164,11 @@ const globalConfigSchema = z.object({
 export type ParameterMapping = z.infer<typeof parameterMappingSchema>;
 export type ProjectParameterDefinition = z.infer<typeof projectParameterSchema>;
 export type ProviderBinding = z.infer<typeof providerBindingSchema>;
+export type SolutionTarget = z.infer<typeof solutionTargetSchema>;
+export type StageParameterOverride = z.infer<typeof stageParameterOverrideSchema>;
+export type ProjectTopologyStage = z.infer<typeof topologyStageSchema>;
+export type ProjectSecretProvider = z.infer<typeof secretProviderSchema>;
+export type ProjectSecretsConfig = z.infer<typeof projectSecretsSchema>;
 export type ProjectConfig = z.infer<typeof projectConfigSchema>;
 export type StoredAuthProfile = z.infer<typeof storedAuthProfileSchema>;
 export type EnvironmentAlias = z.infer<typeof environmentAliasSchema>;

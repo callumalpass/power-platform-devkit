@@ -24,6 +24,8 @@ describe('renderMarkdownReport', () => {
           type: 'string',
           source: 'environment',
           value: 'https://api.example.test',
+          sensitive: false,
+          hasValue: true,
           definition: {
             fromEnv: 'PP_API_BASE_URL',
           },
@@ -37,12 +39,40 @@ describe('renderMarkdownReport', () => {
           exists: true,
         },
       ],
+      topology: {
+        defaultStage: 'dev',
+        selectedStage: 'dev',
+        activeEnvironment: 'dev',
+        activeSolution: {
+          alias: 'core',
+          environment: 'dev',
+          uniqueName: 'core',
+          source: 'default',
+        },
+        stages: {
+          dev: {
+            name: 'dev',
+            environment: 'dev',
+            defaultSolution: {
+              alias: 'core',
+              environment: 'dev',
+              uniqueName: 'core',
+              source: 'default',
+            },
+            solutions: {},
+            parameterOverrides: [],
+          },
+        },
+      },
+      templateRegistries: [],
+      build: {},
       diagnostics: [],
     };
 
     const report = renderMarkdownReport(project);
     expect(report).toContain('# Project Report');
     expect(report).toContain('Default environment');
+    expect(report).toContain('Selected stage');
     expect(report).toContain('API_BASE_URL');
   });
 });

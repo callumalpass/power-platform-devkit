@@ -2,8 +2,15 @@
 
 import { readFile } from 'node:fs/promises';
 import { renderMarkdownReport, generateContextPack } from '@pp/analysis';
-import { stableStringify } from '@pp/artifacts';
 import { AuthService, summarizeProfile, type AuthProfile, type UserAuthProfile } from '@pp/auth';
+import {
+  createMutationPreview,
+  readMutationFlags,
+  renderFailure,
+  renderOutput,
+  renderWarnings,
+  type CliOutputFormat,
+} from './contract';
 import {
   getEnvironmentAlias,
   listEnvironments,
@@ -14,21 +21,27 @@ import {
 } from '@pp/config';
 import {
   parseColumnCreateSpec,
+  parseCustomerRelationshipCreateSpec,
   parseGlobalOptionSetCreateSpec,
+  parseGlobalOptionSetUpdateSpec,
+  parseManyToManyRelationshipCreateSpec,
   parseOneToManyRelationshipCreateSpec,
   parseTableCreateSpec,
   normalizeAttributeDefinition,
   normalizeAttributeDefinitions,
+  normalizeGlobalOptionSetDefinition,
+  normalizeRelationshipDefinition,
   resolveDataverseClient,
   type AttributeMetadataView,
+  type RelationshipMetadataKind,
 } from '@pp/dataverse';
 import { buildDeployPlan } from '@pp/deploy';
 import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
-import { discoverProject, summarizeProject } from '@pp/project';
+import { discoverProject, summarizeProject, summarizeResolvedParameter } from '@pp/project';
 import { SolutionService } from '@pp/solution';
 import YAML from 'yaml';
 
-type OutputFormat = 'json' | 'markdown' | 'table' | 'raw';
+type OutputFormat = CliOutputFormat;
 type AttributeListView = Extract<AttributeMetadataView, 'common' | 'raw'>;
 
 const ATTRIBUTE_COMMON_SELECT_FIELDS = [
@@ -192,8 +205,14 @@ async function runSolution(command: string | undefined, args: string[]): Promise
 
 async function runProjectInspect(args: string[]): Promise<number> {
   const path = positionalArgs(args)[0] ?? process.cwd();
-  const format = (readFlag(args, '--format') ?? 'json') as OutputFormat;
-  const project = await discoverProject(path);
+  const format = outputFormat(args, 'json');
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const project = await discoverProject(path, discoveryOptions.data);
 
   if (!project.success || !project.data) {
     return printFailure(project);
@@ -201,9 +220,15 @@ async function runProjectInspect(args: string[]): Promise<number> {
 
   const payload = {
     summary: summarizeProject(project.data),
+    topology: project.data.topology,
     providerBindings: project.data.providerBindings,
-    parameters: project.data.parameters,
+    parameters: Object.fromEntries(
+      Object.values(project.data.parameters).map((parameter) => [parameter.name, summarizeResolvedParameter(parameter)])
+    ),
     assets: project.data.assets,
+    templateRegistries: project.data.templateRegistries,
+    build: project.data.build,
+    docs: project.data.docs,
   };
 
   printByFormat(payload, format);
@@ -212,8 +237,14 @@ async function runProjectInspect(args: string[]): Promise<number> {
 
 async function runAnalysisReport(args: string[]): Promise<number> {
   const path = positionalArgs(args)[0] ?? process.cwd();
-  const format = (readFlag(args, '--format') ?? 'markdown') as OutputFormat;
-  const project = await discoverProject(path);
+  const format = outputFormat(args, 'markdown');
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const project = await discoverProject(path, discoveryOptions.data);
 
   if (!project.success || !project.data) {
     return printFailure(project);
@@ -237,8 +268,14 @@ async function runAnalysisReport(args: string[]): Promise<number> {
 async function runAnalysisContext(args: string[]): Promise<number> {
   const projectPath = readFlag(args, '--project') ?? process.cwd();
   const asset = readFlag(args, '--asset');
-  const format = (readFlag(args, '--format') ?? 'json') as OutputFormat;
-  const project = await discoverProject(projectPath);
+  const format = outputFormat(args, 'json');
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const project = await discoverProject(projectPath, discoveryOptions.data);
 
   if (!project.success || !project.data) {
     return printFailure(project);
@@ -256,8 +293,14 @@ async function runAnalysisContext(args: string[]): Promise<number> {
 
 async function runDeployPlan(args: string[]): Promise<number> {
   const projectPath = readFlag(args, '--project') ?? process.cwd();
-  const format = (readFlag(args, '--format') ?? 'json') as OutputFormat;
-  const project = await discoverProject(projectPath);
+  const format = outputFormat(args, 'json');
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const project = await discoverProject(projectPath, discoveryOptions.data);
 
   if (!project.success || !project.data) {
     return printFailure(project);
@@ -274,7 +317,7 @@ async function runDeployPlan(args: string[]): Promise<number> {
 }
 
 async function runAuthProfileList(auth: AuthService, args: string[]): Promise<number> {
-  const format = (readFlag(args, '--format') ?? 'json') as OutputFormat;
+  const format = outputFormat(args, 'json');
   const profiles = await auth.listProfiles();
 
   if (!profiles.success) {
@@ -292,7 +335,7 @@ async function runAuthProfileInspect(auth: AuthService, args: string[]): Promise
     return printFailure(argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name is required.'));
   }
 
-  const format = (readFlag(args, '--format') ?? 'json') as OutputFormat;
+  const format = outputFormat(args, 'json');
   const profile = await auth.getProfile(name);
 
   if (!profile.success) {
@@ -410,13 +453,19 @@ async function runAuthProfileSave(
     }
   }
 
+  const preview = maybeHandleMutationPreview(args, 'json', `auth.profile.${type === 'user' ? 'add-user' : `add-${type}`}`, { name }, summarizeProfile(profile));
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const saved = await auth.saveProfile(profile);
 
   if (!saved.success || !saved.data) {
     return printFailure(saved);
   }
 
-  printByFormat(summarizeProfile(saved.data), (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(summarizeProfile(saved.data), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -493,7 +542,7 @@ async function runAuthLogin(auth: AuthService, args: string[]): Promise<number> 
       resource: resource || undefined,
       authenticated: true,
     },
-    (readFlag(args, '--format') ?? 'json') as OutputFormat
+    outputFormat(args, 'json')
   );
   return 0;
 }
@@ -503,6 +552,12 @@ async function runAuthProfileRemove(auth: AuthService, args: string[]): Promise<
 
   if (!name) {
     return printFailure(argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name is required.'));
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'auth.profile.remove', { name });
+
+  if (preview !== undefined) {
+    return preview;
   }
 
   const removed = await auth.removeProfile(name);
@@ -517,7 +572,7 @@ async function runAuthProfileRemove(auth: AuthService, args: string[]): Promise<
 
 async function runAuthToken(auth: AuthService, args: string[]): Promise<number> {
   const profileName = readFlag(args, '--profile');
-  const format = (readFlag(args, '--format') ?? 'raw') as OutputFormat;
+  const format = outputFormat(args, 'raw');
 
   if (!profileName) {
     return printFailure(argumentFailure('AUTH_TOKEN_PROFILE_REQUIRED', '--profile is required.'));
@@ -573,7 +628,7 @@ async function runEnvironmentList(configOptions: ConfigStoreOptions, args: strin
     return printFailure(environments);
   }
 
-  printByFormat(environments.data ?? [], (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(environments.data ?? [], outputFormat(args, 'json'));
   return 0;
 }
 
@@ -596,13 +651,19 @@ async function runEnvironmentAdd(configOptions: ConfigStoreOptions, args: string
     apiPath: readFlag(args, '--api-path'),
   };
 
+  const preview = maybeHandleMutationPreview(args, 'json', 'env.add', { alias, url, authProfile }, environment);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const saved = await saveEnvironmentAlias(environment, configOptions);
 
   if (!saved.success || !saved.data) {
     return printFailure(saved);
   }
 
-  printByFormat(saved.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(saved.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -623,7 +684,7 @@ async function runEnvironmentInspect(configOptions: ConfigStoreOptions, args: st
     return printFailure(fail(createDiagnostic('error', 'ENV_NOT_FOUND', `Environment alias ${alias} was not found.`)));
   }
 
-  printByFormat(environment.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(environment.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -632,6 +693,12 @@ async function runEnvironmentRemove(configOptions: ConfigStoreOptions, args: str
 
   if (!alias) {
     return printFailure(argumentFailure('ENV_ALIAS_REQUIRED', 'Environment alias is required.'));
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'env.remove', { alias });
+
+  if (preview !== undefined) {
+    return preview;
   }
 
   const removed = await removeEnvironmentAlias(alias, configOptions);
@@ -664,7 +731,7 @@ async function runDataverseWhoAmI(args: string[]): Promise<number> {
       authProfile: resolution.data.authProfile.name,
       ...whoAmI.data,
     },
-    (readFlag(args, '--format') ?? 'json') as OutputFormat
+    outputFormat(args, 'json')
   );
   return 0;
 }
@@ -689,6 +756,14 @@ async function runDataverseRequest(args: string[]): Promise<number> {
     return printFailure(body);
   }
 
+  if ((readFlag(args, '--method') ?? 'GET').toUpperCase() !== 'GET') {
+    const preview = maybeHandleMutationPreview(args, 'json', 'dv.request', { path, method: readFlag(args, '--method') ?? 'GET' }, body.data);
+
+    if (preview !== undefined) {
+      return preview;
+    }
+  }
+
   const response = await resolution.data.client.request<unknown>({
     path,
     method: readFlag(args, '--method') ?? 'GET',
@@ -707,7 +782,7 @@ async function runDataverseRequest(args: string[]): Promise<number> {
       headers: response.data.headers,
       body: response.data.data,
     },
-    (readFlag(args, '--format') ?? 'json') as OutputFormat
+    outputFormat(args, 'json')
   );
   return 0;
 }
@@ -744,7 +819,7 @@ async function runDataverseQuery(args: string[]): Promise<number> {
       return printFailure(page);
     }
 
-    printByFormat(page.data ?? { records: [] }, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+    printByFormat(page.data ?? { records: [] }, outputFormat(args, 'json'));
     return 0;
   }
 
@@ -757,7 +832,7 @@ async function runDataverseQuery(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data ?? [], (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
   return 0;
 }
 
@@ -786,7 +861,7 @@ async function runDataverseGet(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -813,6 +888,12 @@ async function runDataverseCreate(args: string[]): Promise<number> {
     return printFailure(argumentFailure('DV_BODY_REQUIRED', '--body or --body-file must contain a JSON object.'));
   }
 
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.create', { table }, body.data as Record<string, unknown>);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const result = await resolution.data.client.create<Record<string, unknown>, Record<string, unknown>>(table, body.data as Record<string, unknown>, {
     select: readListFlag(args, '--select'),
     expand: readListFlag(args, '--expand'),
@@ -826,7 +907,7 @@ async function runDataverseCreate(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -855,6 +936,12 @@ async function runDataverseUpdate(args: string[]): Promise<number> {
     return printFailure(argumentFailure('DV_BODY_REQUIRED', '--body or --body-file must contain a JSON object.'));
   }
 
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.update', { table, id }, body.data as Record<string, unknown>);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const result = await resolution.data.client.update<Record<string, unknown>, Record<string, unknown>>(
     table,
     id,
@@ -873,7 +960,7 @@ async function runDataverseUpdate(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -892,6 +979,12 @@ async function runDataverseDelete(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.delete', { table, id });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const result = await resolution.data.client.delete(table, id, {
     ifMatch: readFlag(args, '--if-match'),
   });
@@ -900,7 +993,7 @@ async function runDataverseDelete(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -911,7 +1004,7 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'DV_METADATA_ACTION_REQUIRED',
-        'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata create-table`, `dv metadata add-column`, `dv metadata create-option-set`, or `dv metadata create-relationship`.'
+        'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata option-set <name>`, `dv metadata relationship <schemaName>`, `dv metadata create-table`, `dv metadata add-column`, `dv metadata create-option-set`, `dv metadata update-option-set`, `dv metadata create-relationship`, `dv metadata create-many-to-many`, or `dv metadata create-customer-relationship`.'
       )
     );
   }
@@ -932,6 +1025,14 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
     return runDataverseMetadataColumn(args);
   }
 
+  if (action === 'option-set') {
+    return runDataverseMetadataOptionSet(args);
+  }
+
+  if (action === 'relationship') {
+    return runDataverseMetadataRelationship(args);
+  }
+
   if (action === 'create-table') {
     return runDataverseMetadataCreateTable(args);
   }
@@ -944,8 +1045,20 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
     return runDataverseMetadataCreateOptionSet(args);
   }
 
+  if (action === 'update-option-set') {
+    return runDataverseMetadataUpdateOptionSet(args);
+  }
+
   if (action === 'create-relationship') {
     return runDataverseMetadataCreateRelationship(args);
+  }
+
+  if (action === 'create-many-to-many') {
+    return runDataverseMetadataCreateManyToManyRelationship(args);
+  }
+
+  if (action === 'create-customer-relationship') {
+    return runDataverseMetadataCreateCustomerRelationship(args);
   }
 
   return printFailure(argumentFailure('DV_METADATA_ACTION_INVALID', `Unsupported metadata action ${action}.`));
@@ -975,7 +1088,7 @@ async function runDataverseMetadataTables(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data ?? [], (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1003,7 +1116,7 @@ async function runDataverseMetadataTable(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1045,7 +1158,7 @@ async function runDataverseMetadataColumns(args: string[]): Promise<number> {
 
   printWarnings(result);
   const payload = view.data === 'raw' ? result.data ?? [] : normalizeAttributeDefinitions(result.data ?? [], 'common');
-  printByFormat(payload, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(payload, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1091,7 +1204,86 @@ async function runDataverseMetadataColumn(args: string[]): Promise<number> {
 
   printWarnings(result);
   const payload = view.data === 'raw' ? result.data : normalizeAttributeDefinition(result.data, view.data);
-  printByFormat(payload, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(payload, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseMetadataOptionSet(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const name = positional[1];
+
+  if (!name) {
+    return printFailure(argumentFailure('DV_METADATA_OPTION_SET_REQUIRED', 'Usage: dv metadata option-set <name> --env <alias>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await resolution.data.client.getGlobalOptionSet(name, {
+    select: readListFlag(args, '--select'),
+    expand: readListFlag(args, '--expand'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  const view = readMetadataInspectView(args);
+
+  if (!view.success || !view.data) {
+    return printFailure(view);
+  }
+
+  const payload = view.data === 'raw' ? result.data : normalizeGlobalOptionSetDefinition(result.data);
+  printWarnings(result);
+  printByFormat(payload, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseMetadataRelationship(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const schemaName = positional[1];
+
+  if (!schemaName) {
+    return printFailure(argumentFailure('DV_METADATA_RELATIONSHIP_REQUIRED', 'Usage: dv metadata relationship <schemaName> --env <alias>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const kind = readRelationshipKind(args);
+
+  if (!kind.success || !kind.data) {
+    return printFailure(kind);
+  }
+
+  const result = await resolution.data.client.getRelationship(schemaName, {
+    kind: kind.data,
+    select: readListFlag(args, '--select'),
+    expand: readListFlag(args, '--expand'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  const view = readMetadataInspectView(args);
+
+  if (!view.success || !view.data) {
+    return printFailure(view);
+  }
+
+  const payload = view.data === 'raw' ? result.data : normalizeRelationshipDefinition(result.data);
+  printWarnings(result);
+  printByFormat(payload, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1120,6 +1312,12 @@ async function runDataverseMetadataCreateTable(args: string[]): Promise<number> 
     return printFailure(writeOptions);
   }
 
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.metadata.create-table', { solution: writeOptions.data?.solutionUniqueName }, spec.data);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const result = await resolution.data.client.createTable(spec.data, writeOptions.data);
 
   if (!result.success || !result.data) {
@@ -1127,7 +1325,7 @@ async function runDataverseMetadataCreateTable(args: string[]): Promise<number> 
   }
 
   printWarnings(result);
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1165,6 +1363,12 @@ async function runDataverseMetadataAddColumn(args: string[]): Promise<number> {
     return printFailure(writeOptions);
   }
 
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.metadata.add-column', { tableLogicalName, solution: writeOptions.data?.solutionUniqueName }, spec.data);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const result = await resolution.data.client.createColumn(tableLogicalName, spec.data, writeOptions.data);
 
   if (!result.success || !result.data) {
@@ -1172,7 +1376,7 @@ async function runDataverseMetadataAddColumn(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1206,6 +1410,12 @@ async function runDataverseMetadataCreateOptionSet(args: string[]): Promise<numb
     return printFailure(writeOptions);
   }
 
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.metadata.create-option-set', { solution: writeOptions.data?.solutionUniqueName }, spec.data);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const result = await resolution.data.client.createGlobalOptionSet(spec.data, writeOptions.data);
 
   if (!result.success || !result.data) {
@@ -1213,7 +1423,54 @@ async function runDataverseMetadataCreateOptionSet(args: string[]): Promise<numb
   }
 
   printWarnings(result);
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseMetadataUpdateOptionSet(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const specInput = await readStructuredSpecArgument(
+    args,
+    '--file',
+    'DV_METADATA_UPDATE_OPTION_SET_FILE_REQUIRED',
+    'Usage: dv metadata update-option-set --file FILE --env <alias>'
+  );
+
+  if (!specInput.success || specInput.data === undefined) {
+    return printFailure(specInput);
+  }
+
+  const spec = parseGlobalOptionSetUpdateSpec(specInput.data);
+
+  if (!spec.success || !spec.data) {
+    return printFailure(spec);
+  }
+
+  const writeOptions = readMetadataCreateOptions(args);
+
+  if (!writeOptions.success || !writeOptions.data) {
+    return printFailure(writeOptions);
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.metadata.update-option-set', { solution: writeOptions.data?.solutionUniqueName }, spec.data);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await resolution.data.client.updateGlobalOptionSet(spec.data, writeOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1247,6 +1504,12 @@ async function runDataverseMetadataCreateRelationship(args: string[]): Promise<n
     return printFailure(writeOptions);
   }
 
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.metadata.create-relationship', { solution: writeOptions.data?.solutionUniqueName }, spec.data);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const result = await resolution.data.client.createOneToManyRelationship(spec.data, writeOptions.data);
 
   if (!result.success || !result.data) {
@@ -1254,7 +1517,101 @@ async function runDataverseMetadataCreateRelationship(args: string[]): Promise<n
   }
 
   printWarnings(result);
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseMetadataCreateManyToManyRelationship(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const specInput = await readStructuredSpecArgument(
+    args,
+    '--file',
+    'DV_METADATA_CREATE_MANY_TO_MANY_FILE_REQUIRED',
+    'Usage: dv metadata create-many-to-many --file FILE --env <alias>'
+  );
+
+  if (!specInput.success || specInput.data === undefined) {
+    return printFailure(specInput);
+  }
+
+  const spec = parseManyToManyRelationshipCreateSpec(specInput.data);
+
+  if (!spec.success || !spec.data) {
+    return printFailure(spec);
+  }
+
+  const writeOptions = readMetadataCreateOptions(args);
+
+  if (!writeOptions.success || !writeOptions.data) {
+    return printFailure(writeOptions);
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.metadata.create-many-to-many', { solution: writeOptions.data?.solutionUniqueName }, spec.data);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await resolution.data.client.createManyToManyRelationship(spec.data, writeOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseMetadataCreateCustomerRelationship(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const specInput = await readStructuredSpecArgument(
+    args,
+    '--file',
+    'DV_METADATA_CREATE_CUSTOMER_RELATIONSHIP_FILE_REQUIRED',
+    'Usage: dv metadata create-customer-relationship --file FILE --env <alias>'
+  );
+
+  if (!specInput.success || specInput.data === undefined) {
+    return printFailure(specInput);
+  }
+
+  const spec = parseCustomerRelationshipCreateSpec(specInput.data);
+
+  if (!spec.success || !spec.data) {
+    return printFailure(spec);
+  }
+
+  const writeOptions = readMetadataCreateOptions(args);
+
+  if (!writeOptions.success || !writeOptions.data) {
+    return printFailure(writeOptions);
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.metadata.create-customer-relationship', { solution: writeOptions.data?.solutionUniqueName }, spec.data);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await resolution.data.client.createCustomerRelationship(spec.data, writeOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1272,7 +1629,7 @@ async function runSolutionList(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1300,7 +1657,7 @@ async function runSolutionInspect(args: string[]): Promise<number> {
     return printFailure(fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`)));
   }
 
-  printByFormat(result.data, (readFlag(args, '--format') ?? 'json') as OutputFormat);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1370,42 +1727,71 @@ async function resolveDataverseClientForCli(args: string[]) {
 }
 
 function printByFormat(value: unknown, format: OutputFormat): void {
-  switch (format) {
-    case 'raw':
-      process.stdout.write(typeof value === 'string' ? value + '\n' : stableStringify(value as never) + '\n');
-      break;
-    case 'markdown':
-      process.stdout.write(typeof value === 'string' ? value + '\n' : stableStringify(value as never) + '\n');
-      break;
-    case 'table':
-      process.stdout.write(stableStringify(value as never) + '\n');
-      break;
-    case 'json':
-    default:
-      process.stdout.write(stableStringify(value as never) + '\n');
-      break;
-  }
+  process.stdout.write(renderOutput(value, format));
 }
 
 function printFailure(result: OperationResult<unknown>): number {
-  const diagnostics = [...result.diagnostics, ...result.warnings];
-
-  for (const diagnostic of diagnostics) {
-    process.stderr.write(`${diagnostic.level.toUpperCase()} ${diagnostic.code}: ${diagnostic.message}\n`);
-  }
+  process.stderr.write(renderFailure(result, resolveProcessOutputFormat()));
 
   return 1;
 }
 
 function printWarnings(result: OperationResult<unknown>): void {
-  for (const warning of result.warnings) {
-    process.stderr.write(`${warning.level.toUpperCase()} ${warning.code}: ${warning.message}\n`);
+  if (result.warnings.length > 0) {
+    process.stderr.write(renderWarnings(result.warnings));
   }
+}
+
+function maybeHandleMutationPreview(
+  args: string[],
+  fallbackFormat: OutputFormat,
+  action: string,
+  target: Record<string, unknown>,
+  input?: unknown
+): number | undefined {
+  const mutation = readMutationFlags(args);
+
+  if (!mutation.success || !mutation.data) {
+    return printFailure(mutation);
+  }
+
+  if (mutation.data.mode === 'apply') {
+    return undefined;
+  }
+
+  printByFormat(createMutationPreview(action, mutation.data, target, input), outputFormat(args, fallbackFormat));
+  return 0;
+}
+
+function outputFormat(args: string[], fallback: OutputFormat): OutputFormat {
+  return (readFlag(args, '--format') ?? fallback) as OutputFormat;
+}
+
+function resolveProcessOutputFormat(): OutputFormat {
+  return outputFormat(process.argv.slice(2), 'json');
 }
 
 function readConfigOptions(args: string[]): ConfigStoreOptions {
   const configDir = readFlag(args, '--config-dir');
   return configDir ? { configDir } : {};
+}
+
+function readProjectDiscoveryOptions(args: string[]): OperationResult<{ stage?: string; parameterOverrides?: Record<string, string> }> {
+  const parameterOverrides = readParameterOverrides(args);
+
+  if (!parameterOverrides.success || !parameterOverrides.data) {
+    return parameterOverrides;
+  }
+
+  return ok(
+    {
+      stage: readFlag(args, '--stage'),
+      parameterOverrides: Object.keys(parameterOverrides.data).length > 0 ? parameterOverrides.data : undefined,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
 }
 
 function readFlag(args: string[], name: string): string | undefined {
@@ -1433,6 +1819,24 @@ function readRepeatedFlags(args: string[], name: string): string[] {
   }
 
   return values;
+}
+
+function readParameterOverrides(args: string[]): OperationResult<Record<string, string>> {
+  const overrides: Record<string, string> = {};
+
+  for (const value of readRepeatedFlags(args, '--param')) {
+    const separatorIndex = value.indexOf('=');
+
+    if (separatorIndex <= 0) {
+      return argumentFailure('PROJECT_PARAM_OVERRIDE_INVALID', 'Use `--param NAME=VALUE` for project parameter overrides.');
+    }
+
+    overrides[value.slice(0, separatorIndex)] = value.slice(separatorIndex + 1);
+  }
+
+  return ok(overrides, {
+    supportTier: 'preview',
+  });
 }
 
 function readListFlag(args: string[], name: string): string[] | undefined {
@@ -1494,6 +1898,30 @@ function readAttributeDetailView(args: string[]): OperationResult<AttributeMetad
   }
 
   return argumentFailure('DV_METADATA_COLUMN_VIEW_INVALID', 'Unsupported --view for `dv metadata column`. Use `common`, `detailed`, or `raw`.');
+}
+
+function readMetadataInspectView(args: string[]): OperationResult<'normalized' | 'raw'> {
+  const view = readFlag(args, '--view') ?? 'normalized';
+
+  if (view === 'normalized' || view === 'raw') {
+    return ok(view, {
+      supportTier: 'preview',
+    });
+  }
+
+  return argumentFailure('DV_METADATA_VIEW_INVALID', 'Unsupported --view. Use `normalized` or `raw`.');
+}
+
+function readRelationshipKind(args: string[]): OperationResult<RelationshipMetadataKind> {
+  const kind = readFlag(args, '--kind') ?? 'auto';
+
+  if (kind === 'auto' || kind === 'one-to-many' || kind === 'many-to-many') {
+    return ok(kind, {
+      supportTier: 'preview',
+    });
+  }
+
+  return argumentFailure('DV_METADATA_RELATIONSHIP_KIND_INVALID', 'Unsupported --kind. Use `auto`, `one-to-many`, or `many-to-many`.');
 }
 
 function mergeUniqueStrings(base: readonly string[], extra: string[] | undefined): string[] {
@@ -1669,13 +2097,16 @@ function positionalArgs(args: string[]): string[] {
 const BOOLEAN_FLAGS = new Set([
   '--all',
   '--count',
+  '--dry-run',
   '--device-code',
   '--device-code-fallback',
   '--force-prompt',
   '--no-device-code-fallback',
   '--no-publish',
   '--page-info',
+  '--plan',
   '--return-representation',
+  '--yes',
 ]);
 
 function argumentFailure(code: string, message: string): OperationResult<never> {
@@ -1723,18 +2154,31 @@ function printHelp(): void {
       '  dv metadata table <logicalName> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
       '  dv metadata columns <tableLogicalName> --env ALIAS [--view common|raw] [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
       '  dv metadata column <tableLogicalName> <columnLogicalName> --env ALIAS [--view common|detailed|raw] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata option-set <name> --env ALIAS [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata relationship <schemaName> --env ALIAS [--kind auto|one-to-many|many-to-many] [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
       '  dv metadata create-table --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '  dv metadata add-column <tableLogicalName> --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '  dv metadata create-option-set --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata update-option-set --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '  dv metadata create-relationship --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata create-many-to-many --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata create-customer-relationship --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '',
       '  solution list --env ALIAS [--config-dir path]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',
       '',
-      '  project inspect [path] [--format json|markdown|table]',
-      '  analysis report [path] [--format json|markdown]',
-      '  analysis context [--project path] [--asset assetRef] [--format json|markdown]',
-      '  deploy plan [--project path] [--format json|markdown]',
+      '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  deploy plan [--project path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+      '',
+      'Mutation command options:',
+      '  --dry-run  render a mutation preview without side effects',
+      '  --plan     render a mutation plan without side effects',
+      '  --yes      record non-interactive confirmation for guarded workflows',
     ].join('\n') + '\n'
   );
 }

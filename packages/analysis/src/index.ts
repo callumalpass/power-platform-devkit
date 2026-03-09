@@ -1,15 +1,28 @@
 import { fail, ok, type OperationResult } from '@pp/diagnostics';
 import { buildDeployPlan, type DeployPlan } from '@pp/deploy';
-import { summarizeProject, type ProjectContext, type ProjectSummary } from '@pp/project';
+import { summarizeProject, summarizeResolvedParameter, type ProjectContext, type ProjectSummary } from '@pp/project';
 
 export interface AnalysisContextPack {
   generatedAt: string;
   project: ProjectSummary;
   providerBindings: Record<string, string>;
+  topology: {
+    defaultStage?: string;
+    selectedStage?: string;
+    activeEnvironment?: string;
+    activeSolution?: string;
+    stages: Array<{
+      name: string;
+      environment?: string;
+      defaultSolution?: string;
+    }>;
+  };
   parameters: Array<{
     name: string;
     source: string;
     hasValue: boolean;
+    sensitive: boolean;
+    reference?: string;
     mappings: Array<{ kind: string; target: string }>;
   }>;
   assets: Array<{
@@ -42,12 +55,28 @@ export function generateContextPack(project: ProjectContext, focusAsset?: string
       providerBindings: Object.fromEntries(
         Object.entries(project.providerBindings).map(([name, binding]) => [name, `${binding.kind}:${binding.target}`])
       ),
-      parameters: Object.values(project.parameters).map((parameter) => ({
-        name: parameter.name,
-        source: parameter.source,
-        hasValue: parameter.value !== undefined || parameter.source === 'secret-ref',
-        mappings: parameter.definition.mapsTo ?? [],
-      })),
+      topology: {
+        defaultStage: project.topology.defaultStage,
+        selectedStage: project.topology.selectedStage,
+        activeEnvironment: project.topology.activeEnvironment,
+        activeSolution: project.topology.activeSolution?.uniqueName,
+        stages: Object.values(project.topology.stages).map((stage) => ({
+          name: stage.name,
+          environment: stage.environment,
+          defaultSolution: stage.defaultSolution?.uniqueName,
+        })),
+      },
+      parameters: Object.values(project.parameters).map((parameter) => {
+        const summary = summarizeResolvedParameter(parameter);
+        return {
+          name: summary.name,
+          source: summary.source,
+          hasValue: summary.hasValue,
+          sensitive: summary.sensitive,
+          reference: summary.reference,
+          mappings: summary.mappings,
+        };
+      }),
       assets: project.assets.map((asset) => ({
         name: asset.name,
         path: asset.path,
@@ -70,8 +99,9 @@ export function renderMarkdownReport(project: ProjectContext): string {
     .join('\n');
   const parameters = Object.values(project.parameters)
     .map((parameter) => {
-      const valueState = parameter.value !== undefined || parameter.source === 'secret-ref' ? 'resolved' : 'missing';
-      return `- \`${parameter.name}\`: ${parameter.source} (${valueState})`;
+      const summary = summarizeResolvedParameter(parameter);
+      const valueState = summary.hasValue ? 'resolved' : 'missing';
+      return `- \`${summary.name}\`: ${summary.source} (${valueState}${summary.sensitive ? ', sensitive' : ''})`;
     })
     .join('\n');
   const assets = project.assets
@@ -84,6 +114,10 @@ export function renderMarkdownReport(project: ProjectContext): string {
     `- Root: \`${summary.root}\``,
     `- Default environment: \`${summary.defaultEnvironment ?? 'unset'}\``,
     `- Default solution: \`${summary.defaultSolution ?? 'unset'}\``,
+    `- Selected stage: \`${summary.selectedStage ?? 'unset'}\``,
+    `- Active environment: \`${summary.activeEnvironment ?? 'unset'}\``,
+    `- Active solution: \`${summary.activeSolution ?? 'unset'}\``,
+    `- Topology stages: ${summary.topologyStageCount}`,
     `- Assets discovered: ${summary.assetCount}`,
     `- Provider bindings: ${summary.providerBindingCount}`,
     `- Parameters: ${summary.parameterCount}`,

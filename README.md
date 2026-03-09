@@ -2,7 +2,7 @@
 
 TypeScript monorepo for an agent-oriented Power Platform toolkit.
 
-The repository is structured around small workspace packages rather than a single CLI application. The CLI currently exposes the first useful slice of that architecture: auth profile management, Dataverse environment aliases, Dataverse read operations, metadata authoring, solution inspection, project discovery, analysis context generation, and deploy-plan generation.
+The repository is structured around small workspace packages rather than a single CLI application. The CLI currently exposes the first useful slice of that architecture: auth profile management, Dataverse environment aliases, Dataverse read operations, metadata authoring, solution inspection, project discovery, stage-aware topology inspection, analysis context generation, and deploy-plan generation.
 
 ## Current scope
 
@@ -10,11 +10,13 @@ Implemented today:
 
 - auth profiles for browser user login, device code, environment tokens, client secret, and static tokens
 - environment aliases that bind a Dataverse URL to an auth profile
-- Dataverse commands: `whoami`, generic Web API requests, query/get, create/update/delete, metadata inspection, metadata create for phase 1 and 2 schema assets
+- Dataverse commands: `whoami`, generic Web API requests, query/get, create/update/delete, normalized metadata inspection, metadata create for phase 1/2 plus a phase-3 slice (`autonumber`, `file`, `image`, many-to-many, customer relationships, option-set updates)
 - solution commands: `list`, `inspect`
 - project discovery from `pp.config.json|yaml|yml`
+- stage-aware project topology, solution alias resolution, and secret-backed parameter resolution
 - analysis outputs for agent context and markdown reports
 - deploy-plan generation from local project state
+- read-only live smoke coverage through `pnpm smoke:live`
 
 Scaffolded but not yet implemented in depth:
 
@@ -95,10 +97,15 @@ pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
 pp dv metadata column account name --env dev --select LogicalName,SchemaName,AttributeType
 pp dv metadata column account name --env dev --view raw
+pp dv metadata option-set pp_projectstatus --env dev
+pp dv metadata relationship pp_project_account --env dev
 pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
 pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
 pp dv metadata create-option-set --env dev --file ./specs/status.optionset.yaml --solution Core
+pp dv metadata update-option-set --env dev --file ./specs/status.update.yaml --solution Core
 pp dv metadata create-relationship --env dev --file ./specs/project-account.relationship.yaml --solution Core
+pp dv metadata create-many-to-many --env dev --file ./specs/project-contact.m2m.yaml --solution Core
+pp dv metadata create-customer-relationship --env dev --file ./specs/project-customer.relationship.yaml --solution Core
 pp solution list --env dev
 ```
 
@@ -170,16 +177,33 @@ More detail is in [docs/auth-and-environments.md](docs/auth-and-environments.md)
 
 The `project`, `analysis`, and `deploy` commands work entirely from local repo state:
 
-- `project inspect` summarizes assets, provider bindings, and resolved parameters
+- `project inspect` summarizes assets, provider bindings, resolved parameters, and stage topology
 - `analysis report` emits a markdown report suitable for humans or agent handoff
 - `analysis context` emits a JSON context pack with deploy-plan data included
-- `deploy plan` turns resolved project parameters and assets into a structured plan
+- `deploy plan` turns resolved project parameters, topology, and assets into a structured plan
 
 The project config format and parameter resolution rules are documented in [docs/project-config.md](docs/project-config.md).
+
+## Live smoke
+
+Run the read-only live smoke path against the configured test-like environment alias and auth profile:
+
+```bash
+pnpm smoke:live
+```
+
+Override target selection when needed:
+
+```bash
+PP_SMOKE_ENV=test pnpm smoke:live
+PP_SMOKE_PROFILE=test-user pnpm smoke:live
+PP_CONFIG_DIR=./.tmp/pp-config pnpm smoke:live
+```
 
 ## Documentation
 
 - [Documentation index](docs/README.md)
+- [Command contract](docs/command-contract.md)
 - [Quickstart](docs/quickstart.md)
 - [Auth and environments](docs/auth-and-environments.md)
 - [Project config](docs/project-config.md)
