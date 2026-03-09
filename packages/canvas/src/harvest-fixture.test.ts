@@ -11,6 +11,7 @@ import {
   buildCanvasHarvestFixturePrototypeValidationBatchDocument,
   buildCanvasHarvestPrototypeValidationFixtureDocument,
   buildCanvasHarvestFixturePrototypeValidationBacklogDocument,
+  mergeCanvasHarvestFixturePrototypeDraftDocument,
   mergeCanvasHarvestFixturePrototypePromotionBatchDocument,
   mergeCanvasHarvestFixturePrototypeValidationBatchDocument,
   promoteCanvasHarvestFixturePrototypeDraft,
@@ -845,6 +846,150 @@ describe('canvas harvest fixture planning', () => {
         constructor: 'GroupContainer',
       }),
     ]);
+  });
+
+  it('merges refreshed prototype drafts with existing manual review edits', () => {
+    const built: CanvasHarvestFixturePrototypeDraftDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:12:00.000Z',
+      sourcePlanGeneratedAt: '2026-03-10T00:11:00.000Z',
+      sourcePrototypeGeneratedAt: '2026-03-10T00:10:00.000Z',
+      counts: {
+        draftControls: 2,
+        skippedControls: 1,
+      },
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          constructor: 'GroupContainer',
+          suggestedInsertQueries: ['Container'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'GroupContainer',
+            templateName: 'groupContainer',
+            templateVersion: '1.5.0',
+          },
+          properties: {
+            Height: '=320',
+            Width: '=600',
+          },
+          notes: ['Generated note'],
+          latestInsertObservation: {
+            generatedAt: '2026-03-10T00:11:30.000Z',
+            outcome: 'inserted',
+            strategy: 'insert-pane-search',
+            attemptedQueries: ['Container'],
+          },
+        },
+        {
+          family: 'modern',
+          catalogName: 'Date picker',
+          constructor: 'ModernDatePicker',
+          suggestedInsertQueries: ['Date picker'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'ModernDatePicker',
+            templateName: 'modernDatePicker',
+            templateVersion: '1.0.0',
+          },
+          properties: {
+            Height: '=32',
+          },
+          notes: ['Fresh modern note'],
+        },
+      ],
+      skipped: [
+        {
+          family: 'modern',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No constructor-backed suggestion is pinned yet.',
+          suggestedInsertQueries: ['Button'],
+        },
+      ],
+    };
+    const existing: CanvasHarvestFixturePrototypeDraftDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:05:00.000Z',
+      sourcePlanGeneratedAt: '2026-03-10T00:04:00.000Z',
+      sourcePrototypeGeneratedAt: '2026-03-10T00:03:00.000Z',
+      counts: {
+        draftControls: 3,
+        skippedControls: 0,
+      },
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          constructor: 'GroupContainer',
+          variant: 'Horizontal',
+          suggestedInsertQueries: ['Container'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'GroupContainer',
+            templateName: 'groupContainer',
+            templateVersion: '1.5.0',
+          },
+          properties: {
+            Height: '=400',
+            CustomFlag: '=true',
+          },
+          notes: ['Generated note', 'Manual review note'],
+        },
+        {
+          family: 'classic',
+          catalogName: 'Gallery',
+          constructor: 'Gallery',
+          suggestedInsertQueries: ['Gallery'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'Gallery',
+            templateName: 'gallery',
+            templateVersion: '2.15.0',
+          },
+        },
+      ],
+      skipped: [],
+    };
+
+    const merged = mergeCanvasHarvestFixturePrototypeDraftDocument(built, existing);
+
+    expect(merged.preservedEntries).toBe(1);
+    expect(merged.preservedVariantEntries).toBe(1);
+    expect(merged.preservedPropertyKeys).toBe(2);
+    expect(merged.preservedNotesEntries).toBe(1);
+    expect(merged.drafts).toEqual({
+      ...built,
+      drafts: [
+        {
+          family: 'classic',
+          catalogName: 'Container',
+          constructor: 'GroupContainer',
+          variant: 'Horizontal',
+          suggestedInsertQueries: ['Container'],
+          suggestion: {
+            matchType: 'constructor',
+            constructor: 'GroupContainer',
+            templateName: 'groupContainer',
+            templateVersion: '1.5.0',
+          },
+          properties: {
+            Height: '=400',
+            Width: '=600',
+            CustomFlag: '=true',
+          },
+          notes: ['Generated note', 'Manual review note'],
+          latestInsertObservation: {
+            generatedAt: '2026-03-10T00:11:30.000Z',
+            outcome: 'inserted',
+            strategy: 'insert-pane-search',
+            attemptedQueries: ['Container'],
+          },
+        },
+        built.drafts[1]!,
+      ],
+    });
   });
 
   it('resolves prototype draft selectors with family-aware ambiguity checks', () => {

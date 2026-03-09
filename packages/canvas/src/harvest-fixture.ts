@@ -222,6 +222,14 @@ export interface CanvasHarvestFixturePrototypeDraftDocument {
   skipped: CanvasHarvestFixturePrototypeDraftSkippedControl[];
 }
 
+export interface MergeCanvasHarvestFixturePrototypeDraftDocumentResult {
+  drafts: CanvasHarvestFixturePrototypeDraftDocument;
+  preservedEntries: number;
+  preservedVariantEntries: number;
+  preservedPropertyKeys: number;
+  preservedNotesEntries: number;
+}
+
 export interface CanvasHarvestFixturePrototypeValidationBacklogEntry {
   family: 'classic' | 'modern';
   catalogName: string;
@@ -1011,6 +1019,83 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
     },
     drafts,
     skipped,
+  };
+}
+
+export function mergeCanvasHarvestFixturePrototypeDraftDocument(
+  drafts: CanvasHarvestFixturePrototypeDraftDocument,
+  existing: CanvasHarvestFixturePrototypeDraftDocument
+): MergeCanvasHarvestFixturePrototypeDraftDocumentResult {
+  const existingByKey = new Map(
+    existing.drafts.map((entry) => [makeCatalogKey(entry.family, entry.catalogName), entry] as const)
+  );
+  let preservedEntries = 0;
+  let preservedVariantEntries = 0;
+  let preservedPropertyKeys = 0;
+  let preservedNotesEntries = 0;
+
+  const mergedDrafts = drafts.drafts.map((entry) => {
+    const existingEntry = existingByKey.get(makeCatalogKey(entry.family, entry.catalogName));
+    if (!existingEntry) {
+      return entry;
+    }
+
+    let changed = false;
+    let variant = entry.variant;
+    if (existingEntry.variant && existingEntry.variant !== entry.variant) {
+      variant = existingEntry.variant;
+      preservedVariantEntries += 1;
+      changed = true;
+    }
+
+    let properties = entry.properties;
+    if (existingEntry.properties) {
+      const mergedProperties = {
+        ...(entry.properties ?? {}),
+        ...existingEntry.properties,
+      };
+      const preservedPropertyCount = Object.entries(existingEntry.properties).filter(
+        ([propertyName, propertyValue]) => entry.properties?.[propertyName] !== propertyValue
+      ).length;
+      if (preservedPropertyCount > 0) {
+        properties = mergedProperties;
+        preservedPropertyKeys += preservedPropertyCount;
+        changed = true;
+      } else if (!properties && Object.keys(mergedProperties).length > 0) {
+        properties = mergedProperties;
+      }
+    }
+
+    const draftNotes = entry.notes ?? [];
+    const existingNotes = existingEntry.notes ?? [];
+    const preservedNotes = existingNotes.filter((note) => !draftNotes.includes(note));
+    const notes = dedupeStrings(draftNotes.concat(existingNotes));
+    if (preservedNotes.length > 0) {
+      preservedNotesEntries += 1;
+      changed = true;
+    }
+
+    if (changed) {
+      preservedEntries += 1;
+    }
+
+    return {
+      ...entry,
+      ...(variant ? { variant } : {}),
+      ...(properties ? { properties } : {}),
+      ...(notes.length > 0 ? { notes } : {}),
+    };
+  });
+
+  return {
+    drafts: {
+      ...drafts,
+      drafts: mergedDrafts,
+    },
+    preservedEntries,
+    preservedVariantEntries,
+    preservedPropertyKeys,
+    preservedNotesEntries,
   };
 }
 
