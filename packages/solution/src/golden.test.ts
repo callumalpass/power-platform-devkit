@@ -10,6 +10,32 @@ interface SolutionFixtureEnvironments {
 }
 
 describe('solution fixture-backed goldens', () => {
+  it('captures solution list, inspect, components, and dependencies outputs from committed Dataverse-like fixtures', async () => {
+    const fixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+
+    const source = new SolutionService(createFixtureDataverseClient(fixture.source));
+    const list = await source.list();
+    const inspect = await source.inspect('Core');
+    const components = await source.components('Core');
+    const dependencies = await source.dependencies('Core');
+
+    expect(list.success).toBe(true);
+    expect(list.data).toBeDefined();
+    expect(inspect.success).toBe(true);
+    expect(inspect.data).toBeDefined();
+    expect(components.success).toBe(true);
+    expect(components.data).toBeDefined();
+    expect(dependencies.success).toBe(true);
+    expect(dependencies.data).toBeDefined();
+
+    await expectGoldenJson(list.data, 'fixtures/solution/golden/list-report.json');
+    await expectGoldenJson(inspect.data, 'fixtures/solution/golden/inspect-report.json');
+    await expectGoldenJson(components.data, 'fixtures/solution/golden/components-report.json');
+    await expectGoldenJson(dependencies.data, 'fixtures/solution/golden/dependencies-report.json');
+  });
+
   it('captures solution analysis and compare outputs from committed Dataverse-like fixtures', async () => {
     const fixture = (await readJsonFile(
       resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')

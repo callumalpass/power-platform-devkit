@@ -1,0 +1,24 @@
+[
+  {
+    "dependencyType": 2,
+    "dependentComponentObjectId": "obj-flow",
+    "dependentComponentType": 29,
+    "dependentComponentTypeLabel": "workflow",
+    "id": "dep-source-missing-form",
+    "missingRequiredComponent": true,
+    "requiredComponentObjectId": "obj-form",
+    "requiredComponentType": 24,
+    "requiredComponentTypeLabel": "form"
+  },
+  {
+    "dependencyType": 1,
+    "dependentComponentObjectId": "obj-app",
+    "dependentComponentType": 80,
+    "dependentComponentTypeLabel": "app-module",
+    "id": "dep-source-satisfied-site",
+    "missingRequiredComponent": false,
+    "requiredComponentObjectId": "obj-site",
+    "requiredComponentType": 62,
+    "requiredComponentTypeLabel": "site-map"
+  }
+]

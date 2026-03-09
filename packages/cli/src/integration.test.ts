@@ -573,4 +573,33 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(analyze.stdout), 'fixtures/solution/golden/analyze-report.json');
     await expectGoldenJson(JSON.parse(compare.stdout), 'fixtures/solution/golden/compare-report.json');
   });
+
+  it('covers solution list, inspect, components, and dependencies through the CLI entrypoint', async () => {
+    const fixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(fixture.source),
+    });
+
+    const list = await runCli(['solution', 'list', '--env', 'source', '--format', 'json']);
+    const inspect = await runCli(['solution', 'inspect', 'Core', '--env', 'source', '--format', 'json']);
+    const components = await runCli(['solution', 'components', 'Core', '--env', 'source', '--format', 'json']);
+    const dependencies = await runCli(['solution', 'dependencies', 'Core', '--env', 'source', '--format', 'json']);
+
+    expect(list.code).toBe(0);
+    expect(list.stderr).toBe('');
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(components.code).toBe(0);
+    expect(components.stderr).toBe('');
+    expect(dependencies.code).toBe(0);
+    expect(dependencies.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
+    await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/solution/golden/inspect-report.json');
+    await expectGoldenJson(JSON.parse(components.stdout), 'fixtures/solution/golden/components-report.json');
+    await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/solution/golden/dependencies-report.json');
+  });
 });
