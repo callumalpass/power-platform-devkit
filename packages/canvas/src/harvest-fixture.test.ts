@@ -170,6 +170,12 @@ const insertReport: CanvasControlInsertReportDocument = {
   schemaVersion: 1,
   generatedAt: '2026-03-09T09:15:00.000Z',
   catalogPath: '/tmp/canvas-control-catalog-subset.json',
+  catalogGeneratedAt: '2026-03-09T08:00:00.000Z',
+  catalogCounts: {
+    total: 5,
+    classic: 3,
+    modern: 2,
+  },
   fixtureContainerName: 'HarvestFixtureContainer',
   entries: [
     {
@@ -293,6 +299,13 @@ describe('canvas harvest fixture planning', () => {
       prototypeMissingControls: 1,
       registryMissingControls: 1,
     });
+    expect(plan.catalogCounts).toEqual({
+      total: 5,
+      classic: 3,
+      modern: 2,
+    });
+    expect(plan.registryTemplateCount).toBe(4);
+    expect(plan.prototypeCount).toBe(4);
     expect(plan.controls).toEqual([
       expect.objectContaining({
         family: 'classic',
@@ -336,12 +349,44 @@ describe('canvas harvest fixture planning', () => {
   it('annotates the plan with the latest Studio insert outcomes when provided', () => {
     const plan = buildCanvasHarvestFixturePlan({
       catalog,
+      catalogPath: resolve('registries/canvas-control-catalog.json'),
       registry,
       prototypes,
       insertReport,
+      insertReportPath: resolve('/tmp/canvas-control-insert-report.json'),
       generatedAt: '2026-03-09T09:30:00.000Z',
     });
 
+    expect(plan.insertReportSummary).toEqual({
+      path: resolve('/tmp/canvas-control-insert-report.json'),
+      generatedAt: '2026-03-09T09:15:00.000Z',
+      entryCount: 2,
+      totals: {
+        attempted: 2,
+        inserted: 1,
+        covered: 0,
+        notFound: 1,
+        failed: 0,
+      },
+      catalog: {
+        path: '/tmp/canvas-control-catalog-subset.json',
+        generatedAt: '2026-03-09T08:00:00.000Z',
+        counts: {
+          total: 5,
+          classic: 3,
+          modern: 2,
+        },
+      },
+      matchedControlCount: 2,
+      unmatchedCatalogControlCount: 3,
+      unmatchedReportEntryCount: 0,
+      alignment: 'partial',
+      notes: [
+        'Insert report catalog snapshot matches the current catalog generatedAt.',
+        `Insert report was captured from /tmp/canvas-control-catalog-subset.json while this plan used ${resolve('registries/canvas-control-catalog.json')}.`,
+        '3 current catalog controls have no insert observation in this report.',
+      ],
+    });
     expect(plan.controls[0]).toEqual(
       expect.objectContaining({
         family: 'classic',
@@ -375,6 +420,64 @@ describe('canvas harvest fixture planning', () => {
           'Latest Studio insert attempt (2026-03-09T09:15:00.000Z) inserted this control via Button (Modern) using insert-pane-search. Queries: Button.',
           'Catalog status: preview.',
           'Awaiting pinned registry coverage.',
+        ]),
+      })
+    );
+  });
+
+  it('flags insert reports that no longer match the current catalog slice', () => {
+    const mismatchedInsertReport: CanvasControlInsertReportDocument = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-09T10:00:00.000Z',
+      catalogPath: '/tmp/older-catalog.json',
+      catalogGeneratedAt: '2026-03-08T23:59:59.000Z',
+      fixtureContainerName: 'HarvestFixtureContainer',
+      entries: [
+        {
+          family: 'modern',
+          name: 'Info button',
+          docPath: 'modern-control-info-button.md',
+          status: [],
+          outcome: 'not-found',
+          strategy: 'search-miss',
+          attempts: [
+            {
+              query: 'Information button',
+              candidates: [],
+            },
+          ],
+        },
+      ],
+      totals: {
+        attempted: 1,
+        inserted: 0,
+        covered: 0,
+        notFound: 1,
+        failed: 0,
+      },
+    };
+
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      catalogPath: resolve('registries/canvas-control-catalog.json'),
+      registry,
+      prototypes,
+      insertReport: mismatchedInsertReport,
+      insertReportPath: resolve('/tmp/mismatched-insert-report.json'),
+      generatedAt: '2026-03-09T10:05:00.000Z',
+    });
+
+    expect(plan.insertReportSummary).toEqual(
+      expect.objectContaining({
+        alignment: 'mismatch',
+        matchedControlCount: 0,
+        unmatchedCatalogControlCount: 5,
+        unmatchedReportEntryCount: 1,
+        notes: expect.arrayContaining([
+          'Insert report catalog snapshot 2026-03-08T23:59:59.000Z differs from current catalog snapshot 2026-03-09T08:00:00.000Z.',
+          `Insert report was captured from /tmp/older-catalog.json while this plan used ${resolve('registries/canvas-control-catalog.json')}.`,
+          '5 current catalog controls have no insert observation in this report.',
+          '1 insert report entries do not exist in the current catalog input.',
         ]),
       })
     );

@@ -1,29 +1,15 @@
 import { resolve } from 'node:path';
-import { assertCanvasControlCatalogLooksComplete } from './control-catalog';
+import {
+  assertCanvasControlCatalogLooksComplete,
+  summarizeCanvasControlCatalogDocument,
+  type CanvasControlCatalogCounts,
+  type CanvasControlCatalogDocument,
+  type CanvasControlCatalogEntry,
+  type CanvasControlCatalogSource,
+} from './control-catalog';
 import type { CanvasTemplateRecord, CanvasTemplateRegistryDocument } from './index';
 
-export interface CanvasControlCatalogSource {
-  family: 'classic' | 'modern';
-  learnUrl: string;
-  markdownUrl: string;
-}
-
-export interface CanvasControlCatalogEntry {
-  family: 'classic' | 'modern';
-  name: string;
-  description: string;
-  docPath: string;
-  learnUrl: string;
-  markdownUrl: string;
-  status: string[];
-}
-
-export interface CanvasControlCatalogDocument {
-  schemaVersion: 1;
-  generatedAt: string;
-  sources: CanvasControlCatalogSource[];
-  controls: CanvasControlCatalogEntry[];
-}
+export type { CanvasControlCatalogCounts, CanvasControlCatalogDocument, CanvasControlCatalogEntry, CanvasControlCatalogSource };
 
 export interface CanvasHarvestFixturePrototype {
   family: 'classic' | 'modern';
@@ -69,6 +55,8 @@ export interface CanvasControlInsertReportDocument {
   schemaVersion: 1;
   generatedAt: string;
   catalogPath: string;
+  catalogGeneratedAt?: string;
+  catalogCounts?: CanvasControlCatalogCounts;
   fixtureContainerName: string;
   entries: CanvasControlInsertReportEntry[];
   totals: {
@@ -107,18 +95,43 @@ export interface CanvasHarvestFixturePlanEntry {
   latestInsertObservation?: CanvasHarvestFixtureInsertObservation;
 }
 
+export interface CanvasHarvestFixtureCatalogSummary {
+  path?: string;
+  generatedAt?: string;
+  counts: CanvasControlCatalogCounts;
+}
+
+export type CanvasHarvestFixtureInsertReportAlignment = 'same-snapshot' | 'same-controls' | 'partial' | 'mismatch';
+
+export interface CanvasHarvestFixtureInsertReportSummary {
+  path?: string;
+  generatedAt: string;
+  entryCount: number;
+  totals: CanvasControlInsertReportDocument['totals'];
+  catalog: CanvasHarvestFixtureCatalogSummary;
+  matchedControlCount: number;
+  unmatchedCatalogControlCount: number;
+  unmatchedReportEntryCount: number;
+  alignment: CanvasHarvestFixtureInsertReportAlignment;
+  notes: string[];
+}
+
 export interface CanvasHarvestFixturePlan {
   schemaVersion: 1;
   generatedAt: string;
   catalogGeneratedAt?: string;
   registryGeneratedAt?: string;
   prototypeGeneratedAt?: string;
+  catalogCounts: CanvasControlCatalogCounts;
+  registryTemplateCount: number;
+  prototypeCount: number;
   counts: {
     catalogControls: number;
     resolvedControls: number;
     prototypeMissingControls: number;
     registryMissingControls: number;
   };
+  insertReportSummary?: CanvasHarvestFixtureInsertReportSummary;
   controls: CanvasHarvestFixturePlanEntry[];
 }
 
@@ -134,9 +147,11 @@ export interface AssertCanvasHarvestFixtureCatalogWriteOptions {
 
 export interface BuildCanvasHarvestFixturePlanOptions {
   catalog: CanvasControlCatalogDocument;
+  catalogPath?: string;
   registry: CanvasTemplateRegistryDocument;
   prototypes: CanvasHarvestFixturePrototypeDocument;
   insertReport?: CanvasControlInsertReportDocument;
+  insertReportPath?: string;
   generatedAt?: string;
 }
 
@@ -196,6 +211,7 @@ export function assertCanvasHarvestFixtureCatalogCanWriteOutputs(
 
 export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixturePlanOptions): CanvasHarvestFixturePlan {
   const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const catalogCounts = options.catalog.counts ?? summarizeCanvasControlCatalogDocument(options.catalog);
   const prototypesByKey = new Map(
     options.prototypes.prototypes.map((prototype) => [makeCatalogKey(prototype.family, prototype.catalogName), prototype] as const)
   );
@@ -265,12 +281,25 @@ export function buildCanvasHarvestFixturePlan(options: BuildCanvasHarvestFixture
     catalogGeneratedAt: options.catalog.generatedAt,
     registryGeneratedAt: options.registry.generatedAt,
     prototypeGeneratedAt: options.prototypes.generatedAt,
+    catalogCounts,
+    registryTemplateCount: options.registry.templates.length,
+    prototypeCount: options.prototypes.prototypes.length,
     counts: {
       catalogControls: controls.length,
       resolvedControls: controls.filter((control) => control.status === 'resolved').length,
       prototypeMissingControls: controls.filter((control) => control.status === 'prototype-missing').length,
       registryMissingControls: controls.filter((control) => control.status === 'registry-missing').length,
     },
+    ...(options.insertReport
+      ? {
+          insertReportSummary: summarizeInsertReport({
+            catalog: options.catalog,
+            catalogPath: options.catalogPath,
+            insertReport: options.insertReport,
+            insertReportPath: options.insertReportPath,
+          }),
+        }
+      : {}),
     controls,
   };
 }
@@ -394,6 +423,80 @@ function buildCatalogNotes(control: CanvasControlCatalogEntry): string[] {
   return control.status.length > 0 ? [`Catalog status: ${control.status.join(', ')}.`] : [];
 }
 
+function summarizeInsertReport(options: {
+  catalog: CanvasControlCatalogDocument;
+  catalogPath?: string;
+  insertReport: CanvasControlInsertReportDocument;
+  insertReportPath?: string;
+}): CanvasHarvestFixtureInsertReportSummary {
+  const currentCatalogKeys = new Set(options.catalog.controls.map((control) => makeCatalogKey(control.family, control.name)));
+  const reportCatalogKeys = new Set(options.insertReport.entries.map((entry) => makeCatalogKey(entry.family, entry.name)));
+  let matchedControlCount = 0;
+
+  for (const key of reportCatalogKeys) {
+    if (currentCatalogKeys.has(key)) {
+      matchedControlCount += 1;
+    }
+  }
+
+  const unmatchedCatalogControlCount = Math.max(0, currentCatalogKeys.size - matchedControlCount);
+  const unmatchedReportEntryCount = Math.max(0, reportCatalogKeys.size - matchedControlCount);
+  const reportCatalogCounts = options.insertReport.catalogCounts ?? summarizeInsertReportEntries(options.insertReport.entries);
+  const notes: string[] = [];
+
+  if (options.insertReport.catalogGeneratedAt) {
+    if (options.insertReport.catalogGeneratedAt === options.catalog.generatedAt) {
+      notes.push('Insert report catalog snapshot matches the current catalog generatedAt.');
+    } else {
+      notes.push(
+        `Insert report catalog snapshot ${options.insertReport.catalogGeneratedAt} differs from current catalog snapshot ${options.catalog.generatedAt}.`
+      );
+    }
+  } else {
+    notes.push('Insert report does not record catalog generatedAt, so exact snapshot matching is unavailable.');
+  }
+
+  if (
+    options.catalogPath &&
+    options.insertReport.catalogPath &&
+    normalizePath(options.catalogPath) !== normalizePath(options.insertReport.catalogPath)
+  ) {
+    notes.push(`Insert report was captured from ${options.insertReport.catalogPath} while this plan used ${options.catalogPath}.`);
+  }
+
+  if (unmatchedCatalogControlCount > 0) {
+    notes.push(`${unmatchedCatalogControlCount} current catalog controls have no insert observation in this report.`);
+  }
+
+  if (unmatchedReportEntryCount > 0) {
+    notes.push(`${unmatchedReportEntryCount} insert report entries do not exist in the current catalog input.`);
+  }
+
+  return {
+    path: options.insertReportPath,
+    generatedAt: options.insertReport.generatedAt,
+    entryCount: options.insertReport.entries.length,
+    totals: options.insertReport.totals,
+    catalog: {
+      path: options.insertReport.catalogPath,
+      generatedAt: options.insertReport.catalogGeneratedAt,
+      counts: reportCatalogCounts,
+    },
+    matchedControlCount,
+    unmatchedCatalogControlCount,
+    unmatchedReportEntryCount,
+    alignment: determineInsertReportAlignment({
+      catalogGeneratedAt: options.catalog.generatedAt,
+      insertReportCatalogGeneratedAt: options.insertReport.catalogGeneratedAt,
+      matchedControlCount,
+      unmatchedCatalogControlCount,
+      unmatchedReportEntryCount,
+      reportEntryCount: reportCatalogKeys.size,
+    }),
+    notes,
+  };
+}
+
 function writesTrackedCanvasHarvestFixtureOutput(options: AssertCanvasHarvestFixtureCatalogWriteOptions): boolean {
   const trackedPaths = new Set([normalizePath(options.trackedPlanPath), normalizePath(options.trackedYamlPath)]);
   return [options.planPath, options.yamlPath].some((path) => trackedPaths.has(normalizePath(path)));
@@ -401,6 +504,30 @@ function writesTrackedCanvasHarvestFixtureOutput(options: AssertCanvasHarvestFix
 
 function normalizePath(path: string): string {
   return resolve(path);
+}
+
+function determineInsertReportAlignment(options: {
+  catalogGeneratedAt?: string;
+  insertReportCatalogGeneratedAt?: string;
+  matchedControlCount: number;
+  unmatchedCatalogControlCount: number;
+  unmatchedReportEntryCount: number;
+  reportEntryCount: number;
+}): CanvasHarvestFixtureInsertReportAlignment {
+  const exactSnapshot =
+    Boolean(options.catalogGeneratedAt) &&
+    Boolean(options.insertReportCatalogGeneratedAt) &&
+    options.catalogGeneratedAt === options.insertReportCatalogGeneratedAt;
+
+  if (options.unmatchedCatalogControlCount === 0 && options.unmatchedReportEntryCount === 0) {
+    return exactSnapshot ? 'same-snapshot' : 'same-controls';
+  }
+
+  if (options.matchedControlCount > 0 || options.reportEntryCount === 0) {
+    return 'partial';
+  }
+
+  return 'mismatch';
 }
 
 function buildInsertObservation(
@@ -513,6 +640,32 @@ function dedupeStrings(values: string[]): string[] {
   }
 
   return deduped;
+}
+
+function summarizeInsertReportEntries(entries: CanvasControlInsertReportEntry[]): CanvasControlCatalogCounts {
+  const uniqueKeys = new Set<string>();
+  let classic = 0;
+  let modern = 0;
+
+  for (const entry of entries) {
+    const key = makeCatalogKey(entry.family, entry.name);
+    if (uniqueKeys.has(key)) {
+      continue;
+    }
+
+    uniqueKeys.add(key);
+    if (entry.family === 'classic') {
+      classic += 1;
+    } else {
+      modern += 1;
+    }
+  }
+
+  return {
+    total: uniqueKeys.size,
+    classic,
+    modern,
+  };
 }
 
 function familyLabel(value: 'classic' | 'modern'): string {

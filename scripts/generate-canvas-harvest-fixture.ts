@@ -41,9 +41,11 @@ async function main(): Promise<void> {
 
   const plan = buildCanvasHarvestFixturePlan({
     catalog,
+    catalogPath,
     registry,
     prototypes,
     insertReport,
+    insertReportPath: insertReportPath ? resolve(insertReportPath) : undefined,
     generatedAt,
   });
   const rendered = renderCanvasHarvestFixture({
@@ -69,6 +71,11 @@ async function main(): Promise<void> {
   process.stdout.write(`Wrote fixture YAML: ${yamlPath}\n`);
   if (insertReportPath) {
     process.stdout.write(`Applied insert report: ${resolve(insertReportPath)}\n`);
+  }
+  if (plan.insertReportSummary) {
+    process.stdout.write(
+      `Insert report alignment: ${plan.insertReportSummary.alignment}; matched: ${plan.insertReportSummary.matchedControlCount}; unmatched catalog: ${plan.insertReportSummary.unmatchedCatalogControlCount}; unmatched report: ${plan.insertReportSummary.unmatchedReportEntryCount}\n`
+    );
   }
   process.stdout.write(
     `Catalog controls: ${plan.counts.catalogControls}; resolved: ${plan.counts.resolvedControls}; prototype missing: ${plan.counts.prototypeMissingControls}; registry missing: ${plan.counts.registryMissingControls}\n`
