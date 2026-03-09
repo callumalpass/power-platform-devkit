@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
 import {
@@ -14,6 +14,7 @@ import {
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(tempDirs.splice(0, tempDirs.length).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -258,6 +259,9 @@ describe('FlowService', () => {
   });
 
   it('summarizes runtime failures and doctor findings from flow runs', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
+
     const service = new FlowService(createStubDataverseClient());
 
     const runs = await service.runs('Invoice Sync', {

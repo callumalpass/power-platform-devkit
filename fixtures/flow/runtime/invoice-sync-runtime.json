@@ -1,0 +1,101 @@
+{
+  "query": {
+    "solutions": [
+      {
+        "solutionid": "sol-1",
+        "uniquename": "Core"
+      }
+    ]
+  },
+  "queryAll": {
+    "workflows": [
+      {
+        "workflowid": "flow-1",
+        "name": "Invoice Sync",
+        "uniquename": "crd_InvoiceSync",
+        "category": 5,
+        "statecode": 1,
+        "statuscode": 2,
+        "clientdata": "{\"definition\":{\"parameters\":{\"$connections\":{\"value\":{\"shared_office365\":{\"connectionId\":\"/connections/office365\",\"connectionReferenceLogicalName\":\"shared_office365\"}}},\"ApiBaseUrl\":{\"defaultValue\":\"https://example.test\"}},\"actions\":{\"SendMail\":{\"inputs\":{\"subject\":\"@{parameters('ApiBaseUrl')}\",\"body\":\"@{environmentVariables('pp_ApiUrl')}\"}}}}}"
+      },
+      {
+        "workflowid": "flow-2",
+        "name": "Other Flow",
+        "uniquename": "crd_Other",
+        "category": 5
+      }
+    ],
+    "solutioncomponents": [
+      {
+        "solutioncomponentid": "comp-1",
+        "objectid": "flow-1",
+        "componenttype": 29
+      }
+    ],
+    "flowruns": [
+      {
+        "flowrunid": "run-3",
+        "workflowid": "flow-1",
+        "workflowname": "Invoice Sync",
+        "status": "Failed",
+        "starttime": "2026-03-09T11:30:00.000Z",
+        "endtime": "2026-03-09T11:31:15.000Z",
+        "durationinms": 75000,
+        "retrycount": 0,
+        "errorcode": "ConnectorAuthFailed",
+        "errormessage": "shared_office365 connection is missing consent"
+      },
+      {
+        "flowrunid": "run-1",
+        "workflowid": "flow-1",
+        "workflowname": "Invoice Sync",
+        "status": "Failed",
+        "starttime": "2026-03-09T09:00:00.000Z",
+        "endtime": "2026-03-09T09:02:00.000Z",
+        "durationinms": 120000,
+        "retrycount": 1,
+        "errorcode": "ConnectorAuthFailed",
+        "errormessage": "shared_office365 connection is not authorized"
+      },
+      {
+        "flowrunid": "run-2",
+        "workflowid": "flow-1",
+        "workflowname": "Invoice Sync",
+        "status": "Succeeded",
+        "starttime": "2026-03-09T08:00:00.000Z",
+        "endtime": "2026-03-09T08:01:00.000Z",
+        "durationinms": 60000
+      },
+      {
+        "flowrunid": "run-old",
+        "workflowid": "flow-1",
+        "workflowname": "Invoice Sync",
+        "status": "Failed",
+        "starttime": "2026-02-20T07:00:00.000Z",
+        "endtime": "2026-02-20T07:01:00.000Z",
+        "durationinms": 60000,
+        "retrycount": 0,
+        "errorcode": "ConnectorAuthFailed",
+        "errormessage": "shared_office365 connection timed out"
+      }
+    ],
+    "connectionreferences": [
+      {
+        "connectionreferenceid": "ref-1",
+        "connectionreferencelogicalname": "shared_office365",
+        "displayname": "Office 365 Mail",
+        "connectorid": "/providers/microsoft.powerapps/apis/shared_office365",
+        "_solutionid_value": "sol-1"
+      }
+    ],
+    "environmentvariabledefinitions": [
+      {
+        "environmentvariabledefinitionid": "env-1",
+        "schemaname": "pp_ApiUrl",
+        "displayname": "API URL",
+        "_solutionid_value": "sol-1"
+      }
+    ],
+    "environmentvariablevalues": []
+  }
+}

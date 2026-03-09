@@ -17,6 +17,7 @@ The committed fixtures currently cover:
 
 - canvas template import, inspect, validate, build, and diff outputs
 - flow unpack, validate, patch, and normalize outputs
+- flow remote inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures
 - project analysis context and markdown reporting
 - CLI workflows that drive those same local fixture paths end to end
 
