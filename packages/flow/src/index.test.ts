@@ -106,6 +106,66 @@ function createStubDataverseClient(): DataverseClient {
               supportTier: 'preview',
             }
           );
+        case 'flowruns':
+          return ok(
+            [
+              {
+                flowrunid: 'run-1',
+                workflowid: 'flow-1',
+                workflowname: 'Invoice Sync',
+                status: 'Failed',
+                starttime: '2026-03-09T09:00:00.000Z',
+                endtime: '2026-03-09T09:02:00.000Z',
+                durationinms: 120000,
+                retrycount: 1,
+                errorcode: 'ConnectorAuthFailed',
+                errormessage: 'shared_office365 connection is not authorized',
+              },
+              {
+                flowrunid: 'run-2',
+                workflowid: 'flow-1',
+                workflowname: 'Invoice Sync',
+                status: 'Succeeded',
+                starttime: '2026-03-09T08:00:00.000Z',
+                endtime: '2026-03-09T08:01:00.000Z',
+                durationinms: 60000,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        case 'connectionreferences':
+          return ok(
+            [
+              {
+                connectionreferenceid: 'ref-1',
+                connectionreferencelogicalname: 'shared_office365',
+                connectorid: '/providers/microsoft.powerapps/apis/shared_office365',
+                _solutionid_value: 'sol-1',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        case 'environmentvariabledefinitions':
+          return ok(
+            [
+              {
+                environmentvariabledefinitionid: 'env-1',
+                schemaname: 'pp_ApiUrl',
+                _solutionid_value: 'sol-1',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        case 'environmentvariablevalues':
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
         default:
           return ok([] as T[], {
             supportTier: 'preview',
@@ -195,6 +255,62 @@ describe('FlowService', () => {
       definition: Record<string, unknown>;
     };
     expect(normalized.definition.lastModifiedTime).toBeUndefined();
+  });
+
+  it('summarizes runtime failures and doctor findings from flow runs', async () => {
+    const service = new FlowService(createStubDataverseClient());
+
+    const runs = await service.runs('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
+    const errors = await service.errors('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+      groupBy: 'connectionReference',
+    });
+    const connrefs = await service.connrefs('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
+    const doctor = await service.doctor('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
+
+    expect(runs.success).toBe(true);
+    expect(runs.data).toHaveLength(2);
+    expect(runs.data?.[0]).toMatchObject({
+      id: 'run-1',
+      status: 'Failed',
+      errorCode: 'ConnectorAuthFailed',
+    });
+
+    expect(errors.success).toBe(true);
+    expect(errors.data?.[0]).toMatchObject({
+      group: 'shared_office365',
+      count: 1,
+    });
+
+    expect(connrefs.success).toBe(true);
+    expect(connrefs.data?.connectionReferences[0]).toMatchObject({
+      name: 'shared_office365',
+      valid: false,
+      recentFailures: 1,
+    });
+    expect(connrefs.data?.environmentVariables[0]).toMatchObject({
+      name: 'pp_ApiUrl',
+      hasValue: false,
+    });
+
+    expect(doctor.success).toBe(true);
+    expect(doctor.data?.recentRuns).toMatchObject({
+      total: 2,
+      failed: 1,
+    });
+    expect(doctor.data?.invalidConnectionReferences).toHaveLength(1);
+    expect(doctor.data?.missingEnvironmentVariables).toHaveLength(1);
+    expect(doctor.data?.findings).toContain('Connection reference shared_office365 is invalid for this flow.');
   });
 
   it('applies bounded patches without dropping unknown fields', async () => {

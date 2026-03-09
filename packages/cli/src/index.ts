@@ -307,6 +307,14 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
       return runFlowValidate(args);
     case 'patch':
       return runFlowPatch(args);
+    case 'runs':
+      return runFlowRuns(args);
+    case 'errors':
+      return runFlowErrors(args);
+    case 'connrefs':
+      return runFlowConnrefs(args);
+    case 'doctor':
+      return runFlowDoctor(args);
     default:
       printHelp();
       return 1;
@@ -2399,6 +2407,123 @@ async function runFlowPatch(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runFlowRuns(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow runs <name|id|uniqueName> --env ALIAS [--status STATUS] [--since 7d]'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new FlowService(resolution.data.client).runs(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    status: readFlag(args, '--status'),
+    since: readFlag(args, '--since'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowErrors(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow errors <name|id|uniqueName> --env ALIAS [--group-by errorCode|errorMessage|connectionReference]'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const groupBy = readFlag(args, '--group-by') as 'errorCode' | 'errorMessage' | 'connectionReference' | undefined;
+
+  if (groupBy && !['errorCode', 'errorMessage', 'connectionReference'].includes(groupBy)) {
+    return printFailure(argumentFailure('FLOW_GROUP_BY_INVALID', 'Use --group-by errorCode, errorMessage, or connectionReference.'));
+  }
+
+  const result = await new FlowService(resolution.data.client).errors(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    since: readFlag(args, '--since'),
+    status: readFlag(args, '--status'),
+    groupBy,
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowConnrefs(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow connrefs <name|id|uniqueName> --env ALIAS [--since 7d]'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new FlowService(resolution.data.client).connrefs(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    since: readFlag(args, '--since'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'FLOW_NOT_FOUND', `Flow ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowDoctor(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow doctor <name|id|uniqueName> --env ALIAS [--since 7d]'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new FlowService(resolution.data.client).doctor(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    since: readFlag(args, '--since'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 function buildPublicClientProfile(
   baseProfile: UserAuthProfile,
   args: string[]
@@ -3025,6 +3150,10 @@ function printHelp(): void {
       '  flow normalize <path> [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow validate <path> [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow patch <path> --file PATCH.json [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow runs <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow errors <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow connrefs <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow doctor <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',

@@ -1,7 +1,13 @@
 import { stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
-import { type DataverseClient } from '@pp/dataverse';
+import {
+  ConnectionReferenceService,
+  EnvironmentVariableService,
+  type DataverseClient,
+  type ConnectionReferenceValidationResult,
+  type EnvironmentVariableSummary,
+} from '@pp/dataverse';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { SolutionService } from '@pp/solution';
 
@@ -100,6 +106,70 @@ export interface FlowPatchResult {
   summary: FlowArtifactSummary;
 }
 
+export interface FlowRunRecord {
+  flowrunid?: string;
+  name?: string;
+  workflowid?: string;
+  workflowname?: string;
+  status?: string;
+  starttime?: string;
+  endtime?: string;
+  durationinms?: number;
+  retrycount?: number;
+  errorcode?: string;
+  errormessage?: string;
+}
+
+export interface FlowRunSummary {
+  id: string;
+  workflowId?: string;
+  workflowName?: string;
+  status?: string;
+  startTime?: string;
+  endTime?: string;
+  durationMs?: number;
+  retryCount?: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface FlowErrorGroup {
+  group: string;
+  count: number;
+  latestRunId?: string;
+  latestStatus?: string;
+  sampleErrorCode?: string;
+  sampleErrorMessage?: string;
+}
+
+export interface FlowConnectionHealthReport {
+  flow: FlowInspectResult;
+  connectionReferences: Array<{
+    name: string;
+    valid: boolean;
+    diagnostics: string[];
+    recentFailures: number;
+  }>;
+  environmentVariables: Array<{
+    name: string;
+    hasValue: boolean;
+    recentFailures: number;
+  }>;
+}
+
+export interface FlowDoctorReport {
+  flow?: FlowInspectResult;
+  recentRuns: {
+    total: number;
+    failed: number;
+    latestFailure?: FlowRunSummary;
+  };
+  errorGroups: FlowErrorGroup[];
+  invalidConnectionReferences: ConnectionReferenceValidationResult[];
+  missingEnvironmentVariables: EnvironmentVariableSummary[];
+  findings: string[];
+}
+
 const NOISY_FLOW_KEYS = new Set([
   'createdTime',
   'lastModifiedTime',
@@ -178,6 +248,312 @@ export class FlowService {
       diagnostics: flows.diagnostics,
       warnings: flows.warnings,
     });
+  }
+
+  async runs(
+    identifier: string,
+    options: {
+      solutionUniqueName?: string;
+      status?: string;
+      since?: string;
+    } = {}
+  ): Promise<OperationResult<FlowRunSummary[]>> {
+    const flow = await this.inspect(identifier, options);
+
+    if (!flow.success) {
+      return flow as unknown as OperationResult<FlowRunSummary[]>;
+    }
+
+    if (!flow.data) {
+      return ok([], {
+        supportTier: 'experimental',
+        diagnostics: flow.diagnostics,
+        warnings: flow.warnings,
+        knownLimitations: [
+          'Flow runtime diagnostics require FlowRun ingestion to be available in the target environment.',
+        ],
+      });
+    }
+
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for flow runtime diagnostics.', {
+          source: '@pp/flow',
+        })
+      );
+    }
+
+    const runs = await this.dataverseClient.queryAll<FlowRunRecord>({
+      table: 'flowruns',
+      select: ['flowrunid', 'name', 'workflowid', 'workflowname', 'status', 'starttime', 'endtime', 'durationinms', 'retrycount', 'errorcode', 'errormessage'],
+    });
+
+    if (!runs.success) {
+      return runs as unknown as OperationResult<FlowRunSummary[]>;
+    }
+
+    const remoteFlow = flow.data;
+    const filtered = (runs.data ?? [])
+      .filter((run) => matchesFlowRun(run, remoteFlow))
+      .filter((run) => !options.status || normalizeStatus(run.status) === normalizeStatus(options.status))
+      .filter((run) => !options.since || isAfterRelativeTime(run.starttime, options.since))
+      .map(normalizeFlowRun)
+      .sort(compareRunsDescending);
+
+    return ok(filtered, {
+      supportTier: 'experimental',
+      diagnostics: [...flow.diagnostics, ...runs.diagnostics],
+      warnings: [...flow.warnings, ...runs.warnings],
+      knownLimitations: [
+        'FlowRun data may be delayed or incomplete depending on ingestion and retention settings.',
+      ],
+    });
+  }
+
+  async errors(
+    identifier: string,
+    options: {
+      solutionUniqueName?: string;
+      status?: string;
+      since?: string;
+      groupBy?: 'errorCode' | 'errorMessage' | 'connectionReference';
+    } = {}
+  ): Promise<OperationResult<FlowErrorGroup[]>> {
+    const runs = await this.runs(identifier, {
+      solutionUniqueName: options.solutionUniqueName,
+      status: options.status ?? 'Failed',
+      since: options.since,
+    });
+
+    if (!runs.success) {
+      return runs as unknown as OperationResult<FlowErrorGroup[]>;
+    }
+
+    const flow = await this.inspect(identifier, {
+      solutionUniqueName: options.solutionUniqueName,
+    });
+
+    if (!flow.success) {
+      return flow as unknown as OperationResult<FlowErrorGroup[]>;
+    }
+
+    const groupBy = options.groupBy ?? 'errorCode';
+    const groups = new Map<string, FlowErrorGroup>();
+
+    for (const run of runs.data ?? []) {
+      const group = resolveFlowErrorGroup(run, flow.data, groupBy);
+      const existing = groups.get(group);
+
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+
+      groups.set(group, {
+        group,
+        count: 1,
+        latestRunId: run.id,
+        latestStatus: run.status,
+        sampleErrorCode: run.errorCode,
+        sampleErrorMessage: run.errorMessage,
+      });
+    }
+
+    return ok(Array.from(groups.values()).sort((left, right) => right.count - left.count || left.group.localeCompare(right.group)), {
+      supportTier: 'experimental',
+      diagnostics: runs.diagnostics,
+      warnings: runs.warnings,
+    });
+  }
+
+  async connrefs(
+    identifier: string,
+    options: {
+      solutionUniqueName?: string;
+      since?: string;
+    } = {}
+  ): Promise<OperationResult<FlowConnectionHealthReport | undefined>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for flow connection-health inspection.', {
+          source: '@pp/flow',
+        })
+      );
+    }
+
+    const [flow, runs, references, variables] = await Promise.all([
+      this.inspect(identifier, options),
+      this.runs(identifier, {
+        solutionUniqueName: options.solutionUniqueName,
+        status: 'Failed',
+        since: options.since,
+      }),
+      new ConnectionReferenceService(this.dataverseClient).validate({
+        solutionUniqueName: options.solutionUniqueName,
+      }),
+      new EnvironmentVariableService(this.dataverseClient).list({
+        solutionUniqueName: options.solutionUniqueName,
+      }),
+    ]);
+
+    if (!flow.success) {
+      return flow as unknown as OperationResult<FlowConnectionHealthReport | undefined>;
+    }
+
+    if (!runs.success) {
+      return runs as unknown as OperationResult<FlowConnectionHealthReport | undefined>;
+    }
+
+    if (!references.success) {
+      return references as unknown as OperationResult<FlowConnectionHealthReport | undefined>;
+    }
+
+    if (!variables.success) {
+      return variables as unknown as OperationResult<FlowConnectionHealthReport | undefined>;
+    }
+
+    if (!flow.data) {
+      return ok(undefined, {
+        supportTier: 'experimental',
+        diagnostics: flow.diagnostics,
+        warnings: [...flow.warnings, ...runs.warnings, ...references.warnings, ...variables.warnings],
+      });
+    }
+
+    const failedRuns = runs.data ?? [];
+
+    return ok(
+      {
+        flow: flow.data,
+        connectionReferences: flow.data.connectionReferences.map((reference) => {
+          const validation =
+            (references.data ?? []).find((candidate) =>
+              candidate.reference.logicalName === reference.connectionReferenceLogicalName ||
+              candidate.reference.logicalName === reference.name
+            ) ?? null;
+
+          return {
+            name: reference.name,
+            valid: validation ? validation.valid && validation.diagnostics.length === 0 : false,
+            diagnostics: (validation?.diagnostics ?? []).map((diagnostic) => diagnostic.message),
+            recentFailures: countRunsForReference(failedRuns, reference.name),
+          };
+        }),
+        environmentVariables: flow.data.environmentVariables.map((name) => {
+          const variable = (variables.data ?? []).find((candidate) => candidate.schemaName === name);
+
+          return {
+            name,
+            hasValue: Boolean(variable?.effectiveValue),
+            recentFailures: failedRuns.length,
+          };
+        }),
+      },
+      {
+        supportTier: 'experimental',
+        diagnostics: [...flow.diagnostics, ...runs.diagnostics, ...references.diagnostics, ...variables.diagnostics],
+        warnings: [...flow.warnings, ...runs.warnings, ...references.warnings, ...variables.warnings],
+      }
+    );
+  }
+
+  async doctor(
+    identifier: string,
+    options: {
+      solutionUniqueName?: string;
+      since?: string;
+    } = {}
+  ): Promise<OperationResult<FlowDoctorReport>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for flow doctor reports.', {
+          source: '@pp/flow',
+        })
+      );
+    }
+
+    const [flow, runs, errors, references, variables] = await Promise.all([
+      this.inspect(identifier, options),
+      this.runs(identifier, {
+        solutionUniqueName: options.solutionUniqueName,
+        since: options.since,
+      }),
+      this.errors(identifier, {
+        solutionUniqueName: options.solutionUniqueName,
+        since: options.since,
+      }),
+      new ConnectionReferenceService(this.dataverseClient).validate({
+        solutionUniqueName: options.solutionUniqueName,
+      }),
+      new EnvironmentVariableService(this.dataverseClient).list({
+        solutionUniqueName: options.solutionUniqueName,
+      }),
+    ]);
+
+    if (!flow.success) {
+      return flow as unknown as OperationResult<FlowDoctorReport>;
+    }
+
+    if (!runs.success) {
+      return runs as unknown as OperationResult<FlowDoctorReport>;
+    }
+
+    if (!errors.success) {
+      return errors as unknown as OperationResult<FlowDoctorReport>;
+    }
+
+    if (!references.success) {
+      return references as unknown as OperationResult<FlowDoctorReport>;
+    }
+
+    if (!variables.success) {
+      return variables as unknown as OperationResult<FlowDoctorReport>;
+    }
+
+    const failedRuns = (runs.data ?? []).filter((run) => normalizeStatus(run.status) === 'failed');
+    const invalidConnectionReferences = (references.data ?? []).filter((reference) =>
+      flow.data?.connectionReferences.some(
+        (flowReference) =>
+          reference.reference.logicalName === flowReference.connectionReferenceLogicalName ||
+          reference.reference.logicalName === flowReference.name
+      )
+    ).filter((reference) => !reference.valid || reference.diagnostics.length > 0);
+    const missingEnvironmentVariables = (variables.data ?? []).filter(
+      (variable) => flow.data?.environmentVariables.includes(variable.schemaName ?? '') && !variable.effectiveValue
+    );
+    const findings = [
+      ...invalidConnectionReferences.map(
+        (reference) => `Connection reference ${reference.reference.logicalName ?? reference.reference.id} is invalid for this flow.`
+      ),
+      ...missingEnvironmentVariables.map(
+        (variable) => `Environment variable ${variable.schemaName ?? variable.definitionId} does not have an effective value.`
+      ),
+      ...(errors.data ?? []).slice(0, 3).map((group) => `Recent failures are grouping under ${group.group}.`),
+    ];
+
+    return ok(
+      {
+        flow: flow.data,
+        recentRuns: {
+          total: runs.data?.length ?? 0,
+          failed: failedRuns.length,
+          latestFailure: failedRuns[0],
+        },
+        errorGroups: errors.data ?? [],
+        invalidConnectionReferences,
+        missingEnvironmentVariables,
+        findings,
+      },
+      {
+        supportTier: 'experimental',
+        diagnostics: [...flow.diagnostics, ...runs.diagnostics, ...errors.diagnostics, ...references.diagnostics, ...variables.diagnostics],
+        warnings: [...flow.warnings, ...runs.warnings, ...errors.warnings, ...references.warnings, ...variables.warnings],
+        knownLimitations: [
+          'Runtime diagnostics depend on FlowRun ingestion and may lag behind portal data.',
+          'Connector-level grouping is heuristic until richer runtime fields are available.',
+        ],
+      }
+    );
   }
 
   async loadArtifact(path: string): Promise<OperationResult<FlowArtifact>> {
@@ -417,6 +793,86 @@ function normalizeRemoteFlow(record: FlowRecord): FlowInspectResult {
     environmentVariables: parsed.environmentVariables,
     clientData: parsed.clientData,
   };
+}
+
+function normalizeFlowRun(record: FlowRunRecord): FlowRunSummary {
+  return {
+    id: record.flowrunid ?? record.name ?? 'unknown-run',
+    workflowId: record.workflowid,
+    workflowName: record.workflowname,
+    status: record.status,
+    startTime: record.starttime,
+    endTime: record.endtime,
+    durationMs: record.durationinms,
+    retryCount: record.retrycount,
+    errorCode: record.errorcode,
+    errorMessage: record.errormessage,
+  };
+}
+
+function matchesFlowRun(record: FlowRunRecord, flow: FlowInspectResult): boolean {
+  return record.workflowid === flow.id || record.workflowname === flow.name || record.workflowname === flow.uniqueName;
+}
+
+function normalizeStatus(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function compareRunsDescending(left: FlowRunSummary, right: FlowRunSummary): number {
+  return (right.startTime ?? '').localeCompare(left.startTime ?? '');
+}
+
+function isAfterRelativeTime(value: string | undefined, relative: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.valueOf())) {
+    return false;
+  }
+
+  const match = relative.match(/^(\d+)([dh])$/i);
+
+  if (!match) {
+    return true;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2]?.toLowerCase();
+  const now = Date.now();
+  const offset = unit === 'h' ? amount * 60 * 60 * 1000 : amount * 24 * 60 * 60 * 1000;
+
+  return date.valueOf() >= now - offset;
+}
+
+function resolveFlowErrorGroup(
+  run: FlowRunSummary,
+  flow: FlowInspectResult | undefined,
+  groupBy: 'errorCode' | 'errorMessage' | 'connectionReference'
+): string {
+  switch (groupBy) {
+    case 'errorMessage':
+      return run.errorMessage ?? 'unknown-message';
+    case 'connectionReference': {
+      const errorText = `${run.errorCode ?? ''} ${run.errorMessage ?? ''}`.toLowerCase();
+      const match = flow?.connectionReferences.find((reference) =>
+        errorText.includes(reference.name.toLowerCase()) ||
+        errorText.includes((reference.connectionReferenceLogicalName ?? '').toLowerCase())
+      );
+      return match?.name ?? 'unknown-connection-reference';
+    }
+    case 'errorCode':
+    default:
+      return run.errorCode ?? 'unknown-error-code';
+  }
+}
+
+function countRunsForReference(runs: FlowRunSummary[], referenceName: string): number {
+  return runs.filter((run) =>
+    `${run.errorCode ?? ''} ${run.errorMessage ?? ''}`.toLowerCase().includes(referenceName.toLowerCase())
+  ).length;
 }
 
 async function resolveFlowArtifactPath(path: string): Promise<OperationResult<string>> {

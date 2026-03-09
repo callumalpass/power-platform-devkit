@@ -35,6 +35,37 @@ The current remote slice intentionally targets Dataverse `workflows` plus
 solution-component filtering. It does not yet claim a full deploy/runtime
 surface.
 
+## Runtime commands
+
+The runtime slice is read-first and currently marked `experimental` because it
+depends on the FlowRun ingestion surface being available and reasonably fresh in
+the target environment.
+
+```bash
+pp flow runs "Invoice Sync" --env dev --since 7d
+pp flow errors "Invoice Sync" --env dev --group-by connectionReference
+pp flow connrefs "Invoice Sync" --env dev --solution Core
+pp flow doctor "Invoice Sync" --env dev --solution Core --since 7d
+```
+
+Current behavior:
+
+- `flow runs` returns recent run summaries with status, duration, retries, and
+  error fields
+- `flow errors` groups failed runs by `errorCode`, `errorMessage`, or a
+  connection-reference heuristic
+- `flow connrefs` combines runtime failures with connection-reference and
+  environment-variable health
+- `flow doctor` produces a compact pre-triaged report with recent failures,
+  grouped errors, invalid connection references, missing environment variables,
+  and synthesized findings
+
+Known limits in this slice:
+
+- runtime ingestion can lag behind the maker portal view
+- connector grouping is heuristic until richer runtime fields are exposed
+- the runtime tables are treated as read-only evidence, not a mutation surface
+
 ## Local artifact format
 
 The canonical unpacked artifact is `flow.json`:
