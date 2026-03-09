@@ -4,10 +4,18 @@
       "catalogName": "Button",
       "constructor": "Classic/Button",
       "family": "classic",
+      "liveValidation": {
+        "method": "promoted-draft",
+        "notes": [
+          "Backfilled from the promotion-time pending note on 2026-03-10."
+        ],
+        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "status": "pending"
+      },
       "notes": [
         "The source fixture plan still marks this control as prototype missing; regenerate the plan to reflect the pinned prototype.",
         "Constructor Classic/Button resolves to button@2.2.0.",
-        "Prototype notes still mark live paste validation as pending."
+        "Recorded live validation keeps this control pending via promoted-draft as of 2026-03-10T00:54:16+11:00."
       ],
       "planAlignment": "stale",
       "planReason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
@@ -30,10 +38,18 @@
       "catalogName": "Icon",
       "constructor": "Classic/Icon",
       "family": "classic",
+      "liveValidation": {
+        "method": "migrated-note-state",
+        "notes": [
+          "Backfilled from the pre-structured pending note on 2026-03-10."
+        ],
+        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "status": "pending"
+      },
       "notes": [
         "No matching control exists in the source fixture plan; this pinned prototype sits outside the preserved plan snapshot.",
         "Constructor Classic/Icon resolves to icon@2.5.0.",
-        "Prototype notes still mark live paste validation as pending."
+        "Recorded live validation keeps this control pending via migrated-note-state as of 2026-03-10T00:54:16+11:00."
       ],
       "planAlignment": "prototype-only",
       "prototypeNotes": [
@@ -50,10 +66,18 @@
       "catalogName": "Image",
       "constructor": "Image",
       "family": "classic",
+      "liveValidation": {
+        "method": "migrated-note-state",
+        "notes": [
+          "Backfilled from the pre-structured pending note on 2026-03-10."
+        ],
+        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "status": "pending"
+      },
       "notes": [
         "No matching control exists in the source fixture plan; this pinned prototype sits outside the preserved plan snapshot.",
         "Constructor Image resolves to image@2.2.3.",
-        "Prototype notes still mark live paste validation as pending."
+        "Recorded live validation keeps this control pending via migrated-note-state as of 2026-03-10T00:54:16+11:00."
       ],
       "planAlignment": "prototype-only",
       "prototypeNotes": [
@@ -70,10 +94,18 @@
       "catalogName": "Label",
       "constructor": "Label",
       "family": "classic",
+      "liveValidation": {
+        "method": "migrated-note-state",
+        "notes": [
+          "Backfilled from the pre-structured pending note on 2026-03-10."
+        ],
+        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "status": "pending"
+      },
       "notes": [
         "The source fixture plan already resolves this pinned prototype.",
         "Constructor Label resolves to label@2.5.1.",
-        "Prototype notes still mark live paste validation as pending."
+        "Recorded live validation keeps this control pending via migrated-note-state as of 2026-03-10T00:54:16+11:00."
       ],
       "planAlignment": "aligned",
       "planReason": "Fixture prototype Label resolves to label@2.5.1.",
@@ -93,10 +125,18 @@
       "catalogName": "Text",
       "constructor": "ModernText",
       "family": "modern",
+      "liveValidation": {
+        "method": "top-level-paste",
+        "notes": [
+          "Backfilled from the earlier validated prototype note during the structured validation migration."
+        ],
+        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "status": "validated"
+      },
       "notes": [
         "No matching control exists in the source fixture plan; this pinned prototype sits outside the preserved plan snapshot.",
         "Constructor ModernText resolves to modernText@1.0.0.",
-        "Prototype notes indicate this control has already been live validated."
+        "Recorded live validation marks this control validated via top-level-paste on 2026-03-10T00:54:16+11:00."
       ],
       "planAlignment": "prototype-only",
       "prototypeNotes": [
@@ -112,6 +152,7 @@
   ],
   "counts": {
     "alignedPlanControls": 1,
+    "failedValidationControls": 0,
     "pendingValidationControls": 4,
     "prototypeControls": 5,
     "prototypeOnlyControls": 3,
@@ -120,9 +161,9 @@
     "unknownValidationControls": 0,
     "validatedControls": 1
   },
-  "generatedAt": "2026-03-09T13:48:46.900Z",
+  "generatedAt": "2026-03-09T13:58:35.573Z",
   "schemaVersion": 1,
   "sourcePlanGeneratedAt": "2026-03-09T12:21:27.948Z",
-  "sourcePrototypeGeneratedAt": "2026-03-09T13:37:25.835Z",
-  "sourceRegistryGeneratedAt": "2026-03-09T13:47:04.820Z"
+  "sourcePrototypeGeneratedAt": "2026-03-09T13:58:32.687Z",
+  "sourceRegistryGeneratedAt": "2026-03-09T13:52:45.428Z"
 }

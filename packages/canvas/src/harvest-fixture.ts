@@ -17,6 +17,7 @@ export interface CanvasHarvestFixturePrototype {
   constructor: string;
   variant?: string;
   properties?: Record<string, string>;
+  liveValidation?: CanvasHarvestFixturePrototypeValidationRecord;
   notes?: string[];
 }
 
@@ -24,6 +25,19 @@ export interface CanvasHarvestFixturePrototypeDocument {
   schemaVersion: 1;
   generatedAt?: string;
   prototypes: CanvasHarvestFixturePrototype[];
+}
+
+export type CanvasHarvestFixturePrototypeValidationStatus = 'validated' | 'pending' | 'failed' | 'unknown';
+export type CanvasHarvestFixtureRecordedPrototypeValidationStatus = Exclude<
+  CanvasHarvestFixturePrototypeValidationStatus,
+  'unknown'
+>;
+
+export interface CanvasHarvestFixturePrototypeValidationRecord {
+  status: CanvasHarvestFixtureRecordedPrototypeValidationStatus;
+  recordedAt: string;
+  method?: string;
+  notes?: string[];
 }
 
 export type CanvasControlInsertReportOutcome = 'inserted' | 'covered' | 'not-found' | 'failed';
@@ -104,7 +118,6 @@ export interface CanvasHarvestFixturePrototypeSuggestion {
   constructor?: string;
 }
 
-export type CanvasHarvestFixturePrototypeValidationStatus = 'validated' | 'pending' | 'unknown';
 export type CanvasHarvestFixturePrototypeValidationPlanAlignment = 'aligned' | 'stale' | 'prototype-only';
 
 export interface CanvasHarvestFixtureCatalogSummary {
@@ -175,6 +188,7 @@ export interface CanvasHarvestFixturePrototypeValidationBacklogEntry {
   constructor: string;
   suggestedInsertQueries: string[];
   validationStatus: CanvasHarvestFixturePrototypeValidationStatus;
+  liveValidation?: CanvasHarvestFixturePrototypeValidationRecord;
   planAlignment: CanvasHarvestFixturePrototypeValidationPlanAlignment;
   planStatus?: CanvasHarvestFixtureControlStatus;
   planReason?: string;
@@ -195,6 +209,7 @@ export interface CanvasHarvestFixturePrototypeValidationBacklogDocument {
     prototypeControls: number;
     validatedControls: number;
     pendingValidationControls: number;
+    failedValidationControls: number;
     unknownValidationControls: number;
     alignedPlanControls: number;
     stalePlanControls: number;
@@ -251,6 +266,22 @@ export interface PromoteCanvasHarvestFixturePrototypeDraftOptions {
 export interface PromotedCanvasHarvestFixturePrototypeDraftResult {
   promoted: CanvasHarvestFixturePrototype;
   resolvedTemplate: Pick<CanvasTemplateRecord, 'templateName' | 'templateVersion'>;
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+}
+
+export interface RecordCanvasHarvestFixturePrototypeValidationOptions {
+  prototypes: CanvasHarvestFixturePrototypeDocument;
+  family: 'classic' | 'modern';
+  catalogName: string;
+  status: CanvasHarvestFixtureRecordedPrototypeValidationStatus;
+  recordedAt?: string;
+  method?: string;
+  notes?: string[];
+  generatedAt?: string;
+}
+
+export interface RecordedCanvasHarvestFixturePrototypeValidationResult {
+  prototype: CanvasHarvestFixturePrototype;
   prototypes: CanvasHarvestFixturePrototypeDocument;
 }
 
@@ -534,6 +565,7 @@ export function buildCanvasHarvestFixturePrototypeValidationBacklogDocument(
           name: prototype.catalogName,
         });
       const validationStatus = determinePrototypeValidationStatus(prototype);
+      const liveValidation = prototype.liveValidation;
       const planAlignment = determinePrototypeValidationPlanAlignment({
         prototype,
         planControl,
@@ -546,6 +578,7 @@ export function buildCanvasHarvestFixturePrototypeValidationBacklogDocument(
         constructor: prototype.constructor,
         suggestedInsertQueries,
         validationStatus,
+        ...(liveValidation ? { liveValidation } : {}),
         planAlignment,
         ...(planControl?.status ? { planStatus: planControl.status } : {}),
         ...(planControl?.reason ? { planReason: planControl.reason } : {}),
@@ -582,6 +615,7 @@ export function buildCanvasHarvestFixturePrototypeValidationBacklogDocument(
       prototypeControls: controls.length,
       validatedControls: controls.filter((control) => control.validationStatus === 'validated').length,
       pendingValidationControls: controls.filter((control) => control.validationStatus === 'pending').length,
+      failedValidationControls: controls.filter((control) => control.validationStatus === 'failed').length,
       unknownValidationControls: controls.filter((control) => control.validationStatus === 'unknown').length,
       alignedPlanControls: controls.filter((control) => control.planAlignment === 'aligned').length,
       stalePlanControls: controls.filter((control) => control.planAlignment === 'stale').length,
@@ -625,6 +659,10 @@ export function promoteCanvasHarvestFixturePrototypeDraft(
   const { notes: _draftNotes, ...draftWithoutNotes } = selectedDraft;
   const promoted: CanvasHarvestFixturePrototype = {
     ...draftWithoutNotes,
+    liveValidation: {
+      status: 'pending',
+      recordedAt: generatedAt,
+    },
     notes: buildPromotedPrototypeNotes({
       draft: selectedDraft,
       draftDocument: options.drafts,
@@ -643,6 +681,52 @@ export function promoteCanvasHarvestFixturePrototypeDraft(
       schemaVersion: 1,
       generatedAt,
       prototypes: [...options.prototypes.prototypes, promoted],
+    },
+  };
+}
+
+export function recordCanvasHarvestFixturePrototypeValidation(
+  options: RecordCanvasHarvestFixturePrototypeValidationOptions
+): RecordedCanvasHarvestFixturePrototypeValidationResult {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const recordedAt = options.recordedAt ?? generatedAt;
+  const key = makeCatalogKey(options.family, options.catalogName);
+  const prototypeIndex = options.prototypes.prototypes.findIndex(
+    (prototype) => makeCatalogKey(prototype.family, prototype.catalogName) === key
+  );
+
+  if (prototypeIndex < 0) {
+    const availablePrototypes = options.prototypes.prototypes.map(
+      (prototype) => `${familyLabel(prototype.family)}/${prototype.catalogName}`
+    );
+    const availabilityNote =
+      availablePrototypes.length > 0
+        ? ` Available pinned prototypes: ${availablePrototypes.join(', ')}.`
+        : ' No pinned prototypes are available.';
+    throw new Error(
+      `No pinned fixture prototype exists for ${familyLabel(options.family)}/${options.catalogName}.${availabilityNote}`
+    );
+  }
+
+  const prototype = options.prototypes.prototypes[prototypeIndex]!;
+  const updatedPrototype: CanvasHarvestFixturePrototype = {
+    ...prototype,
+    liveValidation: {
+      status: options.status,
+      recordedAt,
+      ...(options.method ? { method: options.method } : {}),
+      ...(options.notes && options.notes.length > 0 ? { notes: dedupeStrings(options.notes) } : {}),
+    },
+  };
+  const updatedPrototypes = [...options.prototypes.prototypes];
+  updatedPrototypes[prototypeIndex] = updatedPrototype;
+
+  return {
+    prototype: updatedPrototype,
+    prototypes: {
+      schemaVersion: 1,
+      generatedAt,
+      prototypes: updatedPrototypes,
     },
   };
 }
@@ -979,13 +1063,16 @@ function buildPrototypeValidationBacklogNotes(options: {
 
   switch (options.validationStatus) {
     case 'validated':
-      notes.push('Prototype notes indicate this control has already been live validated.');
+      notes.push(buildPrototypeValidationStatusNote(options.prototype.liveValidation, 'validated'));
       break;
     case 'pending':
-      notes.push('Prototype notes still mark live paste validation as pending.');
+      notes.push(buildPrototypeValidationStatusNote(options.prototype.liveValidation, 'pending'));
+      break;
+    case 'failed':
+      notes.push(buildPrototypeValidationStatusNote(options.prototype.liveValidation, 'failed'));
       break;
     default:
-      notes.push('Prototype notes do not yet say whether live paste validation has happened.');
+      notes.push(buildPrototypeValidationStatusNote(options.prototype.liveValidation, 'unknown'));
       break;
   }
 
@@ -1017,8 +1104,12 @@ function buildPromotedPrototypeNotes(options: {
 }
 
 function determinePrototypeValidationStatus(
-  prototype: Pick<CanvasHarvestFixturePrototype, 'notes'>
+  prototype: Pick<CanvasHarvestFixturePrototype, 'notes' | 'liveValidation'>
 ): CanvasHarvestFixturePrototypeValidationStatus {
+  if (prototype.liveValidation) {
+    return prototype.liveValidation.status;
+  }
+
   const notes = prototype.notes ?? [];
 
   if (
@@ -1033,6 +1124,16 @@ function determinePrototypeValidationStatus(
 
   if (notes.some((note) => /\bvalidated\b|\blive-validated\b/i.test(note))) {
     return 'validated';
+  }
+
+  if (
+    notes.some((note) =>
+      /(?:live paste validation|live-validate|validation).*\b(failed|failure|error|timed out)\b|\b(failed|failure|error|timed out)\b.*(?:live paste validation|live-validate|validation)/i.test(
+        note
+      )
+    )
+  ) {
+    return 'failed';
   }
 
   return 'unknown';
@@ -1097,9 +1198,10 @@ function comparePrototypeValidationBacklogEntries(
   right: CanvasHarvestFixturePrototypeValidationBacklogEntry
 ): number {
   const validationPriority: Record<CanvasHarvestFixturePrototypeValidationStatus, number> = {
-    pending: 0,
-    unknown: 1,
-    validated: 2,
+    failed: 0,
+    pending: 1,
+    unknown: 2,
+    validated: 3,
   };
   const alignmentPriority: Record<CanvasHarvestFixturePrototypeValidationPlanAlignment, number> = {
     stale: 0,
@@ -1113,6 +1215,36 @@ function comparePrototypeValidationBacklogEntries(
     left.family.localeCompare(right.family) ||
     left.catalogName.localeCompare(right.catalogName)
   );
+}
+
+function buildPrototypeValidationStatusNote(
+  liveValidation: CanvasHarvestFixturePrototypeValidationRecord | undefined,
+  status: CanvasHarvestFixturePrototypeValidationStatus
+): string {
+  if (!liveValidation) {
+    switch (status) {
+      case 'validated':
+        return 'Prototype notes indicate this control has already been live validated.';
+      case 'pending':
+        return 'Prototype notes still mark live paste validation as pending.';
+      case 'failed':
+        return 'Prototype notes indicate the last live validation attempt failed.';
+      default:
+        return 'Prototype notes do not yet say whether live paste validation has happened.';
+    }
+  }
+
+  const method = liveValidation.method ? ` via ${liveValidation.method}` : '';
+  switch (status) {
+    case 'validated':
+      return `Recorded live validation marks this control validated${method} on ${liveValidation.recordedAt}.`;
+    case 'pending':
+      return `Recorded live validation keeps this control pending${method} as of ${liveValidation.recordedAt}.`;
+    case 'failed':
+      return `Recorded live validation marks this control failed${method} on ${liveValidation.recordedAt}.`;
+    default:
+      return 'Prototype notes do not yet say whether live paste validation has happened.';
+  }
 }
 
 function summarizeInsertReport(options: {

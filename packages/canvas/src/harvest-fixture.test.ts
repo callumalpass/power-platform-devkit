@@ -8,6 +8,7 @@ import {
   buildCanvasHarvestFixturePrototypeDraftDocument,
   buildCanvasHarvestFixturePrototypeValidationBacklogDocument,
   promoteCanvasHarvestFixturePrototypeDraft,
+  recordCanvasHarvestFixturePrototypeValidation,
   renderCanvasHarvestFixture,
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
   DEFAULT_CANVAS_HARVEST_FIXTURE_YAML_PATH,
@@ -592,6 +593,10 @@ describe('canvas harvest fixture planning', () => {
       family: 'classic',
       catalogName: 'Button',
       constructor: 'Classic/Button',
+      liveValidation: {
+        status: 'pending',
+        recordedAt: '2026-03-10T00:10:00.000Z',
+      },
       properties: {
         Height: '=40',
         Width: '=160',
@@ -613,6 +618,40 @@ describe('canvas harvest fixture planning', () => {
       schemaVersion: 1,
       generatedAt: '2026-03-10T00:10:00.000Z',
       prototypes: [...prototypes.prototypes, promoted.promoted],
+    });
+  });
+
+  it('records structured live validation metadata for an existing pinned prototype', () => {
+    const recorded = recordCanvasHarvestFixturePrototypeValidation({
+      prototypes,
+      family: 'classic',
+      catalogName: 'Label',
+      status: 'failed',
+      recordedAt: '2026-03-10T00:15:00.000Z',
+      method: 'container-paste',
+      notes: ['Studio paste succeeded, but the exported artifact was missing the control.'],
+      generatedAt: '2026-03-10T00:16:00.000Z',
+    });
+
+    expect(recorded.prototype).toEqual({
+      family: 'classic',
+      catalogName: 'Label',
+      constructor: 'Label',
+      properties: {
+        Text: '="Classic label fixture"',
+      },
+      liveValidation: {
+        status: 'failed',
+        recordedAt: '2026-03-10T00:15:00.000Z',
+        method: 'container-paste',
+        notes: ['Studio paste succeeded, but the exported artifact was missing the control.'],
+      },
+      notes: ['Harvested alias from the TEST export.'],
+    });
+    expect(recorded.prototypes).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:16:00.000Z',
+      prototypes: [prototypes.prototypes[0], recorded.prototype, prototypes.prototypes[2], prototypes.prototypes[3]],
     });
   });
 
@@ -703,7 +742,23 @@ describe('canvas harvest fixture planning', () => {
           ) {
             return {
               ...prototype,
+              liveValidation: {
+                status: 'pending' as const,
+                recordedAt: '2026-03-10T00:18:00.000Z',
+                method: 'container-paste',
+              },
               notes: ['Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending.'],
+            };
+          }
+
+          if (prototype.family === 'modern' && prototype.catalogName === 'Text') {
+            return {
+              ...prototype,
+              liveValidation: {
+                status: 'validated' as const,
+                recordedAt: '2026-03-10T00:19:00.000Z',
+                method: 'top-level-paste',
+              },
             };
           }
 
@@ -717,6 +772,11 @@ describe('canvas harvest fixture planning', () => {
             Height: '=40',
             Width: '=40',
             Image: '=SampleImage',
+          },
+          liveValidation: {
+            status: 'pending' as const,
+            recordedAt: '2026-03-10T00:18:00.000Z',
+            method: 'container-paste',
           },
           notes: ['Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending.'],
         }),
@@ -733,6 +793,7 @@ describe('canvas harvest fixture planning', () => {
       prototypeControls: 6,
       validatedControls: 1,
       pendingValidationControls: 4,
+      failedValidationControls: 0,
       unknownValidationControls: 1,
       alignedPlanControls: 4,
       stalePlanControls: 1,
@@ -744,6 +805,10 @@ describe('canvas harvest fixture planning', () => {
         constructor: 'Classic/Button',
         suggestedInsertQueries: ['Button'],
         validationStatus: 'pending',
+        liveValidation: {
+          status: 'pending',
+          recordedAt: '2026-03-10T00:10:00.000Z',
+        },
         planAlignment: 'stale',
         planStatus: 'prototype-missing',
         templateName: 'button',
@@ -751,7 +816,7 @@ describe('canvas harvest fixture planning', () => {
         notes: expect.arrayContaining([
           'The source fixture plan still marks this control as prototype missing; regenerate the plan to reflect the pinned prototype.',
           'Constructor Classic/Button resolves to button@2.2.0.',
-          'Prototype notes still mark live paste validation as pending.',
+          'Recorded live validation keeps this control pending as of 2026-03-10T00:10:00.000Z.',
         ]),
       })
     );
@@ -774,12 +839,17 @@ describe('canvas harvest fixture planning', () => {
         constructor: 'Image',
         suggestedInsertQueries: ['Image'],
         validationStatus: 'pending',
+        liveValidation: {
+          status: 'pending',
+          recordedAt: '2026-03-10T00:18:00.000Z',
+          method: 'container-paste',
+        },
         planAlignment: 'prototype-only',
         templateName: 'image',
         templateVersion: '2.2.3',
         notes: expect.arrayContaining([
           'No matching control exists in the source fixture plan; this pinned prototype sits outside the preserved plan snapshot.',
-          'Prototype notes still mark live paste validation as pending.',
+          'Recorded live validation keeps this control pending via container-paste as of 2026-03-10T00:18:00.000Z.',
         ]),
       })
     );
@@ -787,13 +857,61 @@ describe('canvas harvest fixture planning', () => {
       expect.objectContaining({
         constructor: 'ModernText',
         validationStatus: 'validated',
+        liveValidation: {
+          status: 'validated',
+          recordedAt: '2026-03-10T00:19:00.000Z',
+          method: 'top-level-paste',
+        },
         planAlignment: 'aligned',
         planStatus: 'resolved',
         templateName: 'modernText',
         templateVersion: '1.0.0',
         notes: expect.arrayContaining([
           'The source fixture plan already resolves this pinned prototype.',
-          'Prototype notes indicate this control has already been live validated.',
+          'Recorded live validation marks this control validated via top-level-paste on 2026-03-10T00:19:00.000Z.',
+        ]),
+      })
+    );
+  });
+
+  it('prefers structured live validation metadata over legacy note parsing', () => {
+    const backlog = buildCanvasHarvestFixturePrototypeValidationBacklogDocument({
+      plan: buildCanvasHarvestFixturePlan({
+        catalog,
+        registry,
+        prototypes,
+        generatedAt: '2026-03-09T09:30:00.000Z',
+      }),
+      registry,
+      prototypes: {
+        ...prototypes,
+        prototypes: prototypes.prototypes.map((prototype) =>
+          prototype.family === 'modern' && prototype.catalogName === 'Text'
+            ? {
+                ...prototype,
+                liveValidation: {
+                  status: 'failed' as const,
+                  recordedAt: '2026-03-10T00:25:00.000Z',
+                  method: 'container-paste',
+                },
+              }
+            : prototype
+        ),
+      },
+      generatedAt: '2026-03-10T00:26:00.000Z',
+    });
+
+    expect(backlog.counts.failedValidationControls).toBe(1);
+    expect(backlog.controls.find((control) => control.family === 'modern' && control.catalogName === 'Text')).toEqual(
+      expect.objectContaining({
+        validationStatus: 'failed',
+        liveValidation: {
+          status: 'failed',
+          recordedAt: '2026-03-10T00:25:00.000Z',
+          method: 'container-paste',
+        },
+        notes: expect.arrayContaining([
+          'Recorded live validation marks this control failed via container-paste on 2026-03-10T00:25:00.000Z.',
         ]),
       })
     );

@@ -35,7 +35,7 @@ async function main(): Promise<void> {
   process.stdout.write(`Wrote prototype validation backlog: ${outPath}\n`);
   process.stdout.write(`Source plan: ${planPath}\n`);
   process.stdout.write(
-    `Prototype controls: ${backlog.counts.prototypeControls}; pending validation: ${backlog.counts.pendingValidationControls}; validated: ${backlog.counts.validatedControls}; unknown: ${backlog.counts.unknownValidationControls}\n`
+    `Prototype controls: ${backlog.counts.prototypeControls}; pending validation: ${backlog.counts.pendingValidationControls}; failed: ${backlog.counts.failedValidationControls}; validated: ${backlog.counts.validatedControls}; unknown: ${backlog.counts.unknownValidationControls}\n`
   );
   process.stdout.write(
     `Plan alignment: aligned ${backlog.counts.alignedPlanControls}; stale ${backlog.counts.stalePlanControls}; prototype-only ${backlog.counts.prototypeOnlyControls}; registry missing ${backlog.counts.registryMissingControls}\n`
