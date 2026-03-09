@@ -110,22 +110,38 @@ describe('cli fixture-backed workflows', () => {
       PP_SQL_ENDPOINT: undefined,
     };
 
+    const projectInspect = await runCli(['project', 'inspect', fixtureRoot, '--format', 'json'], {
+      env,
+    });
     const report = await runCli(['analysis', 'report', fixtureRoot, '--format', 'markdown'], {
       env,
     });
     const context = await runCli(['analysis', 'context', '--project', fixtureRoot, '--asset', 'apps', '--format', 'json'], {
       env,
     });
+    const deployPlan = await runCli(['deploy', 'plan', '--project', fixtureRoot, '--format', 'json'], {
+      env,
+    });
 
+    expect(projectInspect.code).toBe(0);
+    expect(projectInspect.stderr).toBe('');
     expect(report.code).toBe(0);
     expect(report.stderr).toBe('');
     expect(context.code).toBe(0);
     expect(context.stderr).toBe('');
+    expect(deployPlan.code).toBe(0);
+    expect(deployPlan.stderr).toBe('');
 
+    await expectGoldenJson(JSON.parse(projectInspect.stdout), 'fixtures/analysis/golden/project-inspect.json', {
+      normalize: (value) => normalizeCliAnalysisSnapshot(value),
+    });
     await expectGoldenText(report.stdout, 'fixtures/analysis/golden/report.md', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
     });
     await expectGoldenJson(JSON.parse(context.stdout), 'fixtures/analysis/golden/context-pack.json', {
+      normalize: (value) => normalizeCliAnalysisSnapshot(value),
+    });
+    await expectGoldenJson(JSON.parse(deployPlan.stdout), 'fixtures/analysis/golden/deploy-plan.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
     });
   });

@@ -1,0 +1,116 @@
+{
+  "activeEnvironment": "prod",
+  "activeSolution": "CoreManaged",
+  "assets": [
+    {
+      "exists": true,
+      "kind": "directory",
+      "name": "apps",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/apps"
+    },
+    {
+      "exists": true,
+      "kind": "directory",
+      "name": "flows",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/flows"
+    },
+    {
+      "exists": true,
+      "kind": "file",
+      "name": "solutionBundle",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/solutions/Core.zip"
+    },
+    {
+      "exists": true,
+      "kind": "directory",
+      "name": "docs",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/docs"
+    }
+  ],
+  "build": {
+    "canvas": {
+      "mode": "seeded"
+    }
+  },
+  "defaultEnvironment": "dev",
+  "defaultSolution": "core",
+  "generatedAt": "<GENERATED_AT>",
+  "inputs": [
+    {
+      "hasValue": true,
+      "mappings": [
+        {
+          "kind": "dataverse-envvar",
+          "target": "pp_TenantDomain"
+        }
+      ],
+      "name": "tenantDomain",
+      "sensitive": false,
+      "source": "environment",
+      "value": "contoso.example"
+    },
+    {
+      "hasValue": true,
+      "mappings": [
+        {
+          "kind": "deploy-secret",
+          "target": "api-token"
+        }
+      ],
+      "name": "apiToken",
+      "reference": "app_token",
+      "sensitive": true,
+      "source": "secret",
+      "value": "<redacted>"
+    },
+    {
+      "hasValue": false,
+      "mappings": [
+        {
+          "kind": "deploy-input",
+          "target": "sql-endpoint"
+        }
+      ],
+      "name": "sqlEndpoint",
+      "sensitive": false,
+      "source": "missing"
+    },
+    {
+      "hasValue": true,
+      "mappings": [],
+      "name": "releaseName",
+      "sensitive": false,
+      "source": "value",
+      "value": "production"
+    },
+    {
+      "hasValue": true,
+      "mappings": [],
+      "name": "useManagedIdentity",
+      "sensitive": false,
+      "source": "value",
+      "value": false
+    }
+  ],
+  "projectRoot": "<REPO_ROOT>/fixtures/analysis/project",
+  "providerBindings": [
+    "primaryDataverse",
+    "financeSharePoint"
+  ],
+  "selectedStage": "prod",
+  "templateRegistries": [
+    "./registries/canvas-controls.json"
+  ],
+  "topology": [
+    {
+      "defaultSolution": "CoreDev",
+      "environment": "dev",
+      "name": "dev"
+    },
+    {
+      "defaultSolution": "CoreManaged",
+      "environment": "prod",
+      "name": "prod"
+    }
+  ]
+}
