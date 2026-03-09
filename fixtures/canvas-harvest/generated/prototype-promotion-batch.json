@@ -1,0 +1,82 @@
+{
+  "entries": [
+    {
+      "catalogName": "Container",
+      "family": "classic"
+    },
+    {
+      "catalogName": "Grid container",
+      "family": "classic"
+    },
+    {
+      "catalogName": "Horizontal container",
+      "family": "classic"
+    },
+    {
+      "catalogName": "Vertical container",
+      "family": "classic"
+    },
+    {
+      "catalogName": "Date picker",
+      "family": "modern"
+    },
+    {
+      "catalogName": "Radio group",
+      "family": "modern"
+    },
+    {
+      "catalogName": "Tabs or tab list",
+      "family": "modern"
+    },
+    {
+      "catalogName": "Text input",
+      "family": "modern"
+    }
+  ],
+  "generatedAt": "2026-03-09T16:37:29.015Z",
+  "schemaVersion": 1,
+  "selection": {
+    "firstSelectedControl": "Classic/Container",
+    "lastSelectedControl": "Modern/Text input",
+    "matchingDrafts": 10,
+    "mode": "explicit",
+    "requestedPromotions": [
+      {
+        "catalogName": "Container",
+        "family": "classic"
+      },
+      {
+        "catalogName": "Grid container",
+        "family": "classic"
+      },
+      {
+        "catalogName": "Horizontal container",
+        "family": "classic"
+      },
+      {
+        "catalogName": "Vertical container",
+        "family": "classic"
+      },
+      {
+        "catalogName": "Date picker",
+        "family": "modern"
+      },
+      {
+        "catalogName": "Radio group",
+        "family": "modern"
+      },
+      {
+        "catalogName": "Tabs or tab list",
+        "family": "modern"
+      },
+      {
+        "catalogName": "Text input",
+        "family": "modern"
+      }
+    ],
+    "selectedDrafts": 8,
+    "skippedDrafts": 2,
+    "startIndex": 0
+  },
+  "sourceDraftGeneratedAt": "2026-03-09T16:04:21.224Z"
+}
