@@ -317,13 +317,13 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
         printCanvasCreateHelp();
         return 0;
       }
-      return runCanvasUnsupportedRemoteMutation('create');
+      return runCanvasUnsupportedRemoteMutation('create', args);
     case 'import':
       if (args.includes('--help') || args.includes('help')) {
         printCanvasImportHelp();
         return 0;
       }
-      return runCanvasUnsupportedRemoteMutation('import');
+      return runCanvasUnsupportedRemoteMutation('import', args);
     case 'list':
       return runCanvasList(args);
     case 'templates':
@@ -343,7 +343,12 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
   }
 }
 
-function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import'): number {
+function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): number {
+  const envAlias = readFlag(args, '--env');
+  const solutionUniqueName = readFlag(args, '--solution');
+  const displayName = command === 'create' ? readFlag(args, '--name') : undefined;
+  const importPath = command === 'import' ? positionalArgs(args)[0] : undefined;
+
   return printFailure(
     fail(
       createDiagnostic(
@@ -360,13 +365,12 @@ function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import'): numbe
       ),
       {
         supportTier: 'preview',
-        suggestedNextActions:
-          command === 'create'
-            ? ['Use `pp canvas list --env <alias> --solution <solution>` to confirm existing remote apps.', 'Use Maker blank-app creation for now when you need a new remote canvas app.']
-            : [
-                'Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
-                'Use Maker or solution tooling for the remote import step until `pp canvas import` exists.',
-              ],
+        suggestedNextActions: buildCanvasRemoteMutationSuggestions(command, {
+          envAlias,
+          solutionUniqueName,
+          displayName,
+          importPath,
+        }),
         knownLimitations: [
           'Remote canvas coverage in pp is currently read-only.',
           'pp does not yet return a remote canvas app id for create/import workflows.',
@@ -374,6 +378,63 @@ function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import'): numbe
       }
     )
   );
+}
+
+function buildCanvasRemoteMutationSuggestions(
+  command: 'create' | 'import',
+  context: {
+    envAlias?: string;
+    solutionUniqueName?: string;
+    displayName?: string;
+    importPath?: string;
+  }
+): string[] {
+  const envAlias = context.envAlias ? formatCliArg(context.envAlias) : '<alias>';
+  const solutionSuffix = context.solutionUniqueName ? ` --solution ${formatCliArg(context.solutionUniqueName)}` : '';
+  const envSuffix = ` --env ${envAlias}`;
+  const listCommand = `pp canvas list${envSuffix}${solutionSuffix}`;
+  const solutionComponentsCommand = context.solutionUniqueName
+    ? `pp solution components ${formatCliArg(context.solutionUniqueName)}${envSuffix} --format json`
+    : undefined;
+
+  if (command === 'create') {
+    const suggestions = ['Use Maker blank-app creation for now when you need a new remote canvas app.'];
+
+    if (context.displayName) {
+      suggestions.push(
+        `After saving in Maker, run \`pp canvas inspect ${formatCliArg(context.displayName)}${envSuffix}${solutionSuffix}\` to confirm the remote app id.`
+      );
+    }
+
+    suggestions.push(`After the Maker step, run \`${listCommand}\` to confirm the new app is visible in Dataverse.`);
+
+    if (solutionComponentsCommand) {
+      suggestions.push(`Run \`${solutionComponentsCommand}\` to verify that the app was added to the solution.`);
+    }
+
+    return suggestions;
+  }
+
+  const suggestions = [];
+
+  if (context.importPath) {
+    suggestions.push(`Use Maker or solution tooling to import \`${context.importPath}\` until \`pp canvas import\` exists.`);
+  } else {
+    suggestions.push('Use Maker or solution tooling for the remote import step until `pp canvas import` exists.');
+  }
+
+  suggestions.push(`After the import step, run \`${listCommand}\` to confirm the app is visible in Dataverse.`);
+
+  if (solutionComponentsCommand) {
+    suggestions.push(`Run \`${solutionComponentsCommand}\` to verify that the imported app was added to the solution.`);
+  }
+
+  suggestions.push('Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.');
+  return suggestions;
+}
+
+function formatCliArg(value: string): string {
+  return /^[A-Za-z0-9._:/=-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
 async function runCanvasTemplates(args: string[]): Promise<number> {

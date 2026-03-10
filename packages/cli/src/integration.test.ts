@@ -958,8 +958,29 @@ describe('cli fixture-backed workflows', () => {
   });
 
   it('returns explicit diagnostics for unsupported remote canvas mutations', async () => {
-    const create = await runCli(['canvas', 'create', '--env', 'fixture', '--format', 'json']);
-    const importResult = await runCli(['canvas', 'import', './dist/Harness.msapp', '--env', 'fixture', '--format', 'json']);
+    const create = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--format',
+      'json',
+    ]);
+    const importResult = await runCli([
+      'canvas',
+      'import',
+      './dist/Harness App.msapp',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--format',
+      'json',
+    ]);
 
     expect(create.code).toBe(1);
     expect(create.stdout).toBe('');
@@ -972,6 +993,12 @@ describe('cli fixture-backed workflows', () => {
           source: '@pp/cli',
         },
       ],
+      suggestedNextActions: expect.arrayContaining([
+        'Use Maker blank-app creation for now when you need a new remote canvas app.',
+        'After saving in Maker, run `pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
+        'After the Maker step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.',
+        'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the app was added to the solution.',
+      ]),
       knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
     });
 
@@ -987,6 +1014,9 @@ describe('cli fixture-backed workflows', () => {
         },
       ],
       suggestedNextActions: expect.arrayContaining([
+        'Use Maker or solution tooling to import `./dist/Harness App.msapp` until `pp canvas import` exists.',
+        'After the import step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the app is visible in Dataverse.',
+        'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the imported app was added to the solution.',
         'Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
       ]),
     });
