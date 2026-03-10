@@ -2051,6 +2051,31 @@ async function deployLoadedFlowArtifact(
     );
   }
 
+  const uniqueNameMismatch = resolveFlowTargetUniqueNameMismatch(artifact, remoteFlow.data);
+
+  if (uniqueNameMismatch) {
+    return fail(
+      [
+        ...diagnostics,
+        ...remoteFlow.diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_DEPLOY_TARGET_UNIQUE_NAME_MISMATCH',
+          `Flow artifact ${path} declares uniqueName ${uniqueNameMismatch.artifactUniqueName}, but the resolved target workflow uses ${uniqueNameMismatch.remoteUniqueName}.`,
+          {
+            source: '@pp/flow',
+            path,
+            hint: 'Existing-target deploy and artifact-mode promotion currently require metadata.uniqueName to match the resolved remote workflow identity.',
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: [...warnings, ...remoteFlow.warnings],
+      }
+    );
+  }
+
   const updateEntity = buildFlowDeployUpdateEntity(artifact);
   const update = await options.dataverseClient.update(
     'workflows',
@@ -2989,6 +3014,30 @@ function resolveFlowCreateTargetMismatch(artifact: FlowArtifact, explicitTarget:
   );
 
   return !supportedIdentifiers.has(explicitTarget);
+}
+
+function resolveFlowTargetUniqueNameMismatch(
+  artifact: FlowArtifact,
+  remoteFlow: FlowInspectResult
+): {
+  artifactUniqueName: string;
+  remoteUniqueName: string;
+} | undefined {
+  const artifactUniqueName = artifact.metadata.uniqueName?.trim();
+  const remoteUniqueName = remoteFlow.uniqueName?.trim();
+
+  if (!artifactUniqueName || !remoteUniqueName) {
+    return undefined;
+  }
+
+  if (artifactUniqueName.toLowerCase() === remoteUniqueName.toLowerCase()) {
+    return undefined;
+  }
+
+  return {
+    artifactUniqueName,
+    remoteUniqueName,
+  };
 }
 
 function validateFlowWorkflowStateMetadata(artifact: FlowArtifact, path: string): Diagnostic[] {

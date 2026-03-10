@@ -258,7 +258,9 @@ The current pack/deploy boundary is:
   any preserved bounded `clientdata` siblings after the shared local validator
   passes, and when a destination solution scope is supplied it also checks that
   projected connection references and environment variables exist there before
-  mutation, unless `--create-if-missing` is used; `--workflow-state` can
+  mutation, unless `--create-if-missing` is used; when `metadata.uniqueName`
+  is declared it must also match the resolved existing target workflow instead
+  of silently retargeting another flow by name or id; `--workflow-state` can
   override the bounded state/status pair for that mutation without changing the
   local artifact
 - remote promotion currently transfers that same bounded workflow shell plus

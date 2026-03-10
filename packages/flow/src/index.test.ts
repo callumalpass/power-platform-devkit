@@ -715,6 +715,33 @@ describe('FlowService', () => {
     });
   });
 
+  it('blocks direct deploy when the resolved existing target has a different unique name', async () => {
+    let updated = false;
+    const client = {
+      ...createStubDataverseClient(),
+      update: async () => {
+        updated = true;
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(client).deployArtifact('fixtures/flow/raw/invoice-flow.raw.json', {
+      target: 'Other Flow',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('FLOW_DEPLOY_TARGET_UNIQUE_NAME_MISMATCH');
+    expect(updated).toBe(false);
+  });
+
   it('infers the supported workflow statuscode during deploy when only statecode is declared locally', async () => {
     const dir = await createTempDir();
     const artifactPath = join(dir, 'flow.json');
@@ -1084,6 +1111,35 @@ describe('FlowService', () => {
         statuscode: 1,
       },
     });
+  });
+
+  it('blocks artifact-mode promotion when the resolved target has a different unique name', async () => {
+    let updated = false;
+    const sourceClient = createStubDataverseClient();
+    const targetClient = {
+      ...createStubDataverseClient(),
+      update: async () => {
+        updated = true;
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(sourceClient).promoteArtifact('Invoice Sync', {
+      target: 'Other Flow',
+      targetDataverseClient: targetClient,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('FLOW_DEPLOY_TARGET_UNIQUE_NAME_MISMATCH');
+    expect(updated).toBe(false);
   });
 
   it('blocks direct flow deploy when projected target solution bindings are missing', async () => {
