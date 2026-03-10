@@ -2762,8 +2762,93 @@ async function runEnvironmentInspect(configOptions: ConfigStoreOptions, args: st
     return printFailure(fail(createDiagnostic('error', 'ENV_NOT_FOUND', `Environment alias ${alias} was not found.`)));
   }
 
-  printByFormat(environment.data, outputFormat(args, 'json'));
+  const auth = new AuthService(configOptions);
+  const profile = await auth.getProfile(environment.data.authProfile);
+
+  printByFormat(
+    buildEnvironmentInspectView(environment.data, profile.success ? profile.data ?? undefined : undefined),
+    outputFormat(args, 'json')
+  );
   return 0;
+}
+
+function buildEnvironmentInspectView(environment: EnvironmentAlias, profile: AuthProfile | undefined): Record<string, unknown> {
+  return {
+    ...environment,
+    auth: buildEnvironmentAuthSummary(environment, profile),
+    tooling: {
+      pp: {
+        authContextSource: 'pp-config',
+        usesEnvironmentAuthProfile: true,
+      },
+      pac: buildPacEnvironmentGuidance(profile),
+    },
+  };
+}
+
+function buildEnvironmentAuthSummary(environment: EnvironmentAlias, profile: AuthProfile | undefined): Record<string, unknown> {
+  if (!profile) {
+    return {
+      name: environment.authProfile,
+      status: 'missing',
+    };
+  }
+
+  return {
+    ...summarizeProfile(profile),
+    status: 'configured',
+  };
+}
+
+function buildPacEnvironmentGuidance(profile: AuthProfile | undefined): Record<string, unknown> {
+  const base = {
+    sharesPpAuthContext: false,
+    recommendedAction:
+      'Treat pac as a separately authenticated tool. Do not assume a successful `pp dv whoami` means pac can reuse that environment or session.',
+  };
+
+  if (!profile) {
+    return {
+      ...base,
+      risk: 'unknown',
+      reason: 'The bound pp auth profile could not be resolved from local config.',
+    };
+  }
+
+  switch (profile.type) {
+    case 'user':
+      return {
+        ...base,
+        risk: profile.browserProfile ? 'high' : 'medium',
+        reason: profile.browserProfile
+          ? `This alias uses pp user auth with browser profile ${profile.browserProfile}, but pac does not read pp browser-profile bootstrap state or its auth cache.`
+          : 'This alias uses pp user auth, but pac does not read pp auth profiles or their cached session state.',
+      };
+    case 'device-code':
+      return {
+        ...base,
+        risk: 'medium',
+        reason: 'This alias uses a pp device-code profile, but pac still requires its own auth bootstrap instead of reusing pp config.',
+      };
+    case 'client-secret':
+      return {
+        ...base,
+        risk: 'low',
+        reason: 'This alias uses a non-interactive pp client-secret profile, but pac still needs separate credentials or environment setup.',
+      };
+    case 'environment-token':
+      return {
+        ...base,
+        risk: 'low',
+        reason: 'This alias uses a pp environment-token profile, but pac still needs a separate token/bootstrap path.',
+      };
+    case 'static-token':
+      return {
+        ...base,
+        risk: 'low',
+        reason: 'This alias uses a pp static token, but pac still cannot consume pp config directly.',
+      };
+  }
 }
 
 async function runEnvironmentResolveMakerId(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {

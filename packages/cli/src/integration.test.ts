@@ -6044,6 +6044,107 @@ describe('cli fixture-backed workflows', () => {
     expect(help.stdout).toContain('env resolve-maker-id <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]');
   });
 
+  it('surfaces bound auth and pac guidance in env inspect output', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://fixture.crm.dynamics.com',
+              loginHint: 'fixture.user@example.com',
+              browserProfile: 'fixture-browser',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await runCli(['env', 'inspect', 'fixture', '--config-dir', configDir, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      alias: 'fixture',
+      url: 'https://fixture.crm.dynamics.com',
+      authProfile: 'fixture-user',
+      auth: {
+        name: 'fixture-user',
+        type: 'user',
+        browserProfile: 'fixture-browser',
+        status: 'configured',
+      },
+      tooling: {
+        pp: {
+          authContextSource: 'pp-config',
+          usesEnvironmentAuthProfile: true,
+        },
+        pac: {
+          sharesPpAuthContext: false,
+          risk: 'high',
+          recommendedAction: expect.stringContaining('Treat pac as a separately authenticated tool.'),
+          reason: expect.stringContaining('browser profile fixture-browser'),
+        },
+      },
+    });
+  });
+
+  it('keeps env inspect readable when the bound auth profile is missing', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {},
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'missing-profile',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await runCli(['env', 'inspect', 'fixture', '--config-dir', configDir, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      alias: 'fixture',
+      authProfile: 'missing-profile',
+      auth: {
+        name: 'missing-profile',
+        status: 'missing',
+      },
+      tooling: {
+        pac: {
+          sharesPpAuthContext: false,
+          risk: 'unknown',
+        },
+      },
+    });
+  });
+
   it('prints help for auth profile inspect --help without running validation', async () => {
     const inspect = await runCli(['auth', 'profile', 'inspect', '--help']);
 

@@ -229,6 +229,32 @@ the Power Platform environments API, persists the discovered
 record. Use this when a harness or Maker handoff needs exact `make.powerapps`
 deep links but the alias was originally registered without `--maker-env-id`.
 
+`pp env inspect <alias>` now also expands the bound auth profile summary and a
+tooling advisory block. The `tooling.pac` section is there to make a common
+failure mode explicit: `pac` does not read `pp` auth profiles, browser-profile
+bootstrap state, or cached `pp` sessions. A successful
+`pp dv whoami --env <alias>` only proves the alias works inside `pp`.
+
+Example:
+
+```bash
+pp env inspect test --format json
+```
+
+Look for:
+
+- `auth.status` to confirm the bound profile is configured locally
+- `auth.type` and `auth.browserProfile` to see whether the alias is
+  browser-backed
+- `tooling.pac.sharesPpAuthContext`, which is currently `false`
+- `tooling.pac.risk` and `tooling.pac.reason` before assuming a `pac` fallback
+  will stay non-interactive
+
+For harness and fallback workflows, use that output as the contract. Prefer
+staying inside `pp` when possible; if `pac` is unavoidable, treat it as a
+separately authenticated tool and verify it explicitly before relying on it in
+the middle of a scenario step.
+
 For disposable bootstrap flows, `pp env cleanup-plan <alias> --prefix <runPrefix>`
 lists solutions whose unique name or friendly name starts with that prefix.
 `pp env reset <alias> --prefix <runPrefix>` then deletes those matches through
