@@ -254,6 +254,7 @@ describe('FlowService', () => {
         name: 'Invoice Sync',
         displayName: 'Invoice Sync',
         uniqueName: 'crd_InvoiceSync',
+        category: 5,
         sourcePath: 'dataverse://workflows/flow-1',
         connectionReferences: [
           {
@@ -346,7 +347,7 @@ describe('FlowService', () => {
         uniqueName: 'crd_InvoiceFlow',
         solutionUniqueName: 'Core',
       },
-      updatedFields: ['clientdata'],
+      updatedFields: ['clientdata', 'name', 'category', 'statecode', 'statuscode'],
       validation: {
         valid: true,
       },
@@ -356,6 +357,12 @@ describe('FlowService', () => {
       table: 'workflows',
       id: 'flow-1',
       solutionUniqueName: 'Core',
+      entity: {
+        name: 'Invoice Flow',
+        category: 5,
+        statecode: 1,
+        statuscode: 2,
+      },
     });
     expect(updates[0]?.entity.clientdata).toContain('"definition"');
   });
@@ -521,6 +528,12 @@ describe('FlowService', () => {
       table: 'workflows',
       id: 'target-flow-1',
       solutionUniqueName: 'CoreTarget',
+      entity: {
+        name: 'Invoice Sync',
+        category: 5,
+        statecode: 1,
+        statuscode: 2,
+      },
     });
     expect(String(updates[0]?.entity.clientdata)).toContain('"definition"');
   });

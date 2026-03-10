@@ -32,6 +32,7 @@
   },
   "kind": "pp.flow.artifact",
   "metadata": {
+    "category": 5,
     "connectionReferences": [
       {
         "apiId": "/providers/microsoft.powerapps/apis/shared_office365",

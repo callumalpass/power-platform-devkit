@@ -89,6 +89,7 @@ The canonical unpacked artifact is `flow.json`:
   "metadata": {
     "name": "Invoice Flow",
     "displayName": "Invoice Flow",
+    "category": 5,
     "connectionReferences": [
       {
         "name": "shared_office365",
@@ -150,11 +151,12 @@ hand-editing the Maker export shape. `pp flow deploy <path> --environment ALIAS`
 now carries that lifecycle one step further for an already-existing target cloud
 flow by validating the local artifact, resolving a remote workflow by `--target`
 or the artifact metadata (`uniqueName`, then `name`, then `displayName`, then
-`id`), and PATCHing the normalized definition back into Dataverse
-`workflows.clientdata`.
+`id`), and PATCHing the normalized definition plus a bounded workflow-shell
+metadata slice (`name`, `category`, `statecode`, and `statuscode` when present)
+back into Dataverse `workflows`.
 When `--create-if-missing` is supplied, the same command can also provision a
 bounded missing cloud-flow shell using the artifact `metadata.uniqueName`,
-minimal workflow metadata, and the normalized `clientdata` definition.
+bounded workflow metadata, and the normalized `clientdata` definition.
 `pp flow promote <name|id|uniqueName> --source-environment SRC --target-environment DST`
 builds directly on the same contract: it exports a supported remote source flow
 into the canonical artifact model in memory, runs the shared local validator,
@@ -168,16 +170,18 @@ The current pack/deploy boundary is:
   `pp.flow.artifact` instead of preserving every opaque remote `clientdata`
   field
 - writes a raw `properties.definition` payload plus supported metadata fields
-  such as `displayName`, `name`, `uniquename`, `statecode`, and `statuscode`
+  such as `displayName`, `name`, `uniquename`, `category`, `statecode`, and
+  `statuscode`
 - preserves top-level unknown fields captured during normalization
 - intentionally does not reintroduce stripped noisy timestamps such as
   `createdTime` or `lastModifiedTime`
-- remote deploy currently updates only an existing workflow record and only
-  writes the normalized `clientdata` definition after the shared local
-  validator passes, unless `--create-if-missing` is used
-- remote promotion currently transfers only the normalized definition and the
-  same bounded create-if-missing workflow shell; it does not package or migrate
-  broader workflow metadata/state beyond that surface
+- remote deploy currently updates only a bounded workflow shell (`name`,
+  `category`, `statecode`, `statuscode`) plus the normalized `clientdata`
+  definition after the shared local validator passes, unless
+  `--create-if-missing` is used
+- remote promotion currently transfers that same bounded workflow shell plus
+  the normalized definition; it does not package or migrate broader workflow
+  metadata/state beyond that surface
 - create-if-missing currently requires artifact `metadata.uniqueName`, creates
   only a bounded workflow shell (`category`, `name`, `uniquename`,
   `statecode`/`statuscode` when present, plus normalized `clientdata`), and
