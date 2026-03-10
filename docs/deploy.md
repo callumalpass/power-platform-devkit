@@ -64,6 +64,14 @@ The adapter packages call the shared deploy service rather than reimplementing d
 
 Each adapter discovers the project and invokes the shared deploy execution path, so CI wrappers stay thin.
 
+The repo now includes turnkey Node entrypoints for those wrappers:
+
+- `scripts/run-github-deploy.mjs`
+- `scripts/run-azure-deploy.mjs`
+- `scripts/run-pp-pipeline-deploy.mjs`
+
+These scripts invoke the built adapter entrypoints and, if needed, bootstrap a workspace build before retrying. They emit a machine-readable JSON `OperationResult` and exit with status `1` when adapter option resolution, project discovery, or deploy execution fails.
+
 The adapter entrypoints now resolve a small pipeline-friendly contract before calling shared deploy services:
 
 - `projectPath`
