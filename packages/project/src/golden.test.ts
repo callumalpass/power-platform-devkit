@@ -42,4 +42,37 @@ describe('project fixture-backed goldens', () => {
       normalize: normalizeProjectSnapshot,
     });
   });
+
+  it('captures repo-root discovery when the committed analysis fixture is the only descendant project anchor', async () => {
+    const discovery = await discoverProject(repoRoot, {
+      environment: {
+        PP_TENANT_DOMAIN: undefined,
+        PP_SECRET_app_token: undefined,
+        PP_SQL_ENDPOINT: undefined,
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const project = discovery.data!;
+    const payload = {
+      summary: summarizeProject(project),
+      discovery: project.discovery,
+      diagnostics: project.diagnostics,
+      topology: project.topology,
+      providerBindings: project.providerBindings,
+      parameters: Object.fromEntries(
+        Object.values(project.parameters).map((parameter) => [parameter.name, summarizeResolvedParameter(parameter)])
+      ),
+      assets: project.assets,
+      templateRegistries: project.templateRegistries,
+      build: project.build,
+      docs: project.docs,
+    };
+
+    await expectGoldenJson(payload, 'fixtures/analysis/golden/project-root-discovery.json', {
+      normalize: normalizeProjectSnapshot,
+    });
+  });
 });
