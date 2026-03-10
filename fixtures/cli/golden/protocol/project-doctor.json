@@ -1,0 +1,108 @@
+{
+  "assets": [
+    {
+      "exists": true,
+      "kind": "directory",
+      "name": "apps",
+      "path": "<TMP_DIR>/apps"
+    },
+    {
+      "exists": true,
+      "kind": "directory",
+      "name": "flows",
+      "path": "<TMP_DIR>/flows"
+    },
+    {
+      "exists": true,
+      "kind": "directory",
+      "name": "solutions",
+      "path": "<TMP_DIR>/solutions"
+    },
+    {
+      "exists": true,
+      "kind": "directory",
+      "name": "docs",
+      "path": "<TMP_DIR>/docs"
+    }
+  ],
+  "checks": [
+    {
+      "code": "PROJECT_DOCTOR_CONFIG_PRESENT",
+      "message": "Project config found at <TMP_DIR>/pp.config.yaml",
+      "path": "<TMP_DIR>/pp.config.yaml",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+      "message": "Asset path apps is present for apps",
+      "path": "<TMP_DIR>/apps",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+      "message": "Asset path flows is present for flows",
+      "path": "<TMP_DIR>/flows",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+      "message": "Asset path solutions is present for solutions",
+      "path": "<TMP_DIR>/solutions",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+      "message": "Asset path docs is present for docs",
+      "path": "<TMP_DIR>/docs",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_PROVIDER_BINDINGS_PRESENT",
+      "message": "Project defines 1 provider binding(s).",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_TOPOLOGY_PRESENT",
+      "message": "Project topology defines 1 stage(s).",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_LAYOUT_PROFILE",
+      "hint": "Keep editable sources and generated outputs in separate roots so the project intent stays obvious.",
+      "message": "Layout profile is source-first: editable assets live in dedicated roots and generated bundles are already separate or absent.",
+      "status": "info"
+    }
+  ],
+  "configPath": "<TMP_DIR>/pp.config.yaml",
+  "layout": {
+    "editableAssetRoots": [
+      "apps",
+      "flows",
+      "solutions",
+      "docs"
+    ],
+    "generatedBundlePaths": [],
+    "normalizedAssets": {
+      "apps": "apps",
+      "docs": "docs",
+      "flows": "flows",
+      "solutionBundle": "artifacts/solutions/CoreLifecycle.zip",
+      "solutions": "solutions"
+    },
+    "profile": "source-first",
+    "recommendations": []
+  },
+  "root": "<TMP_DIR>",
+  "summary": {
+    "configuredAssetCount": 4,
+    "existingAssetCount": 4,
+    "hasConfig": true,
+    "hasProviderBindings": true,
+    "hasTemplateRegistries": false,
+    "hasTopology": true,
+    "layoutProfile": "source-first",
+    "missingAssetCount": 0,
+    "requiredParameterCount": 0,
+    "unresolvedRequiredParameterCount": 0
+  }
+}

@@ -172,6 +172,15 @@ export interface ProjectDoctorSummary {
   hasTemplateRegistries: boolean;
   requiredParameterCount: number;
   unresolvedRequiredParameterCount: number;
+  layoutProfile: ProjectLayoutAssessment['profile'];
+}
+
+export interface ProjectLayoutAssessment {
+  profile: 'source-first' | 'source-first-inline-bundle' | 'bundle-first' | 'minimal';
+  editableAssetRoots: string[];
+  generatedBundlePaths: string[];
+  normalizedAssets: Record<string, string>;
+  recommendations: string[];
 }
 
 export interface ProjectDoctorReport {
@@ -180,6 +189,7 @@ export interface ProjectDoctorReport {
   discovery?: ProjectDiscoveryDetails;
   summary: ProjectDoctorSummary;
   assets: ProjectAsset[];
+  layout: ProjectLayoutAssessment;
   checks: ProjectDoctorCheck[];
 }
 
@@ -366,6 +376,7 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
   }
 
   const assets = project?.assets ?? (await inspectAssets(resolvedRoot, {}));
+  const layout = assessProjectLayout(project?.root ?? resolvedRoot, assets, project?.config);
 
   for (const asset of assets) {
     checks.push({
@@ -411,6 +422,25 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
     }
   }
 
+  checks.push({
+    status: layout.profile === 'source-first-inline-bundle' ? 'warn' : 'info',
+    code: 'PROJECT_DOCTOR_LAYOUT_PROFILE',
+    message: describeLayoutProfile(layout.profile),
+    hint:
+      layout.recommendations.length > 0
+        ? layout.recommendations[0]
+        : 'Keep editable sources and generated outputs in separate roots so the project intent stays obvious.',
+  });
+
+  if (layout.profile === 'source-first-inline-bundle') {
+    checks.push({
+      status: 'warn',
+      code: 'PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE',
+      message: 'Generated solution bundles currently live inside the editable solution area.',
+      hint: `Prefer \`${layout.normalizedAssets.solutionBundle}\` for packaged zips and reserve \`solutions/\` for unpacked solution source when the repo tracks both.`,
+    });
+  }
+
   for (const diagnostic of diagnostics) {
     checks.push({
       status: diagnostic.level === 'error' ? 'fail' : diagnostic.level === 'warning' ? 'warn' : 'info',
@@ -442,15 +472,22 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
         hasTemplateRegistries: (project?.templateRegistries ?? []).length > 0,
         requiredParameterCount: requiredParameters.length,
         unresolvedRequiredParameterCount: unresolvedRequiredParameters.length,
+        layoutProfile: layout.profile,
       },
       assets,
+      layout,
       checks,
     },
     {
       supportTier: 'preview',
       diagnostics: diagnostics.filter((diagnostic) => diagnostic.level === 'error'),
       warnings: diagnostics.filter((diagnostic) => diagnostic.level === 'warning'),
-      suggestedNextActions: buildDoctorSuggestedNextActions(project?.configPath !== undefined, assets, unresolvedRequiredParameters.map((parameter) => parameter.name)),
+      suggestedNextActions: buildDoctorSuggestedNextActions(
+        project?.configPath !== undefined,
+        assets,
+        unresolvedRequiredParameters.map((parameter) => parameter.name),
+        layout
+      ),
     }
   );
 }
@@ -1083,7 +1120,12 @@ function renderProjectConfig(config: ProjectConfig, configPath: string): string 
   ].join('\n');
 }
 
-function buildDoctorSuggestedNextActions(hasConfig: boolean, assets: ProjectAsset[], unresolvedParameters: string[]): string[] {
+function buildDoctorSuggestedNextActions(
+  hasConfig: boolean,
+  assets: ProjectAsset[],
+  unresolvedParameters: string[],
+  layout: ProjectLayoutAssessment
+): string[] {
   const actions: string[] = [];
 
   if (!hasConfig) {
@@ -1097,6 +1139,8 @@ function buildDoctorSuggestedNextActions(hasConfig: boolean, assets: ProjectAsse
   if (unresolvedParameters.length > 0) {
     actions.push(`Resolve required project parameters: ${unresolvedParameters.join(', ')}.`);
   }
+
+  actions.push(...layout.recommendations);
 
   if (actions.length === 0) {
     actions.push('Project layout looks coherent. Keep `pp.config.*` aligned with real environment aliases, solution names, and parameter sources as the repo evolves.');
@@ -1131,6 +1175,74 @@ function normalizeProvidedValue(value: PrimitiveValue, type: ParameterType): Pri
   }
 
   return value;
+}
+
+function assessProjectLayout(root: string, assets: ProjectAsset[], config?: ProjectConfig): ProjectLayoutAssessment {
+  const relativeRoot = resolve(root);
+  const editableAssetRoots = assets
+    .filter((asset) => asset.exists && asset.kind === 'directory' && ['apps', 'flows', 'docs', 'solutions'].includes(asset.name))
+    .map((asset) => relative(relativeRoot, asset.path) || '.');
+  const generatedBundleAssets = assets.filter(
+    (asset) => asset.exists && (asset.name === 'solutionBundle' || (asset.kind === 'file' && asset.path.toLowerCase().endsWith('.zip')))
+  );
+  const generatedBundlePaths = generatedBundleAssets.map((asset) => relative(relativeRoot, asset.path) || '.');
+  const hasEditableRoots = editableAssetRoots.length > 0;
+  const inlineBundle = generatedBundleAssets.some((asset) => relativeRootContains(join(relativeRoot, 'solutions'), asset.path));
+  const solutionName = config?.defaults?.solution ?? 'Core';
+  const normalizedAssets = {
+    apps: 'apps',
+    flows: 'flows',
+    solutions: 'solutions',
+    solutionBundle: join('artifacts', 'solutions', `${solutionName}.zip`).replaceAll('\\', '/'),
+    docs: 'docs',
+  };
+  const recommendations: string[] = [];
+
+  let profile: ProjectLayoutAssessment['profile'] = 'minimal';
+  if (hasEditableRoots && generatedBundlePaths.length > 0) {
+    profile = inlineBundle ? 'source-first-inline-bundle' : 'source-first';
+  } else if (hasEditableRoots) {
+    profile = 'source-first';
+  } else if (generatedBundlePaths.length > 0) {
+    profile = 'bundle-first';
+  }
+
+  if (profile === 'source-first-inline-bundle') {
+    recommendations.push(
+      `Normalize the layout by keeping editable sources under \`apps/\`, \`flows/\`, \`solutions/\`, and \`docs/\`, then move packaged zips to \`${normalizedAssets.solutionBundle}\`.`
+    );
+  } else if (profile === 'bundle-first') {
+    recommendations.push(
+      `If the repo starts tracking editable sources, keep them in dedicated roots such as \`apps/\`, \`flows/\`, and \`solutions/\`, and leave packaged zips under \`${normalizedAssets.solutionBundle}\`.`
+    );
+  }
+
+  return {
+    profile,
+    editableAssetRoots,
+    generatedBundlePaths,
+    normalizedAssets,
+    recommendations,
+  };
+}
+
+function describeLayoutProfile(profile: ProjectLayoutAssessment['profile']): string {
+  switch (profile) {
+    case 'source-first':
+      return 'Layout profile is source-first: editable assets live in dedicated roots and generated bundles are already separate or absent.';
+    case 'source-first-inline-bundle':
+      return 'Layout profile is source-first, but the generated solution bundle is stored inside the editable solution area.';
+    case 'bundle-first':
+      return 'Layout profile is bundle-first: packaged artifacts are present without separate editable source roots.';
+    case 'minimal':
+    default:
+      return 'Layout profile is minimal: `pp` can validate the declared assets, but the repo does not yet express a richer source-versus-bundle convention.';
+  }
+}
+
+function relativeRootContains(parent: string, child: string): boolean {
+  const candidate = relative(parent, child);
+  return candidate === '' || (!candidate.startsWith('..') && !candidate.startsWith('/'));
 }
 
 function coerceValue(rawValue: string, type: ParameterType): PrimitiveValue {

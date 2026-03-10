@@ -74,6 +74,18 @@
       "status": "pass"
     },
     {
+      "code": "PROJECT_DOCTOR_LAYOUT_PROFILE",
+      "hint": "Normalize the layout by keeping editable sources under `apps/`, `flows/`, `solutions/`, and `docs/`, then move packaged zips to `artifacts/solutions/core.zip`.",
+      "message": "Layout profile is source-first, but the generated solution bundle is stored inside the editable solution area.",
+      "status": "warn"
+    },
+    {
+      "code": "PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE",
+      "hint": "Prefer `artifacts/solutions/core.zip` for packaged zips and reserve `solutions/` for unpacked solution source when the repo tracks both.",
+      "message": "Generated solution bundles currently live inside the editable solution area.",
+      "status": "warn"
+    },
+    {
       "code": "PROJECT_PARAMETER_MISSING",
       "hint": "Set PP_TENANT_DOMAIN or provide an explicit value in the project config.",
       "message": "Required project parameter tenantDomain is not resolved",
@@ -109,6 +121,27 @@
     "resolvedRoot": "<REPO_ROOT>/fixtures/analysis/project",
     "usedDefaultLayout": false
   },
+  "layout": {
+    "editableAssetRoots": [
+      "apps",
+      "flows",
+      "docs"
+    ],
+    "generatedBundlePaths": [
+      "solutions/Core.zip"
+    ],
+    "normalizedAssets": {
+      "apps": "apps",
+      "docs": "docs",
+      "flows": "flows",
+      "solutionBundle": "artifacts/solutions/core.zip",
+      "solutions": "solutions"
+    },
+    "profile": "source-first-inline-bundle",
+    "recommendations": [
+      "Normalize the layout by keeping editable sources under `apps/`, `flows/`, `solutions/`, and `docs/`, then move packaged zips to `artifacts/solutions/core.zip`."
+    ]
+  },
   "root": "<REPO_ROOT>",
   "summary": {
     "configuredAssetCount": 4,
@@ -117,6 +150,7 @@
     "hasProviderBindings": true,
     "hasTemplateRegistries": true,
     "hasTopology": true,
+    "layoutProfile": "source-first-inline-bundle",
     "missingAssetCount": 0,
     "requiredParameterCount": 3,
     "unresolvedRequiredParameterCount": 3

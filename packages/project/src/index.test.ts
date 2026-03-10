@@ -147,6 +147,11 @@ describe('discoverProject', () => {
     expect(discovery.success).toBe(true);
     expect(discovery.data?.config.defaults?.environment).toBe('sandbox');
     expect(discovery.data?.topology.activeSolution?.uniqueName).toBe('CoreLifecycle');
+
+    const doctor = await doctorProject(root);
+    expect(doctor.success).toBe(true);
+    expect(doctor.data?.summary.layoutProfile).toBe('source-first');
+    expect(doctor.data?.layout.normalizedAssets.solutionBundle).toBe('artifacts/solutions/CoreLifecycle.zip');
   });
 
   it('reports layout problems and missing required parameters through doctorProject', async () => {
@@ -223,6 +228,24 @@ describe('discoverProject', () => {
     expect(doctor.success).toBe(true);
     expect(doctor.data?.discovery?.autoSelectedProjectRoot).toBe('fixtures/analysis/project');
     expect(doctor.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')).toBe(true);
+  });
+
+  it('flags source-first projects that keep generated bundles inside solutions', async () => {
+    const report = await doctorProject(join(process.cwd(), 'fixtures', 'analysis', 'project'), {
+      environment: {
+        PP_TENANT_DOMAIN: undefined,
+        PP_SECRET_app_token: undefined,
+        PP_SQL_ENDPOINT: undefined,
+      },
+    });
+
+    expect(report.success).toBe(true);
+    expect(report.data?.summary.layoutProfile).toBe('source-first-inline-bundle');
+    expect(report.data?.layout.generatedBundlePaths).toContain('solutions/Core.zip');
+    expect(report.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE')).toBe(true);
+    expect(report.suggestedNextActions).toEqual(
+      expect.arrayContaining([expect.stringContaining('artifacts/solutions/core.zip')])
+    );
   });
 
 });
