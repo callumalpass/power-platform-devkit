@@ -202,6 +202,9 @@ The current pack/deploy boundary is:
 - writes a raw `properties.definition` payload plus supported metadata fields
   such as `displayName`, `name`, `description`, `uniquename`, `category`,
   `statecode`, and `statuscode`
+- repack also restores the supported top-level raw workflow shell fields
+  (`name`, `description`, `uniquename`, `category`, `statecode`,
+  `statuscode`) instead of narrowing them down to `properties.*` only
 - repack also restores that bounded preserved `clientdata` context alongside
   `properties.definition` so local export/edit/repack flows can round-trip the
   supported remote payload shape

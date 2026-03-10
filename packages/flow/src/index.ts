@@ -1383,7 +1383,7 @@ export async function promoteRemoteFlowArtifact(
       warnings: deployed.warnings,
       knownLimitations: [
         ...(deployed.knownLimitations ?? []),
-        'Remote flow promotion currently transfers only a bounded workflow shell (`name`, `category`, `statecode`, `statuscode`) plus the normalized clientdata definition.',
+        'Remote flow promotion currently transfers only a bounded workflow shell (`name`, `description`, `category`, `statecode`, `statuscode`) plus the normalized clientdata payload.',
       ],
       provenance: [
         {
@@ -1985,7 +1985,7 @@ async function deployLoadedFlowArtifact(
       diagnostics: [...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics],
       warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
       knownLimitations: [
-        'Remote flow deploy currently syncs only a bounded workflow shell (`name`, `category`, `statecode`, `statuscode`) plus the normalized clientdata definition.',
+        'Remote flow deploy currently syncs only a bounded workflow shell (`name`, `description`, `category`, `statecode`, `statuscode`) plus the normalized clientdata payload.',
         'Flow creation, solution import/export packaging, and broader workflow metadata/state transitions still require later lifecycle work.',
       ],
       provenance: [
@@ -2934,6 +2934,12 @@ function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, Fl
   const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
   const record: Record<string, FlowJsonValue> = {
     ...(artifact.unknown ? cloneJsonValue(artifact.unknown) : {}),
+    ...(artifact.metadata.name ? { name: artifact.metadata.name } : {}),
+    ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
+    ...(artifact.metadata.uniqueName ? { uniquename: artifact.metadata.uniqueName } : {}),
+    ...(artifact.metadata.category !== undefined ? { category: artifact.metadata.category } : {}),
+    ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
+    ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
     ...(artifact.clientData || Object.keys(artifact.definition).length > 0
       ? {
           clientdata: buildFlowDeployClientData(artifact),

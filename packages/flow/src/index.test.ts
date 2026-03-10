@@ -1127,6 +1127,12 @@ describe('FlowService', () => {
       rawPath,
       JSON.stringify(
         {
+          name: 'Invoice Flow',
+          description: 'Synchronize invoice payloads to downstream systems.',
+          uniquename: 'crd_InvoiceFlow',
+          category: 5,
+          statecode: 1,
+          statuscode: 2,
           extraTopLevel: {
             preserve: true,
           },
@@ -1212,9 +1218,15 @@ describe('FlowService', () => {
       format: 'raw-json',
     });
     expect(packedDocument).toMatchObject({
+      category: 5,
+      description: 'Synchronize invoice payloads to downstream systems.',
       extraTopLevel: {
         preserve: true,
       },
+      name: 'Invoice Flow',
+      statecode: 1,
+      statuscode: 2,
+      uniquename: 'crd_InvoiceFlow',
       properties: {
         description: 'Synchronize invoice payloads to downstream systems.',
         displayName: 'Invoice Flow',
