@@ -993,6 +993,8 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
       return runFlowNormalize(args);
     case 'validate':
       return runFlowValidate(args);
+    case 'graph':
+      return runFlowGraph(args);
     case 'patch':
       return runFlowPatch(args);
     case 'runs':
@@ -3952,6 +3954,23 @@ async function runFlowValidate(args: string[]): Promise<number> {
   return result.data.valid ? 0 : 1;
 }
 
+async function runFlowGraph(args: string[]): Promise<number> {
+  const inputPath = positionalArgs(args)[0];
+
+  if (!inputPath) {
+    return printFailure(argumentFailure('FLOW_GRAPH_PATH_REQUIRED', 'Usage: flow graph <path>'));
+  }
+
+  const result = await new FlowService().graphArtifact(inputPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runFlowPatch(args: string[]): Promise<number> {
   const inputPath = positionalArgs(args)[0];
   const patchFile = readFlag(args, '--file');
@@ -5207,6 +5226,7 @@ function printHelp(): void {
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow normalize <path> [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow validate <path> [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow graph <path> [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow patch <path> --file PATCH.json [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow runs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow errors <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [--format table|json|yaml|ndjson|markdown|raw]',

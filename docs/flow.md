@@ -108,6 +108,7 @@ pp flow unpack ./exports/invoice-flow.json --out ./flows/invoice
 pp flow inspect ./flows/invoice
 pp flow normalize ./flows/invoice
 pp flow validate ./flows/invoice
+pp flow graph ./flows/invoice
 pp flow patch ./flows/invoice --file ./patches/invoice.dev.json --out ./flows/invoice-dev
 ```
 
@@ -139,6 +140,20 @@ artifact-first and bounded:
   - dynamic-content references for supported parameters, environment
     variables, action outputs, variables, and `$connections` lookups
   - variable initialization and write targets for supported variable actions
+
+`pp flow graph <path>` builds on that IR and emits a dependency-oriented local
+inspection report with:
+
+- normalized workflow nodes annotated with child scopes, `runAfter`
+  dependencies, reverse dependents, and per-node reference counts
+- graph edges for containment, control-flow dependencies, action-output reads,
+  parameter/environment-variable/connection-reference reads, and variable
+  reads/writes
+- declared resource summaries for parameters, environment variables,
+  connection references, and variables with the nodes that initialize, read, or
+  write them
+- a small hotspot summary so high-fan-in, high-fan-out, and
+  reference-dense nodes are obvious without hand-walking the JSON
 
 ## Patch model
 
@@ -224,6 +239,9 @@ correlate diagnostics back to the normalized source model. It also returns an
 `intermediateRepresentation` summary with parsed node counts plus
 control-flow/data-flow totals from the stable IR surface, and each parsed node
 retains the supported expression occurrences that produced its reference slice.
+
+The new graph report reuses that same parsed model directly instead of asking
+consumers to reconstruct control-flow and data-flow relationships themselves.
 
 The shared deploy preflight now reuses this validator for `flow-parameter`,
 `flow-connref`, and `flow-envvar` mappings, so the same supported semantic

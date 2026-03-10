@@ -87,6 +87,81 @@ export interface FlowValidationReport {
   semanticSummary: FlowSemanticSummary;
 }
 
+export interface FlowGraphNodeSummary {
+  id: string;
+  name: string;
+  kind: FlowNodeKind;
+  type?: string;
+  path: string;
+  parentId?: string;
+  branch: FlowNodeBranch;
+  childIds: string[];
+  dependsOn: string[];
+  unresolvedDependsOn: string[];
+  dependentIds: string[];
+  referenceCounts: {
+    parameters: number;
+    environmentVariables: number;
+    connectionReferences: number;
+    actions: number;
+    variables: number;
+  };
+  variableUsage: {
+    initializes: string[];
+    reads: string[];
+    writes: string[];
+  };
+}
+
+export interface FlowGraphEdge {
+  from: string;
+  to: string;
+  kind:
+    | 'containment'
+    | 'runAfter'
+    | 'parameterReference'
+    | 'environmentVariableReference'
+    | 'connectionReferenceReference'
+    | 'actionReference'
+    | 'variableReference'
+    | 'variableWrite';
+  path?: string;
+  resolved: boolean;
+}
+
+export interface FlowGraphResourceSummary {
+  parameters: string[];
+  environmentVariables: string[];
+  connectionReferences: string[];
+  variables: Array<{
+    name: string;
+    initializedBy: string[];
+    readBy: string[];
+    writtenBy: string[];
+  }>;
+}
+
+export interface FlowGraphReport {
+  artifactName?: string;
+  summary: {
+    nodeCount: number;
+    triggerCount: number;
+    actionCount: number;
+    scopeCount: number;
+    edgeCounts: Record<FlowGraphEdge['kind'], number>;
+    unresolvedEdgeCount: number;
+  };
+  nodes: FlowGraphNodeSummary[];
+  edges: FlowGraphEdge[];
+  resources: FlowGraphResourceSummary;
+  hotspots: Array<{
+    kind: 'controlFanIn' | 'controlFanOut' | 'referenceDensity';
+    nodeId: string;
+    nodeName: string;
+    metric: number;
+  }>;
+}
+
 export interface FlowPatchDocument {
   connectionReferences?: Record<string, string>;
   environmentVariables?: Record<string, string>;
@@ -749,6 +824,10 @@ export class FlowService {
     return parseFlowIntermediateRepresentation(path);
   }
 
+  async graphArtifact(path: string): Promise<OperationResult<FlowGraphReport>> {
+    return graphFlowArtifact(path);
+  }
+
   async unpack(inputPath: string, outPath: string): Promise<OperationResult<FlowUnpackResult>> {
     return unpackFlowArtifact(inputPath, outPath);
   }
@@ -925,6 +1004,20 @@ export async function parseFlowIntermediateRepresentation(
   }
 
   return ok(buildFlowIntermediateRepresentation(artifact.data), {
+    supportTier: 'preview',
+    diagnostics: artifact.diagnostics,
+    warnings: artifact.warnings,
+  });
+}
+
+export async function graphFlowArtifact(path: string): Promise<OperationResult<FlowGraphReport>> {
+  const artifact = await loadFlowArtifact(path);
+
+  if (!artifact.success || !artifact.data) {
+    return artifact as unknown as OperationResult<FlowGraphReport>;
+  }
+
+  return ok(buildFlowGraphReport(artifact.data), {
     supportTier: 'preview',
     diagnostics: artifact.diagnostics,
     warnings: artifact.warnings,
@@ -1963,6 +2056,239 @@ function summarizeFlowIntermediateRepresentation(
   };
 }
 
+function buildFlowGraphReport(artifact: FlowArtifact): FlowGraphReport {
+  const intermediateRepresentation = buildFlowIntermediateRepresentation(artifact);
+  const definition = asRecord(artifact.definition) ?? {};
+  const declaredParameters = new Set([
+    ...Object.keys(normalizeFlowParameters(artifact.metadata.parameters)),
+    ...Object.keys(normalizeFlowParameters(asRecord(definition.parameters))),
+  ].filter((name) => name !== '$connections'));
+  const declaredEnvironmentVariables = new Set(artifact.metadata.environmentVariables);
+  const declaredConnectionReferences = new Set([
+    ...artifact.metadata.connectionReferences.map((reference) => reference.name),
+    ...Array.from(collectDefinitionConnectionReferences(definition).keys()),
+  ]);
+  const nodesByName = new Map(intermediateRepresentation.nodes.map((node) => [node.name, node] as const));
+  const variableGraph = new Map<
+    string,
+    {
+      name: string;
+      initializedBy: Set<string>;
+      readBy: Set<string>;
+      writtenBy: Set<string>;
+    }
+  >();
+  const edges: FlowGraphEdge[] = [];
+
+  for (const node of intermediateRepresentation.nodes) {
+    for (const childId of node.childIds) {
+      edges.push({
+        from: node.id,
+        to: childId,
+        kind: 'containment',
+        resolved: true,
+      });
+    }
+
+    for (const dependencyId of node.controlFlow.dependsOn) {
+      edges.push({
+        from: node.id,
+        to: dependencyId,
+        kind: 'runAfter',
+        resolved: true,
+      });
+    }
+
+    for (const unresolvedDependency of node.controlFlow.unresolvedDependsOn) {
+      edges.push({
+        from: node.id,
+        to: `action:${unresolvedDependency}`,
+        kind: 'runAfter',
+        resolved: false,
+      });
+    }
+
+    for (const reference of node.dataFlow.dynamicContentReferences) {
+      if (reference.kind === 'parameter') {
+        edges.push({
+          from: node.id,
+          to: `parameter:${reference.name}`,
+          kind: 'parameterReference',
+          path: reference.path,
+          resolved: declaredParameters.has(reference.name),
+        });
+        continue;
+      }
+
+      if (reference.kind === 'environmentVariable') {
+        edges.push({
+          from: node.id,
+          to: `environmentVariable:${reference.name}`,
+          kind: 'environmentVariableReference',
+          path: reference.path,
+          resolved: declaredEnvironmentVariables.has(reference.name),
+        });
+        continue;
+      }
+
+      if (reference.kind === 'connectionReference') {
+        edges.push({
+          from: node.id,
+          to: `connectionReference:${reference.name}`,
+          kind: 'connectionReferenceReference',
+          path: reference.path,
+          resolved: declaredConnectionReferences.has(reference.name),
+        });
+        continue;
+      }
+
+      if (reference.kind === 'action') {
+        const targetNode = nodesByName.get(reference.name);
+        edges.push({
+          from: node.id,
+          to: targetNode?.id ?? `action:${reference.name}`,
+          kind: 'actionReference',
+          path: reference.path,
+          resolved: Boolean(targetNode),
+        });
+        continue;
+      }
+
+      if (reference.kind === 'variable') {
+        const variable = getOrCreateVariableGraph(variableGraph, reference.name);
+        variable.readBy.add(node.id);
+        edges.push({
+          from: node.id,
+          to: `variable:${reference.name}`,
+          kind: 'variableReference',
+          path: reference.path,
+          resolved: variable.initializedBy.size > 0 || intermediateRepresentation.nodes.some((candidate) => candidate.variableUsage.initializes.includes(reference.name)),
+        });
+      }
+    }
+
+    for (const variableName of node.variableUsage.initializes) {
+      getOrCreateVariableGraph(variableGraph, variableName).initializedBy.add(node.id);
+    }
+
+    for (const write of node.dataFlow.writes) {
+      const variable = getOrCreateVariableGraph(variableGraph, write.name);
+      variable.writtenBy.add(node.id);
+      edges.push({
+        from: node.id,
+        to: `variable:${write.name}`,
+        kind: 'variableWrite',
+        path: write.path,
+        resolved: variable.initializedBy.size > 0 || write.operation === 'initialize',
+      });
+    }
+  }
+
+  const nodes = intermediateRepresentation.nodes.map((node) => ({
+    id: node.id,
+    name: node.name,
+    kind: node.kind,
+    type: node.type,
+    path: node.path,
+    parentId: node.parentId,
+    branch: node.branch,
+    childIds: node.childIds,
+    dependsOn: node.controlFlow.dependsOn,
+    unresolvedDependsOn: node.controlFlow.unresolvedDependsOn,
+    dependentIds: node.controlFlow.dependentIds,
+    referenceCounts: {
+      parameters: node.dataFlow.dynamicContentReferences.filter((reference) => reference.kind === 'parameter').length,
+      environmentVariables: node.dataFlow.dynamicContentReferences.filter((reference) => reference.kind === 'environmentVariable').length,
+      connectionReferences: node.dataFlow.dynamicContentReferences.filter((reference) => reference.kind === 'connectionReference').length,
+      actions: node.dataFlow.dynamicContentReferences.filter((reference) => reference.kind === 'action').length,
+      variables: node.dataFlow.dynamicContentReferences.filter((reference) => reference.kind === 'variable').length,
+    },
+    variableUsage: node.variableUsage,
+  }));
+  const hotspots = intermediateRepresentation.nodes
+    .flatMap((node) => {
+      const referenceDensity = node.dataFlow.dynamicContentReferences.length;
+      const records: Array<{
+        kind: 'controlFanIn' | 'controlFanOut' | 'referenceDensity';
+        nodeId: string;
+        nodeName: string;
+        metric: number;
+      }> = [];
+
+      if (node.controlFlow.dependentIds.length > 0) {
+        records.push({
+          kind: 'controlFanIn',
+          nodeId: node.id,
+          nodeName: node.name,
+          metric: node.controlFlow.dependentIds.length,
+        });
+      }
+
+      if (node.controlFlow.dependsOn.length + node.controlFlow.unresolvedDependsOn.length > 0) {
+        records.push({
+          kind: 'controlFanOut',
+          nodeId: node.id,
+          nodeName: node.name,
+          metric: node.controlFlow.dependsOn.length + node.controlFlow.unresolvedDependsOn.length,
+        });
+      }
+
+      if (referenceDensity > 0) {
+        records.push({
+          kind: 'referenceDensity',
+          nodeId: node.id,
+          nodeName: node.name,
+          metric: referenceDensity,
+        });
+      }
+
+      return records;
+    })
+    .sort((left, right) => right.metric - left.metric || left.kind.localeCompare(right.kind) || left.nodeId.localeCompare(right.nodeId))
+    .slice(0, 10);
+
+  const edgeCounts = Object.fromEntries(
+    [
+      'containment',
+      'runAfter',
+      'parameterReference',
+      'environmentVariableReference',
+      'connectionReferenceReference',
+      'actionReference',
+      'variableReference',
+      'variableWrite',
+    ].map((kind) => [kind, edges.filter((edge) => edge.kind === kind).length])
+  ) as Record<FlowGraphEdge['kind'], number>;
+
+  return {
+    artifactName: intermediateRepresentation.artifactName,
+    summary: {
+      nodeCount: intermediateRepresentation.nodeCount,
+      triggerCount: intermediateRepresentation.triggerCount,
+      actionCount: intermediateRepresentation.actionCount,
+      scopeCount: intermediateRepresentation.scopeCount,
+      edgeCounts,
+      unresolvedEdgeCount: edges.filter((edge) => !edge.resolved).length,
+    },
+    nodes,
+    edges: edges.sort(compareFlowGraphEdges),
+    resources: {
+      parameters: Array.from(declaredParameters).sort(),
+      environmentVariables: Array.from(declaredEnvironmentVariables).sort(),
+      connectionReferences: Array.from(declaredConnectionReferences).sort(),
+      variables: Array.from(variableGraph.values())
+        .map((variable) => ({
+          name: variable.name,
+          initializedBy: Array.from(variable.initializedBy).sort(),
+          readBy: Array.from(variable.readBy).sort(),
+          writtenBy: Array.from(variable.writtenBy).sort(),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    },
+    hotspots,
+  };
+}
+
 function readInitializeVariableNames(value: unknown): string[] {
   const record = asRecord(value);
   const inputs = asRecord(record?.inputs);
@@ -2199,6 +2525,48 @@ function describeConnectorParameterPath(
   name: string
 ): string {
   return `${nodePath}.${describeConnectorInputBucket(bucket)}.${name}`;
+}
+
+function getOrCreateVariableGraph(
+  graph: Map<
+    string,
+    {
+      name: string;
+      initializedBy: Set<string>;
+      readBy: Set<string>;
+      writtenBy: Set<string>;
+    }
+  >,
+  name: string
+): {
+  name: string;
+  initializedBy: Set<string>;
+  readBy: Set<string>;
+  writtenBy: Set<string>;
+} {
+  const existing = graph.get(name);
+
+  if (existing) {
+    return existing;
+  }
+
+  const created = {
+    name,
+    initializedBy: new Set<string>(),
+    readBy: new Set<string>(),
+    writtenBy: new Set<string>(),
+  };
+  graph.set(name, created);
+  return created;
+}
+
+function compareFlowGraphEdges(left: FlowGraphEdge, right: FlowGraphEdge): number {
+  return (
+    left.kind.localeCompare(right.kind) ||
+    left.from.localeCompare(right.from) ||
+    left.to.localeCompare(right.to) ||
+    (left.path ?? '').localeCompare(right.path ?? '')
+  );
 }
 
 function extractWholeFlowExpression(value: string): string | undefined {

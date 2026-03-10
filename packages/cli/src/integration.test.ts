@@ -2588,6 +2588,13 @@ describe('cli fixture-backed workflows', () => {
     const inspect = await runCli(['flow', 'inspect', rawPath, '--format', 'json']);
     const unpack = await runCli(['flow', 'unpack', rawPath, '--out', unpackedPath, '--format', 'json']);
     const validate = await runCli(['flow', 'validate', unpackedPath, '--format', 'json']);
+    const graph = await runCli([
+      'flow',
+      'graph',
+      resolveRepoPath('fixtures', 'flow', 'artifacts', 'semantic-diagnostic-flow'),
+      '--format',
+      'json',
+    ]);
     const patch = await runCli(['flow', 'patch', unpackedPath, '--file', patchPath, '--out', patchedPath, '--format', 'json']);
     const normalize = await runCli(['flow', 'normalize', patchedPath, '--out', normalizedPath, '--format', 'json']);
 
@@ -2597,6 +2604,8 @@ describe('cli fixture-backed workflows', () => {
     expect(unpack.stderr).toBe('');
     expect(validate.code).toBe(0);
     expect(validate.stderr).toBe('');
+    expect(graph.code).toBe(0);
+    expect(graph.stderr).toBe('');
     expect(patch.code).toBe(0);
     expect(patch.stderr).toBe('');
     expect(normalize.code).toBe(0);
@@ -2612,6 +2621,9 @@ describe('cli fixture-backed workflows', () => {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
     await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/flow/golden/validation-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(graph.stdout), 'fixtures/flow/golden/semantic/graph-report.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
     await expectGoldenJson(JSON.parse(patch.stdout), 'fixtures/flow/golden/patched-result.json', {

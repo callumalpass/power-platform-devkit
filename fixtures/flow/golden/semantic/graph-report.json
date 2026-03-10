@@ -1,0 +1,683 @@
+{
+  "artifactName": "Semantic Diagnostic Flow",
+  "edges": [
+    {
+      "from": "action:actions.ComposeBadAction",
+      "kind": "actionReference",
+      "path": "definition.actions.ComposeBadAction.inputs",
+      "resolved": false,
+      "to": "action:MissingAction"
+    },
+    {
+      "from": "action:actions.ConnectorBadParameterShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.ConnectorBadParameterShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_office365"
+    },
+    {
+      "from": "action:actions.ConnectorMismatch",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.ConnectorMismatch.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_office365"
+    },
+    {
+      "from": "action:actions.ConnectorMissingParameters",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.ConnectorMissingParameters.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_office365"
+    },
+    {
+      "from": "action:actions.SendMail",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SendMail.inputs.host.connection.name",
+      "resolved": false,
+      "to": "connectionReference:shared_missing"
+    },
+    {
+      "from": "action:actions.SharePointCreateBadTitleShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointCreateBadTitleShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
+      "from": "action:actions.SharePointCreateMissingDataset",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointCreateMissingDataset.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
+      "from": "scope:actions.ScopeA",
+      "kind": "containment",
+      "resolved": true,
+      "to": "action:actions.ScopeA.actions.SetCounter"
+    },
+    {
+      "from": "action:actions.RetryHot",
+      "kind": "environmentVariableReference",
+      "path": "definition.actions.RetryHot.inputs",
+      "resolved": true,
+      "to": "environmentVariable:pp_ApiUrl"
+    },
+    {
+      "from": "action:actions.ComposeBadParam",
+      "kind": "parameterReference",
+      "path": "definition.actions.ComposeBadParam.inputs",
+      "resolved": false,
+      "to": "parameter:MissingParam"
+    },
+    {
+      "from": "action:actions.ComposeTemplateSummary",
+      "kind": "parameterReference",
+      "path": "definition.actions.ComposeTemplateSummary.inputs",
+      "resolved": true,
+      "to": "parameter:ApiBaseUrl"
+    },
+    {
+      "from": "action:actions.ComposeBadParam",
+      "kind": "runAfter",
+      "resolved": false,
+      "to": "action:MissingStep"
+    },
+    {
+      "from": "action:actions.ComposeBadVariable",
+      "kind": "variableReference",
+      "path": "definition.actions.ComposeBadVariable.inputs",
+      "resolved": false,
+      "to": "variable:MissingVariable"
+    },
+    {
+      "from": "action:actions.ComposeTemplateSummary",
+      "kind": "variableReference",
+      "path": "definition.actions.ComposeTemplateSummary.inputs",
+      "resolved": true,
+      "to": "variable:Counter"
+    },
+    {
+      "from": "action:actions.ScopeA.actions.SetCounter",
+      "kind": "variableReference",
+      "path": "definition.actions.ScopeA.actions.SetCounter.inputs.value",
+      "resolved": true,
+      "to": "variable:Counter"
+    },
+    {
+      "from": "action:actions.InitCounter",
+      "kind": "variableWrite",
+      "path": "definition.actions.InitCounter.inputs.variables.0.name",
+      "resolved": true,
+      "to": "variable:Counter"
+    },
+    {
+      "from": "action:actions.ScopeA.actions.SetCounter",
+      "kind": "variableWrite",
+      "path": "definition.actions.ScopeA.actions.SetCounter.inputs.name",
+      "resolved": true,
+      "to": "variable:Counter"
+    },
+    {
+      "from": "action:actions.SetGhost",
+      "kind": "variableWrite",
+      "path": "definition.actions.SetGhost.inputs.name",
+      "resolved": false,
+      "to": "variable:Ghost"
+    }
+  ],
+  "hotspots": [
+    {
+      "kind": "referenceDensity",
+      "metric": 2,
+      "nodeId": "action:actions.ComposeTemplateSummary",
+      "nodeName": "ComposeTemplateSummary"
+    },
+    {
+      "kind": "controlFanOut",
+      "metric": 1,
+      "nodeId": "action:actions.ComposeBadParam",
+      "nodeName": "ComposeBadParam"
+    },
+    {
+      "kind": "referenceDensity",
+      "metric": 1,
+      "nodeId": "action:actions.ComposeBadAction",
+      "nodeName": "ComposeBadAction"
+    },
+    {
+      "kind": "referenceDensity",
+      "metric": 1,
+      "nodeId": "action:actions.ComposeBadParam",
+      "nodeName": "ComposeBadParam"
+    },
+    {
+      "kind": "referenceDensity",
+      "metric": 1,
+      "nodeId": "action:actions.ComposeBadVariable",
+      "nodeName": "ComposeBadVariable"
+    },
+    {
+      "kind": "referenceDensity",
+      "metric": 1,
+      "nodeId": "action:actions.ConnectorBadParameterShape",
+      "nodeName": "ConnectorBadParameterShape"
+    },
+    {
+      "kind": "referenceDensity",
+      "metric": 1,
+      "nodeId": "action:actions.ConnectorMismatch",
+      "nodeName": "ConnectorMismatch"
+    },
+    {
+      "kind": "referenceDensity",
+      "metric": 1,
+      "nodeId": "action:actions.ConnectorMissingParameters",
+      "nodeName": "ConnectorMissingParameters"
+    },
+    {
+      "kind": "referenceDensity",
+      "metric": 1,
+      "nodeId": "action:actions.RetryHot",
+      "nodeName": "RetryHot"
+    },
+    {
+      "kind": "referenceDensity",
+      "metric": 1,
+      "nodeId": "action:actions.ScopeA.actions.SetCounter",
+      "nodeName": "SetCounter"
+    }
+  ],
+  "nodes": [
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.ComposeBadAction",
+      "kind": "action",
+      "name": "ComposeBadAction",
+      "path": "actions.ComposeBadAction",
+      "referenceCounts": {
+        "actions": 1,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "Compose",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.ComposeBadParam",
+      "kind": "action",
+      "name": "ComposeBadParam",
+      "path": "actions.ComposeBadParam",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 1,
+        "variables": 0
+      },
+      "type": "Compose",
+      "unresolvedDependsOn": [
+        "MissingStep"
+      ],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.ComposeBadVariable",
+      "kind": "action",
+      "name": "ComposeBadVariable",
+      "path": "actions.ComposeBadVariable",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 1
+      },
+      "type": "Compose",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [
+          "MissingVariable"
+        ],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.ComposeTemplateSummary",
+      "kind": "action",
+      "name": "ComposeTemplateSummary",
+      "path": "actions.ComposeTemplateSummary",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 1,
+        "variables": 1
+      },
+      "type": "Compose",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [
+          "Counter"
+        ],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.ConnectorBadParameterShape",
+      "kind": "action",
+      "name": "ConnectorBadParameterShape",
+      "path": "actions.ConnectorBadParameterShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.ConnectorMismatch",
+      "kind": "action",
+      "name": "ConnectorMismatch",
+      "path": "actions.ConnectorMismatch",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.ConnectorMissingParameters",
+      "kind": "action",
+      "name": "ConnectorMissingParameters",
+      "path": "actions.ConnectorMissingParameters",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.ConnectorUnsupportedShape",
+      "kind": "action",
+      "name": "ConnectorUnsupportedShape",
+      "path": "actions.ConnectorUnsupportedShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.InitCounter",
+      "kind": "action",
+      "name": "InitCounter",
+      "path": "actions.InitCounter",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "InitializeVariable",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [
+          "Counter"
+        ],
+        "reads": [],
+        "writes": [
+          "Counter"
+        ]
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.RetryHot",
+      "kind": "action",
+      "name": "RetryHot",
+      "path": "actions.RetryHot",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 1,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "Compose",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [
+        "action:actions.ScopeA.actions.SetCounter"
+      ],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "scope:actions.ScopeA",
+      "kind": "scope",
+      "name": "ScopeA",
+      "path": "actions.ScopeA",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "Scope",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "actions",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.ScopeA.actions.SetCounter",
+      "kind": "action",
+      "name": "SetCounter",
+      "parentId": "scope:actions.ScopeA",
+      "path": "actions.ScopeA.actions.SetCounter",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 1
+      },
+      "type": "SetVariable",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [
+          "Counter"
+        ],
+        "writes": [
+          "Counter"
+        ]
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SendMail",
+      "kind": "action",
+      "name": "SendMail",
+      "path": "actions.SendMail",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SetGhost",
+      "kind": "action",
+      "name": "SetGhost",
+      "path": "actions.SetGhost",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "SetVariable",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": [
+          "Ghost"
+        ]
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SharePointCreateBadTitleShape",
+      "kind": "action",
+      "name": "SharePointCreateBadTitleShape",
+      "path": "actions.SharePointCreateBadTitleShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SharePointCreateMissingDataset",
+      "kind": "action",
+      "name": "SharePointCreateMissingDataset",
+      "path": "actions.SharePointCreateMissingDataset",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "trigger:triggers.Manual",
+      "kind": "trigger",
+      "name": "Manual",
+      "path": "triggers.Manual",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "Request",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    }
+  ],
+  "resources": {
+    "connectionReferences": [
+      "shared_declared_only",
+      "shared_definition_only",
+      "shared_office365",
+      "shared_sharepointonline"
+    ],
+    "environmentVariables": [
+      "pp_ApiUrl"
+    ],
+    "parameters": [
+      "ApiBaseUrl"
+    ],
+    "variables": [
+      {
+        "initializedBy": [
+          "action:actions.InitCounter"
+        ],
+        "name": "Counter",
+        "readBy": [
+          "action:actions.ComposeTemplateSummary",
+          "action:actions.ScopeA.actions.SetCounter"
+        ],
+        "writtenBy": [
+          "action:actions.InitCounter",
+          "action:actions.ScopeA.actions.SetCounter"
+        ]
+      },
+      {
+        "initializedBy": [],
+        "name": "Ghost",
+        "readBy": [],
+        "writtenBy": [
+          "action:actions.SetGhost"
+        ]
+      },
+      {
+        "initializedBy": [],
+        "name": "MissingVariable",
+        "readBy": [
+          "action:actions.ComposeBadVariable"
+        ],
+        "writtenBy": []
+      }
+    ]
+  },
+  "summary": {
+    "actionCount": 16,
+    "edgeCounts": {
+      "actionReference": 1,
+      "connectionReferenceReference": 6,
+      "containment": 1,
+      "environmentVariableReference": 1,
+      "parameterReference": 2,
+      "runAfter": 1,
+      "variableReference": 3,
+      "variableWrite": 3
+    },
+    "nodeCount": 17,
+    "scopeCount": 1,
+    "triggerCount": 1,
+    "unresolvedEdgeCount": 6
+  }
+}

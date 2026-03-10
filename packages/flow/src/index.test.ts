@@ -916,6 +916,30 @@ describe('FlowService', () => {
     ]);
   });
 
+  it('builds a local graph report from the parsed flow model', async () => {
+    const graph = await new FlowService().graphArtifact('fixtures/flow/artifacts/semantic-diagnostic-flow');
+
+    expect(graph.success).toBe(true);
+    expect(graph.data).toMatchObject({
+      artifactName: 'Semantic Diagnostic Flow',
+      summary: {
+        nodeCount: 17,
+        unresolvedEdgeCount: 6,
+      },
+      resources: {
+        parameters: ['ApiBaseUrl'],
+      },
+    });
+    expect(graph.data?.edges).toContainEqual(
+      expect.objectContaining({
+        from: 'action:actions.ComposeBadParam',
+        to: 'action:MissingStep',
+        kind: 'runAfter',
+        resolved: false,
+      })
+    );
+  });
+
   it('applies bounded patches without dropping unknown fields', async () => {
     const dir = await createTempDir();
     const artifactPath = join(dir, 'flow.json');

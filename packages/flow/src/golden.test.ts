@@ -235,6 +235,17 @@ describe('flow fixture-backed goldens', () => {
     });
   });
 
+  it('captures flow graph reports as stable goldens', async () => {
+    const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'semantic-diagnostic-flow');
+    const graph = await new FlowService().graphArtifact(artifactPath);
+
+    expect(graph.success).toBe(true);
+
+    await expectGoldenJson(graph.data, 'fixtures/flow/golden/semantic/graph-report.json', {
+      normalize: (value) => normalizeFlowSnapshot(value),
+    });
+  });
+
   it('captures semantic flow validation diagnostics from committed fixtures', async () => {
     const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'semantic-diagnostic-flow');
     const validation = await validateFlowArtifact(artifactPath);
