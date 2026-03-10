@@ -1149,6 +1149,109 @@ describe('deploy fixture-backed goldens', () => {
     });
   });
 
+  it('fails preflight when an existing dataverse connection reference conflicts with configured create metadata', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-connref-metadata-'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        'solutions:',
+        '  core:',
+        '    uniqueName: CoreManaged',
+        'parameters:',
+        '  sqlConnection:',
+        '    type: string',
+        '    value: conn-target-sql',
+        '    mapsTo:',
+        '      - kind: dataverse-connref-create',
+        '        target: pp_shared_sql',
+        '        displayName: Shared SQL',
+        '        connectorId: /providers/Microsoft.PowerApps/apis/shared_sql',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [],
+        dependencies: [],
+        connectionreferences: [
+          {
+            connectionreferenceid: 'connref-1',
+            connectionreferencelogicalname: 'pp_shared_sql',
+            connectionreferencedisplayname: 'Shared SQL',
+            connectorid: '/providers/Microsoft.PowerApps/apis/shared_office365',
+            connectionid: 'conn-old-sql',
+            _solutionid_value: 'solution-prod-1',
+            statecode: 0,
+          },
+        ],
+        environmentvariabledefinitions: [],
+        environmentvariablevalues: [],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const updateSpy = vi.spyOn(client, 'update');
+    const createSpy = vi.spyOn(client, 'create');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_METADATA_MISMATCH',
+        target: 'pp_shared_sql',
+        details: {
+          parameter: 'sqlConnection',
+          mismatchedFields: ['connectorId'],
+          expected: {
+            connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+          },
+          actual: {
+            connectorId: '/providers/Microsoft.PowerApps/apis/shared_office365',
+          },
+        },
+      })
+    );
+    expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-connref-upsert')).toMatchObject({
+      status: 'skipped',
+      targetExists: true,
+      currentValue: 'conn-old-sql',
+      nextValue: 'conn-target-sql',
+      changed: false,
+      message: 'Existing connection reference metadata does not match the configured create mapping.',
+    });
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
   it('creates missing dataverse environment variables through the shared deploy path when configured', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const discovery = await discoverProject(fixtureRoot, {
@@ -1293,6 +1396,116 @@ describe('deploy fixture-backed goldens', () => {
         value: 'true',
       })
     );
+  });
+
+  it('fails preflight when an existing dataverse environment variable conflicts with configured create metadata', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-envvar-metadata-'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        'solutions:',
+        '  core:',
+        '    uniqueName: CoreManaged',
+        'parameters:',
+        '  featureFlag:',
+        '    type: boolean',
+        '    value: true',
+        '    mapsTo:',
+        '      - kind: dataverse-envvar-create',
+        '        target: pp_FeatureFlag',
+        '        displayName: Feature Flag',
+        '        type: secret',
+        '        defaultValue: false',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [{ objectid: 'envvar-def-1' }],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_FeatureFlag',
+            displayname: 'Feature Flag',
+            defaultvalue: 'false',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old-value',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const updateSpy = vi.spyOn(client, 'update');
+    const createSpy = vi.spyOn(client, 'create');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_METADATA_MISMATCH',
+        target: 'pp_FeatureFlag',
+        details: {
+          parameter: 'featureFlag',
+          mismatchedFields: ['type'],
+          expected: {
+            type: 'secret',
+          },
+          actual: {
+            type: 'string',
+          },
+        },
+      })
+    );
+    expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-envvar-upsert')).toMatchObject({
+      status: 'skipped',
+      targetExists: true,
+      currentValue: 'old-value',
+      nextValue: 'true',
+      changed: false,
+      message: 'Existing environment variable metadata does not match the configured create mapping.',
+    });
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(createSpy).not.toHaveBeenCalled();
   });
 
   it('fails preflight when dataverse envvar create mappings configure an unsupported type', async () => {

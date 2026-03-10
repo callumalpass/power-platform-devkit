@@ -172,6 +172,12 @@ export interface DeployConnectionReferenceCreateOptions {
   customConnectorId?: string;
 }
 
+interface DeployMetadataMismatch {
+  mismatchedFields: string[];
+  expected: Record<string, unknown>;
+  actual: Record<string, unknown>;
+}
+
 export interface ResolvedDeployBindingEntry extends DeployBindingSummaryEntry {
   value?: string | number | boolean;
 }
@@ -719,6 +725,33 @@ async function executePreparedDeploy(context: {
         continue;
       }
 
+      if (isDataverseEnvvarUpsertOperation(operation.plan)) {
+        const metadataMismatch = resolveEnvironmentVariableCreateMetadataMismatch(variable, operation.plan.createOptions);
+
+        if (metadataMismatch) {
+          checks.push({
+            status: 'fail',
+            code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_METADATA_MISMATCH',
+            message: `Environment variable ${operation.plan.target} does not match the configured create metadata.`,
+            target: operation.plan.target,
+            details: {
+              parameter: operation.plan.parameter,
+              ...metadataMismatch,
+            },
+          });
+          applyOperations.push({
+            ...operation.plan,
+            status: 'skipped',
+            targetExists: true,
+            currentValue: variable.effectiveValue,
+            nextValue,
+            changed: false,
+            message: 'Existing environment variable metadata does not match the configured create mapping.',
+          });
+          continue;
+        }
+      }
+
       applyOperations.push({
         ...operation.plan,
         status: 'planned',
@@ -796,6 +829,33 @@ async function executePreparedDeploy(context: {
           message: 'Target connection reference is missing.',
         });
         continue;
+      }
+
+      if (isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
+        const metadataMismatch = resolveConnectionReferenceCreateMetadataMismatch(reference, operation.plan.createOptions);
+
+        if (metadataMismatch) {
+          checks.push({
+            status: 'fail',
+            code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_METADATA_MISMATCH',
+            message: `Connection reference ${operation.plan.target} does not match the configured create metadata.`,
+            target: operation.plan.target,
+            details: {
+              parameter: operation.plan.parameter,
+              ...metadataMismatch,
+            },
+          });
+          applyOperations.push({
+            ...operation.plan,
+            status: 'skipped',
+            targetExists: true,
+            currentValue: reference.connectionId,
+            nextValue,
+            changed: false,
+            message: 'Existing connection reference metadata does not match the configured create mapping.',
+          });
+          continue;
+        }
       }
 
       applyOperations.push({
@@ -1556,6 +1616,141 @@ function resolveInvalidEnvironmentVariableCreateType(type: string | number | und
 
 function resolveMissingConnectionReferenceConnector(options: DeployConnectionReferenceCreateOptions | undefined): boolean {
   return !options?.connectorId && !options?.customConnectorId;
+}
+
+function normalizeEnvironmentVariableTypeForComparison(type: string | number | undefined): string | undefined {
+  if (type === undefined) {
+    return undefined;
+  }
+
+  const normalized = String(type)
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
+
+  switch (normalized) {
+    case '100000000':
+    case 'string':
+    case 'text':
+      return 'string';
+    case '100000001':
+    case 'number':
+    case 'decimal':
+      return 'number';
+    case '100000002':
+    case 'boolean':
+    case 'bool':
+    case 'two-options':
+    case 'yes-no':
+      return 'boolean';
+    case '100000003':
+    case 'json':
+      return 'json';
+    case '100000004':
+    case 'data-source':
+    case 'datasource':
+      return 'data-source';
+    case '100000005':
+    case 'secret':
+      return 'secret';
+    default:
+      return normalized;
+  }
+}
+
+function resolveEnvironmentVariableCreateMetadataMismatch(
+  variable: EnvironmentVariableSummary,
+  options: DeployEnvironmentVariableCreateOptions | undefined
+): DeployMetadataMismatch | undefined {
+  if (!options) {
+    return undefined;
+  }
+
+  const mismatchedFields: string[] = [];
+  const expected: Record<string, unknown> = {};
+  const actual: Record<string, unknown> = {};
+
+  if (options.displayName !== undefined && options.displayName !== variable.displayName) {
+    mismatchedFields.push('displayName');
+    expected.displayName = options.displayName;
+    actual.displayName = variable.displayName;
+  }
+
+  if (options.defaultValue !== undefined && options.defaultValue !== variable.defaultValue) {
+    mismatchedFields.push('defaultValue');
+    expected.defaultValue = options.defaultValue;
+    actual.defaultValue = variable.defaultValue;
+  }
+
+  if (options.valueSchema !== undefined && options.valueSchema !== variable.valueSchema) {
+    mismatchedFields.push('valueSchema');
+    expected.valueSchema = options.valueSchema;
+    actual.valueSchema = variable.valueSchema;
+  }
+
+  if (options.secretStore !== undefined && options.secretStore !== variable.secretStore) {
+    mismatchedFields.push('secretStore');
+    expected.secretStore = options.secretStore;
+    actual.secretStore = variable.secretStore;
+  }
+
+  if (options.type !== undefined) {
+    const expectedType = normalizeEnvironmentVariableTypeForComparison(options.type);
+    const actualType = normalizeEnvironmentVariableTypeForComparison(variable.type);
+
+    if (expectedType !== actualType) {
+      mismatchedFields.push('type');
+      expected.type = options.type;
+      actual.type = variable.type;
+    }
+  }
+
+  return mismatchedFields.length > 0
+    ? {
+        mismatchedFields,
+        expected,
+        actual,
+      }
+    : undefined;
+}
+
+function resolveConnectionReferenceCreateMetadataMismatch(
+  reference: ConnectionReferenceSummary,
+  options: DeployConnectionReferenceCreateOptions | undefined
+): DeployMetadataMismatch | undefined {
+  if (!options) {
+    return undefined;
+  }
+
+  const mismatchedFields: string[] = [];
+  const expected: Record<string, unknown> = {};
+  const actual: Record<string, unknown> = {};
+
+  if (options.displayName !== undefined && options.displayName !== reference.displayName) {
+    mismatchedFields.push('displayName');
+    expected.displayName = options.displayName;
+    actual.displayName = reference.displayName;
+  }
+
+  if (options.connectorId !== undefined && options.connectorId !== reference.connectorId) {
+    mismatchedFields.push('connectorId');
+    expected.connectorId = options.connectorId;
+    actual.connectorId = reference.connectorId;
+  }
+
+  if (options.customConnectorId !== undefined && options.customConnectorId !== reference.customConnectorId) {
+    mismatchedFields.push('customConnectorId');
+    expected.customConnectorId = options.customConnectorId;
+    actual.customConnectorId = reference.customConnectorId;
+  }
+
+  return mismatchedFields.length > 0
+    ? {
+        mismatchedFields,
+        expected,
+        actual,
+      }
+    : undefined;
 }
 
 function diffComparableDeployPlans(expectedPlan: DeployPlan, actualPlan: DeployPlan): string[] {
