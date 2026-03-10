@@ -52,7 +52,7 @@ async function createTempDir(): Promise<string> {
 
 function createStubClient(data: StubData): DataverseClient {
   return {
-    query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+    query: async <T>(options: { table: string; filter?: string }): Promise<OperationResult<T[]>> => {
       if (options.table === 'solutions') {
         return ok([data.solution] as T[], {
           supportTier: 'preview',
@@ -60,7 +60,21 @@ function createStubClient(data: StubData): DataverseClient {
       }
 
       if (options.table === 'publishers') {
-        return ok((data.publishers ?? []) as T[], {
+        const publishers = (data.publishers ?? []).filter((publisher) => {
+          const filter = options.filter;
+          if (!filter) {
+            return true;
+          }
+
+          const match = /uniquename eq '([^']+)'/.exec(filter);
+          if (!match) {
+            return true;
+          }
+
+          return publisher.uniquename === match[1];
+        });
+
+        return ok(publishers as T[], {
           supportTier: 'preview',
         });
       }
@@ -706,6 +720,91 @@ describe('SolutionService', () => {
       friendlyname: 'Harness Shell',
       version: '1.0.0.0',
     });
+  });
+
+  it('surfaces available publishers when solution creation omits a publisher', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        publishers: [
+          {
+            publisherid: 'pub-1',
+            uniquename: 'DefaultPublisher',
+            friendlyname: 'Default Publisher',
+          },
+          {
+            publisherid: 'pub-2',
+            uniquename: 'pp',
+            friendlyname: 'Power Platform',
+          },
+        ],
+        components: [],
+        dependencies: [],
+      })
+    );
+
+    const result = await service.create('HarnessShell');
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_PUBLISHER_REQUIRED',
+          message: 'A publisher is required. Use --publisher-id or --publisher-unique-name.',
+          detail: expect.stringContaining('DefaultPublisher'),
+        }),
+      ])
+    );
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Retry with `pp solution create HarnessShell --environment <alias> --publisher-unique-name DefaultPublisher`.',
+        'Retry with `pp solution create HarnessShell --environment <alias> --publisher-unique-name pp`.',
+      ])
+    );
+  });
+
+  it('surfaces available publishers when the requested publisher unique name does not exist', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        publishers: [
+          {
+            publisherid: 'pub-1',
+            uniquename: 'DefaultPublisher',
+            friendlyname: 'Default Publisher',
+          },
+        ],
+        components: [],
+        dependencies: [],
+      })
+    );
+
+    const result = await service.create('HarnessShell', {
+      publisherUniqueName: 'MissingPublisher',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_PUBLISHER_NOT_FOUND',
+          message: 'Publisher MissingPublisher was not found.',
+        }),
+      ])
+    );
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Run `pp dv query publishers --environment <alias> --select publisherid,uniquename,friendlyname --format json` to inspect available publishers before retrying `pp solution create HarnessShell`.',
+      ])
+    );
   });
 
   it('updates solution version and publisher through a first-class metadata flow', async () => {

@@ -4703,12 +4703,6 @@ async function runSolutionCreate(args: string[]): Promise<number> {
   const publisherId = readFlag(args, '--publisher-id');
   const publisherUniqueName = readFlag(args, '--publisher-unique-name');
 
-  if (!publisherId && !publisherUniqueName) {
-    return printFailure(
-      argumentFailure('SOLUTION_PUBLISHER_REQUIRED', 'Use --publisher-id or --publisher-unique-name when creating a solution.')
-    );
-  }
-
   const resolution = await resolveDataverseClientForCli(args);
 
   if (!resolution.success || !resolution.data) {

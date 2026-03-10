@@ -6137,6 +6137,47 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('suggests available publishers when solution creation omits publisher selection', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          publishers: [
+            {
+              publisherid: 'pub-1',
+              uniquename: 'DefaultPublisher',
+              friendlyname: 'Default Publisher',
+            },
+            {
+              publisherid: 'pub-2',
+              uniquename: 'pp',
+              friendlyname: 'Power Platform',
+            },
+          ],
+        },
+      }),
+    });
+
+    const create = await runCli(['solution', 'create', 'HarnessShell', '--env', 'source', '--format', 'json']);
+
+    expect(create.code).toBe(1);
+    expect(create.stdout).toBe('');
+    expect(JSON.parse(create.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: 'SOLUTION_PUBLISHER_REQUIRED',
+          message: 'A publisher is required. Use --publisher-id or --publisher-unique-name.',
+          detail: expect.stringContaining('DefaultPublisher'),
+        }),
+      ],
+      suggestedNextActions: expect.arrayContaining([
+        'Retry with `pp solution create HarnessShell --environment <alias> --publisher-unique-name DefaultPublisher`.',
+        'Retry with `pp solution create HarnessShell --environment <alias> --publisher-unique-name pp`.',
+      ]),
+      supportTier: 'preview',
+    });
+  });
+
   it('covers solution metadata updates through the CLI entrypoint', async () => {
     mockDataverseResolution({
       source: createFixtureDataverseClient({

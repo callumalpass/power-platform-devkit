@@ -53,6 +53,7 @@ export interface SolutionDeleteResult {
 interface PublisherSummary {
   publisherid: string;
   uniquename?: string;
+  friendlyname?: string;
 }
 
 interface SolutionInspectRecord {
@@ -318,15 +319,30 @@ export class SolutionService {
   }
 
   async create(uniqueName: string, options: SolutionCreateOptions = {}): Promise<OperationResult<SolutionSummary>> {
+    const availablePublishers =
+      options.publisherId || options.publisherUniqueName ? undefined : await this.listPublishers();
     const publisherId = options.publisherId ?? (await this.resolvePublisherId(options.publisherUniqueName));
 
     if (!publisherId) {
+      const publisherSummary = this.formatPublisherList(availablePublishers);
       return fail(
-        createDiagnostic('error', 'SOLUTION_PUBLISHER_REQUIRED', 'A publisher is required. Use --publisher-id or --publisher-unique-name.', {
-          source: '@pp/solution',
-        }),
+        createDiagnostic(
+          'error',
+          options.publisherUniqueName ? 'SOLUTION_PUBLISHER_NOT_FOUND' : 'SOLUTION_PUBLISHER_REQUIRED',
+          options.publisherUniqueName
+            ? `Publisher ${options.publisherUniqueName} was not found.`
+            : 'A publisher is required. Use --publisher-id or --publisher-unique-name.',
+          {
+            source: '@pp/solution',
+            detail: publisherSummary ? `Available publishers: ${publisherSummary}.` : undefined,
+            hint: availablePublishers?.length
+              ? 'Retry with one of the listed publisher unique names or ids.'
+              : 'Inspect available publishers in the target environment, then retry with --publisher-id or --publisher-unique-name.',
+          }
+        ),
         {
           supportTier: 'preview',
+          suggestedNextActions: this.buildPublisherSuggestions(uniqueName, availablePublishers),
         }
       );
     }
@@ -1077,6 +1093,49 @@ export class SolutionService {
     }
 
     return publishers.data?.[0]?.publisherid;
+  }
+
+  private async listPublishers(): Promise<PublisherSummary[]> {
+    const publishers = await this.dataverseClient.query<PublisherSummary>({
+      table: 'publishers',
+      select: ['publisherid', 'uniquename', 'friendlyname'],
+      top: 10,
+    });
+
+    if (!publishers.success) {
+      return [];
+    }
+
+    return (publishers.data ?? []).filter((publisher): publisher is PublisherSummary => Boolean(publisher.publisherid));
+  }
+
+  private formatPublisherList(publishers: PublisherSummary[] | undefined): string | undefined {
+    if (!publishers?.length) {
+      return undefined;
+    }
+
+    return publishers
+      .map((publisher) => {
+        const label = publisher.uniquename ?? publisher.publisherid;
+        return publisher.friendlyname && publisher.friendlyname !== publisher.uniquename
+          ? `${label} (${publisher.friendlyname}, ${publisher.publisherid})`
+          : `${label} (${publisher.publisherid})`;
+      })
+      .join(', ');
+  }
+
+  private buildPublisherSuggestions(uniqueName: string, publishers: PublisherSummary[] | undefined): string[] {
+    if (!publishers?.length) {
+      return [
+        `Run \`pp dv query publishers --environment <alias> --select publisherid,uniquename,friendlyname --format json\` to inspect available publishers before retrying \`pp solution create ${uniqueName}\`.`,
+      ];
+    }
+
+    return publishers.slice(0, 3).map((publisher) =>
+      publisher.uniquename
+        ? `Retry with \`pp solution create ${uniqueName} --environment <alias> --publisher-unique-name ${publisher.uniquename}\`.`
+        : `Retry with \`pp solution create ${uniqueName} --environment <alias> --publisher-id ${publisher.publisherid}\`.`
+    );
   }
 
   private async enrichSolutionSummary(record: SolutionInspectRecord | undefined): Promise<SolutionSummary | undefined> {
