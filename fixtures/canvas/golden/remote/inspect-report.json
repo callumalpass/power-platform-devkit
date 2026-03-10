@@ -1,0 +1,21 @@
+{
+  "data": {
+    "appVersion": "1.2.3.4",
+    "createdByClientVersion": "3.25000.1",
+    "displayName": "Harness Canvas",
+    "id": "canvas-1",
+    "inSolution": true,
+    "lastPublishTime": "2026-03-10T04:50:00.000Z",
+    "name": "crd_HarnessCanvas",
+    "openUri": "https://make.powerapps.com/e/test/canvas/?app-id=canvas-1",
+    "status": "Published",
+    "tags": [
+      "harness",
+      "solution"
+    ]
+  },
+  "diagnostics": [],
+  "success": true,
+  "supportTier": "preview",
+  "warnings": []
+}

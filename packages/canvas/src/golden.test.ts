@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readJsonFile } from '@pp/artifacts';
-import { buildCanvasApp, diffCanvasApps, importCanvasTemplateRegistry, inspectCanvasApp, validateCanvasApp } from './index';
+import { ok, type OperationResult } from '@pp/diagnostics';
+import type { DataverseClient } from '@pp/dataverse';
+import { buildCanvasApp, CanvasService, diffCanvasApps, importCanvasTemplateRegistry, inspectCanvasApp, validateCanvasApp } from './index';
 import { expectGoldenJson, expectGoldenText, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
 
 const tempDirs: string[] = [];
@@ -87,7 +89,94 @@ function snapshotCanvasResult<T>(result: {
   };
 }
 
+function createRemoteCanvasStubDataverseClient(): DataverseClient {
+  return {
+    query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+      if (options.table === 'solutions') {
+        return ok(
+          [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ] as T[],
+          {
+            supportTier: 'preview',
+          }
+        );
+      }
+
+      return ok([] as T[], {
+        supportTier: 'preview',
+      });
+    },
+    queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+      switch (options.table) {
+        case 'canvasapps':
+          return ok(
+            [
+              {
+                canvasappid: 'canvas-2',
+                displayname: 'Other Canvas',
+                name: 'crd_OtherCanvas',
+                tags: 'other',
+              },
+              {
+                canvasappid: 'canvas-1',
+                displayname: 'Harness Canvas',
+                name: 'crd_HarnessCanvas',
+                appopenuri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
+                appversion: '1.2.3.4',
+                createdbyclientversion: '3.25000.1',
+                lastpublishtime: '2026-03-10T04:50:00.000Z',
+                status: 'Published',
+                tags: 'harness;solution',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        case 'solutioncomponents':
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'canvas-1',
+                componenttype: 300,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        default:
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+      }
+    },
+  } as unknown as DataverseClient;
+}
+
 describe('canvas fixture-backed goldens', () => {
+  it('captures remote canvas discovery and inspect outputs from committed fixtures', async () => {
+    const service = new CanvasService(createRemoteCanvasStubDataverseClient());
+
+    const list = await service.listRemote({
+      solutionUniqueName: 'Core',
+    });
+    const inspect = await service.inspectRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(list.success).toBe(true);
+    expect(inspect.success).toBe(true);
+
+    await expectGoldenJson(snapshotCanvasResult(list), 'fixtures/canvas/golden/remote/list-report.json');
+    await expectGoldenJson(snapshotCanvasResult(inspect), 'fixtures/canvas/golden/remote/inspect-report.json');
+  });
+
   it('captures normalized template imports and preserves re-import semantics', async () => {
     const tempDir = await createTempDir();
     const sourcePath = resolveRepoPath('fixtures', 'canvas', 'registries', 'import-source.json');
