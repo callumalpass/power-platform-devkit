@@ -84,6 +84,10 @@ describe('@pp/mcp', () => {
         'pp.model-app.inspect',
         'pp.project.inspect',
         'pp.analysis.context',
+        'pp.analysis.portfolio',
+        'pp.analysis.drift',
+        'pp.analysis.usage',
+        'pp.analysis.policy',
         'pp.domain.list',
       ])
     );
@@ -134,6 +138,19 @@ describe('@pp/mcp', () => {
       },
     });
     expect((analysis.structuredContent as { data: { focusAsset: string } }).data.focusAsset).toBe('solution:core');
+
+    const portfolio = await client.callTool({
+      name: 'pp.analysis.portfolio',
+      arguments: {},
+    });
+    expect(portfolio.isError).toBeFalsy();
+    expect(portfolio.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.analysis.portfolio',
+      },
+    });
+    expect((portfolio.structuredContent as { data: { summary: { projectCount: number } } }).data.summary.projectCount).toBe(1);
 
     const domains = await client.callTool({
       name: 'pp.domain.list',

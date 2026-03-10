@@ -217,6 +217,7 @@ The `project`, `analysis`, and `deploy` commands work entirely from local repo s
 - `project inspect` summarizes assets, provider bindings, resolved parameters, and stage topology; machine-readable output now carries discovery hints and unresolved-input diagnostics in the stdout document itself
 - `analysis report` emits a markdown report suitable for humans or agent handoff
 - `analysis context` emits a JSON context pack with deploy-plan data included
+- `analysis portfolio`, `analysis drift`, `analysis usage`, and `analysis policy` aggregate multiple project roots into governance-grade portfolio views for CI, dashboards, or recurring review
 - `deploy plan` turns resolved project parameters, topology, and assets into a structured plan
 - `deploy apply` runs the shared resolve/preflight/plan/apply/report path locally or through the CI adapter wrappers
 

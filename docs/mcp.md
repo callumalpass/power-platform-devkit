@@ -14,6 +14,10 @@ surface.
 - `pp.model-app.inspect`
 - `pp.project.inspect`
 - `pp.analysis.context`
+- `pp.analysis.portfolio`
+- `pp.analysis.drift`
+- `pp.analysis.usage`
+- `pp.analysis.policy`
 - `pp.domain.list`
 
 Every tool returns a structured envelope that preserves:

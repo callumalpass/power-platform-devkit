@@ -105,6 +105,10 @@ These apply to:
 - `project inspect`
 - `analysis report`
 - `analysis context`
+- `analysis portfolio`
+- `analysis drift`
+- `analysis usage`
+- `analysis policy`
 - `deploy plan`
 - `deploy apply`
 

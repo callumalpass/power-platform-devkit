@@ -28,6 +28,93 @@ async function createTempDir(): Promise<string> {
   return path;
 }
 
+async function writePortfolioFixtureProject(
+  root: string,
+  config: {
+    owner?: string;
+    docsPaths?: string[];
+    providerKind: string;
+    providerTarget: string;
+    defaultEnvironment: string;
+    stageEnvironment: string;
+    solutionUniqueName: string;
+    assetRoot: string;
+    includeMissingAsset?: boolean;
+    includeRequiredSecret?: boolean;
+    sensitiveLiteral?: boolean;
+  }
+): Promise<string> {
+  await mkdir(join(root, config.assetRoot), { recursive: true });
+  await mkdir(join(root, 'docs'), { recursive: true });
+
+  const docsSection =
+    config.owner || (config.docsPaths ?? []).length > 0
+      ? [
+          'docs:',
+          ...(config.owner ? [`  owner: ${config.owner}`] : []),
+          ...((config.docsPaths ?? []).length > 0 ? ['  paths:', ...(config.docsPaths ?? []).map((path) => `    - ${path}`)] : []),
+        ]
+      : [];
+  const missingAssetSection = config.includeMissingAsset ? ['  flows: flows'] : [];
+  const parameterLines = [
+    'parameters:',
+    '  tenantDomain:',
+    '    type: string',
+    '    fromEnv: PP_TENANT_DOMAIN',
+    '    required: true',
+    ...(config.sensitiveLiteral
+      ? [
+          '  apiToken:',
+          '    type: string',
+          '    value: super-secret',
+          '    secretRef: api_token',
+          '    required: true',
+        ]
+      : []),
+    ...(config.includeRequiredSecret
+      ? [
+          '  deployKey:',
+          '    type: string',
+          '    secretRef: deploy_key',
+          '    required: true',
+        ]
+      : []),
+  ];
+
+  await writeFile(
+    join(root, 'pp.config.yaml'),
+    [
+      'name: portfolio-fixture',
+      'defaults:',
+      `  environment: ${config.defaultEnvironment}`,
+      '  solution: core',
+      'solutions:',
+      '  core:',
+      `    environment: ${config.defaultEnvironment}`,
+      `    uniqueName: ${config.solutionUniqueName}`,
+      'assets:',
+      `  apps: ${config.assetRoot}`,
+      ...missingAssetSection,
+      'providerBindings:',
+      '  primaryDataverse:',
+      `    kind: ${config.providerKind}`,
+      `    target: ${config.providerTarget}`,
+      ...parameterLines,
+      'topology:',
+      '  defaultStage: prod',
+      '  stages:',
+      '    prod:',
+      `      environment: ${config.stageEnvironment}`,
+      '      solution: core',
+      ...docsSection,
+      '',
+    ].join('\n'),
+    'utf8'
+  );
+
+  return root;
+}
+
 async function writeUnpackedCanvasFixture(
   root: string,
   options: {
@@ -724,6 +811,93 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(context.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
     await expectGoldenJson(JSON.parse(deployPlan.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
     await expectGoldenJson(JSON.parse(deployApply.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
+  });
+
+  it('aggregates portfolio, drift, usage, and policy analysis across multiple projects', async () => {
+    const firstRoot = await createTempDir();
+    const secondRoot = await createTempDir();
+    await writePortfolioFixtureProject(firstRoot, {
+      owner: 'team-alpha',
+      docsPaths: ['docs'],
+      providerKind: 'dataverse',
+      providerTarget: 'dev',
+      defaultEnvironment: 'dev',
+      stageEnvironment: 'dev',
+      solutionUniqueName: 'CoreDev',
+      assetRoot: 'apps',
+    });
+    await writePortfolioFixtureProject(secondRoot, {
+      providerKind: 'custom-connector',
+      providerTarget: 'prod-api',
+      defaultEnvironment: 'prod',
+      stageEnvironment: 'prod',
+      solutionUniqueName: 'CoreProd',
+      assetRoot: 'client-apps',
+      includeMissingAsset: true,
+      includeRequiredSecret: true,
+      sensitiveLiteral: true,
+    });
+
+    const env = {
+      PP_TENANT_DOMAIN: 'contoso.example',
+    };
+
+    const portfolio = await runCli(
+      ['analysis', 'portfolio', '--project', firstRoot, '--project', secondRoot, '--allow-provider-kind', 'dataverse', '--format', 'json'],
+      { env }
+    );
+    const drift = await runCli(['analysis', 'drift', firstRoot, secondRoot, '--allow-provider-kind', 'dataverse', '--format', 'json'], {
+      env,
+    });
+    const usage = await runCli(['analysis', 'usage', firstRoot, secondRoot, '--format', 'json'], {
+      env,
+    });
+    const policy = await runCli(['analysis', 'policy', firstRoot, secondRoot, '--allow-provider-kind', 'dataverse', '--format', 'json'], {
+      env,
+    });
+
+    expect(portfolio.code).toBe(0);
+    expect(drift.code).toBe(0);
+    expect(usage.code).toBe(0);
+    expect(policy.code).toBe(0);
+
+    const portfolioJson = JSON.parse(portfolio.stdout) as {
+      summary: { projectCount: number; driftCount: number; governanceFindingCount: number };
+    };
+    const driftJson = JSON.parse(drift.stdout) as { findings: Array<{ code: string }> };
+    const usageJson = JSON.parse(usage.stdout) as { owners: Array<{ owner: string }>; assetUsage: Array<{ assetName: string }> };
+    const policyJson = JSON.parse(policy.stdout) as { findings: Array<{ code: string }> };
+    const portfolioDiagnostics = JSON.parse(portfolio.stderr) as { warnings: Array<{ code: string }> };
+    const driftDiagnostics = JSON.parse(drift.stderr) as { warnings: Array<{ code: string }> };
+    const usageDiagnostics = JSON.parse(usage.stderr) as { warnings: Array<{ code: string }> };
+    const policyDiagnostics = JSON.parse(policy.stderr) as { warnings: Array<{ code: string }> };
+
+    expect(portfolioJson.summary.projectCount).toBe(2);
+    expect(portfolioJson.summary.driftCount).toBeGreaterThanOrEqual(3);
+    expect(portfolioJson.summary.governanceFindingCount).toBeGreaterThanOrEqual(4);
+    expect(portfolioDiagnostics.warnings.map((warning) => warning.code)).toContain('PROJECT_SECRET_PROVIDER_UNSET');
+    expect(driftDiagnostics.warnings.map((warning) => warning.code)).toContain('PROJECT_SECRET_PROVIDER_UNSET');
+    expect(usageDiagnostics.warnings.map((warning) => warning.code)).toContain('PROJECT_SECRET_PROVIDER_UNSET');
+    expect(policyDiagnostics.warnings.map((warning) => warning.code)).toContain('PROJECT_SECRET_PROVIDER_UNSET');
+    expect(driftJson.findings.map((finding) => finding.code)).toEqual(
+      expect.arrayContaining([
+        'PORTFOLIO_STAGE_DRIFT',
+        'PORTFOLIO_PROVIDER_BINDING_DRIFT',
+        'PORTFOLIO_ASSET_DRIFT',
+      ])
+    );
+    expect(usageJson.owners.map((entry) => entry.owner)).toContain('team-alpha');
+    expect(usageJson.assetUsage.map((entry) => entry.assetName)).toEqual(expect.arrayContaining(['apps', 'flows']));
+    expect(policyJson.findings.map((finding) => finding.code)).toEqual(
+      expect.arrayContaining([
+        'PORTFOLIO_OWNER_MISSING',
+        'PORTFOLIO_PROVENANCE_MISSING',
+        'PORTFOLIO_UNSUPPORTED_PROVIDER_KIND',
+        'PORTFOLIO_MISSING_ASSET',
+        'PORTFOLIO_REQUIRED_PARAMETER_MISSING',
+        'PORTFOLIO_UNSAFE_SENSITIVE_VALUE',
+      ])
+    );
   });
 
   it('covers confirmed live deploy apply through the CLI entrypoint', async () => {

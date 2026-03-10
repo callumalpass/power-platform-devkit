@@ -6,7 +6,7 @@ import { basename, dirname, extname, isAbsolute, resolve as resolvePath } from '
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { renderMarkdownReport, generateContextPack } from '@pp/analysis';
+import { renderMarkdownPortfolioReport, renderMarkdownReport, generateContextPack, generatePortfolioReport } from '@pp/analysis';
 import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
   AuthService,
@@ -84,6 +84,7 @@ import {
   type ProjectInitPlan,
   type ProjectInitResult,
   type ProviderBindingResolverContext,
+  type ProjectContext,
   type ResolvedPowerBiTarget,
   type ResolvedSharePointTarget,
 } from '@pp/project';
@@ -194,6 +195,14 @@ export async function main(argv: string[]): Promise<number> {
       return runAnalysisReport(rest);
     case 'analysis context':
       return runAnalysisContext(rest);
+    case 'analysis portfolio':
+      return runAnalysisPortfolio(rest);
+    case 'analysis drift':
+      return runAnalysisDrift(rest);
+    case 'analysis usage':
+      return runAnalysisUsage(rest);
+    case 'analysis policy':
+      return runAnalysisPolicy(rest);
     case 'deploy plan':
       return runDeployPlan(rest);
     case 'deploy apply':
@@ -1713,6 +1722,84 @@ async function runAnalysisContext(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runAnalysisPortfolio(args: string[]): Promise<number> {
+  const format = outputFormat(args, 'json');
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const projects = await discoverAnalysisPortfolioProjects(args, discoveryOptions.data);
+
+  if (!projects.success || !projects.data) {
+    return printFailure(projects);
+  }
+
+  const report = generatePortfolioReport(projects.data, {
+    focusAsset: readFlag(args, '--asset'),
+    allowedProviderKinds: readRepeatedFlags(args, '--allow-provider-kind'),
+  });
+
+  if (!report.success || !report.data) {
+    return printFailure(report);
+  }
+
+  if (format === 'markdown') {
+    process.stdout.write(renderMarkdownPortfolioReport(report.data) + '\n');
+  } else {
+    printByFormat(report.data, format);
+  }
+
+  printResultDiagnostics(projects, format);
+  printResultDiagnostics(report, format);
+  return 0;
+}
+
+async function runAnalysisDrift(args: string[]): Promise<number> {
+  return runAnalysisPortfolioView(args, 'drift');
+}
+
+async function runAnalysisUsage(args: string[]): Promise<number> {
+  return runAnalysisPortfolioView(args, 'usage');
+}
+
+async function runAnalysisPolicy(args: string[]): Promise<number> {
+  return runAnalysisPortfolioView(args, 'policy');
+}
+
+async function runAnalysisPortfolioView(args: string[], view: 'drift' | 'usage' | 'policy'): Promise<number> {
+  const format = outputFormat(args, 'json');
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const projects = await discoverAnalysisPortfolioProjects(args, discoveryOptions.data);
+
+  if (!projects.success || !projects.data) {
+    return printFailure(projects);
+  }
+
+  const report = generatePortfolioReport(projects.data, {
+    focusAsset: readFlag(args, '--asset'),
+    allowedProviderKinds: readRepeatedFlags(args, '--allow-provider-kind'),
+  });
+
+  if (!report.success || !report.data) {
+    return printFailure(report);
+  }
+
+  const payload =
+    view === 'drift' ? report.data.drift : view === 'usage' ? report.data.inventories : report.data.governance;
+
+  printByFormat(payload, format);
+  printResultDiagnostics(projects, format);
+  printResultDiagnostics(report, format);
+  return 0;
+}
+
 async function runDeployPlan(args: string[]): Promise<number> {
   const projectPath = readFlag(args, '--project') ?? process.cwd();
   const format = outputFormat(args, 'json');
@@ -1738,6 +1825,53 @@ async function runDeployPlan(args: string[]): Promise<number> {
   printResultDiagnostics(project, format);
   printResultDiagnostics(plan, format);
   return 0;
+}
+
+async function discoverAnalysisPortfolioProjects(
+  args: string[],
+  options: { stage?: string; parameterOverrides?: Record<string, string> }
+): Promise<OperationResult<ProjectContext[]>> {
+  const projectPaths = readAnalysisPortfolioProjectPaths(args);
+  const projects: ProjectContext[] = [];
+  const warnings: Diagnostic[] = [];
+  const seen = new Set<string>();
+
+  for (const projectPath of projectPaths) {
+    const resolvedPath = resolvePath(projectPath);
+
+    if (seen.has(resolvedPath)) {
+      warnings.push(
+        createDiagnostic('warning', 'ANALYSIS_PORTFOLIO_DUPLICATE_PROJECT', `Skipping duplicate portfolio project ${resolvedPath}`, {
+          source: '@pp/cli',
+        })
+      );
+      continue;
+    }
+
+    seen.add(resolvedPath);
+    const project = await discoverProject(resolvedPath, {
+      ...options,
+      environment: process.env,
+    });
+
+    if (!project.success || !project.data) {
+      return fail([...warnings, ...project.diagnostics], {
+        warnings: [...warnings, ...project.warnings],
+        supportTier: project.supportTier,
+        suggestedNextActions: project.suggestedNextActions,
+        provenance: project.provenance,
+        knownLimitations: project.knownLimitations,
+      });
+    }
+
+    warnings.push(...project.warnings);
+    projects.push(project.data);
+  }
+
+  return ok(projects, {
+    warnings,
+    supportTier: 'preview',
+  });
 }
 
 async function runDeployApply(args: string[]): Promise<number> {
@@ -7186,6 +7320,11 @@ function readRepeatedFlags(args: string[], name: string): string[] {
   return values;
 }
 
+function readAnalysisPortfolioProjectPaths(args: string[]): string[] {
+  const configured = [...readRepeatedFlags(args, '--project'), ...positionalArgs(args)];
+  return configured.length > 0 ? configured : [process.cwd()];
+}
+
 function flagAliases(name: string): string[] {
   switch (name) {
     case '--env':
@@ -8471,6 +8610,10 @@ function printHelp(): void {
       '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  analysis portfolio [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  analysis drift [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  analysis usage [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  analysis policy [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  deploy plan [--project path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  deploy apply [--project path] [--stage STAGE] [--param NAME=VALUE] [--dry-run|--plan|--plan FILE] [--yes] [--format table|json|yaml|ndjson|markdown|raw]',
       '',

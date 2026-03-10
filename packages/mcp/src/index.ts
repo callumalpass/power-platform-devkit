@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { generateContextPack, type AnalysisContextPack } from '@pp/analysis';
+import { generateContextPack, generatePortfolioReport, type AnalysisContextPack } from '@pp/analysis';
 import { listEnvironments, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
 import {
   ConnectionReferenceService,
@@ -10,7 +10,7 @@ import {
   type ConnectionReferenceSummary,
   type EnvironmentVariableSummary,
 } from '@pp/dataverse';
-import { type Diagnostic, type OperationResult, type ProvenanceRecord, type SupportTier, ok } from '@pp/diagnostics';
+import { createDiagnostic, fail, type Diagnostic, type OperationResult, type ProvenanceRecord, type SupportTier, ok } from '@pp/diagnostics';
 import { ModelService, type ModelAppSummary, type ModelInspectResult } from '@pp/model';
 import { discoverProject, type ProjectContext } from '@pp/project';
 import { SolutionService, type SolutionAnalysis, type SolutionSummary } from '@pp/solution';
@@ -103,6 +103,13 @@ const projectScopeSchema = z.object({
   stage: z.string().min(1).optional(),
 });
 
+const portfolioScopeSchema = z.object({
+  projectPaths: z.array(z.string().min(1)).optional(),
+  stage: z.string().min(1).optional(),
+  allowedProviderKinds: z.array(z.string().min(1)).optional(),
+  focusAsset: z.string().min(1).optional(),
+});
+
 export const initialMcpTools: McpToolDefinition[] = [
   {
     name: 'pp.environment.list',
@@ -150,6 +157,26 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'Generate a structured project and deploy context pack for agent workflows.',
   },
   {
+    name: 'pp.analysis.portfolio',
+    title: 'Analyze Portfolio',
+    description: 'Aggregate multiple projects into a structured portfolio governance and drift report.',
+  },
+  {
+    name: 'pp.analysis.drift',
+    title: 'Inspect Portfolio Drift',
+    description: 'Inspect cross-project drift across stages, provider bindings, parameters, and assets.',
+  },
+  {
+    name: 'pp.analysis.usage',
+    title: 'Inspect Portfolio Usage',
+    description: 'Inspect ownership, asset usage, provider usage, and parameter inventories across projects.',
+  },
+  {
+    name: 'pp.analysis.policy',
+    title: 'Inspect Portfolio Policy',
+    description: 'Inspect governance findings such as missing ownership, missing provenance, and unsupported connectors.',
+  },
+  {
     name: 'pp.domain.list',
     title: 'List Supported Domains',
     description: 'Describe the current MCP read surface and the mutation boundary for each exposed domain.',
@@ -161,7 +188,7 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     name: 'project',
     kind: 'local-context',
     supportTier: 'preview',
-    readTools: ['pp.project.inspect', 'pp.analysis.context'],
+    readTools: ['pp.project.inspect', 'pp.analysis.context', 'pp.analysis.portfolio', 'pp.analysis.drift', 'pp.analysis.usage', 'pp.analysis.policy'],
     mutationToolsAvailable: false,
     notes: 'Reads local project topology, parameters, and analysis context without mutating the filesystem.',
   },
@@ -185,7 +212,7 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     name: 'analysis',
     kind: 'local-context',
     supportTier: 'preview',
-    readTools: ['pp.analysis.context', 'pp.domain.list'],
+    readTools: ['pp.analysis.context', 'pp.analysis.portfolio', 'pp.analysis.drift', 'pp.analysis.usage', 'pp.analysis.policy', 'pp.domain.list'],
     mutationToolsAvailable: false,
     notes: 'Returns structured agent context and interface metadata instead of rendered prose.',
   },
@@ -447,6 +474,82 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
   );
 
   server.registerTool(
+    'pp.analysis.portfolio',
+    {
+      title: 'Analyze Portfolio',
+      description: 'Aggregate multiple projects into a structured portfolio governance and drift report.',
+      inputSchema: portfolioScopeSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Analyze Portfolio'),
+    },
+    async ({ projectPaths, stage, allowedProviderKinds, focusAsset }) =>
+      runPortfolioTool('pp.analysis.portfolio', defaults, {
+        projectPaths,
+        stage,
+        allowedProviderKinds,
+        focusAsset,
+        view: 'portfolio',
+      })
+  );
+
+  server.registerTool(
+    'pp.analysis.drift',
+    {
+      title: 'Inspect Portfolio Drift',
+      description: 'Inspect cross-project drift across stages, provider bindings, parameters, and assets.',
+      inputSchema: portfolioScopeSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Portfolio Drift'),
+    },
+    async ({ projectPaths, stage, allowedProviderKinds, focusAsset }) =>
+      runPortfolioTool('pp.analysis.drift', defaults, {
+        projectPaths,
+        stage,
+        allowedProviderKinds,
+        focusAsset,
+        view: 'drift',
+      })
+  );
+
+  server.registerTool(
+    'pp.analysis.usage',
+    {
+      title: 'Inspect Portfolio Usage',
+      description: 'Inspect ownership, asset usage, provider usage, and parameter inventories across projects.',
+      inputSchema: portfolioScopeSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Portfolio Usage'),
+    },
+    async ({ projectPaths, stage, allowedProviderKinds, focusAsset }) =>
+      runPortfolioTool('pp.analysis.usage', defaults, {
+        projectPaths,
+        stage,
+        allowedProviderKinds,
+        focusAsset,
+        view: 'usage',
+      })
+  );
+
+  server.registerTool(
+    'pp.analysis.policy',
+    {
+      title: 'Inspect Portfolio Policy',
+      description: 'Inspect governance findings such as missing ownership, missing provenance, and unsupported connectors.',
+      inputSchema: portfolioScopeSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Portfolio Policy'),
+    },
+    async ({ projectPaths, stage, allowedProviderKinds, focusAsset }) =>
+      runPortfolioTool('pp.analysis.policy', defaults, {
+        projectPaths,
+        stage,
+        allowedProviderKinds,
+        focusAsset,
+        view: 'policy',
+      })
+  );
+
+  server.registerTool(
     'pp.domain.list',
     {
       title: 'List Supported Domains',
@@ -476,6 +579,102 @@ function readConfigOptions(configDir: string | undefined, defaults: PpMcpServerO
 
 function resolveProjectPath(projectPath: string | undefined, defaults: PpMcpServerOptions): string {
   return resolve(projectPath ?? defaults.projectPath ?? process.cwd());
+}
+
+async function resolvePortfolioProjects(
+  projectPaths: string[] | undefined,
+  stage: string | undefined,
+  defaults: PpMcpServerOptions
+): Promise<OperationResult<ProjectContext[]>> {
+  const requested = (projectPaths && projectPaths.length > 0 ? projectPaths : [resolveProjectPath(undefined, defaults)]).map((path) =>
+    resolve(path)
+  );
+  const projects: ProjectContext[] = [];
+  const warnings: Diagnostic[] = [];
+  const seen = new Set<string>();
+
+  for (const projectPath of requested) {
+    if (seen.has(projectPath)) {
+      warnings.push(
+        createDiagnostic('warning', 'ANALYSIS_PORTFOLIO_DUPLICATE_PROJECT', `Skipping duplicate portfolio project ${projectPath}`, {
+          source: '@pp/mcp',
+        })
+      );
+      continue;
+    }
+
+    seen.add(projectPath);
+    const result = await discoverProject(projectPath, {
+      stage,
+      environment: process.env,
+    });
+
+    if (!result.success || !result.data) {
+      return fail([...warnings, ...result.diagnostics], {
+        warnings: [...warnings, ...result.warnings],
+        supportTier: result.supportTier,
+        suggestedNextActions: result.suggestedNextActions,
+        provenance: result.provenance,
+        knownLimitations: result.knownLimitations,
+      });
+    }
+
+    warnings.push(...result.warnings);
+    projects.push(result.data);
+  }
+
+  return ok(projects, {
+    warnings,
+    supportTier: 'preview',
+  });
+}
+
+async function runPortfolioTool(
+  toolName: string,
+  defaults: PpMcpServerOptions,
+  args: {
+    projectPaths?: string[];
+    stage?: string;
+    allowedProviderKinds?: string[];
+    focusAsset?: string;
+    view: 'portfolio' | 'drift' | 'usage' | 'policy';
+  }
+) {
+  const projects = await resolvePortfolioProjects(args.projectPaths, args.stage, defaults);
+
+  if (!projects.success || !projects.data) {
+    return toToolResult(toolName, projects);
+  }
+
+  const result = generatePortfolioReport(projects.data, {
+    allowedProviderKinds: args.allowedProviderKinds,
+    focusAsset: args.focusAsset,
+  });
+
+  if (!result.success || !result.data) {
+    return toToolResult(toolName, result);
+  }
+
+  const data =
+    args.view === 'portfolio'
+      ? result.data
+      : args.view === 'drift'
+        ? result.data.drift
+        : args.view === 'usage'
+          ? result.data.inventories
+          : result.data.governance;
+
+  return toToolResult(
+    toolName,
+    ok(data, {
+      diagnostics: [...projects.diagnostics, ...result.diagnostics],
+      warnings: [...projects.warnings, ...result.warnings],
+      supportTier: result.supportTier,
+      suggestedNextActions: result.suggestedNextActions,
+      provenance: result.provenance,
+      knownLimitations: result.knownLimitations,
+    })
+  );
 }
 
 async function resolveRemoteRuntime(args: RemoteToolArgs, defaults: PpMcpServerOptions): Promise<OperationResult<ResolvedRemoteRuntime>> {

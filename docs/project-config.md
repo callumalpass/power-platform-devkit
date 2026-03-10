@@ -357,6 +357,22 @@ pp analysis context --asset apps
 
 Produces a structured JSON context pack intended for coding agents or other automation. It includes project summary, provider bindings, parameter state, assets, and the deploy plan.
 
+### Portfolio analysis
+
+```bash
+pp analysis portfolio --project ./apps/core --project ./apps/sales --format json
+pp analysis drift ./apps/core ./apps/sales --format json
+pp analysis usage ./apps/core ./apps/sales --format json
+pp analysis policy ./apps/core ./apps/sales --allow-provider-kind dataverse --format json
+```
+
+Produces structured multi-project governance outputs:
+
+- portfolio summaries with per-project ownership and topology context
+- cross-project drift findings across stages, provider bindings, parameters, and assets
+- usage inventories for owners, assets, provider bindings, and parameters
+- policy findings for missing owners, missing provenance/docs paths, unsupported provider kinds, missing assets, unresolved required parameters, and sensitive literal values
+
 ### Deploy plan
 
 ```bash
