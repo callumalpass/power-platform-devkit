@@ -146,6 +146,35 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('covers real CLI protocol outputs for representative success paths', async () => {
+    const solutionFixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+    const flowRuntimeFixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'flow', 'runtime', 'invoice-sync-runtime.json')
+    )) as FlowRuntimeFixture;
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(solutionFixture.source),
+      fixture: createFixtureDataverseClient(flowRuntimeFixture),
+    });
+
+    const solutionList = await runCli(['solution', 'list', '--env', 'source', '--format', 'table']);
+    const solutionAnalyze = await runCli(['solution', 'analyze', 'Core', '--env', 'source', '--format', 'yaml']);
+    const flowList = await runCli(['flow', 'list', '--env', 'fixture', '--solution', 'Core', '--format', 'ndjson']);
+
+    expect(solutionList.code).toBe(0);
+    expect(solutionList.stderr).toBe('');
+    expect(solutionAnalyze.code).toBe(0);
+    expect(solutionAnalyze.stderr).toBe('');
+    expect(flowList.code).toBe(0);
+    expect(flowList.stderr).toBe('');
+
+    await expectGoldenText(solutionList.stdout, 'fixtures/cli/golden/protocol/solution-list.table.txt');
+    await expectGoldenText(solutionAnalyze.stdout, 'fixtures/cli/golden/protocol/solution-analyze.yaml');
+    await expectGoldenText(flowList.stdout, 'fixtures/cli/golden/protocol/flow-list.ndjson');
+  });
+
   it('covers canvas inspect, validate, build, and diff through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const baseAppPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'base-app');
@@ -376,6 +405,68 @@ describe('cli fixture-backed workflows', () => {
     });
     await expectGoldenJson(JSON.parse(build.stderr), 'fixtures/canvas/golden/semantic/cli-build-failure.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+  });
+
+  it('covers real CLI failure protocol outputs for fixture-backed canvas and flow diagnostics', async () => {
+    const tempDir = await createTempDir();
+    const canvasAppPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'diagnostic-app');
+    const runtimeRegistryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'runtime-registry.json');
+    const semanticRegistryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'semantic-registry.json');
+    const canvasOutPath = join(tempDir, 'DiagnosticCanvas.msapp');
+    const flowArtifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow');
+
+    const canvasValidate = await runCli([
+      'canvas',
+      'validate',
+      canvasAppPath,
+      '--mode',
+      'strict',
+      '--registry',
+      runtimeRegistryPath,
+      '--registry',
+      semanticRegistryPath,
+      '--format',
+      'table',
+    ]);
+    const canvasBuild = await runCli([
+      'canvas',
+      'build',
+      canvasAppPath,
+      '--mode',
+      'strict',
+      '--registry',
+      runtimeRegistryPath,
+      '--registry',
+      semanticRegistryPath,
+      '--out',
+      canvasOutPath,
+      '--format',
+      'raw',
+    ]);
+    const flowValidateTable = await runCli(['flow', 'validate', flowArtifactPath, '--format', 'table']);
+    const flowValidateYaml = await runCli(['flow', 'validate', flowArtifactPath, '--format', 'yaml']);
+
+    expect(canvasValidate.code).toBe(1);
+    expect(canvasValidate.stderr).toBe('');
+    expect(canvasBuild.code).toBe(1);
+    expect(canvasBuild.stdout).toBe('');
+    expect(flowValidateTable.code).toBe(1);
+    expect(flowValidateTable.stderr).toBe('');
+    expect(flowValidateYaml.code).toBe(1);
+    expect(flowValidateYaml.stderr).toBe('');
+
+    await expectGoldenText(canvasValidate.stdout, 'fixtures/cli/golden/protocol/canvas-validate-failure.table.txt', {
+      normalize: (value) => normalizeCliSnapshot(value),
+    });
+    await expectGoldenText(canvasBuild.stderr, 'fixtures/cli/golden/protocol/canvas-build-failure.raw.txt', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenText(flowValidateTable.stdout, 'fixtures/cli/golden/protocol/flow-validate-failure.table.txt', {
+      normalize: (value) => normalizeCliSnapshot(value),
+    });
+    await expectGoldenText(flowValidateYaml.stdout, 'fixtures/cli/golden/protocol/flow-validate-failure.yaml', {
+      normalize: (value) => normalizeCliSnapshot(value),
     });
   });
 

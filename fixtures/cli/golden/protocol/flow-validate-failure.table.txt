@@ -1,0 +1,8 @@
+field                 value
+--------------------  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+valid                 false
+path                  <REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow
+name
+connectionReferences  [{"apiId":"/providers/microsoft.powerapps/apis/shared_office365","connectionId":"/connections/office365","connectionReferenceLogicalName":"shared_office365","name":"shared_office365"},{"apiId":"/providers/microsoft.powerapps/apis/shared_office365","connectionId":"/connections/office365-alt","connectionReferenceLogicalName":"shared_office365_duplicate","name":"shared_office365"}]
+parameters            ["ApiBaseUrl"]
+environmentVariables  []
