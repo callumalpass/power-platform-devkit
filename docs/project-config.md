@@ -90,6 +90,13 @@ parameters:
       - kind: flow-connref
         path: flows/invoice-sync/flow.json
         target: shared_office365
+  runtimeApiEnvironmentVariable:
+    type: string
+    value: pp_RuntimeUrl
+    mapsTo:
+      - kind: flow-envvar
+        path: flows/invoice-sync/flow.json
+        target: pp_ApiUrl
   useManagedIdentity:
     type: boolean
     value: false
@@ -276,6 +283,11 @@ Returns:
 - provider bindings
 - discovered assets
 - template registries, build conventions, and docs metadata
+
+When the current directory is not itself a `pp` project, `project inspect` keeps
+the default-layout fallback but now includes descendant `pp.config.*` candidates
+in its warning output when it finds committed project roots below the inspected
+path.
 
 ### Analysis report
 

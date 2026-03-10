@@ -527,6 +527,201 @@ describe('deploy fixture-backed goldens', () => {
     ]);
   });
 
+  it('plans and applies flow artifact environment variable mappings through shared deploy orchestration', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-envvar-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await writeFile(
+      join(root, 'flows', 'invoice', 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: ['pp_ApiUrl'],
+          },
+          definition: {
+            actions: {
+              SendMail: {
+                inputs: {
+                  body: "@{environmentVariables('pp_ApiUrl')}",
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  runtimeApiEnvironmentVariable:',
+        '    type: string',
+        '    value: pp_RuntimeUrl',
+        '    mapsTo:',
+        '      - kind: flow-envvar',
+        '        path: flows/invoice/flow.json',
+        '        target: pp_ApiUrl',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const plan = buildDeployPlan(discovery.data!);
+    expect(plan.success).toBe(true);
+    expect(plan.data?.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-envvar-set',
+        parameter: 'runtimeApiEnvironmentVariable',
+        target: 'pp_ApiUrl',
+        path: join(root, 'flows', 'invoice', 'flow.json'),
+        valuePreview: 'pp_RuntimeUrl',
+      })
+    );
+
+    const preview = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(preview.success).toBe(true);
+    expect(preview.data?.preflight.ok).toBe(true);
+    expect(preview.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-envvar-set',
+        parameter: 'runtimeApiEnvironmentVariable',
+        target: 'pp_ApiUrl',
+        currentValue: 'pp_ApiUrl',
+        nextValue: 'pp_RuntimeUrl',
+        status: 'planned',
+        changed: true,
+      })
+    );
+
+    const apply = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(apply.success).toBe(true);
+    expect(apply.data?.preflight.ok).toBe(true);
+    expect(apply.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-envvar-set',
+        parameter: 'runtimeApiEnvironmentVariable',
+        status: 'applied',
+        changed: true,
+      })
+    );
+
+    const updatedArtifact = JSON.parse(await readFile(join(root, 'flows', 'invoice', 'flow.json'), 'utf8')) as {
+      metadata: { environmentVariables: string[] };
+      definition: { actions: { SendMail: { inputs: { body: string } } } };
+    };
+    expect(updatedArtifact.metadata.environmentVariables).toEqual(['pp_RuntimeUrl']);
+    expect(updatedArtifact.definition.actions.SendMail.inputs.body).toBe("@{environmentVariables('pp_RuntimeUrl')}");
+  });
+
+  it('fails preflight when multiple parameters map to the same flow artifact environment variable target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-envvar-conflict-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await writeFile(
+      join(root, 'flows', 'invoice', 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: ['pp_ApiUrl'],
+          },
+          definition: {
+            actions: {
+              SendMail: {
+                inputs: {
+                  body: "@{environmentVariables('pp_ApiUrl')}",
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  runtimeApiEnvironmentVariable:',
+        '    type: string',
+        '    value: pp_RuntimeUrl',
+        '    mapsTo:',
+        '      - kind: flow-envvar',
+        '        path: flows/invoice/flow.json',
+        '        target: pp_ApiUrl',
+        '  runtimeApiEnvironmentVariableFallback:',
+        '    type: string',
+        '    value: pp_FallbackUrl',
+        '    mapsTo:',
+        '      - kind: flow-envvar',
+        '        path: flows/invoice/flow.json',
+        '        target: pp_ApiUrl',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_TARGET_CONFLICT',
+        target: 'pp_ApiUrl',
+      })
+    );
+    expect(result.data?.apply.operations).toEqual([
+      expect.objectContaining({
+        kind: 'flow-envvar-set',
+        parameter: 'runtimeApiEnvironmentVariable',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
+      expect.objectContaining({
+        kind: 'flow-envvar-set',
+        parameter: 'runtimeApiEnvironmentVariableFallback',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
+    ]);
+  });
+
   it('executes a saved deploy plan directly without rediscovering the source project', async () => {
     const savedPlan: DeployPlan = {
       projectRoot: '/tmp/detached-plan',
