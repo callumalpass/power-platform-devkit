@@ -115,10 +115,12 @@ When you inspect through an environment alias, the output also includes:
 
 - `resolvedEnvironmentUrl`, the Dataverse URL bound to that alias
 - `targetResource`, the resource `pp` will target for environment-scoped commands
+- `profileDefaultResource`, the profile's stored home resource when it differs from the environment target you are inspecting through
 - `defaultResourceMatchesResolvedEnvironment`, which is `false` when the stored profile home resource differs from the resolved environment URL
 
 That makes stale profile defaults explicit without forcing a separate `env inspect`
-just to confirm which org the alias actually points at.
+just to confirm which org the alias actually points at, while keeping the
+environment target as the primary resource in view.
 
 ## Browser profiles
 

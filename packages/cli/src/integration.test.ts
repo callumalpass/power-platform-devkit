@@ -5749,7 +5749,6 @@ describe('cli fixture-backed workflows', () => {
       tenantId: 'common',
       clientId: '51f81489-12ee-4a9e-aaae-a2591f45987d',
       tokenCacheKey: 'fixture-user',
-      defaultResource: 'https://fixture.crm.dynamics.com',
       loginHint: 'fixture.user@example.com',
       accountUsername: undefined,
       homeAccountId: undefined,
@@ -5760,6 +5759,7 @@ describe('cli fixture-backed workflows', () => {
       resolvedFromEnvironment: 'fixture',
       resolvedEnvironmentUrl: 'https://fixture.crm.dynamics.com',
       targetResource: 'https://fixture.crm.dynamics.com',
+      profileDefaultResource: 'https://fixture.crm.dynamics.com',
       defaultResourceMatchesResolvedEnvironment: true,
     });
   });
@@ -5804,7 +5804,6 @@ describe('cli fixture-backed workflows', () => {
       tenantId: 'common',
       clientId: '51f81489-12ee-4a9e-aaae-a2591f45987d',
       tokenCacheKey: 'fixture-user',
-      defaultResource: 'https://fixture.crm.dynamics.com',
       loginHint: 'fixture.user@example.com',
       accountUsername: undefined,
       homeAccountId: undefined,
@@ -5815,6 +5814,7 @@ describe('cli fixture-backed workflows', () => {
       resolvedFromEnvironment: 'fixture',
       resolvedEnvironmentUrl: 'https://fixture.crm.dynamics.com',
       targetResource: 'https://fixture.crm.dynamics.com',
+      profileDefaultResource: 'https://fixture.crm.dynamics.com',
       defaultResourceMatchesResolvedEnvironment: true,
     });
   });
@@ -5867,7 +5867,6 @@ describe('cli fixture-backed workflows', () => {
         tenantId: 'common',
         clientId: '51f81489-12ee-4a9e-aaae-a2591f45987d',
         tokenCacheKey: 'fixture-user',
-        defaultResource: 'https://fixture.crm.dynamics.com',
         loginHint: 'fixture.user@example.com',
         accountUsername: undefined,
         homeAccountId: undefined,
@@ -5878,6 +5877,7 @@ describe('cli fixture-backed workflows', () => {
         resolvedFromEnvironment: 'fixture',
         resolvedEnvironmentUrl: 'https://fixture.crm.dynamics.com',
         targetResource: 'https://fixture.crm.dynamics.com',
+        profileDefaultResource: 'https://fixture.crm.dynamics.com',
         defaultResourceMatchesResolvedEnvironment: true,
       });
     } finally {
@@ -5924,7 +5924,6 @@ describe('cli fixture-backed workflows', () => {
       tenantId: 'common',
       clientId: '51f81489-12ee-4a9e-aaae-a2591f45987d',
       tokenCacheKey: 'fixture-user',
-      defaultResource: 'https://other.crm.dynamics.com',
       loginHint: 'fixture.user@example.com',
       accountUsername: undefined,
       homeAccountId: undefined,
@@ -5935,6 +5934,7 @@ describe('cli fixture-backed workflows', () => {
       resolvedFromEnvironment: 'fixture',
       resolvedEnvironmentUrl: 'https://fixture.crm.dynamics.com',
       targetResource: 'https://fixture.crm.dynamics.com',
+      profileDefaultResource: 'https://other.crm.dynamics.com',
       defaultResourceMatchesResolvedEnvironment: false,
     });
   });

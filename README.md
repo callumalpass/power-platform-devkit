@@ -251,8 +251,9 @@ pp env list
 ```
 
 When you inspect a profile through `--env`, the JSON output includes the
-resolved environment URL and a boolean that tells you whether the profile's
-stored `defaultResource` still matches that environment.
+resolved environment URL, the actual target resource for that environment, and
+a boolean that tells you whether the profile's stored home resource still
+matches that environment.
 
 Headless and automation-friendly profiles are also supported:
 

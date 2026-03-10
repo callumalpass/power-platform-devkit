@@ -2194,10 +2194,11 @@ async function runAuthProfileInspect(auth: AuthService, configOptions: ConfigSto
   printByFormat(
     target.data.environmentAlias
       ? {
-          ...summary,
+          ...omitAuthProfileInspectDefaultResource(summary),
           resolvedFromEnvironment: target.data.environmentAlias,
           resolvedEnvironmentUrl: target.data.environmentUrl,
           targetResource: target.data.environmentUrl,
+          profileDefaultResource: summary.defaultResource,
           defaultResourceMatchesResolvedEnvironment:
             typeof summary.defaultResource === 'string' && typeof target.data.environmentUrl === 'string'
               ? normalizeAuthProfileInspectResource(summary.defaultResource) ===
@@ -2274,6 +2275,11 @@ function normalizeAuthProfileInspectResource(resource: string): string {
   } catch {
     return resource.replace(/\/+$/, '');
   }
+}
+
+function omitAuthProfileInspectDefaultResource(summary: Record<string, unknown>): Record<string, unknown> {
+  const { defaultResource: _defaultResource, ...withoutDefaultResource } = summary;
+  return withoutDefaultResource;
 }
 
 async function runAuthBrowserProfileList(auth: AuthService, args: string[]): Promise<number> {
