@@ -40,7 +40,7 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
         supportTier: 'preview',
       }),
     queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
-      ok((resolveFixtureQueryAllRecords(queryAllState, options.table) as T[]), {
+      ok((resolveFixtureQueryAllRecords(queryAllState, queryState, options.table) as T[]), {
         supportTier: 'preview',
       }),
     listTables: async (): Promise<OperationResult<EntityDefinition[]>> =>
@@ -126,16 +126,23 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
   } as unknown as DataverseClient;
 }
 
-function resolveFixtureQueryAllRecords(state: Map<string, unknown[]>, table: string): unknown[] {
-  const direct = state.get(table);
+function resolveFixtureQueryAllRecords(queryAllState: Map<string, unknown[]>, queryState: Map<string, unknown[]>, table: string): unknown[] {
+  const direct = queryAllState.get(table);
   if (direct) {
     return direct;
+  }
+
+  const queryFallback = queryState.get(table);
+  if (queryFallback) {
+    return queryFallback;
   }
 
   const appModuleComponentsMatch = table.match(/^appmodules\(([^)]+)\)\/appmodule_appmodulecomponent$/);
   if (appModuleComponentsMatch) {
     const appId = appModuleComponentsMatch[1]?.toLowerCase();
-    const records = (state.get('appmodulecomponents') ?? []) as Array<Record<string, unknown>>;
+    const records = ((queryAllState.get('appmodulecomponents') ?? queryState.get('appmodulecomponents')) ?? []) as Array<
+      Record<string, unknown>
+    >;
     return records.filter((record) => {
       const componentAppId = [record._appmoduleidunique_value, record.appmoduleidunique]
         .find((value): value is string => typeof value === 'string')

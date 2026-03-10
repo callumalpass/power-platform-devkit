@@ -4836,7 +4836,10 @@ async function runSolutionList(args: string[]): Promise<number> {
   }
 
   const service = new SolutionService(resolution.data.client);
-  const result = await service.list();
+  const result = await service.list({
+    uniqueName: readFlag(args, '--unique-name'),
+    prefix: readFlag(args, '--prefix'),
+  });
 
   if (!result.success) {
     return printFailure(result);
@@ -9574,6 +9577,7 @@ function printSolutionHelp(): void {
       '',
       'Examples:',
       '  pp solution list --environment dev --format json',
+      '  pp solution list --environment dev --prefix ppHarness --format json',
       '  pp solution inspect Core --environment dev',
       '',
       'Common output options:',
@@ -9588,12 +9592,18 @@ function printSolutionListHelp(): void {
       'Usage: solution list --environment ALIAS [options]',
       '',
       'Behavior:',
-      '  - Lists installed solutions in the target environment.',
+      '  - Lists installed solutions in the target environment across all Dataverse pages.',
       '  - Returns structured records with solution ids, unique names, friendly names, versions, and managed state.',
+      '  - Use --prefix to narrow by unique/friendly name prefix or --unique-name for one exact solution.',
       '',
       'Examples:',
       '  pp solution list --environment dev',
       '  pp solution list --environment dev --format json',
+      '  pp solution list --environment dev --prefix ppHarness20260310T200706248Z --format json',
+      '',
+      'Options:',
+      '  --prefix PREFIX            Match solution unique names or friendly names starting with PREFIX',
+      '  --unique-name NAME        Match one exact solution unique name',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

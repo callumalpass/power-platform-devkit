@@ -45,6 +45,11 @@ export interface SolutionSetMetadataOptions {
   publisherUniqueName?: string;
 }
 
+export interface SolutionListOptions {
+  uniqueName?: string;
+  prefix?: string;
+}
+
 export interface SolutionDeleteResult {
   removed: boolean;
   solution: SolutionSummary;
@@ -536,11 +541,36 @@ export class SolutionService {
     );
   }
 
-  async list(): Promise<OperationResult<SolutionSummary[]>> {
-    return this.dataverseClient.query<SolutionSummary>({
+  async list(options: SolutionListOptions = {}): Promise<OperationResult<SolutionSummary[]>> {
+    const result = await this.dataverseClient.queryAll<SolutionSummary>({
       table: 'solutions',
       select: ['solutionid', 'uniquename', 'friendlyname', 'version'],
-      top: 100,
+    });
+
+    if (!result.success) {
+      return result;
+    }
+
+    const normalizedUniqueName = options.uniqueName?.trim();
+    const normalizedPrefix = options.prefix?.trim().toLowerCase();
+    const filtered = (result.data ?? []).filter((solution) => {
+      if (normalizedUniqueName && solution.uniquename !== normalizedUniqueName) {
+        return false;
+      }
+
+      if (!normalizedPrefix) {
+        return true;
+      }
+
+      const uniqueName = solution.uniquename.toLowerCase();
+      const friendlyName = solution.friendlyname?.toLowerCase() ?? '';
+      return uniqueName.startsWith(normalizedPrefix) || friendlyName.startsWith(normalizedPrefix);
+    });
+
+    return ok(filtered, {
+      supportTier: 'preview',
+      diagnostics: result.diagnostics,
+      warnings: result.warnings,
     });
   }
 

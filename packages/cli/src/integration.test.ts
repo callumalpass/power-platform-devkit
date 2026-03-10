@@ -5496,6 +5496,68 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
   });
 
+  it('filters solution list results by prefix and exact unique name', async () => {
+    const fixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        ...fixture.source,
+        query: {
+          ...(fixture.source.query ?? {}),
+          solutions: [
+            ...((fixture.source.query?.solutions as Record<string, unknown>[] | undefined) ?? []),
+            {
+              solutionid: 'sol-harness',
+              uniquename: 'ppHarness20260310T200706248Z',
+              friendlyname: 'PP Harness 20260310T200706248Z',
+              version: '26.3.10.2007',
+            },
+          ],
+        },
+      }),
+    });
+
+    const byPrefix = await runCli([
+      'solution',
+      'list',
+      '--environment',
+      'source',
+      '--prefix',
+      'ppHarness20260310T200706248Z',
+      '--format',
+      'json',
+    ]);
+    const byUniqueName = await runCli([
+      'solution',
+      'list',
+      '--environment',
+      'source',
+      '--unique-name',
+      'Core',
+      '--format',
+      'json',
+    ]);
+
+    expect(byPrefix.code).toBe(0);
+    expect(byPrefix.stderr).toBe('');
+    expect(JSON.parse(byPrefix.stdout)).toEqual([
+      expect.objectContaining({
+        solutionid: 'sol-harness',
+        uniquename: 'ppHarness20260310T200706248Z',
+      }),
+    ]);
+
+    expect(byUniqueName.code).toBe(0);
+    expect(byUniqueName.stderr).toBe('');
+    expect(JSON.parse(byUniqueName.stdout)).toEqual([
+      expect.objectContaining({
+        uniquename: 'Core',
+      }),
+    ]);
+  });
+
   it('dispatches solution list when the argv starts with a wrapper separator', async () => {
     const fixture = (await readJsonFile(
       resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
@@ -6512,6 +6574,8 @@ describe('cli fixture-backed workflows', () => {
     expect(solutionListHelp.stderr).toBe('');
     expect(solutionListHelp.stdout).toContain('Usage: solution list --environment ALIAS [options]');
     expect(solutionListHelp.stdout).toContain('pp solution list --environment dev --format json');
+    expect(solutionListHelp.stdout).toContain('--prefix PREFIX');
+    expect(solutionListHelp.stdout).toContain('--unique-name NAME');
     expect(solutionListHelp.stdout).not.toContain('DV_ENV_REQUIRED');
 
     expect(rootHelp.code).toBe(0);

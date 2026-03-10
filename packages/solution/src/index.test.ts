@@ -22,6 +22,13 @@ interface StubData {
       customizationoptionvalueprefix?: number;
     };
   };
+  solutions?: Array<{
+    solutionid: string;
+    uniquename: string;
+    friendlyname?: string;
+    version?: string;
+    ismanaged?: boolean;
+  }>;
   publishers?: Array<Record<string, unknown>>;
   components: Array<Record<string, unknown>>;
   dependencies: Array<Record<string, unknown>>;
@@ -87,7 +94,21 @@ function createStubClient(data: StubData): DataverseClient {
       });
     },
     queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+      const appModuleComponentsMatch = options.table.match(/^appmodules\(([^)]+)\)\/appmodule_appmodulecomponent$/);
+      if (appModuleComponentsMatch) {
+        const appId = appModuleComponentsMatch[1]?.toLowerCase();
+        const records = (data.modelComponents ?? []).filter((record) => {
+          const componentAppId = [record._appmoduleidunique_value, record.appmoduleidunique]
+            .find((value): value is string => typeof value === 'string')
+            ?.toLowerCase();
+          return componentAppId === appId;
+        });
+        return ok(records as T[], { supportTier: 'preview' });
+      }
+
       switch (options.table) {
+        case 'solutions':
+          return ok((data.solutions ?? [currentSolution]) as T[], { supportTier: 'preview' });
         case 'solutioncomponents':
           return ok(data.components as T[], { supportTier: 'preview' });
         case 'dependencies':
@@ -429,6 +450,59 @@ describe('SolutionService', () => {
       missingRequiredComponent: true,
       requiredComponentTypeLabel: 'form',
     });
+  });
+
+  it('lists all solution pages and can narrow results by prefix or unique name', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        solutions: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+            friendlyname: 'Core Solution',
+            version: '1.0.0.0',
+          },
+          {
+            solutionid: 'sol-2',
+            uniquename: 'ppHarness20260310T200706248Z',
+            friendlyname: 'PP Harness 20260310T200706248Z',
+            version: '26.3.10.2007',
+          },
+          {
+            solutionid: 'sol-3',
+            uniquename: 'AnotherSolution',
+            friendlyname: 'Another Solution',
+            version: '1.2.3.4',
+          },
+        ],
+        components: [],
+        dependencies: [],
+      })
+    );
+
+    const prefixed = await service.list({ prefix: 'ppHarness20260310T200706248Z' });
+    const exact = await service.list({ uniqueName: 'Core' });
+
+    expect(prefixed.success).toBe(true);
+    expect(prefixed.data).toEqual([
+      expect.objectContaining({
+        solutionid: 'sol-2',
+        uniquename: 'ppHarness20260310T200706248Z',
+      }),
+    ]);
+
+    expect(exact.success).toBe(true);
+    expect(exact.data).toEqual([
+      expect.objectContaining({
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+      }),
+    ]);
   });
 
   it('fails components when the target solution does not exist', async () => {
