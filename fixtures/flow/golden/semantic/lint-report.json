@@ -16,11 +16,11 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 10,
+      "actionCount": 12,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 8,
-      "expressionCount": 8,
-      "nodeCount": 11,
+      "dynamicContentReferenceCount": 9,
+      "expressionCount": 9,
+      "nodeCount": 13,
       "scopeCount": 1,
       "templateExpressionCount": 2,
       "triggerCount": 1,
@@ -33,16 +33,16 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 10,
+      "actionCount": 12,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 8,
-      "expressionCount": 8,
+      "dynamicContentReferenceCount": 9,
+      "expressionCount": 9,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
-        "connectionReferences": 1,
+        "connectionReferences": 2,
         "environmentVariables": 1,
         "parameters": 2,
         "variables": 3
@@ -66,6 +66,34 @@
       "source": "@pp/flow"
     },
     {
+      "code": "FLOW_CONNECTOR_API_ID_MISMATCH",
+      "level": "error",
+      "message": "Connector action ConnectorMismatch declares apiId /providers/microsoft.powerapps/apis/shared_sharepointonline but connection reference shared_office365 resolves to /providers/microsoft.powerapps/apis/shared_office365.",
+      "path": "actions.ConnectorMismatch.inputs.host.apiId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_OPERATION_ID_MISSING",
+      "level": "error",
+      "message": "Connector action ConnectorMismatch does not declare a supported operationId.",
+      "path": "actions.ConnectorMismatch.inputs.operationId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_API_ID_MISSING",
+      "level": "error",
+      "message": "Connector action SendMail does not declare inputs.host.apiId.",
+      "path": "actions.SendMail.inputs.host.apiId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_OPERATION_ID_MISSING",
+      "level": "error",
+      "message": "Connector action SendMail does not declare a supported operationId.",
+      "path": "actions.SendMail.inputs.operationId",
+      "source": "@pp/flow"
+    },
+    {
       "code": "FLOW_ACTION_REFERENCE_UNRESOLVED",
       "level": "error",
       "message": "Flow expression references missing action MissingAction.",
@@ -84,6 +112,13 @@
       "level": "error",
       "message": "Flow expression references missing variable MissingVariable.",
       "path": "definition.actions.ComposeBadVariable.inputs",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_CONNECTION_REFERENCE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action ConnectorUnsupportedShape uses an unsupported connection reference shape; expected @parameters('$connections')['<name>']['connectionId'].",
+      "path": "definition.actions.ConnectorUnsupportedShape.inputs.host.connection.name",
       "source": "@pp/flow"
     },
     {

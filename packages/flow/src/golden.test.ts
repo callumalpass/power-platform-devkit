@@ -7,6 +7,7 @@ import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
 import {
   FlowService,
+  type FlowPatchDocument,
   loadFlowArtifact,
   normalizeFlowArtifact,
   parseFlowIntermediateRepresentation,
@@ -122,7 +123,9 @@ describe('flow fixture-backed goldens', () => {
     const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');
     const unpackedPath = join(tempDir, 'unpacked');
     const patchedPath = join(tempDir, 'patched');
-    const patchDocument = await readJsonFile(resolveRepoPath('fixtures', 'flow', 'patches', 'invoice-flow.patch.json'));
+    const patchDocument = (await readJsonFile(
+      resolveRepoPath('fixtures', 'flow', 'patches', 'invoice-flow.patch.json')
+    )) as FlowPatchDocument;
 
     await unpackFlowArtifact(rawPath, unpackedPath);
     const patched = await patchFlowArtifact(unpackedPath, patchDocument, patchedPath);

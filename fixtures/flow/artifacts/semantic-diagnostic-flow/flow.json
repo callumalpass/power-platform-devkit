@@ -100,6 +100,29 @@
           }
         }
       },
+      "ConnectorMismatch": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_office365']['connectionId']"
+            }
+          }
+        }
+      },
+      "ConnectorUnsupportedShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "SendEmailV2",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+            "connection": {
+              "name": "/connections/direct-office365"
+            }
+          }
+        }
+      },
       "SetGhost": {
         "type": "SetVariable",
         "inputs": {

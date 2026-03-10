@@ -291,6 +291,14 @@ interface FlowDefinitionConnectionReference {
   apiId?: string;
 }
 
+interface FlowConnectorActionContract {
+  apiId?: string;
+  operationId?: string;
+  connectionReferenceName?: string;
+  connectionPath?: string;
+  connectionReferenceSupported: boolean;
+}
+
 export interface FlowDynamicContentReference {
   kind: 'parameter' | 'environmentVariable' | 'action' | 'variable' | 'connectionReference';
   name: string;
@@ -1314,6 +1322,10 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
   const metadataConnectionReferences = new Map(
     artifact.metadata.connectionReferences.map((reference) => [reference.name, reference] as const)
   );
+  const allConnectionReferences = new Map<string, FlowDefinitionConnectionReference | FlowConnectionReference>([
+    ...Array.from(definitionConnectionReferences.entries()),
+    ...artifact.metadata.connectionReferences.map((reference) => [reference.name, reference] as const),
+  ]);
   const variableNames = new Set(intermediateRepresentation.nodes.flatMap((node) => node.variableUsage.initializes));
   const references = intermediateRepresentation.nodes.flatMap((node) => node.dataFlow.dynamicContentReferences);
   const expressions = intermediateRepresentation.nodes.flatMap((node) => node.dataFlow.expressions);
@@ -1502,10 +1514,82 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
   for (const [name, node] of allNodes) {
     const nested = readNodeAtPath(artifact.definition, parseFlowPath(node.path));
     const nodeRecord = asRecord(nested);
+    const connectorContract = readConnectorActionContract(nodeRecord, node.path);
     const retryPolicy = asRecord(asRecord(nodeRecord?.runtimeConfiguration)?.retryPolicy);
     const concurrency = asRecord(asRecord(nodeRecord?.runtimeConfiguration)?.concurrency);
     const concurrencyRuns = readNumber(concurrency?.runs);
     const retryCount = readNumber(retryPolicy?.count);
+
+    if (connectorContract) {
+      if (!connectorContract.connectionPath) {
+        diagnostics.push(
+          createDiagnostic(
+            'error',
+            'FLOW_CONNECTOR_CONNECTION_REFERENCE_MISSING',
+            `Connector action ${name} does not declare inputs.host.connection.name.`,
+            {
+              source: '@pp/flow',
+              path: `${node.path}.inputs.host.connection.name`,
+            }
+          )
+        );
+      } else if (!connectorContract.connectionReferenceSupported) {
+        diagnostics.push(
+          createDiagnostic(
+            'error',
+            'FLOW_CONNECTOR_CONNECTION_REFERENCE_UNSUPPORTED',
+            `Connector action ${name} uses an unsupported connection reference shape; expected @parameters('$connections')['<name>']['connectionId'].`,
+            {
+              source: '@pp/flow',
+              path: connectorContract.connectionPath,
+            }
+          )
+        );
+      }
+
+      if (!connectorContract.apiId) {
+        diagnostics.push(
+          createDiagnostic('error', 'FLOW_CONNECTOR_API_ID_MISSING', `Connector action ${name} does not declare inputs.host.apiId.`, {
+            source: '@pp/flow',
+            path: `${node.path}.inputs.host.apiId`,
+          })
+        );
+      }
+
+      if (!connectorContract.operationId) {
+        diagnostics.push(
+          createDiagnostic(
+            'error',
+            'FLOW_CONNECTOR_OPERATION_ID_MISSING',
+            `Connector action ${name} does not declare a supported operationId.`,
+            {
+              source: '@pp/flow',
+              path: `${node.path}.inputs.operationId`,
+            }
+          )
+        );
+      }
+
+      if (connectorContract.apiId && connectorContract.connectionReferenceName) {
+        const connectionReference = allConnectionReferences.get(connectorContract.connectionReferenceName);
+        const referenceApiId = normalizeConnectorApiId(connectionReference?.apiId);
+        const actionApiId = normalizeConnectorApiId(connectorContract.apiId);
+
+        if (referenceApiId && actionApiId && referenceApiId !== actionApiId) {
+          diagnostics.push(
+            createDiagnostic(
+              'error',
+              'FLOW_CONNECTOR_API_ID_MISMATCH',
+              `Connector action ${name} declares apiId ${connectorContract.apiId} but connection reference ${connectorContract.connectionReferenceName} resolves to ${connectionReference?.apiId}.`,
+              {
+                source: '@pp/flow',
+                path: `${node.path}.inputs.host.apiId`,
+              }
+            )
+          );
+        }
+      }
+    }
 
     if (concurrencyRuns !== undefined && concurrencyRuns > 1) {
       warnings.push(
@@ -1898,6 +1982,46 @@ function collectConnectionReferenceUsages(value: unknown): Array<{ name: string;
         path: reference.path,
       }))
   );
+}
+
+function readConnectorActionContract(value: unknown, nodePath: string): FlowConnectorActionContract | undefined {
+  const record = asRecord(value);
+  const type = readString(record?.type);
+
+  if (type !== 'OpenApiConnection' && type !== 'OpenApiConnectionWebhook') {
+    return undefined;
+  }
+
+  const inputs = asRecord(record?.inputs);
+  const host = asRecord(inputs?.host);
+  const connection = asRecord(host?.connection);
+  const connectionName = readString(connection?.name);
+
+  return {
+    apiId: readString(host?.apiId) ?? readString(asRecord(host?.api)?.id),
+    operationId: readString(inputs?.operationId) ?? readString(record?.operationId),
+    connectionReferenceName: extractConnectionReferenceName(connectionName),
+    connectionPath: connectionName ? `definition.${nodePath}.inputs.host.connection.name` : undefined,
+    connectionReferenceSupported: Boolean(extractConnectionReferenceName(connectionName)),
+  };
+}
+
+function extractConnectionReferenceName(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const expression = extractWholeFlowExpression(value) ?? value.trim();
+  const match = expression.match(
+    /^parameters\(\s*['"]\$connections['"]\s*\)\s*\[\s*['"]([^'"]+)['"]\s*\]\s*\[\s*['"]connectionId['"]\s*\]$/i
+  );
+
+  return match?.[1];
+}
+
+function normalizeConnectorApiId(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : undefined;
 }
 
 function extractWholeFlowExpression(value: string): string | undefined {

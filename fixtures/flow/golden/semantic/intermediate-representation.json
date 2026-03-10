@@ -1,10 +1,10 @@
 {
-  "actionCount": 10,
+  "actionCount": 12,
   "artifactName": "Semantic Diagnostic Flow",
   "controlFlowEdgeCount": 0,
-  "dynamicContentReferenceCount": 8,
-  "expressionCount": 8,
-  "nodeCount": 11,
+  "dynamicContentReferenceCount": 9,
+  "expressionCount": 9,
+  "nodeCount": 13,
   "nodes": [
     {
       "branch": "root",
@@ -237,6 +237,77 @@
         "reads": [
           "Counter"
         ],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_office365",
+            "path": "definition.actions.ConnectorMismatch.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_office365']['connectionId']",
+            "path": "definition.actions.ConnectorMismatch.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_office365",
+                "path": "definition.actions.ConnectorMismatch.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.ConnectorMismatch",
+      "kind": "action",
+      "name": "ConnectorMismatch",
+      "path": "actions.ConnectorMismatch",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [],
+        "expressions": [],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.ConnectorUnsupportedShape",
+      "kind": "action",
+      "name": "ConnectorUnsupportedShape",
+      "path": "actions.ConnectorUnsupportedShape",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
         "writes": []
       }
     },

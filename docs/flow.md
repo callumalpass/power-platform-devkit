@@ -183,6 +183,15 @@ Current validation checks:
   `definition.parameters.$connections.value` for the supported canonical shape
 - supported `$connections` expression references resolve to declared
   connection-reference keys
+- supported connector-action checks now cover `OpenApiConnection` and
+  `OpenApiConnectionWebhook` nodes where:
+  - `inputs.host.connection.name` uses the canonical
+    `@parameters('$connections')['<name>']['connectionId']` form
+  - `inputs.host.apiId` is present
+  - a supported `operationId` is present
+  - the action-level `apiId` matches the resolved connection-reference `apiId`
+- unsupported connector connection-name shapes fail explicitly instead of being
+  guessed during contract validation
 - supported workflow-expression parsing covers both whole-expression values
   (for example `@parameters('Name')` or `@{variables('X')}`) and embedded
   template segments inside larger strings
