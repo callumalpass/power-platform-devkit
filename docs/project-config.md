@@ -283,6 +283,9 @@ Returns:
 - provider bindings
 - discovered assets
 - template registries, build conventions, and docs metadata
+- for `json`, `yaml`, and `ndjson`, the stdout payload also includes
+  `diagnostics`, `warnings`, `supportTier`, and related result metadata so
+  automation can parse one complete response without reading stderr
 
 When the current directory is not itself a `pp` project, `project inspect`
 auto-selects the lone descendant `pp.config.*` it finds below the inspected path

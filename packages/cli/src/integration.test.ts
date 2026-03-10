@@ -562,7 +562,9 @@ describe('cli fixture-backed workflows', () => {
     expect(deployPlan.code).toBe(0);
     expect(deployApply.code).toBe(1);
 
-    await expectGoldenJson(JSON.parse(projectInspect.stdout), 'fixtures/analysis/golden/project-inspect.json', {
+    expect(projectInspect.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(projectInspect.stdout), 'fixtures/cli/golden/protocol/project-inspect.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
     });
     await expectGoldenText(report.stdout, 'fixtures/analysis/golden/report.md', {
@@ -577,7 +579,6 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(deployApply.stdout), 'fixtures/analysis/golden/deploy-apply-dry-run.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
     });
-    await expectGoldenJson(JSON.parse(projectInspect.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
     await expectGoldenText(report.stderr, 'fixtures/cli/golden/protocol/project-discovery-diagnostics.raw.txt');
     await expectGoldenJson(JSON.parse(context.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
     await expectGoldenJson(JSON.parse(deployPlan.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
@@ -1013,6 +1014,7 @@ describe('cli fixture-backed workflows', () => {
 
     expect(inspect.code).toBe(0);
     expect(doctor.code).toBe(0);
+    expect(inspect.stderr).toBe('');
 
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/project-root-inspect.json', {
       normalize: (value) => normalizeCliSnapshot(value),

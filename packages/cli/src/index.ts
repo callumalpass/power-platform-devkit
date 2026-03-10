@@ -1373,6 +1373,7 @@ async function runProjectInspect(args: string[]): Promise<number> {
   }
 
   const payload = {
+    success: true,
     summary: summarizeProject(project.data),
     discovery:
       project.data.discovery.usedDefaultLayout || project.data.discovery.autoSelectedProjectRoot ? project.data.discovery : undefined,
@@ -1385,10 +1386,18 @@ async function runProjectInspect(args: string[]): Promise<number> {
     templateRegistries: project.data.templateRegistries,
     build: project.data.build,
     docs: project.data.docs,
+    diagnostics: project.diagnostics,
+    warnings: project.warnings,
+    suggestedNextActions: project.suggestedNextActions ?? [],
+    supportTier: project.supportTier,
+    provenance: project.provenance,
+    knownLimitations: project.knownLimitations,
   };
 
   printByFormat(payload, format);
-  printResultDiagnostics(project, format);
+  if (!isMachineReadableOutputFormat(format)) {
+    printResultDiagnostics(project, format);
+  }
   return 0;
 }
 
@@ -5114,6 +5123,10 @@ function readProjectCanvasBuildMode(build: Record<string, unknown>): string | un
 
 function printByFormat(value: unknown, format: OutputFormat): void {
   process.stdout.write(renderOutput(value, format));
+}
+
+function isMachineReadableOutputFormat(format: OutputFormat): boolean {
+  return format === 'json' || format === 'yaml' || format === 'ndjson';
 }
 
 function printFailure(result: OperationResult<unknown>): number {

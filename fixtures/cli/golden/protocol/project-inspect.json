@@ -33,35 +33,12 @@
   "diagnostics": [
     {
       "code": "PROJECT_PARAMETER_MISSING",
-      "hint": "Set PP_TENANT_DOMAIN or provide an explicit value in the project config.",
-      "level": "error",
-      "message": "Required project parameter tenantDomain is not resolved",
-      "source": "@pp/project"
-    },
-    {
-      "code": "PROJECT_PARAMETER_SECRET_MISSING",
-      "hint": "Resolve secret ref app_token or provide an explicit value override.",
-      "level": "error",
-      "message": "Required secret-backed project parameter apiToken is not resolved",
-      "source": "@pp/project"
-    },
-    {
-      "code": "PROJECT_PARAMETER_MISSING",
       "hint": "Set PP_SQL_ENDPOINT or provide an explicit value in the project config.",
       "level": "error",
       "message": "Required project parameter sqlEndpoint is not resolved",
       "source": "@pp/project"
     }
   ],
-  "discovery": {
-    "autoSelectedProjectRoot": "fixtures/analysis/project",
-    "configFound": true,
-    "descendantProjectConfigs": [],
-    "descendantProjectRoots": [],
-    "inspectedPath": "<REPO_ROOT>",
-    "resolvedRoot": "<REPO_ROOT>/fixtures/analysis/project",
-    "usedDefaultLayout": false
-  },
   "docs": {
     "owner": "platform-team",
     "paths": [
@@ -70,7 +47,7 @@
   },
   "parameters": {
     "apiToken": {
-      "hasValue": false,
+      "hasValue": true,
       "mappings": [
         {
           "kind": "deploy-secret",
@@ -79,9 +56,11 @@
       ],
       "name": "apiToken",
       "reference": "app_token",
+      "resolvedBy": "pipeline",
       "sensitive": true,
-      "source": "missing",
-      "type": "string"
+      "source": "secret",
+      "type": "string",
+      "value": "<redacted>"
     },
     "releaseName": {
       "hasValue": true,
@@ -106,7 +85,7 @@
       "type": "string"
     },
     "tenantDomain": {
-      "hasValue": false,
+      "hasValue": true,
       "mappings": [
         {
           "kind": "dataverse-envvar",
@@ -115,8 +94,9 @@
       ],
       "name": "tenantDomain",
       "sensitive": false,
-      "source": "missing",
-      "type": "string"
+      "source": "environment",
+      "type": "string",
+      "value": "contoso.example"
     },
     "useManagedIdentity": {
       "hasValue": true,
@@ -148,8 +128,6 @@
     "defaultEnvironment": "dev",
     "defaultSolution": "core",
     "missingRequiredParameters": [
-      "tenantDomain",
-      "apiToken",
       "sqlEndpoint"
     ],
     "parameterCount": 5,
@@ -218,15 +196,5 @@
       }
     }
   },
-  "warnings": [
-    {
-      "code": "PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED",
-      "detail": "No project config was found at or above <REPO_ROOT>, so the only descendant project was used as the local anchor.",
-      "hint": "Use fixtures/analysis/project when you want to scope commands to that local project explicitly.",
-      "level": "warning",
-      "message": "Auto-selected descendant project config fixtures/analysis/project/pp.config.yaml.",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
-      "source": "@pp/config"
-    }
-  ]
+  "warnings": []
 }

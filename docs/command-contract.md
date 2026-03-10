@@ -38,6 +38,17 @@ Commands still emit primary payloads on stdout and diagnostics on stderr.
   summaries on stderr for the same cases
 - warnings stay off stdout so structured payloads remain parseable
 
+`project inspect` is the current exception for machine-readable formats:
+
+- successful `project inspect --format json|yaml|ndjson` responses embed
+  `diagnostics`, `warnings`, `supportTier`, and related metadata directly in the
+  stdout payload
+- those successful machine-readable `project inspect` responses do not emit a
+  second diagnostics envelope on stderr, so single-stream parsers can consume
+  one complete document
+- human-oriented `project inspect` formats still print diagnostic summaries on
+  stderr
+
 ## Result metadata
 
 Structured diagnostics on stderr carry the shared metadata envelope:

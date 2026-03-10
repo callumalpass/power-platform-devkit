@@ -2,7 +2,7 @@
 
 TypeScript monorepo for an agent-oriented Power Platform toolkit.
 
-The repository is structured around small workspace packages rather than a single CLI application. The CLI currently exposes the first useful slice of that architecture: auth profile management, Dataverse environment aliases, Dataverse read operations, metadata authoring, solution inspection, project discovery, stage-aware topology inspection, analysis context generation, and deploy-plan generation.
+The repository is structured around small workspace packages rather than a single CLI application. The CLI currently exposes the first useful slice of that architecture: auth profile management, Dataverse environment aliases, Dataverse read operations, metadata authoring, solution inspection, project discovery, lightweight project scaffolding and validation, stage-aware topology inspection, analysis context generation, and deploy-plan generation.
 
 ## Current scope
 
@@ -14,9 +14,11 @@ Implemented today:
 - Dataverse commands: `whoami`, generic Web API requests, query/get, create/update/delete, normalized metadata inspection, metadata create for phase 1/2 plus a phase-3 slice (`autonumber`, `file`, `image`, many-to-many, customer relationships, option-set updates)
 - solution commands: `list`, `inspect`
 - project discovery from `pp.config.json|yaml|yml`
+- project scaffolding with `project init` and layout validation with `project doctor`
 - stage-aware project topology, solution alias resolution, and secret-backed parameter resolution
 - analysis outputs for agent context and markdown reports
-- deploy-plan generation from local project state
+- deploy-plan generation plus the first shared `deploy apply` orchestration slice for Dataverse environment variable mappings
+- thin CI/CD adapters and repo-local runner scripts for GitHub Actions, Azure DevOps, and Power Platform Pipelines
 - read-only live smoke coverage through `pnpm smoke:live`
 
 Scaffolded but not yet implemented in depth:
@@ -24,7 +26,7 @@ Scaffolded but not yet implemented in depth:
 - canvas compilation
 - flow artifact handling
 - SharePoint and Power BI provider logic
-- CI/CD adapters
+- broader CI/CD packaging beyond the current thin wrappers and examples
 
 ## Workspace layout
 
@@ -122,7 +124,22 @@ Metadata create commands consume JSON or YAML spec files rather than raw Dataver
 
 ### 5. Add a local project config
 
-Create a `pp.config.yaml` in your repo root:
+Create a `pp.config.yaml` in your repo root, or let `pp` scaffold one:
+
+```bash
+pp project init --name demo --env dev --solution Core
+pp project doctor
+```
+
+The scaffold is intentionally lightweight. It creates:
+
+- `pp.config.yaml`
+- `apps/`
+- `flows/`
+- `solutions/`
+- `docs/`
+
+If you prefer to create the config manually, start with:
 
 ```yaml
 name: demo
@@ -186,12 +203,16 @@ More detail is in [docs/auth-and-environments.md](docs/auth-and-environments.md)
 
 The `project`, `analysis`, and `deploy` commands work entirely from local repo state:
 
-- `project inspect` summarizes assets, provider bindings, resolved parameters, and stage topology
+- `project init` scaffolds a minimal repo-local `pp` layout without imposing a heavy framework
+- `project doctor` reports whether the current config, asset paths, topology, and required inputs form a coherent local project model
+- `project inspect` summarizes assets, provider bindings, resolved parameters, and stage topology; machine-readable output now carries discovery hints and unresolved-input diagnostics in the stdout document itself
 - `analysis report` emits a markdown report suitable for humans or agent handoff
 - `analysis context` emits a JSON context pack with deploy-plan data included
 - `deploy plan` turns resolved project parameters, topology, and assets into a structured plan
+- `deploy apply` runs the shared resolve/preflight/plan/apply/report path locally or through the CI adapter wrappers
 
 The project config format and parameter resolution rules are documented in [docs/project-config.md](docs/project-config.md).
+Deploy usage and CI examples are documented in [docs/deploy.md](docs/deploy.md).
 
 ## Live smoke
 
