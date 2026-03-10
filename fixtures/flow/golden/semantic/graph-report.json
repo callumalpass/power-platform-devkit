@@ -30,6 +30,20 @@
       "to": "connectionReference:shared_office365"
     },
     {
+      "from": "action:actions.DataverseGetRowBadMetadataShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseGetRowBadMetadataShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
+      "from": "action:actions.DataverseGetRowMissingRecordId",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseGetRowMissingRecordId.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
       "from": "action:actions.DataverseListRowsBadCountShape",
       "kind": "connectionReferenceReference",
       "path": "definition.actions.DataverseListRowsBadCountShape.inputs.host.connection.name",
@@ -199,14 +213,14 @@
     {
       "kind": "referenceDensity",
       "metric": 1,
-      "nodeId": "action:actions.DataverseListRowsBadCountShape",
-      "nodeName": "DataverseListRowsBadCountShape"
+      "nodeId": "action:actions.DataverseGetRowBadMetadataShape",
+      "nodeName": "DataverseGetRowBadMetadataShape"
     },
     {
       "kind": "referenceDensity",
       "metric": 1,
-      "nodeId": "action:actions.DataverseListRowsBadTopShape",
-      "nodeName": "DataverseListRowsBadTopShape"
+      "nodeId": "action:actions.DataverseGetRowMissingRecordId",
+      "nodeName": "DataverseGetRowMissingRecordId"
     }
   ],
   "nodes": [
@@ -396,6 +410,54 @@
       "referenceCounts": {
         "actions": 0,
         "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.DataverseGetRowBadMetadataShape",
+      "kind": "action",
+      "name": "DataverseGetRowBadMetadataShape",
+      "path": "actions.DataverseGetRowBadMetadataShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.DataverseGetRowMissingRecordId",
+      "kind": "action",
+      "name": "DataverseGetRowMissingRecordId",
+      "path": "actions.DataverseGetRowMissingRecordId",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
         "environmentVariables": 0,
         "parameters": 0,
         "variables": 0
@@ -758,10 +820,10 @@
     ]
   },
   "summary": {
-    "actionCount": 19,
+    "actionCount": 21,
     "edgeCounts": {
       "actionReference": 1,
-      "connectionReferenceReference": 9,
+      "connectionReferenceReference": 11,
       "containment": 1,
       "environmentVariableReference": 1,
       "parameterReference": 2,
@@ -769,7 +831,7 @@
       "variableReference": 3,
       "variableWrite": 3
     },
-    "nodeCount": 20,
+    "nodeCount": 22,
     "scopeCount": 1,
     "triggerCount": 1,
     "unresolvedEdgeCount": 6

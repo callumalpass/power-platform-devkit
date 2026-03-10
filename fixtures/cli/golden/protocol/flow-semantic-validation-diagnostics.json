@@ -45,6 +45,20 @@
     {
       "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
       "level": "error",
+      "message": "Connector action DataverseGetRowBadMetadataShape parameter x-ms-odata-metadata-full for GetItem must be a boolean literal or expression, not object.",
+      "path": "actions.DataverseGetRowBadMetadataShape.inputs.parameters.x-ms-odata-metadata-full",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action DataverseGetRowMissingRecordId is missing required parameter recordId for GetItem.",
+      "path": "actions.DataverseGetRowMissingRecordId.inputs.parameters.recordId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
       "message": "Connector action DataverseListRowsBadCountShape parameter returntotalrecordcount for ListRecords must be a boolean literal or expression, not array.",
       "path": "actions.DataverseListRowsBadCountShape.inputs.parameters.returntotalrecordcount",
       "source": "@pp/flow"

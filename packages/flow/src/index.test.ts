@@ -601,6 +601,40 @@ describe('FlowService', () => {
                   },
                 },
               },
+              DataverseGetRowMissingRecordId: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    entityName: 'accounts',
+                  },
+                },
+              },
+              DataverseGetRowBadMetadataShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    entityName: 'accounts',
+                    recordId: '00000000-0000-0000-0000-000000000001',
+                    'x-ms-odata-metadata-full': {
+                      value: true,
+                    },
+                  },
+                },
+              },
               SetGhost: {
                 type: 'SetVariable',
                 inputs: {
@@ -635,23 +669,23 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 19,
+      actionCount: 21,
       scopeCount: 1,
-      expressionCount: 16,
+      expressionCount: 18,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 16,
+      dynamicContentReferenceCount: 18,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 9,
+        connectionReferences: 11,
       },
     });
     expect(validation.diagnostics.map((item) => item.code)).toEqual([
@@ -661,6 +695,8 @@ describe('FlowService', () => {
       'FLOW_CONNECTOR_OPERATION_ID_MISSING',
       'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
       'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING',
+      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
       'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
       'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
       'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
@@ -684,14 +720,14 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 20,
+      nodeCount: 22,
       triggerCount: 1,
-      actionCount: 19,
+      actionCount: 21,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 16,
+      expressionCount: 18,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 16,
+      dynamicContentReferenceCount: 18,
       variableReadCount: 3,
       variableWriteCount: 3,
     });
@@ -985,7 +1021,7 @@ describe('FlowService', () => {
     expect(graph.data).toMatchObject({
       artifactName: 'Semantic Diagnostic Flow',
       summary: {
-        nodeCount: 20,
+        nodeCount: 22,
         unresolvedEdgeCount: 6,
       },
       resources: {

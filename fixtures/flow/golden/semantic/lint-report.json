@@ -26,11 +26,11 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 19,
+      "actionCount": 21,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 16,
-      "expressionCount": 16,
-      "nodeCount": 20,
+      "dynamicContentReferenceCount": 18,
+      "expressionCount": 18,
+      "nodeCount": 22,
       "scopeCount": 1,
       "templateExpressionCount": 2,
       "triggerCount": 1,
@@ -43,16 +43,16 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 19,
+      "actionCount": 21,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 16,
-      "expressionCount": 16,
+      "dynamicContentReferenceCount": 18,
+      "expressionCount": 18,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
-        "connectionReferences": 9,
+        "connectionReferences": 11,
         "environmentVariables": 1,
         "parameters": 2,
         "variables": 3
@@ -108,6 +108,20 @@
       "level": "error",
       "message": "Connector action ConnectorUnsupportedShape does not declare the supported inputs.parameters object required by SendEmailV2.",
       "path": "actions.ConnectorUnsupportedShape.inputs.parameters",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action DataverseGetRowBadMetadataShape parameter x-ms-odata-metadata-full for GetItem must be a boolean literal or expression, not object.",
+      "path": "actions.DataverseGetRowBadMetadataShape.inputs.parameters.x-ms-odata-metadata-full",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action DataverseGetRowMissingRecordId is missing required parameter recordId for GetItem.",
+      "path": "actions.DataverseGetRowMissingRecordId.inputs.parameters.recordId",
       "source": "@pp/flow"
     },
     {

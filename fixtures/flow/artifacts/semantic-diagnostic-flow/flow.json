@@ -264,6 +264,40 @@
           }
         }
       },
+      "DataverseGetRowMissingRecordId": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "parameters": {
+            "entityName": "accounts"
+          }
+        }
+      },
+      "DataverseGetRowBadMetadataShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "parameters": {
+            "entityName": "accounts",
+            "recordId": "00000000-0000-0000-0000-000000000001",
+            "x-ms-odata-metadata-full": {
+              "value": true
+            }
+          }
+        }
+      },
       "SetGhost": {
         "type": "SetVariable",
         "inputs": {

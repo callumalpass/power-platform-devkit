@@ -1,10 +1,10 @@
 {
-  "actionCount": 19,
+  "actionCount": 21,
   "artifactName": "Semantic Diagnostic Flow",
   "controlFlowEdgeCount": 0,
-  "dynamicContentReferenceCount": 16,
-  "expressionCount": 16,
-  "nodeCount": 20,
+  "dynamicContentReferenceCount": 18,
+  "expressionCount": 18,
+  "nodeCount": 22,
   "nodes": [
     {
       "branch": "root",
@@ -393,6 +393,96 @@
       "kind": "action",
       "name": "ConnectorUnsupportedShape",
       "path": "actions.ConnectorUnsupportedShape",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_commondataserviceforapps",
+            "path": "definition.actions.DataverseGetRowBadMetadataShape.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+            "path": "definition.actions.DataverseGetRowBadMetadataShape.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_commondataserviceforapps",
+                "path": "definition.actions.DataverseGetRowBadMetadataShape.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.DataverseGetRowBadMetadataShape",
+      "kind": "action",
+      "name": "DataverseGetRowBadMetadataShape",
+      "path": "actions.DataverseGetRowBadMetadataShape",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_commondataserviceforapps",
+            "path": "definition.actions.DataverseGetRowMissingRecordId.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+            "path": "definition.actions.DataverseGetRowMissingRecordId.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_commondataserviceforapps",
+                "path": "definition.actions.DataverseGetRowMissingRecordId.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.DataverseGetRowMissingRecordId",
+      "kind": "action",
+      "name": "DataverseGetRowMissingRecordId",
+      "path": "actions.DataverseGetRowMissingRecordId",
       "runAfter": [],
       "type": "OpenApiConnection",
       "variableUsage": {
