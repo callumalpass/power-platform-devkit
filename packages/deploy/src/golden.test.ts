@@ -97,4 +97,140 @@ describe('deploy fixture-backed goldens', () => {
       normalize: normalizeDeploySnapshot,
     });
   });
+
+  it('blocks live apply when confirmation is not provided', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const discovery = await discoverProject(fixtureRoot, {
+      environment: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    mockDataverseResolution({
+      prod: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-prod-1',
+              uniquename: 'CoreManaged',
+              friendlyname: 'Core Managed',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [],
+          dependencies: [],
+          connectionreferences: [],
+          environmentvariabledefinitions: [
+            {
+              environmentvariabledefinitionid: 'envvar-def-1',
+              schemaname: 'pp_TenantDomain',
+              displayname: 'Tenant Domain',
+              defaultvalue: '',
+              type: 'string',
+              _solutionid_value: 'solution-prod-1',
+            },
+          ],
+          environmentvariablevalues: [
+            {
+              environmentvariablevalueid: 'envvar-value-1',
+              value: 'old.example',
+              _environmentvariabledefinitionid_value: 'envvar-def-1',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+    });
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.confirmation).toEqual({
+      required: true,
+      confirmed: false,
+      status: 'blocked',
+    });
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks.some((check) => check.code === 'DEPLOY_PREFLIGHT_APPLY_CONFIRMATION_REQUIRED')).toBe(true);
+    expect(result.data?.apply.summary.applied).toBe(0);
+  });
+
+  it('executes live apply after confirmation is provided', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const discovery = await discoverProject(fixtureRoot, {
+      environment: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.confirmation).toEqual({
+      required: true,
+      confirmed: true,
+      status: 'confirmed',
+    });
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.apply.summary.applied).toBe(1);
+    expect(result.data?.apply.operations[0]).toMatchObject({
+      status: 'applied',
+      currentValue: 'old.example',
+      nextValue: 'contoso.example',
+      changed: true,
+    });
+  });
 });

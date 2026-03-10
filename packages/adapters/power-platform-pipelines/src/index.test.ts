@@ -8,6 +8,7 @@ describe('resolvePowerPlatformPipelinesDeployOptions', () => {
         PIPELINE_WORKSPACE: '/pipelines/workspace',
         PIPELINE_STAGE: 'release',
         PP_DEPLOY_MODE: 'dry-run',
+        PP_DEPLOY_CONFIRM: '1',
         PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example","enabled":true}',
       },
     });
@@ -17,10 +18,12 @@ describe('resolvePowerPlatformPipelinesDeployOptions', () => {
       projectPath: '/pipelines/workspace',
       stage: 'release',
       mode: 'dry-run',
+      confirm: true,
       environment: {
         PIPELINE_WORKSPACE: '/pipelines/workspace',
         PIPELINE_STAGE: 'release',
         PP_DEPLOY_MODE: 'dry-run',
+        PP_DEPLOY_CONFIRM: '1',
         PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example","enabled":true}',
       },
       parameterOverrides: {
@@ -50,5 +53,16 @@ describe('resolvePowerPlatformPipelinesDeployOptions', () => {
 
     expect(result.success).toBe(false);
     expect(result.diagnostics[0]?.code).toBe('DEPLOY_ADAPTER_MODE_INVALID');
+  });
+
+  it('rejects unsupported Power Platform pipeline confirmation values', () => {
+    const result = resolvePowerPlatformPipelinesDeployOptions({
+      environment: {
+        PP_DEPLOY_CONFIRM: 'later',
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe('DEPLOY_ADAPTER_CONFIRM_INVALID');
   });
 });

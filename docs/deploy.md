@@ -43,9 +43,13 @@ Apply the supported operations:
 pp deploy apply --project . --yes --format json
 ```
 
+Live apply is guarded. Without `--yes`, `mode: apply` returns a machine-readable
+preflight failure instead of mutating the target environment.
+
 The output includes:
 
 - `plan`: resolved deploy target, inputs, and supported operations
+- `confirmation`: whether live apply required confirmation and whether it was provided
 - `preflight`: machine-readable checks and pass/warn/fail status
 - `apply`: per-operation results and summary counts
 - `report`: execution timestamps and duration
@@ -72,8 +76,8 @@ Explicit function options win over environment variables. If no explicit `projec
 ### GitHub Actions
 
 - Workspace fallback: `GITHUB_WORKSPACE`
-- Input aliases: `INPUT_PROJECT_PATH`, `INPUT_STAGE`, `INPUT_MODE`, `INPUT_PARAMETER_OVERRIDES`
-- Shared fallback aliases: `PP_DEPLOY_PROJECT_PATH`, `PP_DEPLOY_STAGE`, `PP_DEPLOY_MODE`, `PP_DEPLOY_PARAMETER_OVERRIDES`
+- Input aliases: `INPUT_PROJECT_PATH`, `INPUT_STAGE`, `INPUT_MODE`, `INPUT_CONFIRM`, `INPUT_PARAMETER_OVERRIDES`
+- Shared fallback aliases: `PP_DEPLOY_PROJECT_PATH`, `PP_DEPLOY_STAGE`, `PP_DEPLOY_MODE`, `PP_DEPLOY_CONFIRM`, `PP_DEPLOY_PARAMETER_OVERRIDES`
 
 Example:
 
@@ -81,7 +85,8 @@ Example:
 - name: Deploy with shared orchestration
   env:
     INPUT_STAGE: prod
-    INPUT_MODE: dry-run
+    INPUT_MODE: apply
+    INPUT_CONFIRM: true
     INPUT_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}'
   run: node ./scripts/run-github-deploy.mjs
 ```
@@ -90,7 +95,7 @@ Example:
 
 - Workspace fallback: `BUILD_SOURCESDIRECTORY`, then `SYSTEM_DEFAULTWORKINGDIRECTORY`
 - Stage aliases: `PP_DEPLOY_STAGE`, `RELEASE_ENVIRONMENTNAME`, `SYSTEM_STAGEDISPLAYNAME`
-- Mode and parameter overrides: `PP_DEPLOY_MODE`, `PP_DEPLOY_PARAMETER_OVERRIDES`
+- Mode, confirmation, and parameter overrides: `PP_DEPLOY_MODE`, `PP_DEPLOY_CONFIRM`, `PP_DEPLOY_PARAMETER_OVERRIDES`
 
 Example:
 
@@ -99,7 +104,8 @@ steps:
   - script: node ./scripts/run-azure-deploy.mjs
     env:
       PP_DEPLOY_STAGE: prod
-      PP_DEPLOY_MODE: plan
+      PP_DEPLOY_MODE: apply
+      PP_DEPLOY_CONFIRM: true
       PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}'
 ```
 
@@ -107,7 +113,7 @@ steps:
 
 - Workspace fallback: `PIPELINE_WORKSPACE`, then `SYSTEM_DEFAULTWORKINGDIRECTORY`
 - Stage aliases: `PP_DEPLOY_STAGE`, `PIPELINE_STAGE`
-- Mode and parameter overrides: `PP_DEPLOY_MODE`, `PP_DEPLOY_PARAMETER_OVERRIDES`
+- Mode, confirmation, and parameter overrides: `PP_DEPLOY_MODE`, `PP_DEPLOY_CONFIRM`, `PP_DEPLOY_PARAMETER_OVERRIDES`
 
 Example:
 
@@ -116,11 +122,13 @@ steps:
   - script: node ./scripts/run-pp-pipeline-deploy.mjs
     env:
       PP_DEPLOY_STAGE: prod
-      PP_DEPLOY_MODE: dry-run
+      PP_DEPLOY_MODE: apply
+      PP_DEPLOY_CONFIRM: true
       PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}'
 ```
 
 `*_PARAMETER_OVERRIDES` values must be JSON objects whose values are strings, numbers, or booleans. Invalid JSON or unsupported `mode` values fail before project discovery or deploy execution begins.
+`*_CONFIRM` values accept `true`/`false`, `yes`/`no`, or `1`/`0`.
 
 ## Current limits
 

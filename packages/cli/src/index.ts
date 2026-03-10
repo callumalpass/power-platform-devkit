@@ -574,6 +574,7 @@ async function runDeployApply(args: string[]): Promise<number> {
 
   const result = await executeDeploy(project.data, {
     mode: mutation.data.mode,
+    confirmed: mutation.data.yes,
   });
 
   if (!result.data) {

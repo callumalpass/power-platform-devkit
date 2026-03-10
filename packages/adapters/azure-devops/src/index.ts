@@ -10,6 +10,7 @@ export interface AzureDevOpsDeployOptions {
   parameterOverrides?: Record<string, string | number | boolean>;
   environment?: NodeJS.ProcessEnv;
   mode?: DeployExecutionMode;
+  confirm?: boolean;
 }
 
 export interface ResolvedAzureDevOpsDeployOptions {
@@ -18,6 +19,7 @@ export interface ResolvedAzureDevOpsDeployOptions {
   parameterOverrides?: Record<string, string | number | boolean>;
   environment: NodeJS.ProcessEnv;
   mode?: DeployExecutionMode;
+  confirm?: boolean;
 }
 
 export function resolveAzureDevOpsDeployOptions(
@@ -55,12 +57,25 @@ export function resolveAzureDevOpsDeployOptions(
     });
   }
 
+  const confirmResult = resolveDeployConfirm(options.confirm, environment.PP_DEPLOY_CONFIRM, '@pp/adapter-azure-devops');
+
+  if (!confirmResult.success) {
+    return fail(confirmResult.diagnostics, {
+      supportTier: confirmResult.supportTier,
+      warnings: confirmResult.warnings,
+      suggestedNextActions: confirmResult.suggestedNextActions,
+      provenance: confirmResult.provenance,
+      knownLimitations: confirmResult.knownLimitations,
+    });
+  }
+
   return ok({
     projectPath,
     stage,
     parameterOverrides: parameterOverridesResult.data,
     environment,
     mode: modeResult.data,
+    confirm: confirmResult.data,
   });
 }
 
@@ -70,6 +85,7 @@ export async function runAzureDevOpsDeploy(options: {
   parameterOverrides?: Record<string, string | number | boolean>;
   environment?: NodeJS.ProcessEnv;
   mode?: DeployExecutionMode;
+  confirm?: boolean;
 } = {}): Promise<OperationResult<DeployExecutionResult>> {
   const resolved = resolveAzureDevOpsDeployOptions(options);
 
@@ -101,6 +117,7 @@ export async function runAzureDevOpsDeploy(options: {
 
   return executeDeploy(project.data, {
     mode: resolved.data.mode,
+    confirmed: resolved.data.confirm,
   });
 }
 
@@ -181,4 +198,31 @@ function resolveParameterOverrides(
       })
     );
   }
+}
+
+function resolveDeployConfirm(explicitConfirm: boolean | undefined, serializedConfirm: string | undefined, source: string): OperationResult<boolean | undefined> {
+  if (explicitConfirm !== undefined) {
+    return ok(explicitConfirm);
+  }
+
+  if (serializedConfirm === undefined || serializedConfirm === '') {
+    return ok(undefined);
+  }
+
+  const normalized = serializedConfirm.trim().toLowerCase();
+
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+    return ok(true);
+  }
+
+  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+    return ok(false);
+  }
+
+  return fail(
+    createDiagnostic('error', 'DEPLOY_ADAPTER_CONFIRM_INVALID', `Unsupported deploy confirmation value "${serializedConfirm}". Expected true/false, yes/no, or 1/0.`, {
+      source,
+      hint: 'Set PP_DEPLOY_CONFIRM to true or false.',
+    })
+  );
 }

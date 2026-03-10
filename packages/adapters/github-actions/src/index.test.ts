@@ -8,6 +8,7 @@ describe('resolveGitHubActionsDeployOptions', () => {
         GITHUB_WORKSPACE: '/workspace/repo',
         INPUT_STAGE: 'prod',
         INPUT_MODE: 'dry-run',
+        INPUT_CONFIRM: 'true',
         INPUT_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example","retryCount":3,"enabled":true}',
       },
     });
@@ -17,10 +18,12 @@ describe('resolveGitHubActionsDeployOptions', () => {
       projectPath: '/workspace/repo',
       stage: 'prod',
       mode: 'dry-run',
+      confirm: true,
       environment: {
         GITHUB_WORKSPACE: '/workspace/repo',
         INPUT_STAGE: 'prod',
         INPUT_MODE: 'dry-run',
+        INPUT_CONFIRM: 'true',
         INPUT_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example","retryCount":3,"enabled":true}',
       },
       parameterOverrides: {
@@ -65,5 +68,16 @@ describe('resolveGitHubActionsDeployOptions', () => {
 
     expect(result.success).toBe(false);
     expect(result.diagnostics[0]?.code).toBe('DEPLOY_ADAPTER_MODE_INVALID');
+  });
+
+  it('fails on invalid GitHub Actions confirmation input', () => {
+    const result = resolveGitHubActionsDeployOptions({
+      environment: {
+        INPUT_CONFIRM: 'deploy-now',
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe('DEPLOY_ADAPTER_CONFIRM_INVALID');
   });
 });

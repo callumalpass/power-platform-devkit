@@ -24,6 +24,11 @@
       "skipped": 1
     }
   },
+  "confirmation": {
+    "confirmed": false,
+    "required": false,
+    "status": "not-required"
+  },
   "mode": "dry-run",
   "plan": {
     "activeEnvironment": "prod",

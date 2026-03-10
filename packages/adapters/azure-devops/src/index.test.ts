@@ -8,6 +8,7 @@ describe('resolveAzureDevOpsDeployOptions', () => {
         BUILD_SOURCESDIRECTORY: '/agent/work/repo',
         RELEASE_ENVIRONMENTNAME: 'prod',
         PP_DEPLOY_MODE: 'plan',
+        PP_DEPLOY_CONFIRM: 'yes',
         PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}',
       },
     });
@@ -17,10 +18,12 @@ describe('resolveAzureDevOpsDeployOptions', () => {
       projectPath: '/agent/work/repo',
       stage: 'prod',
       mode: 'plan',
+      confirm: true,
       environment: {
         BUILD_SOURCESDIRECTORY: '/agent/work/repo',
         RELEASE_ENVIRONMENTNAME: 'prod',
         PP_DEPLOY_MODE: 'plan',
+        PP_DEPLOY_CONFIRM: 'yes',
         PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}',
       },
       parameterOverrides: {
@@ -51,5 +54,16 @@ describe('resolveAzureDevOpsDeployOptions', () => {
 
     expect(result.success).toBe(false);
     expect(result.diagnostics[0]?.code).toBe('DEPLOY_ADAPTER_PARAMETER_OVERRIDES_PARSE_FAILED');
+  });
+
+  it('fails on invalid Azure DevOps confirmation input', () => {
+    const result = resolveAzureDevOpsDeployOptions({
+      environment: {
+        PP_DEPLOY_CONFIRM: 'ship-it',
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe('DEPLOY_ADAPTER_CONFIRM_INVALID');
   });
 });

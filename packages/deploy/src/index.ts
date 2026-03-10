@@ -91,10 +91,17 @@ export interface DeployApplySummary {
   changed: number;
 }
 
+export interface DeployConfirmation {
+  required: boolean;
+  confirmed: boolean;
+  status: 'not-required' | 'confirmed' | 'blocked';
+}
+
 export interface DeployExecutionResult {
   mode: DeployExecutionMode;
   target: DeployTarget;
   plan: DeployPlan;
+  confirmation: DeployConfirmation;
   preflight: DeployPreflightSummary;
   apply: {
     summary: DeployApplySummary;
@@ -184,11 +191,13 @@ export async function executeDeploy(
   project: ProjectContext,
   options: {
     mode?: DeployExecutionMode;
+    confirmed?: boolean;
   } = {}
 ): Promise<OperationResult<DeployExecutionResult>> {
   const startedAt = Date.now();
   const planResult = buildDeployPlan(project);
   const mode = options.mode ?? 'apply';
+  const confirmation = resolveDeployConfirmation(mode, options.confirmed === true);
   const diagnostics = [...planResult.diagnostics];
   const warnings = [...planResult.warnings];
   const checks: DeployPreflightCheck[] = [];
@@ -225,8 +234,19 @@ export async function executeDeploy(
     });
   }
 
+  if (confirmation.status === 'blocked') {
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_APPLY_CONFIRMATION_REQUIRED',
+      message: 'Live deploy apply requires explicit confirmation.',
+      details: {
+        confirmationFlag: '--yes',
+      },
+    });
+  }
+
   if (!target.environmentAlias || !target.solutionUniqueName || !planResult.data) {
-    return ok(finalizeDeployExecution(mode, target, planResult.data, checks, applyOperations, startedAt), {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
@@ -244,7 +264,7 @@ export async function executeDeploy(
       message: `Could not resolve Dataverse environment alias ${target.environmentAlias}.`,
       target: target.environmentAlias,
     });
-    return ok(finalizeDeployExecution(mode, target, planResult.data, checks, applyOperations, startedAt), {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
@@ -361,7 +381,7 @@ export async function executeDeploy(
   const preflightOk = checks.every((check) => check.status !== 'fail');
 
   if (!preflightOk || mode !== 'apply') {
-    return ok(finalizeDeployExecution(mode, target, planResult.data, checks, applyOperations, startedAt), {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
@@ -395,14 +415,14 @@ export async function executeDeploy(
     applyOperations[index] = {
       ...existingOperation,
       status: 'applied',
-      currentValue: result.data.currentValue,
+      currentValue: existingOperation.currentValue,
       nextValue: result.data.effectiveValue,
       changed: true,
       message: `Updated ${operation.plan.target}.`,
     };
   }
 
-  return ok(finalizeDeployExecution(mode, target, planResult.data, checks, applyOperations, startedAt), {
+  return ok(finalizeDeployExecution(mode, target, planResult.data, confirmation, checks, applyOperations, startedAt), {
     supportTier: 'preview',
     diagnostics,
     warnings,
@@ -443,6 +463,7 @@ function finalizeDeployExecution(
   mode: DeployExecutionMode,
   target: DeployTarget,
   plan: DeployPlan | undefined,
+  confirmation: DeployConfirmation,
   checks: DeployPreflightCheck[],
   operations: DeployOperationResult[],
   startedAt: number
@@ -470,6 +491,7 @@ function finalizeDeployExecution(
     mode,
     target,
     plan: normalizedPlan,
+    confirmation,
     preflight: {
       ok: checks.every((check) => check.status !== 'fail'),
       checks,
@@ -517,6 +539,22 @@ function summarizeApplyOperations(operations: DeployOperationResult[]): DeployAp
       changed: 0,
     }
   );
+}
+
+function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean): DeployConfirmation {
+  if (mode !== 'apply') {
+    return {
+      required: false,
+      confirmed,
+      status: 'not-required',
+    };
+  }
+
+  return {
+    required: true,
+    confirmed,
+    status: confirmed ? 'confirmed' : 'blocked',
+  };
 }
 
 function stringifyDeployValue(value: string | number | boolean): string {
