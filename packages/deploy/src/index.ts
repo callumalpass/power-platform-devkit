@@ -470,6 +470,15 @@ export async function executeDeploy(
 
     const existingOperation = applyOperations[index]!;
 
+    if (existingOperation.changed === false) {
+      applyOperations[index] = {
+        ...existingOperation,
+        status: 'skipped',
+        message: `${operation.plan.target} is already up to date.`,
+      };
+      continue;
+    }
+
     const result = await environmentVariables.setValue(operation.plan.target, stringifyDeployValue(operation.value), {
       solutionUniqueName: target.solutionUniqueName,
     });

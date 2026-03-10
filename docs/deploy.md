@@ -26,7 +26,7 @@ During `deploy apply`, `pp`:
 3. analyzes the target solution for preflight facts
 4. inspects environment variables in that solution
 5. resolves adapter-facing input and secret bindings into the shared operation result
-6. updates matching environment variable values for supported Dataverse mappings
+6. updates matching environment variable values for supported Dataverse mappings when the target differs, otherwise records a no-op skip
 
 ## Local usage
 
@@ -58,6 +58,7 @@ The output includes:
 - `confirmation`: whether live apply required confirmation and whether it was provided
 - `preflight`: machine-readable checks and pass/warn/fail status
 - `apply`: per-operation results and summary counts, including adapter-facing bindings that resolved locally
+  and unchanged Dataverse operations that were skipped as already up to date
 - `report`: execution timestamps and duration
 
 ## CI and adapters

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildDeployPlan, executeDeploy, resolveDeployBindings } from './index';
 import { discoverProject } from '@pp/project';
 import { createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
@@ -269,6 +269,7 @@ describe('deploy fixture-backed goldens', () => {
       environment: {
         PP_TENANT_DOMAIN: 'contoso.example',
         PP_SECRET_app_token: 'super-secret',
+        PP_SQL_ENDPOINT: 'sql.contoso.example',
       },
     });
 
@@ -312,6 +313,7 @@ describe('deploy fixture-backed goldens', () => {
     });
 
     mockDataverseResolution({ prod: client });
+    const updateSpy = vi.spyOn(client, 'update');
 
     const result = await executeDeploy(discovery.data!, {
       mode: 'apply',
@@ -324,14 +326,86 @@ describe('deploy fixture-backed goldens', () => {
       confirmed: true,
       status: 'confirmed',
     });
-    expect(result.data?.preflight.ok).toBe(false);
-    expect(result.data?.preflight.checks.some((check) => check.code === 'DEPLOY_PREFLIGHT_INPUT_SOURCE_MISSING')).toBe(true);
-    expect(result.data?.apply.summary.applied).toBe(0);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.preflight.checks.some((check) => check.code === 'DEPLOY_PREFLIGHT_INPUT_SOURCE_MISSING')).toBe(false);
+    expect(result.data?.apply.summary.applied).toBe(1);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
     expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-envvar-set')).toMatchObject({
-      status: 'planned',
+      status: 'applied',
       currentValue: 'old.example',
       nextValue: 'contoso.example',
       changed: true,
+    });
+  });
+
+  it('skips live apply writes when the target environment variable is already up to date', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const discovery = await discoverProject(fixtureRoot, {
+      environment: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+        PP_SQL_ENDPOINT: 'sql.contoso.example',
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'contoso.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const updateSpy = vi.spyOn(client, 'update');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.apply.summary.applied).toBe(0);
+    expect(result.data?.apply.summary.skipped).toBe(1);
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-envvar-set')).toMatchObject({
+      status: 'skipped',
+      currentValue: 'contoso.example',
+      nextValue: 'contoso.example',
+      changed: false,
+      message: 'pp_TenantDomain is already up to date.',
     });
   });
 });
