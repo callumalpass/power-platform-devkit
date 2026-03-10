@@ -20,7 +20,6 @@
   },
   "dependencies": {
     "@pp/dataverse": "workspace:*",
-    "@pp/diagnostics": "workspace:*",
-    "@pp/solution": "workspace:*"
+    "@pp/diagnostics": "workspace:*"
   }
 }

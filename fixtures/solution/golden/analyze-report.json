@@ -59,6 +59,103 @@
     }
   ],
   "missingEnvironmentVariables": [],
+  "modelDriven": {
+    "apps": [
+      {
+        "appId": "obj-app",
+        "composition": {
+          "app": {
+            "id": "obj-app",
+            "name": "Sales Hub",
+            "stateCode": 0,
+            "uniqueName": "SalesHub",
+            "version": "1.0.0.0"
+          },
+          "artifacts": [
+            {
+              "id": "obj-app",
+              "key": "app:obj-app",
+              "kind": "app",
+              "name": "Sales Hub",
+              "status": "resolved"
+            },
+            {
+              "componentId": "src-model-form",
+              "componentType": 60,
+              "id": "form-account-main",
+              "key": "form:form-account-main",
+              "kind": "form",
+              "name": "Account Main",
+              "status": "resolved",
+              "table": "account"
+            },
+            {
+              "componentId": "src-model-sitemap",
+              "componentType": 62,
+              "id": "site-sales",
+              "key": "sitemap:site-sales",
+              "kind": "sitemap",
+              "name": "Sales Hub sitemap",
+              "status": "resolved"
+            },
+            {
+              "componentId": "src-model-table",
+              "componentType": 1,
+              "id": "entity-account",
+              "key": "table:entity-account",
+              "kind": "table",
+              "logicalName": "account",
+              "name": "Account",
+              "status": "resolved",
+              "table": "account"
+            }
+          ],
+          "relationships": [
+            {
+              "from": "app:obj-app",
+              "relation": "contains",
+              "to": "table:entity-account"
+            },
+            {
+              "from": "app:obj-app",
+              "relation": "contains",
+              "to": "form:form-account-main"
+            },
+            {
+              "from": "form:form-account-main",
+              "relation": "depends-on",
+              "to": "table:entity-account"
+            },
+            {
+              "from": "app:obj-app",
+              "relation": "contains",
+              "to": "sitemap:site-sales"
+            }
+          ],
+          "summary": {
+            "byKind": {
+              "app": 1,
+              "form": 1,
+              "sitemap": 1,
+              "table": 1
+            },
+            "missingArtifacts": 0,
+            "tables": [
+              "account"
+            ],
+            "totalArtifacts": 4
+          }
+        },
+        "name": "Sales Hub",
+        "uniqueName": "SalesHub"
+      }
+    ],
+    "summary": {
+      "appCount": 1,
+      "artifactCount": 4,
+      "missingArtifactCount": 0
+    }
+  },
   "origin": {
     "kind": "environment"
   },

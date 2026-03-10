@@ -236,4 +236,110 @@ describe('ModelService', () => {
       'form',
     ]);
   });
+
+  it('builds a normalized composition graph and previews impact for supported surfaces', async () => {
+    const service = new ModelService(createStubClient());
+
+    const composition = await service.composition('Sales Hub', {
+      solutionUniqueName: 'Core',
+    });
+    const impact = await service.impact(
+      'Sales Hub',
+      {
+        kind: 'form',
+        identifier: 'Account Main',
+      },
+      {
+        solutionUniqueName: 'Core',
+      }
+    );
+
+    expect(composition.success).toBe(true);
+    expect(composition.data?.summary).toMatchObject({
+      totalArtifacts: 6,
+      missingArtifacts: 1,
+      byKind: {
+        app: 1,
+        table: 1,
+        form: 2,
+        view: 1,
+        sitemap: 1,
+      },
+    });
+    expect(composition.data?.relationships).toContainEqual({
+      from: 'form:form-1',
+      to: 'table:entity-1',
+      relation: 'depends-on',
+    });
+    expect(impact.success).toBe(true);
+    expect(impact.data?.target).toMatchObject({
+      kind: 'form',
+      name: 'Account Main',
+    });
+    expect(impact.data?.dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'table',
+          logicalName: 'account',
+        }),
+      ])
+    );
+    expect(impact.data?.dependents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'app',
+          name: 'Sales Hub',
+        }),
+      ])
+    );
+  });
+
+  it('emits a bounded rename mutation plan with impact context', async () => {
+    const service = new ModelService(createStubClient());
+
+    const result = await service.planMutation(
+      'Sales Hub',
+      {
+        operation: 'rename',
+        target: {
+          kind: 'view',
+          identifier: 'Active Accounts',
+        },
+        value: {
+          name: 'Current Accounts',
+        },
+      },
+      {
+        solutionUniqueName: 'Core',
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      valid: true,
+      target: {
+        kind: 'view',
+        name: 'Active Accounts',
+      },
+      operations: [
+        {
+          scope: 'dataverse',
+          action: 'update',
+          table: 'savedqueries',
+          id: 'view-1',
+          patch: {
+            name: 'Current Accounts',
+          },
+        },
+      ],
+    });
+    expect(result.data?.impact?.dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'table',
+          logicalName: 'account',
+        }),
+      ])
+    );
+  });
 });

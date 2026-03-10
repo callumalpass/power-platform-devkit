@@ -1,0 +1,118 @@
+{
+  "app": {
+    "id": "app-1",
+    "name": "Sales Hub",
+    "publishedOn": "2026-03-01T08:00:00.000Z",
+    "stateCode": 0,
+    "uniqueName": "SalesHub",
+    "version": "1.0.0.0"
+  },
+  "artifacts": [
+    {
+      "id": "app-1",
+      "key": "app:app-1",
+      "kind": "app",
+      "name": "Sales Hub",
+      "status": "resolved"
+    },
+    {
+      "componentId": "amc-2",
+      "componentType": 60,
+      "id": "form-1",
+      "key": "form:form-1",
+      "kind": "form",
+      "name": "Account Main",
+      "status": "resolved",
+      "table": "account"
+    },
+    {
+      "componentId": "amc-5",
+      "componentType": 60,
+      "id": "missing-form",
+      "key": "form:missing-form",
+      "kind": "form",
+      "status": "missing"
+    },
+    {
+      "componentId": "amc-4",
+      "componentType": 62,
+      "id": "sitemap-1",
+      "key": "sitemap:sitemap-1",
+      "kind": "sitemap",
+      "name": "Sales Hub sitemap",
+      "status": "resolved"
+    },
+    {
+      "componentId": "amc-1",
+      "componentType": 1,
+      "id": "entity-1",
+      "key": "table:entity-1",
+      "kind": "table",
+      "logicalName": "account",
+      "name": "Account",
+      "status": "resolved",
+      "table": "account"
+    },
+    {
+      "componentId": "amc-3",
+      "componentType": 26,
+      "id": "view-1",
+      "key": "view:view-1",
+      "kind": "view",
+      "name": "Active Accounts",
+      "status": "resolved",
+      "table": "account"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "app:app-1",
+      "relation": "contains",
+      "to": "table:entity-1"
+    },
+    {
+      "from": "app:app-1",
+      "relation": "contains",
+      "to": "form:form-1"
+    },
+    {
+      "from": "form:form-1",
+      "relation": "depends-on",
+      "to": "table:entity-1"
+    },
+    {
+      "from": "app:app-1",
+      "relation": "contains",
+      "to": "view:view-1"
+    },
+    {
+      "from": "view:view-1",
+      "relation": "depends-on",
+      "to": "table:entity-1"
+    },
+    {
+      "from": "app:app-1",
+      "relation": "contains",
+      "to": "sitemap:sitemap-1"
+    },
+    {
+      "from": "app:app-1",
+      "relation": "contains",
+      "to": "form:missing-form"
+    }
+  ],
+  "summary": {
+    "byKind": {
+      "app": 1,
+      "form": 2,
+      "sitemap": 1,
+      "table": 1,
+      "view": 1
+    },
+    "missingArtifacts": 1,
+    "tables": [
+      "account"
+    ],
+    "totalArtifacts": 6
+  }
+}

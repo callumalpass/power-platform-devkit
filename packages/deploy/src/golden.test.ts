@@ -2703,8 +2703,34 @@ describe('deploy fixture-backed goldens', () => {
             objectid: 'envvar-def-prod-1',
             componenttype: 380,
           },
+          {
+            solutioncomponentid: 'component-prod-app-1',
+            objectid: 'app-prod-1',
+            componenttype: 80,
+          },
         ],
         dependencies: [],
+        appmodules: [
+          {
+            appmoduleid: 'app-prod-1',
+            uniquename: 'SalesHub',
+            name: 'Sales Hub',
+          },
+        ],
+        appmodulecomponents: [
+          {
+            appmodulecomponentid: 'app-comp-prod-table',
+            componenttype: 1,
+            objectid: 'entity-account',
+            _appmoduleidunique_value: 'app-prod-1',
+          },
+          {
+            appmodulecomponentid: 'app-comp-prod-form-missing',
+            componenttype: 60,
+            objectid: 'form-account-main',
+            _appmoduleidunique_value: 'app-prod-1',
+          },
+        ],
         connectionreferences: [],
         environmentvariabledefinitions: [
           {
@@ -2724,6 +2750,18 @@ describe('deploy fixture-backed goldens', () => {
           },
         ],
       },
+      listTables: [
+        {
+          MetadataId: 'entity-account',
+          LogicalName: 'account',
+          SchemaName: 'Account',
+          DisplayName: {
+            UserLocalizedLabel: {
+              Label: 'Account',
+            },
+          },
+        },
+      ],
     });
     const opsClient = createFixtureDataverseClient({
       query: {
@@ -2784,6 +2822,12 @@ describe('deploy fixture-backed goldens', () => {
       expect.objectContaining({
         code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CONFLICT',
         target: 'pp_TenantDomain',
+      })
+    );
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_MODEL_DRIVEN_MISSING_COMPONENTS',
+        target: 'CoreManaged',
       })
     );
     expect(result.data?.apply.operations.filter((operation) => operation.kind === 'dataverse-envvar-set')).toEqual([

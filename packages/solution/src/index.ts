@@ -5,6 +5,7 @@ import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { stableStringify } from '@pp/artifacts';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
+import { ModelService, type ModelCompositionResult } from '@pp/model';
 import {
   ConnectionReferenceService,
   EnvironmentVariableService,
@@ -102,6 +103,22 @@ export interface SolutionDependencySummary {
   missingRequiredComponent: boolean;
 }
 
+export interface SolutionModelDrivenAppAnalysis {
+  appId: string;
+  uniqueName?: string;
+  name?: string;
+  composition: ModelCompositionResult;
+}
+
+export interface SolutionModelDrivenAnalysis {
+  apps: SolutionModelDrivenAppAnalysis[];
+  summary: {
+    appCount: number;
+    artifactCount: number;
+    missingArtifactCount: number;
+  };
+}
+
 export interface SolutionAnalysis {
   solution: SolutionSummary;
   components: SolutionComponentSummary[];
@@ -109,11 +126,21 @@ export interface SolutionAnalysis {
   missingDependencies: SolutionDependencySummary[];
   invalidConnectionReferences: ConnectionReferenceValidationResult[];
   missingEnvironmentVariables: EnvironmentVariableSummary[];
+  modelDriven: SolutionModelDrivenAnalysis;
   origin: {
     kind: 'environment' | 'zip' | 'unpacked';
     path?: string;
   };
   artifacts: SolutionArtifactInventoryEntry[];
+}
+
+export interface SolutionModelDrivenAppDrift {
+  appId?: string;
+  uniqueName?: string;
+  name?: string;
+  missingArtifactsChanged: boolean;
+  artifactsOnlyInSource: string[];
+  artifactsOnlyInTarget: string[];
 }
 
 export interface SolutionCompareResult {
@@ -127,6 +154,11 @@ export interface SolutionCompareResult {
     artifactsOnlyInSource: SolutionArtifactInventoryEntry[];
     artifactsOnlyInTarget: SolutionArtifactInventoryEntry[];
     changedArtifacts: SolutionArtifactInventoryChange[];
+    modelDriven: {
+      appsOnlyInSource: SolutionModelDrivenAppAnalysis[];
+      appsOnlyInTarget: SolutionModelDrivenAppAnalysis[];
+      changedApps: SolutionModelDrivenAppDrift[];
+    };
   };
   missingDependencies: {
     source: SolutionDependencySummary[];
@@ -601,11 +633,13 @@ export class SolutionService {
       });
     }
 
-    const [components, dependencies, connectionReferences, environmentVariables] = await Promise.all([
+    const modelService = new ModelService(this.dataverseClient);
+    const [components, dependencies, connectionReferences, environmentVariables, modelApps] = await Promise.all([
       this.components(uniqueName),
       this.dependencies(uniqueName),
       new ConnectionReferenceService(this.dataverseClient).validate({ solutionUniqueName: uniqueName }),
       new EnvironmentVariableService(this.dataverseClient).list({ solutionUniqueName: uniqueName }),
+      modelService.list({ solutionUniqueName: uniqueName }),
     ]);
 
     if (!components.success) {
@@ -624,6 +658,31 @@ export class SolutionService {
       return environmentVariables as unknown as OperationResult<SolutionAnalysis | undefined>;
     }
 
+    if (!modelApps.success) {
+      return modelApps as unknown as OperationResult<SolutionAnalysis | undefined>;
+    }
+
+    const modelDrivenApps: SolutionModelDrivenAppAnalysis[] = [];
+    let modelDiagnostics = [...modelApps.diagnostics];
+    let modelWarnings = [...modelApps.warnings];
+
+    for (const app of modelApps.data ?? []) {
+      const composition = await modelService.composition(app.id, { solutionUniqueName: uniqueName });
+
+      if (!composition.success || !composition.data) {
+        return composition as unknown as OperationResult<SolutionAnalysis | undefined>;
+      }
+
+      modelDrivenApps.push({
+        appId: app.id,
+        uniqueName: app.uniqueName,
+        name: app.name,
+        composition: composition.data,
+      });
+      modelDiagnostics = [...modelDiagnostics, ...composition.diagnostics];
+      modelWarnings = [...modelWarnings, ...composition.warnings];
+    }
+
     const analysis: SolutionAnalysis = {
       solution: solution.data,
       components: components.data ?? [],
@@ -631,6 +690,14 @@ export class SolutionService {
       missingDependencies: (dependencies.data ?? []).filter((dependency) => dependency.missingRequiredComponent),
       invalidConnectionReferences: (connectionReferences.data ?? []).filter((reference) => !reference.valid),
       missingEnvironmentVariables: (environmentVariables.data ?? []).filter((variable) => !variable.effectiveValue),
+      modelDriven: {
+        apps: modelDrivenApps,
+        summary: {
+          appCount: modelDrivenApps.length,
+          artifactCount: modelDrivenApps.reduce((count, app) => count + app.composition.summary.totalArtifacts, 0),
+          missingArtifactCount: modelDrivenApps.reduce((count, app) => count + app.composition.summary.missingArtifacts, 0),
+        },
+      },
       origin: {
         kind: 'environment',
       },
@@ -644,14 +711,16 @@ export class SolutionService {
         components.diagnostics,
         dependencies.diagnostics,
         connectionReferences.diagnostics,
-        environmentVariables.diagnostics
+        environmentVariables.diagnostics,
+        modelDiagnostics
       ),
       warnings: mergeDiagnosticLists(
         solution.warnings,
         components.warnings,
         dependencies.warnings,
         connectionReferences.warnings,
-        environmentVariables.warnings
+        environmentVariables.warnings,
+        modelWarnings
       ),
     });
   }
@@ -1220,6 +1289,8 @@ function buildCompareResult(
   const artifactsOnlyInSource: SolutionArtifactInventoryEntry[] = [];
   const artifactsOnlyInTarget: SolutionArtifactInventoryEntry[] = [];
   const changedArtifacts: SolutionArtifactInventoryChange[] = [];
+  const sourceModelApps = new Map(source.modelDriven.apps.map((app) => [app.uniqueName ?? app.appId, app]));
+  const targetModelApps = new Map((target?.modelDriven.apps ?? []).map((app) => [app.uniqueName ?? app.appId, app]));
 
   for (const relativePath of Array.from(artifactPaths).sort()) {
     const sourceArtifact = sourceArtifacts.get(relativePath);
@@ -1244,6 +1315,39 @@ function buildCompareResult(
     }
   }
 
+  const appsOnlyInSource = Array.from(sourceModelApps.entries())
+    .filter(([key]) => !targetModelApps.has(key))
+    .map(([, app]) => app);
+  const appsOnlyInTarget = Array.from(targetModelApps.entries())
+    .filter(([key]) => !sourceModelApps.has(key))
+    .map(([, app]) => app);
+  const changedApps: SolutionModelDrivenAppDrift[] = [];
+
+  for (const [key, sourceApp] of sourceModelApps.entries()) {
+    const targetApp = targetModelApps.get(key);
+
+    if (!targetApp) {
+      continue;
+    }
+
+    const sourceArtifactKeys = new Set(sourceApp.composition.artifacts.map((artifact) => artifact.key));
+    const targetArtifactKeys = new Set(targetApp.composition.artifacts.map((artifact) => artifact.key));
+    const artifactOnlyInSource = Array.from(sourceArtifactKeys).filter((artifactKey) => !targetArtifactKeys.has(artifactKey)).sort();
+    const artifactOnlyInTarget = Array.from(targetArtifactKeys).filter((artifactKey) => !sourceArtifactKeys.has(artifactKey)).sort();
+    const missingArtifactsChanged = sourceApp.composition.summary.missingArtifacts !== targetApp.composition.summary.missingArtifacts;
+
+    if (artifactOnlyInSource.length > 0 || artifactOnlyInTarget.length > 0 || missingArtifactsChanged) {
+      changedApps.push({
+        appId: sourceApp.appId,
+        uniqueName: sourceApp.uniqueName,
+        name: sourceApp.name,
+        missingArtifactsChanged,
+        artifactsOnlyInSource: artifactOnlyInSource,
+        artifactsOnlyInTarget: artifactOnlyInTarget,
+      });
+    }
+  }
+
   return {
     uniqueName,
     source,
@@ -1255,6 +1359,11 @@ function buildCompareResult(
       artifactsOnlyInSource,
       artifactsOnlyInTarget,
       changedArtifacts,
+      modelDriven: {
+        appsOnlyInSource,
+        appsOnlyInTarget,
+        changedApps,
+      },
     },
     missingDependencies: {
       source: source.missingDependencies,
@@ -1348,6 +1457,14 @@ async function analyzeUnpackedArtifact(
       missingDependencies: [],
       invalidConnectionReferences: [],
       missingEnvironmentVariables: [],
+      modelDriven: {
+        apps: [],
+        summary: {
+          appCount: 0,
+          artifactCount: 0,
+          missingArtifactCount: 0,
+        },
+      },
       origin: {
         kind: options.kind,
         path: options.packagePath ?? root,

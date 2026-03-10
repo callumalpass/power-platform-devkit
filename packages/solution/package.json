@@ -21,6 +21,7 @@
   "dependencies": {
     "@pp/artifacts": "workspace:*",
     "@pp/dataverse": "workspace:*",
-    "@pp/diagnostics": "workspace:*"
+    "@pp/diagnostics": "workspace:*",
+    "@pp/model": "workspace:*"
   }
 }

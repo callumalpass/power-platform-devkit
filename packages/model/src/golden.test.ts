@@ -27,6 +27,35 @@ describe('model fixture-backed goldens', () => {
     const dependencies = await service.dependencies('Sales Hub', {
       solutionUniqueName: 'Core',
     });
+    const composition = await service.composition('Sales Hub', {
+      solutionUniqueName: 'Core',
+    });
+    const impact = await service.impact(
+      'Sales Hub',
+      {
+        kind: 'form',
+        identifier: 'Account Main',
+      },
+      {
+        solutionUniqueName: 'Core',
+      }
+    );
+    const mutationPlan = await service.planMutation(
+      'Sales Hub',
+      {
+        operation: 'rename',
+        target: {
+          kind: 'view',
+          identifier: 'Active Accounts',
+        },
+        value: {
+          name: 'Current Accounts',
+        },
+      },
+      {
+        solutionUniqueName: 'Core',
+      }
+    );
 
     expect(list.success).toBe(true);
     expect(list.data).toBeDefined();
@@ -36,6 +65,9 @@ describe('model fixture-backed goldens', () => {
     expect(forms.success).toBe(true);
     expect(views.success).toBe(true);
     expect(dependencies.success).toBe(true);
+    expect(composition.success).toBe(true);
+    expect(impact.success).toBe(true);
+    expect(mutationPlan.success).toBe(true);
 
     await expectGoldenJson(list.data, 'fixtures/model/golden/list-report.json');
     await expectGoldenJson(inspect.data, 'fixtures/model/golden/inspect-report.json');
@@ -43,5 +75,8 @@ describe('model fixture-backed goldens', () => {
     await expectGoldenJson(forms.data, 'fixtures/model/golden/forms-report.json');
     await expectGoldenJson(views.data, 'fixtures/model/golden/views-report.json');
     await expectGoldenJson(dependencies.data, 'fixtures/model/golden/dependencies-report.json');
+    await expectGoldenJson(composition.data, 'fixtures/model/golden/composition-report.json');
+    await expectGoldenJson(impact.data, 'fixtures/model/golden/impact-report.json');
+    await expectGoldenJson(mutationPlan.data, 'fixtures/model/golden/mutation-plan-report.json');
   });
 });

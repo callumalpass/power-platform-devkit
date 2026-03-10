@@ -863,6 +863,10 @@ async function executePreparedDeploy(context: {
     const operationsByPath = new Map<string, PreparedDeployOperation[]>();
 
     for (const operation of group.operations) {
+      if (!isPreparedFlowParameterOperation(operation) && !isPreparedFlowConnectionReferenceOperation(operation) && !isPreparedFlowEnvironmentVariableOperation(operation)) {
+        continue;
+      }
+
       const existing = operationsByPath.get(operation.plan.path);
 
       if (existing) {
@@ -2933,6 +2937,24 @@ async function inspectDeploySolutionTarget(
           code: 'DEPLOY_PREFLIGHT_ENVVARS_MISSING_VALUES',
           message: `Solution ${solutionUniqueName} has ${solutionAnalysis.missingEnvironmentVariables.length} environment variable(s) without an effective value.`,
           target: solutionUniqueName,
+        });
+      }
+
+      if (solutionAnalysis.modelDriven.summary.appCount > 0) {
+        checks.push({
+          status: solutionAnalysis.modelDriven.summary.missingArtifactCount > 0 ? 'warn' : 'pass',
+          code:
+            solutionAnalysis.modelDriven.summary.missingArtifactCount > 0
+              ? 'DEPLOY_PREFLIGHT_MODEL_DRIVEN_MISSING_COMPONENTS'
+              : 'DEPLOY_PREFLIGHT_MODEL_DRIVEN_READY',
+          message:
+            solutionAnalysis.modelDriven.summary.missingArtifactCount > 0
+              ? `Model-driven apps in solution ${solutionUniqueName} have ${solutionAnalysis.modelDriven.summary.missingArtifactCount} missing composition artifact(s).`
+              : `Model-driven apps in solution ${solutionUniqueName} were analyzed without missing composition artifacts.`,
+          target: solutionUniqueName,
+          details: {
+            appCount: solutionAnalysis.modelDriven.summary.appCount,
+          },
         });
       }
     }

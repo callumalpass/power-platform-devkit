@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ok, type OperationResult } from '@pp/diagnostics';
-import type { DataverseClient } from '@pp/dataverse';
+import type { DataverseClient, EntityDefinition } from '@pp/dataverse';
 import { SolutionService, type SolutionCommandInvocation, type SolutionCommandResult } from './index';
 
 interface StubData {
@@ -28,6 +28,12 @@ interface StubData {
   connectionReferences?: Array<Record<string, unknown>>;
   environmentVariableDefinitions?: Array<Record<string, unknown>>;
   environmentVariableValues?: Array<Record<string, unknown>>;
+  modelApps?: Array<Record<string, unknown>>;
+  modelComponents?: Array<Record<string, unknown>>;
+  modelForms?: Array<Record<string, unknown>>;
+  modelViews?: Array<Record<string, unknown>>;
+  modelSitemaps?: Array<Record<string, unknown>>;
+  tables?: EntityDefinition[];
   exportPayloadBase64?: string;
   requestRecorder?: Array<{ path: string; body: Record<string, unknown> | undefined }>;
 }
@@ -75,10 +81,24 @@ function createStubClient(data: StubData): DataverseClient {
           return ok((data.environmentVariableDefinitions ?? []) as T[], { supportTier: 'preview' });
         case 'environmentvariablevalues':
           return ok((data.environmentVariableValues ?? []) as T[], { supportTier: 'preview' });
+        case 'appmodules':
+          return ok((data.modelApps ?? []) as T[], { supportTier: 'preview' });
+        case 'appmodulecomponents':
+          return ok((data.modelComponents ?? []) as T[], { supportTier: 'preview' });
+        case 'systemforms':
+          return ok((data.modelForms ?? []) as T[], { supportTier: 'preview' });
+        case 'savedqueries':
+          return ok((data.modelViews ?? []) as T[], { supportTier: 'preview' });
+        case 'sitemaps':
+          return ok((data.modelSitemaps ?? []) as T[], { supportTier: 'preview' });
         default:
           return ok([] as T[], { supportTier: 'preview' });
       }
     },
+    listTables: async (): Promise<OperationResult<EntityDefinition[]>> =>
+      ok(data.tables ?? [], {
+        supportTier: 'preview',
+      }),
     create: async <TRecord extends Record<string, unknown>, TResult = TRecord>(
       table: string,
       entity: TRecord
@@ -453,6 +473,47 @@ describe('SolutionService', () => {
           },
         ],
         environmentVariableValues: [],
+        modelApps: [
+          {
+            appmoduleid: 'obj-1',
+            uniquename: 'SalesHub',
+            name: 'Sales Hub',
+          },
+        ],
+        modelComponents: [
+          {
+            appmodulecomponentid: 'model-comp-app-table',
+            componenttype: 1,
+            objectid: 'entity-1',
+            _appmoduleidunique_value: 'obj-1',
+          },
+          {
+            appmodulecomponentid: 'model-comp-app-form',
+            componenttype: 60,
+            objectid: 'form-1',
+            _appmoduleidunique_value: 'obj-1',
+          },
+        ],
+        modelForms: [
+          {
+            formid: 'form-1',
+            name: 'Account Main',
+            objecttypecode: 'account',
+            type: 2,
+          },
+        ],
+        tables: [
+          {
+            MetadataId: 'entity-1',
+            LogicalName: 'account',
+            SchemaName: 'Account',
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
+          },
+        ],
       })
     );
 
@@ -462,6 +523,11 @@ describe('SolutionService', () => {
     expect(result.data?.missingDependencies).toHaveLength(1);
     expect(result.data?.invalidConnectionReferences).toHaveLength(1);
     expect(result.data?.missingEnvironmentVariables).toHaveLength(1);
+    expect(result.data?.modelDriven.summary).toMatchObject({
+      appCount: 1,
+      artifactCount: 3,
+      missingArtifactCount: 0,
+    });
   });
 
   it('compares the same solution across environments', async () => {
@@ -488,6 +554,47 @@ describe('SolutionService', () => {
         connectionReferences: [],
         environmentVariableDefinitions: [],
         environmentVariableValues: [],
+        modelApps: [
+          {
+            appmoduleid: 'obj-1',
+            uniquename: 'SalesHub',
+            name: 'Sales Hub',
+          },
+        ],
+        modelComponents: [
+          {
+            appmodulecomponentid: 'src-model-table',
+            componenttype: 1,
+            objectid: 'entity-1',
+            _appmoduleidunique_value: 'obj-1',
+          },
+          {
+            appmodulecomponentid: 'src-model-form',
+            componenttype: 60,
+            objectid: 'form-1',
+            _appmoduleidunique_value: 'obj-1',
+          },
+        ],
+        modelForms: [
+          {
+            formid: 'form-1',
+            name: 'Account Main',
+            objecttypecode: 'account',
+            type: 2,
+          },
+        ],
+        tables: [
+          {
+            MetadataId: 'entity-1',
+            LogicalName: 'account',
+            SchemaName: 'Account',
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
+          },
+        ],
       })
     );
     const target = new SolutionService(
@@ -508,6 +615,47 @@ describe('SolutionService', () => {
         connectionReferences: [],
         environmentVariableDefinitions: [],
         environmentVariableValues: [],
+        modelApps: [
+          {
+            appmoduleid: 'obj-1',
+            uniquename: 'SalesHub',
+            name: 'Sales Hub',
+          },
+        ],
+        modelComponents: [
+          {
+            appmodulecomponentid: 'tgt-model-table',
+            componenttype: 1,
+            objectid: 'entity-1',
+            _appmoduleidunique_value: 'obj-1',
+          },
+          {
+            appmodulecomponentid: 'tgt-model-view',
+            componenttype: 26,
+            objectid: 'view-1',
+            _appmoduleidunique_value: 'obj-1',
+          },
+        ],
+        modelViews: [
+          {
+            savedqueryid: 'view-1',
+            name: 'Active Accounts',
+            returnedtypecode: 'account',
+            querytype: 0,
+          },
+        ],
+        tables: [
+          {
+            MetadataId: 'entity-1',
+            LogicalName: 'account',
+            SchemaName: 'Account',
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
+          },
+        ],
       })
     );
 
@@ -517,6 +665,13 @@ describe('SolutionService', () => {
     expect(result.data?.drift.versionChanged).toBe(true);
     expect(result.data?.drift.componentsOnlyInSource).toHaveLength(1);
     expect(result.data?.drift.componentsOnlyInTarget).toHaveLength(0);
+    expect(result.data?.drift.modelDriven.changedApps).toEqual([
+      expect.objectContaining({
+        uniqueName: 'SalesHub',
+        artifactsOnlyInSource: ['form:form-1'],
+        artifactsOnlyInTarget: ['view:view-1'],
+      }),
+    ]);
   });
 
   it('creates a solution through the solutions entity set', async () => {

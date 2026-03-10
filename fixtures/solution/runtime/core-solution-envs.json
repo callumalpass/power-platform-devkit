@@ -29,6 +29,35 @@
           "statecode": 0
         }
       ],
+      "appmodules": [
+        {
+          "appmoduleid": "obj-app",
+          "uniquename": "SalesHub",
+          "name": "Sales Hub",
+          "appmoduleversion": "1.0.0.0",
+          "statecode": 0
+        }
+      ],
+      "appmodulecomponents": [
+        {
+          "appmodulecomponentid": "src-model-table",
+          "componenttype": 1,
+          "objectid": "entity-account",
+          "_appmoduleidunique_value": "obj-app"
+        },
+        {
+          "appmodulecomponentid": "src-model-form",
+          "componenttype": 60,
+          "objectid": "form-account-main",
+          "_appmoduleidunique_value": "obj-app"
+        },
+        {
+          "appmodulecomponentid": "src-model-sitemap",
+          "componenttype": 62,
+          "objectid": "site-sales",
+          "_appmoduleidunique_value": "obj-app"
+        }
+      ],
       "dependencies": [
         {
           "dependencyid": "dep-source-missing-form",
@@ -45,6 +74,21 @@
           "dependencytype": 1,
           "requiredcomponentobjectid": "obj-site",
           "requiredcomponenttype": 62
+        }
+      ],
+      "savedqueries": [],
+      "sitemaps": [
+        {
+          "sitemapid": "site-sales",
+          "sitemapname": "Sales Hub sitemap"
+        }
+      ],
+      "systemforms": [
+        {
+          "formid": "form-account-main",
+          "name": "Account Main",
+          "objecttypecode": "account",
+          "type": 2
         }
       ],
       "environmentvariabledefinitions": [
@@ -89,7 +133,19 @@
           "solutioncomponentid": "comp-source-flow"
         }
       ]
-    }
+    },
+    "listTables": [
+      {
+        "MetadataId": "entity-account",
+        "LogicalName": "account",
+        "SchemaName": "Account",
+        "DisplayName": {
+          "UserLocalizedLabel": {
+            "Label": "Account"
+          }
+        }
+      }
+    ]
   },
   "target": {
     "query": {
@@ -114,7 +170,40 @@
           "statecode": 0
         }
       ],
+      "appmodules": [
+        {
+          "appmoduleid": "obj-app",
+          "uniquename": "SalesHub",
+          "name": "Sales Hub",
+          "appmoduleversion": "1.1.0.0",
+          "statecode": 0
+        }
+      ],
+      "appmodulecomponents": [
+        {
+          "appmodulecomponentid": "tgt-model-table",
+          "componenttype": 1,
+          "objectid": "entity-account",
+          "_appmoduleidunique_value": "obj-app"
+        },
+        {
+          "appmodulecomponentid": "tgt-model-view",
+          "componenttype": 26,
+          "objectid": "view-active-accounts",
+          "_appmoduleidunique_value": "obj-app"
+        }
+      ],
       "dependencies": [],
+      "savedqueries": [
+        {
+          "savedqueryid": "view-active-accounts",
+          "name": "Active Accounts",
+          "returnedtypecode": "account",
+          "querytype": 0
+        }
+      ],
+      "sitemaps": [],
+      "systemforms": [],
       "environmentvariabledefinitions": [
         {
           "_solutionid_value": "sol-target",
@@ -158,6 +247,18 @@
           "solutioncomponentid": "comp-target-form"
         }
       ]
-    }
+    },
+    "listTables": [
+      {
+        "MetadataId": "entity-account",
+        "LogicalName": "account",
+        "SchemaName": "Account",
+        "DisplayName": {
+          "UserLocalizedLabel": {
+            "Label": "Account"
+          }
+        }
+      }
+    ]
   }
 }

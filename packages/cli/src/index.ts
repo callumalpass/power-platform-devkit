@@ -69,7 +69,7 @@ import { buildDeployPlan, executeDeploy, executeDeployPlan, type DeployPlan } fr
 import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { HttpClient } from '@pp/http';
-import { ModelService } from '@pp/model';
+import { ModelService, type ModelArtifactMutationKind } from '@pp/model';
 import { PowerBiClient } from '@pp/powerbi';
 import {
   discoverProject,
@@ -1503,6 +1503,10 @@ async function runModel(command: string | undefined, args: string[]): Promise<nu
       return runModelList(args);
     case 'inspect':
       return runModelInspect(args);
+    case 'composition':
+      return runModelComposition(args);
+    case 'impact':
+      return runModelImpact(args);
     case 'sitemap':
       return runModelSitemap(args);
     case 'forms':
@@ -1511,6 +1515,8 @@ async function runModel(command: string | undefined, args: string[]): Promise<nu
       return runModelViews(args);
     case 'dependencies':
       return runModelDependencies(args);
+    case 'patch':
+      return runModelPatch(args);
     default:
       printHelp();
       return 1;
@@ -6138,6 +6144,148 @@ async function runModelDependencies(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runModelComposition(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model composition <name|id|uniqueName> --environment ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelService(resolution.data.client).composition(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runModelImpact(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+  const targetKind = readModelTargetKind(args);
+  const targetIdentifier = readFlag(args, '--target');
+
+  if (!identifier || !targetKind || !targetIdentifier) {
+    return printFailure(
+      argumentFailure(
+        'MODEL_IMPACT_ARGS_REQUIRED',
+        'Usage: model impact <name|id|uniqueName> --environment ALIAS --kind app|form|view|sitemap --target <name|id>'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelService(resolution.data.client).impact(
+    identifier,
+    {
+      kind: targetKind,
+      identifier: targetIdentifier,
+    },
+    {
+      solutionUniqueName: readFlag(args, '--solution'),
+    }
+  );
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(
+      fail(createDiagnostic('error', 'MODEL_IMPACT_TARGET_NOT_FOUND', `Target ${targetKind}:${targetIdentifier} was not found in ${identifier}.`))
+    );
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runModelPatch(args: string[]): Promise<number> {
+  const [command, ...rest] = args;
+
+  switch (command) {
+    case 'plan':
+      return runModelPatchPlan(rest);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runModelPatchPlan(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+  const targetKind = readModelTargetKind(args);
+  const targetIdentifier = readFlag(args, '--target');
+  const rename = readFlag(args, '--rename');
+
+  if (!identifier || !targetKind || !targetIdentifier || !rename) {
+    return printFailure(
+      argumentFailure(
+        'MODEL_PATCH_PLAN_ARGS_REQUIRED',
+        'Usage: model patch plan <name|id|uniqueName> --environment ALIAS --kind app|form|view|sitemap --target <name|id> --rename <newName>'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelService(resolution.data.client).planMutation(
+    identifier,
+    {
+      operation: 'rename',
+      target: {
+        kind: targetKind,
+        identifier: targetIdentifier,
+      },
+      value: {
+        name: rename,
+      },
+    },
+    {
+      solutionUniqueName: readFlag(args, '--solution'),
+    }
+  );
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return result.data.valid ? 0 : 1;
+}
+
+function readModelTargetKind(args: string[]): ModelArtifactMutationKind | undefined {
+  const kind = readFlag(args, '--kind');
+
+  if (kind === 'app' || kind === 'form' || kind === 'view' || kind === 'sitemap') {
+    return kind;
+  }
+
+  return undefined;
+}
+
 function buildPublicClientProfile(
   baseProfile: UserAuthProfile,
   args: string[]
@@ -8302,10 +8450,13 @@ function printHelp(): void {
       '  flow doctor <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model inspect <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model composition <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model impact <name|id|uniqueName> --environment ALIAS --kind app|form|view|sitemap --target <name|id> [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model sitemap <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model forms <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model views <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model dependencies <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model patch plan <name|id|uniqueName> --environment ALIAS --kind app|form|view|sitemap --target <name|id> --rename <newName> [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  sharepoint site inspect <site|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  sharepoint list inspect <list|binding> --site <site|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  sharepoint file inspect <file|binding> --site <site|binding> [--drive name] [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
