@@ -12,6 +12,7 @@ The shared deploy contract currently recognizes project parameters mapped with:
 ```yaml
 mapsTo:
   - kind: dataverse-envvar
+    environment: prod
     solution: core
     target: pp_TenantDomain
   - kind: dataverse-envvar-create
@@ -36,7 +37,7 @@ mapsTo:
 During `deploy apply`, `pp`:
 
 1. resolves the active project stage, environment alias, and solution
-2. resolves per-operation Dataverse environment/solution targets from the stage default or an explicit mapping `solution` alias
+2. resolves per-operation Dataverse environment/solution targets from the stage default or explicit mapping `environment` / `solution` overrides
 3. resolves the Dataverse client for each affected environment alias
 4. analyzes each target solution for preflight facts
 5. inspects environment variables and connection references in those solutions
@@ -215,7 +216,7 @@ steps:
 ## Current limits
 
 - `dataverse-envvar`, `dataverse-envvar-create`, `dataverse-connref`, and `dataverse-connref-create` are the supported Dataverse mutation kinds today.
-- Those Dataverse mapping kinds can set `solution` to target a named solution alias from the active stage instead of always using the stage default solution.
+- Those Dataverse mapping kinds can set `environment` and `solution` to target a specific Dataverse environment alias and named solution alias instead of always using the stage defaults.
 - `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
 - Mapped parameters without a resolved value now fail deploy preflight explicitly.
 - Missing target environment variables still fail preflight for `dataverse-envvar`, while `dataverse-envvar-create` records a machine-readable creation check and creates the definition during live apply.

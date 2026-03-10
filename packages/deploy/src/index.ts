@@ -213,6 +213,12 @@ interface PreparedDeployOperation {
   blockedMessage?: string;
 }
 
+interface ResolvedDeployMappingTarget {
+  environmentAlias?: string;
+  solutionAlias?: string;
+  solutionUniqueName?: string;
+}
+
 const SUPPORTED_ENVIRONMENT_VARIABLE_TYPE_ALIASES = new Set([
   '100000000',
   'string',
@@ -1151,10 +1157,10 @@ function createDeployOperationPlan(
   mapping: ParameterMapping
 ): DeployOperationPlan | undefined {
   const valuePreview = parameter.sensitive ? '<redacted>' : parameter.value;
-  const resolvedSolution = resolveDeployMappingSolutionTarget(project, mapping.solution);
-  const environmentAlias = resolvedSolution?.environment ?? project.topology.activeEnvironment;
-  const solutionAlias = resolvedSolution?.alias ?? project.topology.activeSolution?.alias;
-  const solutionUniqueName = resolvedSolution?.uniqueName ?? project.topology.activeSolution?.uniqueName;
+  const resolvedTarget = resolveDeployMappingTarget(project, mapping);
+  const environmentAlias = resolvedTarget.environmentAlias;
+  const solutionAlias = resolvedTarget.solutionAlias;
+  const solutionUniqueName = resolvedTarget.solutionUniqueName;
 
   switch (mapping.kind) {
     case 'dataverse-envvar':
@@ -1622,6 +1628,24 @@ function resolveDeployMappingSolutionTarget(
   }
 
   return undefined;
+}
+
+function resolveDeployMappingTarget(project: ProjectContext, mapping: ParameterMapping): ResolvedDeployMappingTarget {
+  const resolvedSolution = resolveDeployMappingSolutionTarget(project, mapping.solution);
+
+  if (mapping.solution) {
+    return {
+      environmentAlias: mapping.environment ?? resolvedSolution?.environment ?? project.topology.activeEnvironment,
+      solutionAlias: resolvedSolution?.alias ?? mapping.solution,
+      solutionUniqueName: resolvedSolution?.uniqueName,
+    };
+  }
+
+  return {
+    environmentAlias: mapping.environment ?? resolvedSolution?.environment ?? project.topology.activeEnvironment,
+    solutionAlias: resolvedSolution?.alias ?? project.topology.activeSolution?.alias,
+    solutionUniqueName: resolvedSolution?.uniqueName ?? project.topology.activeSolution?.uniqueName,
+  };
 }
 
 function resolveDeployEnvironmentVariableCreateOptions(mapping: ParameterMapping): DeployEnvironmentVariableCreateOptions | undefined {

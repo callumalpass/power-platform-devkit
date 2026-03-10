@@ -1890,4 +1890,155 @@ describe('deploy fixture-backed goldens', () => {
     expect(prodUpdateSpy).toHaveBeenCalledTimes(1);
     expect(opsUpdateSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('targets an explicit mapping environment without changing the stage default solution selection', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-environment-targets-'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        '  environment: prod',
+        '  solution: core',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        '      solutions:',
+        '        core:',
+        '          uniqueName: CoreManaged',
+        'parameters:',
+        '  fallbackTenantDomain:',
+        '    type: string',
+        '    value: fallback.contoso.example',
+        '    mapsTo:',
+        '      - kind: dataverse-envvar',
+        '        environment: ops',
+        '        target: pp_TenantDomain',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    expect(buildDeployPlan(discovery.data!).data?.operations).toEqual([
+      expect.objectContaining({
+        kind: 'dataverse-envvar-set',
+        parameter: 'fallbackTenantDomain',
+        environmentAlias: 'ops',
+        solutionAlias: 'core',
+        solutionUniqueName: 'CoreManaged',
+        target: 'pp_TenantDomain',
+      }),
+    ]);
+
+    const prodClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-prod-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-prod-1',
+            value: 'old-prod.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-prod-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+    const opsClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-ops-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'component-ops-1',
+            objectid: 'envvar-def-ops-1',
+            componenttype: 380,
+          },
+        ],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-ops-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-ops-1',
+            value: 'old-ops.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-ops-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({
+      prod: prodClient,
+      ops: opsClient,
+    });
+    const prodQuerySpy = vi.spyOn(prodClient, 'query');
+    const prodUpdateSpy = vi.spyOn(prodClient, 'update');
+    const opsUpdateSpy = vi.spyOn(opsClient, 'update');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.apply.operations.filter((operation) => operation.kind === 'dataverse-envvar-set')).toEqual([
+      expect.objectContaining({
+        parameter: 'fallbackTenantDomain',
+        environmentAlias: 'ops',
+        solutionAlias: 'core',
+        solutionUniqueName: 'CoreManaged',
+        status: 'applied',
+        nextValue: 'fallback.contoso.example',
+      }),
+    ]);
+    expect(prodQuerySpy).not.toHaveBeenCalled();
+    expect(prodUpdateSpy).not.toHaveBeenCalled();
+    expect(opsUpdateSpy).toHaveBeenCalledTimes(1);
+  });
 });
