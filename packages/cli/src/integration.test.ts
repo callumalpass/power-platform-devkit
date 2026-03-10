@@ -163,9 +163,25 @@ function normalizeCliSnapshot<T>(value: T, ...tempPaths: string[]): T {
 }
 
 function normalizeCliAnalysisSnapshot<T>(value: T): T {
-  return mapSnapshotStrings(normalizeCliSnapshot(value), (entry) =>
+  const normalizedStrings = mapSnapshotStrings(normalizeCliSnapshot(value), (entry) =>
     entry.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, '<GENERATED_AT>')
   );
+
+  return normalizeDurationMs(normalizedStrings);
+}
+
+function normalizeDurationMs<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeDurationMs(item)) as T;
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, nested]) => [key, key === 'durationMs' ? 0 : normalizeDurationMs(nested)])
+    ) as T;
+  }
+
+  return value;
 }
 
 function normalizeImportedRegistryRoundTrip<T>(value: T, ...tempPaths: string[]): T {
@@ -333,7 +349,7 @@ describe('cli fixture-backed workflows', () => {
     expect(report.code).toBe(0);
     expect(context.code).toBe(0);
     expect(deployPlan.code).toBe(0);
-    expect(deployApply.code).toBe(0);
+    expect(deployApply.code).toBe(1);
 
     await expectGoldenJson(JSON.parse(projectInspect.stdout), 'fixtures/analysis/golden/project-inspect.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
@@ -355,6 +371,64 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(context.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
     await expectGoldenJson(JSON.parse(deployPlan.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
     await expectGoldenJson(JSON.parse(deployApply.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
+  });
+
+  it('covers confirmed live deploy apply through the CLI entrypoint', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const env = {
+      PP_TENANT_DOMAIN: 'contoso.example',
+      PP_SECRET_app_token: 'super-secret',
+      PP_SQL_ENDPOINT: 'sql.contoso.example',
+    };
+
+    mockDataverseResolution({
+      prod: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-prod-1',
+              uniquename: 'CoreManaged',
+              friendlyname: 'Core Managed',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [],
+          dependencies: [],
+          connectionreferences: [],
+          environmentvariabledefinitions: [
+            {
+              environmentvariabledefinitionid: 'envvar-def-1',
+              schemaname: 'pp_TenantDomain',
+              displayname: 'Tenant Domain',
+              defaultvalue: '',
+              type: 'string',
+              _solutionid_value: 'solution-prod-1',
+            },
+          ],
+          environmentvariablevalues: [
+            {
+              environmentvariablevalueid: 'envvar-value-1',
+              value: 'old.example',
+              _environmentvariabledefinitionid_value: 'envvar-def-1',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+    });
+
+    const deployApply = await runCli(['deploy', 'apply', '--project', fixtureRoot, '--yes', '--format', 'json'], {
+      env,
+    });
+
+    expect(deployApply.code).toBe(0);
+
+    await expectGoldenJson(JSON.parse(deployApply.stdout), 'fixtures/analysis/golden/deploy-apply-live.json', {
+      normalize: (value) => normalizeCliAnalysisSnapshot(value),
+    });
+    expect(deployApply.stderr).toBe('');
   });
 
   it('covers project init and doctor through the CLI entrypoint', async () => {
