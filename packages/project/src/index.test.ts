@@ -186,12 +186,13 @@ describe('discoverProject', () => {
         {
           path: 'artifacts/solutions/CoreLifecycle.zip',
           kind: 'recommended-bundle',
-          purpose: 'Canonical packaged solution zip path when the repo stores exported bundles.',
+          purpose: 'Canonical packaged solution zip path for later pack/export output; `project init` creates the directory, not the zip.',
         },
       ],
       relationshipSummary: [
         'Editable solution source lives under `solutions/`.',
         'Packaged solution exports belong under `artifacts/solutions/CoreLifecycle.zip`, separate from source assets.',
+        '`project init` creates `artifacts/solutions/` but leaves `artifacts/solutions/CoreLifecycle.zip` absent until a later pack/export step writes the bundle.',
         'Default stage `dev` maps environment `sandbox` to solution `CoreLifecycle`.',
       ],
     });

@@ -1515,8 +1515,43 @@ describe('cli fixture-backed workflows', () => {
     expect(initPlan.stdout).toContain('`solutions` (editable-root): Editable solution source root for unpacked solution content.');
     expect(initPlan.stdout).toContain('./artifacts/solutions/CoreLifecycle.zip  # recommended packaged solution output');
     expect(initPlan.stdout).toContain(
+      '`artifacts/solutions/CoreLifecycle.zip` (recommended-bundle): Canonical packaged solution zip path for later pack/export output; `project init` creates the directory, not the zip.'
+    );
+    expect(initPlan.stdout).toContain(
       'Packaged solution exports belong under `artifacts/solutions/CoreLifecycle.zip`, separate from source assets.'
     );
+    expect(initPlan.stdout).toContain(
+      '`project init` creates `artifacts/solutions/` but leaves `artifacts/solutions/CoreLifecycle.zip` absent until a later pack/export step writes the bundle.'
+    );
+  });
+
+  it('resolves relative project init targets from INIT_CWD when running from the package directory', async () => {
+    const invocationRoot = await createTempDir();
+    const originalCwd = process.cwd();
+
+    process.chdir(resolveRepoPath('packages', 'cli'));
+
+    try {
+      const initPlan = await runCli(
+        ['project', 'init', 'relative-target', '--name', 'HarnessDemo', '--env', 'sandbox', '--solution', 'CoreLifecycle', '--plan', '--format', 'json'],
+        {
+          env: {
+            INIT_CWD: invocationRoot,
+          },
+        }
+      );
+
+      expect(initPlan.code).toBe(0);
+      expect(initPlan.stderr).toBe('');
+
+      const payload = JSON.parse(initPlan.stdout) as Record<string, any>;
+      expect(payload.input.root).toBe(join(invocationRoot, 'relative-target'));
+      expect(payload.target.root).toBe(join(invocationRoot, 'relative-target'));
+      expect(payload.input.configPath).toBe(join(invocationRoot, 'relative-target', 'pp.config.yaml'));
+      expect(JSON.stringify(payload)).not.toContain('/packages/cli/relative-target');
+    } finally {
+      process.chdir(originalCwd);
+    }
   });
 
   it('derives conceptual feedback for the fixture project through the CLI entrypoint', async () => {

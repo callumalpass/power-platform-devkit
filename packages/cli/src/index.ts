@@ -1713,7 +1713,7 @@ async function runModel(command: string | undefined, args: string[]): Promise<nu
 }
 
 async function runProjectInspect(args: string[]): Promise<number> {
-  const path = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
+  const path = resolveInvocationPath(positionalArgs(args)[0]);
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -1761,7 +1761,7 @@ async function runProjectInspect(args: string[]): Promise<number> {
 }
 
 async function runProjectInit(args: string[]): Promise<number> {
-  const root = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
+  const root = resolveInvocationPath(positionalArgs(args)[0]);
   const format = outputFormat(args, 'json');
   const options = {
     name: readFlag(args, '--name'),
@@ -1804,7 +1804,7 @@ async function runProjectInit(args: string[]): Promise<number> {
 }
 
 async function runProjectDoctor(args: string[]): Promise<number> {
-  const root = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
+  const root = resolveInvocationPath(positionalArgs(args)[0]);
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -1828,7 +1828,7 @@ async function runProjectDoctor(args: string[]): Promise<number> {
 }
 
 async function runProjectFeedback(args: string[]): Promise<number> {
-  const root = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
+  const root = resolveInvocationPath(positionalArgs(args)[0]);
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -8002,6 +8002,18 @@ function resolveCliConfigDir(configDir: string): string {
   }
 
   return resolvePath(resolveDefaultInvocationPath(), configDir);
+}
+
+function resolveInvocationPath(path?: string): string {
+  if (!path) {
+    return resolveDefaultInvocationPath();
+  }
+
+  if (isAbsolute(path)) {
+    return path;
+  }
+
+  return resolvePath(resolveDefaultInvocationPath(), path);
 }
 
 function resolveDefaultInvocationPath(): string {

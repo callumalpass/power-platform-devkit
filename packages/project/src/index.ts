@@ -1594,12 +1594,13 @@ function buildProjectInitPreview(
       {
         path: layout.recommendedBundlePath,
         kind: 'recommended-bundle',
-        purpose: 'Canonical packaged solution zip path when the repo stores exported bundles.',
+        purpose: 'Canonical packaged solution zip path for later pack/export output; `project init` creates the directory, not the zip.',
       },
     ],
     relationshipSummary: [
       `Editable solution source lives under \`${contract.solutionSourceRoot}/\`.`,
       `Packaged solution exports belong under \`${layout.recommendedBundlePath}\`, separate from source assets.`,
+      `\`project init\` creates \`${artifactRoot}/\` but leaves \`${layout.recommendedBundlePath}\` absent until a later pack/export step writes the bundle.`,
       `Default stage \`${contract.defaultTarget.stage ?? 'dev'}\` maps environment \`${contract.defaultTarget.environmentAlias ?? 'dev'}\` to solution \`${contract.defaultTarget.solutionUniqueName ?? contract.defaultTarget.solutionAlias ?? 'Core'}\`.`,
     ],
   };
