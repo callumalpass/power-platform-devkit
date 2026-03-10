@@ -4255,7 +4255,10 @@ async function resolveDataverseClientByFlag(args: string[], flag: string) {
     return argumentFailure('DV_ENV_REQUIRED', `${flag} is required.`);
   }
 
-  return resolveDataverseClient(environmentAlias, readConfigOptions(args));
+  return resolveDataverseClient(environmentAlias, {
+    ...readConfigOptions(args),
+    publicClientLoginOptions: readPublicClientLoginOptions(args),
+  });
 }
 
 async function resolveCanvasCliContext(args: string[]) {
@@ -4407,6 +4410,16 @@ function resolveProcessOutputFormat(): OutputFormat {
 function readConfigOptions(args: string[]): ConfigStoreOptions {
   const configDir = readFlag(args, '--config-dir');
   return configDir ? { configDir: resolveCliConfigDir(configDir) } : {};
+}
+
+function readPublicClientLoginOptions(args: string[]): { allowInteractive?: boolean } | undefined {
+  if (hasFlag(args, '--no-interactive-auth')) {
+    return {
+      allowInteractive: false,
+    };
+  }
+
+  return undefined;
 }
 
 function resolveCliConfigDir(configDir: string): string {
@@ -5057,6 +5070,7 @@ function printHelp(): void {
       '  auth browser-profile remove <name> [--config-dir path]',
       '  auth login --name NAME --resource URL [--login-hint user@contoso.com] [--browser-profile NAME] [--force-prompt] [--device-code] [--config-dir path]',
       '  auth token --profile NAME [--resource URL] [--format raw|json]',
+      '  Remote Dataverse-backed commands accept [--no-interactive-auth] to fail fast with structured diagnostics instead of opening browser auth.',
       '',
       '  env list [--config-dir path]',
       '  env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]',
@@ -5064,7 +5078,7 @@ function printHelp(): void {
       '  env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  env remove <alias> [--config-dir path]',
       '',
-      '  dv whoami --env ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  dv whoami --env ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  dv request --env ALIAS --path PATH [--method GET] [--body JSON|--body-file FILE] [--response-type json|text|void] [--header "Name: value"] [--config-dir path]',
       '  dv query <table> --env ALIAS [--select a,b] [--expand x,y] [--orderby expr] [--top N] [--filter expr] [--count] [--all|--page-info] [--config-dir path]',
       '  dv get <table> <id> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
@@ -5087,7 +5101,7 @@ function printHelp(): void {
       '',
       '  solution create <uniqueName> --env ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)',
       '  solution set-metadata <uniqueName> --env ALIAS [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]',
-      '  solution list --env ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution list --env ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',
       '  solution components <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution dependencies <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',

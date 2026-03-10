@@ -293,6 +293,68 @@ describe('AuthService', () => {
     }
   });
 
+  it('returns a structured failure when browser auth is required but disabled', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
+    const auth = new AuthService({ configDir });
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    await auth.saveBrowserProfile({
+      name: 'tenant-a',
+      kind: 'edge',
+      lastBootstrappedAt: '2026-03-10T07:00:00.000Z',
+      lastBootstrapUrl: DEFAULT_BROWSER_BOOTSTRAP_URL,
+    });
+
+    const tokenCache = {
+      deserialize: vi.fn(),
+      serialize: vi.fn(() => '{}'),
+      getAllAccounts: vi.fn(async () => [
+        {
+          homeAccountId: 'home-account',
+          localAccountId: 'local-account',
+          username: 'user@example.com',
+          tenantId: 'tenant-id',
+          environment: 'login.microsoftonline.com',
+        },
+      ]),
+    };
+
+    vi.spyOn(PublicClientApplication.prototype, 'getTokenCache').mockReturnValue(tokenCache as never);
+    vi.spyOn(PublicClientApplication.prototype, 'acquireTokenSilent').mockRejectedValue(
+      Object.assign(new Error('refresh token expired'), { errorCode: 'invalid_grant' })
+    );
+    const interactiveSpy = vi.spyOn(PublicClientApplication.prototype, 'acquireTokenInteractive');
+
+    const result = await auth.loginProfile(
+      {
+        name: 'user-profile',
+        type: 'user',
+        loginHint: 'user@example.com',
+        browserProfile: 'tenant-a',
+      },
+      'https://example.crm.dynamics.com',
+      {
+        allowInteractive: false,
+      }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toMatchObject([
+      {
+        code: 'AUTH_INTERACTIVE_LOGIN_REQUIRED',
+        message: 'Interactive browser authentication is required for profile user-profile.',
+        hint:
+          'Re-run without --no-interactive-auth after bootstrapping the browser profile, or switch the environment to a device-code or non-browser auth profile.',
+      },
+    ]);
+    expect(result.diagnostics[0]?.detail).toContain('Cached account user@example.com could not be refreshed silently: refresh token expired errorCode=invalid_grant.');
+    expect(result.diagnostics[0]?.detail).toContain(
+      'Browser profile tenant-a was last bootstrapped at 2026-03-10T07:00:00.000Z for https://make.powerapps.com/.'
+    );
+    expect(stderrSpy).not.toHaveBeenCalled();
+    expect(interactiveSpy).not.toHaveBeenCalled();
+  });
+
   it('prefers installed stable Linux browser binaries when generic names are absent', async () => {
     const browserBinDir = await mkdtemp(join(tmpdir(), 'pp-browser-bin-'));
     const originalPath = process.env.PATH;

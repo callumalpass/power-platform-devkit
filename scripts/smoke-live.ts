@@ -29,23 +29,31 @@ async function main(): Promise<void> {
   const profile = runCli<Record<string, unknown>>('auth profile inspect', ['auth', 'profile', 'inspect', target.authProfile], configDir);
   assertValue(typeof profile.data.name === 'string', 'Auth profile inspect did not return a profile name.');
 
-  const whoAmI = runCli<Record<string, unknown>>('dv whoami', ['dv', 'whoami', '--env', target.alias], configDir);
+  const whoAmI = runCli<Record<string, unknown>>(
+    'dv whoami',
+    ['dv', 'whoami', '--env', target.alias, '--no-interactive-auth'],
+    configDir
+  );
   assertValue(typeof whoAmI.data.OrganizationId === 'string', 'WhoAmI did not return OrganizationId.');
   assertValue(typeof whoAmI.data.UserId === 'string', 'WhoAmI did not return UserId.');
 
-  const solutions = runCli<Array<Record<string, unknown>>>('solution list', ['solution', 'list', '--env', target.alias], configDir);
+  const solutions = runCli<Array<Record<string, unknown>>>(
+    'solution list',
+    ['solution', 'list', '--env', target.alias, '--no-interactive-auth'],
+    configDir
+  );
   assertValue(Array.isArray(solutions.data), 'Solution list did not return an array.');
 
   const tables = runCli<Array<Record<string, unknown>>>(
     'dv metadata tables',
-    ['dv', 'metadata', 'tables', '--env', target.alias, '--top', '1'],
+    ['dv', 'metadata', 'tables', '--env', target.alias, '--top', '1', '--no-interactive-auth'],
     configDir
   );
   assertValue(Array.isArray(tables.data) && tables.data.length > 0, 'Metadata table smoke query returned no records.');
 
   const columns = runCli<Array<Record<string, unknown>>>(
     'dv metadata columns',
-    ['dv', 'metadata', 'columns', 'account', '--env', target.alias, '--top', '1'],
+    ['dv', 'metadata', 'columns', 'account', '--env', target.alias, '--top', '1', '--no-interactive-auth'],
     configDir
   );
   assertValue(Array.isArray(columns.data) && columns.data.length > 0, 'Metadata column smoke query returned no records.');

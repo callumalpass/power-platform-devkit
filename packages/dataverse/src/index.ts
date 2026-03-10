@@ -1,4 +1,4 @@
-import { createTokenProvider, type AuthProfile } from '@pp/auth';
+import { createTokenProvider, type AuthProfile, type PublicClientLoginOptions } from '@pp/auth';
 import { getAuthProfile, getEnvironmentAlias, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpQueryValue, type HttpRequestOptions, type HttpResponse } from '@pp/http';
@@ -81,6 +81,10 @@ export interface DataverseResolution {
   environment: EnvironmentAlias;
   authProfile: AuthProfile;
   client: DataverseClient;
+}
+
+export interface ResolveDataverseClientOptions extends ConfigStoreOptions {
+  publicClientLoginOptions?: PublicClientLoginOptions;
 }
 
 export interface WhoAmIResult {
@@ -1444,7 +1448,7 @@ export class EnvironmentVariableService {
 
 export async function resolveDataverseClient(
   environmentAlias: string,
-  options: ConfigStoreOptions = {}
+  options: ResolveDataverseClientOptions = {}
 ): Promise<OperationResult<DataverseResolution>> {
   const environmentResult = await getEnvironmentAlias(environmentAlias, options);
 
@@ -1479,7 +1483,7 @@ export async function resolveDataverseClient(
     );
   }
 
-  const tokenProvider = createTokenProvider(authProfileResult.data, options);
+  const tokenProvider = createTokenProvider(authProfileResult.data, options, options.publicClientLoginOptions);
 
   if (!tokenProvider.success || !tokenProvider.data) {
     return tokenProvider as unknown as OperationResult<DataverseResolution>;

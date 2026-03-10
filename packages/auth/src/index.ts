@@ -53,11 +53,25 @@ export interface TokenProvider {
 export interface PublicClientLoginOptions {
   forcePrompt?: boolean;
   preferredFlow?: PublicClientFlow;
+  allowInteractive?: boolean;
 }
 
 interface InteractiveAuthLaunchContext {
   cachedAccountUsername?: string;
   silentFailure?: unknown;
+}
+
+class InteractiveAuthRequiredError extends Error {
+  readonly code = 'AUTH_INTERACTIVE_LOGIN_REQUIRED';
+  readonly hint: string;
+  readonly detail: string;
+
+  constructor(message: string, hint: string, detail: string) {
+    super(message);
+    this.name = 'InteractiveAuthRequiredError';
+    this.hint = hint;
+    this.detail = detail;
+  }
 }
 
 export class StaticTokenProvider implements TokenProvider {
@@ -111,12 +125,14 @@ export class ClientSecretTokenProvider implements TokenProvider {
 export class UserTokenProvider implements TokenProvider {
   constructor(
     private readonly profile: UserAuthProfile,
-    private readonly options: ConfigStoreOptions = {}
+    private readonly options: ConfigStoreOptions = {},
+    private readonly loginOptions: PublicClientLoginOptions = {}
   ) {}
 
   async getAccessToken(resource: string): Promise<string> {
     const result = await acquireAndPersistPublicClientToken(this.profile, this.options, resource, {
       preferredFlow: this.profile.type === 'device-code' ? 'device-code' : 'interactive',
+      ...this.loginOptions,
     });
 
     return result.accessToken;
@@ -251,6 +267,19 @@ export class AuthService {
         }
       );
     } catch (error) {
+      if (isInteractiveAuthRequiredError(error)) {
+        return fail(
+          createDiagnostic('error', error.code, error.message, {
+            source: '@pp/auth',
+            hint: error.hint,
+            detail: error.detail,
+          }),
+          {
+            supportTier: 'stable',
+          }
+        );
+      }
+
       return fail(
         createDiagnostic('error', 'AUTH_TOKEN_ACQUISITION_FAILED', `Failed to authenticate profile ${profile.name}`, {
           source: '@pp/auth',
@@ -293,6 +322,19 @@ export class AuthService {
           }
         );
       } catch (error) {
+        if (isInteractiveAuthRequiredError(error)) {
+          return fail(
+            createDiagnostic('error', error.code, error.message, {
+              source: '@pp/auth',
+              hint: error.hint,
+              detail: error.detail,
+            }),
+            {
+              supportTier: 'stable',
+            }
+          );
+        }
+
         return fail(
           createDiagnostic('error', 'AUTH_TOKEN_ACQUISITION_FAILED', `Failed to acquire token for profile ${profileName}`, {
             source: '@pp/auth',
@@ -320,6 +362,19 @@ export class AuthService {
         }
       );
     } catch (error) {
+      if (isInteractiveAuthRequiredError(error)) {
+        return fail(
+          createDiagnostic('error', error.code, error.message, {
+            source: '@pp/auth',
+            hint: error.hint,
+            detail: error.detail,
+          }),
+          {
+            supportTier: 'stable',
+          }
+        );
+      }
+
       return fail(
         createDiagnostic('error', 'AUTH_TOKEN_ACQUISITION_FAILED', `Failed to acquire token for profile ${profileName}`, {
           source: '@pp/auth',
@@ -332,7 +387,8 @@ export class AuthService {
 
 export function createTokenProvider(
   profile: AuthProfile,
-  options: ConfigStoreOptions = {}
+  options: ConfigStoreOptions = {},
+  loginOptions: PublicClientLoginOptions = {}
 ): OperationResult<TokenProvider> {
   switch (profile.type) {
     case 'static-token':
@@ -349,7 +405,7 @@ export function createTokenProvider(
       });
     case 'user':
     case 'device-code':
-      return ok(new UserTokenProvider(profile, options), {
+      return ok(new UserTokenProvider(profile, options, loginOptions), {
         supportTier: 'stable',
       });
     default:
@@ -553,9 +609,11 @@ async function acquirePublicClientToken(
           cachedAccountUsername: account.username,
           silentFailure: error,
         };
-        process.stderr.write(
-          `Silent authentication failed for profile ${profile.name}: ${formatAuthError(error)}. Falling back to interactive authentication.\n`
-        );
+        if (loginOptions.allowInteractive ?? true) {
+          process.stderr.write(
+            `Silent authentication failed for profile ${profile.name}: ${formatAuthError(error)}. Falling back to interactive authentication.\n`
+          );
+        }
       }
     } else {
       interactiveLaunchContext = {};
@@ -566,6 +624,14 @@ async function acquirePublicClientToken(
 
   if (preferredFlow === 'device-code') {
     return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
+  }
+
+  if (loginOptions.allowInteractive === false) {
+    const browserProfile =
+      profile.type === 'user' && profile.browserProfile
+        ? await loadNamedBrowserProfile(profile.browserProfile, options)
+        : undefined;
+    throw buildInteractiveAuthRequiredError(profile, browserProfile, interactiveLaunchContext);
   }
 
   if (!canAttemptInteractiveAuth()) {
@@ -654,6 +720,42 @@ function buildInteractiveAuthLaunchMessage(
 
   lines.push('If no browser window appears, the browser handoff likely failed.');
   return `${lines.join('\n')}\n`;
+}
+
+function buildInteractiveAuthRequiredError(
+  profile: UserAuthProfile,
+  browserProfile: BrowserProfile | undefined,
+  launchContext: InteractiveAuthLaunchContext | undefined
+): InteractiveAuthRequiredError {
+  const detailLines = [
+    `Interactive browser authentication would be required for auth profile ${profile.name}, but this invocation disabled browser auth.`,
+  ];
+
+  if (launchContext?.silentFailure) {
+    detailLines.push(
+      `Cached account ${launchContext.cachedAccountUsername ?? profile.accountUsername ?? profile.loginHint ?? profile.name} could not be refreshed silently: ${formatAuthError(launchContext.silentFailure)}.`
+    );
+  } else if (launchContext?.cachedAccountUsername) {
+    detailLines.push(`Cached account ${launchContext.cachedAccountUsername} requires an interactive sign-in step.`);
+  } else {
+    detailLines.push('No cached account was available for silent token refresh. This usually means the browser session needs sign-in or consent.');
+  }
+
+  if (browserProfile?.lastBootstrappedAt) {
+    detailLines.push(
+      `Browser profile ${browserProfile.name} was last bootstrapped at ${browserProfile.lastBootstrappedAt}${browserProfile.lastBootstrapUrl ? ` for ${browserProfile.lastBootstrapUrl}` : ''}.`
+    );
+  } else if (browserProfile) {
+    detailLines.push(
+      `Browser profile ${browserProfile.name} has no recorded bootstrap yet. Complete an initial sign-in or consent flow in that profile first.`
+    );
+  }
+
+  return new InteractiveAuthRequiredError(
+    `Interactive browser authentication is required for profile ${profile.name}.`,
+    'Re-run without --no-interactive-auth after bootstrapping the browser profile, or switch the environment to a device-code or non-browser auth profile.',
+    detailLines.join(' ')
+  );
 }
 
 async function acquireTokenByDeviceCode(
@@ -756,6 +858,10 @@ function resolveTokenCacheKey(profile: Pick<UserAuthProfile, 'name' | 'tokenCach
 
 function resolveTokenCachePath(profile: UserAuthProfile, options: ConfigStoreOptions): string {
   return join(getMsalCacheDir(options), `${resolveTokenCacheKey(profile)}.json`);
+}
+
+function isInteractiveAuthRequiredError(error: unknown): error is InteractiveAuthRequiredError {
+  return error instanceof InteractiveAuthRequiredError;
 }
 
 export function resolveBrowserProfileDirectory(profile: BrowserProfile, options: ConfigStoreOptions = {}): string {
