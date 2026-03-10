@@ -6,14 +6,23 @@
         "SendMail": {
           "inputs": {
             "body": "@{environmentVariables('pp_ApiUrl')}",
+            "host": {
+              "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+              "connection": {
+                "name": "@parameters('$connections')['shared_office365']['connectionId']"
+              }
+            },
+            "operationId": "SendEmailV2",
             "subject": "@{parameters('ApiBaseUrl')}"
-          }
+          },
+          "type": "OpenApiConnection"
         }
       },
       "parameters": {
         "$connections": {
           "value": {
             "shared_office365": {
+              "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
               "connectionId": "/connections/office365",
               "connectionReferenceLogicalName": "shared_office365"
             }
@@ -27,6 +36,7 @@
   },
   "connectionReferences": [
     {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
       "connectionId": "/connections/office365",
       "connectionReferenceLogicalName": "shared_office365",
       "name": "shared_office365"

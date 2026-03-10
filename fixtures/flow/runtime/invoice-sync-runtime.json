@@ -16,7 +16,7 @@
         "category": 5,
         "statecode": 1,
         "statuscode": 2,
-        "clientdata": "{\"definition\":{\"parameters\":{\"$connections\":{\"value\":{\"shared_office365\":{\"connectionId\":\"/connections/office365\",\"connectionReferenceLogicalName\":\"shared_office365\"}}},\"ApiBaseUrl\":{\"defaultValue\":\"https://example.test\"}},\"actions\":{\"SendMail\":{\"inputs\":{\"subject\":\"@{parameters('ApiBaseUrl')}\",\"body\":\"@{environmentVariables('pp_ApiUrl')}\"}}}}}"
+        "clientdata": "{\"definition\":{\"parameters\":{\"$connections\":{\"value\":{\"shared_office365\":{\"connectionId\":\"/connections/office365\",\"connectionReferenceLogicalName\":\"shared_office365\",\"apiId\":\"/providers/microsoft.powerapps/apis/shared_office365\"}}},\"ApiBaseUrl\":{\"defaultValue\":\"https://example.test\"}},\"actions\":{\"SendMail\":{\"type\":\"OpenApiConnection\",\"inputs\":{\"operationId\":\"SendEmailV2\",\"host\":{\"apiId\":\"/providers/microsoft.powerapps/apis/shared_office365\",\"connection\":{\"name\":\"@parameters('$connections')['shared_office365']['connectionId']\"}},\"subject\":\"@{parameters('ApiBaseUrl')}\",\"body\":\"@{environmentVariables('pp_ApiUrl')}\"}}}}}"
       },
       {
         "workflowid": "flow-2",

@@ -4,6 +4,15 @@
       "diagnostics": [],
       "name": "shared_office365",
       "recentFailures": 2,
+      "sourceNodes": [
+        {
+          "id": "action:actions.SendMail",
+          "kind": "action",
+          "name": "SendMail",
+          "path": "actions.SendMail",
+          "type": "OpenApiConnection"
+        }
+      ],
       "valid": false
     }
   ],
@@ -11,7 +20,16 @@
     {
       "hasValue": false,
       "name": "pp_ApiUrl",
-      "recentFailures": 2
+      "recentFailures": 2,
+      "sourceNodes": [
+        {
+          "id": "action:actions.SendMail",
+          "kind": "action",
+          "name": "SendMail",
+          "path": "actions.SendMail",
+          "type": "OpenApiConnection"
+        }
+      ]
     }
   ],
   "flow": {
@@ -22,14 +40,23 @@
           "SendMail": {
             "inputs": {
               "body": "@{environmentVariables('pp_ApiUrl')}",
+              "host": {
+                "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+                "connection": {
+                  "name": "@parameters('$connections')['shared_office365']['connectionId']"
+                }
+              },
+              "operationId": "SendEmailV2",
               "subject": "@{parameters('ApiBaseUrl')}"
-            }
+            },
+            "type": "OpenApiConnection"
           }
         },
         "parameters": {
           "$connections": {
             "value": {
               "shared_office365": {
+                "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
                 "connectionId": "/connections/office365",
                 "connectionReferenceLogicalName": "shared_office365"
               }
@@ -43,6 +70,7 @@
     },
     "connectionReferences": [
       {
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
         "connectionId": "/connections/office365",
         "connectionReferenceLogicalName": "shared_office365",
         "name": "shared_office365"
@@ -60,5 +88,11 @@
     "stateCode": 1,
     "statusCode": 2,
     "uniqueName": "crd_InvoiceSync"
+  },
+  "sourceDefinition": {
+    "artifactName": "Invoice Sync",
+    "available": true,
+    "nodeCount": 1,
+    "unresolvedEdgeCount": 0
   }
 }

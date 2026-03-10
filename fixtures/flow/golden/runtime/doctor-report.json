@@ -10,7 +10,7 @@
     }
   ],
   "findings": [
-    "Connection reference shared_office365 is invalid for this flow.",
+    "Recent failures mention connection reference shared_office365, used by SendMail.",
     "Recent failures are grouping under ConnectorAuthFailed."
   ],
   "flow": {
@@ -21,14 +21,23 @@
           "SendMail": {
             "inputs": {
               "body": "@{environmentVariables('pp_ApiUrl')}",
+              "host": {
+                "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+                "connection": {
+                  "name": "@parameters('$connections')['shared_office365']['connectionId']"
+                }
+              },
+              "operationId": "SendEmailV2",
               "subject": "@{parameters('ApiBaseUrl')}"
-            }
+            },
+            "type": "OpenApiConnection"
           }
         },
         "parameters": {
           "$connections": {
             "value": {
               "shared_office365": {
+                "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
                 "connectionId": "/connections/office365",
                 "connectionReferenceLogicalName": "shared_office365"
               }
@@ -42,6 +51,7 @@
     },
     "connectionReferences": [
       {
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
         "connectionId": "/connections/office365",
         "connectionReferenceLogicalName": "shared_office365",
         "name": "shared_office365"
@@ -60,30 +70,7 @@
     "statusCode": 2,
     "uniqueName": "crd_InvoiceSync"
   },
-  "invalidConnectionReferences": [
-    {
-      "diagnostics": [
-        {
-          "code": "DATAVERSE_CONNREF_CONNECTION_MISSING",
-          "level": "warning",
-          "message": "Connection reference Office 365 Mail has no active connection binding.",
-          "source": "@pp/dataverse"
-        }
-      ],
-      "reference": {
-        "connected": false,
-        "connectorId": "/providers/microsoft.powerapps/apis/shared_office365",
-        "displayName": "Office 365 Mail",
-        "id": "ref-1",
-        "logicalName": "shared_office365",
-        "solutionId": "sol-1"
-      },
-      "suggestedNextActions": [
-        "Bind the connection reference to an active connection before deployment."
-      ],
-      "valid": true
-    }
-  ],
+  "invalidConnectionReferences": [],
   "missingEnvironmentVariables": [],
   "recentRuns": {
     "failed": 2,
@@ -100,5 +87,66 @@
       "workflowName": "Invoice Sync"
     },
     "total": 3
+  },
+  "sourceCorrelation": {
+    "artifactName": "Invoice Sync",
+    "available": true,
+    "connectionReferences": [
+      {
+        "name": "shared_office365",
+        "recentFailures": 2,
+        "sourceNodes": [
+          {
+            "id": "action:actions.SendMail",
+            "kind": "action",
+            "name": "SendMail",
+            "path": "actions.SendMail",
+            "type": "OpenApiConnection"
+          }
+        ]
+      }
+    ],
+    "environmentVariables": [
+      {
+        "hasValue": false,
+        "name": "pp_ApiUrl",
+        "recentFailures": 2,
+        "sourceNodes": [
+          {
+            "id": "action:actions.SendMail",
+            "kind": "action",
+            "name": "SendMail",
+            "path": "actions.SendMail",
+            "type": "OpenApiConnection"
+          }
+        ]
+      }
+    ],
+    "errorGroups": [
+      {
+        "count": 2,
+        "group": "ConnectorAuthFailed",
+        "heuristic": "message",
+        "relatedConnectionReferences": [
+          "shared_office365"
+        ],
+        "sourceNodes": [
+          {
+            "id": "action:actions.SendMail",
+            "kind": "action",
+            "name": "SendMail",
+            "path": "actions.SendMail",
+            "type": "OpenApiConnection"
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "connectionReferenceCount": 1,
+      "environmentVariableCount": 1,
+      "errorGroupCount": 1,
+      "nodeCount": 1,
+      "unresolvedEdgeCount": 0
+    }
   }
 }

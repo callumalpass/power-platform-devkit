@@ -55,15 +55,22 @@ Current behavior:
 - `flow errors` groups failed runs by `errorCode`, `errorMessage`, or a
   connection-reference heuristic
 - `flow connrefs` combines runtime failures with connection-reference and
-  environment-variable health
+  environment-variable health, and now attaches source-node locations when the
+  remote flow's `clientdata` still contains a supported definition payload
 - `flow doctor` produces a compact pre-triaged report with recent failures,
   grouped errors, invalid connection references, missing environment variables,
-  and synthesized findings
+  synthesized findings, and a first runtime-to-source correlation slice that
+  maps supported connection-reference or environment-variable evidence back to
+  normalized action/trigger nodes
 
 Known limits in this slice:
 
 - runtime ingestion can lag behind the maker portal view
 - connector grouping is heuristic until richer runtime fields are exposed
+- source correlation is only available when Dataverse `workflows.clientdata`
+  still includes a supported definition shape, and error-group correlation is
+  currently limited to connection-reference name matches from the group key or
+  sample error message
 - the runtime tables are treated as read-only evidence, not a mutation surface
 
 ## Local artifact format

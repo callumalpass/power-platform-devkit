@@ -307,16 +307,24 @@ export interface FlowErrorGroup {
 
 export interface FlowConnectionHealthReport {
   flow: FlowInspectResult;
+  sourceDefinition?: {
+    available: boolean;
+    artifactName?: string;
+    nodeCount?: number;
+    unresolvedEdgeCount?: number;
+  };
   connectionReferences: Array<{
     name: string;
     valid: boolean;
     diagnostics: string[];
     recentFailures: number;
+    sourceNodes: FlowSourceNodeLocation[];
   }>;
   environmentVariables: Array<{
     name: string;
     hasValue: boolean;
     recentFailures: number;
+    sourceNodes: FlowSourceNodeLocation[];
   }>;
 }
 
@@ -330,6 +338,35 @@ export interface FlowDoctorReport {
   errorGroups: FlowErrorGroup[];
   invalidConnectionReferences: ConnectionReferenceValidationResult[];
   missingEnvironmentVariables: EnvironmentVariableSummary[];
+  sourceCorrelation?: {
+    available: boolean;
+    artifactName?: string;
+    summary?: {
+      nodeCount: number;
+      unresolvedEdgeCount: number;
+      connectionReferenceCount: number;
+      environmentVariableCount: number;
+      errorGroupCount: number;
+    };
+    connectionReferences: Array<{
+      name: string;
+      recentFailures: number;
+      sourceNodes: FlowSourceNodeLocation[];
+    }>;
+    environmentVariables: Array<{
+      name: string;
+      hasValue: boolean;
+      recentFailures: number;
+      sourceNodes: FlowSourceNodeLocation[];
+    }>;
+    errorGroups: Array<{
+      group: string;
+      count: number;
+      relatedConnectionReferences: string[];
+      sourceNodes: FlowSourceNodeLocation[];
+      heuristic: 'group-name' | 'message';
+    }>;
+  };
   findings: string[];
 }
 
@@ -359,6 +396,21 @@ interface FlowNodeSummary {
     reads: string[];
     writes: string[];
   };
+}
+
+export interface FlowSourceNodeLocation {
+  id: string;
+  name: string;
+  kind: FlowNodeKind;
+  type?: string;
+  path: string;
+}
+
+interface FlowSourceCorrelationModel {
+  artifactName?: string;
+  graph: FlowGraphReport;
+  connectionReferenceNodes: Map<string, FlowSourceNodeLocation[]>;
+  environmentVariableNodes: Map<string, FlowSourceNodeLocation[]>;
 }
 
 interface FlowSemanticAnalysis {
@@ -657,10 +709,21 @@ export class FlowService {
     }
 
     const failedRuns = runs.data ?? [];
+    const sourceCorrelation = buildFlowSourceCorrelationModel(flow.data);
 
     return ok(
       {
         flow: flow.data,
+        sourceDefinition: sourceCorrelation
+          ? {
+              available: true,
+              artifactName: sourceCorrelation.artifactName,
+              nodeCount: sourceCorrelation.graph.summary.nodeCount,
+              unresolvedEdgeCount: sourceCorrelation.graph.summary.unresolvedEdgeCount,
+            }
+          : {
+              available: false,
+            },
         connectionReferences: flow.data.connectionReferences.map((reference) => {
           const validation =
             (references.data ?? []).find((candidate) =>
@@ -673,6 +736,7 @@ export class FlowService {
             valid: validation ? validation.valid && validation.diagnostics.length === 0 : false,
             diagnostics: (validation?.diagnostics ?? []).map((diagnostic) => diagnostic.message),
             recentFailures: countRunsForReference(failedRuns, reference.name),
+            sourceNodes: sourceCorrelation?.connectionReferenceNodes.get(reference.name) ?? [],
           };
         }),
         environmentVariables: flow.data.environmentVariables.map((name) => {
@@ -682,6 +746,7 @@ export class FlowService {
             name,
             hasValue: Boolean(variable?.effectiveValue),
             recentFailures: failedRuns.length,
+            sourceNodes: sourceCorrelation?.environmentVariableNodes.get(name) ?? [],
           };
         }),
       },
@@ -757,6 +822,9 @@ export class FlowService {
     const missingEnvironmentVariables = (variables.data ?? []).filter(
       (variable) => flow.data?.environmentVariables.includes(variable.schemaName ?? '') && !variable.effectiveValue
     );
+    const sourceCorrelation = flow.data ? buildFlowSourceCorrelationModel(flow.data) : undefined;
+    const correlatedErrorGroups =
+      flow.data && sourceCorrelation ? correlateFlowErrorGroups(errors.data ?? [], flow.data, sourceCorrelation) : [];
     const findings = [
       ...invalidConnectionReferences.map(
         (reference) => `Connection reference ${reference.reference.logicalName ?? reference.reference.id} is invalid for this flow.`
@@ -764,6 +832,10 @@ export class FlowService {
       ...missingEnvironmentVariables.map(
         (variable) => `Environment variable ${variable.schemaName ?? variable.definitionId} does not have an effective value.`
       ),
+      ...correlatedErrorGroups.map((group) => {
+        const nodeNames = group.sourceNodes.map((node) => node.name).join(', ');
+        return `Recent failures mention connection reference ${group.relatedConnectionReferences.join(', ')}, used by ${nodeNames}.`;
+      }),
       ...(errors.data ?? []).slice(0, 3).map((group) => `Recent failures are grouping under ${group.group}.`),
     ];
 
@@ -778,6 +850,37 @@ export class FlowService {
         errorGroups: errors.data ?? [],
         invalidConnectionReferences,
         missingEnvironmentVariables,
+        sourceCorrelation: flow.data
+          ? {
+              available: Boolean(sourceCorrelation),
+              artifactName: sourceCorrelation?.artifactName,
+              summary: sourceCorrelation
+                ? {
+                    nodeCount: sourceCorrelation.graph.summary.nodeCount,
+                    unresolvedEdgeCount: sourceCorrelation.graph.summary.unresolvedEdgeCount,
+                    connectionReferenceCount: flow.data.connectionReferences.length,
+                    environmentVariableCount: flow.data.environmentVariables.length,
+                    errorGroupCount: correlatedErrorGroups.length,
+                  }
+                : undefined,
+              connectionReferences: flow.data.connectionReferences.map((reference) => ({
+                name: reference.name,
+                recentFailures: countRunsForReference(failedRuns, reference.name),
+                sourceNodes: sourceCorrelation?.connectionReferenceNodes.get(reference.name) ?? [],
+              })),
+              environmentVariables: flow.data.environmentVariables.map((name) => {
+                const variable = (variables.data ?? []).find((candidate) => candidate.schemaName === name);
+
+                return {
+                  name,
+                  hasValue: Boolean(variable?.effectiveValue),
+                  recentFailures: failedRuns.length,
+                  sourceNodes: sourceCorrelation?.environmentVariableNodes.get(name) ?? [],
+                };
+              }),
+              errorGroups: correlatedErrorGroups,
+            }
+          : undefined,
         findings,
       },
       {
@@ -1991,7 +2094,11 @@ function collectParameterNames(value: Record<string, unknown>): string[] {
     }
   }
 
-  scanFlowStrings(value, /parameters\('([^']+)'\)/g, (match) => parameterNames.add(match));
+  scanFlowStrings(value, /parameters\('([^']+)'\)/g, (match) => {
+    if (match !== '$connections') {
+      parameterNames.add(match);
+    }
+  });
   return Array.from(parameterNames).sort();
 }
 
@@ -2386,6 +2493,156 @@ function buildFlowGraphReport(artifact: FlowArtifact): FlowGraphReport {
     },
     hotspots,
   };
+}
+
+function buildFlowSourceCorrelationModel(flow: FlowInspectResult): FlowSourceCorrelationModel | undefined {
+  const artifact = buildFlowArtifactFromInspectResult(flow);
+
+  if (!artifact) {
+    return undefined;
+  }
+
+  const graph = buildFlowGraphReport(artifact);
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node] as const));
+  const connectionReferenceNodes = new Map<string, FlowSourceNodeLocation[]>();
+  const environmentVariableNodes = new Map<string, FlowSourceNodeLocation[]>();
+
+  for (const edge of graph.edges) {
+    if (edge.kind !== 'connectionReferenceReference' && edge.kind !== 'environmentVariableReference') {
+      continue;
+    }
+
+    const sourceNode = nodesById.get(edge.from);
+
+    if (!sourceNode) {
+      continue;
+    }
+
+    const [prefix, name] = edge.to.split(':');
+
+    if (!name || (prefix !== 'connectionReference' && prefix !== 'environmentVariable')) {
+      continue;
+    }
+
+    const target = prefix === 'connectionReference' ? connectionReferenceNodes : environmentVariableNodes;
+    const current = target.get(name) ?? [];
+
+    if (!current.some((node) => node.id === sourceNode.id)) {
+      current.push(summarizeFlowSourceNode(sourceNode));
+      current.sort((left, right) => left.path.localeCompare(right.path));
+      target.set(name, current);
+    }
+  }
+
+  return {
+    artifactName: graph.artifactName,
+    graph,
+    connectionReferenceNodes,
+    environmentVariableNodes,
+  };
+}
+
+function buildFlowArtifactFromInspectResult(flow: FlowInspectResult): FlowArtifact | undefined {
+  const parsed = parseFlowClientDataFromValue(flow.clientData);
+
+  if (!parsed.definition) {
+    return undefined;
+  }
+
+  return {
+    schemaVersion: 1,
+    kind: 'pp.flow.artifact',
+    metadata: {
+      id: flow.id,
+      name: flow.uniqueName ?? flow.name,
+      displayName: flow.name,
+      uniqueName: flow.uniqueName,
+      stateCode: flow.stateCode,
+      statusCode: flow.statusCode,
+      connectionReferences: flow.connectionReferences,
+      parameters: normalizeFlowParameters(asRecord(parsed.definition.parameters)),
+      environmentVariables: flow.environmentVariables,
+    },
+    definition: normalizeFlowJsonRecord(parsed.definition) as Record<string, FlowJsonValue>,
+  };
+}
+
+function summarizeFlowSourceNode(node: FlowGraphNodeSummary): FlowSourceNodeLocation {
+  return {
+    id: node.id,
+    name: node.name,
+    kind: node.kind,
+    type: node.type,
+    path: node.path,
+  };
+}
+
+function correlateFlowErrorGroups(
+  errorGroups: FlowErrorGroup[],
+  flow: FlowInspectResult,
+  sourceCorrelation: FlowSourceCorrelationModel
+): NonNullable<FlowDoctorReport['sourceCorrelation']>['errorGroups'] {
+  const relatedAliases = flow.connectionReferences
+    .flatMap((reference) =>
+      [reference.name, reference.connectionReferenceLogicalName].filter((value): value is string => Boolean(value)).map((alias) => ({
+        name: reference.name,
+        alias,
+      }))
+    )
+    .sort((left, right) => right.alias.length - left.alias.length);
+  const correlated: NonNullable<FlowDoctorReport['sourceCorrelation']>['errorGroups'] = [];
+
+  for (const group of errorGroups) {
+    const relatedNames = new Set<string>();
+    let heuristic: 'group-name' | 'message' | undefined;
+    const haystacks = [
+      { value: group.group, heuristic: 'group-name' as const },
+      { value: group.sampleErrorMessage, heuristic: 'message' as const },
+    ];
+
+    for (const haystack of haystacks) {
+      const candidate = normalizeCorrelationText(haystack.value);
+
+      if (!candidate) {
+        continue;
+      }
+
+      for (const alias of relatedAliases) {
+        if (!candidate.includes(normalizeCorrelationText(alias.alias))) {
+          continue;
+        }
+
+        relatedNames.add(alias.name);
+        heuristic ??= haystack.heuristic;
+      }
+    }
+
+    if (relatedNames.size === 0 || !heuristic) {
+      continue;
+    }
+
+    const sourceNodes = Array.from(
+      new Map(
+        Array.from(relatedNames)
+          .flatMap((name) => sourceCorrelation.connectionReferenceNodes.get(name) ?? [])
+          .map((node) => [node.id, node] as const)
+      ).values()
+    ).sort((left, right) => left.path.localeCompare(right.path));
+
+    correlated.push({
+      group: group.group,
+      count: group.count,
+      relatedConnectionReferences: Array.from(relatedNames).sort(),
+      sourceNodes,
+      heuristic,
+    });
+  }
+
+  return correlated;
+}
+
+function normalizeCorrelationText(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase();
 }
 
 function readInitializeVariableNames(value: unknown): string[] {
