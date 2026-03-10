@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { buildDeployPlan, executeDeploy, resolveDeployBindings } from './index';
 import { discoverProject } from '@pp/project';
@@ -101,6 +104,93 @@ describe('deploy fixture-backed goldens', () => {
         value: 'super-secret',
         valuePreview: '<redacted>',
       },
+    ]);
+  });
+
+  it('marks conflicting deploy binding targets and blocks the shared preflight', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-conflict-'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        'solutions:',
+        '  core:',
+        '    uniqueName: CoreManaged',
+        'parameters:',
+        '  sqlEndpoint:',
+        '    type: string',
+        '    fromEnv: PP_SQL_ENDPOINT',
+        '    required: true',
+        '    mapsTo:',
+        '      - kind: deploy-input',
+        '        target: shared-output',
+        '  sqlEndpointFallback:',
+        '    type: string',
+        '    value: fallback.contoso.example',
+        '    mapsTo:',
+        '      - kind: deploy-input',
+        '        target: shared-output',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root, {
+      environment: {
+        PP_SQL_ENDPOINT: 'sql.contoso.example',
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const bindings = resolveDeployBindings(discovery.data!);
+    expect(bindings.inputs).toEqual([
+      expect.objectContaining({
+        parameter: 'sqlEndpoint',
+        status: 'conflict',
+        target: 'shared-output',
+        value: 'sql.contoso.example',
+      }),
+      expect.objectContaining({
+        parameter: 'sqlEndpointFallback',
+        status: 'conflict',
+        target: 'shared-output',
+        value: 'fallback.contoso.example',
+      }),
+    ]);
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT',
+        target: 'shared-output',
+      })
+    );
+    expect(result.data?.apply.operations).toEqual([
+      expect.objectContaining({
+        kind: 'deploy-input-bind',
+        parameter: 'sqlEndpoint',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
+      expect.objectContaining({
+        kind: 'deploy-input-bind',
+        parameter: 'sqlEndpointFallback',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
     ]);
   });
 
@@ -510,5 +600,111 @@ describe('deploy fixture-backed goldens', () => {
       nextValue: 'conn-target-sql',
       changed: true,
     });
+  });
+
+  it('blocks conflicting dataverse envvar targets before remote preflight or apply', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const discovery = await discoverProject(fixtureRoot, {
+      environment: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+        PP_SQL_ENDPOINT: 'sql.contoso.example',
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    discovery.data!.parameters.tenantDomainOverride = {
+      name: 'tenantDomainOverride',
+      type: 'string',
+      source: 'value',
+      value: 'override.example',
+      definition: {
+        type: 'string',
+        value: 'override.example',
+        required: true,
+        mapsTo: [
+          {
+            kind: 'dataverse-envvar',
+            target: 'pp_TenantDomain',
+          },
+        ],
+      },
+      sensitive: false,
+      hasValue: true,
+      reference: undefined,
+      resolvedBy: undefined,
+    };
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const updateSpy = vi.spyOn(client, 'update');
+    const querySpy = vi.spyOn(client, 'query');
+    const queryAllSpy = vi.spyOn(client, 'queryAll');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CONFLICT',
+        target: 'pp_TenantDomain',
+      })
+    );
+    expect(result.data?.apply.operations.filter((operation) => operation.kind === 'dataverse-envvar-set')).toEqual([
+      expect.objectContaining({
+        parameter: 'tenantDomain',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
+      expect.objectContaining({
+        parameter: 'tenantDomainOverride',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
+    ]);
+    expect(querySpy).not.toHaveBeenCalled();
+    expect(queryAllSpy).not.toHaveBeenCalled();
+    expect(updateSpy).not.toHaveBeenCalled();
   });
 });

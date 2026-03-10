@@ -30,6 +30,8 @@ During `deploy apply`, `pp`:
 5. resolves adapter-facing input and secret bindings into the shared operation result
 6. updates matching environment variable values and connection reference bindings for supported Dataverse mappings when the target differs, otherwise records a no-op skip
 
+Preflight also rejects conflicting mappings before any remote inspection or apply work starts. If multiple parameters map to the same Dataverse environment variable, Dataverse connection reference, or adapter binding target, deploy returns a machine-readable failure instead of choosing an arbitrary winner.
+
 ## Local usage
 
 Preview the execution without side effects:
@@ -176,4 +178,5 @@ steps:
 - `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
 - Mapped parameters without a resolved value now fail deploy preflight explicitly.
 - Missing target environment variables or connection references fail preflight.
+- Duplicate target mappings within the same deploy family fail preflight explicitly.
 - Connection reference and missing-environment-variable findings from solution analysis are surfaced as warnings in preflight.

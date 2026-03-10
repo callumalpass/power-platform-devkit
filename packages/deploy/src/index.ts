@@ -127,7 +127,7 @@ export interface DeployBindingSummaryEntry {
   source: ResolvedProjectParameter['source'];
   sensitive: boolean;
   target: string;
-  status: 'resolved' | 'missing';
+  status: 'resolved' | 'missing' | 'conflict';
   reference?: string;
   valuePreview?: string | number | boolean;
 }
@@ -139,6 +139,19 @@ export interface DeployBindingSummary {
 
 export interface ResolvedDeployBindingEntry extends DeployBindingSummaryEntry {
   value?: string | number | boolean;
+}
+
+interface DeployTargetConflict {
+  code:
+    | 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CONFLICT'
+    | 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CONFLICT'
+    | 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT';
+  message: string;
+  details: {
+    target: string;
+    parameters: string[];
+    operationKinds: DeployOperationPlan['kind'][];
+  };
 }
 
 export interface ResolvedDeployBindings {
@@ -258,6 +271,7 @@ export async function executeDeploy(
   const checks: DeployPreflightCheck[] = [];
   const applyOperations: DeployOperationResult[] = [];
   const preparedOperations = collectDeployOperations(project);
+  const conflicts = analyzeDeployTargetConflicts(preparedOperations.map((operation) => operation.plan));
   const dataverseOperations = preparedOperations.filter((operation) => isDataverseMutationOperation(operation.plan));
   const adapterBindingOperations = preparedOperations.filter((operation) => !isDataverseMutationOperation(operation.plan));
   const target = planResult.data?.target ?? {
@@ -268,8 +282,27 @@ export async function executeDeploy(
   };
 
   checks.push(...collectMissingMappingChecks(project));
+  checks.push(
+    ...conflicts.map((conflict) => ({
+      status: 'fail' as const,
+      code: conflict.code,
+      message: conflict.message,
+      target: conflict.details.target,
+      details: conflict.details,
+    }))
+  );
 
   for (const operation of adapterBindingOperations) {
+    if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        changed: false,
+        message: 'Blocked by conflicting deploy target mappings.',
+      });
+      continue;
+    }
+
     applyOperations.push({
       ...operation.plan,
       status: 'resolved',
@@ -317,6 +350,28 @@ export async function executeDeploy(
   }
 
   if (dataverseOperations.length === 0) {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
+      supportTier: 'preview',
+      diagnostics,
+      warnings,
+    });
+  }
+
+  if (conflicts.length > 0) {
+    for (const operation of dataverseOperations) {
+      if (!conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
+        continue;
+      }
+
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Blocked by conflicting deploy target mappings.',
+      });
+    }
+
     return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
@@ -444,6 +499,17 @@ export async function executeDeploy(
 
   for (const operation of dataverseOperations) {
     const nextValue = stringifyDeployValue(operation.value);
+
+    if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue,
+        changed: false,
+        message: 'Blocked by conflicting deploy target mappings.',
+      });
+      continue;
+    }
 
     if (isDataverseEnvvarOperation(operation.plan)) {
       const variable = variableBySchema.get(operation.plan.target.toLowerCase());
@@ -884,6 +950,41 @@ export function resolveDeployBindings(project: ProjectContext): ResolvedDeployBi
     }
   }
 
+  const conflicts = analyzeDeployTargetConflicts(
+    [...inputs, ...secrets].map((entry) => ({
+      kind: entry.kind === 'deploy-secret' ? ('deploy-secret-bind' as const) : ('deploy-input-bind' as const),
+      parameter: entry.parameter,
+      source: entry.source,
+      sensitive: entry.sensitive,
+      target: entry.target,
+      valuePreview: entry.valuePreview,
+    }))
+  );
+
+  for (const entry of [...inputs, ...secrets]) {
+    if (entry.status !== 'resolved') {
+      continue;
+    }
+
+    if (
+      conflicts.some((conflict) =>
+        matchesDeployConflict(
+          {
+            kind: entry.kind === 'deploy-secret' ? 'deploy-secret-bind' : 'deploy-input-bind',
+            parameter: entry.parameter,
+            source: entry.source,
+            sensitive: entry.sensitive,
+            target: entry.target,
+            valuePreview: entry.valuePreview,
+          },
+          conflict
+        )
+      )
+    ) {
+      entry.status = 'conflict';
+    }
+  }
+
   return {
     inputs,
     secrets,
@@ -895,4 +996,97 @@ function summarizeResolvedDeployBindings(bindings: ResolvedDeployBindings): Depl
     inputs: bindings.inputs.map(({ value: _value, ...entry }) => entry),
     secrets: bindings.secrets.map(({ value: _value, ...entry }) => entry),
   };
+}
+
+function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): DeployTargetConflict[] {
+  const grouped = new Map<string, DeployOperationPlan[]>();
+
+  for (const operation of operations) {
+    const key = getDeployConflictKey(operation);
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.push(operation);
+    } else {
+      grouped.set(key, [operation]);
+    }
+  }
+
+  const conflicts: DeployTargetConflict[] = [];
+
+  for (const [, groupedOperations] of grouped) {
+    if (groupedOperations.length < 2) {
+      continue;
+    }
+
+    const sample = groupedOperations[0]!;
+    const parameters = [...new Set(groupedOperations.map((operation) => operation.parameter))];
+    const operationKinds = [...new Set(groupedOperations.map((operation) => operation.kind))];
+    const parameterList = parameters.join(', ');
+
+    if (isDataverseEnvvarOperation(sample)) {
+      conflicts.push({
+        code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CONFLICT',
+        message: `Environment variable ${sample.target} has conflicting deploy mappings from ${parameterList}.`,
+        details: {
+          target: sample.target,
+          parameters,
+          operationKinds,
+        },
+      });
+      continue;
+    }
+
+    if (isDataverseConnectionReferenceOperation(sample)) {
+      conflicts.push({
+        code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CONFLICT',
+        message: `Connection reference ${sample.target} has conflicting deploy mappings from ${parameterList}.`,
+        details: {
+          target: sample.target,
+          parameters,
+          operationKinds,
+        },
+      });
+      continue;
+    }
+
+    conflicts.push({
+      code: 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT',
+      message: `Deploy binding target ${sample.target} has conflicting mappings from ${parameterList}.`,
+      details: {
+        target: sample.target,
+        parameters,
+        operationKinds,
+      },
+    });
+  }
+
+  return conflicts;
+}
+
+function getDeployConflictKey(operation: DeployOperationPlan): string {
+  if (isDataverseEnvvarOperation(operation)) {
+    return `dataverse-envvar:${operation.target.toLowerCase()}`;
+  }
+
+  if (isDataverseConnectionReferenceOperation(operation)) {
+    return `dataverse-connref:${operation.target.toLowerCase()}`;
+  }
+
+  return `binding:${operation.target.toLowerCase()}`;
+}
+
+function matchesDeployConflict(operation: DeployOperationPlan, conflict: DeployTargetConflict): boolean {
+  return getDeployConflictKey(operation) === getDeployConflictComparisonKey(conflict);
+}
+
+function getDeployConflictComparisonKey(conflict: DeployTargetConflict): string {
+  switch (conflict.code) {
+    case 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CONFLICT':
+      return `dataverse-envvar:${conflict.details.target.toLowerCase()}`;
+    case 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CONFLICT':
+      return `dataverse-connref:${conflict.details.target.toLowerCase()}`;
+    case 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT':
+      return `binding:${conflict.details.target.toLowerCase()}`;
+  }
 }
