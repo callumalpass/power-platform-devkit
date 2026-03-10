@@ -235,6 +235,7 @@ export interface DataverseMetadataWriteOptions extends MetadataBuildOptions {
 }
 
 export interface DataverseMetadataWriteResult<T = unknown> extends DataverseWriteResult<T> {
+  entitySummary?: NormalizedMetadataWriteEntity;
   published?: boolean;
   publishTargets?: string[];
 }
@@ -365,6 +366,12 @@ export interface NormalizedRelationshipDefinition {
   entity1NavigationPropertyName?: string;
   entity2NavigationPropertyName?: string;
 }
+
+export type NormalizedMetadataWriteEntity =
+  | NormalizedEntityDefinition
+  | NormalizedAttributeDefinition
+  | NormalizedOptionSetDefinition
+  | NormalizedRelationshipDefinition;
 
 export interface NormalizedAttributeDefinition {
   logicalName?: string;
@@ -4298,6 +4305,7 @@ function buildMetadataWriteResult<T>(
       status: writeResponse.data?.status ?? 204,
       headers: writeHeaders,
       entity,
+      entitySummary: normalizeMetadataWriteEntity(entity),
       entityId: extractEntityId(writeHeaders) ?? readMetadataId(entity),
       location: extractLocation(writeHeaders),
       published,
@@ -4309,6 +4317,30 @@ function buildMetadataWriteResult<T>(
       warnings,
     }
   );
+}
+
+function normalizeMetadataWriteEntity(entity: unknown): NormalizedMetadataWriteEntity | undefined {
+  if (!isRecord(entity)) {
+    return undefined;
+  }
+
+  if ('ReferencedEntity' in entity || 'ReferencingEntity' in entity || 'Entity1LogicalName' in entity || 'Entity2LogicalName' in entity) {
+    return normalizeRelationshipDefinition(entity as RelationshipDefinition);
+  }
+
+  if ('LogicalName' in entity && ('AttributeType' in entity || 'AttributeTypeName' in entity || 'EntityLogicalName' in entity)) {
+    return normalizeAttributeDefinition(entity as AttributeDefinition, 'detailed');
+  }
+
+  if ('Name' in entity && ('Options' in entity || 'OptionSetType' in entity || 'IsGlobal' in entity)) {
+    return normalizeGlobalOptionSetDefinition(entity as GlobalOptionSetDefinition);
+  }
+
+  if ('LogicalName' in entity && ('EntitySetName' in entity || 'OwnershipType' in entity || 'PrimaryIdAttribute' in entity)) {
+    return normalizeEntityDefinition(entity as EntityDefinition);
+  }
+
+  return undefined;
 }
 
 function enrichMetadataWriteFailure<T>(

@@ -6161,6 +6161,7 @@ describe('cli fixture-backed workflows', () => {
 
   it('prints group and subcommand help for remote discovery commands with the shared output contract', async () => {
     const dvHelp = await runCli(['dv', '--help']);
+    const dvMetadataHelp = await runCli(['dv', 'metadata', '--help']);
     const whoAmIHelp = await runCli(['dv', 'whoami', '--help']);
     const solutionHelp = await runCli(['solution', '--help']);
     const solutionListHelp = await runCli(['solution', 'list', '--help']);
@@ -6173,6 +6174,13 @@ describe('cli fixture-backed workflows', () => {
     expect(dvHelp.stdout).toContain('Usage: dv <command> [options]');
     expect(dvHelp.stdout).toContain('whoami');
     expect(dvHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
+
+    expect(dvMetadataHelp.code).toBe(0);
+    expect(dvMetadataHelp.stderr).toBe('');
+    expect(dvMetadataHelp.stdout).toContain('Usage: dv metadata <command> [options]');
+    expect(dvMetadataHelp.stdout).toContain('create-relationship --file FILE');
+    expect(dvMetadataHelp.stdout).toContain('entitySummary');
+    expect(dvMetadataHelp.stdout).not.toContain('DV_METADATA_ACTION_REQUIRED');
 
     expect(whoAmIHelp.code).toBe(0);
     expect(whoAmIHelp.stderr).toBe('');

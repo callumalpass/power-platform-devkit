@@ -619,6 +619,10 @@ async function runDataverse(command: string | undefined, args: string[]): Promis
     case 'delete':
       return runDataverseDelete(args);
     case 'metadata':
+      if (args.includes('--help') || args.includes('help')) {
+        printDataverseMetadataHelp();
+        return 0;
+      }
       return runDataverseMetadata(args);
     default:
       printHelp();
@@ -9183,6 +9187,54 @@ function printDataverseRowsApplyHelp(): void {
       'Examples:',
       '  pp dv rows apply --environment dev --file ./account-ops.yaml',
       '  pp dv rows apply --environment dev --file ./account-ops.yaml --continue-on-error --solution Core',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDataverseMetadataHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: dv metadata <command> [options]',
+      '',
+      'Read commands:',
+      '  tables                                  list Dataverse tables',
+      '  table <logicalName>                     inspect one table definition',
+      '  columns <tableLogicalName>              list columns for a table',
+      '  column <tableLogicalName> <column>      inspect one column definition',
+      '  option-set <name>                       inspect one global option set',
+      '  relationship <schemaName>               inspect one relationship definition',
+      '  snapshot <kind> ...                     save stable table, columns, option-set, or relationship snapshots',
+      '  diff --left FILE --right FILE           compare two saved metadata snapshots',
+      '',
+      'Write commands:',
+      '  apply --file FILE                       apply a metadata manifest',
+      '  create-table --file FILE                create a new Dataverse table',
+      '  update-table <table> --file FILE        update a table definition',
+      '  add-column <table> --file FILE          create a new column on an existing table',
+      '  update-column <table> <column> --file FILE',
+      '                                         update an existing column definition',
+      '  create-option-set --file FILE           create a global option set',
+      '  update-option-set --file FILE           update a global option set',
+      '  create-relationship --file FILE         create a one-to-many relationship',
+      '  update-relationship <schemaName> --kind one-to-many|many-to-many --file FILE',
+      '                                         update an existing relationship',
+      '  create-many-to-many --file FILE         create a many-to-many relationship',
+      '  create-customer-relationship --file FILE',
+      '                                         create a customer lookup and paired relationships',
+      '',
+      'Notes:',
+      '  - Read commands accept `--environment ALIAS` plus `--select`, `--expand`, `--filter`, and view flags where supported.',
+      '  - Write commands accept `--environment ALIAS`, `--file FILE`, optional `--solution UNIQUE_NAME`, and publish controls.',
+      '  - Write results include `entitySummary` so successful creates and updates are easier to confirm without a follow-up inspect call.',
+      '',
+      'Examples:',
+      '  pp dv metadata tables --environment dev --top 10 --format json',
+      '  pp dv metadata column account name --environment dev --view detailed',
+      '  pp dv metadata create-table --environment dev --solution Core --file ./specs/project.table.yaml --format json',
+      '  pp dv metadata create-relationship --environment dev --solution Core --file ./specs/project-account.relationship.yaml --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

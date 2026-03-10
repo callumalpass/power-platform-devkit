@@ -881,6 +881,22 @@ OData-Version: 4.0\r
         headers: {},
         data: {
           SchemaName: 'pp_project_account',
+          MetadataId: 'relationship-1',
+          RelationshipType: 'OneToManyRelationship',
+          ReferencedEntity: 'account',
+          ReferencedAttribute: 'accountid',
+          ReferencingEntity: 'pp_project',
+          ReferencingAttribute: 'pp_accountid',
+          AssociatedMenuConfiguration: {
+            Behavior: 'UseCollectionName',
+            Group: 'Details',
+            Order: 10000,
+            Label: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
+          },
         },
       }),
       ok({
@@ -911,6 +927,20 @@ OData-Version: 4.0\r
     );
 
     expect(result.success).toBe(true);
+    expect(result.data?.entitySummary).toEqual({
+      associatedMenuBehavior: 'UseCollectionName',
+      associatedMenuGroup: 'Details',
+      associatedMenuLabel: 'Account',
+      associatedMenuOrder: 10000,
+      metadataId: 'relationship-1',
+      referencedAttribute: 'accountid',
+      referencedEntity: 'account',
+      referencingAttribute: 'pp_accountid',
+      referencingEntity: 'pp_project',
+      relationshipType: 'one-to-many',
+      schemaName: 'pp_project_account',
+      lookupLogicalName: 'pp_accountid',
+    });
     expect(result.data?.publishTargets).toEqual(['account', 'pp_project']);
     expect(httpClient.requests[0]?.path).toBe('RelationshipDefinitions');
     expect(httpClient.requests[1]?.path).toBe(

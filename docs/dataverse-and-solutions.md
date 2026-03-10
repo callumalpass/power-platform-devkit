@@ -451,11 +451,13 @@ Normalized inspection defaults:
 
 Common flags:
 
+- `pp dv metadata --help` now prints the metadata command surface directly instead of requiring a subcommand first
 - `--file` accepts JSON, YAML, or YML
 - `dv metadata apply --file` accepts a manifest whose `operations` entries point at isolated spec files; `add-column` entries also require `tableLogicalName`
 - `--solution` adds `MSCRM.SolutionUniqueName` to the metadata request
 - `--language-code` defaults to `1033`
 - publish happens by default after create; use `--no-publish` to skip it
+- metadata write commands now include an `entitySummary` field with a normalized table, column, option-set, or relationship summary alongside the raw read-back payload
 
 Example apply manifest:
 
