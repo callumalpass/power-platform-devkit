@@ -89,6 +89,8 @@ import {
   resolveSharePointTarget,
   summarizeProject,
   summarizeResolvedParameter,
+  type ProjectDoctorReport,
+  type ProjectFeedbackReport,
   type ProjectInitPlan,
   type ProjectInitResult,
   type ProviderBindingResolverContext,
@@ -1726,7 +1728,11 @@ async function runProjectInspect(args: string[]): Promise<number> {
     knownLimitations: project.knownLimitations,
   };
 
-  printByFormat(payload, format);
+  if (format === 'table' || format === 'markdown') {
+    process.stdout.write(renderProjectInspectOutput(project.data, format));
+  } else {
+    printByFormat(payload, format);
+  }
   if (!isMachineReadableOutputFormat(format)) {
     printResultDiagnostics(project, format);
   }
@@ -1791,7 +1797,11 @@ async function runProjectDoctor(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, format);
+  if (format === 'table' || format === 'markdown') {
+    process.stdout.write(renderProjectDoctorOutput(result.data, format));
+  } else {
+    printByFormat(result.data, format);
+  }
   printResultDiagnostics(result, format);
   return 0;
 }
@@ -1811,7 +1821,11 @@ async function runProjectFeedback(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, format);
+  if (format === 'table' || format === 'markdown') {
+    process.stdout.write(renderProjectFeedbackOutput(result.data, format));
+  } else {
+    printByFormat(result.data, format);
+  }
   if (!isMachineReadableOutputFormat(format)) {
     printResultDiagnostics(result, format);
   }
@@ -7519,6 +7533,220 @@ function renderProjectInitOutput(
       : []),
     '',
   ].join('\n');
+}
+
+function renderProjectInspectOutput(project: ProjectContext, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
+  const summary = summarizeProject(project);
+  const discoveryNote = summarizeProjectDiscoveryNote(project.discovery);
+  const parameterRows = Object.values(project.parameters).map((parameter) => ({
+    name: parameter.name,
+    source: parameter.source,
+    required: parameter.definition.required ? 'yes' : 'no',
+    value: parameter.hasValue ? (parameter.sensitive ? '<secret>' : String(parameter.value)) : '<missing>',
+  }));
+  const assetRows = project.assets.map((asset) => ({
+    asset: asset.name,
+    kind: asset.kind,
+    exists: asset.exists ? 'yes' : 'no',
+    path: asset.path,
+  }));
+  const bindingRows = Object.entries(project.providerBindings).map(([name, binding]) => ({
+    binding: name,
+    kind: binding.kind,
+    target: binding.target,
+  }));
+  const summaryRows = [
+    { field: 'inspected path', value: project.discovery.inspectedPath },
+    { field: 'canonical project root', value: project.root },
+    { field: 'config path', value: project.configPath ?? '<default layout>' },
+    { field: 'selected stage', value: summary.selectedStage ?? '<unset>' },
+    { field: 'active environment', value: summary.activeEnvironment ?? '<unset>' },
+    { field: 'active solution', value: summary.activeSolution ?? '<unset>' },
+  ];
+
+  if (format === 'table') {
+    return [
+      renderOutput(summaryRows, 'table').trimEnd(),
+      discoveryNote ? '' : undefined,
+      discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
+      '',
+      'Assets',
+      renderOutput(assetRows, 'table').trimEnd(),
+      '',
+      'Parameters',
+      renderOutput(parameterRows, 'table').trimEnd(),
+      ...(bindingRows.length > 0 ? ['', 'Provider bindings', renderOutput(bindingRows, 'table').trimEnd()] : []),
+      '',
+    ]
+      .filter((line): line is string => line !== undefined)
+      .join('\n');
+  }
+
+  return [
+    '# Project Inspect',
+    '',
+    `- Inspected path: \`${project.discovery.inspectedPath}\``,
+    `- Canonical project root: \`${project.root}\``,
+    `- Config path: \`${project.configPath ?? '<default layout>'}\``,
+    `- Selected stage: \`${summary.selectedStage ?? '<unset>'}\``,
+    `- Active environment: \`${summary.activeEnvironment ?? '<unset>'}\``,
+    `- Active solution: \`${summary.activeSolution ?? '<unset>'}\``,
+    ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
+    '',
+    '## Assets',
+    ...assetRows.map((row) => `- \`${row.asset}\` (${row.kind}, exists=${row.exists}): \`${row.path}\``),
+    '',
+    '## Parameters',
+    ...(parameterRows.length > 0
+      ? parameterRows.map((row) => `- \`${row.name}\` from ${row.source} (required=${row.required}): \`${row.value}\``)
+      : ['- None']),
+    ...(bindingRows.length > 0
+      ? ['', '## Provider Bindings', ...bindingRows.map((row) => `- \`${row.binding}\` (${row.kind}): \`${row.target}\``)]
+      : []),
+    '',
+  ].join('\n');
+}
+
+function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
+  const summaryRows = [
+    { field: 'inspected path', value: report.inspectedPath },
+    { field: 'canonical project root', value: report.canonicalProjectRoot },
+    { field: 'config path', value: report.configPath ?? '<default layout>' },
+    { field: 'layout profile', value: report.summary.layoutProfile },
+    { field: 'canonical bundle path', value: report.contract.canonicalBundlePath },
+    { field: 'selected stage', value: report.topology.selectedStage ?? '<unset>' },
+    { field: 'active target', value: report.topology.activeTargetSummary },
+  ];
+  const discoveryNote = summarizeProjectDiscoveryNote(report.discovery);
+  const checkRows = report.checks.map((check) => ({
+    status: check.status,
+    code: check.code,
+    message: check.message,
+    path: check.path ?? '',
+  }));
+
+  if (format === 'table') {
+    return [
+      renderOutput(summaryRows, 'table').trimEnd(),
+      discoveryNote ? '' : undefined,
+      discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
+      '',
+      'Checks',
+      renderOutput(checkRows, 'table').trimEnd(),
+      '',
+    ]
+      .filter((line): line is string => line !== undefined)
+      .join('\n');
+  }
+
+  return [
+    '# Project Doctor',
+    '',
+    `- Inspected path: \`${report.inspectedPath}\``,
+    `- Canonical project root: \`${report.canonicalProjectRoot}\``,
+    `- Config path: \`${report.configPath ?? '<default layout>'}\``,
+    `- Layout profile: \`${report.summary.layoutProfile}\``,
+    `- Canonical bundle path: \`${report.contract.canonicalBundlePath}\``,
+    `- Selected stage: \`${report.topology.selectedStage ?? '<unset>'}\``,
+    `- Active target: ${report.topology.activeTargetSummary}`,
+    ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
+    '',
+    '## Checks',
+    ...report.checks.map((check) => `- \`${check.status}\` \`${check.code}\`: ${check.message}`),
+    '',
+  ].join('\n');
+}
+
+function renderProjectFeedbackOutput(report: ProjectFeedbackReport, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
+  const summaryRows = [
+    { field: 'inspected path', value: report.inspectedPath },
+    { field: 'canonical project root', value: report.canonicalProjectRoot },
+    { field: 'config path', value: report.configPath ?? '<default layout>' },
+    { field: 'layout profile', value: report.summary.layoutProfile },
+    { field: 'canonical bundle path', value: report.summary.canonicalBundlePath },
+    { field: 'selected stage', value: report.summary.selectedStage ?? '<unset>' },
+    { field: 'active environment', value: report.summary.activeEnvironment ?? '<unset>' },
+    { field: 'active solution', value: report.summary.activeSolution ?? '<unset>' },
+  ];
+  const discoveryNote = summarizeProjectDiscoveryNote(report.discovery);
+  const workflowWinsRows = report.workflowWins.map((item) => ({ title: item.title, detail: item.detail }));
+  const frictionRows = report.frictions.map((item) => ({
+    title: item.title,
+    detail: item.detail,
+    evidence: (item.evidence ?? []).join(', '),
+  }));
+  const taskRows = report.recommendedTasks.map((item) => ({
+    task: item.title,
+    rationale: item.rationale,
+  }));
+
+  if (format === 'table') {
+    return [
+      renderOutput(summaryRows, 'table').trimEnd(),
+      discoveryNote ? '' : undefined,
+      discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
+      '',
+      'Workflow wins',
+      renderOutput(workflowWinsRows, 'table').trimEnd(),
+      '',
+      'Frictions',
+      renderOutput(frictionRows, 'table').trimEnd(),
+      '',
+      'Recommended tasks',
+      renderOutput(taskRows, 'table').trimEnd(),
+      '',
+    ]
+      .filter((line): line is string => line !== undefined)
+      .join('\n');
+  }
+
+  return [
+    '# Project Feedback',
+    '',
+    `- Inspected path: \`${report.inspectedPath}\``,
+    `- Canonical project root: \`${report.canonicalProjectRoot}\``,
+    `- Config path: \`${report.configPath ?? '<default layout>'}\``,
+    `- Layout profile: \`${report.summary.layoutProfile}\``,
+    `- Canonical bundle path: \`${report.summary.canonicalBundlePath}\``,
+    `- Selected stage: \`${report.summary.selectedStage ?? '<unset>'}\``,
+    `- Active environment: \`${report.summary.activeEnvironment ?? '<unset>'}\``,
+    `- Active solution: \`${report.summary.activeSolution ?? '<unset>'}\``,
+    ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
+    '',
+    '## Workflow Wins',
+    ...(report.workflowWins.length > 0
+      ? report.workflowWins.map((item) => renderProjectObservation(item.title, item.detail, item.evidence))
+      : ['- None']),
+    '',
+    '## Frictions',
+    ...(report.frictions.length > 0
+      ? report.frictions.map((item) => renderProjectObservation(item.title, item.detail, item.evidence))
+      : ['- None']),
+    '',
+    '## Recommended Tasks',
+    ...report.recommendedTasks.map((item) => `- ${item.title}: ${item.rationale}`),
+    '',
+  ].join('\n');
+}
+
+function summarizeProjectDiscoveryNote(
+  discovery?: Pick<ProjectContext['discovery'], 'inspectedPath' | 'autoSelectedProjectRoot' | 'canonicalAnchorReason'>
+): string | undefined {
+  if (!discovery?.autoSelectedProjectRoot) {
+    return undefined;
+  }
+
+  return discovery.canonicalAnchorReason
+    ? `${discovery.canonicalAnchorReason} Inspected path: ${discovery.inspectedPath}.`
+    : `Auto-selected descendant project root ${discovery.autoSelectedProjectRoot} from ${discovery.inspectedPath}.`;
+}
+
+function renderProjectObservation(title: string, detail: string, evidence: string[] | undefined): string {
+  if (!evidence || evidence.length === 0) {
+    return `- ${title}: ${detail}`;
+  }
+
+  return `- ${title}: ${detail} Evidence: ${evidence.map((item) => `\`${item}\``).join(', ')}`;
 }
 
 function formatProjectContractTarget(target: {

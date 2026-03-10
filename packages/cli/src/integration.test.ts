@@ -1537,6 +1537,25 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('renders project feedback in markdown instead of JSON and keeps feedback in stdout', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const feedback = await runCli(['project', 'feedback', fixtureRoot, '--format', 'markdown'], {
+      env: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+        PP_SQL_ENDPOINT: undefined,
+      },
+    });
+
+    expect(feedback.code).toBe(0);
+    expect(feedback.stdout).toContain('# Project Feedback');
+    expect(feedback.stdout).toContain(`- Canonical project root: \`${fixtureRoot}\``);
+    expect(feedback.stdout).toContain('## Workflow Wins');
+    expect(feedback.stdout).toContain('## Frictions');
+    expect(feedback.stdout).not.toContain('"canonicalProjectRoot"');
+    expect(feedback.stderr).toContain('PROJECT_PARAMETER_MISSING');
+  });
+
   it('auto-selects the descendant project root in project inspect and doctor JSON at repo root', async () => {
     const inspect = await runCli(['project', 'inspect', repoRoot, '--format', 'json']);
     const doctor = await runCli(['project', 'doctor', repoRoot, '--format', 'json']);
@@ -1572,6 +1591,23 @@ describe('cli fixture-backed workflows', () => {
         root: resolveRepoPath('fixtures', 'analysis', 'project'),
       },
     });
+  });
+
+  it('surfaces canonical project root directly in project inspect and doctor markdown at repo root', async () => {
+    const inspect = await runCli(['project', 'inspect', repoRoot, '--format', 'markdown']);
+    const doctor = await runCli(['project', 'doctor', repoRoot, '--format', 'markdown']);
+    const canonicalRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+
+    expect(inspect.code).toBe(0);
+    expect(doctor.code).toBe(0);
+    expect(inspect.stdout).toContain('# Project Inspect');
+    expect(inspect.stdout).toContain(`- Canonical project root: \`${canonicalRoot}\``);
+    expect(inspect.stdout).toContain('Discovery: Treat fixtures/analysis/project as the canonical local project');
+    expect(doctor.stdout).toContain('# Project Doctor');
+    expect(doctor.stdout).toContain(`- Canonical project root: \`${canonicalRoot}\``);
+    expect(doctor.stdout).toContain('Discovery: Treat fixtures/analysis/project as the canonical local project');
+    expect(inspect.stdout).not.toContain('"summary"');
+    expect(doctor.stdout).not.toContain('"canonicalProjectRoot"');
   });
 
   it('resolves SharePoint provider bindings through the CLI', async () => {
