@@ -453,6 +453,9 @@ describe('cli fixture-backed workflows', () => {
       'solution list --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
     );
     expect(stdout.join('')).toContain(
+      'model list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]'
+    );
+    expect(stdout.join('')).toContain(
       'Remote Dataverse-backed commands accept [--no-interactive-auth] to fail fast with structured diagnostics instead of opening browser auth.'
     );
     expect(stdout.join('')).toContain('canvas create --environment ALIAS');
@@ -6060,6 +6063,7 @@ describe('cli fixture-backed workflows', () => {
     const whoAmIHelp = await runCli(['dv', 'whoami', '--help']);
     const solutionHelp = await runCli(['solution', '--help']);
     const solutionListHelp = await runCli(['solution', 'list', '--help']);
+    const rootHelp = await runCli(['--help']);
     const envvarHelp = await runCli(['envvar', '--help']);
     const envvarInspectHelp = await runCli(['envvar', 'inspect', '--help']);
 
@@ -6087,6 +6091,12 @@ describe('cli fixture-backed workflows', () => {
     expect(solutionListHelp.stdout).toContain('Usage: solution list --environment ALIAS [options]');
     expect(solutionListHelp.stdout).toContain('pp solution list --environment dev --format json');
     expect(solutionListHelp.stdout).not.toContain('DV_ENV_REQUIRED');
+
+    expect(rootHelp.code).toBe(0);
+    expect(rootHelp.stderr).toBe('');
+    expect(rootHelp.stdout).toContain(
+      'model inspect <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]'
+    );
 
     expect(envvarHelp.code).toBe(0);
     expect(envvarHelp.stderr).toBe('');
