@@ -1,5 +1,5 @@
-level  code                        message                                                                                                                                    source    path
------  --------------------------  -----------------------------------------------------------------------------------------------------------------------------------------  --------  ----
+level  code                        message                                                                                                                                    source    path  hint  detail
+-----  --------------------------  -----------------------------------------------------------------------------------------------------------------------------------------  --------  ----  ----  ------
 error  FLOW_ARTIFACT_NAME_MISSING  Flow artifact /home/calluma/projects/pp/fixtures/flow/artifacts/diagnostic-flow does not define a name or displayName.                     @pp/flow
 error  FLOW_DEFINITION_MISSING     Flow artifact /home/calluma/projects/pp/fixtures/flow/artifacts/diagnostic-flow does not include a definition payload.                     @pp/flow
 error  FLOW_CONNREF_DUPLICATE      Flow artifact /home/calluma/projects/pp/fixtures/flow/artifacts/diagnostic-flow contains duplicate connection reference shared_office365.  @pp/flow

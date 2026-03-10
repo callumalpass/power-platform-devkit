@@ -252,7 +252,15 @@ pp canvas lint ./apps/MyCanvas --project .
 pp canvas inspect ./apps/MyCanvas --project . --mode strict
 pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp
 pp canvas diff ./apps/MyCanvas ./apps/MyCanvas-next
+pp canvas workspace inspect ./canvas.workspace.json
 pp canvas templates import ./fixtures/canvas/registries/import-source.json --out ./tmp/runtime-registry.json --source imported-catalog --acquired-at 2026-03-10T00:00:00.000Z
+pp canvas templates inspect ./registries/canvas-controls.json
+pp canvas templates diff ./registries/canvas-controls.json ./registries/canvas-controls.next.json
+pp canvas templates pin ./registries/canvas-controls.json --out ./registries/canvas-controls.pinned.json
+pp canvas templates refresh ./fixtures/canvas/registries/import-source.json --current ./registries/canvas-controls.json --out ./registries/canvas-controls.json
+pp canvas templates audit ./registries/canvas-controls.json
+pp canvas patch plan MyCanvas --workspace ./canvas.workspace.json --file ./patches/title.patch.json
+pp canvas patch apply MyCanvas --workspace ./canvas.workspace.json --file ./patches/title.patch.json --out ./tmp/MyCanvas-patched
 ```
 
 Useful flags:
@@ -262,6 +270,7 @@ Useful flags:
 - `canvas list --help` and `canvas inspect --help` for stable remote/local
   command-contract discovery without triggering validation failures
 - `--project` to resolve `templateRegistries` from `pp.config.*`
+- `--workspace FILE` to resolve a workspace app name plus shared catalogs
 - repeated `--registry FILE` to override project registries
 - `--mode strict|seeded|registry`
 - `--cache-dir` for `cache:NAME` registry references
@@ -269,6 +278,8 @@ Useful flags:
 - `canvas templates import` also accepts provenance overrides:
   `--kind`, `--source`, `--acquired-at`, `--source-artifact`,
   `--source-app-id`, `--platform-version`, and `--app-version`
+- `canvas templates refresh` accepts the same provenance overrides plus
+  `--current FILE` to diff a refreshed catalog against the currently pinned one
 
 Remote mutation placeholders:
 
@@ -371,6 +382,84 @@ Rules:
   provided to the canvas registry loader
 - later registry files override earlier files for the same
   `templateName@templateVersion`
+
+## Workspace manifests
+
+Canvas workspaces are versioned JSON manifests that let several apps share
+catalogs without collapsing back into per-app registry wiring:
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "Finance Workspace",
+  "registries": ["./registries/shared-runtime.json"],
+  "catalogs": [
+    {
+      "name": "shared",
+      "registries": ["./registries/shared-runtime.json"]
+    }
+  ],
+  "apps": [
+    {
+      "name": "invoices",
+      "path": "./apps/InvoicesCanvas",
+      "catalogs": ["shared"],
+      "registries": ["./registries/invoices-overrides.json"]
+    }
+  ]
+}
+```
+
+`pp canvas workspace inspect` reports the resolved app paths and registry stack.
+Local `inspect`, `validate`, `lint`, `build`, and `patch` commands also accept
+`--workspace FILE`, so the positional app target can be a workspace app name
+instead of a raw filesystem path.
+
+## Registry lifecycle
+
+Canvas template registries now have first-class lifecycle commands:
+
+- `templates inspect`: summarize a pinned registry snapshot, hashes, and
+  provenance coverage
+- `templates diff`: compare template and support-rule drift between two
+  snapshots
+- `templates pin`: normalize a registry into the canonical committed form
+- `templates refresh`: re-import a source catalog and optionally diff it against
+  the currently pinned snapshot
+- `templates audit`: report provenance completeness across imported templates
+
+These commands stay deterministic because they operate on the same normalized
+registry document shape used by local validate/build workflows.
+
+## Patch workflows
+
+`pp canvas patch plan` and `pp canvas patch apply` provide bounded transforms
+over the supported JSON-manifest canvas slice. The current patch document shape
+is:
+
+```json
+{
+  "schemaVersion": 1,
+  "operations": [
+    {
+      "op": "set-property",
+      "controlPath": "Home/Layout/Title",
+      "property": "TextFormula",
+      "value": "=\"Updated\""
+    }
+  ]
+}
+```
+
+Supported operations today are:
+
+- `set-property`
+- `remove-property`
+- `add-control`
+- `remove-control`
+
+`patch plan` validates the control paths before any writes occur. `patch apply`
+either mutates the app in place or writes a patched copy into `--out`.
 
 ## Current boundary
 

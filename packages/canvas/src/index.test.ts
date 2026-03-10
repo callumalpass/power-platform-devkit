@@ -1,17 +1,24 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve as resolvePath } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
 import {
+  applyCanvasPatch,
   buildCanvasApp,
   CanvasService,
   diffCanvasApps,
+  diffCanvasTemplateRegistries,
   importCanvasTemplateRegistry,
   inspectCanvasApp,
+  inspectCanvasTemplateRegistry,
+  inspectCanvasWorkspace,
   loadCanvasSource,
   loadCanvasTemplateRegistryBundle,
+  pinCanvasTemplateRegistry,
+  planCanvasPatch,
+  refreshCanvasTemplateRegistry,
   resolveCanvasSupport,
   resolveCanvasTemplate,
   resolveCanvasTemplateRegistryPaths,
@@ -743,5 +750,415 @@ describe('canvas app workflows', () => {
       },
     ]);
     expect(diff.data?.templateChanges.added).toEqual(['Label@1.0.0']);
+  });
+});
+
+describe('canvas workspace and registry lifecycle workflows', () => {
+  it('resolves multi-app workspace registries and shared catalogs', async () => {
+    const dir = await createTempDir();
+    const appOne = await writeCanvasApp(dir, {
+      name: 'SalesCanvas',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'Title',
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              properties: {
+                TextFormula: '="Sales"',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const appTwo = await writeCanvasApp(dir, {
+      name: 'OpsCanvas',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'Title',
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              properties: {
+                TextFormula: '="Ops"',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const sharedRegistryPath = join(dir, 'shared-registry.json');
+    const appRegistryPath = join(dir, 'ops-registry.json');
+    const workspacePath = join(dir, 'canvas.workspace.json');
+
+    await writeFile(
+      sharedRegistryPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          templates: [
+            {
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              files: {
+                'Controls/Label.json': {
+                  kind: 'label',
+                },
+              },
+              provenance: {
+                kind: 'official-artifact',
+                source: 'shared',
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Label',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict', 'seeded', 'registry'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    await writeFile(
+      appRegistryPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          templates: [
+            {
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              files: {
+                'Controls/Button.json': {
+                  kind: 'button',
+                },
+              },
+              provenance: {
+                kind: 'official-artifact',
+                source: 'ops',
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Button',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    await writeFile(
+      workspacePath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          name: 'Canvas Workspace',
+          registries: ['./shared-registry.json'],
+          catalogs: [
+            {
+              name: 'shared',
+              registries: ['./shared-registry.json'],
+            },
+          ],
+          apps: [
+            {
+              name: 'sales',
+              path: './SalesCanvas',
+              catalogs: ['shared'],
+            },
+            {
+              name: 'ops',
+              path: './OpsCanvas',
+              catalogs: ['shared'],
+              registries: ['./ops-registry.json'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    expect(appOne).toContain('SalesCanvas');
+    expect(appTwo).toContain('OpsCanvas');
+
+    const workspace = await inspectCanvasWorkspace(workspacePath);
+    expect(workspace.success).toBe(true);
+    expect(workspace.data?.apps).toHaveLength(2);
+    expect(workspace.data?.apps.find((app) => app.name === 'ops')?.registries).toEqual([
+      './shared-registry.json',
+      './shared-registry.json',
+      './ops-registry.json',
+    ]);
+
+    const resolved = await new CanvasService().resolveWorkspaceTarget('ops', {
+      workspacePath,
+    });
+    expect(resolved.success).toBe(true);
+    expect(resolved.data?.path).toBe(resolvePath(dir, 'OpsCanvas'));
+    expect(resolved.data?.registries).toEqual(['./shared-registry.json', './shared-registry.json', './ops-registry.json']);
+  });
+
+  it('inspects, diffs, pins, refreshes, and audits template registries', async () => {
+    const dir = await createTempDir();
+    const leftPath = join(dir, 'left.json');
+    const rightPath = join(dir, 'right.json');
+    const importSourcePath = join(dir, 'import-source.json');
+    const pinnedPath = join(dir, 'pinned.json');
+    const refreshedPath = join(dir, 'refreshed.json');
+
+    await writeFile(
+      leftPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          templates: [
+            {
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              files: {
+                'Controls/Label.json': {
+                  kind: 'label',
+                },
+              },
+              provenance: {
+                kind: 'official-artifact',
+                source: 'left',
+                importedFrom: 'left.json',
+                sourceArtifact: 'left-artifact.zip',
+                platformVersion: '3.24011',
+                appVersion: '1.0.0.0',
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Label',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    await writeFile(
+      rightPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          templates: [
+            {
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              files: {
+                'Controls/Label.json': {
+                  kind: 'label',
+                  variant: 'updated',
+                },
+              },
+              provenance: {
+                kind: 'official-artifact',
+                source: 'right',
+                importedFrom: 'right.json',
+              },
+            },
+            {
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              files: {
+                'Controls/Button.json': {
+                  kind: 'button',
+                },
+              },
+              provenance: {
+                kind: 'official-artifact',
+                source: 'right',
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Label',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict'],
+            },
+            {
+              templateName: 'Button',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    await writeFile(
+      importSourcePath,
+      JSON.stringify(
+        {
+          templates: [
+            {
+              name: 'Label',
+              version: '2.0.0',
+              files: {
+                'Controls/Label.json': {
+                  kind: 'label',
+                  variant: 'refresh',
+                },
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Label',
+              version: '2.*',
+              status: 'supported',
+              modes: ['strict'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await inspectCanvasTemplateRegistry(leftPath);
+    expect(inspect.success).toBe(true);
+    expect(inspect.data?.templateCount).toBe(1);
+
+    const diff = await diffCanvasTemplateRegistries(leftPath, rightPath);
+    expect(diff.success).toBe(true);
+    expect(diff.data?.templates.added).toEqual(['Button@1.0.0']);
+    expect(diff.data?.templates.changed).toEqual(['Label@1.0.0']);
+
+    const pin = await pinCanvasTemplateRegistry(leftPath, pinnedPath);
+    expect(pin.success).toBe(true);
+    expect((await readFile(pinnedPath, 'utf8')).length).toBeGreaterThan(0);
+
+    const audit = await new CanvasService().auditRegistry(leftPath);
+    expect(audit.success).toBe(true);
+    expect(audit.data?.missingImportedFromCount).toBe(0);
+
+    const refresh = await refreshCanvasTemplateRegistry({
+      sourcePath: importSourcePath,
+      currentPath: leftPath,
+      outPath: refreshedPath,
+      provenance: {
+        kind: 'official-artifact',
+        source: 'refresh',
+      },
+    });
+    expect(refresh.success).toBe(true);
+    expect(refresh.data?.registry.templateCount).toBe(1);
+    expect(refresh.data?.diff?.templates.added).toEqual(['Label@2.0.0']);
+    expect(refresh.data?.diff?.templates.removed).toEqual(['Label@1.0.0']);
+  });
+});
+
+describe('canvas patch workflows', () => {
+  it('plans and applies bounded patches for json-manifest apps', async () => {
+    const dir = await createTempDir();
+    const appPath = await writeCanvasApp(dir, {
+      name: 'PatchedCanvas',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'Layout',
+              templateName: 'groupContainer',
+              templateVersion: '1.0.0',
+              properties: {},
+              children: [
+                {
+                  name: 'Title',
+                  templateName: 'Label',
+                  templateVersion: '1.0.0',
+                  properties: {
+                    TextFormula: '="Before"',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const outputPath = join(dir, 'patched-out');
+    const patch = {
+      schemaVersion: 1,
+      operations: [
+        {
+          op: 'set-property',
+          controlPath: 'Home/Layout/Title',
+          property: 'TextFormula',
+          value: '="After"',
+        },
+        {
+          op: 'add-control',
+          screen: 'Home',
+          parentPath: 'Home/Layout',
+          control: {
+            name: 'Submit',
+            templateName: 'Button',
+            templateVersion: '1.0.0',
+            properties: {
+              TextFormula: '="Save"',
+            },
+          },
+        },
+        {
+          op: 'remove-control',
+          controlPath: 'Home/Layout/Title',
+        },
+      ],
+    } as const;
+
+    const plan = await planCanvasPatch(appPath, patch);
+    expect(plan.success).toBe(true);
+    expect(plan.data?.valid).toBe(true);
+    expect(plan.data?.operations).toHaveLength(3);
+
+    const applied = await applyCanvasPatch(appPath, patch, outputPath);
+    expect(applied.success).toBe(true);
+    expect(applied.data?.outPath).toBe(outputPath);
+
+    const reloaded = await loadCanvasSource(outputPath);
+    expect(reloaded.success).toBe(true);
+    expect(reloaded.data?.controls.map((control) => control.path)).toEqual(['Home/Layout', 'Home/Layout/Submit']);
   });
 });

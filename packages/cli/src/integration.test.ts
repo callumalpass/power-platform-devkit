@@ -2787,6 +2787,129 @@ describe('cli fixture-backed workflows', () => {
     );
   });
 
+  it('covers canvas workspace, registry lifecycle, and patch workflows through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const workspacePath = join(tempDir, 'canvas.workspace.json');
+    const patchPath = join(tempDir, 'canvas.patch.json');
+    const registryPath = resolveRepoPath('fixtures', 'canvas', 'registries', 'runtime-registry.json');
+    const importSourcePath = resolveRepoPath('fixtures', 'canvas', 'registries', 'import-source.json');
+    const refreshedPath = join(tempDir, 'refreshed-registry.json');
+    const pinnedPath = join(tempDir, 'pinned-registry.json');
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'base-app');
+    const patchedOutPath = join(tempDir, 'patched-app');
+
+    await writeFile(
+      workspacePath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          name: 'Fixture Workspace',
+          catalogs: [
+            {
+              name: 'runtime',
+              registries: [registryPath],
+            },
+          ],
+          apps: [
+            {
+              name: 'fixture-base',
+              path: appPath,
+              catalogs: ['runtime'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await writeFile(
+      patchPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          operations: [
+            {
+              op: 'set-property',
+              controlPath: 'Home/Layout/Title',
+              property: 'TextFormula',
+              value: '="Workspace patched"',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const workspaceInspect = await runCli(['canvas', 'workspace', 'inspect', workspacePath, '--format', 'json']);
+    const registryInspect = await runCli(['canvas', 'templates', 'inspect', registryPath, '--format', 'json']);
+    const registryAudit = await runCli(['canvas', 'templates', 'audit', registryPath, '--format', 'json']);
+    const registryPin = await runCli(['canvas', 'templates', 'pin', registryPath, '--out', pinnedPath, '--format', 'json']);
+    const registryRefresh = await runCli([
+      'canvas',
+      'templates',
+      'refresh',
+      importSourcePath,
+      '--current',
+      registryPath,
+      '--out',
+      refreshedPath,
+      '--source',
+      'canvas-import-fixture',
+      '--kind',
+      'official-artifact',
+      '--format',
+      'json',
+    ]);
+    const patchPlan = await runCli([
+      'canvas',
+      'patch',
+      'plan',
+      'fixture-base',
+      '--workspace',
+      workspacePath,
+      '--file',
+      patchPath,
+      '--format',
+      'json',
+    ]);
+    const patchApply = await runCli([
+      'canvas',
+      'patch',
+      'apply',
+      'fixture-base',
+      '--workspace',
+      workspacePath,
+      '--file',
+      patchPath,
+      '--out',
+      patchedOutPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(workspaceInspect.code).toBe(0);
+    expect(registryInspect.code).toBe(0);
+    expect(registryAudit.code).toBe(0);
+    expect(registryPin.code).toBe(0);
+    expect(registryRefresh.code).toBe(0);
+    expect(patchPlan.code).toBe(0);
+    expect(patchApply.code).toBe(0);
+
+    expect(JSON.parse(workspaceInspect.stdout).apps[0].name).toBe('fixture-base');
+    expect(JSON.parse(registryInspect.stdout).templateCount).toBeGreaterThan(0);
+    expect(JSON.parse(registryAudit.stdout).templateCount).toBeGreaterThan(0);
+    expect(JSON.parse(registryPin.stdout).outPath.replaceAll('\\', '/')).toContain('/pinned-registry.json');
+    expect(JSON.parse(registryRefresh.stdout).diff.templates.added.length).toBeGreaterThan(0);
+    expect(JSON.parse(patchPlan.stdout).valid).toBe(true);
+    expect(JSON.parse(patchApply.stdout).outPath.replaceAll('\\', '/')).toContain('/patched-app');
+
+    const patchedScreen = JSON.parse(await readFile(join(patchedOutPath, 'screens', 'Home.json'), 'utf8'));
+    expect(patchedScreen.controls[0].children[0].properties.TextFormula).toBe('="Workspace patched"');
+  });
+
   it('covers unpacked .pa.yaml canvas roots through inspect, validate, and native build', async () => {
     const tempDir = await createTempDir();
     const registry = createClassicButtonRegistry();

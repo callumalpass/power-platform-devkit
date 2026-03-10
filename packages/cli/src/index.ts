@@ -579,6 +579,10 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
       return runCanvasList(args);
     case 'templates':
       return runCanvasTemplates(args);
+    case 'workspace':
+      return runCanvasWorkspace(args);
+    case 'patch':
+      return runCanvasPatch(args);
     case 'lint':
       return runCanvasLint(args);
     case 'validate':
@@ -1413,6 +1417,42 @@ async function runCanvasTemplates(args: string[]): Promise<number> {
   switch (command) {
     case 'import':
       return runCanvasTemplateImport(rest);
+    case 'inspect':
+      return runCanvasTemplateInspect(rest);
+    case 'diff':
+      return runCanvasTemplateDiff(rest);
+    case 'pin':
+      return runCanvasTemplatePin(rest);
+    case 'refresh':
+      return runCanvasTemplateRefresh(rest);
+    case 'audit':
+      return runCanvasTemplateAudit(rest);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runCanvasWorkspace(args: string[]): Promise<number> {
+  const [command, ...rest] = args;
+
+  switch (command) {
+    case 'inspect':
+      return runCanvasWorkspaceInspect(rest);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runCanvasPatch(args: string[]): Promise<number> {
+  const [command, ...rest] = args;
+
+  switch (command) {
+    case 'plan':
+      return runCanvasPatchPlan(rest);
+    case 'apply':
+      return runCanvasPatchApply(rest);
     default:
       printHelp();
       return 1;
@@ -5071,16 +5111,16 @@ async function runCanvasValidate(args: string[]): Promise<number> {
   const canvasPath = positionalArgs(args)[0];
 
   if (!canvasPath) {
-    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas validate <path> [--mode strict|seeded|registry]'));
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas validate <path|workspaceApp> [--workspace FILE] [--mode strict|seeded|registry]'));
   }
 
-  const context = await resolveCanvasCliContext(args);
+  const context = await resolveCanvasCliContext(args, canvasPath);
 
   if (!context.success || !context.data) {
     return printFailure(context);
   }
 
-  const result = await new CanvasService().validate(canvasPath, context.data.options);
+  const result = await new CanvasService().validate(context.data.path, context.data.options);
 
   if (!result.success || !result.data) {
     return printFailure(result);
@@ -5095,16 +5135,16 @@ async function runCanvasLint(args: string[]): Promise<number> {
   const canvasPath = positionalArgs(args)[0];
 
   if (!canvasPath) {
-    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas lint <path> [--mode strict|seeded|registry]'));
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas lint <path|workspaceApp> [--workspace FILE] [--mode strict|seeded|registry]'));
   }
 
-  const context = await resolveCanvasCliContext(args);
+  const context = await resolveCanvasCliContext(args, canvasPath);
 
   if (!context.success || !context.data) {
     return printFailure(context);
   }
 
-  const result = await new CanvasService().lint(canvasPath, context.data.options);
+  const result = await new CanvasService().lint(context.data.path, context.data.options);
 
   if (!result.success || !result.data) {
     return printFailure(result);
@@ -5122,7 +5162,7 @@ async function runCanvasInspect(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'CANVAS_INSPECT_ARG_REQUIRED',
-        'Usage: canvas inspect <path>|<displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [--mode strict|seeded|registry]'
+        'Usage: canvas inspect <path>|<workspaceApp>|<displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [--workspace FILE] [--mode strict|seeded|registry]'
       )
     );
   }
@@ -5150,13 +5190,13 @@ async function runCanvasInspect(args: string[]): Promise<number> {
     return 0;
   }
 
-  const context = await resolveCanvasCliContext(args);
+  const context = await resolveCanvasCliContext(args, identifier);
 
   if (!context.success || !context.data) {
     return printFailure(context);
   }
 
-  const result = await new CanvasService().inspect(identifier, context.data.options);
+  const result = await new CanvasService().inspect(context.data.path, context.data.options);
 
   if (!result.success || !result.data) {
     return printFailure(result);
@@ -5190,10 +5230,10 @@ async function runCanvasBuild(args: string[]): Promise<number> {
   const canvasPath = positionalArgs(args)[0];
 
   if (!canvasPath) {
-    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas build <path> [--out FILE] [--mode strict|seeded|registry]'));
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas build <path|workspaceApp> [--workspace FILE] [--out FILE] [--mode strict|seeded|registry]'));
   }
 
-  const context = await resolveCanvasCliContext(args);
+  const context = await resolveCanvasCliContext(args, canvasPath);
 
   if (!context.success || !context.data) {
     return printFailure(context);
@@ -5215,7 +5255,7 @@ async function runCanvasBuild(args: string[]): Promise<number> {
     return preview;
   }
 
-  const result = await new CanvasService().build(canvasPath, {
+  const result = await new CanvasService().build(context.data.path, {
     ...context.data.options,
     outPath,
   });
@@ -5262,6 +5302,198 @@ async function runCanvasTemplateImport(args: string[]): Promise<number> {
     outPath: readFlag(args, '--out'),
     provenance: readCanvasTemplateImportProvenance(args),
   });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasTemplateInspect(args: string[]): Promise<number> {
+  const registryPath = positionalArgs(args)[0];
+
+  if (!registryPath) {
+    return printFailure(argumentFailure('CANVAS_TEMPLATE_REGISTRY_REQUIRED', 'Usage: canvas templates inspect <registryPath>'));
+  }
+
+  const result = await new CanvasService().inspectRegistry(registryPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasTemplateDiff(args: string[]): Promise<number> {
+  const [leftPath, rightPath] = positionalArgs(args);
+
+  if (!leftPath || !rightPath) {
+    return printFailure(argumentFailure('CANVAS_TEMPLATE_DIFF_ARGS_REQUIRED', 'Usage: canvas templates diff <leftRegistry> <rightRegistry>'));
+  }
+
+  const result = await new CanvasService().diffRegistries(leftPath, rightPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasTemplatePin(args: string[]): Promise<number> {
+  const registryPath = positionalArgs(args)[0];
+  const outPath = readFlag(args, '--out');
+
+  if (!registryPath || !outPath) {
+    return printFailure(argumentFailure('CANVAS_TEMPLATE_PIN_ARGS_REQUIRED', 'Usage: canvas templates pin <registryPath> --out FILE'));
+  }
+
+  const result = await new CanvasService().pinRegistry(registryPath, outPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasTemplateRefresh(args: string[]): Promise<number> {
+  const sourcePath = positionalArgs(args)[0];
+
+  if (!sourcePath) {
+    return printFailure(argumentFailure('CANVAS_TEMPLATE_REFRESH_SOURCE_REQUIRED', 'Usage: canvas templates refresh <sourcePath> --out FILE'));
+  }
+
+  const result = await new CanvasService().refreshRegistry({
+    sourcePath,
+    outPath: readFlag(args, '--out'),
+    currentPath: readFlag(args, '--current'),
+    provenance: readCanvasTemplateImportProvenance(args),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasTemplateAudit(args: string[]): Promise<number> {
+  const registryPath = positionalArgs(args)[0];
+
+  if (!registryPath) {
+    return printFailure(argumentFailure('CANVAS_TEMPLATE_AUDIT_ARGS_REQUIRED', 'Usage: canvas templates audit <registryPath>'));
+  }
+
+  const result = await new CanvasService().auditRegistry(registryPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasWorkspaceInspect(args: string[]): Promise<number> {
+  const workspacePath = positionalArgs(args)[0];
+
+  if (!workspacePath) {
+    return printFailure(argumentFailure('CANVAS_WORKSPACE_PATH_REQUIRED', 'Usage: canvas workspace inspect <workspacePath>'));
+  }
+
+  const result = await new CanvasService().inspectWorkspace(workspacePath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasPatchPlan(args: string[]): Promise<number> {
+  const canvasPath = positionalArgs(args)[0];
+  const patchFile = readFlag(args, '--file');
+
+  if (!canvasPath || !patchFile) {
+    return printFailure(argumentFailure('CANVAS_PATCH_PLAN_ARGS_REQUIRED', 'Usage: canvas patch plan <path> --file PATCH.json'));
+  }
+
+  const context = await resolveCanvasCliContext(args, canvasPath);
+
+  if (!context.success || !context.data) {
+    return printFailure(context);
+  }
+
+  const patch = await readJsonFileForCli(patchFile, 'CANVAS_PATCH_FILE_INVALID', '--file must point to a JSON patch document.');
+
+  if (!patch.success || patch.data === undefined) {
+    return printFailure(patch);
+  }
+
+  const result = await new CanvasService().planPatch(context.data.path, patch.data as never);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return result.data.valid ? 0 : 1;
+}
+
+async function runCanvasPatchApply(args: string[]): Promise<number> {
+  const canvasPath = positionalArgs(args)[0];
+  const patchFile = readFlag(args, '--file');
+
+  if (!canvasPath || !patchFile) {
+    return printFailure(argumentFailure('CANVAS_PATCH_APPLY_ARGS_REQUIRED', 'Usage: canvas patch apply <path> --file PATCH.json [--out PATH]'));
+  }
+
+  const context = await resolveCanvasCliContext(args, canvasPath);
+
+  if (!context.success || !context.data) {
+    return printFailure(context);
+  }
+
+  const patch = await readJsonFileForCli(patchFile, 'CANVAS_PATCH_FILE_INVALID', '--file must point to a JSON patch document.');
+
+  if (!patch.success || patch.data === undefined) {
+    return printFailure(patch);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'canvas.patch',
+    {
+      path: context.data.path,
+      patchFile,
+      outPath: readFlag(args, '--out') ?? 'in-place',
+    },
+    patch.data
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new CanvasService().applyPatch(context.data.path, patch.data as never, readFlag(args, '--out'));
 
   if (!result.success || !result.data) {
     return printFailure(result);
@@ -5979,7 +6211,7 @@ async function resolveDataverseClientByFlag(args: string[], flag: string) {
   });
 }
 
-async function resolveCanvasCliContext(args: string[]) {
+async function resolveCanvasCliContext(args: string[], canvasTarget?: string) {
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
   if (!discoveryOptions.success || !discoveryOptions.data) {
@@ -5998,6 +6230,7 @@ async function resolveCanvasCliContext(args: string[]) {
 
   if (!project.success || !project.data) {
     return project as unknown as OperationResult<{
+      path: string;
       options: {
         root: string;
         registries: string[];
@@ -6014,20 +6247,50 @@ async function resolveCanvasCliContext(args: string[]) {
   }
 
   const registries = readRepeatedFlags(args, '--registry');
+  const workspacePath = readFlag(args, '--workspace');
+  let path = canvasTarget ? resolvePath(canvasTarget) : resolvePath(projectPath);
+  let resolvedRegistries = registries.length > 0 ? registries : project.data.templateRegistries;
+  let diagnostics = project.diagnostics;
+  let warnings = project.warnings;
+
+  if (workspacePath && canvasTarget) {
+    const workspace = await new CanvasService().resolveWorkspaceTarget(canvasTarget, {
+      workspacePath,
+      registries,
+    });
+
+    if (!workspace.success || !workspace.data) {
+      return workspace as unknown as OperationResult<{
+        path: string;
+        options: {
+          root: string;
+          registries: string[];
+          cacheDir?: string;
+          mode: CanvasBuildMode;
+        };
+      }>;
+    }
+
+    path = workspace.data.path;
+    resolvedRegistries = workspace.data.registries;
+    diagnostics = [...diagnostics, ...workspace.diagnostics];
+    warnings = [...warnings, ...workspace.warnings];
+  }
 
   return ok(
     {
+      path,
       options: {
         root: project.data.root,
-        registries: registries.length > 0 ? registries : project.data.templateRegistries,
+        registries: resolvedRegistries,
         cacheDir: readFlag(args, '--cache-dir'),
         mode,
       },
     },
     {
       supportTier: 'preview',
-      diagnostics: project.diagnostics,
-      warnings: project.warnings,
+      diagnostics,
+      warnings,
     }
   );
 }
@@ -8010,10 +8273,18 @@ function printHelp(): void {
       '  canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
       '  canvas validate <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas lint <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas inspect <path|displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas build <path> [--project path] [--out FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas inspect <path|workspaceApp|displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [--project path] [--workspace FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas build <path|workspaceApp> [--project path] [--workspace FILE] [--out FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas diff <leftPath> <rightPath> [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas workspace inspect <workspacePath> [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas templates import <sourcePath> [--out FILE] [--kind official-api|official-artifact|harvested|inferred] [--source LABEL] [--acquired-at ISO] [--source-artifact PATH] [--source-app-id ID] [--platform-version VERSION] [--app-version VERSION] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas templates inspect <registryPath> [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas templates diff <leftRegistry> <rightRegistry> [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas templates pin <registryPath> --out FILE [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas templates refresh <sourcePath> [--current FILE] [--out FILE] [--kind official-api|official-artifact|harvested|inferred] [--source LABEL] [--acquired-at ISO] [--source-artifact PATH] [--source-app-id ID] [--platform-version VERSION] [--app-version VERSION] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas templates audit <registryPath> [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas patch plan <path|workspaceApp> --file PATCH.json [--workspace FILE] [--project path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas patch apply <path|workspaceApp> --file PATCH.json [--workspace FILE] [--project path] [--out PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -8080,9 +8351,17 @@ function printCanvasHelp(): void {
       '  inspect <path>               inspect a local canvas source tree',
       '  build <path>                 package a local canvas source tree into an .msapp',
       '  diff <leftPath> <rightPath>  diff two local canvas source trees',
+      '  workspace inspect <path>     inspect a versioned canvas workspace manifest',
+      '  patch plan <path> --file ... preview a bounded canvas patch against json-manifest apps',
+      '  patch apply <path> --file ... apply a bounded canvas patch in place or into --out',
       '',
       'Template registry commands:',
       '  templates import <sourcePath> import harvested or official template metadata',
+      '  templates inspect <registry> summarize a pinned registry snapshot',
+      '  templates diff <left> <right> compare two registry snapshots',
+      '  templates pin <registry> --out FILE normalize and write a pinned registry file',
+      '  templates refresh <source>   re-import a source catalog and optionally diff against --current',
+      '  templates audit <registry>   summarize provenance coverage and version metadata',
       '',
       'Examples:',
       '  pp canvas list --environment dev --solution Core',
@@ -8096,6 +8375,8 @@ function printCanvasHelp(): void {
       '  - `canvas create --delegate` can drive the Maker blank-app flow and wait for the created app id through Dataverse.',
       '  - Attempted remote create/import calls return machine-readable diagnostics with next steps.',
       '  - Use --environment to switch canvas inspect from local-path mode to remote lookup mode.',
+      '  - Use --workspace to resolve a workspace app name plus shared registry catalogs.',
+      '  - Canvas patching currently targets the supported json-manifest source slice only.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { cp, stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
 import { CanvasAppService, type CanvasAppSummary as DataverseCanvasAppSummary, type DataverseClient } from '@pp/dataverse';
@@ -146,6 +146,44 @@ export interface CanvasRegistryImportRequest {
   provenance?: Partial<CanvasTemplateProvenance>;
 }
 
+export interface CanvasWorkspaceCatalogEntry {
+  name: string;
+  registries: string[];
+  notes?: string[];
+}
+
+export interface CanvasWorkspaceAppEntry {
+  name: string;
+  path: string;
+  registries?: string[];
+  catalogs?: string[];
+  notes?: string[];
+}
+
+export interface CanvasWorkspaceDocument {
+  schemaVersion: 1;
+  name: string;
+  registries?: string[];
+  catalogs?: CanvasWorkspaceCatalogEntry[];
+  apps: CanvasWorkspaceAppEntry[];
+}
+
+export interface CanvasWorkspaceResolvedApp {
+  name: string;
+  path: string;
+  registries: string[];
+  catalogs: string[];
+  notes: string[];
+}
+
+export interface CanvasWorkspaceInspectReport {
+  path: string;
+  workspace: CanvasWorkspaceDocument;
+  apps: CanvasWorkspaceResolvedApp[];
+  registries: string[];
+  catalogs: CanvasWorkspaceCatalogEntry[];
+}
+
 export interface CanvasTemplateLookup {
   name: string;
   version?: string;
@@ -163,6 +201,71 @@ export interface CanvasTemplateResolution {
   template?: CanvasTemplateRecord;
   matchedBy?: CanvasTemplateMatchType;
   support: CanvasSupportResolution;
+}
+
+export interface CanvasTemplateRegistryInspectReport {
+  path: string;
+  hash: string;
+  generatedAt?: string;
+  templateCount: number;
+  supportRuleCount: number;
+  templates: Array<{
+    templateName: string;
+    templateVersion: string;
+    provenanceKind: ProvenanceClass;
+    source: string;
+    importedFrom?: string;
+    appVersion?: string;
+    platformVersion?: string;
+    aliases: {
+      displayNames: number;
+      constructors: number;
+      yamlNames: number;
+    };
+  }>;
+}
+
+export interface CanvasTemplateRegistryDiffResult {
+  left: CanvasTemplateRegistryInspectReport;
+  right: CanvasTemplateRegistryInspectReport;
+  templates: {
+    added: string[];
+    removed: string[];
+    changed: string[];
+  };
+  supportRules: {
+    added: string[];
+    removed: string[];
+  };
+}
+
+export interface CanvasTemplateRegistryAuditReport {
+  path: string;
+  templateCount: number;
+  supportRuleCount: number;
+  missingImportedFromCount: number;
+  missingSourceArtifactCount: number;
+  missingPlatformVersionCount: number;
+  missingAppVersionCount: number;
+  provenanceKinds: Record<string, number>;
+  sources: string[];
+  importedFrom: string[];
+  sourceArtifacts: string[];
+  platformVersions: string[];
+  appVersions: string[];
+}
+
+export interface CanvasTemplateRegistryPinResult {
+  outPath: string;
+  hash: string;
+  generatedAt?: string;
+  templateCount: number;
+  supportRuleCount: number;
+}
+
+export interface CanvasTemplateRegistryRefreshResult {
+  registry: CanvasTemplateRegistryInspectReport;
+  diff?: CanvasTemplateRegistryDiffResult;
 }
 
 export interface CanvasTemplateRequirementResolution {
@@ -368,6 +471,75 @@ export interface CanvasDiffResult {
   };
 }
 
+export interface CanvasPatchControlDefinition {
+  name: string;
+  templateName: string;
+  templateVersion: string;
+  properties?: Record<string, CanvasJsonValue>;
+  children?: CanvasPatchControlDefinition[];
+}
+
+export type CanvasPatchOperation =
+  | {
+      op: 'set-property';
+      controlPath: string;
+      property: string;
+      value: CanvasJsonValue;
+    }
+  | {
+      op: 'remove-property';
+      controlPath: string;
+      property: string;
+    }
+  | {
+      op: 'add-control';
+      screen: string;
+      parentPath?: string;
+      control: CanvasPatchControlDefinition;
+    }
+  | {
+      op: 'remove-control';
+      controlPath: string;
+    };
+
+export interface CanvasPatchDocument {
+  schemaVersion: 1;
+  operations: CanvasPatchOperation[];
+}
+
+export interface CanvasPatchPlanStep {
+  index: number;
+  op: CanvasPatchOperation['op'];
+  controlPath?: string;
+  screen?: string;
+  status: 'ready' | 'error';
+  description: string;
+}
+
+export interface CanvasPatchPlanResult {
+  path: string;
+  sourceKind: CanvasSourceModel['kind'];
+  valid: boolean;
+  operations: CanvasPatchPlanStep[];
+}
+
+export interface CanvasPatchApplyResult {
+  path: string;
+  outPath: string;
+  appliedOperations: number;
+  filesWritten: string[];
+  sourceHash: string;
+}
+
+export interface CanvasCliResolution {
+  path: string;
+  registries: string[];
+  workspace?: {
+    path: string;
+    name: string;
+  };
+}
+
 export type CanvasAppSummary = DataverseCanvasAppSummary & {
   inSolution?: boolean;
 };
@@ -451,6 +623,56 @@ export class CanvasService {
 
   async importRegistry(request: CanvasRegistryImportRequest): Promise<OperationResult<CanvasTemplateRegistryDocument>> {
     return importCanvasTemplateRegistry(request);
+  }
+
+  async inspectWorkspace(path: string): Promise<OperationResult<CanvasWorkspaceInspectReport>> {
+    return inspectCanvasWorkspace(path);
+  }
+
+  async resolveWorkspaceTarget(
+    target: string,
+    options: {
+      workspacePath: string;
+      registries?: string[];
+    }
+  ): Promise<OperationResult<CanvasCliResolution>> {
+    return resolveCanvasWorkspaceTarget(target, options);
+  }
+
+  async inspectRegistry(path: string): Promise<OperationResult<CanvasTemplateRegistryInspectReport>> {
+    return inspectCanvasTemplateRegistry(path);
+  }
+
+  async diffRegistries(leftPath: string, rightPath: string): Promise<OperationResult<CanvasTemplateRegistryDiffResult>> {
+    return diffCanvasTemplateRegistries(leftPath, rightPath);
+  }
+
+  async auditRegistry(path: string): Promise<OperationResult<CanvasTemplateRegistryAuditReport>> {
+    return auditCanvasTemplateRegistry(path);
+  }
+
+  async pinRegistry(path: string, outPath: string): Promise<OperationResult<CanvasTemplateRegistryPinResult>> {
+    return pinCanvasTemplateRegistry(path, outPath);
+  }
+
+  async refreshRegistry(
+    request: CanvasRegistryImportRequest & {
+      currentPath?: string;
+    }
+  ): Promise<OperationResult<CanvasTemplateRegistryRefreshResult>> {
+    return refreshCanvasTemplateRegistry(request);
+  }
+
+  async planPatch(path: string, patch: CanvasPatchDocument): Promise<OperationResult<CanvasPatchPlanResult>> {
+    return planCanvasPatch(path, patch);
+  }
+
+  async applyPatch(
+    path: string,
+    patch: CanvasPatchDocument,
+    outPath?: string
+  ): Promise<OperationResult<CanvasPatchApplyResult>> {
+    return applyCanvasPatch(path, patch, outPath);
   }
 
   async listRemote(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<CanvasAppSummary[]>> {
@@ -630,6 +852,392 @@ export async function importCanvasTemplateRegistry(
   }
 
   return normalized;
+}
+
+export async function inspectCanvasWorkspace(path: string): Promise<OperationResult<CanvasWorkspaceInspectReport>> {
+  const loaded = await loadCanvasWorkspace(path);
+
+  if (!loaded.success || !loaded.data) {
+    return loaded as unknown as OperationResult<CanvasWorkspaceInspectReport>;
+  }
+
+  return ok(
+    {
+      path: loaded.data.path,
+      workspace: loaded.data.document,
+      apps: loaded.data.document.apps.map((app) => resolveWorkspaceAppEntry(loaded.data.document, app, loaded.data.root)),
+      registries: loaded.data.document.registries ?? [],
+      catalogs: loaded.data.document.catalogs ?? [],
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: loaded.diagnostics,
+      warnings: loaded.warnings,
+    }
+  );
+}
+
+export async function resolveCanvasWorkspaceTarget(
+  target: string,
+  options: {
+    workspacePath: string;
+    registries?: string[];
+  }
+): Promise<OperationResult<CanvasCliResolution>> {
+  const loaded = await loadCanvasWorkspace(options.workspacePath);
+
+  if (!loaded.success || !loaded.data) {
+    return loaded as unknown as OperationResult<CanvasCliResolution>;
+  }
+
+  const matched =
+    loaded.data.document.apps.find((app) => app.name.toLowerCase() === target.toLowerCase()) ??
+    loaded.data.document.apps.find((app) => resolve(loaded.data.root, app.path) === resolve(target));
+
+  if (!matched) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_WORKSPACE_APP_NOT_FOUND', `Canvas workspace ${loaded.data.document.name} does not define app ${target}.`, {
+        source: '@pp/canvas',
+      }),
+      {
+        supportTier: 'preview',
+        diagnostics: loaded.diagnostics,
+        warnings: loaded.warnings,
+      }
+    );
+  }
+
+  const resolved = resolveWorkspaceAppEntry(loaded.data.document, matched, loaded.data.root);
+  const registries = options.registries && options.registries.length > 0 ? options.registries : resolved.registries;
+
+  return ok(
+    {
+      path: resolved.path,
+      registries,
+      workspace: {
+        path: loaded.data.path,
+        name: loaded.data.document.name,
+      },
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: loaded.diagnostics,
+      warnings: loaded.warnings,
+    }
+  );
+}
+
+export async function inspectCanvasTemplateRegistry(
+  path: string
+): Promise<OperationResult<CanvasTemplateRegistryInspectReport>> {
+  const loaded = await loadCanvasTemplateRegistryDocument(resolve(path));
+
+  if (!loaded.success || !loaded.data) {
+    return loaded as unknown as OperationResult<CanvasTemplateRegistryInspectReport>;
+  }
+
+  return ok(summarizeRegistry(loaded.data), {
+    supportTier: 'preview',
+    diagnostics: loaded.diagnostics,
+    warnings: loaded.warnings,
+  });
+}
+
+export async function diffCanvasTemplateRegistries(
+  leftPath: string,
+  rightPath: string
+): Promise<OperationResult<CanvasTemplateRegistryDiffResult>> {
+  const [left, right] = await Promise.all([
+    loadCanvasTemplateRegistryDocument(resolve(leftPath)),
+    loadCanvasTemplateRegistryDocument(resolve(rightPath)),
+  ]);
+
+  if (!left.success || !left.data) {
+    return left as unknown as OperationResult<CanvasTemplateRegistryDiffResult>;
+  }
+
+  if (!right.success || !right.data) {
+    return right as unknown as OperationResult<CanvasTemplateRegistryDiffResult>;
+  }
+
+  return ok(
+    diffLoadedCanvasRegistries(left.data, right.data),
+    {
+      supportTier: 'preview',
+      diagnostics: [...left.diagnostics, ...right.diagnostics],
+      warnings: [...left.warnings, ...right.warnings],
+    }
+  );
+}
+
+export async function auditCanvasTemplateRegistry(
+  path: string
+): Promise<OperationResult<CanvasTemplateRegistryAuditReport>> {
+  const loaded = await loadCanvasTemplateRegistryDocument(resolve(path));
+
+  if (!loaded.success || !loaded.data) {
+    return loaded as unknown as OperationResult<CanvasTemplateRegistryAuditReport>;
+  }
+
+  const provenanceKinds = new Map<string, number>();
+
+  for (const template of loaded.data.document.templates) {
+    provenanceKinds.set(template.provenance.kind, (provenanceKinds.get(template.provenance.kind) ?? 0) + 1);
+  }
+
+  return ok(
+    {
+      path: loaded.data.path,
+      templateCount: loaded.data.document.templates.length,
+      supportRuleCount: loaded.data.document.supportMatrix.length,
+      missingImportedFromCount: loaded.data.document.templates.filter((template) => !template.provenance.importedFrom).length,
+      missingSourceArtifactCount: loaded.data.document.templates.filter((template) => !template.provenance.sourceArtifact).length,
+      missingPlatformVersionCount: loaded.data.document.templates.filter((template) => !template.provenance.platformVersion).length,
+      missingAppVersionCount: loaded.data.document.templates.filter((template) => !template.provenance.appVersion).length,
+      provenanceKinds: Object.fromEntries(Array.from(provenanceKinds.entries()).sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))),
+      sources: uniqueSorted(loaded.data.document.templates.map((template) => template.provenance.source)),
+      importedFrom: uniqueSorted(loaded.data.document.templates.map((template) => template.provenance.importedFrom)),
+      sourceArtifacts: uniqueSorted(loaded.data.document.templates.map((template) => template.provenance.sourceArtifact)),
+      platformVersions: uniqueSorted(loaded.data.document.templates.map((template) => template.provenance.platformVersion)),
+      appVersions: uniqueSorted(loaded.data.document.templates.map((template) => template.provenance.appVersion)),
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: loaded.diagnostics,
+      warnings: loaded.warnings,
+    }
+  );
+}
+
+export async function pinCanvasTemplateRegistry(
+  path: string,
+  outPath: string
+): Promise<OperationResult<CanvasTemplateRegistryPinResult>> {
+  const loaded = await loadCanvasTemplateRegistryDocument(resolve(path));
+
+  if (!loaded.success || !loaded.data) {
+    return loaded as unknown as OperationResult<CanvasTemplateRegistryPinResult>;
+  }
+
+  await writeJsonFile(outPath, loaded.data.document as unknown as Parameters<typeof writeJsonFile>[1]);
+
+  return ok(
+    {
+      outPath: resolve(outPath),
+      hash: loaded.data.hash,
+      generatedAt: loaded.data.document.generatedAt,
+      templateCount: loaded.data.document.templates.length,
+      supportRuleCount: loaded.data.document.supportMatrix.length,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: loaded.diagnostics,
+      warnings: loaded.warnings,
+    }
+  );
+}
+
+export async function refreshCanvasTemplateRegistry(
+  request: CanvasRegistryImportRequest & {
+    currentPath?: string;
+  }
+): Promise<OperationResult<CanvasTemplateRegistryRefreshResult>> {
+  const current =
+    request.currentPath
+      ? await loadCanvasTemplateRegistryDocument(resolve(request.currentPath))
+      : undefined;
+  if (current && (!current.success || !current.data)) {
+    return current as unknown as OperationResult<CanvasTemplateRegistryRefreshResult>;
+  }
+  const imported = await importCanvasTemplateRegistry(request);
+
+  if (!imported.success || !imported.data) {
+    return imported as unknown as OperationResult<CanvasTemplateRegistryRefreshResult>;
+  }
+
+  const path = resolve(request.outPath ?? request.currentPath ?? request.sourcePath);
+  const hash = sha256Hex(stringifyCanvasJson(imported.data));
+  const registry = summarizeRegistry({
+    path,
+    hash,
+    document: imported.data,
+  });
+  let diff: CanvasTemplateRegistryDiffResult | undefined;
+
+  if (current?.data) {
+    diff = diffLoadedCanvasRegistries(current.data, {
+      path,
+      hash,
+      document: imported.data,
+    });
+  }
+
+  return ok(
+    {
+      registry,
+      ...(diff ? { diff } : {}),
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: imported.diagnostics,
+      warnings: imported.warnings,
+    }
+  );
+}
+
+export async function planCanvasPatch(
+  path: string,
+  patch: CanvasPatchDocument
+): Promise<OperationResult<CanvasPatchPlanResult>> {
+  const source = await loadCanvasSource(path);
+
+  if (!source.success || !source.data) {
+    return source as unknown as OperationResult<CanvasPatchPlanResult>;
+  }
+
+  if (source.data.kind !== 'json-manifest') {
+    return fail(
+      createDiagnostic('error', 'CANVAS_PATCH_KIND_UNSUPPORTED', `Canvas patch currently supports json-manifest sources only; received ${source.data.kind ?? 'unknown'}.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const validation = normalizeCanvasPatchDocument(patch);
+
+  if (!validation.success || !validation.data) {
+    return validation as unknown as OperationResult<CanvasPatchPlanResult>;
+  }
+
+  const operations = validation.data.operations.map((operation, index) => planCanvasPatchOperation(source.data, operation, index));
+
+  return ok(
+    {
+      path: resolve(path),
+      sourceKind: source.data.kind,
+      valid: operations.every((operation) => operation.status === 'ready'),
+      operations,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: source.diagnostics,
+      warnings: source.warnings,
+    }
+  );
+}
+
+export async function applyCanvasPatch(
+  path: string,
+  patch: CanvasPatchDocument,
+  outPath?: string
+): Promise<OperationResult<CanvasPatchApplyResult>> {
+  const plan = await planCanvasPatch(path, patch);
+
+  if (!plan.success || !plan.data) {
+    return plan as unknown as OperationResult<CanvasPatchApplyResult>;
+  }
+
+  if (!plan.data.valid) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_PATCH_PLAN_INVALID', `Canvas patch plan for ${path} contains invalid operations.`, {
+        source: '@pp/canvas',
+      }),
+      {
+        supportTier: 'preview',
+        diagnostics: plan.diagnostics,
+        warnings: plan.warnings,
+      }
+    );
+  }
+
+  const source = await loadCanvasSource(path);
+
+  if (!source.success || !source.data || source.data.kind !== 'json-manifest') {
+    return source as unknown as OperationResult<CanvasPatchApplyResult>;
+  }
+
+  const targetRoot = outPath ? resolve(outPath) : source.data.root;
+
+  if (outPath) {
+    await cp(source.data.root, targetRoot, { recursive: true });
+  }
+
+  const manifest = await readCanvasJsonFile(resolve(targetRoot, basename(source.data.manifestPath)));
+
+  if (!manifest.success || manifest.data === undefined) {
+    return manifest as unknown as OperationResult<CanvasPatchApplyResult>;
+  }
+
+  const manifestRecord = asRecord(manifest.data);
+
+  if (!manifestRecord || !Array.isArray(manifestRecord.screens)) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_PATCH_MANIFEST_INVALID', `Canvas manifest ${source.data.manifestPath} is not patchable.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const screenRecords = new Map<string, { path: string; document: Record<string, unknown> }>();
+
+  for (const screen of source.data.manifest.screens) {
+    const screenPath = resolve(targetRoot, screen.file);
+    const screenDocument = await readCanvasJsonFile(screenPath);
+
+    if (!screenDocument.success || screenDocument.data === undefined) {
+      return screenDocument as unknown as OperationResult<CanvasPatchApplyResult>;
+    }
+
+    const screenRecord = asRecord(screenDocument.data);
+
+    if (!screenRecord) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_PATCH_SCREEN_INVALID', `Canvas screen ${screenPath} is not patchable.`, {
+          source: '@pp/canvas',
+        })
+      );
+    }
+
+    if (!Array.isArray(screenRecord.controls)) {
+      screenRecord.controls = [];
+    }
+
+    screenRecords.set(screen.name, {
+      path: screenPath,
+      document: screenRecord,
+    });
+  }
+
+  for (const operation of patch.operations) {
+    applyCanvasPatchOperation(screenRecords, operation);
+  }
+
+  const filesWritten: string[] = [];
+
+  await writeJsonFile(resolve(targetRoot, basename(source.data.manifestPath)), manifestRecord as unknown as Parameters<typeof writeJsonFile>[1]);
+  filesWritten.push(resolve(targetRoot, basename(source.data.manifestPath)));
+
+  for (const screen of Array.from(screenRecords.values()).sort((left, right) => left.path.localeCompare(right.path))) {
+    await writeJsonFile(screen.path, screen.document as unknown as Parameters<typeof writeJsonFile>[1]);
+    filesWritten.push(screen.path);
+  }
+
+  const reloaded = await loadCanvasSource(targetRoot);
+
+  return ok(
+    {
+      path: resolve(path),
+      outPath: targetRoot,
+      appliedOperations: patch.operations.length,
+      filesWritten,
+      sourceHash: reloaded.success && reloaded.data ? reloaded.data.sourceHash : source.data.sourceHash,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: [...plan.diagnostics, ...(reloaded.success ? reloaded.diagnostics : [])],
+      warnings: [...plan.warnings, ...(reloaded.success ? reloaded.warnings : [])],
+    }
+  );
 }
 
 export async function inspectCanvasApp(
@@ -907,6 +1515,583 @@ export async function diffCanvasApps(leftPath: string, rightPath: string): Promi
       warnings: [...left.warnings, ...right.warnings],
     }
   );
+}
+
+interface LoadedCanvasWorkspace {
+  path: string;
+  root: string;
+  document: CanvasWorkspaceDocument;
+}
+
+async function loadCanvasWorkspace(path: string): Promise<OperationResult<LoadedCanvasWorkspace>> {
+  const workspacePath = await resolveCanvasWorkspacePath(path);
+
+  if (!workspacePath.success || !workspacePath.data) {
+    return workspacePath as unknown as OperationResult<LoadedCanvasWorkspace>;
+  }
+
+  const document = await readCanvasJsonFile(workspacePath.data);
+
+  if (!document.success || document.data === undefined) {
+    return document as unknown as OperationResult<LoadedCanvasWorkspace>;
+  }
+
+  const normalized = normalizeCanvasWorkspaceDocument(document.data, workspacePath.data);
+
+  if (!normalized.success || !normalized.data) {
+    return normalized as unknown as OperationResult<LoadedCanvasWorkspace>;
+  }
+
+  return ok(
+    {
+      path: workspacePath.data,
+      root: dirname(workspacePath.data),
+      document: normalized.data,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: normalized.diagnostics,
+      warnings: normalized.warnings,
+    }
+  );
+}
+
+async function resolveCanvasWorkspacePath(path: string): Promise<OperationResult<string>> {
+  const candidates = path.endsWith('.json')
+    ? [resolve(path)]
+    : [resolve(path, 'canvas.workspace.json'), resolve(path, 'canvas-workspace.json')];
+
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) {
+      return ok(candidate, {
+        supportTier: 'preview',
+      });
+    }
+  }
+
+  return fail(
+    createDiagnostic('error', 'CANVAS_WORKSPACE_NOT_FOUND', `No canvas workspace manifest was found at ${path}.`, {
+      source: '@pp/canvas',
+      hint: 'Provide a workspace directory with canvas.workspace.json or a direct manifest path.',
+    })
+  );
+}
+
+function normalizeCanvasWorkspaceDocument(value: unknown, workspacePath: string): OperationResult<CanvasWorkspaceDocument> {
+  const workspace = asRecord(value);
+
+  if (!workspace) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_WORKSPACE_INVALID', `Canvas workspace ${workspacePath} must be a JSON object.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const name = readString(workspace.name);
+  const schemaVersion = workspace.schemaVersion;
+  const appsValue = Array.isArray(workspace.apps) ? workspace.apps : [];
+  const catalogsValue = Array.isArray(workspace.catalogs) ? workspace.catalogs : [];
+
+  if (!name || schemaVersion !== 1 || appsValue.length === 0) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_WORKSPACE_FIELDS_REQUIRED', `Canvas workspace ${workspacePath} must include schemaVersion: 1, name, and at least one app.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const apps = appsValue.map((entry, index) => normalizeCanvasWorkspaceApp(entry, workspacePath, index));
+
+  for (const app of apps) {
+    if (!app.success || !app.data) {
+      return app as unknown as OperationResult<CanvasWorkspaceDocument>;
+    }
+  }
+
+  const catalogs = catalogsValue.map((entry, index) => normalizeCanvasWorkspaceCatalog(entry, workspacePath, index));
+
+  for (const catalog of catalogs) {
+    if (!catalog.success || !catalog.data) {
+      return catalog as unknown as OperationResult<CanvasWorkspaceDocument>;
+    }
+  }
+
+  return ok(
+    {
+      schemaVersion: 1,
+      name,
+      ...(Array.isArray(workspace.registries) ? { registries: normalizeStringArray(workspace.registries) } : {}),
+      catalogs: catalogs.map((entry) => entry.data!),
+      apps: apps.map((entry) => entry.data!),
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+function normalizeCanvasWorkspaceCatalog(
+  value: unknown,
+  workspacePath: string,
+  index: number
+): OperationResult<CanvasWorkspaceCatalogEntry> {
+  const catalog = asRecord(value);
+
+  if (!catalog) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_WORKSPACE_CATALOG_INVALID', `Catalog ${index} in ${workspacePath} must be an object.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const name = readString(catalog.name);
+  const registries = Array.isArray(catalog.registries) ? normalizeStringArray(catalog.registries) : [];
+
+  if (!name || registries.length === 0) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_WORKSPACE_CATALOG_FIELDS_REQUIRED', `Catalog ${index} in ${workspacePath} must include name and at least one registry.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  return ok(
+    {
+      name,
+      registries,
+      ...(Array.isArray(catalog.notes) ? { notes: normalizeStringArray(catalog.notes) } : {}),
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+function normalizeCanvasWorkspaceApp(
+  value: unknown,
+  workspacePath: string,
+  index: number
+): OperationResult<CanvasWorkspaceAppEntry> {
+  const app = asRecord(value);
+
+  if (!app) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_WORKSPACE_APP_INVALID', `App ${index} in ${workspacePath} must be an object.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const name = readString(app.name);
+  const path = readString(app.path);
+
+  if (!name || !path) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_WORKSPACE_APP_FIELDS_REQUIRED', `App ${index} in ${workspacePath} must include name and path.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  return ok(
+    {
+      name,
+      path,
+      ...(Array.isArray(app.registries) ? { registries: normalizeStringArray(app.registries) } : {}),
+      ...(Array.isArray(app.catalogs) ? { catalogs: normalizeStringArray(app.catalogs) } : {}),
+      ...(Array.isArray(app.notes) ? { notes: normalizeStringArray(app.notes) } : {}),
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+function resolveWorkspaceAppEntry(
+  workspace: CanvasWorkspaceDocument,
+  app: CanvasWorkspaceAppEntry,
+  workspaceRoot: string
+): CanvasWorkspaceResolvedApp {
+  const catalogs = (app.catalogs ?? []).map((name) => workspace.catalogs?.find((entry) => entry.name === name)).filter(Boolean) as CanvasWorkspaceCatalogEntry[];
+
+  return {
+    name: app.name,
+    path: resolve(workspaceRoot, app.path),
+    registries: [...(workspace.registries ?? []), ...catalogs.flatMap((entry) => entry.registries), ...(app.registries ?? [])],
+    catalogs: catalogs.map((entry) => entry.name),
+    notes: [...catalogs.flatMap((entry) => entry.notes ?? []), ...(app.notes ?? [])],
+  };
+}
+
+function summarizeRegistry(document: LoadedRegistryDocument): CanvasTemplateRegistryInspectReport {
+  return {
+    path: document.path,
+    hash: document.hash,
+    generatedAt: document.document.generatedAt,
+    templateCount: document.document.templates.length,
+    supportRuleCount: document.document.supportMatrix.length,
+    templates: document.document.templates.map((template) => ({
+      templateName: template.templateName,
+      templateVersion: template.templateVersion,
+      provenanceKind: template.provenance.kind,
+      source: template.provenance.source,
+      importedFrom: template.provenance.importedFrom,
+      appVersion: template.provenance.appVersion,
+      platformVersion: template.provenance.platformVersion,
+      aliases: {
+        displayNames: template.aliases?.displayNames?.length ?? 0,
+        constructors: template.aliases?.constructors?.length ?? 0,
+        yamlNames: template.aliases?.yamlNames?.length ?? 0,
+      },
+    })),
+  };
+}
+
+function diffLoadedCanvasRegistries(
+  left: LoadedRegistryDocument,
+  right: LoadedRegistryDocument
+): CanvasTemplateRegistryDiffResult {
+  const leftTemplates = new Map(left.document.templates.map((template) => [makeTemplateKey(template.templateName, template.templateVersion), template] as const));
+  const rightTemplates = new Map(right.document.templates.map((template) => [makeTemplateKey(template.templateName, template.templateVersion), template] as const));
+  const templateKeys = new Set([...leftTemplates.keys(), ...rightTemplates.keys()]);
+  const changed: string[] = [];
+  const added: string[] = [];
+  const removed: string[] = [];
+
+  for (const key of Array.from(templateKeys).sort()) {
+    const leftTemplate = leftTemplates.get(key);
+    const rightTemplate = rightTemplates.get(key);
+
+    if (!leftTemplate && rightTemplate) {
+      added.push(formatTemplateKey(rightTemplate.templateName, rightTemplate.templateVersion));
+      continue;
+    }
+
+    if (leftTemplate && !rightTemplate) {
+      removed.push(formatTemplateKey(leftTemplate.templateName, leftTemplate.templateVersion));
+      continue;
+    }
+
+    if (leftTemplate && rightTemplate && leftTemplate.contentHash !== rightTemplate.contentHash) {
+      changed.push(formatTemplateKey(leftTemplate.templateName, leftTemplate.templateVersion));
+    }
+  }
+
+  const leftRules = new Set(left.document.supportMatrix.map((rule) => stableStringify(rule)));
+  const rightRules = new Set(right.document.supportMatrix.map((rule) => stableStringify(rule)));
+
+  return {
+    left: summarizeRegistry(left),
+    right: summarizeRegistry(right),
+    templates: {
+      added,
+      removed,
+      changed,
+    },
+    supportRules: {
+      added: Array.from(rightRules).filter((entry) => !leftRules.has(entry)).sort(),
+      removed: Array.from(leftRules).filter((entry) => !rightRules.has(entry)).sort(),
+    },
+  };
+}
+
+function formatTemplateKey(templateName: string, templateVersion: string): string {
+  return `${templateName}@${templateVersion}`;
+}
+
+function uniqueSorted(values: Array<string | undefined>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim().length > 0)))).sort((left, right) =>
+    left.localeCompare(right)
+  );
+}
+
+function normalizeStringArray(values: unknown[]): string[] {
+  return values
+    .map((value) => readString(value))
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function normalizeCanvasPatchDocument(value: unknown): OperationResult<CanvasPatchDocument> {
+  const patch = asRecord(value);
+
+  if (!patch || patch.schemaVersion !== 1 || !Array.isArray(patch.operations) || patch.operations.length === 0) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_PATCH_INVALID', 'Canvas patch documents must include schemaVersion: 1 and a non-empty operations array.', {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  return ok(
+    {
+      schemaVersion: 1,
+      operations: patch.operations as CanvasPatchOperation[],
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+function planCanvasPatchOperation(source: CanvasSourceModel, operation: CanvasPatchOperation, index: number): CanvasPatchPlanStep {
+  switch (operation.op) {
+    case 'set-property': {
+      const control = source.controls.find((entry) => entry.path === operation.controlPath);
+      return control
+        ? {
+            index,
+            op: operation.op,
+            controlPath: operation.controlPath,
+            status: 'ready',
+            description: `Set ${operation.property} on ${operation.controlPath}.`,
+          }
+        : {
+            index,
+            op: operation.op,
+            controlPath: operation.controlPath,
+            status: 'error',
+            description: `Control ${operation.controlPath} was not found.`,
+          };
+    }
+    case 'remove-property': {
+      const control = findCanvasControlByPath(source, operation.controlPath);
+      const hasProperty = control ? Object.prototype.hasOwnProperty.call(control.properties, operation.property) : false;
+      return control && hasProperty
+        ? {
+            index,
+            op: operation.op,
+            controlPath: operation.controlPath,
+            status: 'ready',
+            description: `Remove ${operation.property} from ${operation.controlPath}.`,
+          }
+        : {
+            index,
+            op: operation.op,
+            controlPath: operation.controlPath,
+            status: 'error',
+            description: `Property ${operation.property} was not found on ${operation.controlPath}.`,
+          };
+    }
+    case 'add-control': {
+      const parentPath = operation.parentPath;
+      const parent = parentPath ? source.controls.find((entry) => entry.path === parentPath) : undefined;
+      const screenExists = source.screens.some((screen) => screen.name === operation.screen);
+      const duplicate = parentPath
+        ? false
+        : source.controls.some((entry) => entry.path === `${operation.screen}/${operation.control.name}`);
+
+      if (!screenExists) {
+        return {
+          index,
+          op: operation.op,
+          screen: operation.screen,
+          status: 'error',
+          description: `Screen ${operation.screen} was not found.`,
+        };
+      }
+
+      if (parentPath && !parent) {
+        return {
+          index,
+          op: operation.op,
+          screen: operation.screen,
+          controlPath: parentPath,
+          status: 'error',
+          description: `Parent control ${parentPath} was not found.`,
+        };
+      }
+
+      if (duplicate) {
+        return {
+          index,
+          op: operation.op,
+          screen: operation.screen,
+          status: 'error',
+          description: `Top-level control ${operation.screen}/${operation.control.name} already exists.`,
+        };
+      }
+
+      return {
+        index,
+        op: operation.op,
+        screen: operation.screen,
+        controlPath: parentPath,
+        status: 'ready',
+        description: `Add ${operation.control.name} to ${parentPath ?? operation.screen}.`,
+      };
+    }
+    case 'remove-control': {
+      const control = source.controls.find((entry) => entry.path === operation.controlPath);
+      return control
+        ? {
+            index,
+            op: operation.op,
+            controlPath: operation.controlPath,
+            status: 'ready',
+            description: `Remove ${operation.controlPath}.`,
+          }
+        : {
+            index,
+            op: operation.op,
+            controlPath: operation.controlPath,
+            status: 'error',
+            description: `Control ${operation.controlPath} was not found.`,
+          };
+    }
+  }
+}
+
+function applyCanvasPatchOperation(
+  screenRecords: Map<string, { path: string; document: Record<string, unknown> }>,
+  operation: CanvasPatchOperation
+): void {
+  switch (operation.op) {
+    case 'set-property': {
+      const control = resolvePatchControl(screenRecords, operation.controlPath);
+
+      if (control) {
+        const properties = asRecord(control.properties) ?? {};
+        properties[operation.property] = operation.value;
+        control.properties = properties;
+      }
+      return;
+    }
+    case 'remove-property': {
+      const control = resolvePatchControl(screenRecords, operation.controlPath);
+
+      if (control && asRecord(control.properties)) {
+        delete (control.properties as Record<string, unknown>)[operation.property];
+      }
+      return;
+    }
+    case 'add-control': {
+      const screen = screenRecords.get(operation.screen);
+
+      if (!screen) {
+        return;
+      }
+
+      const controls = Array.isArray(screen.document.controls) ? screen.document.controls : [];
+      const parent = operation.parentPath ? resolvePatchControl(screenRecords, operation.parentPath) : undefined;
+      const targetChildren =
+        parent && Array.isArray(parent.children)
+          ? parent.children
+          : parent
+            ? ((parent.children = []) as unknown[])
+            : controls;
+
+      targetChildren.push(serializePatchControl(operation.control));
+      screen.document.controls = controls;
+      return;
+    }
+    case 'remove-control': {
+      removePatchControl(screenRecords, operation.controlPath);
+      return;
+    }
+  }
+}
+
+function findCanvasControlByPath(source: CanvasSourceModel, controlPath: string): CanvasControlDefinition | undefined {
+  const parts = controlPath.split('/').filter((part) => part.length > 0);
+  const screen = source.screens.find((entry) => entry.name === parts[0]);
+
+  if (!screen) {
+    return undefined;
+  }
+
+  let controls = screen.controls;
+  let current: CanvasControlDefinition | undefined;
+
+  for (const segment of parts.slice(1)) {
+    current = controls.find((control) => control.name === segment);
+
+    if (!current) {
+      return undefined;
+    }
+
+    controls = current.children;
+  }
+
+  return current;
+}
+
+function resolvePatchControl(
+  screenRecords: Map<string, { path: string; document: Record<string, unknown> }>,
+  controlPath: string
+): Record<string, unknown> | undefined {
+  const parts = controlPath.split('/').filter((part) => part.length > 0);
+  const screen = screenRecords.get(parts[0] ?? '');
+
+  if (!screen) {
+    return undefined;
+  }
+
+  let currentChildren = Array.isArray(screen.document.controls) ? screen.document.controls : [];
+  let current: Record<string, unknown> | undefined;
+
+  for (const segment of parts.slice(1)) {
+    current = currentChildren.map((entry) => asRecord(entry)).find((entry) => entry && readString(entry.name) === segment);
+
+    if (!current) {
+      return undefined;
+    }
+
+    currentChildren = Array.isArray(current.children) ? current.children : [];
+  }
+
+  return current;
+}
+
+function removePatchControl(
+  screenRecords: Map<string, { path: string; document: Record<string, unknown> }>,
+  controlPath: string
+): boolean {
+  const parts = controlPath.split('/').filter((part) => part.length > 0);
+  const screen = screenRecords.get(parts[0] ?? '');
+
+  if (!screen) {
+    return false;
+  }
+
+  let children = Array.isArray(screen.document.controls) ? screen.document.controls : [];
+
+  for (const [index, segment] of parts.slice(1).entries()) {
+    const childIndex = children.findIndex((entry) => readString(asRecord(entry)?.name) === segment);
+
+    if (childIndex < 0) {
+      return false;
+    }
+
+    if (index === parts.slice(1).length - 1) {
+      children.splice(childIndex, 1);
+      return true;
+    }
+
+    const next = asRecord(children[childIndex]);
+
+    if (!next) {
+      return false;
+    }
+
+    children = Array.isArray(next.children) ? next.children : [];
+  }
+
+  return false;
+}
+
+function serializePatchControl(control: CanvasPatchControlDefinition): Record<string, unknown> {
+  return {
+    name: control.name,
+    templateName: control.templateName,
+    templateVersion: control.templateVersion,
+    ...(control.properties ? { properties: control.properties } : {}),
+    ...(control.children && control.children.length > 0
+      ? { children: control.children.map((child) => serializePatchControl(child)) }
+      : {}),
+  };
 }
 
 export async function loadCanvasSource(path: string, options: CanvasSourceReadOptions = {}): Promise<OperationResult<CanvasSourceModel>> {
