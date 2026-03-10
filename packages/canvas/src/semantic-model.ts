@@ -519,6 +519,14 @@ function resolveMemberBinding(
         targetId: `${dataSource.id}:relationship:${normalizeName(relationship.name)}`,
       };
     }
+
+    return {
+      kind: 'unresolved',
+      name: `${dataSource.name}.${node.property.name}`,
+      resolved: false,
+      metadataBacked: true,
+      span: node.property.span,
+    };
   }
 
   if (node.object.kind !== 'Identifier') {

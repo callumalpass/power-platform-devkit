@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildCanvasApp, buildCanvasSemanticModel, loadCanvasSource, validateCanvasApp } from './index';
+import { buildCanvasApp, buildCanvasSemanticModel, lintCanvasApp, loadCanvasSource, validateCanvasApp } from './index';
 
 const tempDirs: string[] = [];
 
@@ -328,6 +328,60 @@ describe('canvas pa.yaml source support', () => {
       valid: false,
     });
     expect(semantic.formulas[0]?.unsupportedReason).toMatch(/Unsupported Power Fx character|Unexpected token/);
+  });
+
+  it('emits source-aware lint diagnostics for metadata-backed and unsupported formula regions', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: =Contacts.MissingField',
+        '            OnSelect: =If(IsBlank(varSelectedAccount), "none", \'Account Category\'.MissingValue)',
+        '            InvalidThing: =1',
+        '      - Button2:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Ship it"',
+        '            OnSelect: =Set(varX, 1); Notify("done")',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+
+    const lint = await lintCanvasApp(appRoot, {
+      mode: 'strict',
+      registries: ['./controls.json'],
+      root: appRoot,
+    });
+
+    expect(lint.success).toBe(true);
+    expect(lint.data?.valid).toBe(false);
+    const metadataDiagnostic = lint.data?.diagnostics.find((diagnostic) => diagnostic.code === 'CANVAS_METADATA_REFERENCE_UNRESOLVED');
+    const propertyDiagnostic = lint.data?.diagnostics.find((diagnostic) => diagnostic.code === 'CANVAS_CONTROL_PROPERTY_INVALID');
+    const unsupportedDiagnostic = lint.data?.diagnostics.find((diagnostic) => diagnostic.code === 'CANVAS_POWERFX_UNSUPPORTED');
+
+    expect(metadataDiagnostic).toMatchObject({
+      path: 'Src/Screen1.pa.yaml:7:19',
+      location: {
+        file: 'Src/Screen1.pa.yaml',
+        start: {
+          line: 7,
+          column: 19,
+        },
+      },
+    });
+    expect(propertyDiagnostic).toMatchObject({
+      path: 'Src/Screen1.pa.yaml:9:27',
+    });
+    expect(unsupportedDiagnostic).toMatchObject({
+      path: 'Src/Screen1.pa.yaml:14:23',
+      unsupported: true,
+    });
   });
 
   it('builds a native msapp archive from unpacked pa.yaml sources', async () => {

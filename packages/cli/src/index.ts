@@ -403,6 +403,7 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
     case 'templates':
       return runCanvasTemplates(args);
     case 'lint':
+      return runCanvasLint(args);
     case 'validate':
       return runCanvasValidate(args);
     case 'inspect':
@@ -3488,7 +3489,7 @@ async function runCanvasValidate(args: string[]): Promise<number> {
   const canvasPath = positionalArgs(args)[0];
 
   if (!canvasPath) {
-    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas validate|lint <path> [--mode strict|seeded|registry]'));
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas validate <path> [--mode strict|seeded|registry]'));
   }
 
   const context = await resolveCanvasCliContext(args);
@@ -3498,6 +3499,30 @@ async function runCanvasValidate(args: string[]): Promise<number> {
   }
 
   const result = await new CanvasService().validate(canvasPath, context.data.options);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return result.data.valid ? 0 : 1;
+}
+
+async function runCanvasLint(args: string[]): Promise<number> {
+  const canvasPath = positionalArgs(args)[0];
+
+  if (!canvasPath) {
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas lint <path> [--mode strict|seeded|registry]'));
+  }
+
+  const context = await resolveCanvasCliContext(args);
+
+  if (!context.success || !context.data) {
+    return printFailure(context);
+  }
+
+  const result = await new CanvasService().lint(canvasPath, context.data.options);
 
   if (!result.success || !result.data) {
     return printFailure(result);
@@ -5053,7 +5078,7 @@ function printCanvasHelp(): void {
       '',
       'Local canvas commands:',
       '  validate <path>              validate a local canvas source tree',
-      '  lint <path>                  alias for validate',
+      '  lint <path>                  emit metadata-aware lint diagnostics for a local canvas source tree',
       '  inspect <path>               inspect a local canvas source tree',
       '  build <path>                 package a local canvas source tree into an .msapp',
       '  diff <leftPath> <rightPath>  diff two local canvas source trees',

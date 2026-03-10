@@ -288,6 +288,45 @@ export interface CanvasValidationReport {
   registries: CanvasRegistrySourceSummary[];
 }
 
+export type CanvasLintCategory = 'formula' | 'binding' | 'property' | 'template' | 'metadata' | 'policy';
+
+export interface CanvasLintRelatedContext {
+  kind: 'control' | 'template' | 'binding' | 'support' | 'metadata';
+  message: string;
+  path?: string;
+  location?: CanvasSourceSpan;
+  metadataBacked?: boolean;
+}
+
+export interface CanvasLintDiagnostic {
+  severity: 'error' | 'warning' | 'info';
+  code: string;
+  category: CanvasLintCategory;
+  message: string;
+  source: '@pp/canvas';
+  path: string;
+  controlPath?: string;
+  property?: string;
+  location?: CanvasSourceSpan;
+  metadataBacked?: boolean;
+  unsupported?: boolean;
+  related?: CanvasLintRelatedContext[];
+}
+
+export interface CanvasLintReport {
+  valid: boolean;
+  mode: CanvasBuildMode;
+  source: CanvasValidationReport['source'];
+  dataSources?: CanvasDataSourceSummary[];
+  registries: CanvasRegistrySourceSummary[];
+  summary: {
+    errorCount: number;
+    warningCount: number;
+    infoCount: number;
+  };
+  diagnostics: CanvasLintDiagnostic[];
+}
+
 export interface CanvasInspectReport extends CanvasValidationReport {
   screens: Array<{
     name: string;
@@ -368,6 +407,10 @@ interface CanvasComparable {
 
 interface PreparedCanvasValidation {
   source: CanvasSourceModel;
+  semanticModel: ReturnType<typeof buildCanvasSemanticModel>;
+  invalidPropertyChecks: CanvasPropertyCheck[];
+  unresolvedTemplates: CanvasTemplateUsageIssue[];
+  unsupportedTemplates: CanvasTemplateUsageIssue[];
   report: CanvasValidationReport;
   diagnostics: Diagnostic[];
   warnings: Diagnostic[];
@@ -394,6 +437,15 @@ export class CanvasService {
     } = {}
   ): Promise<OperationResult<CanvasValidationReport>> {
     return validateCanvasApp(path, options);
+  }
+
+  async lint(
+    path: string,
+    options: CanvasRegistryLoadOptions & {
+      mode?: CanvasBuildMode;
+    } = {}
+  ): Promise<OperationResult<CanvasLintReport>> {
+    return lintCanvasApp(path, options);
   }
 
   async build(
@@ -654,6 +706,48 @@ export async function validateCanvasApp(
     diagnostics: prepared.data.diagnostics,
     warnings: prepared.data.warnings,
   });
+}
+
+export async function lintCanvasApp(
+  path: string,
+  options: CanvasRegistryLoadOptions & {
+    mode?: CanvasBuildMode;
+  } = {}
+): Promise<OperationResult<CanvasLintReport>> {
+  const prepared = await prepareCanvasValidation(path, options);
+
+  if (!prepared.success || !prepared.data) {
+    return prepared as unknown as OperationResult<CanvasLintReport>;
+  }
+
+  const lintDiagnostics = buildCanvasLintDiagnostics(prepared.data);
+  const diagnostics = lintDiagnostics
+    .filter((diagnostic) => diagnostic.severity === 'error')
+    .map((diagnostic) => toOperationDiagnostic(diagnostic));
+  const warnings = lintDiagnostics
+    .filter((diagnostic) => diagnostic.severity === 'warning')
+    .map((diagnostic) => toOperationDiagnostic(diagnostic));
+
+  return ok(
+    {
+      valid: diagnostics.length === 0,
+      mode: prepared.data.report.mode,
+      source: prepared.data.report.source,
+      ...(prepared.data.source.dataSources && prepared.data.source.dataSources.length > 0 ? { dataSources: prepared.data.source.dataSources } : {}),
+      registries: prepared.data.report.registries,
+      summary: {
+        errorCount: diagnostics.length,
+        warningCount: warnings.length,
+        infoCount: lintDiagnostics.filter((diagnostic) => diagnostic.severity === 'info').length,
+      },
+      diagnostics: lintDiagnostics,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics,
+      warnings,
+    }
+  );
 }
 
 export async function buildCanvasApp(
@@ -1161,6 +1255,10 @@ async function prepareCanvasValidation(
   return ok(
     {
       source: source.data,
+      semanticModel,
+      invalidPropertyChecks,
+      unresolvedTemplates,
+      unsupportedTemplates,
       report: {
         valid,
         mode,
@@ -1761,6 +1859,152 @@ function mergeRegistrySources(
   }
 
   return Array.from(merged.values()).sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function buildCanvasLintDiagnostics(prepared: PreparedCanvasValidation): CanvasLintDiagnostic[] {
+  const diagnostics: CanvasLintDiagnostic[] = [];
+  const controlByPath = new Map(prepared.semanticModel.controls.map((control) => [control.path, control]));
+
+  for (const formula of prepared.semanticModel.formulas) {
+    if (!formula.valid) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'CANVAS_POWERFX_UNSUPPORTED',
+        category: 'formula',
+        message: formula.unsupportedReason
+          ? `Formula ${formula.property} on ${formula.controlPath} is outside the supported Power Fx semantic slice: ${formula.unsupportedReason}`
+          : `Formula ${formula.property} on ${formula.controlPath} is outside the supported Power Fx semantic slice.`,
+        source: '@pp/canvas',
+        path: buildLintPath(formula.controlPath, formula.property, formula.sourceSpan),
+        controlPath: formula.controlPath,
+        property: formula.property,
+        location: formula.sourceSpan,
+        unsupported: true,
+        related: [
+          {
+            kind: 'control',
+            message: `Formula property ${formula.property} belongs to ${formula.controlPath}.`,
+            path: formula.controlPath,
+            location: formula.sourceSpan,
+          },
+        ],
+      });
+    }
+
+    for (const binding of formula.bindings.filter((item) => !item.resolved)) {
+      diagnostics.push({
+        severity: 'error',
+        code: binding.metadataBacked ? 'CANVAS_METADATA_REFERENCE_UNRESOLVED' : 'CANVAS_FORMULA_REFERENCE_UNRESOLVED',
+        category: binding.metadataBacked ? 'metadata' : 'binding',
+        message: binding.metadataBacked
+          ? `Metadata-backed reference ${binding.name} in ${formula.property} on ${formula.controlPath} could not be resolved.`
+          : `Reference ${binding.name} in ${formula.property} on ${formula.controlPath} could not be resolved.`,
+        source: '@pp/canvas',
+        path: buildLintPath(formula.controlPath, formula.property, formula.sourceSpan),
+        controlPath: formula.controlPath,
+        property: formula.property,
+        location: formula.sourceSpan,
+        metadataBacked: binding.metadataBacked,
+        related: [
+          {
+            kind: 'binding',
+            message: `Unresolved ${binding.metadataBacked ? 'metadata-backed ' : ''}binding ${binding.name}.`,
+            path: formula.controlPath,
+            location: formula.sourceSpan,
+            metadataBacked: binding.metadataBacked,
+          },
+        ],
+      });
+    }
+  }
+
+  for (const property of prepared.invalidPropertyChecks) {
+    const control = controlByPath.get(property.controlPath);
+    const location = control?.source?.propertySpans?.[property.property];
+    diagnostics.push({
+      severity: 'error',
+      code: 'CANVAS_CONTROL_PROPERTY_INVALID',
+      category: 'property',
+      message: `Property ${property.property} is not valid for ${property.templateName}@${property.templateVersion} on ${property.controlPath}.`,
+      source: '@pp/canvas',
+      path: buildLintPath(property.controlPath, property.property, location),
+      controlPath: property.controlPath,
+      property: property.property,
+      location,
+      related: [
+        {
+          kind: 'template',
+          message: property.source ? `Template metadata source: ${property.source}.` : `Template ${property.templateName}@${property.templateVersion}.`,
+          path: property.controlPath,
+        },
+      ],
+    });
+  }
+
+  for (const issue of prepared.unresolvedTemplates) {
+    const control = controlByPath.get(issue.controlPath);
+    const location = control?.source?.controlTypeSpan ?? control?.source?.nameSpan ?? control?.source?.span;
+    diagnostics.push({
+      severity: 'error',
+      code: 'CANVAS_TEMPLATE_METADATA_MISSING',
+      category: 'template',
+      message: `Template metadata for ${issue.templateName}@${issue.templateVersion} was not resolved for ${issue.controlPath}.`,
+      source: '@pp/canvas',
+      path: buildLintPath(issue.controlPath, undefined, location),
+      controlPath: issue.controlPath,
+      location,
+      related: [
+        {
+          kind: 'template',
+          message: `Missing template requirement ${issue.templateName}@${issue.templateVersion}.`,
+          path: issue.controlPath,
+          location,
+        },
+      ],
+    });
+  }
+
+  for (const issue of prepared.unsupportedTemplates) {
+    const control = controlByPath.get(issue.controlPath);
+    const location = control?.source?.controlTypeSpan ?? control?.source?.nameSpan ?? control?.source?.span;
+    diagnostics.push({
+      severity: issue.status === 'partial' ? 'warning' : 'error',
+      code: 'CANVAS_TEMPLATE_UNSUPPORTED',
+      category: 'policy',
+      message: `Template ${issue.templateName}@${issue.templateVersion} for ${issue.controlPath} is ${issue.status} in ${prepared.report.mode} mode.`,
+      source: '@pp/canvas',
+      path: buildLintPath(issue.controlPath, undefined, location),
+      controlPath: issue.controlPath,
+      location,
+      unsupported: issue.status !== 'supported',
+      related: [
+        {
+          kind: 'support',
+          message: issue.modes.length > 0 ? `Supported modes: ${issue.modes.join(', ')}.` : 'No supported modes were declared.',
+          path: issue.controlPath,
+          location,
+        },
+      ],
+    });
+  }
+
+  return diagnostics.sort((left, right) => left.path.localeCompare(right.path) || left.code.localeCompare(right.code) || left.message.localeCompare(right.message));
+}
+
+function toOperationDiagnostic(diagnostic: CanvasLintDiagnostic): Diagnostic {
+  return createDiagnostic(diagnostic.severity, diagnostic.code, diagnostic.message, {
+    source: diagnostic.source,
+    path: diagnostic.path,
+    detail: diagnostic.related?.map((item) => item.message).join(' '),
+  });
+}
+
+function buildLintPath(controlPath: string, property: string | undefined, location: CanvasSourceSpan | undefined): string {
+  if (location) {
+    return `${location.file}:${location.start.line}:${location.start.column}`;
+  }
+
+  return property ? `${controlPath}.${property}` : controlPath;
 }
 
 function normalizeCanvasTemplateRegistry(

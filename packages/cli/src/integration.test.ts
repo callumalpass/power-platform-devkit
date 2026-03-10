@@ -88,6 +88,37 @@ async function writeUnpackedCanvasFixture(
             Type: 'Table',
             DatasetName: 'default.cds',
             EntityName: 'account',
+            Metadata: {
+              Name: 'Accounts',
+              LogicalName: 'account',
+              Columns: [
+                { Name: 'Account Name', Type: 'Text' },
+                { Name: 'Category', Type: 'Choice' },
+              ],
+              Relationships: [{ Name: 'Primary Contact', Target: 'Contacts' }],
+              OptionSets: [
+                {
+                  Name: 'Account Category',
+                  Values: [{ Name: 'Preferred', Value: 1000 }],
+                },
+              ],
+            },
+          },
+          {
+            Name: 'Contacts',
+            Type: 'Table',
+            DatasetName: 'default.cds',
+            EntityName: 'contact',
+            Metadata: {
+              Name: 'Contacts',
+              LogicalName: 'contact',
+              Columns: [
+                { Name: 'Email', Type: 'Text' },
+                { Name: 'Full Name', Type: 'Text' },
+              ],
+              Relationships: [],
+              OptionSets: [],
+            },
           },
         ],
       },
@@ -171,6 +202,26 @@ function normalizeCliAnalysisSnapshot<T>(value: T): T {
   );
 
   return normalizeDurationMs(normalizedStrings);
+}
+
+function normalizeCanvasTempRegistrySnapshot<T>(value: T, ...tempPaths: string[]): T {
+  const normalized = normalizeCliSnapshot(value, ...tempPaths);
+
+  if (typeof normalized !== 'object' || normalized === null) {
+    return normalized;
+  }
+
+  return mapSnapshotStrings(normalized, (entry) => {
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry)) {
+      return '<GENERATED_AT>';
+    }
+
+    if (/^[a-f0-9]{64}$/.test(entry)) {
+      return '<HASH>';
+    }
+
+    return entry;
+  });
 }
 
 function normalizeDurationMs<T>(value: T): T {
@@ -1742,7 +1793,6 @@ describe('cli fixture-backed workflows', () => {
     expect(validate.stderr).toBe('');
     expect(lint.code).toBe(0);
     expect(lint.stderr).toBe('');
-    expect(lint.stdout).toBe(validate.stdout);
     expect(build.code).toBe(0);
     expect(build.stderr).toBe('');
     expect(diff.code).toBe(0);
@@ -1752,6 +1802,9 @@ describe('cli fixture-backed workflows', () => {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
     await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/canvas/golden/validation-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(lint.stdout), 'fixtures/canvas/golden/lint-report.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
     await expectGoldenJson(JSON.parse(build.stdout), 'fixtures/canvas/golden/build-result.json', {
@@ -1940,6 +1993,52 @@ describe('cli fixture-backed workflows', () => {
       ])
     );
     expect(invalidDiagnostics.diagnostics.some((diagnostic) => diagnostic.code === 'CANVAS_CONTROL_PROPERTY_INVALID')).toBe(true);
+  });
+
+  it('covers metadata-aware canvas lint diagnostics for unpacked .pa.yaml apps', async () => {
+    const tempDir = await createTempDir();
+    const appPath = await writeUnpackedCanvasFixture(tempDir, {
+      name: 'YamlCanvasLint',
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: =Contacts.MissingField',
+        '            OnSelect: =If(IsBlank(varSelectedAccount), "none", \'Account Category\'.MissingValue)',
+        '            InvalidThing: =1',
+        '      - Button2:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Ship it"',
+        '            OnSelect: =Set(varX, 1); Notify("done")',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+    const registryPath = join(appPath, 'controls.json');
+
+    const lint = await runCli([
+      'canvas',
+      'lint',
+      appPath,
+      '--mode',
+      'strict',
+      '--registry',
+      registryPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(lint.code).toBe(1);
+    await expectGoldenJson(JSON.parse(lint.stdout), 'fixtures/canvas/golden/native/lint-invalid-report.json', {
+      normalize: (value) => normalizeCanvasTempRegistrySnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(lint.stderr), 'fixtures/cli/golden/protocol/canvas-lint-diagnostics.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
   });
 
   it('covers dry-run and plan previews for canvas and flow mutation commands without side effects', async () => {

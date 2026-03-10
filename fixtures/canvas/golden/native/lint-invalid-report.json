@@ -1,0 +1,255 @@
+{
+  "dataSources": [
+    {
+      "datasetName": "default.cds",
+      "entityName": "account",
+      "metadata": {
+        "columns": [
+          {
+            "name": "Account Name",
+            "type": "Text"
+          },
+          {
+            "name": "Category",
+            "type": "Choice"
+          }
+        ],
+        "logicalName": "account",
+        "name": "Accounts",
+        "optionSets": [
+          {
+            "name": "Account Category",
+            "values": [
+              {
+                "name": "Preferred",
+                "value": 1000
+              }
+            ]
+          }
+        ],
+        "relationships": [
+          {
+            "name": "Primary Contact",
+            "target": "Contacts"
+          }
+        ]
+      },
+      "name": "Accounts",
+      "type": "Table"
+    },
+    {
+      "datasetName": "default.cds",
+      "entityName": "contact",
+      "metadata": {
+        "columns": [
+          {
+            "name": "Email",
+            "type": "Text"
+          },
+          {
+            "name": "Full Name",
+            "type": "Text"
+          }
+        ],
+        "logicalName": "contact",
+        "name": "Contacts",
+        "optionSets": [],
+        "relationships": []
+      },
+      "name": "Contacts",
+      "type": "Table"
+    }
+  ],
+  "diagnostics": [
+    {
+      "category": "formula",
+      "code": "CANVAS_POWERFX_UNSUPPORTED",
+      "controlPath": "Screen1/Button2",
+      "location": {
+        "end": {
+          "column": 52,
+          "line": 14,
+          "offset": 438
+        },
+        "file": "Src/Screen1.pa.yaml",
+        "start": {
+          "column": 23,
+          "line": 14,
+          "offset": 409
+        }
+      },
+      "message": "Formula OnSelect on Screen1/Button2 is outside the supported Power Fx semantic slice: Unsupported Power Fx character ;.",
+      "path": "Src/Screen1.pa.yaml:14:23",
+      "property": "OnSelect",
+      "related": [
+        {
+          "kind": "control",
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 14,
+              "offset": 438
+            },
+            "file": "Src/Screen1.pa.yaml",
+            "start": {
+              "column": 23,
+              "line": 14,
+              "offset": 409
+            }
+          },
+          "message": "Formula property OnSelect belongs to Screen1/Button2.",
+          "path": "Screen1/Button2"
+        }
+      ],
+      "severity": "error",
+      "source": "@pp/canvas",
+      "unsupported": true
+    },
+    {
+      "category": "metadata",
+      "code": "CANVAS_METADATA_REFERENCE_UNRESOLVED",
+      "controlPath": "Screen1/Button1",
+      "location": {
+        "end": {
+          "column": 41,
+          "line": 7,
+          "offset": 153
+        },
+        "file": "Src/Screen1.pa.yaml",
+        "start": {
+          "column": 19,
+          "line": 7,
+          "offset": 131
+        }
+      },
+      "message": "Metadata-backed reference Contacts.MissingField in Text on Screen1/Button1 could not be resolved.",
+      "metadataBacked": true,
+      "path": "Src/Screen1.pa.yaml:7:19",
+      "property": "Text",
+      "related": [
+        {
+          "kind": "binding",
+          "location": {
+            "end": {
+              "column": 41,
+              "line": 7,
+              "offset": 153
+            },
+            "file": "Src/Screen1.pa.yaml",
+            "start": {
+              "column": 19,
+              "line": 7,
+              "offset": 131
+            }
+          },
+          "message": "Unresolved metadata-backed binding Contacts.MissingField.",
+          "metadataBacked": true,
+          "path": "Screen1/Button1"
+        }
+      ],
+      "severity": "error",
+      "source": "@pp/canvas"
+    },
+    {
+      "category": "metadata",
+      "code": "CANVAS_METADATA_REFERENCE_UNRESOLVED",
+      "controlPath": "Screen1/Button1",
+      "location": {
+        "end": {
+          "column": 96,
+          "line": 8,
+          "offset": 249
+        },
+        "file": "Src/Screen1.pa.yaml",
+        "start": {
+          "column": 23,
+          "line": 8,
+          "offset": 176
+        }
+      },
+      "message": "Metadata-backed reference MissingValue in OnSelect on Screen1/Button1 could not be resolved.",
+      "metadataBacked": true,
+      "path": "Src/Screen1.pa.yaml:8:23",
+      "property": "OnSelect",
+      "related": [
+        {
+          "kind": "binding",
+          "location": {
+            "end": {
+              "column": 96,
+              "line": 8,
+              "offset": 249
+            },
+            "file": "Src/Screen1.pa.yaml",
+            "start": {
+              "column": 23,
+              "line": 8,
+              "offset": 176
+            }
+          },
+          "message": "Unresolved metadata-backed binding MissingValue.",
+          "metadataBacked": true,
+          "path": "Screen1/Button1"
+        }
+      ],
+      "severity": "error",
+      "source": "@pp/canvas"
+    },
+    {
+      "category": "property",
+      "code": "CANVAS_CONTROL_PROPERTY_INVALID",
+      "controlPath": "Screen1/Button1",
+      "location": {
+        "end": {
+          "column": 29,
+          "line": 9,
+          "offset": 278
+        },
+        "file": "Src/Screen1.pa.yaml",
+        "start": {
+          "column": 27,
+          "line": 9,
+          "offset": 276
+        }
+      },
+      "message": "Property InvalidThing is not valid for Button@2.2.0 on Screen1/Button1.",
+      "path": "Src/Screen1.pa.yaml:9:27",
+      "property": "InvalidThing",
+      "related": [
+        {
+          "kind": "template",
+          "message": "Template metadata source: templateXml.",
+          "path": "Screen1/Button1"
+        }
+      ],
+      "severity": "error",
+      "source": "@pp/canvas"
+    }
+  ],
+  "mode": "strict",
+  "registries": [
+    {
+      "generatedAt": "<GENERATED_AT>",
+      "hash": "<HASH>",
+      "path": "<TMP_DIR>/YamlCanvasLint/controls.json",
+      "supportRuleCount": 1,
+      "templateCount": 1
+    }
+  ],
+  "source": {
+    "controlCount": 2,
+    "displayName": "YamlCanvasLint",
+    "manifestPath": "<TMP_DIR>/YamlCanvasLint/Src/App.pa.yaml",
+    "name": "YamlCanvasLint",
+    "root": "<TMP_DIR>/YamlCanvasLint",
+    "screenCount": 1,
+    "sourceHash": "<HASH>",
+    "version": "1.0.0"
+  },
+  "summary": {
+    "errorCount": 4,
+    "infoCount": 0,
+    "warningCount": 0
+  },
+  "valid": false
+}
