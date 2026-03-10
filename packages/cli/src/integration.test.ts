@@ -357,16 +357,16 @@ describe('cli fixture-backed workflows', () => {
     expect(code).toBe(0);
     expect(stderr.join('')).toBe('');
     expect(stdout.join('')).toContain(
-      'dv whoami --env ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
+      'dv whoami --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
     );
     expect(stdout.join('')).toContain(
-      'solution list --env ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
+      'solution list --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
     );
     expect(stdout.join('')).toContain(
       'Remote Dataverse-backed commands accept [--no-interactive-auth] to fail fast with structured diagnostics instead of opening browser auth.'
     );
-    expect(stdout.join('')).toContain('canvas create --env ALIAS');
-    expect(stdout.join('')).toContain('canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME]');
+    expect(stdout.join('')).toContain('canvas create --environment ALIAS');
+    expect(stdout.join('')).toContain('canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME]');
     expect(stdout.join('')).toContain('[preview: returns not-implemented diagnostics]');
   });
 
@@ -390,7 +390,7 @@ describe('cli fixture-backed workflows', () => {
     expect(code).toBe(0);
     expect(stderr.join('')).toBe('');
     expect(stdout.join('')).toContain('Usage: canvas <command> [options]');
-    expect(stdout.join('')).toContain('pp canvas list --env dev --solution Core');
+    expect(stdout.join('')).toContain('pp canvas list --environment dev --solution Core');
     expect(stdout.join('')).toContain('Remote create/import commands are not implemented yet.');
     expect(stdout.join('')).toContain('Attempted remote create/import calls return machine-readable diagnostics with next steps.');
   });
@@ -401,7 +401,7 @@ describe('cli fixture-backed workflows', () => {
 
     expect(createHelp.code).toBe(0);
     expect(createHelp.stderr).toBe('');
-    expect(createHelp.stdout).toContain('Usage: canvas create --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
+    expect(createHelp.stdout).toContain('Usage: canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
     expect(createHelp.stdout).toContain('Preview placeholder. Remote blank-app creation is not implemented yet.');
     expect(createHelp.stdout).toContain('--maker-env-id ID');
     expect(createHelp.stdout).toContain('--open');
@@ -413,7 +413,7 @@ describe('cli fixture-backed workflows', () => {
 
     expect(importHelp.code).toBe(0);
     expect(importHelp.stderr).toBe('');
-    expect(importHelp.stdout).toContain('Usage: canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
+    expect(importHelp.stdout).toContain('Usage: canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
     expect(importHelp.stdout).toContain('Preview placeholder. Remote canvas import is not implemented yet.');
     expect(importHelp.stdout).toContain('--name DISPLAY_NAME');
     expect(importHelp.stdout).toContain('--maker-env-id ID');
@@ -431,15 +431,15 @@ describe('cli fixture-backed workflows', () => {
 
     expect(listHelp.code).toBe(0);
     expect(listHelp.stderr).toBe('');
-    expect(listHelp.stdout).toContain('Usage: canvas list --env ALIAS [--solution UNIQUE_NAME] [options]');
+    expect(listHelp.stdout).toContain('Usage: canvas list --environment ALIAS [--solution UNIQUE_NAME] [options]');
     expect(listHelp.stdout).toContain('Lists remote canvas apps through Dataverse.');
-    expect(listHelp.stdout).toContain('pp canvas list --env dev --solution Core');
+    expect(listHelp.stdout).toContain('pp canvas list --environment dev --solution Core');
 
     expect(inspectHelp.code).toBe(0);
     expect(inspectHelp.stderr).toBe('');
-    expect(inspectHelp.stdout).toContain('Usage: canvas inspect <path|displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [options]');
-    expect(inspectHelp.stdout).toContain('With `--env`, inspects a remote canvas app by display name, logical name, or id.');
-    expect(inspectHelp.stdout).toContain('pp canvas inspect "Harness Canvas" --env dev --solution Core');
+    expect(inspectHelp.stdout).toContain('Usage: canvas inspect <path|displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [options]');
+    expect(inspectHelp.stdout).toContain('With `--environment`, inspects a remote canvas app by display name, logical name, or id.');
+    expect(inspectHelp.stdout).toContain('pp canvas inspect "Harness Canvas" --environment dev --solution Core');
   });
 
   it('prints stable help for project commands without mutating the target path', async () => {
@@ -463,7 +463,7 @@ describe('cli fixture-backed workflows', () => {
     expect(initHelp.code).toBe(0);
     expect(initHelp.stderr).toBe('');
     expect(initHelp.stdout).toContain(
-      'Usage: project init [path] [--name NAME] [--env ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [options]'
+      'Usage: project init [path] [--name NAME] [--environment ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [options]'
     );
     expect(initHelp.stdout).toContain('`--help` only prints this text and never inspects or mutates the target path.');
     expect(initHelp.stdout).toContain('`pp.config.yaml`');
@@ -1233,7 +1233,7 @@ describe('cli fixture-backed workflows', () => {
       diagnostics: [
         {
           code: 'DV_ENV_REQUIRED',
-          message: '--env is required.',
+          message: '--environment <alias> is required.',
         },
       ],
     });
@@ -1244,7 +1244,7 @@ describe('cli fixture-backed workflows', () => {
       diagnostics: [
         {
           code: 'CANVAS_IMPORT_PATH_REQUIRED',
-          message: 'Usage: canvas import <file.msapp> --env <alias> [--solution UNIQUE_NAME]',
+          message: 'Usage: canvas import <file.msapp> --environment <alias> [--solution UNIQUE_NAME]',
         },
       ],
     });
@@ -3079,6 +3079,7 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
     expect(inspect.stdout).toContain('auth profile inspect <name> [--config-dir path]');
+    expect(inspect.stdout).toContain('auth profile inspect --environment ALIAS [--config-dir path]');
     expect(inspect.stdout).not.toContain('AUTH_PROFILE_NAME_REQUIRED');
   });
 

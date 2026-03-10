@@ -430,7 +430,7 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
 }
 
 async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number> {
-  const envAlias = readFlag(args, '--env');
+  const envAlias = readEnvironmentAlias(args);
   const configOptions = readConfigOptions(args);
   const explicitSolutionUniqueName = readFlag(args, '--solution');
   const explicitMakerEnvironmentId = readFlag(args, '--maker-env-id');
@@ -450,11 +450,13 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
   ];
 
   if (!envAlias) {
-    return printFailure(argumentFailure('DV_ENV_REQUIRED', '--env is required.'));
+    return printFailure(argumentFailure('DV_ENV_REQUIRED', '--environment <alias> is required.'));
   }
 
   if (command === 'import' && !importPath) {
-    return printFailure(argumentFailure('CANVAS_IMPORT_PATH_REQUIRED', 'Usage: canvas import <file.msapp> --env <alias> [--solution UNIQUE_NAME]'));
+    return printFailure(
+      argumentFailure('CANVAS_IMPORT_PATH_REQUIRED', 'Usage: canvas import <file.msapp> --environment <alias> [--solution UNIQUE_NAME]')
+    );
   }
 
   const mutation = readMutationFlags(args);
@@ -700,7 +702,7 @@ function buildCanvasRemoteMutationSuggestions(
 ): string[] {
   const envAlias = context.envAlias ? formatCliArg(context.envAlias) : '<alias>';
   const solutionSuffix = context.solutionUniqueName ? ` --solution ${formatCliArg(context.solutionUniqueName)}` : '';
-  const envSuffix = ` --env ${envAlias}`;
+  const envSuffix = ` --environment ${envAlias}`;
   const listCommand = `pp canvas list${envSuffix}${solutionSuffix}`;
   const solutionComponentsCommand = context.solutionUniqueName
     ? `pp solution components ${formatCliArg(context.solutionUniqueName)}${envSuffix} --format json`
@@ -806,7 +808,7 @@ function buildCanvasRemoteMutationFallbackDetails(
 } {
   const envAlias = context.envAlias ? formatCliArg(context.envAlias) : '<alias>';
   const solutionSuffix = context.solutionUniqueName ? ` --solution ${formatCliArg(context.solutionUniqueName)}` : '';
-  const envSuffix = ` --env ${envAlias}`;
+  const envSuffix = ` --environment ${envAlias}`;
   const makerUrls = buildMakerCanvasUrls(context);
   const inspectCommand = context.displayName
     ? `pp canvas inspect ${formatCliArg(context.displayName)}${envSuffix}${solutionSuffix}`
@@ -897,9 +899,9 @@ function buildCanvasMissingSolutionSuggestions(envAlias: string, solutionUniqueN
   const formattedSolutionUniqueName = formatCliArg(solutionUniqueName);
 
   return [
-    `Run \`pp solution list --env ${formattedEnvAlias}\` to discover the available solution unique names in this environment.`,
+    `Run \`pp solution list --environment ${formattedEnvAlias}\` to discover the available solution unique names in this environment.`,
     `Retry with a valid \`--solution\` value, or configure ${formattedEnvAlias} with \`defaultSolution\` if this workflow should stay solution-scoped by default.`,
-    `Once you have the right solution, use \`pp solution inspect ${formattedSolutionUniqueName} --env ${formattedEnvAlias}\` to confirm it resolves before retrying the canvas workflow.`,
+    `Once you have the right solution, use \`pp solution inspect ${formattedSolutionUniqueName} --environment ${formattedEnvAlias}\` to confirm it resolves before retrying the canvas workflow.`,
   ];
 }
 
@@ -1029,7 +1031,7 @@ async function runProjectInit(args: string[]): Promise<number> {
   const format = outputFormat(args, 'json');
   const options = {
     name: readFlag(args, '--name'),
-    environment: readFlag(args, '--env') ?? readFlag(args, '--environment'),
+    environment: readEnvironmentAlias(args),
     solution: readFlag(args, '--solution'),
     stage: readFlag(args, '--stage'),
     force: hasFlag(args, '--force'),
@@ -1281,10 +1283,10 @@ async function resolveAuthProfileInspectTarget(
     );
   }
 
-  const environmentAlias = readFlag(args, '--env');
+  const environmentAlias = readEnvironmentAlias(args);
 
   if (!environmentAlias) {
-    return argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name or --env <alias> is required.');
+    return argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name or --environment <alias> is required.');
   }
 
   const environment = await getEnvironmentAlias(environmentAlias, configOptions);
@@ -2082,7 +2084,7 @@ async function runDataverseGet(args: string[]): Promise<number> {
   const id = positional[1];
 
   if (!table || !id) {
-    return printFailure(argumentFailure('DV_GET_ARGS_REQUIRED', 'Usage: dv get <table> <id> --env <alias>'));
+    return printFailure(argumentFailure('DV_GET_ARGS_REQUIRED', 'Usage: dv get <table> <id> --environment <alias>'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2157,7 +2159,7 @@ async function runDataverseUpdate(args: string[]): Promise<number> {
   const id = positional[1];
 
   if (!table || !id) {
-    return printFailure(argumentFailure('DV_UPDATE_ARGS_REQUIRED', 'Usage: dv update <table> <id> --env <alias> --body <json>'));
+    return printFailure(argumentFailure('DV_UPDATE_ARGS_REQUIRED', 'Usage: dv update <table> <id> --environment <alias> --body <json>'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2210,7 +2212,7 @@ async function runDataverseDelete(args: string[]): Promise<number> {
   const id = positional[1];
 
   if (!table || !id) {
-    return printFailure(argumentFailure('DV_DELETE_ARGS_REQUIRED', 'Usage: dv delete <table> <id> --env <alias>'));
+    return printFailure(argumentFailure('DV_DELETE_ARGS_REQUIRED', 'Usage: dv delete <table> <id> --environment <alias>'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2337,7 +2339,7 @@ async function runDataverseMetadataTable(args: string[]): Promise<number> {
   const logicalName = positional[1];
 
   if (!logicalName) {
-    return printFailure(argumentFailure('DV_METADATA_TABLE_REQUIRED', 'Usage: dv metadata table <logicalName> --env <alias>'));
+    return printFailure(argumentFailure('DV_METADATA_TABLE_REQUIRED', 'Usage: dv metadata table <logicalName> --environment <alias>'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2365,7 +2367,7 @@ async function runDataverseMetadataColumns(args: string[]): Promise<number> {
   const logicalName = positional[1];
 
   if (!logicalName) {
-    return printFailure(argumentFailure('DV_METADATA_COLUMNS_TABLE_REQUIRED', 'Usage: dv metadata columns <tableLogicalName> --env <alias>'));
+    return printFailure(argumentFailure('DV_METADATA_COLUMNS_TABLE_REQUIRED', 'Usage: dv metadata columns <tableLogicalName> --environment <alias>'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2409,7 +2411,7 @@ async function runDataverseMetadataColumn(args: string[]): Promise<number> {
 
   if (!tableLogicalName || !columnLogicalName) {
     return printFailure(
-      argumentFailure('DV_METADATA_COLUMN_REQUIRED', 'Usage: dv metadata column <tableLogicalName> <columnLogicalName> --env <alias>')
+      argumentFailure('DV_METADATA_COLUMN_REQUIRED', 'Usage: dv metadata column <tableLogicalName> <columnLogicalName> --environment <alias>')
     );
   }
 
@@ -2453,7 +2455,7 @@ async function runDataverseMetadataOptionSet(args: string[]): Promise<number> {
   const name = positional[1];
 
   if (!name) {
-    return printFailure(argumentFailure('DV_METADATA_OPTION_SET_REQUIRED', 'Usage: dv metadata option-set <name> --env <alias>'));
+    return printFailure(argumentFailure('DV_METADATA_OPTION_SET_REQUIRED', 'Usage: dv metadata option-set <name> --environment <alias>'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2489,7 +2491,7 @@ async function runDataverseMetadataRelationship(args: string[]): Promise<number>
   const schemaName = positional[1];
 
   if (!schemaName) {
-    return printFailure(argumentFailure('DV_METADATA_RELATIONSHIP_REQUIRED', 'Usage: dv metadata relationship <schemaName> --env <alias>'));
+    return printFailure(argumentFailure('DV_METADATA_RELATIONSHIP_REQUIRED', 'Usage: dv metadata relationship <schemaName> --environment <alias>'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2534,7 +2536,12 @@ async function runDataverseMetadataCreateTable(args: string[]): Promise<number> 
     return printFailure(resolution);
   }
 
-  const specInput = await readStructuredSpecArgument(args, '--file', 'DV_METADATA_CREATE_TABLE_FILE_REQUIRED', 'Usage: dv metadata create-table --file FILE --env <alias>');
+  const specInput = await readStructuredSpecArgument(
+    args,
+    '--file',
+    'DV_METADATA_CREATE_TABLE_FILE_REQUIRED',
+    'Usage: dv metadata create-table --file FILE --environment <alias>'
+  );
 
   if (!specInput.success || specInput.data === undefined) {
     return printFailure(specInput);
@@ -2575,7 +2582,10 @@ async function runDataverseMetadataAddColumn(args: string[]): Promise<number> {
 
   if (!tableLogicalName) {
     return printFailure(
-      argumentFailure('DV_METADATA_ADD_COLUMN_TABLE_REQUIRED', 'Usage: dv metadata add-column <tableLogicalName> --file FILE --env <alias>')
+      argumentFailure(
+        'DV_METADATA_ADD_COLUMN_TABLE_REQUIRED',
+        'Usage: dv metadata add-column <tableLogicalName> --file FILE --environment <alias>'
+      )
     );
   }
 
@@ -2585,7 +2595,12 @@ async function runDataverseMetadataAddColumn(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
-  const specInput = await readStructuredSpecArgument(args, '--file', 'DV_METADATA_ADD_COLUMN_FILE_REQUIRED', 'Usage: dv metadata add-column <tableLogicalName> --file FILE --env <alias>');
+  const specInput = await readStructuredSpecArgument(
+    args,
+    '--file',
+    'DV_METADATA_ADD_COLUMN_FILE_REQUIRED',
+    'Usage: dv metadata add-column <tableLogicalName> --file FILE --environment <alias>'
+  );
 
   if (!specInput.success || specInput.data === undefined) {
     return printFailure(specInput);
@@ -2631,7 +2646,7 @@ async function runDataverseMetadataCreateOptionSet(args: string[]): Promise<numb
     args,
     '--file',
     'DV_METADATA_CREATE_OPTION_SET_FILE_REQUIRED',
-    'Usage: dv metadata create-option-set --file FILE --env <alias>'
+    'Usage: dv metadata create-option-set --file FILE --environment <alias>'
   );
 
   if (!specInput.success || specInput.data === undefined) {
@@ -2678,7 +2693,7 @@ async function runDataverseMetadataUpdateOptionSet(args: string[]): Promise<numb
     args,
     '--file',
     'DV_METADATA_UPDATE_OPTION_SET_FILE_REQUIRED',
-    'Usage: dv metadata update-option-set --file FILE --env <alias>'
+    'Usage: dv metadata update-option-set --file FILE --environment <alias>'
   );
 
   if (!specInput.success || specInput.data === undefined) {
@@ -2725,7 +2740,7 @@ async function runDataverseMetadataCreateRelationship(args: string[]): Promise<n
     args,
     '--file',
     'DV_METADATA_CREATE_RELATIONSHIP_FILE_REQUIRED',
-    'Usage: dv metadata create-relationship --file FILE --env <alias>'
+    'Usage: dv metadata create-relationship --file FILE --environment <alias>'
   );
 
   if (!specInput.success || specInput.data === undefined) {
@@ -2772,7 +2787,7 @@ async function runDataverseMetadataCreateManyToManyRelationship(args: string[]):
     args,
     '--file',
     'DV_METADATA_CREATE_MANY_TO_MANY_FILE_REQUIRED',
-    'Usage: dv metadata create-many-to-many --file FILE --env <alias>'
+    'Usage: dv metadata create-many-to-many --file FILE --environment <alias>'
   );
 
   if (!specInput.success || specInput.data === undefined) {
@@ -2819,7 +2834,7 @@ async function runDataverseMetadataCreateCustomerRelationship(args: string[]): P
     args,
     '--file',
     'DV_METADATA_CREATE_CUSTOMER_RELATIONSHIP_FILE_REQUIRED',
-    'Usage: dv metadata create-customer-relationship --file FILE --env <alias>'
+    'Usage: dv metadata create-customer-relationship --file FILE --environment <alias>'
   );
 
   if (!specInput.success || specInput.data === undefined) {
@@ -2880,7 +2895,7 @@ async function runSolutionCreate(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'SOLUTION_CREATE_ARGS_REQUIRED',
-        'Usage: solution create <uniqueName> --env <alias> [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)'
+        'Usage: solution create <uniqueName> --environment <alias> [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)'
       )
     );
   }
@@ -2952,7 +2967,7 @@ async function runSolutionSetMetadata(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'SOLUTION_SET_METADATA_ARGS_REQUIRED',
-        'Usage: solution set-metadata <uniqueName> --env <alias> [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]'
+        'Usage: solution set-metadata <uniqueName> --environment <alias> [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]'
       )
     );
   }
@@ -3122,7 +3137,7 @@ async function runSolutionExport(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'SOLUTION_EXPORT_ARGS_REQUIRED',
-        'Usage: solution export <uniqueName> --env <alias> [--out PATH] [--managed] [--manifest FILE]'
+        'Usage: solution export <uniqueName> --environment <alias> [--out PATH] [--managed] [--manifest FILE]'
       )
     );
   }
@@ -3170,7 +3185,7 @@ async function runSolutionImport(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'SOLUTION_IMPORT_ARGS_REQUIRED',
-        'Usage: solution import <path.zip> --env <alias> [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows]'
+        'Usage: solution import <path.zip> --environment <alias> [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows]'
       )
     );
   }
@@ -3330,7 +3345,9 @@ async function runConnectionReferenceInspect(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('CONNREF_IDENTIFIER_REQUIRED', 'Usage: connref inspect <logicalName|displayName|id> --env <alias>'));
+    return printFailure(
+      argumentFailure('CONNREF_IDENTIFIER_REQUIRED', 'Usage: connref inspect <logicalName|displayName|id> --environment <alias>')
+    );
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -3403,7 +3420,7 @@ async function runEnvironmentVariableCreate(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'ENVVAR_SCHEMA_REQUIRED',
-        'Usage: envvar create <schemaName> --env <alias> [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret]'
+        'Usage: envvar create <schemaName> --environment <alias> [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret]'
       )
     );
   }
@@ -3464,7 +3481,9 @@ async function runEnvironmentVariableInspect(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('ENVVAR_IDENTIFIER_REQUIRED', 'Usage: envvar inspect <schemaName|displayName|id> --env <alias>'));
+    return printFailure(
+      argumentFailure('ENVVAR_IDENTIFIER_REQUIRED', 'Usage: envvar inspect <schemaName|displayName|id> --environment <alias>')
+    );
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -3532,7 +3551,9 @@ async function runEnvironmentVariableSet(args: string[]): Promise<number> {
   const value = readFlag(args, '--value');
 
   if (!identifier || value === undefined) {
-    return printFailure(argumentFailure('ENVVAR_SET_ARGS_REQUIRED', 'Usage: envvar set <schemaName|displayName|id> --env <alias> --value VALUE'));
+    return printFailure(
+      argumentFailure('ENVVAR_SET_ARGS_REQUIRED', 'Usage: envvar set <schemaName|displayName|id> --environment <alias> --value VALUE')
+    );
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -3615,12 +3636,12 @@ async function runCanvasInspect(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'CANVAS_INSPECT_ARG_REQUIRED',
-        'Usage: canvas inspect <path>|<displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [--mode strict|seeded|registry]'
+        'Usage: canvas inspect <path>|<displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [--mode strict|seeded|registry]'
       )
     );
   }
 
-  if (readFlag(args, '--env')) {
+  if (readEnvironmentAlias(args)) {
     const resolution = await resolveDataverseClientForCli(args);
 
     if (!resolution.success || !resolution.data) {
@@ -3788,10 +3809,10 @@ async function runFlowInspect(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow inspect <name|id|uniqueName|path> [--env ALIAS]'));
+    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow inspect <name|id|uniqueName|path> [--environment ALIAS]'));
   }
 
-  if (readFlag(args, '--env')) {
+  if (readEnvironmentAlias(args)) {
     const resolution = await resolveDataverseClientForCli(args);
 
     if (!resolution.success || !resolution.data) {
@@ -3927,7 +3948,9 @@ async function runFlowRuns(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow runs <name|id|uniqueName> --env ALIAS [--status STATUS] [--since 7d]'));
+    return printFailure(
+      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--status STATUS] [--since 7d]')
+    );
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -3954,7 +3977,12 @@ async function runFlowErrors(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow errors <name|id|uniqueName> --env ALIAS [--group-by errorCode|errorMessage|connectionReference]'));
+    return printFailure(
+      argumentFailure(
+        'FLOW_IDENTIFIER_REQUIRED',
+        'Usage: flow errors <name|id|uniqueName> --environment ALIAS [--group-by errorCode|errorMessage|connectionReference]'
+      )
+    );
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -3988,7 +4016,9 @@ async function runFlowConnrefs(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow connrefs <name|id|uniqueName> --env ALIAS [--since 7d]'));
+    return printFailure(
+      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow connrefs <name|id|uniqueName> --environment ALIAS [--since 7d]')
+    );
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4018,7 +4048,9 @@ async function runFlowDoctor(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow doctor <name|id|uniqueName> --env ALIAS [--since 7d]'));
+    return printFailure(
+      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow doctor <name|id|uniqueName> --environment ALIAS [--since 7d]')
+    );
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4063,7 +4095,7 @@ async function runModelInspect(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model inspect <name|id|uniqueName> --env ALIAS'));
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model inspect <name|id|uniqueName> --environment ALIAS'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4092,7 +4124,7 @@ async function runModelSitemap(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model sitemap <name|id|uniqueName> --env ALIAS'));
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model sitemap <name|id|uniqueName> --environment ALIAS'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4117,7 +4149,7 @@ async function runModelForms(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model forms <name|id|uniqueName> --env ALIAS'));
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model forms <name|id|uniqueName> --environment ALIAS'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4142,7 +4174,7 @@ async function runModelViews(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model views <name|id|uniqueName> --env ALIAS'));
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model views <name|id|uniqueName> --environment ALIAS'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4167,7 +4199,7 @@ async function runModelDependencies(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
   if (!identifier) {
-    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model dependencies <name|id|uniqueName> --env ALIAS'));
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model dependencies <name|id|uniqueName> --environment ALIAS'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4245,14 +4277,14 @@ function resolveRequestedResource(profile: AuthProfile, requestedResource: strin
 }
 
 async function resolveDataverseClientForCli(args: string[]) {
-  return resolveDataverseClientByFlag(args, '--env');
+  return resolveDataverseClientByFlag(args, '--environment');
 }
 
 async function resolveDataverseClientByFlag(args: string[], flag: string) {
   const environmentAlias = readFlag(args, flag);
 
   if (!environmentAlias) {
-    return argumentFailure('DV_ENV_REQUIRED', `${flag} is required.`);
+    return argumentFailure('DV_ENV_REQUIRED', `${flag} <alias> is required.`);
   }
 
   return resolveDataverseClient(environmentAlias, {
@@ -4389,6 +4421,10 @@ function outputFormat(args: string[], fallback: OutputFormat): OutputFormat {
   return (readFlag(args, '--format') ?? fallback) as OutputFormat;
 }
 
+function readEnvironmentAlias(args: string[]): string | undefined {
+  return readFlag(args, '--environment');
+}
+
 function readCanvasTemplateImportProvenance(args: string[]): Partial<CanvasTemplateProvenance> | undefined {
   const provenance: Partial<CanvasTemplateProvenance> = {
     kind: readFlag(args, '--kind') as CanvasTemplateProvenance['kind'] | undefined,
@@ -4490,6 +4526,7 @@ function readRepeatedFlags(args: string[], name: string): string[] {
 function flagAliases(name: string): string[] {
   switch (name) {
     case '--env':
+    case '--environment':
       return ['--env', '--environment'];
     default:
       return [name];
@@ -5056,7 +5093,7 @@ function printHelp(): void {
       'Commands:',
       '  auth profile list [--config-dir path]',
       '  auth profile inspect <name> [--config-dir path]',
-      '  auth profile inspect --env ALIAS [--config-dir path]',
+      '  auth profile inspect --environment ALIAS [--config-dir path]  # --env also works',
       '  auth profile add-user --name NAME [--resource URL] [--login-hint user@contoso.com] [--browser-profile NAME] [--config-dir path]',
       '  auth profile add-static --name NAME --token TOKEN [--resource URL]',
       '  auth profile add-env --name NAME --env-var ENV_VAR [--resource URL]',
@@ -5078,73 +5115,73 @@ function printHelp(): void {
       '  env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  env remove <alias> [--config-dir path]',
       '',
-      '  dv whoami --env ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  dv request --env ALIAS --path PATH [--method GET] [--body JSON|--body-file FILE] [--response-type json|text|void] [--header "Name: value"] [--config-dir path]',
-      '  dv query <table> --env ALIAS [--select a,b] [--expand x,y] [--orderby expr] [--top N] [--filter expr] [--count] [--all|--page-info] [--config-dir path]',
-      '  dv get <table> <id> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv create <table> --env ALIAS --body JSON|--body-file FILE [--return-representation] [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv update <table> <id> --env ALIAS --body JSON|--body-file FILE [--return-representation] [--if-match etag] [--config-dir path]',
-      '  dv delete <table> <id> --env ALIAS [--if-match etag] [--config-dir path]',
-      '  dv metadata tables --env ALIAS [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
-      '  dv metadata table <logicalName> --env ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv metadata columns <tableLogicalName> --env ALIAS [--view common|raw] [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
-      '  dv metadata column <tableLogicalName> <columnLogicalName> --env ALIAS [--view common|detailed|raw] [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv metadata option-set <name> --env ALIAS [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv metadata relationship <schemaName> --env ALIAS [--kind auto|one-to-many|many-to-many] [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv metadata create-table --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata add-column <tableLogicalName> --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata create-option-set --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata update-option-set --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata create-relationship --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata create-many-to-many --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata create-customer-relationship --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv whoami --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  dv request --environment ALIAS --path PATH [--method GET] [--body JSON|--body-file FILE] [--response-type json|text|void] [--header "Name: value"] [--config-dir path]',
+      '  dv query <table> --environment ALIAS [--select a,b] [--expand x,y] [--orderby expr] [--top N] [--filter expr] [--count] [--all|--page-info] [--config-dir path]',
+      '  dv get <table> <id> --environment ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv create <table> --environment ALIAS --body JSON|--body-file FILE [--return-representation] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv update <table> <id> --environment ALIAS --body JSON|--body-file FILE [--return-representation] [--if-match etag] [--config-dir path]',
+      '  dv delete <table> <id> --environment ALIAS [--if-match etag] [--config-dir path]',
+      '  dv metadata tables --environment ALIAS [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
+      '  dv metadata table <logicalName> --environment ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata columns <tableLogicalName> --environment ALIAS [--view common|raw] [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
+      '  dv metadata column <tableLogicalName> <columnLogicalName> --environment ALIAS [--view common|detailed|raw] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata option-set <name> --environment ALIAS [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata relationship <schemaName> --environment ALIAS [--kind auto|one-to-many|many-to-many] [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata create-table --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata add-column <tableLogicalName> --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata create-option-set --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata update-option-set --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata create-relationship --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata create-many-to-many --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      '  dv metadata create-customer-relationship --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '',
-      '  solution create <uniqueName> --env ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)',
-      '  solution set-metadata <uniqueName> --env ALIAS [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]',
-      '  solution list --env ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',
-      '  solution components <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution dependencies <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution analyze <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution create <uniqueName> --environment ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)',
+      '  solution set-metadata <uniqueName> --environment ALIAS [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]',
+      '  solution list --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution inspect <uniqueName> --environment ALIAS [--config-dir path]',
+      '  solution components <uniqueName> --environment ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution dependencies <uniqueName> --environment ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution analyze <uniqueName> --environment ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution compare [uniqueName] (--source-env ALIAS|--source-zip FILE.zip|--source-folder DIR) (--target-env ALIAS|--target-zip FILE.zip|--target-folder DIR) [--pac PATH] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution export <uniqueName> --env ALIAS [--out PATH] [--managed] [--manifest FILE] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution import <path.zip> --env ALIAS [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution export <uniqueName> --environment ALIAS [--out PATH] [--managed] [--manifest FILE] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution import <path.zip> --environment ALIAS [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution pack <folder> --out FILE.zip [--package-type managed|unmanaged|both] [--map FILE] [--pac PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution unpack <path.zip> --out DIR [--package-type managed|unmanaged|both] [--allow-delete] [--map FILE] [--pac PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  connref list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  connref inspect <logicalName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  connref validate --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar create <schemaName> --env ALIAS [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar inspect <schemaName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar set <schemaName|displayName|id> --env ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas create --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
-      '  canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
+      '  connref list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  connref inspect <logicalName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  connref validate --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar create <schemaName> --environment ALIAS [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
+      '  canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
       '  canvas validate <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas lint <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas inspect <path|displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas inspect <path|displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas build <path> [--project path] [--out FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas diff <leftPath> <rightPath> [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas templates import <sourcePath> [--out FILE] [--kind official-api|official-artifact|harvested|inferred] [--source LABEL] [--acquired-at ISO] [--source-artifact PATH] [--source-app-id ID] [--platform-version VERSION] [--app-version VERSION] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow inspect <name|id|uniqueName|path> [--env ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow normalize <path> [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow validate <path> [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow patch <path> --file PATCH.json [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow runs <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow errors <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow connrefs <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow doctor <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model inspect <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model sitemap <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model forms <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model views <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model dependencies <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow runs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow errors <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow connrefs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow doctor <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model inspect <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model sitemap <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model forms <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model views <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model dependencies <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
-      '  project init [path] [--name NAME] [--env ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [--force] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  project init [path] [--name NAME] [--environment ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [--force] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  project doctor [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -5170,7 +5207,7 @@ function printCanvasHelp(): void {
       '',
       'Remote canvas commands:',
       '  list                         list remote canvas apps through Dataverse',
-      '  inspect <displayName|name|id> inspect a remote canvas app when used with --env',
+      '  inspect <displayName|name|id> inspect a remote canvas app when used with --environment',
       '  create                       reserved for future remote blank-app creation; currently returns diagnostics',
       '  import <file.msapp>          reserved for future remote import; currently returns diagnostics',
       '',
@@ -5185,8 +5222,8 @@ function printCanvasHelp(): void {
       '  templates import <sourcePath> import harvested or official template metadata',
       '',
       'Examples:',
-      '  pp canvas list --env dev --solution Core',
-      '  pp canvas inspect "Harness Canvas" --env dev --solution Core',
+      '  pp canvas list --environment dev --solution Core',
+      '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
       '  pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp',
       '',
@@ -5194,7 +5231,7 @@ function printCanvasHelp(): void {
       '  - Remote canvas coverage today is read-only: list and inspect.',
       '  - Remote create/import commands are not implemented yet.',
       '  - Attempted remote create/import calls return machine-readable diagnostics with next steps.',
-      '  - Use --env to switch canvas inspect from local-path mode to remote lookup mode.',
+      '  - Use --environment to switch canvas inspect from local-path mode to remote lookup mode.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -5205,7 +5242,7 @@ function printCanvasHelp(): void {
 function printCanvasCreateHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas create --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
+      'Usage: canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
       '',
       'Status:',
       '  Preview placeholder. Remote blank-app creation is not implemented yet.',
@@ -5216,8 +5253,8 @@ function printCanvasCreateHelp(): void {
       '  --browser-profile NAME     Browser profile to use with --open for the Maker handoff',
       '',
       'What works today:',
-      '  - Use `pp canvas list --env <alias> --solution <solution>` to inspect existing remote canvas apps.',
-      '  - Use `pp canvas inspect <displayName|name|id> --env <alias> --solution <solution>` to inspect a specific remote app.',
+      '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps.',
+      '  - Use `pp canvas inspect <displayName|name|id> --environment <alias> --solution <solution>` to inspect a specific remote app.',
       '  - Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.',
       '',
       'Next steps for new apps today:',
@@ -5241,19 +5278,19 @@ function printCanvasCreateHelp(): void {
 function printCanvasListHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas list --env ALIAS [--solution UNIQUE_NAME] [options]',
+      'Usage: canvas list --environment ALIAS [--solution UNIQUE_NAME] [options]',
       '',
       'Status:',
       '  Lists remote canvas apps through Dataverse.',
       '',
       'Behavior:',
-      '  - Requires `--env` to resolve the target environment alias.',
+      '  - Requires `--environment` to resolve the target environment alias.',
       '  - When `--solution` is provided, filters the result to canvas apps that are solution components.',
       '  - Returns remote app ids and any Maker open URIs currently available from Dataverse.',
       '',
       'Examples:',
-      '  pp canvas list --env dev',
-      '  pp canvas list --env dev --solution Core',
+      '  pp canvas list --environment dev',
+      '  pp canvas list --environment dev --solution Core',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -5264,7 +5301,7 @@ function printCanvasListHelp(): void {
 function printCanvasImportHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
+      'Usage: canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
       '',
       'Status:',
       '  Preview placeholder. Remote canvas import is not implemented yet.',
@@ -5277,7 +5314,7 @@ function printCanvasImportHelp(): void {
       '',
       'What works today:',
       '  - Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
-      '  - Use `pp canvas list --env <alias> --solution <solution>` to inspect existing remote canvas apps.',
+      '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps.',
       '  - Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.',
       '',
       'Next steps for remote import today:',
@@ -5300,21 +5337,21 @@ function printCanvasImportHelp(): void {
 function printCanvasInspectHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas inspect <path|displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [options]',
+      'Usage: canvas inspect <path|displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [options]',
       '',
       'Modes:',
-      '  - Without `--env`, inspects a local canvas source tree.',
-      '  - With `--env`, inspects a remote canvas app by display name, logical name, or id.',
+      '  - Without `--environment`, inspects a local canvas source tree.',
+      '  - With `--environment`, inspects a remote canvas app by display name, logical name, or id.',
       '',
       'Remote behavior:',
-      '  - Requires the positional identifier plus `--env`.',
+      '  - Requires the positional identifier plus `--environment`.',
       '  - Accepts optional `--solution` to scope remote lookup to a solution.',
       '',
       'Local behavior:',
       '  - Accepts a local canvas path plus `--project`, repeated `--registry`, `--cache-dir`, and `--mode` options.',
       '',
       'Examples:',
-      '  pp canvas inspect "Harness Canvas" --env dev --solution Core',
+      '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
       '',
       'Common output options:',
@@ -5334,7 +5371,7 @@ function printProjectHelp(): void {
       '  inspect [path]              inspect resolved project topology and asset roots',
       '',
       'Examples:',
-      '  pp project init ./demo --name Demo --env dev --solution Core',
+      '  pp project init ./demo --name Demo --environment dev --solution Core',
       '  pp project doctor ./demo --stage prod --format json',
       '  pp project inspect ./demo --stage prod --param releaseName=2026.03.10 --format json',
       '',
@@ -5351,7 +5388,7 @@ function printProjectHelp(): void {
 function printProjectInitHelp(): void {
   process.stdout.write(
     [
-      'Usage: project init [path] [--name NAME] [--env ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [options]',
+      'Usage: project init [path] [--name NAME] [--environment ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [options]',
       '',
       'Status:',
       '  Scaffolds a minimal local pp project layout.',
@@ -5367,7 +5404,7 @@ function printProjectInitHelp(): void {
       '',
       'Options:',
       '  --name NAME                Project name to store in `pp.config.yaml`',
-      '  --env ALIAS                Default Dataverse environment alias',
+      '  --environment ALIAS        Default Dataverse environment alias',
       '  --solution UNIQUE_NAME     Default solution alias and unique name seed',
       '  --stage STAGE              Default topology stage name',
       '  --force                    Replace an existing project config file',
