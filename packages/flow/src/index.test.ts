@@ -409,6 +409,94 @@ describe('FlowService', () => {
     expect(validation.warnings).toEqual([]);
   });
 
+  it('accepts supported SharePoint get/update connector parameters', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'SharePoint Connector Flow',
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [
+              {
+                name: 'shared_sharepointonline',
+                connectionReferenceLogicalName: 'shared_sharepointonline',
+                apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+              },
+            ],
+          },
+          definition: {
+            parameters: {
+              '$connections': {
+                value: {
+                  shared_sharepointonline: {
+                    connectionReferenceLogicalName: 'shared_sharepointonline',
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connectionId: '/connections/sharepointonline',
+                  },
+                },
+              },
+            },
+            actions: {
+              SharePointGetItem: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                    id: 42,
+                    view: 'All Items',
+                  },
+                },
+              },
+              SharePointPatchItem: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'PatchItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                    id: 42,
+                    'item/Title': 'Updated draft',
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(true);
+    expect(validation.diagnostics).toEqual([]);
+    expect(validation.warnings).toEqual([]);
+  });
+
   it('summarizes runtime failures and doctor findings from flow runs', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
@@ -686,6 +774,42 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointGetItemMissingId: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                  },
+                },
+              },
+              SharePointPatchItemBadTitleShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'PatchItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                    id: 42,
+                    'item/Title': {
+                      value: 'Draft item',
+                    },
+                  },
+                },
+              },
               DataverseListRowsMissingEntity: {
                 type: 'OpenApiConnection',
                 inputs: {
@@ -869,23 +993,23 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 25,
+      actionCount: 27,
       scopeCount: 1,
-      expressionCount: 22,
+      expressionCount: 24,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 22,
+      dynamicContentReferenceCount: 24,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 15,
+        connectionReferences: 17,
       },
     });
     expect(validation.diagnostics.map((item) => item.code)).toEqual([
@@ -908,6 +1032,8 @@ describe('FlowService', () => {
       'FLOW_CONNECTOR_OPERATION_ID_MISSING',
       'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
       'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
       'FLOW_ACTION_REFERENCE_UNRESOLVED',
       'FLOW_PARAMETER_REFERENCE_UNRESOLVED',
       'FLOW_VARIABLE_REFERENCE_UNRESOLVED',
@@ -924,14 +1050,14 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 26,
+      nodeCount: 28,
       triggerCount: 1,
-      actionCount: 25,
+      actionCount: 27,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 22,
+      expressionCount: 24,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 22,
+      dynamicContentReferenceCount: 24,
       variableReadCount: 3,
       variableWriteCount: 3,
     });
@@ -1225,7 +1351,7 @@ describe('FlowService', () => {
     expect(graph.data).toMatchObject({
       artifactName: 'Semantic Diagnostic Flow',
       summary: {
-        nodeCount: 29,
+        nodeCount: 31,
         unresolvedEdgeCount: 6,
       },
       resources: {

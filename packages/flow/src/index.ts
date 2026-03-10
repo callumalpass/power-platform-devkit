@@ -437,6 +437,27 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
     ],
   },
   {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetItem',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'table', kind: 'string', required: true },
+      { name: 'id', kind: 'integer', required: true },
+      { name: 'view', kind: 'string' },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'PatchItem',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'table', kind: 'string', required: true },
+      { name: 'id', kind: 'integer', required: true },
+      { name: 'item', kind: 'record', required: true, allowPrefixedFields: true },
+      { name: 'view', kind: 'string' },
+    ],
+  },
+  {
     apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
     operationId: 'ListRecords',
     parameters: [

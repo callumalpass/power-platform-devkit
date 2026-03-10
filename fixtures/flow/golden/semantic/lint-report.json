@@ -26,11 +26,11 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 24,
+      "actionCount": 30,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 21,
-      "expressionCount": 21,
-      "nodeCount": 25,
+      "dynamicContentReferenceCount": 27,
+      "expressionCount": 27,
+      "nodeCount": 31,
       "scopeCount": 1,
       "templateExpressionCount": 2,
       "triggerCount": 1,
@@ -43,16 +43,16 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 24,
+      "actionCount": 30,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 21,
-      "expressionCount": 21,
+      "dynamicContentReferenceCount": 27,
+      "expressionCount": 27,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
-        "connectionReferences": 14,
+        "connectionReferences": 20,
         "environmentVariables": 1,
         "parameters": 2,
         "variables": 3
@@ -113,6 +113,20 @@
     {
       "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
       "level": "error",
+      "message": "Connector action DataverseCreateRowBadItemFieldShape parameter item/name for CreateRecord must be a scalar literal or whole expression, not object.",
+      "path": "actions.DataverseCreateRowBadItemFieldShape.inputs.parameters.item/name",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action DataverseCreateRowMissingItem is missing required parameter item for CreateRecord.",
+      "path": "actions.DataverseCreateRowMissingItem.inputs.parameters.item",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
       "message": "Connector action DataverseGetRowBadMetadataShape parameter x-ms-odata-metadata-full for GetItem must be a boolean literal or expression, not object.",
       "path": "actions.DataverseGetRowBadMetadataShape.inputs.parameters.x-ms-odata-metadata-full",
       "source": "@pp/flow"
@@ -160,6 +174,20 @@
       "source": "@pp/flow"
     },
     {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action DataverseUpdateRowBadItemFieldShape parameter item/name for UpdateOnlyRecord must be a scalar literal or whole expression, not array.",
+      "path": "actions.DataverseUpdateRowBadItemFieldShape.inputs.parameters.item/name",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action DataverseUpdateRowMissingItem is missing required parameter item for UpdateOnlyRecord.",
+      "path": "actions.DataverseUpdateRowMissingItem.inputs.parameters.item",
+      "source": "@pp/flow"
+    },
+    {
       "code": "FLOW_CONNECTOR_API_ID_MISSING",
       "level": "error",
       "message": "Connector action SendMail does not declare inputs.host.apiId.",
@@ -185,6 +213,20 @@
       "level": "error",
       "message": "Connector action SharePointCreateMissingDataset is missing required parameter dataset for CreateItem.",
       "path": "actions.SharePointCreateMissingDataset.inputs.parameters.dataset",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointGetItemMissingId is missing required parameter id for GetItem.",
+      "path": "actions.SharePointGetItemMissingId.inputs.parameters.id",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointPatchItemBadTitleShape parameter item/Title for PatchItem must be a scalar literal or whole expression, not object.",
+      "path": "actions.SharePointPatchItemBadTitleShape.inputs.parameters.item/Title",
       "source": "@pp/flow"
     },
     {

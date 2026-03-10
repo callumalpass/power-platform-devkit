@@ -1,10 +1,10 @@
 {
-  "actionCount": 28,
+  "actionCount": 30,
   "artifactName": "Semantic Diagnostic Flow",
   "controlFlowEdgeCount": 0,
-  "dynamicContentReferenceCount": 25,
-  "expressionCount": 25,
-  "nodeCount": 29,
+  "dynamicContentReferenceCount": 27,
+  "expressionCount": 27,
+  "nodeCount": 31,
   "nodes": [
     {
       "branch": "root",
@@ -1279,6 +1279,96 @@
       "kind": "action",
       "name": "SharePointCreateMissingDataset",
       "path": "actions.SharePointCreateMissingDataset",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointGetItemMissingId.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointGetItemMissingId.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointGetItemMissingId.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointGetItemMissingId",
+      "kind": "action",
+      "name": "SharePointGetItemMissingId",
+      "path": "actions.SharePointGetItemMissingId",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointPatchItemBadTitleShape.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointPatchItemBadTitleShape.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointPatchItemBadTitleShape.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointPatchItemBadTitleShape",
+      "kind": "action",
+      "name": "SharePointPatchItemBadTitleShape",
+      "path": "actions.SharePointPatchItemBadTitleShape",
       "runAfter": [],
       "type": "OpenApiConnection",
       "variableUsage": {

@@ -213,6 +213,42 @@
           }
         }
       },
+      "SharePointGetItemMissingId": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "table": "Documents"
+          }
+        }
+      },
+      "SharePointPatchItemBadTitleShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "PatchItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "table": "Documents",
+            "id": 42,
+            "item/Title": {
+              "value": "Draft item"
+            }
+          }
+        }
+      },
       "DataverseListRowsMissingEntity": {
         "type": "OpenApiConnection",
         "inputs": {

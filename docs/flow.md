@@ -215,6 +215,15 @@ Current validation checks:
   - `shared_sharepointonline` `CreateItem` with required
     `inputs.parameters.dataset`, `inputs.parameters.table`, and
     `inputs.parameters.item/Title`
+  - `shared_sharepointonline` `GetItem` with required
+    `inputs.parameters.dataset`, `inputs.parameters.table`, and
+    `inputs.parameters.id`, plus optional `inputs.parameters.view`
+  - `shared_sharepointonline` `PatchItem` with required
+    `inputs.parameters.dataset`, `inputs.parameters.table`, and
+    `inputs.parameters.id`, plus a required row payload expressed either as
+    `inputs.parameters.item` or one-or-more flattened
+    `inputs.parameters.item/<column>` entries, and optional
+    `inputs.parameters.view`
   - `shared_commondataserviceforapps` `ListRecords` with required
     `inputs.parameters.entityName` or `inputs.pathParameters.entityName` plus
     typed optional query inputs accepted from either `inputs.parameters` or

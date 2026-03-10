@@ -148,6 +148,20 @@
       "source": "@pp/flow"
     },
     {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointGetItemMissingId is missing required parameter id for GetItem.",
+      "path": "actions.SharePointGetItemMissingId.inputs.parameters.id",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointPatchItemBadTitleShape parameter item/Title for PatchItem must be a scalar literal or whole expression, not object.",
+      "path": "actions.SharePointPatchItemBadTitleShape.inputs.parameters.item/Title",
+      "source": "@pp/flow"
+    },
+    {
       "code": "FLOW_ACTION_REFERENCE_UNRESOLVED",
       "level": "error",
       "message": "Flow expression references missing action MissingAction.",
