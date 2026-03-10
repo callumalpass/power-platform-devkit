@@ -355,6 +355,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
   const envAlias = readFlag(args, '--env');
   const configOptions = readConfigOptions(args);
   const explicitSolutionUniqueName = readFlag(args, '--solution');
+  const explicitMakerEnvironmentId = readFlag(args, '--maker-env-id');
   const displayName = command === 'create' ? readFlag(args, '--name') : undefined;
   const importPath = command === 'import' ? positionalArgs(args)[0] : undefined;
   const defaultSolutionUniqueName =
@@ -442,7 +443,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           solutionId: resolvedSolutionId,
           displayName,
           importPath,
-          makerEnvironmentId: resolution.data.environment.makerEnvironmentId,
+          makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
           derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
         }),
         knownLimitations,
@@ -4252,6 +4253,9 @@ function printCanvasCreateHelp(): void {
       'Status:',
       '  Preview placeholder. Remote blank-app creation is not implemented yet.',
       '',
+      'Options:',
+      '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
+      '',
       'What works today:',
       '  - Use `pp canvas list --env <alias> --solution <solution>` to inspect existing remote canvas apps.',
       '  - Use `pp canvas inspect <displayName|name|id> --env <alias> --solution <solution>` to inspect a specific remote app.',
@@ -4300,6 +4304,9 @@ function printCanvasImportHelp(): void {
       '',
       'Status:',
       '  Preview placeholder. Remote canvas import is not implemented yet.',
+      '',
+      'Options:',
+      '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
       '',
       'What works today:',
       '  - Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',

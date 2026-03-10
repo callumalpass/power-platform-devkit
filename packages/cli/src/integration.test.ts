@@ -340,12 +340,14 @@ describe('cli fixture-backed workflows', () => {
     expect(createHelp.stderr).toBe('');
     expect(createHelp.stdout).toContain('Usage: canvas create --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
     expect(createHelp.stdout).toContain('Preview placeholder. Remote blank-app creation is not implemented yet.');
+    expect(createHelp.stdout).toContain('--maker-env-id ID');
     expect(createHelp.stdout).toContain('Finish blank-app creation in Maker when you need a new remote canvas app.');
 
     expect(importHelp.code).toBe(0);
     expect(importHelp.stderr).toBe('');
     expect(importHelp.stdout).toContain('Usage: canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [options]');
     expect(importHelp.stdout).toContain('Preview placeholder. Remote canvas import is not implemented yet.');
+    expect(importHelp.stdout).toContain('--maker-env-id ID');
     expect(importHelp.stdout).toContain('Use Maker or solution tooling for the remote import step until `pp canvas import` exists.');
   });
 
@@ -1284,6 +1286,94 @@ describe('cli fixture-backed workflows', () => {
       success: false,
       suggestedNextActions: expect.arrayContaining([
         'Open https://make.powerapps.com/environments/env-123/solutions/solution-1/apps to continue the import from the solution-scoped apps view in Maker.',
+      ]),
+    });
+  });
+
+  it('lets placeholder canvas mutation guidance override the alias maker environment id per command', async () => {
+    const configDir = await createTempDir();
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {},
+      },
+    });
+
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const create = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--maker-env-id',
+      'env-override',
+      '--config-dir',
+      configDir,
+      '--format',
+      'json',
+    ]);
+    const importResult = await runCli([
+      'canvas',
+      'import',
+      './dist/Harness App.msapp',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--maker-env-id',
+      'env-override',
+      '--config-dir',
+      configDir,
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(1);
+    expect(JSON.parse(create.stderr)).toMatchObject({
+      success: false,
+      suggestedNextActions: expect.arrayContaining([
+        'Open https://make.powerapps.com/e/env-override/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1 to start the solution-scoped blank canvas app flow in Maker.',
+      ]),
+    });
+
+    expect(importResult.code).toBe(1);
+    expect(JSON.parse(importResult.stderr)).toMatchObject({
+      success: false,
+      suggestedNextActions: expect.arrayContaining([
+        'Open https://make.powerapps.com/environments/env-override/solutions/solution-1/apps to continue the import from the solution-scoped apps view in Maker.',
       ]),
     });
   });

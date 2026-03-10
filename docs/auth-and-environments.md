@@ -200,7 +200,9 @@ Optional fields supported today:
 
 `--maker-env-id` does not affect Dataverse resolution. It is optional metadata
 that lets `pp` print exact Maker deep links for workflows such as the current
-canvas create/import fallback guidance.
+canvas create/import fallback guidance. For one-off runs, `pp canvas create`
+and `pp canvas import` also accept `--maker-env-id` directly so you do not have
+to persist that metadata on the alias first.
 
 Inspect and remove aliases:
 
