@@ -59,10 +59,7 @@ invalidConnectionReferences:
     suggestedNextActions:
       - Recreate or repair the connection reference so it binds to a connector.
       - Bind the connection reference to an active connection before deployment.
-missingEnvironmentVariables:
-  - definitionId: envdef-source-api-url
-    schemaName: pp_ApiBaseUrl
-    displayName: API Base URL
-    type: text
-    solutionId: sol-source
-    hasCurrentValue: false
+missingEnvironmentVariables: []
+origin:
+  kind: environment
+artifacts: []

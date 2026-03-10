@@ -56,11 +56,17 @@ import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostic
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { ModelService } from '@pp/model';
 import { discoverProject, doctorProject, initProject, planProjectInit, summarizeProject, summarizeResolvedParameter } from '@pp/project';
-import { SolutionService, type SolutionPackageType } from '@pp/solution';
+import { SolutionService, type SolutionAnalysis, type SolutionPackageType } from '@pp/solution';
 import YAML from 'yaml';
 
 type OutputFormat = CliOutputFormat;
 type AttributeListView = Extract<AttributeMetadataView, 'common' | 'raw'>;
+type SolutionCompareInputKind = 'environment' | 'zip' | 'folder';
+
+interface SolutionCompareInput {
+  kind: SolutionCompareInputKind;
+  value: string;
+}
 
 const ATTRIBUTE_COMMON_SELECT_FIELDS = [
   'LogicalName',
@@ -2987,33 +2993,46 @@ async function runSolutionAnalyze(args: string[]): Promise<number> {
 
 async function runSolutionCompare(args: string[]): Promise<number> {
   const uniqueName = positionalArgs(args)[0];
+  const sourceInput = readSolutionCompareInput(args, 'source');
 
-  if (!uniqueName) {
-    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
+  if (!sourceInput.success || !sourceInput.data) {
+    return printFailure(sourceInput);
   }
 
-  const sourceResolution = await resolveDataverseClientByFlag(args, '--source-env');
+  const targetInput = readSolutionCompareInput(args, 'target');
 
-  if (!sourceResolution.success || !sourceResolution.data) {
-    return printFailure(sourceResolution);
+  if (!targetInput.success || !targetInput.data) {
+    return printFailure(targetInput);
   }
 
-  const targetResolution = await resolveDataverseClientByFlag(args, '--target-env');
-
-  if (!targetResolution.success || !targetResolution.data) {
-    return printFailure(targetResolution);
+  if ((sourceInput.data.kind === 'environment' || targetInput.data.kind === 'environment') && !uniqueName) {
+    return printFailure(
+      argumentFailure(
+        'SOLUTION_UNIQUE_NAME_REQUIRED',
+        'Solution unique name is required when either compare side targets an environment.'
+      )
+    );
   }
 
-  const sourceService = new SolutionService(sourceResolution.data.client);
-  const targetService = new SolutionService(targetResolution.data.client);
-  const result = await sourceService.compare(uniqueName, targetService);
+  const sourceAnalysis = await resolveSolutionCompareAnalysis(args, 'source', sourceInput.data, uniqueName);
 
-  if (!result.success) {
+  if (!sourceAnalysis.success || !sourceAnalysis.data) {
+    return printFailure(sourceAnalysis);
+  }
+
+  const targetAnalysis = await resolveSolutionCompareAnalysis(args, 'target', targetInput.data, uniqueName);
+
+  if (!targetAnalysis.success || !targetAnalysis.data) {
+    return printFailure(targetAnalysis);
+  }
+
+  const compareUniqueName =
+    uniqueName ?? sourceAnalysis.data.solution.uniquename ?? targetAnalysis.data.solution.uniquename ?? 'local-solution';
+  const service = createLocalSolutionService();
+  const result = service.compareLocal(compareUniqueName, sourceAnalysis.data, targetAnalysis.data);
+
+  if (!result.success || !result.data) {
     return printFailure(result);
-  }
-
-  if (!result.data) {
-    return printFailure(fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found in the source environment.`)));
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
@@ -4799,6 +4818,93 @@ function readSolutionPackageTypeFlag(args: string[]): OperationResult<SolutionPa
   return argumentFailure('SOLUTION_PACKAGE_TYPE_INVALID', 'Use --package-type managed, unmanaged, or both.');
 }
 
+function readSolutionCompareInput(args: string[], side: 'source' | 'target'): OperationResult<SolutionCompareInput> {
+  const options = [
+    {
+      kind: 'environment' as const,
+      value: readFlag(args, `--${side}-env`),
+    },
+    {
+      kind: 'zip' as const,
+      value: readFlag(args, `--${side}-zip`),
+    },
+    {
+      kind: 'folder' as const,
+      value: readFlag(args, `--${side}-folder`),
+    },
+  ].filter((option) => option.value);
+
+  if (options.length !== 1) {
+    return argumentFailure(
+      'SOLUTION_COMPARE_INPUT_INVALID',
+      `Provide exactly one of --${side}-env, --${side}-zip, or --${side}-folder.`
+    );
+  }
+
+  return ok(options[0], {
+    supportTier: 'preview',
+  });
+}
+
+async function resolveSolutionCompareAnalysis(
+  args: string[],
+  side: 'source' | 'target',
+  input: SolutionCompareInput,
+  uniqueName: string | undefined
+): Promise<OperationResult<SolutionAnalysis>> {
+  if (input.kind === 'environment') {
+    if (!uniqueName) {
+      return argumentFailure(
+        'SOLUTION_UNIQUE_NAME_REQUIRED',
+        'Solution unique name is required when comparing against an environment.'
+      ) as OperationResult<SolutionAnalysis>;
+    }
+
+    const resolution = await resolveDataverseClientByFlag(args, `--${side}-env`);
+
+    if (!resolution.success || !resolution.data) {
+      return resolution as OperationResult<SolutionAnalysis>;
+    }
+
+    const analysis = await new SolutionService(resolution.data.client).analyze(uniqueName);
+
+    if (!analysis.success) {
+      return analysis as OperationResult<SolutionAnalysis>;
+    }
+
+    if (!analysis.data) {
+      return fail(
+        [
+          ...analysis.diagnostics,
+          createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found in environment ${input.value}.`, {
+            source: '@pp/cli',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: analysis.warnings,
+        }
+      ) as OperationResult<SolutionAnalysis>;
+    }
+
+    return ok(analysis.data, {
+      supportTier: 'preview',
+      diagnostics: analysis.diagnostics,
+      warnings: analysis.warnings,
+    });
+  }
+
+  const service = createLocalSolutionService();
+  return input.kind === 'zip'
+    ? service.analyzeArtifact({
+        packagePath: input.value,
+        pacExecutable: readFlag(args, '--pac'),
+      })
+    : service.analyzeArtifact({
+        unpackedPath: input.value,
+      });
+}
+
 function createLocalSolutionService(): SolutionService {
   return new SolutionService(new NullDataverseClient() as never);
 }
@@ -4877,7 +4983,7 @@ function printHelp(): void {
       '  solution components <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution dependencies <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution analyze <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution compare <uniqueName> --source-env ALIAS --target-env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution compare [uniqueName] (--source-env ALIAS|--source-zip FILE.zip|--source-folder DIR) (--target-env ALIAS|--target-zip FILE.zip|--target-folder DIR) [--pac PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution export <uniqueName> --env ALIAS [--out PATH] [--managed] [--manifest FILE] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution import <path.zip> --env ALIAS [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution pack <folder> --out FILE.zip [--package-type managed|unmanaged|both] [--map FILE] [--pac PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',

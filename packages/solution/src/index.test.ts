@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -590,5 +590,113 @@ describe('SolutionService', () => {
     ]);
     expect(packResult.data?.artifact.bytes).toBeGreaterThan(0);
     expect(unpackResult.data?.unpackedRoot.path).toBe(unpackDir);
+  });
+
+  it('analyzes unpacked local solution artifacts and compares file drift', async () => {
+    const tempDir = await createTempDir();
+    const sourceDir = join(tempDir, 'source');
+    const targetDir = join(tempDir, 'target');
+    await mkdir(sourceDir, { recursive: true });
+    await mkdir(targetDir, { recursive: true });
+    await writeFile(join(sourceDir, 'Other.xml'), '<ImportExportXml><SolutionManifest><UniqueName>Core</UniqueName><Version>1.0.0.0</Version></SolutionManifest></ImportExportXml>', 'utf8');
+    await writeFile(join(sourceDir, 'customizations.xml'), '<Source />', 'utf8');
+    await writeFile(join(targetDir, 'Other.xml'), '<ImportExportXml><SolutionManifest><UniqueName>Core</UniqueName><Version>1.1.0.0</Version></SolutionManifest></ImportExportXml>', 'utf8');
+    await writeFile(join(targetDir, 'customizations.xml'), '<Target />', 'utf8');
+    await writeFile(join(targetDir, 'extra.txt'), 'target-only', 'utf8');
+
+    const service = new SolutionService(createStubClient({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+      },
+      components: [],
+      dependencies: [],
+    }));
+
+    const source = await service.analyzeArtifact({
+      unpackedPath: sourceDir,
+    });
+    const target = await service.analyzeArtifact({
+      unpackedPath: targetDir,
+    });
+    const compare = service.compareLocal('Core', source.data!, target.data!);
+
+    expect(source.success).toBe(true);
+    expect(source.data).toMatchObject({
+      solution: {
+        uniquename: 'Core',
+        version: '1.0.0.0',
+      },
+      origin: {
+        kind: 'unpacked',
+        path: sourceDir,
+      },
+    });
+    expect(compare.success).toBe(true);
+    expect(compare.data?.drift.versionChanged).toBe(true);
+    expect(compare.data?.drift.changedArtifacts).toHaveLength(2);
+    expect(compare.data?.drift.artifactsOnlyInTarget).toHaveLength(1);
+  });
+
+  it('analyzes solution packages through the existing PAC unpack seam', async () => {
+    const tempDir = await createTempDir();
+    const packagePath = join(tempDir, 'Core_managed.zip');
+    const manifestPath = join(tempDir, 'Core_managed.pp-solution.json');
+    await writeFile(packagePath, 'zip-placeholder', 'utf8');
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'pp-solution-release',
+        generatedAt: '2026-03-10T00:00:00.000Z',
+        solution: {
+          uniqueName: 'Core',
+          friendlyName: 'Core Solution',
+          version: '2.0.0.0',
+          packageType: 'managed',
+        },
+        files: [],
+      }),
+      'utf8'
+    );
+    const runner = createStubCommandRunner(async (invocation) => {
+      if (invocation.args[1] === 'unpack') {
+        const folder = invocation.args[invocation.args.indexOf('--folder') + 1]!;
+        await mkdir(folder, { recursive: true });
+        await writeFile(join(folder, 'Other.xml'), '<ImportExportXml />', 'utf8');
+      }
+    });
+    const service = new SolutionService(createStubClient({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+      },
+      components: [],
+      dependencies: [],
+    }), {
+      commandRunner: runner,
+    });
+
+    const result = await service.analyzeArtifact({
+      packagePath,
+      pacExecutable: '/tmp/fake-pac',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      solution: {
+        uniquename: 'Core',
+        friendlyname: 'Core Solution',
+        version: '2.0.0.0',
+      },
+      origin: {
+        kind: 'zip',
+        path: packagePath,
+      },
+    });
+    expect(runner.invocations[0]).toMatchObject({
+      executable: '/tmp/fake-pac',
+      args: expect.arrayContaining(['solution', 'unpack', '--zipfile', packagePath]),
+    });
   });
 });

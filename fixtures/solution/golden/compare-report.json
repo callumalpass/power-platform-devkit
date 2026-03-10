@@ -1,5 +1,8 @@
 {
   "drift": {
+    "artifactsOnlyInSource": [],
+    "artifactsOnlyInTarget": [],
+    "changedArtifacts": [],
     "componentsOnlyInSource": [
       {
         "componentType": 62,
@@ -26,16 +29,7 @@
   },
   "missingConfig": {
     "environmentVariablesMissingValues": {
-      "source": [
-        {
-          "definitionId": "envdef-source-api-url",
-          "displayName": "API Base URL",
-          "hasCurrentValue": false,
-          "schemaName": "pp_ApiBaseUrl",
-          "solutionId": "sol-source",
-          "type": "text"
-        }
-      ],
+      "source": [],
       "target": []
     },
     "invalidConnectionReferences": {
@@ -90,6 +84,7 @@
     "target": []
   },
   "source": {
+    "artifacts": [],
     "components": [
       {
         "componentType": 80,
@@ -178,16 +173,10 @@
         "requiredComponentTypeLabel": "form"
       }
     ],
-    "missingEnvironmentVariables": [
-      {
-        "definitionId": "envdef-source-api-url",
-        "displayName": "API Base URL",
-        "hasCurrentValue": false,
-        "schemaName": "pp_ApiBaseUrl",
-        "solutionId": "sol-source",
-        "type": "text"
-      }
-    ],
+    "missingEnvironmentVariables": [],
+    "origin": {
+      "kind": "environment"
+    },
     "solution": {
       "friendlyname": "Core Solution",
       "solutionid": "sol-source",
@@ -196,6 +185,7 @@
     }
   },
   "target": {
+    "artifacts": [],
     "components": [
       {
         "componentType": 80,
@@ -214,6 +204,9 @@
     "invalidConnectionReferences": [],
     "missingDependencies": [],
     "missingEnvironmentVariables": [],
+    "origin": {
+      "kind": "environment"
+    },
     "solution": {
       "friendlyname": "Core Solution",
       "solutionid": "sol-target",

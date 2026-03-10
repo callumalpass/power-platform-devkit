@@ -2449,6 +2449,96 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(compare.stdout), 'fixtures/solution/golden/compare-report.json');
   });
 
+  it('compares environment solutions against local solution artifacts through the CLI entrypoint', async () => {
+    const fixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+    const tempDir = await createTempDir();
+    const pacPath = join(tempDir, 'fake-pac.js');
+    const packagePath = join(tempDir, 'Core_managed.zip');
+    const manifestPath = join(tempDir, 'Core_managed.pp-solution.json');
+
+    await writeFile(packagePath, 'zip-placeholder', 'utf8');
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'pp-solution-release',
+        generatedAt: '2026-03-10T00:00:00.000Z',
+        solution: {
+          uniqueName: 'Core',
+          friendlyName: 'Core Solution',
+          version: '9.9.9.9',
+          packageType: 'managed',
+        },
+        files: [],
+      }),
+      'utf8'
+    );
+    await writeFile(
+      pacPath,
+      [
+        '#!/usr/bin/env node',
+        "const { mkdirSync, writeFileSync } = require('node:fs');",
+        'const args = process.argv.slice(2);',
+        "if (args[1] === 'unpack') {",
+        "  const folder = args[args.indexOf('--folder') + 1];",
+        "  mkdirSync(folder, { recursive: true });",
+        "  writeFileSync(`${folder}/Other.xml`, '<ImportExportXml><SolutionManifest><UniqueName>Core</UniqueName><Version>9.9.9.9</Version></SolutionManifest></ImportExportXml>');",
+        "  writeFileSync(`${folder}/customizations.xml`, '<Artifact />');",
+        '}',
+      ].join('\n'),
+      'utf8'
+    );
+    await chmod(pacPath, 0o755);
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(fixture.source),
+    });
+
+    const compare = await runCli([
+      'solution',
+      'compare',
+      'Core',
+      '--source-env',
+      'source',
+      '--target-zip',
+      packagePath,
+      '--pac',
+      pacPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(compare.code).toBe(0);
+    expect(compare.stderr).toBe('');
+    expect(normalizeCliSnapshot(JSON.parse(compare.stdout), tempDir)).toMatchObject({
+      uniqueName: 'Core',
+      source: {
+        origin: {
+          kind: 'environment',
+        },
+      },
+      target: {
+        origin: {
+          kind: 'zip',
+          path: '<TMP_DIR>/Core_managed.zip',
+        },
+      },
+      drift: {
+        versionChanged: true,
+        artifactsOnlyInTarget: [
+          {
+            relativePath: 'Other.xml',
+          },
+          {
+            relativePath: 'customizations.xml',
+          },
+        ],
+      },
+    });
+  });
+
   it('covers solution list, inspect, components, and dependencies through the CLI entrypoint', async () => {
     const fixture = (await readJsonFile(
       resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')

@@ -463,6 +463,8 @@ pp solution components Core --env dev
 pp solution dependencies Core --env dev
 pp solution analyze Core --env dev
 pp solution compare Core --source-env dev --target-env prod
+pp solution compare Core --source-env dev --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac
+pp solution compare --source-folder ./src/solutions/Core --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac
 ```
 
 Current solution output includes:
@@ -533,11 +535,10 @@ Implemented today:
 - solution inspect by unique name
 - solution component inventory
 - solution dependency and preflight analysis
-- environment-to-environment solution comparison
+- solution comparison across environments, solution zips, and unpacked roots
 
 Not implemented yet:
 
 - deeper metadata browsing beyond basic table listing and single-table inspection
 - state/status metadata, owner-style lookups, formula-column edge cases, and other remaining phase 3 metadata assets
-- solution compare and diff across local zips and unpacked roots
 - deploy consumption of solution release manifests and rollback bundles

@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { basename, dirname, extname, relative, resolve } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { stableStringify } from '@pp/artifacts';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import {
@@ -83,6 +84,11 @@ export interface SolutionAnalysis {
   missingDependencies: SolutionDependencySummary[];
   invalidConnectionReferences: ConnectionReferenceValidationResult[];
   missingEnvironmentVariables: EnvironmentVariableSummary[];
+  origin: {
+    kind: 'environment' | 'zip' | 'unpacked';
+    path?: string;
+  };
+  artifacts: SolutionArtifactInventoryEntry[];
 }
 
 export interface SolutionCompareResult {
@@ -93,6 +99,9 @@ export interface SolutionCompareResult {
     versionChanged: boolean;
     componentsOnlyInSource: SolutionComponentSummary[];
     componentsOnlyInTarget: SolutionComponentSummary[];
+    artifactsOnlyInSource: SolutionArtifactInventoryEntry[];
+    artifactsOnlyInTarget: SolutionArtifactInventoryEntry[];
+    changedArtifacts: SolutionArtifactInventoryChange[];
   };
   missingDependencies: {
     source: SolutionDependencySummary[];
@@ -111,6 +120,18 @@ export interface SolutionCompareResult {
 }
 
 export type SolutionPackageType = 'managed' | 'unmanaged' | 'both';
+
+export interface SolutionArtifactInventoryEntry {
+  relativePath: string;
+  sha256: string;
+  bytes: number;
+}
+
+export interface SolutionArtifactInventoryChange {
+  relativePath: string;
+  source: SolutionArtifactInventoryEntry;
+  target: SolutionArtifactInventoryEntry;
+}
 
 export interface SolutionArtifactFile {
   role: 'solution-zip' | 'manifest' | 'unpacked-root';
@@ -203,6 +224,12 @@ export interface SolutionUnpackResult {
   packageType: SolutionPackageType;
   sourcePackage: SolutionArtifactFile;
   unpackedRoot: SolutionArtifactFile;
+}
+
+export interface SolutionArtifactAnalyzeOptions {
+  packagePath?: string;
+  unpackedPath?: string;
+  pacExecutable?: string;
 }
 
 export interface SolutionCommandInvocation {
@@ -528,6 +555,10 @@ export class SolutionService {
       missingDependencies: (dependencies.data ?? []).filter((dependency) => dependency.missingRequiredComponent),
       invalidConnectionReferences: (connectionReferences.data ?? []).filter((reference) => !reference.valid),
       missingEnvironmentVariables: (environmentVariables.data ?? []).filter((variable) => !variable.effectiveValue),
+      origin: {
+        kind: 'environment',
+      },
+      artifacts: [],
     };
 
     return ok(analysis, {
@@ -568,42 +599,69 @@ export class SolutionService {
       });
     }
 
-    const sourceComponents = sourceAnalysis.data.components;
-    const targetComponents = targetAnalysis.data?.components ?? [];
-    const targetComponentIds = new Set(targetComponents.map((component) => component.objectId).filter(Boolean) as string[]);
-    const sourceComponentIds = new Set(sourceComponents.map((component) => component.objectId).filter(Boolean) as string[]);
+    return ok(buildCompareResult(uniqueName, sourceAnalysis.data, targetAnalysis.data), {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(sourceAnalysis.diagnostics, targetAnalysis.diagnostics),
+      warnings: mergeDiagnosticLists(sourceAnalysis.warnings, targetAnalysis.warnings),
+    });
+  }
 
-    return ok(
-      {
-        uniqueName,
-        source: sourceAnalysis.data,
-        target: targetAnalysis.data,
-        drift: {
-          versionChanged: sourceAnalysis.data.solution.version !== targetAnalysis.data?.solution.version,
-          componentsOnlyInSource: sourceComponents.filter((component) => component.objectId && !targetComponentIds.has(component.objectId)),
-          componentsOnlyInTarget: targetComponents.filter((component) => component.objectId && !sourceComponentIds.has(component.objectId)),
-        },
-        missingDependencies: {
-          source: sourceAnalysis.data.missingDependencies,
-          target: targetAnalysis.data?.missingDependencies ?? [],
-        },
-        missingConfig: {
-          invalidConnectionReferences: {
-            source: sourceAnalysis.data.invalidConnectionReferences,
-            target: targetAnalysis.data?.invalidConnectionReferences ?? [],
-          },
-          environmentVariablesMissingValues: {
-            source: sourceAnalysis.data.missingEnvironmentVariables,
-            target: targetAnalysis.data?.missingEnvironmentVariables ?? [],
-          },
-        },
-      },
-      {
-        supportTier: 'preview',
-        diagnostics: mergeDiagnosticLists(sourceAnalysis.diagnostics, targetAnalysis.diagnostics),
-        warnings: mergeDiagnosticLists(sourceAnalysis.warnings, targetAnalysis.warnings),
+  compareLocal(uniqueName: string, source: SolutionAnalysis, target: SolutionAnalysis): OperationResult<SolutionCompareResult> {
+    return ok(buildCompareResult(uniqueName, source, target), {
+      supportTier: 'preview',
+    });
+  }
+
+  async analyzeArtifact(options: SolutionArtifactAnalyzeOptions): Promise<OperationResult<SolutionAnalysis>> {
+    if (!options.packagePath && !options.unpackedPath) {
+      return fail(
+        createDiagnostic('error', 'SOLUTION_ARTIFACT_SOURCE_REQUIRED', 'Provide either a solution package path or an unpacked solution path.', {
+          source: '@pp/solution',
+        }),
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+
+    if (options.packagePath && options.unpackedPath) {
+      return fail(
+        createDiagnostic('error', 'SOLUTION_ARTIFACT_SOURCE_AMBIGUOUS', 'Provide only one solution artifact source at a time.', {
+          source: '@pp/solution',
+        }),
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+
+    if (options.unpackedPath) {
+      return analyzeUnpackedArtifact(resolve(options.unpackedPath), {
+        kind: 'unpacked',
+      });
+    }
+
+    const packagePath = resolve(options.packagePath!);
+    const tempDir = await mkdtemp(join(tmpdir(), 'pp-solution-compare-'));
+
+    try {
+      const unpack = await this.unpack(packagePath, {
+        outDir: tempDir,
+        packageType: 'both',
+        pacExecutable: options.pacExecutable,
+      });
+
+      if (!unpack.success) {
+        return unpack as unknown as OperationResult<SolutionAnalysis>;
       }
-    );
+
+      return await analyzeUnpackedArtifact(tempDir, {
+        kind: 'zip',
+        packagePath,
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }
 
   async exportSolution(uniqueName: string, options: SolutionExportOptions = {}): Promise<OperationResult<SolutionExportResult>> {
@@ -1018,6 +1076,74 @@ function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagno
   return lists.flatMap((list) => list ?? []);
 }
 
+function buildCompareResult(
+  uniqueName: string,
+  source: SolutionAnalysis,
+  target?: SolutionAnalysis
+): SolutionCompareResult {
+  const sourceComponents = source.components;
+  const targetComponents = target?.components ?? [];
+  const targetComponentIds = new Set(targetComponents.map((component) => component.objectId).filter(Boolean) as string[]);
+  const sourceComponentIds = new Set(sourceComponents.map((component) => component.objectId).filter(Boolean) as string[]);
+  const sourceArtifacts = new Map(source.artifacts.map((artifact) => [artifact.relativePath, artifact]));
+  const targetArtifacts = new Map((target?.artifacts ?? []).map((artifact) => [artifact.relativePath, artifact]));
+  const artifactPaths = new Set([...sourceArtifacts.keys(), ...targetArtifacts.keys()]);
+  const artifactsOnlyInSource: SolutionArtifactInventoryEntry[] = [];
+  const artifactsOnlyInTarget: SolutionArtifactInventoryEntry[] = [];
+  const changedArtifacts: SolutionArtifactInventoryChange[] = [];
+
+  for (const relativePath of Array.from(artifactPaths).sort()) {
+    const sourceArtifact = sourceArtifacts.get(relativePath);
+    const targetArtifact = targetArtifacts.get(relativePath);
+
+    if (sourceArtifact && !targetArtifact) {
+      artifactsOnlyInSource.push(sourceArtifact);
+      continue;
+    }
+
+    if (!sourceArtifact && targetArtifact) {
+      artifactsOnlyInTarget.push(targetArtifact);
+      continue;
+    }
+
+    if (sourceArtifact && targetArtifact && sourceArtifact.sha256 !== targetArtifact.sha256) {
+      changedArtifacts.push({
+        relativePath,
+        source: sourceArtifact,
+        target: targetArtifact,
+      });
+    }
+  }
+
+  return {
+    uniqueName,
+    source,
+    target,
+    drift: {
+      versionChanged: source.solution.version !== target?.solution.version,
+      componentsOnlyInSource: sourceComponents.filter((component) => component.objectId && !targetComponentIds.has(component.objectId)),
+      componentsOnlyInTarget: targetComponents.filter((component) => component.objectId && !sourceComponentIds.has(component.objectId)),
+      artifactsOnlyInSource,
+      artifactsOnlyInTarget,
+      changedArtifacts,
+    },
+    missingDependencies: {
+      source: source.missingDependencies,
+      target: target?.missingDependencies ?? [],
+    },
+    missingConfig: {
+      invalidConnectionReferences: {
+        source: source.invalidConnectionReferences,
+        target: target?.invalidConnectionReferences ?? [],
+      },
+      environmentVariablesMissingValues: {
+        source: source.missingEnvironmentVariables,
+        target: target?.missingEnvironmentVariables ?? [],
+      },
+    },
+  };
+}
+
 function resolveOutputPath(
   uniqueName: string,
   packageType: Exclude<SolutionPackageType, 'both'>,
@@ -1068,6 +1194,155 @@ async function buildDirectoryArtifact(path: string): Promise<SolutionArtifactFil
     path: resolvedPath,
     relativePath: basename(resolvedPath),
   };
+}
+
+async function analyzeUnpackedArtifact(
+  root: string,
+  options: {
+    kind: 'zip' | 'unpacked';
+    packagePath?: string;
+  }
+): Promise<OperationResult<SolutionAnalysis>> {
+  const artifacts = await collectArtifactInventory(root);
+  const metadata = await resolveLocalSolutionMetadata(root, options.packagePath);
+
+  return ok(
+    {
+      solution: {
+        solutionid: options.packagePath ?? root,
+        uniquename: metadata.uniqueName ?? basename(root),
+        friendlyname: metadata.friendlyName,
+        version: metadata.version,
+      },
+      components: [],
+      dependencies: [],
+      missingDependencies: [],
+      invalidConnectionReferences: [],
+      missingEnvironmentVariables: [],
+      origin: {
+        kind: options.kind,
+        path: options.packagePath ?? root,
+      },
+      artifacts,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+async function collectArtifactInventory(root: string): Promise<SolutionArtifactInventoryEntry[]> {
+  const entries = await walkFiles(root);
+  const inventory = await Promise.all(
+    entries.map(async (path) => {
+      const content = await readFile(path);
+      const info = await stat(path);
+
+      return {
+        relativePath: relative(root, path).replaceAll('\\', '/'),
+        sha256: createHash('sha256').update(content).digest('hex'),
+        bytes: info.size,
+      };
+    })
+  );
+
+  return inventory.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+async function walkFiles(root: string): Promise<string[]> {
+  const found: string[] = [];
+  const entries = await readdir(root, { withFileTypes: true });
+
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const fullPath = join(root, entry.name);
+
+    if (entry.isDirectory()) {
+      found.push(...(await walkFiles(fullPath)));
+      continue;
+    }
+
+    if (entry.isFile()) {
+      found.push(fullPath);
+    }
+  }
+
+  return found;
+}
+
+async function resolveLocalSolutionMetadata(
+  root: string,
+  packagePath?: string
+): Promise<{ uniqueName?: string; friendlyName?: string; version?: string }> {
+  if (packagePath) {
+    const manifest = await readReleaseManifest(resolveAdjacentManifestPath(packagePath));
+
+    if (manifest.success && manifest.data) {
+      return {
+        uniqueName: manifest.data.solution.uniqueName,
+        friendlyName: manifest.data.solution.friendlyName,
+        version: manifest.data.solution.version,
+      };
+    }
+  }
+
+  const metadataCandidates = ['Other.xml', 'Solution.xml', 'solution.xml'];
+
+  for (const candidate of metadataCandidates) {
+    const path = await findFileByBasename(root, candidate);
+
+    if (!path) {
+      continue;
+    }
+
+    const content = await readFile(path, 'utf8');
+    const uniqueName = readXmlTag(content, ['UniqueName', 'uniquename']);
+    const friendlyName = readXmlTag(content, ['LocalizedName', 'FriendlyName', 'friendlyname']);
+    const version = readXmlTag(content, ['Version', 'version']);
+
+    if (uniqueName || friendlyName || version) {
+      return {
+        uniqueName,
+        friendlyName,
+        version,
+      };
+    }
+  }
+
+  return {};
+}
+
+async function findFileByBasename(root: string, name: string): Promise<string | undefined> {
+  const entries = await readdir(root, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = join(root, entry.name);
+
+    if (entry.isFile() && entry.name === name) {
+      return fullPath;
+    }
+
+    if (entry.isDirectory()) {
+      const nested = await findFileByBasename(fullPath, name);
+
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function readXmlTag(content: string, tags: string[]): string | undefined {
+  for (const tag of tags) {
+    const match = new RegExp(`<${tag}>([^<]+)</${tag}>`, 'i').exec(content);
+
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+
+  return undefined;
 }
 
 function createReleaseManifest(
