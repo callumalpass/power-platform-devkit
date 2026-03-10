@@ -2,8 +2,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ok, type OperationResult } from '@pp/diagnostics';
+import type { DataverseClient } from '@pp/dataverse';
 import {
   buildCanvasApp,
+  CanvasService,
   diffCanvasApps,
   importCanvasTemplateRegistry,
   inspectCanvasApp,
@@ -84,6 +87,76 @@ async function writeCanvasApp(
   }
 
   return appPath;
+}
+
+function createRemoteCanvasStubDataverseClient(): DataverseClient {
+  return {
+    query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+      if (options.table === 'solutions') {
+        return ok(
+          [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ] as T[],
+          {
+            supportTier: 'preview',
+          }
+        );
+      }
+
+      return ok([] as T[], {
+        supportTier: 'preview',
+      });
+    },
+    queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+      switch (options.table) {
+        case 'canvasapps':
+          return ok(
+            [
+              {
+                canvasappid: 'canvas-2',
+                displayname: 'Other Canvas',
+                name: 'crd_OtherCanvas',
+                tags: 'other',
+              },
+              {
+                canvasappid: 'canvas-1',
+                displayname: 'Harness Canvas',
+                name: 'crd_HarnessCanvas',
+                appopenuri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
+                appversion: '1.2.3.4',
+                createdbyclientversion: '3.25000.1',
+                lastpublishtime: '2026-03-10T04:50:00.000Z',
+                status: 'Published',
+                tags: 'harness;solution',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        case 'solutioncomponents':
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'canvas-1',
+                componenttype: 300,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        default:
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+      }
+    },
+  } as unknown as DataverseClient;
 }
 
 describe('canvas template registries', () => {
@@ -348,6 +421,34 @@ describe('canvas template registries', () => {
       '/repo/registries/base.json',
       '/cache/canvas/seeded-controls.json',
     ]);
+  });
+});
+
+describe('remote canvas app workflows', () => {
+  it('lists and inspects remote canvas apps with solution filtering', async () => {
+    const service = new CanvasService(createRemoteCanvasStubDataverseClient());
+
+    const list = await service.listRemote({
+      solutionUniqueName: 'Core',
+    });
+    const inspect = await service.inspectRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(list.success).toBe(true);
+    expect(list.data).toHaveLength(1);
+    expect(list.data?.[0]).toMatchObject({
+      id: 'canvas-1',
+      displayName: 'Harness Canvas',
+      name: 'crd_HarnessCanvas',
+      inSolution: true,
+      tags: ['harness', 'solution'],
+    });
+    expect(inspect.success).toBe(true);
+    expect(inspect.data).toMatchObject({
+      id: 'canvas-1',
+      openUri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
+    });
   });
 });
 

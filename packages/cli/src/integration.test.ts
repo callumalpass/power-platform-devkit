@@ -699,6 +699,77 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenText(flowList.stdout, 'fixtures/cli/golden/protocol/flow-list.ndjson');
   });
 
+  it('covers remote canvas list and inspect through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'comp-1',
+              objectid: 'canvas-1',
+              componenttype: 300,
+            },
+          ],
+          canvasapps: [
+            {
+              canvasappid: 'canvas-2',
+              displayname: 'Other Canvas',
+              name: 'crd_OtherCanvas',
+              tags: 'other',
+            },
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+              appopenuri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
+              appversion: '1.2.3.4',
+              createdbyclientversion: '3.25000.1',
+              lastpublishtime: '2026-03-10T04:50:00.000Z',
+              status: 'Published',
+              tags: 'harness;solution',
+            },
+          ],
+        },
+      }),
+    });
+
+    const list = await runCli(['canvas', 'list', '--env', 'fixture', '--solution', 'Core', '--format', 'json']);
+    const inspect = await runCli(['canvas', 'inspect', 'Harness Canvas', '--env', 'fixture', '--solution', 'Core', '--format', 'json']);
+
+    expect(list.code).toBe(0);
+    expect(list.stderr).toBe('');
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(list.stdout)).toEqual([
+      {
+        id: 'canvas-1',
+        displayName: 'Harness Canvas',
+        name: 'crd_HarnessCanvas',
+        openUri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
+        appVersion: '1.2.3.4',
+        createdByClientVersion: '3.25000.1',
+        lastPublishTime: '2026-03-10T04:50:00.000Z',
+        status: 'Published',
+        tags: ['harness', 'solution'],
+        inSolution: true,
+      },
+    ]);
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      id: 'canvas-1',
+      displayName: 'Harness Canvas',
+      openUri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
+      inSolution: true,
+    });
+  });
+
   it('covers canvas inspect, validate, build, and diff through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const baseAppPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'base-app');

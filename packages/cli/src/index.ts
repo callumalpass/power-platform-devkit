@@ -307,6 +307,8 @@ async function runEnvironmentVariable(command: string | undefined, args: string[
 
 async function runCanvas(command: string | undefined, args: string[]): Promise<number> {
   switch (command) {
+    case 'list':
+      return runCanvasList(args);
     case 'templates':
       return runCanvasTemplates(args);
     case 'lint':
@@ -2547,10 +2549,38 @@ async function runCanvasValidate(args: string[]): Promise<number> {
 }
 
 async function runCanvasInspect(args: string[]): Promise<number> {
-  const canvasPath = positionalArgs(args)[0];
+  const identifier = positionalArgs(args)[0];
 
-  if (!canvasPath) {
-    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas inspect <path> [--mode strict|seeded|registry]'));
+  if (!identifier) {
+    return printFailure(
+      argumentFailure(
+        'CANVAS_INSPECT_ARG_REQUIRED',
+        'Usage: canvas inspect <path>|<displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [--mode strict|seeded|registry]'
+      )
+    );
+  }
+
+  if (readFlag(args, '--env')) {
+    const resolution = await resolveDataverseClientForCli(args);
+
+    if (!resolution.success || !resolution.data) {
+      return printFailure(resolution);
+    }
+
+    const result = await new CanvasService(resolution.data.client).inspectRemote(identifier, {
+      solutionUniqueName: readFlag(args, '--solution'),
+    });
+
+    if (!result.success) {
+      return printFailure(result);
+    }
+
+    if (!result.data) {
+      return printFailure(fail(createDiagnostic('error', 'CANVAS_REMOTE_NOT_FOUND', `Canvas app ${identifier} was not found.`)));
+    }
+
+    printByFormat(result.data, outputFormat(args, 'json'));
+    return 0;
   }
 
   const context = await resolveCanvasCliContext(args);
@@ -2559,7 +2589,7 @@ async function runCanvasInspect(args: string[]): Promise<number> {
     return printFailure(context);
   }
 
-  const result = await new CanvasService().inspect(canvasPath, context.data.options);
+  const result = await new CanvasService().inspect(identifier, context.data.options);
 
   if (!result.success || !result.data) {
     return printFailure(result);
@@ -2567,6 +2597,25 @@ async function runCanvasInspect(args: string[]): Promise<number> {
 
   printByFormat(result.data, outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasList(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new CanvasService(resolution.data.client).listRemote({
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
   return 0;
 }
 
@@ -3832,9 +3881,10 @@ function printHelp(): void {
       '  envvar list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar inspect <schemaName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar set <schemaName|displayName|id> --env ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas validate <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas lint <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas inspect <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas inspect <path|displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas build <path> [--project path] [--out FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas diff <leftPath> <rightPath> [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas templates import <sourcePath> [--out FILE] [--kind official-api|official-artifact|harvested|inferred] [--source LABEL] [--acquired-at ISO] [--source-artifact PATH] [--source-app-id ID] [--platform-version VERSION] [--app-version VERSION] [--format table|json|yaml|ndjson|markdown|raw]',

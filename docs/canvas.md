@@ -3,6 +3,7 @@
 Canvas support starts with pinned template metadata. The current `@pp/canvas`
 surface now includes:
 
+- remote canvas-app listing and inspection through Dataverse
 - template registry documents and support-matrix resolution
 - normalized source loading from both manifest JSON trees and unpacked
   `.pa.yaml` app roots
@@ -200,6 +201,8 @@ Current validation rules across both source kinds:
 ## CLI commands
 
 ```bash
+pp canvas list --env dev --solution Core
+pp canvas inspect "My Canvas App" --env dev --solution Core
 pp canvas validate ./apps/MyCanvas --project .
 pp canvas lint ./apps/MyCanvas --project .
 pp canvas inspect ./apps/MyCanvas --project . --mode strict
@@ -210,6 +213,8 @@ pp canvas templates import ./fixtures/canvas/registries/import-source.json --out
 
 Useful flags:
 
+- `--env` and optional `--solution` for remote `canvas list` and remote
+  `canvas inspect`
 - `--project` to resolve `templateRegistries` from `pp.config.*`
 - repeated `--registry FILE` to override project registries
 - `--mode strict|seeded|registry`
@@ -221,6 +226,8 @@ Useful flags:
 
 Path detection is automatic:
 
+- when `--env` is present, `canvas inspect` resolves a remote app by display
+  name, logical name, or id instead of reading local source
 - point at a directory containing `canvas.json` for the legacy manifest slice
 - point at an unpacked app root or `Src/` directory for the `.pa.yaml` slice
 

@@ -1,7 +1,9 @@
 import { stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
+import { type DataverseClient } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type OperationResult, type ProvenanceClass } from '@pp/diagnostics';
+import { SolutionService } from '@pp/solution';
 import { buildCanvasMsappFromUnpackedSource } from './msapp-build';
 import { type CanvasDataSourceSummary, loadCanvasPaYamlSource, resolveCanvasPaYamlRoot } from './pa-yaml';
 import { buildCanvasTemplateSurface } from './template-surface';
@@ -257,6 +259,31 @@ export interface CanvasDiffResult {
   };
 }
 
+export interface CanvasAppRecord {
+  canvasappid: string;
+  displayname?: string;
+  name?: string;
+  appopenuri?: string;
+  appversion?: string;
+  createdbyclientversion?: string;
+  lastpublishtime?: string;
+  status?: string;
+  tags?: string;
+}
+
+export interface CanvasAppSummary {
+  id: string;
+  displayName?: string;
+  name?: string;
+  openUri?: string;
+  appVersion?: string;
+  createdByClientVersion?: string;
+  lastPublishTime?: string;
+  status?: string;
+  tags: string[];
+  inSolution?: boolean;
+}
+
 interface CanvasTemplateCandidate {
   template: CanvasTemplateRecord;
   matchedBy: CanvasTemplateMatchType;
@@ -283,6 +310,8 @@ interface PreparedCanvasValidation {
 const DEFAULT_SUPPORTED_MODES: CanvasBuildMode[] = ['strict', 'seeded', 'registry'];
 
 export class CanvasService {
+  constructor(private readonly dataverseClient?: DataverseClient) {}
+
   async inspect(
     path: string,
     options: CanvasRegistryLoadOptions & {
@@ -321,6 +350,91 @@ export class CanvasService {
 
   async importRegistry(request: CanvasRegistryImportRequest): Promise<OperationResult<CanvasTemplateRegistryDocument>> {
     return importCanvasTemplateRegistry(request);
+  }
+
+  async listRemote(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<CanvasAppSummary[]>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote canvas app listing.', {
+          source: '@pp/canvas',
+        })
+      );
+    }
+
+    const records = await this.dataverseClient.queryAll<CanvasAppRecord>({
+      table: 'canvasapps',
+      select: [
+        'canvasappid',
+        'displayname',
+        'name',
+        'appopenuri',
+        'appversion',
+        'createdbyclientversion',
+        'lastpublishtime',
+        'status',
+        'tags',
+      ],
+    });
+
+    if (!records.success) {
+      return records as unknown as OperationResult<CanvasAppSummary[]>;
+    }
+
+    let allowedIds: Set<string> | undefined;
+    let diagnostics = records.diagnostics;
+    let warnings = records.warnings;
+
+    if (options.solutionUniqueName) {
+      const components = await new SolutionService(this.dataverseClient).components(options.solutionUniqueName);
+
+      if (!components.success) {
+        return components as unknown as OperationResult<CanvasAppSummary[]>;
+      }
+
+      allowedIds = new Set(
+        (components.data ?? [])
+          .map((component) => component.objectId)
+          .filter((componentId): componentId is string => Boolean(componentId))
+      );
+      diagnostics = [...diagnostics, ...components.diagnostics];
+      warnings = [...warnings, ...components.warnings];
+    }
+
+    return ok(
+      (records.data ?? [])
+        .filter((record) => !allowedIds || allowedIds.has(record.canvasappid))
+        .map((record) => normalizeRemoteCanvasApp(record, allowedIds))
+        .sort((left, right) => (left.displayName ?? left.name ?? left.id).localeCompare(right.displayName ?? right.name ?? right.id)),
+      {
+        supportTier: 'preview',
+        diagnostics,
+        warnings,
+      }
+    );
+  }
+
+  async inspectRemote(
+    identifier: string,
+    options: {
+      solutionUniqueName?: string;
+    } = {}
+  ): Promise<OperationResult<CanvasAppSummary | undefined>> {
+    const apps = await this.listRemote(options);
+
+    if (!apps.success) {
+      return apps as unknown as OperationResult<CanvasAppSummary | undefined>;
+    }
+
+    const normalized = identifier.toLowerCase();
+    const match = (apps.data ?? []).find(
+      (app) => app.id.toLowerCase() === normalized || app.name?.toLowerCase() === normalized || app.displayName?.toLowerCase() === normalized
+    );
+
+    return ok(match, {
+      supportTier: 'preview',
+      diagnostics: apps.diagnostics,
+      warnings: apps.warnings,
+    });
   }
 }
 
@@ -2002,6 +2116,32 @@ function compareTemplateCandidates(left: CanvasTemplateCandidate, right: CanvasT
 
 function compareTemplates(left: CanvasTemplateRecord, right: CanvasTemplateRecord): number {
   return left.templateName.localeCompare(right.templateName) || compareTemplateVersions(left.templateVersion, right.templateVersion);
+}
+
+function normalizeRemoteCanvasApp(record: CanvasAppRecord, allowedIds?: Set<string>): CanvasAppSummary {
+  return {
+    id: record.canvasappid,
+    displayName: record.displayname,
+    name: record.name,
+    openUri: record.appopenuri,
+    appVersion: record.appversion,
+    createdByClientVersion: record.createdbyclientversion,
+    lastPublishTime: record.lastpublishtime,
+    status: record.status,
+    tags: splitCanvasTags(record.tags),
+    inSolution: allowedIds ? allowedIds.has(record.canvasappid) : undefined,
+  };
+}
+
+function splitCanvasTags(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
 }
 
 function compareTemplateVersions(left: string, right: string): number {
