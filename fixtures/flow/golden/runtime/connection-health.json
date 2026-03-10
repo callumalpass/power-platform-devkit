@@ -1,9 +1,7 @@
 {
   "connectionReferences": [
     {
-      "diagnostics": [
-        "Connection reference Office 365 Mail has no active connection binding."
-      ],
+      "diagnostics": [],
       "name": "shared_office365",
       "recentFailures": 2,
       "valid": false

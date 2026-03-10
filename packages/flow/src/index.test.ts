@@ -509,7 +509,7 @@ describe('FlowService', () => {
     expect(validation.warnings).toEqual([]);
   });
 
-  it('accepts supported SharePoint get/list/update connector parameters', async () => {
+  it('accepts supported SharePoint item and file connector parameters', async () => {
     const dir = await createTempDir();
     const artifactPath = join(dir, 'flow.json');
 
@@ -617,6 +617,94 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointCreateFile: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateFile',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    folderPath: '/Shared Documents/Drafts',
+                    name: 'draft.txt',
+                    body: {
+                      '$content-type': 'text/plain',
+                      '$content': "@{base64('hello')}",
+                    },
+                  },
+                },
+              },
+              SharePointGetFileContent: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileContent',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    id: 'file-42',
+                    inferContentType: true,
+                  },
+                },
+              },
+              SharePointGetFileContentByPath: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileContentByPath',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    path: '/Shared Documents/Drafts/draft.txt',
+                    inferContentType: '@equals(1, 1)',
+                  },
+                },
+              },
+              SharePointUpdateFile: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'UpdateFile',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    id: 'file-42',
+                    body: '@body(\'SharePointGetFileContent\')',
+                  },
+                },
+              },
+              SharePointDeleteFile: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'DeleteFile',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    id: 'file-43',
+                  },
+                },
+              },
             },
           },
         },
@@ -688,9 +776,9 @@ describe('FlowService', () => {
       total: 2,
       failed: 1,
     });
-    expect(doctor.data?.invalidConnectionReferences).toHaveLength(1);
+    expect(doctor.data?.invalidConnectionReferences).toHaveLength(0);
     expect(doctor.data?.missingEnvironmentVariables).toHaveLength(1);
-    expect(doctor.data?.findings).toContain('Connection reference shared_office365 is invalid for this flow.');
+    expect(doctor.data?.findings).toContain('Environment variable pp_ApiUrl does not have an effective value.');
   });
 
   it('validates supported semantic references and reliability settings locally', async () => {
@@ -1017,6 +1105,90 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointCreateFileMissingBody: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateFile',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    folderPath: '/Shared Documents/Drafts',
+                    name: 'draft.txt',
+                  },
+                },
+              },
+              SharePointCreateFileBadBodyShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateFile',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    folderPath: '/Shared Documents/Drafts',
+                    name: 'draft.txt',
+                    body: {
+                      value: 'aGVsbG8=',
+                    },
+                  },
+                },
+              },
+              SharePointGetFileContentMissingId: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileContent',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                  },
+                },
+              },
+              SharePointUpdateFileBadBodyShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'UpdateFile',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    id: 'file-42',
+                    body: ['aGVsbG8='],
+                  },
+                },
+              },
+              SharePointDeleteFileMissingId: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'DeleteFile',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                  },
+                },
+              },
               DataverseListRowsMissingEntity: {
                 type: 'OpenApiConnection',
                 inputs: {
@@ -1236,23 +1408,23 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 33,
+      actionCount: 38,
       scopeCount: 1,
-      expressionCount: 30,
+      expressionCount: 35,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 30,
+      dynamicContentReferenceCount: 35,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 23,
+        connectionReferences: 28,
       },
     });
     expect(validation.diagnostics.map((item) => item.code)).toEqual(
@@ -1290,6 +1462,18 @@ describe('FlowService', () => {
     expect(validation.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+        path: 'actions.SharePointCreateFileMissingBody.inputs.parameters.body',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+        path: 'actions.SharePointUpdateFileBadBodyShape.inputs.parameters.body',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
         path: 'actions.DataverseDeleteRowMissingRecordId.inputs.parameters.recordId',
       })
     );
@@ -1304,14 +1488,14 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 34,
+      nodeCount: 39,
       triggerCount: 1,
-      actionCount: 33,
+      actionCount: 38,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 30,
+      expressionCount: 35,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 30,
+      dynamicContentReferenceCount: 35,
       variableReadCount: 3,
       variableWriteCount: 3,
     });
@@ -1605,7 +1789,7 @@ describe('FlowService', () => {
     expect(graph.data).toMatchObject({
       artifactName: 'Semantic Diagnostic Flow',
       summary: {
-        nodeCount: 37,
+        nodeCount: 42,
         unresolvedEdgeCount: 6,
       },
       resources: {

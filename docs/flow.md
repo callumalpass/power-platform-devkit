@@ -248,6 +248,20 @@ Current validation checks:
   - `shared_sharepointonline` `DeleteItem` with required
     `inputs.parameters.dataset`, `inputs.parameters.table`, and
     `inputs.parameters.id`
+  - `shared_sharepointonline` `CreateFile` with required
+    `inputs.parameters.dataset`, `inputs.parameters.folderPath`,
+    `inputs.parameters.name`, and `inputs.parameters.body`
+  - `shared_sharepointonline` `GetFileContent` with required
+    `inputs.parameters.dataset` and `inputs.parameters.id`, plus optional
+    `inputs.parameters.inferContentType`
+  - `shared_sharepointonline` `GetFileContentByPath` with required
+    `inputs.parameters.dataset` and `inputs.parameters.path`, plus optional
+    `inputs.parameters.inferContentType`
+  - `shared_sharepointonline` `UpdateFile` with required
+    `inputs.parameters.dataset`, `inputs.parameters.id`, and
+    `inputs.parameters.body`
+  - `shared_sharepointonline` `DeleteFile` with required
+    `inputs.parameters.dataset` and `inputs.parameters.id`
   - `shared_commondataserviceforapps` `ListRecords` with required
     `inputs.parameters.entityName` or `inputs.pathParameters.entityName` plus
     typed optional query inputs accepted from either `inputs.parameters` or
@@ -280,6 +294,9 @@ Current validation checks:
     expressions, integer fields must remain integer literals or whole
     expressions, and boolean fields must remain boolean literals or whole
     expressions instead of arrays or nested objects
+  - bounded binary file payload checks accept direct string literals, whole
+    expressions, or canonical `$content` / `$content-type` wrapper objects and
+    fail unsupported array/object payload shapes locally
   - bounded Dataverse row payload checks accept object-valued `item` payloads
     or flattened `item/<column>` scalars / whole expressions, and fail
     missing row payloads or nested array/object field shapes locally

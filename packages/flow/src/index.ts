@@ -383,7 +383,7 @@ interface FlowConnectorActionContract {
 
 interface FlowSupportedConnectorOperationParameter {
   name: string;
-  kind: 'string' | 'integer' | 'boolean' | 'record';
+  kind: 'string' | 'integer' | 'boolean' | 'record' | 'binary';
   bucket?: 'parameters' | 'queries' | 'pathParameters';
   buckets?: Array<'parameters' | 'queries' | 'pathParameters'>;
   required?: boolean;
@@ -486,6 +486,51 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
       { name: 'dataset', kind: 'string', required: true },
       { name: 'table', kind: 'string', required: true },
       { name: 'id', kind: 'integer', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'CreateFile',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'folderPath', kind: 'string', required: true },
+      { name: 'name', kind: 'string', required: true },
+      { name: 'body', kind: 'binary', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetFileContent',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'id', kind: 'string', required: true },
+      { name: 'inferContentType', kind: 'boolean' },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetFileContentByPath',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'path', kind: 'string', required: true },
+      { name: 'inferContentType', kind: 'boolean' },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'UpdateFile',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'id', kind: 'string', required: true },
+      { name: 'body', kind: 'binary', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'DeleteFile',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'id', kind: 'string', required: true },
     ],
   },
   {
@@ -2761,6 +2806,38 @@ function validateConnectorParameterValue(
   value: unknown,
   kind: FlowSupportedConnectorOperationParameter['kind']
 ): string | undefined {
+  if (kind === 'binary') {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+
+      if (!trimmed) {
+        return undefined;
+      }
+
+      return undefined;
+    }
+
+    const record = asRecord(value);
+    const content = record?.['$content'];
+    const contentType = record?.['$content-type'];
+
+    if (record) {
+      if (content !== undefined && typeof content !== 'string') {
+        return `$content must be a string literal or whole expression, not ${describeFlowJsonShape(content)}`;
+      }
+
+      if (contentType !== undefined && typeof contentType !== 'string') {
+        return `$content-type must be a string literal or whole expression, not ${describeFlowJsonShape(contentType)}`;
+      }
+
+      if (typeof content === 'string' || typeof contentType === 'string') {
+        return undefined;
+      }
+    }
+
+    return 'must be a string literal, whole expression, or a $content wrapper object';
+  }
+
   if (kind === 'record') {
     if (typeof value === 'string') {
       const trimmed = value.trim();

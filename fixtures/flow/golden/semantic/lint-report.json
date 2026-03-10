@@ -26,11 +26,11 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 36,
+      "actionCount": 41,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 33,
-      "expressionCount": 33,
-      "nodeCount": 37,
+      "dynamicContentReferenceCount": 38,
+      "expressionCount": 38,
+      "nodeCount": 42,
       "scopeCount": 1,
       "templateExpressionCount": 2,
       "triggerCount": 1,
@@ -43,16 +43,16 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 36,
+      "actionCount": 41,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 33,
-      "expressionCount": 33,
+      "dynamicContentReferenceCount": 38,
+      "expressionCount": 38,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
-        "connectionReferences": 26,
+        "connectionReferences": 31,
         "environmentVariables": 1,
         "parameters": 2,
         "variables": 3
@@ -223,10 +223,31 @@
       "source": "@pp/flow"
     },
     {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointCreateFileBadBodyShape parameter body for CreateFile must be a string literal, whole expression, or a $content wrapper object.",
+      "path": "actions.SharePointCreateFileBadBodyShape.inputs.parameters.body",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointCreateFileMissingBody is missing required parameter body for CreateFile.",
+      "path": "actions.SharePointCreateFileMissingBody.inputs.parameters.body",
+      "source": "@pp/flow"
+    },
+    {
       "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
       "level": "error",
       "message": "Connector action SharePointCreateMissingDataset is missing required parameter dataset for CreateItem.",
       "path": "actions.SharePointCreateMissingDataset.inputs.parameters.dataset",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointDeleteFileMissingId is missing required parameter id for DeleteFile.",
+      "path": "actions.SharePointDeleteFileMissingId.inputs.parameters.id",
       "source": "@pp/flow"
     },
     {
@@ -241,6 +262,13 @@
       "level": "error",
       "message": "Connector action SharePointDeleteItemMissingId is missing required parameter id for DeleteItem.",
       "path": "actions.SharePointDeleteItemMissingId.inputs.parameters.id",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointGetFileContentMissingId is missing required parameter id for GetFileContent.",
+      "path": "actions.SharePointGetFileContentMissingId.inputs.parameters.id",
       "source": "@pp/flow"
     },
     {
@@ -269,6 +297,13 @@
       "level": "error",
       "message": "Connector action SharePointPatchItemBadTitleShape parameter item/Title for PatchItem must be a scalar literal or whole expression, not object.",
       "path": "actions.SharePointPatchItemBadTitleShape.inputs.parameters.item/Title",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointUpdateFileBadBodyShape parameter body for UpdateFile must be a string literal, whole expression, or a $content wrapper object.",
+      "path": "actions.SharePointUpdateFileBadBodyShape.inputs.parameters.body",
       "source": "@pp/flow"
     },
     {

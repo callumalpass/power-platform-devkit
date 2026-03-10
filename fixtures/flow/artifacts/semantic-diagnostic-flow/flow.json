@@ -319,6 +319,92 @@
           }
         }
       },
+      "SharePointCreateFileMissingBody": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "CreateFile",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "folderPath": "/Shared Documents/Drafts",
+            "name": "draft.txt"
+          }
+        }
+      },
+      "SharePointCreateFileBadBodyShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "CreateFile",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "folderPath": "/Shared Documents/Drafts",
+            "name": "draft.txt",
+            "body": {
+              "value": "aGVsbG8="
+            }
+          }
+        }
+      },
+      "SharePointGetFileContentMissingId": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetFileContent",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering"
+          }
+        }
+      },
+      "SharePointUpdateFileBadBodyShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "UpdateFile",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "id": "file-42",
+            "body": [
+              "aGVsbG8="
+            ]
+          }
+        }
+      },
+      "SharePointDeleteFileMissingId": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "DeleteFile",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering"
+          }
+        }
+      },
       "DataverseListRowsMissingEntity": {
         "type": "OpenApiConnection",
         "inputs": {
