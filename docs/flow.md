@@ -424,7 +424,11 @@ consumers to reconstruct control-flow and data-flow relationships themselves.
 The shared deploy preflight now reuses this validator for `flow-parameter`,
 `flow-connref`, and `flow-envvar` mappings, so the same supported semantic
 errors fail before deploy-time artifact mutation and warning-only reliability
-findings appear in the deploy check set.
+findings appear in the deploy check set. When deploy also has a resolved target
+environment and solution, that shared preflight now checks the projected
+connection-reference logical names and environment-variable schema names
+against the destination solution, failing missing targets before apply and
+warning when the remote target exists but is not runtime-ready.
 
 This is the artifact-first foundation for the runtime diagnostics and doctor
 work that follows.

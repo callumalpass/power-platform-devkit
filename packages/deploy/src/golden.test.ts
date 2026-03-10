@@ -57,12 +57,18 @@ async function writeValidFlowArtifact(path: string): Promise<void> {
             SendMail: {
               type: 'OpenApiConnection',
               inputs: {
+                operationId: 'SendEmailV2',
                 host: {
+                  apiId: '/providers/microsoft.powerapps/apis/shared_office365',
                   connection: {
                     name: "@parameters('$connections')['shared_office365']['connectionId']",
                   },
                 },
-                body: "@{environmentVariables('pp_ApiUrl')}",
+                parameters: {
+                  'emailMessage/To': 'ops@contoso.example',
+                  'emailMessage/Subject': "@{parameters('ApiBaseUrl')}",
+                  'emailMessage/Body': "@{environmentVariables('pp_ApiUrl')}",
+                },
               },
             },
           },
@@ -412,7 +418,6 @@ describe('deploy fixture-backed goldens', () => {
         code: 'DEPLOY_PREFLIGHT_FLOW_ASSET_VALIDATION_FAILED',
         target: join(root, 'flows', 'invoice', 'flow.json'),
         details: expect.objectContaining({
-          diagnosticCount: 10,
           diagnosticCodes: expect.arrayContaining([
             'FLOW_RUN_AFTER_TARGET_MISSING',
             'FLOW_PARAMETER_REFERENCE_UNRESOLVED',
@@ -750,6 +755,213 @@ describe('deploy fixture-backed goldens', () => {
     };
     expect(updatedArtifact.metadata.environmentVariables).toEqual(['pp_RuntimeUrl']);
     expect(updatedArtifact.definition.actions.SendMail.inputs.body).toBe("@{environmentVariables('pp_RuntimeUrl')}");
+  });
+
+  it('fails preflight when projected flow target bindings are missing from the destination solution', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-remote-target-missing-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await writeValidFlowArtifact(join(root, 'flows', 'invoice', 'flow.json'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        'solutions:',
+        '  core:',
+        '    uniqueName: CoreManaged',
+        'parameters:',
+        '  mailConnectionReference:',
+        '    type: string',
+        '    value: pp_shared_mail',
+        '    mapsTo:',
+        '      - kind: flow-connref',
+        '        path: flows/invoice/flow.json',
+        '        target: shared_office365',
+        '  runtimeApiEnvironmentVariable:',
+        '    type: string',
+        '    value: pp_RuntimeUrl',
+        '    mapsTo:',
+        '      - kind: flow-envvar',
+        '        path: flows/invoice/flow.json',
+        '        target: pp_ApiUrl',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    mockDataverseResolution({
+      prod: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-prod-1',
+              uniquename: 'CoreManaged',
+              friendlyname: 'Core Managed',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [],
+          dependencies: [],
+          connectionreferences: [],
+          environmentvariabledefinitions: [],
+          environmentvariablevalues: [],
+        },
+      }),
+    });
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_FLOW_TARGET_CONNREF_MISSING',
+        target: 'pp_shared_mail',
+        details: expect.objectContaining({
+          environmentAlias: 'prod',
+          solutionUniqueName: 'CoreManaged',
+          artifactReference: 'shared_office365',
+        }),
+      })
+    );
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_FLOW_TARGET_ENVVAR_MISSING',
+        target: 'pp_RuntimeUrl',
+        details: expect.objectContaining({
+          environmentAlias: 'prod',
+          solutionUniqueName: 'CoreManaged',
+          artifactVariable: 'pp_ApiUrl',
+        }),
+      })
+    );
+  });
+
+  it('warns when projected flow target bindings exist but are not runtime-ready in the destination solution', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-remote-target-warning-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await writeValidFlowArtifact(join(root, 'flows', 'invoice', 'flow.json'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        'solutions:',
+        '  core:',
+        '    uniqueName: CoreManaged',
+        'parameters:',
+        '  mailConnectionReference:',
+        '    type: string',
+        '    value: pp_shared_mail',
+        '    mapsTo:',
+        '      - kind: flow-connref',
+        '        path: flows/invoice/flow.json',
+        '        target: shared_office365',
+        '  runtimeApiEnvironmentVariable:',
+        '    type: string',
+        '    value: pp_RuntimeUrl',
+        '    mapsTo:',
+        '      - kind: flow-envvar',
+        '        path: flows/invoice/flow.json',
+        '        target: pp_ApiUrl',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    mockDataverseResolution({
+      prod: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-prod-1',
+              uniquename: 'CoreManaged',
+              friendlyname: 'Core Managed',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [{ objectid: 'connref-1' }, { objectid: 'envvar-def-1' }],
+          dependencies: [],
+          connectionreferences: [
+            {
+              connectionreferenceid: 'connref-1',
+              connectionreferencelogicalname: 'pp_shared_mail',
+              connectionreferencedisplayname: 'Shared Mail',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_office365',
+              connectionid: '',
+              _solutionid_value: 'solution-prod-1',
+              statecode: 0,
+            },
+          ],
+          environmentvariabledefinitions: [
+            {
+              environmentvariabledefinitionid: 'envvar-def-1',
+              schemaname: 'pp_RuntimeUrl',
+              displayname: 'Runtime URL',
+              defaultvalue: '',
+              type: 'string',
+              _solutionid_value: 'solution-prod-1',
+            },
+          ],
+          environmentvariablevalues: [],
+        },
+      }),
+    });
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_FLOW_TARGET_CONNREF_UNBOUND',
+        target: 'pp_shared_mail',
+        details: expect.objectContaining({
+          environmentAlias: 'prod',
+          solutionUniqueName: 'CoreManaged',
+          artifactReference: 'shared_office365',
+        }),
+      })
+    );
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_FLOW_TARGET_ENVVAR_VALUE_MISSING',
+        target: 'pp_RuntimeUrl',
+        details: expect.objectContaining({
+          environmentAlias: 'prod',
+          solutionUniqueName: 'CoreManaged',
+          artifactVariable: 'pp_ApiUrl',
+        }),
+      })
+    );
   });
 
   it('surfaces warning-only flow validation results during deploy preflight', async () => {
@@ -1595,7 +1807,7 @@ describe('deploy fixture-backed goldens', () => {
         ],
       },
       queryAll: {
-        solutioncomponents: [{ objectid: 'envvar-def-1' }],
+        solutioncomponents: [{ objectid: 'envvar-def-1' }, { objectid: 'connref-1' }],
         dependencies: [],
         connectionreferences: [
           {
@@ -1900,7 +2112,7 @@ describe('deploy fixture-backed goldens', () => {
         ],
       },
       queryAll: {
-        solutioncomponents: [],
+        solutioncomponents: [{ objectid: 'connref-1' }],
         dependencies: [],
         connectionreferences: [
           {

@@ -66,7 +66,12 @@ For all flow-targeted mappings, preflight also runs the shared local
 `pp flow validate` semantic pass against each referenced artifact. Semantic
 errors fail preflight before any artifact mutation runs, while warning-only
 findings such as supported reliability warnings are surfaced as explicit
-preflight warnings.
+preflight warnings. When the deploy target resolves to a Dataverse environment
+and solution, preflight also projects the post-mapping flow connection
+reference logical names and environment variable schema names, then checks that
+those targets exist remotely before apply. Missing projected targets fail
+preflight; existing-but-unbound connection references and environment variables
+without an effective value surface as explicit warnings.
 For the create-capable Dataverse mappings, preflight also rejects runs where the target already exists but its metadata does not match the configured create contract. That prevents a create/upsert mapping from silently updating a different target shape than the project declared.
 Dataverse conflict detection is scoped by the resolved environment and solution target, so the same schema or logical name can be deployed to different stage solution aliases without being treated as ambiguous.
 
@@ -250,6 +255,9 @@ steps:
 - Referenced flow artifacts now fail preflight when shared flow validation
   reports semantic errors; warning-only validation findings surface as
   explicit deploy warnings.
+- Flow-targeted deploy preflight now also validates projected remote
+  connection-reference and environment-variable targets against the resolved
+  destination solution when an environment and solution are available.
 - Detached saved-plan execution is limited by redaction: operations whose saved
   plan value is missing or redacted fail preflight instead of guessing.
 - Connection reference and missing-environment-variable findings from solution analysis are surfaced as warnings in preflight.

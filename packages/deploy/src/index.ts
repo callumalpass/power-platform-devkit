@@ -243,6 +243,20 @@ interface FlowEnvironmentVariableDeployTargetInspection {
   currentValue?: string;
 }
 
+interface DeploySolutionTargetInspection {
+  environmentAlias: string;
+  solutionUniqueName: string;
+  checks: DeployPreflightCheck[];
+  diagnostics: Diagnostic[];
+  warnings: Diagnostic[];
+  solutionFound: boolean;
+  solutionAnalysis?: Awaited<ReturnType<SolutionService['analyze']>>['data'];
+  references: ConnectionReferenceSummary[];
+  variables: EnvironmentVariableSummary[];
+  referenceByLogicalName: Map<string, ConnectionReferenceSummary>;
+  variableBySchema: Map<string, EnvironmentVariableSummary>;
+}
+
 interface PreparedDeployOperation {
   plan: DeployOperationPlan;
   value?: DeployPrimitiveValue;
@@ -520,6 +534,8 @@ async function executePreparedDeploy(context: {
   const flowValidationResults = new Map<string, OperationResult<FlowValidationReport>>();
   const flowArtifactResults = new Map<string, OperationResult<FlowArtifact>>();
   const invalidFlowArtifacts = new Set<string>();
+  const solutionTargetInspectionPromises = new Map<string, Promise<DeploySolutionTargetInspection>>();
+  const reportedSolutionTargetInspections = new Set<string>();
 
   async function getFlowValidation(path: string): Promise<OperationResult<FlowValidationReport>> {
     const cached = flowValidationResults.get(path);
@@ -543,6 +559,35 @@ async function executePreparedDeploy(context: {
     const result = await loadFlowArtifact(path);
     flowArtifactResults.set(path, result);
     return result;
+  }
+
+  async function getSolutionTargetInspection(
+    environmentAlias: string,
+    solutionUniqueName: string
+  ): Promise<DeploySolutionTargetInspection> {
+    const key = `${environmentAlias.toLowerCase()}::${solutionUniqueName.toLowerCase()}`;
+    const cached = solutionTargetInspectionPromises.get(key);
+
+    if (cached) {
+      return cached;
+    }
+
+    const pending = inspectDeploySolutionTarget(environmentAlias, solutionUniqueName);
+    solutionTargetInspectionPromises.set(key, pending);
+    return pending;
+  }
+
+  function recordSolutionTargetInspection(inspection: DeploySolutionTargetInspection): void {
+    const key = `${inspection.environmentAlias.toLowerCase()}::${inspection.solutionUniqueName.toLowerCase()}`;
+
+    if (reportedSolutionTargetInspections.has(key)) {
+      return;
+    }
+
+    reportedSolutionTargetInspections.add(key);
+    diagnostics.push(...inspection.diagnostics);
+    warnings.push(...inspection.warnings);
+    checks.push(...inspection.checks);
   }
 
   checks.push(
@@ -805,6 +850,117 @@ async function executePreparedDeploy(context: {
     });
   }
 
+  const flowTargetGroups = groupPreparedFlowOperationsByTarget(flowOperations, target);
+
+  for (const group of flowTargetGroups) {
+    const inspection = await getSolutionTargetInspection(group.environmentAlias, group.solutionUniqueName);
+    recordSolutionTargetInspection(inspection);
+
+    if (!inspection.solutionFound) {
+      continue;
+    }
+
+    const operationsByPath = new Map<string, PreparedDeployOperation[]>();
+
+    for (const operation of group.operations) {
+      const existing = operationsByPath.get(operation.plan.path);
+
+      if (existing) {
+        existing.push(operation);
+      } else {
+        operationsByPath.set(operation.plan.path, [operation]);
+      }
+    }
+
+    for (const [path, artifactOperations] of operationsByPath.entries()) {
+      if (invalidFlowArtifacts.has(path)) {
+        continue;
+      }
+
+      const artifact = await getFlowArtifact(path);
+
+      if (!artifact.success || !artifact.data) {
+        continue;
+      }
+
+      const projection = projectFlowArtifactRemoteTargets(artifact.data, artifactOperations);
+
+      for (const reference of projection.connectionReferences) {
+        const discovered = inspection.referenceByLogicalName.get(reference.projectedLogicalName.toLowerCase());
+
+        if (!discovered) {
+          checks.push({
+            status: 'fail',
+            code: 'DEPLOY_PREFLIGHT_FLOW_TARGET_CONNREF_MISSING',
+            message: `Flow artifact ${path} projects connection reference ${reference.projectedLogicalName} but it was not found in solution ${group.solutionUniqueName}.`,
+            target: reference.projectedLogicalName,
+            details: {
+              path,
+              environmentAlias: group.environmentAlias,
+              solutionUniqueName: group.solutionUniqueName,
+              artifactReference: reference.artifactReference,
+              projectedLogicalName: reference.projectedLogicalName,
+            },
+          });
+          continue;
+        }
+
+        if (!discovered.connected) {
+          checks.push({
+            status: 'warn',
+            code: 'DEPLOY_PREFLIGHT_FLOW_TARGET_CONNREF_UNBOUND',
+            message: `Flow artifact ${path} projects connection reference ${reference.projectedLogicalName}, but the target reference is not connected in ${group.environmentAlias}.`,
+            target: reference.projectedLogicalName,
+            details: {
+              path,
+              environmentAlias: group.environmentAlias,
+              solutionUniqueName: group.solutionUniqueName,
+              artifactReference: reference.artifactReference,
+              projectedLogicalName: reference.projectedLogicalName,
+            },
+          });
+        }
+      }
+
+      for (const variable of projection.environmentVariables) {
+        const discovered = inspection.variableBySchema.get(variable.projectedSchemaName.toLowerCase());
+
+        if (!discovered) {
+          checks.push({
+            status: 'fail',
+            code: 'DEPLOY_PREFLIGHT_FLOW_TARGET_ENVVAR_MISSING',
+            message: `Flow artifact ${path} projects environment variable ${variable.projectedSchemaName} but it was not found in solution ${group.solutionUniqueName}.`,
+            target: variable.projectedSchemaName,
+            details: {
+              path,
+              environmentAlias: group.environmentAlias,
+              solutionUniqueName: group.solutionUniqueName,
+              artifactVariable: variable.artifactVariable,
+              projectedSchemaName: variable.projectedSchemaName,
+            },
+          });
+          continue;
+        }
+
+        if (!discovered.effectiveValue) {
+          checks.push({
+            status: 'warn',
+            code: 'DEPLOY_PREFLIGHT_FLOW_TARGET_ENVVAR_VALUE_MISSING',
+            message: `Flow artifact ${path} projects environment variable ${variable.projectedSchemaName}, but the target variable does not have an effective value.`,
+            target: variable.projectedSchemaName,
+            details: {
+              path,
+              environmentAlias: group.environmentAlias,
+              solutionUniqueName: group.solutionUniqueName,
+              artifactVariable: variable.artifactVariable,
+              projectedSchemaName: variable.projectedSchemaName,
+            },
+          });
+        }
+      }
+    }
+  }
+
   for (const operation of dataverseOperations) {
     if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
       applyOperations.push({
@@ -913,114 +1069,12 @@ async function executePreparedDeploy(context: {
   const dataverseGroups = groupPreparedDataverseOperations(runnableDataverseOperations, target);
 
   for (const group of dataverseGroups) {
-    const resolution = await resolveDataverseClient(group.environmentAlias);
+    const inspection = await getSolutionTargetInspection(group.environmentAlias, group.solutionUniqueName);
+    recordSolutionTargetInspection(inspection);
 
-    if (!resolution.success || !resolution.data) {
-      diagnostics.push(...resolution.diagnostics);
-      warnings.push(...resolution.warnings);
-      checks.push({
-        status: 'fail',
-        code: 'DEPLOY_PREFLIGHT_DATAVERSE_RESOLUTION_FAILED',
-        message: `Could not resolve Dataverse environment alias ${group.environmentAlias}.`,
-        target: group.environmentAlias,
-        details: {
-          solution: group.solutionUniqueName,
-        },
-      });
-      continue;
-    }
-
-    const solutionService = new SolutionService(resolution.data.client);
-    const connectionReferences = new ConnectionReferenceService(resolution.data.client);
-    const environmentVariables = new EnvironmentVariableService(resolution.data.client);
-    const [analysis, references, variables] = await Promise.all([
-      solutionService.analyze(group.solutionUniqueName),
-      connectionReferences.list({ solutionUniqueName: group.solutionUniqueName }),
-      environmentVariables.list({ solutionUniqueName: group.solutionUniqueName }),
-    ]);
-
-    if (!analysis.success) {
-      diagnostics.push(...analysis.diagnostics);
-      warnings.push(...analysis.warnings);
-      checks.push({
-        status: 'fail',
-        code: 'DEPLOY_PREFLIGHT_SOLUTION_ANALYZE_FAILED',
-        message: `Failed to analyze solution ${group.solutionUniqueName} before deploy.`,
-        target: group.solutionUniqueName,
-      });
-    }
-
-    if (!variables.success) {
-      diagnostics.push(...variables.diagnostics);
-      warnings.push(...variables.warnings);
-      checks.push({
-        status: 'fail',
-        code: 'DEPLOY_PREFLIGHT_ENVVAR_DISCOVERY_FAILED',
-        message: `Failed to inspect environment variables for solution ${group.solutionUniqueName}.`,
-        target: group.solutionUniqueName,
-      });
-    }
-
-    if (!references.success) {
-      diagnostics.push(...references.diagnostics);
-      warnings.push(...references.warnings);
-      checks.push({
-        status: 'fail',
-        code: 'DEPLOY_PREFLIGHT_CONNREF_DISCOVERY_FAILED',
-        message: `Failed to inspect connection references for solution ${group.solutionUniqueName}.`,
-        target: group.solutionUniqueName,
-      });
-    }
-
-    const solutionAnalysis = analysis.success ? analysis.data : undefined;
-    const discoveredReferences: ConnectionReferenceSummary[] = references.success ? references.data ?? [] : [];
-    const discoveredVariables: EnvironmentVariableSummary[] = variables.success ? variables.data ?? [] : [];
-    const referenceByLogicalName = new Map(
-      discoveredReferences
-        .filter((reference) => reference.logicalName)
-        .map((reference) => [reference.logicalName!.toLowerCase(), reference] as const)
-    );
-    const variableBySchema = new Map(
-      discoveredVariables
-        .filter((variable) => variable.schemaName)
-        .map((variable) => [variable.schemaName!.toLowerCase(), variable] as const)
-    );
-
-    if (analysis.success) {
-      if (!solutionAnalysis) {
-        checks.push({
-          status: 'fail',
-          code: 'DEPLOY_PREFLIGHT_SOLUTION_NOT_FOUND',
-          message: `Solution ${group.solutionUniqueName} was not found in ${group.environmentAlias}.`,
-          target: group.solutionUniqueName,
-        });
-      } else {
-        checks.push({
-          status: 'pass',
-          code: 'DEPLOY_PREFLIGHT_SOLUTION_FOUND',
-          message: `Solution ${group.solutionUniqueName} is available in ${group.environmentAlias}.`,
-          target: group.solutionUniqueName,
-        });
-
-        if (solutionAnalysis.invalidConnectionReferences.length > 0) {
-          checks.push({
-            status: 'warn',
-            code: 'DEPLOY_PREFLIGHT_CONNECTION_REFS_INVALID',
-            message: `Solution ${group.solutionUniqueName} has ${solutionAnalysis.invalidConnectionReferences.length} invalid connection reference(s).`,
-            target: group.solutionUniqueName,
-          });
-        }
-
-        if (solutionAnalysis.missingEnvironmentVariables.length > 0) {
-          checks.push({
-            status: 'warn',
-            code: 'DEPLOY_PREFLIGHT_ENVVARS_MISSING_VALUES',
-            message: `Solution ${group.solutionUniqueName} has ${solutionAnalysis.missingEnvironmentVariables.length} environment variable(s) without an effective value.`,
-            target: group.solutionUniqueName,
-          });
-        }
-      }
-    }
+    const solutionAnalysis = inspection.solutionAnalysis;
+    const referenceByLogicalName = inspection.referenceByLogicalName;
+    const variableBySchema = inspection.variableBySchema;
 
     for (const operation of group.operations) {
       const nextValue = stringifyDeployValue(operation.value!);
@@ -2745,6 +2799,226 @@ function groupPreparedDataverseOperations(
   }
 
   return [...grouped.values()];
+}
+
+function groupPreparedFlowOperationsByTarget(
+  operations: PreparedDeployOperation[],
+  target: DeployTarget
+): Array<{ environmentAlias: string; solutionUniqueName: string; operations: PreparedDeployOperation[] }> {
+  return groupPreparedDataverseOperations(operations, target);
+}
+
+async function inspectDeploySolutionTarget(
+  environmentAlias: string,
+  solutionUniqueName: string
+): Promise<DeploySolutionTargetInspection> {
+  const diagnostics: Diagnostic[] = [];
+  const warnings: Diagnostic[] = [];
+  const checks: DeployPreflightCheck[] = [];
+  const resolution = await resolveDataverseClient(environmentAlias);
+
+  if (!resolution.success || !resolution.data) {
+    diagnostics.push(...resolution.diagnostics);
+    warnings.push(...resolution.warnings);
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_DATAVERSE_RESOLUTION_FAILED',
+      message: `Could not resolve Dataverse environment alias ${environmentAlias}.`,
+      target: environmentAlias,
+      details: {
+        solution: solutionUniqueName,
+      },
+    });
+    return {
+      environmentAlias,
+      solutionUniqueName,
+      checks,
+      diagnostics,
+      warnings,
+      solutionFound: false,
+      references: [],
+      variables: [],
+      referenceByLogicalName: new Map(),
+      variableBySchema: new Map(),
+    };
+  }
+
+  const solutionService = new SolutionService(resolution.data.client);
+  const connectionReferences = new ConnectionReferenceService(resolution.data.client);
+  const environmentVariables = new EnvironmentVariableService(resolution.data.client);
+  const [analysis, references, variables] = await Promise.all([
+    solutionService.analyze(solutionUniqueName),
+    connectionReferences.list({ solutionUniqueName }),
+    environmentVariables.list({ solutionUniqueName }),
+  ]);
+
+  if (!analysis.success) {
+    diagnostics.push(...analysis.diagnostics);
+    warnings.push(...analysis.warnings);
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_SOLUTION_ANALYZE_FAILED',
+      message: `Failed to analyze solution ${solutionUniqueName} before deploy.`,
+      target: solutionUniqueName,
+    });
+  }
+
+  if (!variables.success) {
+    diagnostics.push(...variables.diagnostics);
+    warnings.push(...variables.warnings);
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_ENVVAR_DISCOVERY_FAILED',
+      message: `Failed to inspect environment variables for solution ${solutionUniqueName}.`,
+      target: solutionUniqueName,
+    });
+  }
+
+  if (!references.success) {
+    diagnostics.push(...references.diagnostics);
+    warnings.push(...references.warnings);
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_CONNREF_DISCOVERY_FAILED',
+      message: `Failed to inspect connection references for solution ${solutionUniqueName}.`,
+      target: solutionUniqueName,
+    });
+  }
+
+  const solutionAnalysis = analysis.success ? analysis.data : undefined;
+  const discoveredReferences: ConnectionReferenceSummary[] = references.success ? references.data ?? [] : [];
+  const discoveredVariables: EnvironmentVariableSummary[] = variables.success ? variables.data ?? [] : [];
+  const referenceByLogicalName = new Map(
+    discoveredReferences
+      .filter((reference) => reference.logicalName)
+      .map((reference) => [reference.logicalName!.toLowerCase(), reference] as const)
+  );
+  const variableBySchema = new Map(
+    discoveredVariables
+      .filter((variable) => variable.schemaName)
+      .map((variable) => [variable.schemaName!.toLowerCase(), variable] as const)
+  );
+
+  let solutionFound = false;
+
+  if (analysis.success) {
+    if (!solutionAnalysis) {
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_SOLUTION_NOT_FOUND',
+        message: `Solution ${solutionUniqueName} was not found in ${environmentAlias}.`,
+        target: solutionUniqueName,
+      });
+    } else {
+      solutionFound = true;
+      checks.push({
+        status: 'pass',
+        code: 'DEPLOY_PREFLIGHT_SOLUTION_FOUND',
+        message: `Solution ${solutionUniqueName} is available in ${environmentAlias}.`,
+        target: solutionUniqueName,
+      });
+
+      if (solutionAnalysis.invalidConnectionReferences.length > 0) {
+        checks.push({
+          status: 'warn',
+          code: 'DEPLOY_PREFLIGHT_CONNECTION_REFS_INVALID',
+          message: `Solution ${solutionUniqueName} has ${solutionAnalysis.invalidConnectionReferences.length} invalid connection reference(s).`,
+          target: solutionUniqueName,
+        });
+      }
+
+      if (solutionAnalysis.missingEnvironmentVariables.length > 0) {
+        checks.push({
+          status: 'warn',
+          code: 'DEPLOY_PREFLIGHT_ENVVARS_MISSING_VALUES',
+          message: `Solution ${solutionUniqueName} has ${solutionAnalysis.missingEnvironmentVariables.length} environment variable(s) without an effective value.`,
+          target: solutionUniqueName,
+        });
+      }
+    }
+  }
+
+  return {
+    environmentAlias,
+    solutionUniqueName,
+    checks,
+    diagnostics,
+    warnings,
+    solutionFound,
+    solutionAnalysis,
+    references: discoveredReferences,
+    variables: discoveredVariables,
+    referenceByLogicalName,
+    variableBySchema,
+  };
+}
+
+function projectFlowArtifactRemoteTargets(
+  artifact: FlowArtifact,
+  operations: PreparedDeployOperation[]
+): {
+  connectionReferences: Array<{ artifactReference: string; projectedLogicalName: string }>;
+  environmentVariables: Array<{ artifactVariable: string; projectedSchemaName: string }>;
+} {
+  const connectionReferenceOverrides = new Map<string, string>();
+  const environmentVariableOverrides = new Map<string, string>();
+
+  for (const operation of operations) {
+    if (
+      isPreparedFlowConnectionReferenceOperation(operation) &&
+      operation.executable &&
+      operation.value !== undefined &&
+      !isDeployValueRedacted(operation.value)
+    ) {
+      connectionReferenceOverrides.set(operation.plan.target, stringifyDeployValue(operation.value));
+    }
+
+    if (
+      isPreparedFlowEnvironmentVariableOperation(operation) &&
+      operation.executable &&
+      operation.value !== undefined &&
+      !isDeployValueRedacted(operation.value)
+    ) {
+      environmentVariableOverrides.set(operation.plan.target, stringifyDeployValue(operation.value));
+    }
+  }
+
+  const connectionReferences = artifact.metadata.connectionReferences
+    .map((reference) => ({
+      artifactReference: reference.name,
+      projectedLogicalName:
+        connectionReferenceOverrides.get(reference.name) ?? reference.connectionReferenceLogicalName ?? reference.name,
+    }))
+    .filter((reference) => reference.projectedLogicalName);
+  const environmentVariables = artifact.metadata.environmentVariables
+    .map((variable) => ({
+      artifactVariable: variable,
+      projectedSchemaName: environmentVariableOverrides.get(variable) ?? variable,
+    }))
+    .filter((variable) => variable.projectedSchemaName);
+
+  return {
+    connectionReferences: dedupeProjectedFlowTargets(connectionReferences, (entry) => entry.projectedLogicalName.toLowerCase()),
+    environmentVariables: dedupeProjectedFlowTargets(environmentVariables, (entry) => entry.projectedSchemaName.toLowerCase()),
+  };
+}
+
+function dedupeProjectedFlowTargets<T>(entries: T[], getKey: (entry: T) => string): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+
+  for (const entry of entries) {
+    const key = getKey(entry);
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(entry);
+  }
+
+  return deduped;
 }
 
 function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): DeployTargetConflict[] {
