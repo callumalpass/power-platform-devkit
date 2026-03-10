@@ -474,8 +474,14 @@ export class SolutionService {
       return update as unknown as OperationResult<SolutionSummary>;
     }
 
+    const refreshed = await this.inspect(uniqueName);
+
+    if (!refreshed.success) {
+      return refreshed as unknown as OperationResult<SolutionSummary>;
+    }
+
     return ok(
-      {
+      refreshed.data ?? {
         solutionid: update.data?.entity?.solutionid ?? solution.data.solutionid,
         uniquename: update.data?.entity?.uniquename ?? solution.data.uniquename,
         friendlyname: update.data?.entity?.friendlyname ?? solution.data.friendlyname,
@@ -483,8 +489,8 @@ export class SolutionService {
       },
       {
         supportTier: 'preview',
-        diagnostics: mergeDiagnosticLists(solution.diagnostics, update.diagnostics),
-        warnings: mergeDiagnosticLists(solution.warnings, update.warnings),
+        diagnostics: mergeDiagnosticLists(solution.diagnostics, update.diagnostics, refreshed.diagnostics),
+        warnings: mergeDiagnosticLists(solution.warnings, update.warnings, refreshed.warnings),
       }
     );
   }

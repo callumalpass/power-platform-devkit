@@ -6190,12 +6190,15 @@ describe('cli fixture-backed workflows', () => {
               uniquename: 'HarnessShell',
               friendlyname: 'Harness Shell',
               version: '1.0.0.0',
+              _publisherid_value: 'pub-0',
             },
           ],
           publishers: [
             {
               publisherid: 'pub-1',
               uniquename: 'HarnessPublisher',
+              friendlyname: 'Harness Publisher',
+              customizationprefix: 'pp',
             },
           ],
         },
@@ -6206,6 +6209,7 @@ describe('cli fixture-backed workflows', () => {
               uniquename: 'HarnessShell',
               friendlyname: 'Harness Shell',
               version: '1.0.0.0',
+              _publisherid_value: 'pub-0',
             },
           ],
         },
@@ -6233,6 +6237,12 @@ describe('cli fixture-backed workflows', () => {
       uniquename: 'HarnessShell',
       friendlyname: 'Harness Shell',
       version: '2026.3.10.34135',
+      publisher: {
+        publisherid: 'pub-1',
+        uniquename: 'HarnessPublisher',
+        friendlyname: 'Harness Publisher',
+        customizationprefix: 'pp',
+      },
     });
   });
 

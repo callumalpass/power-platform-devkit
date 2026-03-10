@@ -18,6 +18,21 @@ export interface DataverseResolutionFixture {
 export function createFixtureDataverseClient(fixture: DataverseFixture): DataverseClient {
   const queryState = new Map(Object.entries(structuredClone(fixture.query ?? {})));
   const queryAllState = new Map(Object.entries(structuredClone(fixture.queryAll ?? {})));
+  const updateState = (state: Map<string, unknown[]>, table: string, id: string, entity: Record<string, unknown>) => {
+    const records = (state.get(table) ?? []) as Array<Record<string, unknown>>;
+    const index = records.findIndex((record) => Object.values(record).includes(id));
+
+    if (index === -1) {
+      return false;
+    }
+
+    const updated = {
+      ...records[index],
+      ...entity,
+    };
+    state.set(table, records.map((record, recordIndex) => (recordIndex === index ? updated : record)));
+    return true;
+  };
 
   return {
     query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
@@ -61,10 +76,10 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
       id: string,
       entity: TRecord
     ): Promise<OperationResult<{ status: number; headers: Record<string, string>; entity?: TResult; entityId?: string }>> => {
-      const records = (queryAllState.get(table) ?? []) as Array<Record<string, unknown>>;
-      const index = records.findIndex((record) => Object.values(record).includes(id));
+      const updatedQuery = updateState(queryState, table, id, entity);
+      const updatedQueryAll = updateState(queryAllState, table, id, entity);
 
-      if (index === -1) {
+      if (!updatedQuery && !updatedQueryAll) {
         return fail(
           createDiagnostic('error', 'DATAVERSE_FIXTURE_ENTITY_NOT_FOUND', `Fixture entity ${table}/${id} was not found.`, {
             source: '@pp/test',
@@ -72,11 +87,9 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
         );
       }
 
-      const updated = {
-        ...records[index],
-        ...entity,
-      };
-      queryAllState.set(table, records.map((record, recordIndex) => (recordIndex === index ? updated : record)));
+      const updatedRecords =
+        (((queryState.get(table) ?? queryAllState.get(table)) as Array<Record<string, unknown>> | undefined) ?? []);
+      const updated = updatedRecords.find((record) => Object.values(record).includes(id)) ?? entity;
       return ok(
         {
           status: 204,

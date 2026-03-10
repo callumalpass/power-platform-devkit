@@ -51,16 +51,19 @@ async function createTempDir(): Promise<string> {
 }
 
 function createStubClient(data: StubData): DataverseClient {
+  let currentSolution = structuredClone(data.solution);
+  const publishers = structuredClone(data.publishers ?? []);
+
   return {
     query: async <T>(options: { table: string; filter?: string }): Promise<OperationResult<T[]>> => {
       if (options.table === 'solutions') {
-        return ok([data.solution] as T[], {
+        return ok([currentSolution] as T[], {
           supportTier: 'preview',
         });
       }
 
       if (options.table === 'publishers') {
-        const publishers = (data.publishers ?? []).filter((publisher) => {
+        const matchingPublishers = publishers.filter((publisher) => {
           const filter = options.filter;
           if (!filter) {
             return true;
@@ -74,7 +77,7 @@ function createStubClient(data: StubData): DataverseClient {
           return publisher.uniquename === match[1];
         });
 
-        return ok(publishers as T[], {
+        return ok(matchingPublishers as T[], {
           supportTier: 'preview',
         });
       }
@@ -152,6 +155,22 @@ function createStubClient(data: StubData): DataverseClient {
       entity: TRecord
     ): Promise<OperationResult<{ status: number; headers: Record<string, string>; entity?: TResult; entityId?: string }>> => {
       if (table === 'solutions') {
+        const publisherBind = entity['publisherid@odata.bind'];
+        const publisherId =
+          typeof publisherBind === 'string' ? /^\/publishers\(([^)]+)\)$/.exec(publisherBind)?.[1] : undefined;
+        const expandedPublisher =
+          typeof publisherId === 'string'
+            ? (publishers.find((publisher) => publisher.publisherid === publisherId) as StubData['solution']['publisherid'] | undefined)
+            : currentSolution.publisherid;
+        currentSolution = {
+          ...currentSolution,
+          ...entity,
+          solutionid: id,
+          version: (entity.version as string | undefined) ?? currentSolution.version,
+          _publisherid_value: publisherId ?? currentSolution._publisherid_value,
+          publisherid: expandedPublisher,
+        };
+
         return ok(
           {
             status: 200,
@@ -159,9 +178,9 @@ function createStubClient(data: StubData): DataverseClient {
             entityId: id,
             entity: {
               solutionid: id,
-              uniquename: data.solution.uniquename,
-              friendlyname: data.solution.friendlyname,
-              version: entity.version ?? data.solution.version,
+              uniquename: currentSolution.uniquename,
+              friendlyname: currentSolution.friendlyname,
+              version: currentSolution.version,
             } as TResult,
           },
           {
@@ -820,6 +839,8 @@ describe('SolutionService', () => {
           {
             publisherid: 'pub-1',
             uniquename: 'HarnessPublisher',
+            friendlyname: 'Harness Publisher',
+            customizationprefix: 'pp',
           },
         ],
         components: [],
@@ -838,6 +859,12 @@ describe('SolutionService', () => {
       uniquename: 'HarnessShell',
       friendlyname: 'Harness Shell',
       version: '2026.3.10.34135',
+      publisher: {
+        publisherid: 'pub-1',
+        uniquename: 'HarnessPublisher',
+        friendlyname: 'Harness Publisher',
+        customizationprefix: 'pp',
+      },
     });
   });
 
