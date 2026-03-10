@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pp/artifacts": "workspace:*",
     "@pp/dataverse": "workspace:*",
     "@pp/diagnostics": "workspace:*"
   }

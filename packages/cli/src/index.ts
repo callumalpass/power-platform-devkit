@@ -56,7 +56,7 @@ import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostic
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { ModelService } from '@pp/model';
 import { discoverProject, doctorProject, initProject, planProjectInit, summarizeProject, summarizeResolvedParameter } from '@pp/project';
-import { SolutionService } from '@pp/solution';
+import { SolutionService, type SolutionPackageType } from '@pp/solution';
 import YAML from 'yaml';
 
 type OutputFormat = CliOutputFormat;
@@ -325,6 +325,14 @@ async function runSolution(command: string | undefined, args: string[]): Promise
       return runSolutionAnalyze(args);
     case 'compare':
       return runSolutionCompare(args);
+    case 'export':
+      return runSolutionExport(args);
+    case 'import':
+      return runSolutionImport(args);
+    case 'pack':
+      return runSolutionPack(args);
+    case 'unpack':
+      return runSolutionUnpack(args);
     default:
       printHelp();
       return 1;
@@ -569,7 +577,6 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
             }
           ),
           {
-            supportTier: 'preview',
             details: fallbackDetails,
             ...resultMetadata,
           }
@@ -3013,6 +3020,197 @@ async function runSolutionCompare(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runSolutionExport(args: string[]): Promise<number> {
+  const uniqueName = positionalArgs(args)[0];
+
+  if (!uniqueName) {
+    return printFailure(
+      argumentFailure(
+        'SOLUTION_EXPORT_ARGS_REQUIRED',
+        'Usage: solution export <uniqueName> --env <alias> [--out PATH] [--managed] [--manifest FILE]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const outputTarget = readSolutionOutputTarget(readFlag(args, '--out'));
+  const preview = maybeHandleMutationPreview(args, 'json', 'solution.export', {
+    environment: resolution.data.environment.alias,
+    uniqueName,
+    ...(outputTarget.outPath ? { outPath: outputTarget.outPath } : {}),
+    ...(outputTarget.outDir ? { outDir: outputTarget.outDir } : {}),
+    managed: args.includes('--managed'),
+  });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = new SolutionService(resolution.data.client);
+  const result = await service.exportSolution(uniqueName, {
+    managed: args.includes('--managed'),
+    outPath: outputTarget.outPath,
+    outDir: outputTarget.outDir,
+    manifestPath: readFlag(args, '--manifest'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSolutionImport(args: string[]): Promise<number> {
+  const packagePath = positionalArgs(args)[0];
+
+  if (!packagePath) {
+    return printFailure(
+      argumentFailure(
+        'SOLUTION_IMPORT_ARGS_REQUIRED',
+        'Usage: solution import <path.zip> --env <alias> [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'solution.import', {
+    environment: resolution.data.environment.alias,
+    packagePath,
+  });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = new SolutionService(resolution.data.client);
+  const result = await service.importSolution(packagePath, {
+    publishWorkflows: !args.includes('--no-publish-workflows'),
+    overwriteUnmanagedCustomizations: args.includes('--overwrite-unmanaged-customizations'),
+    holdingSolution: args.includes('--holding-solution'),
+    skipProductUpdateDependencies: args.includes('--skip-product-update-dependencies'),
+    importJobId: readFlag(args, '--import-job-id'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSolutionPack(args: string[]): Promise<number> {
+  const sourceFolder = positionalArgs(args)[0];
+
+  if (!sourceFolder) {
+    return printFailure(argumentFailure('SOLUTION_PACK_ARGS_REQUIRED', 'Usage: solution pack <folder> --out <file.zip> [--package-type managed|unmanaged|both] [--pac PATH]'));
+  }
+
+  const outPath = readFlag(args, '--out');
+
+  if (!outPath) {
+    return printFailure(argumentFailure('SOLUTION_PACK_OUT_REQUIRED', '--out <file.zip> is required.'));
+  }
+
+  const packageType = readSolutionPackageTypeFlag(args);
+
+  if (!packageType.success || !packageType.data) {
+    return printFailure(packageType);
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'solution.pack', {
+    sourceFolder,
+    outPath,
+    packageType: packageType.data,
+  });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = createLocalSolutionService();
+  const result = await service.pack(sourceFolder, {
+    outPath,
+    packageType: packageType.data,
+    pacExecutable: readFlag(args, '--pac'),
+    mapFile: readFlag(args, '--map'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSolutionUnpack(args: string[]): Promise<number> {
+  const packagePath = positionalArgs(args)[0];
+
+  if (!packagePath) {
+    return printFailure(
+      argumentFailure(
+        'SOLUTION_UNPACK_ARGS_REQUIRED',
+        'Usage: solution unpack <path.zip> --out <dir> [--package-type managed|unmanaged|both] [--allow-delete] [--pac PATH]'
+      )
+    );
+  }
+
+  const outDir = readFlag(args, '--out');
+
+  if (!outDir) {
+    return printFailure(argumentFailure('SOLUTION_UNPACK_OUT_REQUIRED', '--out <dir> is required.'));
+  }
+
+  const packageType = readSolutionPackageTypeFlag(args);
+
+  if (!packageType.success || !packageType.data) {
+    return printFailure(packageType);
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'solution.unpack', {
+    packagePath,
+    outDir,
+    packageType: packageType.data,
+  });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = createLocalSolutionService();
+  const result = await service.unpack(packagePath, {
+    outDir,
+    packageType: packageType.data,
+    pacExecutable: readFlag(args, '--pac'),
+    allowDelete: args.includes('--allow-delete'),
+    mapFile: readFlag(args, '--map'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runConnectionReferenceList(args: string[]): Promise<number> {
   const resolution = await resolveDataverseClientForCli(args);
 
@@ -4546,16 +4744,22 @@ function positionalArgs(args: string[]): string[] {
 
 const BOOLEAN_FLAGS = new Set([
   '--all',
+  '--allow-delete',
   '--count',
   '--dry-run',
   '--device-code',
   '--device-code-fallback',
   '--force-prompt',
+  '--holding-solution',
+  '--managed',
   '--no-device-code-fallback',
   '--no-publish',
+  '--no-publish-workflows',
+  '--overwrite-unmanaged-customizations',
   '--page-info',
   '--plan',
   '--return-representation',
+  '--skip-product-update-dependencies',
   '--yes',
 ]);
 
@@ -4573,6 +4777,48 @@ function isPromptValue(value: string | undefined): value is Extract<UserAuthProf
 
 function isBrowserProfileKind(value: string): value is BrowserProfile['kind'] {
   return value === 'edge' || value === 'chrome' || value === 'chromium' || value === 'custom';
+}
+
+function readSolutionOutputTarget(value: string | undefined): { outPath?: string; outDir?: string } {
+  if (!value) {
+    return {};
+  }
+
+  return extname(value).toLowerCase() === '.zip' ? { outPath: value } : { outDir: value };
+}
+
+function readSolutionPackageTypeFlag(args: string[]): OperationResult<SolutionPackageType> {
+  const value = readFlag(args, '--package-type') ?? 'both';
+
+  if (value === 'managed' || value === 'unmanaged' || value === 'both') {
+    return ok(value, {
+      supportTier: 'preview',
+    });
+  }
+
+  return argumentFailure('SOLUTION_PACKAGE_TYPE_INVALID', 'Use --package-type managed, unmanaged, or both.');
+}
+
+function createLocalSolutionService(): SolutionService {
+  return new SolutionService(new NullDataverseClient() as never);
+}
+
+class NullDataverseClient {
+  query(): never {
+    throw new Error('NullDataverseClient should not be used for Dataverse reads.');
+  }
+
+  queryAll(): never {
+    throw new Error('NullDataverseClient should not be used for Dataverse reads.');
+  }
+
+  request(): never {
+    throw new Error('NullDataverseClient should not be used for Dataverse requests.');
+  }
+
+  requestJson(): never {
+    throw new Error('NullDataverseClient should not be used for Dataverse requests.');
+  }
 }
 
 function printHelp(): void {
@@ -4632,6 +4878,10 @@ function printHelp(): void {
       '  solution dependencies <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution analyze <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution compare <uniqueName> --source-env ALIAS --target-env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution export <uniqueName> --env ALIAS [--out PATH] [--managed] [--manifest FILE] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution import <path.zip> --env ALIAS [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution pack <folder> --out FILE.zip [--package-type managed|unmanaged|both] [--map FILE] [--pac PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  solution unpack <path.zip> --out DIR [--package-type managed|unmanaged|both] [--allow-delete] [--map FILE] [--pac PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  connref list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  connref inspect <logicalName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  connref validate --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',

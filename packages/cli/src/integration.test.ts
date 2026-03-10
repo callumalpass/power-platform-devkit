@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readJsonFile } from '@pp/artifacts';
 import { AuthService } from '@pp/auth';
 import type { DataverseClient } from '@pp/dataverse';
+import { ok } from '@pp/diagnostics';
 import { type DataverseFixture, createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
 import { expectGoldenJson, expectGoldenText, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
 import { main } from './index';
@@ -1580,6 +1581,9 @@ describe('cli fixture-backed workflows', () => {
   it('launches the Maker handoff for placeholder canvas mutations through a persisted browser profile', async () => {
     const launchBrowserProfile = vi.spyOn(AuthService.prototype, 'launchBrowserProfile').mockResolvedValue({
       success: true,
+      diagnostics: [],
+      warnings: [],
+      supportTier: 'preview',
       data: {
         profile: {
           name: 'maker-fixture',
@@ -2527,6 +2531,144 @@ describe('cli fixture-backed workflows', () => {
     expect(list.code).toBe(0);
     expect(list.stderr).toBe('');
     await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
+  });
+
+  it('exports and imports solution artifacts through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const requests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+    const client = {
+      query: async <T>(options: { table: string }) =>
+        ok(
+          options.table === 'solutions'
+            ? ([{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0' }] as T[])
+            : ([] as T[]),
+          { supportTier: 'preview' }
+        ),
+      queryAll: async <T>() => ok([] as T[], { supportTier: 'preview' }),
+      requestJson: async <T>(options: { path: string; body?: Record<string, unknown> }) => {
+        requests.push({ path: options.path, body: options.body });
+        return ok(
+          {
+            ExportSolutionFile: Buffer.from('cli-export').toString('base64'),
+          } as T,
+          { supportTier: 'preview' }
+        );
+      },
+      request: async (options: { path: string; body?: Record<string, unknown> }) => {
+        requests.push({ path: options.path, body: options.body });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            data: undefined,
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        client,
+      },
+    });
+
+    const exportPath = join(tempDir, 'Core_managed.zip');
+    const exportResult = await runCli(['solution', 'export', 'Core', '--env', 'source', '--managed', '--out', exportPath, '--format', 'json']);
+
+    expect(exportResult.code).toBe(0);
+    expect(exportResult.stderr).toBe('');
+    expect(await readFile(exportPath, 'utf8')).toBe('cli-export');
+    expect(requests[0]).toEqual({
+      path: 'ExportSolution',
+      body: {
+        SolutionName: 'Core',
+        Managed: true,
+      },
+    });
+
+    const importResult = await runCli(['solution', 'import', exportPath, '--env', 'source', '--format', 'json']);
+
+    expect(importResult.code).toBe(0);
+    expect(importResult.stderr).toBe('');
+    expect(requests[1]?.path).toBe('ImportSolution');
+    expect(requests[1]?.body).toMatchObject({
+      PublishWorkflows: true,
+      OverwriteUnmanagedCustomizations: false,
+      HoldingSolution: false,
+      SkipProductUpdateDependencies: false,
+      CustomizationFile: Buffer.from('cli-export').toString('base64'),
+    });
+  });
+
+  it('packs and unpacks solution artifacts through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const pacPath = join(tempDir, 'fake-pac.js');
+    const packedPath = join(tempDir, 'Harness.zip');
+    const unpackDir = join(tempDir, 'unpacked');
+
+    await writeFile(
+      pacPath,
+      [
+        '#!/usr/bin/env node',
+        "const { mkdirSync, writeFileSync } = require('node:fs');",
+        'const args = process.argv.slice(2);',
+        "const zipfile = args[args.indexOf('--zipfile') + 1];",
+        "const folder = args[args.indexOf('--folder') + 1];",
+        "if (args[1] === 'pack') writeFileSync(zipfile, 'cli-packed');",
+        "if (args[1] === 'unpack') { mkdirSync(folder, { recursive: true }); writeFileSync(`${folder}/Other.xml`, '<ImportExportXml />'); }",
+      ].join('\n'),
+      'utf8'
+    );
+    await chmod(pacPath, 0o755);
+
+    const packResult = await runCli([
+      'solution',
+      'pack',
+      tempDir,
+      '--out',
+      packedPath,
+      '--package-type',
+      'managed',
+      '--pac',
+      pacPath,
+      '--format',
+      'json',
+    ]);
+    const unpackResult = await runCli([
+      'solution',
+      'unpack',
+      packedPath,
+      '--out',
+      unpackDir,
+      '--package-type',
+      'both',
+      '--allow-delete',
+      '--pac',
+      pacPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(packResult.code).toBe(0);
+    expect(packResult.stderr).toBe('');
+    expect(await readFile(packedPath, 'utf8')).toBe('cli-packed');
+    expect(JSON.parse(packResult.stdout)).toMatchObject({
+      packageType: 'managed',
+      artifact: {
+        path: packedPath,
+      },
+    });
+
+    expect(unpackResult.code).toBe(0);
+    expect(unpackResult.stderr).toBe('');
+    await access(join(unpackDir, 'Other.xml'));
+    expect(JSON.parse(unpackResult.stdout)).toMatchObject({
+      packageType: 'both',
+      unpackedRoot: {
+        path: unpackDir,
+      },
+    });
   });
 
   it('resolves auth profile inspect from an environment alias', async () => {

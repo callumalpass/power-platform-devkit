@@ -516,6 +516,9 @@ Most current commands default to JSON output. Some project and analysis commands
 Implemented today:
 
 - solution create for unmanaged shells
+- solution export through the Dataverse `ExportSolution` action with `pp` release manifests
+- solution import through the Dataverse `ImportSolution` action with structured retry guidance
+- local solution pack and unpack orchestration through `pac solution pack|unpack`
 - Dataverse `WhoAmI`
 - generic Web API request execution
 - table query with select/top/filter/expand/orderby/count
@@ -536,4 +539,5 @@ Not implemented yet:
 
 - deeper metadata browsing beyond basic table listing and single-table inspection
 - state/status metadata, owner-style lookups, formula-column edge cases, and other remaining phase 3 metadata assets
-- solution import/export
+- solution compare and diff across local zips and unpacked roots
+- deploy consumption of solution release manifests and rollback bundles

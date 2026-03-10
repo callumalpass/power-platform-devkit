@@ -1,3 +1,8 @@
+import { spawn } from 'node:child_process';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { basename, dirname, extname, relative, resolve } from 'node:path';
+import { stableStringify } from '@pp/artifacts';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import {
   ConnectionReferenceService,
@@ -105,8 +110,128 @@ export interface SolutionCompareResult {
   };
 }
 
+export type SolutionPackageType = 'managed' | 'unmanaged' | 'both';
+
+export interface SolutionArtifactFile {
+  role: 'solution-zip' | 'manifest' | 'unpacked-root';
+  path: string;
+  relativePath?: string;
+  sha256?: string;
+  bytes?: number;
+}
+
+export interface SolutionReleaseManifest {
+  schemaVersion: 1;
+  kind: 'pp-solution-release';
+  generatedAt: string;
+  solution: {
+    uniqueName: string;
+    friendlyName?: string;
+    version?: string;
+    packageType: Exclude<SolutionPackageType, 'both'>;
+  };
+  source?: {
+    environmentUrl?: string;
+  };
+  analysis?: {
+    componentCount: number;
+    dependencyCount: number;
+    missingDependencyCount: number;
+    invalidConnectionReferenceCount: number;
+    missingEnvironmentVariableCount: number;
+  };
+  recovery?: {
+    rollbackCandidateVersion?: string;
+  };
+  files: SolutionArtifactFile[];
+}
+
+export interface SolutionExportOptions {
+  managed?: boolean;
+  outDir?: string;
+  outPath?: string;
+  manifestPath?: string;
+}
+
+export interface SolutionExportResult {
+  solution: SolutionSummary;
+  packageType: Exclude<SolutionPackageType, 'both'>;
+  artifact: SolutionArtifactFile;
+  manifest?: SolutionReleaseManifest;
+  manifestPath?: string;
+}
+
+export interface SolutionImportOptions {
+  publishWorkflows?: boolean;
+  overwriteUnmanagedCustomizations?: boolean;
+  holdingSolution?: boolean;
+  skipProductUpdateDependencies?: boolean;
+  importJobId?: string;
+}
+
+export interface SolutionImportResult {
+  packagePath: string;
+  manifestPath?: string;
+  packageType?: Exclude<SolutionPackageType, 'both'>;
+  imported: boolean;
+  options: Required<Omit<SolutionImportOptions, 'importJobId'>> & { importJobId?: string };
+  manifest?: SolutionReleaseManifest;
+}
+
+export interface SolutionPackOptions {
+  outPath: string;
+  packageType?: SolutionPackageType;
+  pacExecutable?: string;
+  mapFile?: string;
+}
+
+export interface SolutionPackResult {
+  packageType: SolutionPackageType;
+  artifact: SolutionArtifactFile;
+  sourceFolder: string;
+}
+
+export interface SolutionUnpackOptions {
+  outDir: string;
+  packageType?: SolutionPackageType;
+  pacExecutable?: string;
+  allowDelete?: boolean;
+  mapFile?: string;
+}
+
+export interface SolutionUnpackResult {
+  packageType: SolutionPackageType;
+  sourcePackage: SolutionArtifactFile;
+  unpackedRoot: SolutionArtifactFile;
+}
+
+export interface SolutionCommandInvocation {
+  executable: string;
+  args: string[];
+  cwd?: string;
+}
+
+export interface SolutionCommandResult extends SolutionCommandInvocation {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface SolutionCommandRunner {
+  run(invocation: SolutionCommandInvocation): Promise<OperationResult<SolutionCommandResult>>;
+}
+
 export class SolutionService {
-  constructor(private readonly dataverseClient: DataverseClient) {}
+  private readonly commandRunner: SolutionCommandRunner;
+
+  constructor(
+    private readonly dataverseClient: DataverseClient,
+    options: {
+      commandRunner?: SolutionCommandRunner;
+    } = {}
+  ) {
+    this.commandRunner = options.commandRunner ?? new DefaultSolutionCommandRunner();
+  }
 
   async create(uniqueName: string, options: SolutionCreateOptions = {}): Promise<OperationResult<SolutionSummary>> {
     const publisherId = options.publisherId ?? (await this.resolvePublisherId(options.publisherUniqueName));
@@ -481,6 +606,265 @@ export class SolutionService {
     );
   }
 
+  async exportSolution(uniqueName: string, options: SolutionExportOptions = {}): Promise<OperationResult<SolutionExportResult>> {
+    const solution = await this.inspect(uniqueName);
+
+    if (!solution.success) {
+      return solution as unknown as OperationResult<SolutionExportResult>;
+    }
+
+    if (!solution.data) {
+      return fail(
+        [
+          ...solution.diagnostics,
+          createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`, {
+            source: '@pp/solution',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: solution.warnings,
+        }
+      );
+    }
+
+    const analysis = await this.analyze(uniqueName);
+
+    if (!analysis.success) {
+      return analysis as unknown as OperationResult<SolutionExportResult>;
+    }
+
+    const packageType: Exclude<SolutionPackageType, 'both'> = options.managed ? 'managed' : 'unmanaged';
+    const outputPath = resolveOutputPath(uniqueName, packageType, options.outPath, options.outDir);
+    await mkdir(dirname(outputPath), { recursive: true });
+
+    const exportResult = await this.dataverseClient.requestJson<{ ExportSolutionFile?: string }>({
+      path: 'ExportSolution',
+      method: 'POST',
+      body: {
+        SolutionName: uniqueName,
+        Managed: packageType === 'managed',
+      },
+      responseType: 'json',
+    });
+
+    if (!exportResult.success) {
+      return exportResult as unknown as OperationResult<SolutionExportResult>;
+    }
+
+    const exportFile = exportResult.data?.ExportSolutionFile;
+
+    if (!exportFile) {
+      return fail(
+        [
+          ...solution.diagnostics,
+          ...analysis.diagnostics,
+          ...exportResult.diagnostics,
+          createDiagnostic('error', 'SOLUTION_EXPORT_EMPTY', `Solution ${uniqueName} did not return an export payload.`, {
+            source: '@pp/solution',
+            path: outputPath,
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: mergeDiagnosticLists(solution.warnings, analysis.warnings, exportResult.warnings),
+        }
+      );
+    }
+
+    const content = Buffer.from(exportFile, 'base64');
+    await writeFile(outputPath, content);
+    const artifact = await buildArtifactFile('solution-zip', outputPath);
+    const manifestPath = resolveManifestPath(outputPath, options.manifestPath);
+    const manifest = createReleaseManifest(solution.data, packageType, artifact, analysis.data);
+    await writeReleaseManifest(manifestPath, manifest, dirname(outputPath));
+
+    return ok(
+      {
+        solution: solution.data,
+        packageType,
+        artifact,
+        manifest,
+        manifestPath,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(solution.diagnostics, analysis.diagnostics, exportResult.diagnostics),
+        warnings: mergeDiagnosticLists(solution.warnings, analysis.warnings, exportResult.warnings),
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse ExportSolution',
+          },
+        ],
+      }
+    );
+  }
+
+  async importSolution(packagePath: string, options: SolutionImportOptions = {}): Promise<OperationResult<SolutionImportResult>> {
+    const resolvedPackagePath = resolve(packagePath);
+    const packageBytes = await readFile(resolvedPackagePath);
+    const manifestPath = resolveAdjacentManifestPath(resolvedPackagePath);
+    const manifest = await readReleaseManifest(manifestPath);
+    const normalizedOptions = {
+      publishWorkflows: options.publishWorkflows ?? true,
+      overwriteUnmanagedCustomizations: options.overwriteUnmanagedCustomizations ?? false,
+      holdingSolution: options.holdingSolution ?? false,
+      skipProductUpdateDependencies: options.skipProductUpdateDependencies ?? false,
+      importJobId: options.importJobId,
+    };
+
+    const importResult = await this.dataverseClient.request<void>({
+      path: 'ImportSolution',
+      method: 'POST',
+      body: {
+        CustomizationFile: packageBytes.toString('base64'),
+        PublishWorkflows: normalizedOptions.publishWorkflows,
+        OverwriteUnmanagedCustomizations: normalizedOptions.overwriteUnmanagedCustomizations,
+        HoldingSolution: normalizedOptions.holdingSolution,
+        SkipProductUpdateDependencies: normalizedOptions.skipProductUpdateDependencies,
+        ...(normalizedOptions.importJobId ? { ImportJobId: normalizedOptions.importJobId } : {}),
+      },
+      responseType: 'void',
+    });
+
+    if (!importResult.success) {
+      return fail(importResult.diagnostics, {
+        supportTier: 'preview',
+        warnings: importResult.warnings,
+        suggestedNextActions: explainImportFailure(importResult.diagnostics, manifest.data),
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse ImportSolution',
+          },
+        ],
+      });
+    }
+
+    return ok(
+      {
+        packagePath: resolvedPackagePath,
+        manifestPath: manifest.success ? manifestPath : undefined,
+        packageType: manifest.data?.solution.packageType,
+        imported: true,
+        options: normalizedOptions,
+        manifest: manifest.data,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: importResult.diagnostics,
+        warnings: mergeDiagnosticLists(importResult.warnings, manifest.warnings),
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse ImportSolution',
+          },
+        ],
+      }
+    );
+  }
+
+  async pack(sourceFolder: string, options: SolutionPackOptions): Promise<OperationResult<SolutionPackResult>> {
+    const resolvedSourceFolder = resolve(sourceFolder);
+    const outputPath = resolve(options.outPath);
+    await mkdir(dirname(outputPath), { recursive: true });
+
+    const packageType = options.packageType ?? 'unmanaged';
+    const command = await this.runPacCommand({
+      pacExecutable: options.pacExecutable,
+      args: [
+        'solution',
+        'pack',
+        '--folder',
+        resolvedSourceFolder,
+        '--zipfile',
+        outputPath,
+        '--packagetype',
+        toPacPackageType(packageType),
+        ...(options.mapFile ? ['--map', resolve(options.mapFile)] : []),
+      ],
+    });
+
+    if (!command.success) {
+      return command as unknown as OperationResult<SolutionPackResult>;
+    }
+
+    const artifact = await buildArtifactFile('solution-zip', outputPath);
+
+    return ok(
+      {
+        packageType,
+        artifact,
+        sourceFolder: resolvedSourceFolder,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: command.diagnostics,
+        warnings: command.warnings,
+        provenance: [
+          {
+            kind: 'official-artifact',
+            source: 'pac solution pack',
+          },
+        ],
+      }
+    );
+  }
+
+  async unpack(packagePath: string, options: SolutionUnpackOptions): Promise<OperationResult<SolutionUnpackResult>> {
+    const resolvedPackagePath = resolve(packagePath);
+    const outputDir = resolve(options.outDir);
+    await mkdir(outputDir, { recursive: true });
+
+    const packageType = options.packageType ?? 'both';
+    const command = await this.runPacCommand({
+      pacExecutable: options.pacExecutable,
+      args: [
+        'solution',
+        'unpack',
+        '--zipfile',
+        resolvedPackagePath,
+        '--folder',
+        outputDir,
+        '--packagetype',
+        toPacPackageType(packageType),
+        ...(options.allowDelete ? ['--allowDelete', 'true'] : []),
+        ...(options.mapFile ? ['--map', resolve(options.mapFile)] : []),
+      ],
+    });
+
+    if (!command.success) {
+      return command as unknown as OperationResult<SolutionUnpackResult>;
+    }
+
+    const sourcePackage = await buildArtifactFile('solution-zip', resolvedPackagePath);
+    const unpackedRoot = await buildDirectoryArtifact(outputDir);
+
+    return ok(
+      {
+        packageType,
+        sourcePackage,
+        unpackedRoot,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: command.diagnostics,
+        warnings: command.warnings,
+        provenance: [
+          {
+            kind: 'official-artifact',
+            source: 'pac solution unpack',
+          },
+        ],
+      }
+    );
+  }
+
+  async readReleaseManifest(path: string): Promise<OperationResult<SolutionReleaseManifest | undefined>> {
+    return readReleaseManifest(resolve(path));
+  }
+
   private async resolvePublisherId(uniqueName: string | undefined): Promise<string | undefined> {
     if (!uniqueName) {
       return undefined;
@@ -498,6 +882,82 @@ export class SolutionService {
     }
 
     return publishers.data?.[0]?.publisherid;
+  }
+
+  private async runPacCommand(options: { pacExecutable?: string; args: string[]; cwd?: string }) {
+    return this.commandRunner.run({
+      executable: options.pacExecutable ?? 'pac',
+      args: options.args,
+      cwd: options.cwd,
+    });
+  }
+}
+
+class DefaultSolutionCommandRunner implements SolutionCommandRunner {
+  async run(invocation: SolutionCommandInvocation): Promise<OperationResult<SolutionCommandResult>> {
+    return new Promise((resolvePromise) => {
+      const stdout: Buffer[] = [];
+      const stderr: Buffer[] = [];
+      const child = spawn(invocation.executable, invocation.args, {
+        cwd: invocation.cwd,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk));
+      child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
+      child.on('error', (error) => {
+        resolvePromise(
+          fail(
+            createDiagnostic(
+              'error',
+              'SOLUTION_TOOL_EXECUTION_FAILED',
+              `Failed to launch ${invocation.executable}: ${error.message}`,
+              {
+                source: '@pp/solution',
+                detail: invocation.args.join(' '),
+              }
+            ),
+            {
+              supportTier: 'preview',
+            }
+          )
+        );
+      });
+      child.on('close', (exitCode) => {
+        const result: SolutionCommandResult = {
+          ...invocation,
+          exitCode: exitCode ?? 0,
+          stdout: Buffer.concat(stdout).toString('utf8'),
+          stderr: Buffer.concat(stderr).toString('utf8'),
+        };
+
+        if ((exitCode ?? 0) !== 0) {
+          resolvePromise(
+            fail(
+              createDiagnostic(
+                'error',
+                'SOLUTION_TOOL_COMMAND_FAILED',
+                `${invocation.executable} exited with code ${exitCode ?? 0}.`,
+                {
+                  source: '@pp/solution',
+                  detail: result.stderr || result.stdout || invocation.args.join(' '),
+                }
+              ),
+              {
+                supportTier: 'preview',
+              }
+            )
+          );
+          return;
+        }
+
+        resolvePromise(
+          ok(result, {
+            supportTier: 'preview',
+          })
+        );
+      });
+    });
   }
 }
 
@@ -556,4 +1016,166 @@ function escapeODataString(value: string): string {
 
 function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagnostic[] {
   return lists.flatMap((list) => list ?? []);
+}
+
+function resolveOutputPath(
+  uniqueName: string,
+  packageType: Exclude<SolutionPackageType, 'both'>,
+  explicitOutPath?: string,
+  explicitOutDir?: string
+): string {
+  if (explicitOutPath) {
+    return resolve(explicitOutPath);
+  }
+
+  return resolve(explicitOutDir ?? process.cwd(), `${uniqueName}_${packageType}.zip`);
+}
+
+function resolveManifestPath(outputPath: string, explicitManifestPath?: string): string {
+  if (explicitManifestPath) {
+    return resolve(explicitManifestPath);
+  }
+
+  return outputPath.replace(/\.zip$/i, '.pp-solution.json');
+}
+
+function resolveAdjacentManifestPath(packagePath: string): string {
+  if (extname(packagePath).toLowerCase() === '.zip') {
+    return packagePath.replace(/\.zip$/i, '.pp-solution.json');
+  }
+
+  return `${packagePath}.pp-solution.json`;
+}
+
+async function buildArtifactFile(role: SolutionArtifactFile['role'], path: string): Promise<SolutionArtifactFile> {
+  const resolvedPath = resolve(path);
+  const content = await readFile(resolvedPath);
+  const info = await stat(resolvedPath);
+
+  return {
+    role,
+    path: resolvedPath,
+    sha256: createHash('sha256').update(content).digest('hex'),
+    bytes: info.size,
+  };
+}
+
+async function buildDirectoryArtifact(path: string): Promise<SolutionArtifactFile> {
+  const resolvedPath = resolve(path);
+
+  return {
+    role: 'unpacked-root',
+    path: resolvedPath,
+    relativePath: basename(resolvedPath),
+  };
+}
+
+function createReleaseManifest(
+  solution: SolutionSummary,
+  packageType: Exclude<SolutionPackageType, 'both'>,
+  artifact: SolutionArtifactFile,
+  analysis: SolutionAnalysis | undefined
+): SolutionReleaseManifest {
+  return {
+    schemaVersion: 1,
+    kind: 'pp-solution-release',
+    generatedAt: new Date().toISOString(),
+    solution: {
+      uniqueName: solution.uniquename,
+      friendlyName: solution.friendlyname,
+      version: solution.version,
+      packageType,
+    },
+    analysis: analysis
+      ? {
+          componentCount: analysis.components.length,
+          dependencyCount: analysis.dependencies.length,
+          missingDependencyCount: analysis.missingDependencies.length,
+          invalidConnectionReferenceCount: analysis.invalidConnectionReferences.length,
+          missingEnvironmentVariableCount: analysis.missingEnvironmentVariables.length,
+        }
+      : undefined,
+    recovery: {
+      rollbackCandidateVersion: solution.version,
+    },
+    files: [artifact],
+  };
+}
+
+async function writeReleaseManifest(path: string, manifest: SolutionReleaseManifest, baseDir: string): Promise<void> {
+  const manifestWithRelativeFiles: SolutionReleaseManifest = {
+    ...manifest,
+    files: manifest.files.map((file) => ({
+      ...file,
+      relativePath: relative(baseDir, file.path),
+    })),
+  };
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, stableStringify(manifestWithRelativeFiles as unknown as Parameters<typeof stableStringify>[0]) + '\n', 'utf8');
+}
+
+async function readReleaseManifest(path: string): Promise<OperationResult<SolutionReleaseManifest | undefined>> {
+  try {
+    const content = await readFile(path, 'utf8');
+    return ok(JSON.parse(content) as SolutionReleaseManifest, {
+      supportTier: 'preview',
+    });
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return ok(undefined, {
+        supportTier: 'preview',
+      });
+    }
+
+    return fail(
+      createDiagnostic('error', 'SOLUTION_RELEASE_MANIFEST_READ_FAILED', `Failed to read solution release manifest ${path}.`, {
+        source: '@pp/solution',
+        path,
+        detail: error instanceof Error ? error.message : String(error),
+      }),
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+}
+
+function toPacPackageType(packageType: SolutionPackageType): string {
+  switch (packageType) {
+    case 'managed':
+      return 'Managed';
+    case 'unmanaged':
+      return 'Unmanaged';
+    case 'both':
+    default:
+      return 'Both';
+  }
+}
+
+function explainImportFailure(diagnostics: Diagnostic[], manifest?: SolutionReleaseManifest): string[] {
+  const joined = diagnostics.map((diagnostic) => `${diagnostic.code} ${diagnostic.message} ${diagnostic.detail ?? ''}`).join(' ').toLowerCase();
+  const actions: string[] = [];
+
+  if (joined.includes('dependency')) {
+    actions.push('Review solution dependencies in the target environment before retrying the import.');
+  }
+
+  if (joined.includes('connection reference')) {
+    actions.push('Validate connection references in the target environment with `pp connref validate --env <alias>`.');
+  }
+
+  if (joined.includes('environment variable')) {
+    actions.push('Populate required Dataverse environment variables before retrying the import.');
+  }
+
+  if (manifest?.solution.uniqueName) {
+    actions.push(`Re-run \`pp solution analyze ${manifest.solution.uniqueName} --env <alias>\` to inspect target-side blockers.`);
+  }
+
+  return Array.from(new Set(actions));
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }
