@@ -617,6 +617,23 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointCreateFolder: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateNewFolder',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Shared Documents',
+                    path: '/Shared Documents/Drafts',
+                  },
+                },
+              },
               SharePointCreateFile: {
                 type: 'OpenApiConnection',
                 inputs: {
@@ -635,6 +652,38 @@ describe('FlowService', () => {
                       '$content-type': 'text/plain',
                       '$content': "@{base64('hello')}",
                     },
+                  },
+                },
+              },
+              SharePointGetFileMetadata: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileMetadata',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    id: 'file-42',
+                  },
+                },
+              },
+              SharePointGetFileMetadataByPath: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileMetadataByPath',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    path: '/Shared Documents/Drafts/draft.txt',
                   },
                 },
               },
@@ -672,6 +721,44 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointGetFileItem: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                    id: 42,
+                    view: 'All Documents',
+                  },
+                },
+              },
+              SharePointGetFileItems: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileItems',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                    $orderby: 'Modified desc',
+                    $top: 10,
+                    folderPath: '/Shared Documents/Drafts',
+                    viewScopeOption: 'RecursiveAll',
+                  },
+                },
+              },
               SharePointUpdateFile: {
                 type: 'OpenApiConnection',
                 inputs: {
@@ -686,6 +773,38 @@ describe('FlowService', () => {
                     dataset: 'https://contoso.sharepoint.com/sites/Engineering',
                     id: 'file-42',
                     body: '@body(\'SharePointGetFileContent\')',
+                  },
+                },
+              },
+              SharePointGetFolderMetadata: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFolderMetadata',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    id: 'folder-42',
+                  },
+                },
+              },
+              SharePointGetFolderMetadataByPath: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFolderMetadataByPath',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    path: '/Shared Documents/Drafts',
                   },
                 },
               },
@@ -1105,6 +1224,22 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointCreateFolderMissingPath: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateNewFolder',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Shared Documents',
+                  },
+                },
+              },
               SharePointCreateFileMissingBody: {
                 type: 'OpenApiConnection',
                 inputs: {
@@ -1142,6 +1277,24 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointGetFileMetadataByPathBadPathShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileMetadataByPath',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    path: {
+                      value: '/Shared Documents/Drafts/draft.txt',
+                    },
+                  },
+                },
+              },
               SharePointGetFileContentMissingId: {
                 type: 'OpenApiConnection',
                 inputs: {
@@ -1154,6 +1307,41 @@ describe('FlowService', () => {
                   },
                   parameters: {
                     dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                  },
+                },
+              },
+              SharePointGetFileItemMissingId: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                  },
+                },
+              },
+              SharePointGetFileItemsBadViewScopeShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFileItems',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                    viewScopeOption: {
+                      recursive: true,
+                    },
                   },
                 },
               },
@@ -1171,6 +1359,21 @@ describe('FlowService', () => {
                     dataset: 'https://contoso.sharepoint.com/sites/Engineering',
                     id: 'file-42',
                     body: ['aGVsbG8='],
+                  },
+                },
+              },
+              SharePointGetFolderMetadataMissingId: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetFolderMetadata',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
                   },
                 },
               },
@@ -1408,23 +1611,23 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 38,
+      actionCount: 43,
       scopeCount: 1,
-      expressionCount: 35,
+      expressionCount: 40,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 35,
+      dynamicContentReferenceCount: 40,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 28,
+        connectionReferences: 33,
       },
     });
     expect(validation.diagnostics.map((item) => item.code)).toEqual(
@@ -1462,6 +1665,18 @@ describe('FlowService', () => {
     expect(validation.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+        path: 'actions.SharePointCreateFolderMissingPath.inputs.parameters.path',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+        path: 'actions.SharePointGetFileMetadataByPathBadPathShape.inputs.parameters.path',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
         path: 'actions.SharePointCreateFileMissingBody.inputs.parameters.body',
       })
     );
@@ -1469,6 +1684,24 @@ describe('FlowService', () => {
       expect.objectContaining({
         code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
         path: 'actions.SharePointUpdateFileBadBodyShape.inputs.parameters.body',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+        path: 'actions.SharePointGetFileItemMissingId.inputs.parameters.id',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+        path: 'actions.SharePointGetFileItemsBadViewScopeShape.inputs.parameters.viewScopeOption',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+        path: 'actions.SharePointGetFolderMetadataMissingId.inputs.parameters.id',
       })
     );
     expect(validation.diagnostics).toContainEqual(
@@ -1488,14 +1721,14 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 39,
+      nodeCount: 44,
       triggerCount: 1,
-      actionCount: 38,
+      actionCount: 43,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 35,
+      expressionCount: 40,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 35,
+      dynamicContentReferenceCount: 40,
       variableReadCount: 3,
       variableWriteCount: 3,
     });
@@ -1789,7 +2022,7 @@ describe('FlowService', () => {
     expect(graph.data).toMatchObject({
       artifactName: 'Semantic Diagnostic Flow',
       summary: {
-        nodeCount: 42,
+        nodeCount: 47,
         unresolvedEdgeCount: 6,
       },
       resources: {

@@ -156,6 +156,13 @@
       "to": "connectionReference:shared_sharepointonline"
     },
     {
+      "from": "action:actions.SharePointCreateFolderMissingPath",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointCreateFolderMissingPath.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
       "from": "action:actions.SharePointCreateMissingDataset",
       "kind": "connectionReferenceReference",
       "path": "definition.actions.SharePointCreateMissingDataset.inputs.host.connection.name",
@@ -187,6 +194,34 @@
       "from": "action:actions.SharePointGetFileContentMissingId",
       "kind": "connectionReferenceReference",
       "path": "definition.actions.SharePointGetFileContentMissingId.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
+      "from": "action:actions.SharePointGetFileItemMissingId",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointGetFileItemMissingId.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
+      "from": "action:actions.SharePointGetFileItemsBadViewScopeShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointGetFileItemsBadViewScopeShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
+      "from": "action:actions.SharePointGetFileMetadataByPathBadPathShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointGetFileMetadataByPathBadPathShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
+      "from": "action:actions.SharePointGetFolderMetadataMissingId",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointGetFolderMetadataMissingId.inputs.host.connection.name",
       "resolved": true,
       "to": "connectionReference:shared_sharepointonline"
     },
@@ -1132,6 +1167,30 @@
       "childIds": [],
       "dependentIds": [],
       "dependsOn": [],
+      "id": "action:actions.SharePointCreateFolderMissingPath",
+      "kind": "action",
+      "name": "SharePointCreateFolderMissingPath",
+      "path": "actions.SharePointCreateFolderMissingPath",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
       "id": "action:actions.SharePointCreateMissingDataset",
       "kind": "action",
       "name": "SharePointCreateMissingDataset",
@@ -1232,6 +1291,102 @@
       "kind": "action",
       "name": "SharePointGetFileContentMissingId",
       "path": "actions.SharePointGetFileContentMissingId",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SharePointGetFileItemMissingId",
+      "kind": "action",
+      "name": "SharePointGetFileItemMissingId",
+      "path": "actions.SharePointGetFileItemMissingId",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SharePointGetFileItemsBadViewScopeShape",
+      "kind": "action",
+      "name": "SharePointGetFileItemsBadViewScopeShape",
+      "path": "actions.SharePointGetFileItemsBadViewScopeShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SharePointGetFileMetadataByPathBadPathShape",
+      "kind": "action",
+      "name": "SharePointGetFileMetadataByPathBadPathShape",
+      "path": "actions.SharePointGetFileMetadataByPathBadPathShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SharePointGetFolderMetadataMissingId",
+      "kind": "action",
+      "name": "SharePointGetFolderMetadataMissingId",
+      "path": "actions.SharePointGetFolderMetadataMissingId",
       "referenceCounts": {
         "actions": 0,
         "connectionReferences": 1,
@@ -1440,10 +1595,10 @@
     ]
   },
   "summary": {
-    "actionCount": 41,
+    "actionCount": 46,
     "edgeCounts": {
       "actionReference": 1,
-      "connectionReferenceReference": 31,
+      "connectionReferenceReference": 36,
       "containment": 1,
       "environmentVariableReference": 1,
       "parameterReference": 2,
@@ -1451,7 +1606,7 @@
       "variableReference": 3,
       "variableWrite": 3
     },
-    "nodeCount": 42,
+    "nodeCount": 47,
     "scopeCount": 1,
     "triggerCount": 1,
     "unresolvedEdgeCount": 6

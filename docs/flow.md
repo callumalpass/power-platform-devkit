@@ -248,9 +248,25 @@ Current validation checks:
   - `shared_sharepointonline` `DeleteItem` with required
     `inputs.parameters.dataset`, `inputs.parameters.table`, and
     `inputs.parameters.id`
+  - `shared_sharepointonline` `CreateNewFolder` with required
+    `inputs.parameters.dataset`, `inputs.parameters.table`, and
+    `inputs.parameters.path`
   - `shared_sharepointonline` `CreateFile` with required
     `inputs.parameters.dataset`, `inputs.parameters.folderPath`,
     `inputs.parameters.name`, and `inputs.parameters.body`
+  - `shared_sharepointonline` `GetFileMetadata` with required
+    `inputs.parameters.dataset` and `inputs.parameters.id`
+  - `shared_sharepointonline` `GetFileMetadataByPath` with required
+    `inputs.parameters.dataset` and `inputs.parameters.path`
+  - `shared_sharepointonline` `GetFileItem` with required
+    `inputs.parameters.dataset`, `inputs.parameters.table`, and
+    `inputs.parameters.id`, plus optional `inputs.parameters.view`
+  - `shared_sharepointonline` `GetFileItems` with required
+    `inputs.parameters.dataset` and `inputs.parameters.table`, plus bounded
+    optional library query settings including `inputs.parameters.$filter`,
+    `inputs.parameters.$orderby`, `inputs.parameters.$top`,
+    `inputs.parameters.folderPath`, `inputs.parameters.view`, and
+    `inputs.parameters.viewScopeOption`
   - `shared_sharepointonline` `GetFileContent` with required
     `inputs.parameters.dataset` and `inputs.parameters.id`, plus optional
     `inputs.parameters.inferContentType`
@@ -262,6 +278,10 @@ Current validation checks:
     `inputs.parameters.body`
   - `shared_sharepointonline` `DeleteFile` with required
     `inputs.parameters.dataset` and `inputs.parameters.id`
+  - `shared_sharepointonline` `GetFolderMetadata` with required
+    `inputs.parameters.dataset` and `inputs.parameters.id`
+  - `shared_sharepointonline` `GetFolderMetadataByPath` with required
+    `inputs.parameters.dataset` and `inputs.parameters.path`
   - `shared_commondataserviceforapps` `ListRecords` with required
     `inputs.parameters.entityName` or `inputs.pathParameters.entityName` plus
     typed optional query inputs accepted from either `inputs.parameters` or

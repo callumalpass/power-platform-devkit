@@ -26,11 +26,11 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 41,
+      "actionCount": 46,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 38,
-      "expressionCount": 38,
-      "nodeCount": 42,
+      "dynamicContentReferenceCount": 43,
+      "expressionCount": 43,
+      "nodeCount": 47,
       "scopeCount": 1,
       "templateExpressionCount": 2,
       "triggerCount": 1,
@@ -43,16 +43,16 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 41,
+      "actionCount": 46,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 38,
-      "expressionCount": 38,
+      "dynamicContentReferenceCount": 43,
+      "expressionCount": 43,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
-        "connectionReferences": 31,
+        "connectionReferences": 36,
         "environmentVariables": 1,
         "parameters": 2,
         "variables": 3
@@ -239,6 +239,13 @@
     {
       "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
       "level": "error",
+      "message": "Connector action SharePointCreateFolderMissingPath is missing required parameter path for CreateNewFolder.",
+      "path": "actions.SharePointCreateFolderMissingPath.inputs.parameters.path",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
       "message": "Connector action SharePointCreateMissingDataset is missing required parameter dataset for CreateItem.",
       "path": "actions.SharePointCreateMissingDataset.inputs.parameters.dataset",
       "source": "@pp/flow"
@@ -269,6 +276,34 @@
       "level": "error",
       "message": "Connector action SharePointGetFileContentMissingId is missing required parameter id for GetFileContent.",
       "path": "actions.SharePointGetFileContentMissingId.inputs.parameters.id",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointGetFileItemMissingId is missing required parameter id for GetFileItem.",
+      "path": "actions.SharePointGetFileItemMissingId.inputs.parameters.id",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointGetFileItemsBadViewScopeShape parameter viewScopeOption for GetFileItems must be a string expression or literal, not object.",
+      "path": "actions.SharePointGetFileItemsBadViewScopeShape.inputs.parameters.viewScopeOption",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointGetFileMetadataByPathBadPathShape parameter path for GetFileMetadataByPath must be a string expression or literal, not object.",
+      "path": "actions.SharePointGetFileMetadataByPathBadPathShape.inputs.parameters.path",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointGetFolderMetadataMissingId is missing required parameter id for GetFolderMetadata.",
+      "path": "actions.SharePointGetFolderMetadataMissingId.inputs.parameters.id",
       "source": "@pp/flow"
     },
     {

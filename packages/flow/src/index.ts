@@ -490,6 +490,15 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
   },
   {
     apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'CreateNewFolder',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'table', kind: 'string', required: true },
+      { name: 'path', kind: 'string', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
     operationId: 'CreateFile',
     parameters: [
       { name: 'dataset', kind: 'string', required: true },
@@ -505,6 +514,46 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
       { name: 'dataset', kind: 'string', required: true },
       { name: 'id', kind: 'string', required: true },
       { name: 'inferContentType', kind: 'boolean' },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetFileMetadata',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'id', kind: 'string', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetFileMetadataByPath',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'path', kind: 'string', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetFileItem',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'table', kind: 'string', required: true },
+      { name: 'id', kind: 'integer', required: true },
+      { name: 'view', kind: 'string' },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetFileItems',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'table', kind: 'string', required: true },
+      { name: '$filter', kind: 'string' },
+      { name: '$orderby', kind: 'string' },
+      { name: '$top', kind: 'integer' },
+      { name: 'folderPath', kind: 'string' },
+      { name: 'view', kind: 'string' },
+      { name: 'viewScopeOption', kind: 'string' },
     ],
   },
   {
@@ -531,6 +580,22 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
     parameters: [
       { name: 'dataset', kind: 'string', required: true },
       { name: 'id', kind: 'string', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetFolderMetadata',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'id', kind: 'string', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetFolderMetadataByPath',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'path', kind: 'string', required: true },
     ],
   },
   {

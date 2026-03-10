@@ -319,6 +319,22 @@
           }
         }
       },
+      "SharePointCreateFolderMissingPath": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "CreateNewFolder",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "table": "Shared Documents"
+          }
+        }
+      },
       "SharePointCreateFileMissingBody": {
         "type": "OpenApiConnection",
         "inputs": {
@@ -356,6 +372,24 @@
           }
         }
       },
+      "SharePointGetFileMetadataByPathBadPathShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetFileMetadataByPath",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "path": {
+              "value": "/Shared Documents/Drafts/draft.txt"
+            }
+          }
+        }
+      },
       "SharePointGetFileContentMissingId": {
         "type": "OpenApiConnection",
         "inputs": {
@@ -368,6 +402,41 @@
           },
           "parameters": {
             "dataset": "https://contoso.sharepoint.com/sites/Engineering"
+          }
+        }
+      },
+      "SharePointGetFileItemMissingId": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetFileItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "table": "Documents"
+          }
+        }
+      },
+      "SharePointGetFileItemsBadViewScopeShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetFileItems",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "table": "Documents",
+            "viewScopeOption": {
+              "recursive": true
+            }
           }
         }
       },
@@ -387,6 +456,21 @@
             "body": [
               "aGVsbG8="
             ]
+          }
+        }
+      },
+      "SharePointGetFolderMetadataMissingId": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetFolderMetadata",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering"
           }
         }
       },
