@@ -1550,8 +1550,15 @@ describe('cli fixture-backed workflows', () => {
     expect(feedback.code).toBe(0);
     expect(feedback.stdout).toContain('# Project Feedback');
     expect(feedback.stdout).toContain(`- Canonical project root: \`${fixtureRoot}\``);
+    expect(feedback.stdout).toContain('- Bundle status: `not generated yet`');
+    expect(feedback.stdout).toContain('- Active mapping: stage prod -> environment prod -> solution CoreManaged');
+    expect(feedback.stdout).toContain('Environment alias provenance: Stage prod in pp.config.yaml selects environment alias prod.');
+    expect(feedback.stdout).toContain('Bundle lifecycle: The canonical bundle path is artifacts/solutions/core.zip');
     expect(feedback.stdout).toContain('## Workflow Wins');
     expect(feedback.stdout).toContain('## Frictions');
+    expect(feedback.stdout).toContain('Stage-to-environment-to-solution mapping');
+    expect(feedback.stdout).toContain('Bundle artifact lifecycle is still easy to miss');
+    expect(feedback.stdout).toContain('Environment alias provenance is still easy to miss');
     expect(feedback.stdout).not.toContain('"canonicalProjectRoot"');
     expect(feedback.stderr).toContain('PROJECT_PARAMETER_MISSING');
   });

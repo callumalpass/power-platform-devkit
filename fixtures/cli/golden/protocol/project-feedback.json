@@ -66,12 +66,28 @@
       "title": "Recommended bundle placement is still not canonical everywhere"
     },
     {
-      "detail": "The model is present, but other commands still make users infer the full stage-to-environment-to-solution story. Current mapping: dev -> dev / CoreDev; prod -> prod / CoreManaged.",
+      "detail": "This feedback can now restate the route as dev -> dev / CoreDev; prod -> prod / CoreManaged, but operators still need the same stage-to-environment-to-solution wording in other project diagnostics.",
       "evidence": [
         "dev",
         "prod"
       ],
-      "title": "Stage mappings still need an operator-oriented explanation"
+      "title": "Adjacent commands still need the same mapping explanation"
+    },
+    {
+      "detail": "The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.",
+      "evidence": [
+        "artifacts/solutions/core.zip",
+        "solutions"
+      ],
+      "title": "Bundle artifact lifecycle is still easy to miss"
+    },
+    {
+      "detail": "Stage prod in pp.config.yaml selects environment alias prod. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
+      "evidence": [
+        "prod",
+        "pp.config.yaml"
+      ],
+      "title": "Environment alias provenance is still easy to miss"
     },
     {
       "detail": "The local model is structurally coherent, but these required parameters still block a fully deployable project: sqlEndpoint.",
@@ -88,20 +104,32 @@
       "title": "Tighten layout validation around canonical bundle output"
     },
     {
-      "rationale": "Operators should not need to open pp.config.yaml to explain how stages map to environments and solution targets.",
-      "title": "Render stage-to-environment-to-solution mappings directly in project doctor"
+      "rationale": "Operators should not have to translate between feedback output and other commands to explain how a stage resolves to an environment alias and solution target.",
+      "title": "Keep stage-to-environment-to-solution wording aligned across project diagnostics"
+    },
+    {
+      "rationale": "Operators should see whether the bundle path is already populated and which pack or export action is expected to create it.",
+      "title": "Explain when canonical bundle artifacts should exist"
+    },
+    {
+      "rationale": "The project stores alias names locally, but operators still need to know that live environment resolution comes from the external pp environment registry and auth profiles.",
+      "title": "Explain environment alias provenance alongside active targets"
     }
   ],
   "root": "<REPO_ROOT>/fixtures/analysis/project",
   "summary": {
     "activeEnvironment": "prod",
     "activeSolution": "CoreManaged",
+    "activeTargetSummary": "stage prod -> environment prod -> solution CoreManaged",
+    "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.",
     "canonicalBundlePath": "artifacts/solutions/core.zip",
+    "canonicalBundlePresent": false,
     "editableAssetRoots": [
       "apps",
       "flows",
       "docs"
     ],
+    "environmentAliasProvenance": "Stage prod in pp.config.yaml selects environment alias prod. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
     "layoutProfile": "source-first-inline-bundle",
     "selectedStage": "prod",
     "unresolvedRequiredParameters": [
@@ -127,12 +155,12 @@
       "title": "Source-first asset contract"
     },
     {
-      "detail": "The project already maps stage prod to environment prod and solution CoreManaged.",
+      "detail": "The project already explains the current deployment route as stage prod -> environment prod -> solution CoreManaged.",
       "evidence": [
         "dev:dev:CoreDev",
         "prod:prod:CoreManaged"
       ],
-      "title": "Stage-aware topology"
+      "title": "Stage-to-environment-to-solution mapping"
     }
   ]
 }
