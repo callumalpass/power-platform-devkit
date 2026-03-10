@@ -9530,6 +9530,8 @@ function printProjectInspectHelp(): void {
       'Behavior:',
       '  - Returns project summary, resolved topology, parameters, provider bindings, asset inventory, registries, build metadata, and docs metadata.',
       '  - Reads project context without mutating the filesystem.',
+      '  - Auto-selects the lone descendant `pp.config.*` under the inspected path and reports discovery details when the current path is not itself a pp project.',
+      '  - Pair with `pp project doctor` for layout validation and `pp project init` to scaffold a canonical `apps/`, `flows/`, `solutions/`, and `docs/` workspace.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

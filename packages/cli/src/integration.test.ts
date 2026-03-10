@@ -740,6 +740,8 @@ describe('cli fixture-backed workflows', () => {
     expect(inspectHelp.stderr).toBe('');
     expect(inspectHelp.stdout).toContain('Usage: project inspect [path] [--stage STAGE] [--param NAME=VALUE] [options]');
     expect(inspectHelp.stdout).toContain('Reads project context without mutating the filesystem.');
+    expect(inspectHelp.stdout).toContain('Auto-selects the lone descendant `pp.config.*` under the inspected path');
+    expect(inspectHelp.stdout).toContain('Pair with `pp project doctor` for layout validation and `pp project init`');
 
     expect(after).toEqual(before);
   });
