@@ -304,6 +304,10 @@ describe('cli fixture-backed workflows', () => {
 
     expect(code).toBe(0);
     expect(stderr.join('')).toBe('');
+    expect(stdout.join('')).toContain('dv whoami --env ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]');
+    expect(stdout.join('')).toContain(
+      'solution list --env ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
+    );
     expect(stdout.join('')).toContain('canvas create --env ALIAS');
     expect(stdout.join('')).toContain('canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME]');
     expect(stdout.join('')).toContain('[preview: returns not-implemented diagnostics]');

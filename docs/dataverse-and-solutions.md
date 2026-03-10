@@ -15,6 +15,7 @@ pp env add --name dev --url https://example.crm.dynamics.com --profile dev-user
 
 ```bash
 pp dv whoami --env dev
+pp dv whoami --env dev --format json
 ```
 
 Calls Dataverse `WhoAmI()` and returns:
@@ -23,6 +24,10 @@ Calls Dataverse `WhoAmI()` and returns:
 - `OrganizationId`
 - `UserId`
 - the resolved environment alias and auth profile
+
+Supported flags:
+
+- `--format`
 
 ## `dv request`
 
@@ -142,6 +147,19 @@ Supported flags:
 - `--if-match`
 
 ## Connection references
+
+## `solution list`
+
+```bash
+pp solution list --env dev
+pp solution list --env dev --format json
+```
+
+Lists installed solutions for the resolved environment alias.
+
+Supported flags:
+
+- `--format`
 
 List, inspect, and validate connection references as first-class ALM objects:
 
