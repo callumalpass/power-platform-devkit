@@ -3,13 +3,40 @@
   "kind": "pp.flow.artifact",
   "metadata": {
     "name": "Semantic Diagnostic Flow",
-    "connectionReferences": [],
+    "connectionReferences": [
+      {
+        "name": "shared_office365",
+        "connectionReferenceLogicalName": "shared_office365",
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365"
+      },
+      {
+        "name": "shared_declared_only",
+        "connectionReferenceLogicalName": "shared_declared_only",
+        "apiId": "/providers/microsoft.powerapps/apis/shared_declared_only"
+      }
+    ],
     "parameters": {
       "ApiBaseUrl": "https://example.test"
     },
     "environmentVariables": []
   },
   "definition": {
+    "parameters": {
+      "$connections": {
+        "value": {
+          "shared_office365": {
+            "connectionReferenceLogicalName": "shared_office365_runtime",
+            "apiId": "/providers/microsoft.powerapps/apis/shared_exchangeonline",
+            "connectionId": "/connections/office365"
+          },
+          "shared_definition_only": {
+            "connectionReferenceLogicalName": "shared_definition_only",
+            "apiId": "/providers/microsoft.powerapps/apis/shared_definition_only",
+            "connectionId": "/connections/definition-only"
+          }
+        }
+      }
+    },
     "triggers": {
       "Manual": {
         "type": "Request",
@@ -58,6 +85,16 @@
           }
         },
         "inputs": "@{environmentVariables('pp_ApiUrl')}"
+      },
+      "SendMail": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "host": {
+            "connection": {
+              "name": "@parameters('$connections')['shared_missing']['connectionId']"
+            }
+          }
+        }
       },
       "ScopeA": {
         "type": "Scope",

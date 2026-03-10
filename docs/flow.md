@@ -160,6 +160,10 @@ Current validation checks:
 - artifact has a name/display name
 - definition payload exists
 - connection reference names are present and non-duplicated
+- declared `metadata.connectionReferences` stay coherent with
+  `definition.parameters.$connections.value` for the supported canonical shape
+- supported `$connections` expression references resolve to declared
+  connection-reference keys
 - supported expression references resolve for:
   - `parameters('...')`
   - `variables('...')`

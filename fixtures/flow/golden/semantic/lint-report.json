@@ -1,6 +1,17 @@
 {
   "data": {
-    "connectionReferences": [],
+    "connectionReferences": [
+      {
+        "apiId": "/providers/microsoft.powerapps/apis/shared_declared_only",
+        "connectionReferenceLogicalName": "shared_declared_only",
+        "name": "shared_declared_only"
+      },
+      {
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+        "connectionReferenceLogicalName": "shared_office365",
+        "name": "shared_office365"
+      }
+    ],
     "environmentVariables": [
       "pp_ApiUrl"
     ],
@@ -10,7 +21,7 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 7,
+      "actionCount": 8,
       "initializedVariables": [
         "Counter"
       ],
@@ -52,6 +63,41 @@
       "level": "error",
       "message": "Flow expression references missing variable MissingVariable.",
       "path": "definition.actions.ComposeBadVariable.inputs",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_REFERENCE_UNRESOLVED",
+      "level": "error",
+      "message": "Flow expression references missing connection reference shared_missing.",
+      "path": "definition.actions.SendMail.inputs.host.connection.name",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_DEFINITION_ENTRY_MISSING",
+      "level": "error",
+      "message": "Flow connection reference shared_declared_only is declared in metadata but missing from definition.parameters.$connections.",
+      "path": "definition.parameters.$connections.value.shared_declared_only",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_METADATA_MISSING",
+      "level": "error",
+      "message": "Flow definition references connection shared_definition_only in $connections but metadata.connectionReferences does not declare it.",
+      "path": "definition.parameters.$connections.value.shared_definition_only",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_API_ID_MISMATCH",
+      "level": "error",
+      "message": "Flow connection reference shared_office365 has mismatched apiId values between metadata and definition.",
+      "path": "definition.parameters.$connections.value.shared_office365.apiId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_LOGICAL_NAME_MISMATCH",
+      "level": "error",
+      "message": "Flow connection reference shared_office365 has mismatched logical names between metadata and definition.",
+      "path": "definition.parameters.$connections.value.shared_office365.connectionReferenceLogicalName",
       "source": "@pp/flow"
     }
   ],

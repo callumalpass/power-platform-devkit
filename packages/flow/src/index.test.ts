@@ -345,13 +345,40 @@ describe('FlowService', () => {
           kind: 'pp.flow.artifact',
           metadata: {
             name: 'Semantic Diagnostic Flow',
-            connectionReferences: [],
+            connectionReferences: [
+              {
+                name: 'shared_office365',
+                connectionReferenceLogicalName: 'shared_office365',
+                apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+              },
+              {
+                name: 'shared_declared_only',
+                connectionReferenceLogicalName: 'shared_declared_only',
+                apiId: '/providers/microsoft.powerapps/apis/shared_declared_only',
+              },
+            ],
             parameters: {
               ApiBaseUrl: 'https://example.test',
             },
             environmentVariables: [],
           },
           definition: {
+            parameters: {
+              '$connections': {
+                value: {
+                  shared_office365: {
+                    connectionReferenceLogicalName: 'shared_office365_runtime',
+                    apiId: '/providers/microsoft.powerapps/apis/shared_exchangeonline',
+                    connectionId: '/connections/office365',
+                  },
+                  shared_definition_only: {
+                    connectionReferenceLogicalName: 'shared_definition_only',
+                    apiId: '/providers/microsoft.powerapps/apis/shared_definition_only',
+                    connectionId: '/connections/definition-only',
+                  },
+                },
+              },
+            },
             triggers: {
               Manual: {
                 type: 'Request',
@@ -399,6 +426,16 @@ describe('FlowService', () => {
                 },
                 inputs: "@{environmentVariables('pp_ApiUrl')}",
               },
+              SendMail: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  host: {
+                    connection: {
+                      name: "@parameters('$connections')['shared_missing']['connectionId']",
+                    },
+                  },
+                },
+              },
               ScopeA: {
                 type: 'Scope',
                 actions: {
@@ -426,7 +463,7 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 7,
+      actionCount: 8,
       scopeCount: 1,
       initializedVariables: ['Counter'],
       referenceCounts: {
@@ -441,6 +478,11 @@ describe('FlowService', () => {
       'FLOW_ACTION_REFERENCE_UNRESOLVED',
       'FLOW_PARAMETER_REFERENCE_UNRESOLVED',
       'FLOW_VARIABLE_REFERENCE_UNRESOLVED',
+      'FLOW_CONNREF_REFERENCE_UNRESOLVED',
+      'FLOW_CONNREF_DEFINITION_ENTRY_MISSING',
+      'FLOW_CONNREF_METADATA_MISSING',
+      'FLOW_CONNREF_API_ID_MISMATCH',
+      'FLOW_CONNREF_LOGICAL_NAME_MISMATCH',
     ]);
     expect(validation.warnings.map((item) => item.code)).toEqual([
       'FLOW_RETRY_POLICY_HIGH',

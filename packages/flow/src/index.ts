@@ -204,6 +204,12 @@ interface FlowStringLocation {
   path: string;
 }
 
+interface FlowDefinitionConnectionReference {
+  name: string;
+  connectionReferenceLogicalName?: string;
+  apiId?: string;
+}
+
 const NOISY_FLOW_KEYS = new Set([
   'createdTime',
   'lastModifiedTime',
@@ -1178,8 +1184,14 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
   const actionNodes = collectFlowNodes(asRecord(definition.actions), 'action', 'actions');
   const allNodes = new Map<string, FlowNodeSummary>([...triggerNodes, ...actionNodes]);
   const parameterNames = new Set(Object.keys(normalizeFlowParameters(asRecord(definition.parameters) ?? artifact.metadata.parameters)));
+  const definitionConnectionReferences = collectDefinitionConnectionReferences(definition);
+  const metadataConnectionReferences = new Map(
+    artifact.metadata.connectionReferences.map((reference) => [reference.name, reference] as const)
+  );
   const variableNames = collectInitializedVariables(artifact.definition, allNodes);
   const references = collectExpressionReferences(artifact.definition);
+  const connectionReferenceUsages = collectConnectionReferenceUsages(artifact.definition);
+  const hasDefinitionConnections = definitionConnectionReferences.size > 0;
   let scopeCount = 0;
 
   for (const node of allNodes.values()) {
@@ -1255,6 +1267,95 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
       default:
         break;
     }
+  }
+
+  if (hasDefinitionConnections) {
+    for (const reference of artifact.metadata.connectionReferences) {
+      const definitionReference = definitionConnectionReferences.get(reference.name);
+
+      if (!definitionReference) {
+        diagnostics.push(
+          createDiagnostic(
+            'error',
+            'FLOW_CONNREF_DEFINITION_ENTRY_MISSING',
+            `Flow connection reference ${reference.name} is declared in metadata but missing from definition.parameters.$connections.`,
+            {
+              source: '@pp/flow',
+              path: `definition.parameters.$connections.value.${reference.name}`,
+            }
+          )
+        );
+        continue;
+      }
+
+      if (
+        reference.connectionReferenceLogicalName &&
+        definitionReference.connectionReferenceLogicalName &&
+        reference.connectionReferenceLogicalName !== definitionReference.connectionReferenceLogicalName
+      ) {
+        diagnostics.push(
+          createDiagnostic(
+            'error',
+            'FLOW_CONNREF_LOGICAL_NAME_MISMATCH',
+            `Flow connection reference ${reference.name} has mismatched logical names between metadata and definition.`,
+            {
+              source: '@pp/flow',
+              path: `definition.parameters.$connections.value.${reference.name}.connectionReferenceLogicalName`,
+            }
+          )
+        );
+      }
+
+      if (reference.apiId && definitionReference.apiId && reference.apiId !== definitionReference.apiId) {
+        diagnostics.push(
+          createDiagnostic(
+            'error',
+            'FLOW_CONNREF_API_ID_MISMATCH',
+            `Flow connection reference ${reference.name} has mismatched apiId values between metadata and definition.`,
+            {
+              source: '@pp/flow',
+              path: `definition.parameters.$connections.value.${reference.name}.apiId`,
+            }
+          )
+        );
+      }
+    }
+
+    for (const [name] of definitionConnectionReferences) {
+      if (metadataConnectionReferences.has(name)) {
+        continue;
+      }
+
+      diagnostics.push(
+        createDiagnostic(
+          'error',
+          'FLOW_CONNREF_METADATA_MISSING',
+          `Flow definition references connection ${name} in $connections but metadata.connectionReferences does not declare it.`,
+          {
+            source: '@pp/flow',
+            path: `definition.parameters.$connections.value.${name}`,
+          }
+        )
+      );
+    }
+  }
+
+  for (const usage of connectionReferenceUsages) {
+    if (metadataConnectionReferences.has(usage.name) || definitionConnectionReferences.has(usage.name)) {
+      continue;
+    }
+
+    diagnostics.push(
+      createDiagnostic(
+        'error',
+        'FLOW_CONNREF_REFERENCE_UNRESOLVED',
+        `Flow expression references missing connection reference ${usage.name}.`,
+        {
+          source: '@pp/flow',
+          path: usage.path,
+        }
+      )
+    );
   }
 
   for (const [name, node] of allNodes) {
@@ -1440,6 +1541,10 @@ function collectExpressionReferences(value: unknown): Array<{ kind: 'parameter' 
         continue;
       }
 
+      if (rawKind === 'parameters' && name === '$connections') {
+        continue;
+      }
+
       references.push({
         kind:
           rawKind === 'parameters'
@@ -1456,6 +1561,48 @@ function collectExpressionReferences(value: unknown): Array<{ kind: 'parameter' 
   }
 
   return references;
+}
+
+function collectDefinitionConnectionReferences(value: Record<string, unknown>): Map<string, FlowDefinitionConnectionReference> {
+  const parameterRecord = asRecord(value.parameters);
+  const connectionValues = asRecord(asRecord(asRecord(parameterRecord?.['$connections'])?.value));
+  const references = new Map<string, FlowDefinitionConnectionReference>();
+
+  for (const [name, nested] of Object.entries(connectionValues ?? {})) {
+    const record = asRecord(nested);
+
+    references.set(name, {
+      name,
+      connectionReferenceLogicalName:
+        readString(record?.connectionReferenceLogicalName) ??
+        readString(record?.connectionreferencelogicalname) ??
+        readString(record?.logicalName),
+      apiId: readString(record?.apiId) ?? readString(asRecord(record?.api)?.id) ?? readString(record?.connectorId),
+    });
+  }
+
+  return references;
+}
+
+function collectConnectionReferenceUsages(value: unknown): Array<{ name: string; path: string }> {
+  const usages: Array<{ name: string; path: string }> = [];
+
+  for (const location of collectFlowStrings(value)) {
+    for (const match of location.value.matchAll(/parameters\(\s*['"]\$connections['"]\s*\)\s*\[\s*['"]([^'"]+)['"]\s*\]/g)) {
+      const name = match[1];
+
+      if (!name) {
+        continue;
+      }
+
+      usages.push({
+        name,
+        path: location.path,
+      });
+    }
+  }
+
+  return usages;
 }
 
 function collectFlowStrings(value: unknown, path = 'definition'): FlowStringLocation[] {
