@@ -945,6 +945,208 @@ describe('deploy fixture-backed goldens', () => {
     });
   });
 
+  it('creates missing dataverse connection references through the shared deploy path when configured', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const discovery = await discoverProject(fixtureRoot, {
+      environment: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+        PP_SQL_ENDPOINT: 'sql.contoso.example',
+        PP_SQL_CONNECTION_ID: 'conn-target-sql',
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    discovery.data!.parameters.sqlConnection = {
+      name: 'sqlConnection',
+      type: 'string',
+      source: 'environment',
+      value: 'conn-target-sql',
+      definition: {
+        type: 'string',
+        fromEnv: 'PP_SQL_CONNECTION_ID',
+        required: true,
+        mapsTo: [
+          {
+            kind: 'dataverse-connref-create',
+            target: 'pp_shared_sql',
+            displayName: 'Shared SQL',
+            connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+          },
+        ],
+      },
+      sensitive: false,
+      hasValue: true,
+      reference: undefined,
+      resolvedBy: undefined,
+    };
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [{ objectid: 'envvar-def-1' }],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const createSpy = vi.spyOn(client, 'create');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CREATE',
+        status: 'pass',
+        target: 'pp_shared_sql',
+      })
+    );
+    expect(result.data?.plan.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'dataverse-connref-upsert',
+        target: 'pp_shared_sql',
+        createOptions: {
+          displayName: 'Shared SQL',
+          connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+        },
+      })
+    );
+    expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-connref-upsert')).toMatchObject({
+      status: 'applied',
+      targetExists: false,
+      currentValue: undefined,
+      nextValue: 'conn-target-sql',
+      changed: true,
+      message: 'Created and updated pp_shared_sql.',
+      createOptions: {
+        displayName: 'Shared SQL',
+        connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+      },
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      'connectionreferences',
+      {
+        connectionreferencelogicalname: 'pp_shared_sql',
+        connectionreferencedisplayname: 'Shared SQL',
+        connectorid: '/providers/Microsoft.PowerApps/apis/shared_sql',
+        connectionid: 'conn-target-sql',
+      },
+      expect.objectContaining({
+        solutionUniqueName: 'CoreManaged',
+      })
+    );
+  });
+
+  it('fails preflight when dataverse connection reference create mappings omit connector metadata', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-connref-create-'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        'solutions:',
+        '  core:',
+        '    uniqueName: CoreManaged',
+        'parameters:',
+        '  sqlConnection:',
+        '    type: string',
+        '    value: conn-target-sql',
+        '    mapsTo:',
+        '      - kind: dataverse-connref-create',
+        '        target: pp_shared_sql',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [],
+        environmentvariablevalues: [],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_CONNECTOR_MISSING',
+        target: 'pp_shared_sql',
+      })
+    );
+    expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-connref-upsert')).toMatchObject({
+      status: 'skipped',
+      targetExists: false,
+      changed: false,
+      message: 'Configured connection reference create mapping is missing connector metadata.',
+    });
+  });
+
   it('creates missing dataverse environment variables through the shared deploy path when configured', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const discovery = await discoverProject(fixtureRoot, {

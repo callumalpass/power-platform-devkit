@@ -4,7 +4,12 @@ import { ConnectionReferenceService, EnvironmentVariableService, resolveDatavers
 import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { summarizeResolvedParameter, type ProjectContext, type ResolvedProjectParameter } from '@pp/project';
 import { SolutionService } from '@pp/solution';
-import type { ConnectionReferenceSummary, EnvironmentVariableCreateOptions, EnvironmentVariableSummary } from '@pp/dataverse';
+import type {
+  ConnectionReferenceCreateOptions,
+  ConnectionReferenceSummary,
+  EnvironmentVariableCreateOptions,
+  EnvironmentVariableSummary,
+} from '@pp/dataverse';
 
 export interface DeployInput {
   name: string;
@@ -47,6 +52,11 @@ export interface DataverseConnectionReferenceDeployOperationPlan extends DeployO
   kind: 'dataverse-connref-set';
 }
 
+export interface DataverseConnectionReferenceUpsertDeployOperationPlan extends DeployOperationPlanBase {
+  kind: 'dataverse-connref-upsert';
+  createOptions?: DeployConnectionReferenceCreateOptions;
+}
+
 export interface DeployInputBindingOperationPlan extends DeployOperationPlanBase {
   kind: 'deploy-input-bind';
 }
@@ -59,6 +69,7 @@ export type DeployOperationPlan =
   | DataverseEnvvarDeployOperationPlan
   | DataverseEnvvarUpsertDeployOperationPlan
   | DataverseConnectionReferenceDeployOperationPlan
+  | DataverseConnectionReferenceUpsertDeployOperationPlan
   | DeployInputBindingOperationPlan
   | DeploySecretBindingOperationPlan;
 
@@ -151,6 +162,12 @@ export interface DeployEnvironmentVariableCreateOptions {
   type?: string | number;
   valueSchema?: string;
   secretStore?: number;
+}
+
+export interface DeployConnectionReferenceCreateOptions {
+  displayName?: string;
+  connectorId?: string;
+  customConnectorId?: string;
 }
 
 export interface ResolvedDeployBindingEntry extends DeployBindingSummaryEntry {
@@ -712,37 +729,85 @@ async function executePreparedDeploy(context: {
       continue;
     }
 
-    const reference = referenceByLogicalName.get(operation.plan.target.toLowerCase());
+    if (isDataverseConnectionReferenceOperation(operation.plan) || isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
+      const reference = referenceByLogicalName.get(operation.plan.target.toLowerCase());
 
-    if (!reference) {
-      checks.push({
-        status: 'fail',
-        code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_MISSING',
-        message: `Connection reference ${operation.plan.target} was not found in solution ${target.solutionUniqueName}.`,
-        target: operation.plan.target,
-        details: {
-          parameter: operation.plan.parameter,
-        },
-      });
+      if (!reference) {
+        if (isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
+          const missingConnector = resolveMissingConnectionReferenceConnector(operation.plan.createOptions);
+
+          if (missingConnector) {
+            checks.push({
+              status: 'fail',
+              code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_CONNECTOR_MISSING',
+              message: `Connection reference ${operation.plan.target} is configured without connector metadata for creation.`,
+              target: operation.plan.target,
+              details: {
+                parameter: operation.plan.parameter,
+              },
+            });
+            applyOperations.push({
+              ...operation.plan,
+              status: 'skipped',
+              targetExists: false,
+              nextValue,
+              changed: false,
+              message: 'Configured connection reference create mapping is missing connector metadata.',
+            });
+            continue;
+          }
+
+          checks.push({
+            status: 'pass',
+            code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CREATE',
+            message: `Connection reference ${operation.plan.target} will be created in solution ${target.solutionUniqueName}.`,
+            target: operation.plan.target,
+            details: {
+              parameter: operation.plan.parameter,
+            },
+          });
+          applyOperations.push({
+            ...operation.plan,
+            status: 'planned',
+            targetExists: false,
+            nextValue,
+            changed: true,
+            message: mode === 'apply' ? 'Ready to create and apply.' : 'Preview will create the missing target.',
+          });
+          continue;
+        }
+
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_MISSING',
+          message: `Connection reference ${operation.plan.target} was not found in solution ${target.solutionUniqueName}.`,
+          target: operation.plan.target,
+          details: {
+            parameter: operation.plan.parameter,
+          },
+        });
+        applyOperations.push({
+          ...operation.plan,
+          status: 'skipped',
+          targetExists: false,
+          nextValue,
+          message: 'Target connection reference is missing.',
+        });
+        continue;
+      }
+
       applyOperations.push({
         ...operation.plan,
-        status: 'skipped',
-        targetExists: false,
+        status: 'planned',
+        targetExists: true,
+        currentValue: reference.connectionId,
         nextValue,
-        message: 'Target connection reference is missing.',
+        changed: reference.connectionId !== nextValue,
+        message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
       });
       continue;
     }
 
-    applyOperations.push({
-      ...operation.plan,
-      status: 'planned',
-      targetExists: true,
-      currentValue: reference.connectionId,
-      nextValue,
-      changed: reference.connectionId !== nextValue,
-      message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
-    });
   }
 
   const preflightOk = checks.every((check) => check.status !== 'fail');
@@ -764,7 +829,11 @@ async function executePreparedDeploy(context: {
 
     const existingOperation = applyOperations[index]!;
 
-    if (existingOperation.targetExists === false && !isDataverseEnvvarUpsertOperation(operation.plan)) {
+    if (
+      existingOperation.targetExists === false &&
+      !isDataverseEnvvarUpsertOperation(operation.plan) &&
+      !isDataverseConnectionReferenceUpsertOperation(operation.plan)
+    ) {
       continue;
     }
 
@@ -834,29 +903,61 @@ async function executePreparedDeploy(context: {
       continue;
     }
 
-    const result = await connectionReferences.setConnectionId(operation.plan.target, nextValue, {
-      solutionUniqueName: target.solutionUniqueName,
-    });
+    if (isDataverseConnectionReferenceOperation(operation.plan) || isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
+      if (existingOperation.targetExists === false && isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
+        const createResult = await connectionReferences.create(operation.plan.target, nextValue, {
+          ...toConnectionReferenceCreateOptions(operation.plan.createOptions),
+          solutionUniqueName: target.solutionUniqueName,
+        });
 
-    if (!result.success || !result.data) {
-      diagnostics.push(...result.diagnostics);
-      warnings.push(...result.warnings);
+        if (!createResult.success || !createResult.data) {
+          diagnostics.push(...createResult.diagnostics);
+          warnings.push(...createResult.warnings);
+          applyOperations[index] = {
+            ...existingOperation,
+            status: 'failed',
+            message: `Failed to create ${operation.plan.target}.`,
+          };
+          continue;
+        }
+
+        applyOperations[index] = {
+          ...existingOperation,
+          status: 'applied',
+          currentValue: existingOperation.currentValue,
+          nextValue: createResult.data.connectionId,
+          changed: true,
+          message: `Created and updated ${operation.plan.target}.`,
+        };
+        continue;
+      }
+
+      const result = await connectionReferences.setConnectionId(operation.plan.target, nextValue, {
+        solutionUniqueName: target.solutionUniqueName,
+      });
+
+      if (!result.success || !result.data) {
+        diagnostics.push(...result.diagnostics);
+        warnings.push(...result.warnings);
+        applyOperations[index] = {
+          ...existingOperation,
+          status: 'failed',
+          message: `Failed to update ${operation.plan.target}.`,
+        };
+        continue;
+      }
+
       applyOperations[index] = {
         ...existingOperation,
-        status: 'failed',
-        message: `Failed to update ${operation.plan.target}.`,
+        status: 'applied',
+        currentValue: existingOperation.currentValue,
+        nextValue: result.data.connectionId,
+        changed: true,
+        message: `Updated ${operation.plan.target}.`,
       };
       continue;
     }
 
-    applyOperations[index] = {
-      ...existingOperation,
-      status: 'applied',
-      currentValue: existingOperation.currentValue,
-      nextValue: result.data.connectionId,
-      changed: true,
-      message: `Updated ${operation.plan.target}.`,
-    };
   }
 
   return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
@@ -970,6 +1071,16 @@ function createDeployOperationPlan(
         target: mapping.target,
         valuePreview,
       };
+    case 'dataverse-connref-create':
+      return {
+        kind: 'dataverse-connref-upsert',
+        parameter: parameter.name,
+        source: parameter.source,
+        sensitive: parameter.sensitive,
+        target: mapping.target,
+        valuePreview,
+        createOptions: resolveDeployConnectionReferenceCreateOptions(mapping),
+      };
     case 'deploy-input':
       return {
         kind: 'deploy-input-bind',
@@ -1027,6 +1138,16 @@ function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCh
           status: 'fail',
           code: 'DEPLOY_PREFLIGHT_CONNREF_SOURCE_MISSING',
           message: `Deploy parameter ${parameter.name} is unresolved but maps to Dataverse connection reference ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+          },
+        });
+      } else if (mapping.kind === 'dataverse-connref-create') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to Dataverse connection reference create target ${mapping.target}.`,
           target: mapping.target,
           details: {
             parameter: parameter.name,
@@ -1122,6 +1243,16 @@ function collectSavedPlanMissingChecks(plan: DeployPlan): DeployPreflightCheck[]
           status: 'fail',
           code: 'DEPLOY_PREFLIGHT_CONNREF_SOURCE_MISSING',
           message: `Saved deploy plan input ${input.name} is unresolved but maps to Dataverse connection reference ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
+      } else if (mapping.kind === 'dataverse-connref-create') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to Dataverse connection reference create target ${mapping.target}.`,
           target: mapping.target,
           details: {
             parameter: input.name,
@@ -1274,10 +1405,25 @@ function isDataverseConnectionReferenceOperation(
   return operation.kind === 'dataverse-connref-set';
 }
 
+function isDataverseConnectionReferenceUpsertOperation(
+  operation: DeployOperationPlan
+): operation is DataverseConnectionReferenceUpsertDeployOperationPlan {
+  return operation.kind === 'dataverse-connref-upsert';
+}
+
 function isDataverseMutationOperation(
   operation: DeployOperationPlan
-): operation is DataverseEnvvarDeployOperationPlan | DataverseEnvvarUpsertDeployOperationPlan | DataverseConnectionReferenceDeployOperationPlan {
-  return isDataverseEnvvarOperation(operation) || isDataverseEnvvarUpsertOperation(operation) || isDataverseConnectionReferenceOperation(operation);
+): operation is
+  | DataverseEnvvarDeployOperationPlan
+  | DataverseEnvvarUpsertDeployOperationPlan
+  | DataverseConnectionReferenceDeployOperationPlan
+  | DataverseConnectionReferenceUpsertDeployOperationPlan {
+  return (
+    isDataverseEnvvarOperation(operation) ||
+    isDataverseEnvvarUpsertOperation(operation) ||
+    isDataverseConnectionReferenceOperation(operation) ||
+    isDataverseConnectionReferenceUpsertOperation(operation)
+  );
 }
 
 function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean): DeployConfirmation {
@@ -1337,6 +1483,20 @@ function resolveDeployEnvironmentVariableCreateOptions(mapping: ParameterMapping
   return Object.values(options).some((value) => value !== undefined) ? options : undefined;
 }
 
+function resolveDeployConnectionReferenceCreateOptions(mapping: ParameterMapping): DeployConnectionReferenceCreateOptions | undefined {
+  if (mapping.kind !== 'dataverse-connref-create') {
+    return undefined;
+  }
+
+  const options: DeployConnectionReferenceCreateOptions = {
+    displayName: mapping.displayName,
+    connectorId: mapping.connectorId,
+    customConnectorId: mapping.customConnectorId,
+  };
+
+  return Object.values(options).some((value) => value !== undefined) ? options : undefined;
+}
+
 function toEnvironmentVariableCreateOptions(
   options: DeployEnvironmentVariableCreateOptions | undefined
 ): Omit<EnvironmentVariableCreateOptions, 'solutionUniqueName'> {
@@ -1350,6 +1510,20 @@ function toEnvironmentVariableCreateOptions(
     type: options.type,
     valueSchema: options.valueSchema,
     secretStore: options.secretStore,
+  };
+}
+
+function toConnectionReferenceCreateOptions(
+  options: DeployConnectionReferenceCreateOptions | undefined
+): Omit<ConnectionReferenceCreateOptions, 'solutionUniqueName'> {
+  if (!options) {
+    return {};
+  }
+
+  return {
+    displayName: options.displayName,
+    connectorId: options.connectorId,
+    customConnectorId: options.customConnectorId,
   };
 }
 
@@ -1368,6 +1542,10 @@ function resolveInvalidEnvironmentVariableCreateType(type: string | number | und
     .replace(/[\s_]+/g, '-');
 
   return SUPPORTED_ENVIRONMENT_VARIABLE_TYPE_ALIASES.has(normalized) ? undefined : type;
+}
+
+function resolveMissingConnectionReferenceConnector(options: DeployConnectionReferenceCreateOptions | undefined): boolean {
+  return !options?.connectorId && !options?.customConnectorId;
 }
 
 function diffComparableDeployPlans(expectedPlan: DeployPlan, actualPlan: DeployPlan): string[] {
@@ -1602,7 +1780,7 @@ function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): Deploy
       continue;
     }
 
-    if (isDataverseConnectionReferenceOperation(sample)) {
+    if (isDataverseConnectionReferenceOperation(sample) || isDataverseConnectionReferenceUpsertOperation(sample)) {
       conflicts.push({
         code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CONFLICT',
         message: `Connection reference ${sample.target} has conflicting deploy mappings from ${parameterList}.`,
@@ -1634,7 +1812,7 @@ function getDeployConflictKey(operation: DeployOperationPlan): string {
     return `dataverse-envvar:${operation.target.toLowerCase()}`;
   }
 
-  if (isDataverseConnectionReferenceOperation(operation)) {
+  if (isDataverseConnectionReferenceOperation(operation) || isDataverseConnectionReferenceUpsertOperation(operation)) {
     return `dataverse-connref:${operation.target.toLowerCase()}`;
   }
 

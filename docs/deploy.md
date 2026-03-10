@@ -22,6 +22,10 @@ mapsTo:
     secretStore: 0
   - kind: dataverse-connref
     target: pp_shared_sql
+  - kind: dataverse-connref-create
+    target: pp_shared_sql
+    displayName: Shared SQL
+    connectorId: /providers/Microsoft.PowerApps/apis/shared_sql
   - kind: deploy-secret
     target: api-token
   - kind: deploy-input
@@ -37,6 +41,7 @@ During `deploy apply`, `pp`:
 5. resolves adapter-facing input and secret bindings into the shared operation result
 6. updates matching environment variable values and connection reference bindings for supported Dataverse mappings when the target differs, otherwise records a no-op skip
 7. creates missing environment variable definitions first for `dataverse-envvar-create` mappings, honoring any configured create metadata (`displayName`, `type`, `defaultValue`, `valueSchema`, `secretStore`), then applies the requested value through the same shared env-var execution path
+8. creates missing connection references first for `dataverse-connref-create` mappings, honoring configured create metadata (`displayName`, `connectorId`, `customConnectorId`), then records the requested connection binding through the same shared connection-reference execution path
 
 Preflight also rejects conflicting mappings before any remote inspection or apply work starts. If multiple parameters map to the same Dataverse environment variable, Dataverse connection reference, or adapter binding target, deploy returns a machine-readable failure instead of choosing an arbitrary winner.
 
@@ -203,12 +208,13 @@ steps:
 
 ## Current limits
 
-- `dataverse-envvar`, `dataverse-envvar-create`, and `dataverse-connref` are the supported Dataverse mutation kinds today.
+- `dataverse-envvar`, `dataverse-envvar-create`, `dataverse-connref`, and `dataverse-connref-create` are the supported Dataverse mutation kinds today.
 - `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
 - Mapped parameters without a resolved value now fail deploy preflight explicitly.
 - Missing target environment variables still fail preflight for `dataverse-envvar`, while `dataverse-envvar-create` records a machine-readable creation check and creates the definition during live apply.
 - Invalid configured `dataverse-envvar-create` types now fail preflight before any Dataverse write is attempted.
-- Missing target connection references fail preflight.
+- Missing target connection references still fail preflight for `dataverse-connref`, while `dataverse-connref-create` records a machine-readable creation check and creates the reference during live apply.
+- `dataverse-connref-create` requires `connectorId` or `customConnectorId`; missing connector metadata fails preflight before any Dataverse write is attempted.
 - Duplicate target mappings within the same deploy family fail preflight explicitly.
 - Detached saved-plan execution is limited by redaction: operations whose saved
   plan value is missing or redacted fail preflight instead of guessing.

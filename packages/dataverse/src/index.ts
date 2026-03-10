@@ -238,6 +238,13 @@ export interface ConnectionReferenceSummary {
   connected: boolean;
 }
 
+export interface ConnectionReferenceCreateOptions {
+  displayName?: string;
+  connectorId?: string;
+  customConnectorId?: string;
+  solutionUniqueName?: string;
+}
+
 export interface ConnectionReferenceValidationResult {
   reference: ConnectionReferenceSummary;
   valid: boolean;
@@ -1200,6 +1207,62 @@ export class ConnectionReferenceService {
         supportTier: 'preview',
         diagnostics: mergeDiagnosticLists(reference.diagnostics, update.diagnostics),
         warnings: mergeDiagnosticLists(reference.warnings, update.warnings),
+      }
+    );
+  }
+
+  async create(
+    logicalName: string,
+    connectionId: string,
+    options: ConnectionReferenceCreateOptions = {}
+  ): Promise<OperationResult<ConnectionReferenceSummary>> {
+    if (!options.connectorId && !options.customConnectorId) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'DATAVERSE_CONNREF_CONNECTOR_REQUIRED',
+          `Connection reference ${logicalName} requires connector metadata before it can be created.`,
+          {
+            source: '@pp/dataverse',
+          }
+        )
+      );
+    }
+
+    const createResult = await this.dataverseClient.create<Record<string, unknown>, ConnectionReferenceRecord>(
+      'connectionreferences',
+      {
+        connectionreferencelogicalname: logicalName,
+        connectionreferencedisplayname: options.displayName ?? logicalName,
+        connectionid: connectionId,
+        ...(options.connectorId ? { connectorid: options.connectorId } : {}),
+        ...(options.customConnectorId ? { customconnectorid: options.customConnectorId } : {}),
+      },
+      {
+        returnRepresentation: true,
+        solutionUniqueName: options.solutionUniqueName,
+      }
+    );
+
+    if (!createResult.success) {
+      return createResult as unknown as OperationResult<ConnectionReferenceSummary>;
+    }
+
+    const created = createResult.data?.entity;
+
+    return ok(
+      normalizeConnectionReference({
+        connectionreferenceid: created?.connectionreferenceid ?? createResult.data?.entityId ?? '',
+        connectionreferencelogicalname: created?.connectionreferencelogicalname ?? logicalName,
+        connectionreferencedisplayname: created?.connectionreferencedisplayname ?? options.displayName ?? logicalName,
+        connectorid: created?.connectorid ?? options.connectorId,
+        connectionid: created?.connectionid ?? connectionId,
+        customconnectorid: created?.customconnectorid ?? options.customConnectorId,
+      }),
+      {
+        supportTier: 'preview',
+        diagnostics: createResult.diagnostics,
+        warnings: createResult.warnings,
       }
     );
   }

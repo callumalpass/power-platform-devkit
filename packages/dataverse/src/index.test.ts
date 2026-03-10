@@ -1170,6 +1170,51 @@ describe('ALM services', () => {
       connectionid: 'conn-next',
     });
   });
+
+  it('creates a connection reference within a solution', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 204,
+        headers: {
+          'odata-entityid': "https://example.crm.dynamics.com/api/data/v9.2/connectionreferences(ref-1)",
+        },
+        data: {
+          connectionreferenceid: 'ref-1',
+          connectionreferencelogicalname: 'pp_shared_sql',
+          connectionreferencedisplayname: 'Shared SQL',
+          connectorid: '/providers/Microsoft.PowerApps/apis/shared_sql',
+          connectionid: 'conn-next',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.create('pp_shared_sql', 'conn-next', {
+      displayName: 'Shared SQL',
+      connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+      solutionUniqueName: 'CoreManaged',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      id: 'ref-1',
+      logicalName: 'pp_shared_sql',
+      displayName: 'Shared SQL',
+      connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+      connectionId: 'conn-next',
+      connected: true,
+    });
+    expect(httpClient.requests.at(-1)?.method).toBe('POST');
+    expect(httpClient.requests.at(-1)?.path).toBe('connectionreferences');
+    expect(httpClient.requests.at(-1)?.headers?.['MSCRM.SolutionUniqueName']).toBe('CoreManaged');
+    expect(httpClient.requests.at(-1)?.body).toEqual({
+      connectionreferencelogicalname: 'pp_shared_sql',
+      connectionreferencedisplayname: 'Shared SQL',
+      connectorid: '/providers/Microsoft.PowerApps/apis/shared_sql',
+      connectionid: 'conn-next',
+    });
+  });
 });
 
 describe('normalizeMetadataQueryOptions', () => {

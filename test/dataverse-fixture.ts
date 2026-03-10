@@ -120,6 +120,12 @@ export function mockDataverseResolution(fixtures: Record<string, DataverseClient
 }
 
 function inferIdKey(table: string, entity: Record<string, unknown>): string {
+  const preferredKey = inferPreferredIdKey(table);
+
+  if (preferredKey) {
+    return preferredKey;
+  }
+
   const explicitKey = Object.keys(entity).find((key) => key.endsWith('id'));
 
   if (explicitKey) {
@@ -131,4 +137,17 @@ function inferIdKey(table: string, entity: Record<string, unknown>): string {
   }
 
   return `${table.slice(0, -1)}id`;
+}
+
+function inferPreferredIdKey(table: string): string | undefined {
+  switch (table) {
+    case 'connectionreferences':
+      return 'connectionreferenceid';
+    case 'environmentvariabledefinitions':
+      return 'environmentvariabledefinitionid';
+    case 'environmentvariablevalues':
+      return 'environmentvariablevalueid';
+    default:
+      return undefined;
+  }
 }

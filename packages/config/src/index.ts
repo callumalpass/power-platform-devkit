@@ -16,6 +16,8 @@ const parameterMappingSchema = z.object({
   kind: z.string(),
   target: z.string(),
   displayName: z.string().optional(),
+  connectorId: z.string().optional(),
+  customConnectorId: z.string().optional(),
   defaultValue: primitiveValueSchema.optional(),
   type: z.union([z.string(), z.number()]).optional(),
   valueSchema: z.string().optional(),
