@@ -175,9 +175,11 @@ export interface ResolvedDeployBindings {
   secrets: ResolvedDeployBindingEntry[];
 }
 
+type DeployPrimitiveValue = string | number | boolean;
+
 interface PreparedDeployOperation {
   plan: DeployOperationPlan;
-  value?: string | number | boolean;
+  value?: DeployPrimitiveValue;
   executable: boolean;
   blockedCode?: 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_MISSING' | 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_REDACTED';
   blockedMessage?: string;
@@ -360,24 +362,26 @@ export async function executeDeployPlan(
   options: {
     mode?: DeployExecutionMode;
     confirmed?: boolean;
+    parameterOverrides?: Record<string, DeployPrimitiveValue>;
   } = {}
 ): Promise<OperationResult<DeployExecutionResult>> {
   const startedAt = Date.now();
   const mode = options.mode ?? 'apply';
   const confirmation = resolveDeployConfirmation(mode, options.confirmed === true);
+  const effectivePlan = applySavedPlanParameterOverrides(plan, options.parameterOverrides);
   const checks: DeployPreflightCheck[] = [
-    ...collectSavedPlanMissingChecks(plan),
-    ...collectSavedPlanValueChecks(plan),
+    ...collectSavedPlanMissingChecks(effectivePlan),
+    ...collectSavedPlanValueChecks(plan, options.parameterOverrides),
   ];
 
   return executePreparedDeploy({
     mode,
-    plan,
-    bindings: plan.bindings,
+    plan: effectivePlan,
+    bindings: effectivePlan.bindings,
     confirmation,
-    target: plan.target,
+    target: effectivePlan.target,
     checks,
-    preparedOperations: prepareSavedPlanOperations(plan),
+    preparedOperations: prepareSavedPlanOperations(plan, options.parameterOverrides),
     diagnostics: [],
     warnings: [],
     startedAt,
@@ -892,8 +896,19 @@ function prepareProjectDeployOperations(project: ProjectContext): PreparedDeploy
   }));
 }
 
-function prepareSavedPlanOperations(plan: DeployPlan): PreparedDeployOperation[] {
+function prepareSavedPlanOperations(
+  plan: DeployPlan,
+  parameterOverrides: Record<string, DeployPrimitiveValue> = {}
+): PreparedDeployOperation[] {
   return plan.operations.map((operation) => {
+    if (Object.hasOwn(parameterOverrides, operation.parameter)) {
+      return {
+        plan: applySavedPlanOperationOverride(operation, parameterOverrides[operation.parameter]!),
+        value: parameterOverrides[operation.parameter]!,
+        executable: true,
+      };
+    }
+
     if (operation.valuePreview === undefined) {
       return {
         plan: operation,
@@ -1139,8 +1154,11 @@ function collectSavedPlanMissingChecks(plan: DeployPlan): DeployPreflightCheck[]
   return checks;
 }
 
-function collectSavedPlanValueChecks(plan: DeployPlan): DeployPreflightCheck[] {
-  return prepareSavedPlanOperations(plan)
+function collectSavedPlanValueChecks(
+  plan: DeployPlan,
+  parameterOverrides: Record<string, DeployPrimitiveValue> = {}
+): DeployPreflightCheck[] {
+  return prepareSavedPlanOperations(plan, parameterOverrides)
     .filter((operation) => !operation.executable && operation.blockedCode && operation.blockedMessage)
     .map((operation) => ({
       status: 'fail' as const,
@@ -1477,6 +1495,71 @@ function summarizeResolvedDeployBindings(bindings: ResolvedDeployBindings): Depl
   return {
     inputs: bindings.inputs.map(({ value: _value, ...entry }) => entry),
     secrets: bindings.secrets.map(({ value: _value, ...entry }) => entry),
+  };
+}
+
+function applySavedPlanParameterOverrides(
+  plan: DeployPlan,
+  parameterOverrides: Record<string, DeployPrimitiveValue> = {}
+): DeployPlan {
+  if (Object.keys(parameterOverrides).length === 0) {
+    return plan;
+  }
+
+  return {
+    ...plan,
+    inputs: plan.inputs.map((input) => {
+      if (!Object.hasOwn(parameterOverrides, input.name)) {
+        return input;
+      }
+
+      const override = parameterOverrides[input.name]!;
+
+      return {
+        ...input,
+        source: 'value',
+        hasValue: true,
+        value: input.sensitive ? '<redacted>' : override,
+      };
+    }),
+    bindings: {
+      inputs: plan.bindings.inputs.map((binding) => applySavedPlanBindingOverride(binding, parameterOverrides)),
+      secrets: plan.bindings.secrets.map((binding) => applySavedPlanBindingOverride(binding, parameterOverrides)),
+    },
+    operations: plan.operations.map((operation) => {
+      if (!Object.hasOwn(parameterOverrides, operation.parameter)) {
+        return operation;
+      }
+
+      return applySavedPlanOperationOverride(operation, parameterOverrides[operation.parameter]!);
+    }),
+  };
+}
+
+function applySavedPlanBindingOverride(
+  binding: DeployBindingSummaryEntry,
+  parameterOverrides: Record<string, DeployPrimitiveValue>
+): DeployBindingSummaryEntry {
+  if (!Object.hasOwn(parameterOverrides, binding.parameter)) {
+    return binding;
+  }
+
+  return {
+    ...binding,
+    source: 'value',
+    status: 'resolved',
+    valuePreview: binding.sensitive ? '<redacted>' : parameterOverrides[binding.parameter]!,
+  };
+}
+
+function applySavedPlanOperationOverride(
+  operation: DeployOperationPlan,
+  value: DeployPrimitiveValue
+): DeployOperationPlan {
+  return {
+    ...operation,
+    source: 'value',
+    valuePreview: operation.sensitive ? '<redacted>' : value,
   };
 }
 

@@ -50,8 +50,9 @@ Current behavior:
   shape without another CLI break
 - `deploy apply` also accepts `--plan <file>` as a saved-plan execution
   checkpoint; that path still uses live apply mode and fails preflight if the
-  current project no longer matches the saved plan
-
+  current project no longer matches the saved plan. When `--project` is omitted,
+  repeatable `--param NAME=VALUE` overrides can supply executable values for
+  detached saved-plan apply
 Today this contract is wired through:
 
 - auth profile create/remove commands
@@ -71,7 +72,14 @@ Project-aware commands also share:
 
 These apply to:
 
+- `project doctor`
 - `project inspect`
 - `analysis report`
 - `analysis context`
 - `deploy plan`
+- `deploy apply`
+
+`project init` also supports the shared mutation preview flags:
+
+- `--dry-run`
+- `--plan`

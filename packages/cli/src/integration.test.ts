@@ -651,6 +651,127 @@ describe('cli fixture-backed workflows', () => {
     );
   });
 
+  it('covers detached saved-plan deploy apply with explicit parameter overrides for redacted values', async () => {
+    const tempDir = await createTempDir();
+    const planPath = join(tempDir, 'deploy-plan.json');
+
+    await writeFile(
+      planPath,
+      JSON.stringify(
+        {
+          projectRoot: '/tmp/detached-plan',
+          generatedAt: '2026-03-10T00:00:00.000Z',
+          executionStages: ['resolve', 'preflight', 'plan', 'apply', 'report'],
+          supportedAdapters: ['github-actions', 'azure-devops', 'power-platform-pipelines'],
+          target: {
+            stage: 'prod',
+            environmentAlias: 'prod',
+            solutionUniqueName: 'CoreManaged',
+          },
+          inputs: [
+            {
+              name: 'tenantDomain',
+              source: 'secret',
+              hasValue: true,
+              sensitive: true,
+              reference: 'tenant_domain',
+              mappings: [
+                {
+                  kind: 'dataverse-envvar',
+                  target: 'pp_TenantDomain',
+                },
+              ],
+            },
+          ],
+          providerBindings: [],
+          topology: [],
+          templateRegistries: [],
+          build: {},
+          assets: [],
+          bindings: {
+            inputs: [],
+            secrets: [],
+          },
+          operations: [
+            {
+              kind: 'dataverse-envvar-set',
+              parameter: 'tenantDomain',
+              source: 'secret',
+              sensitive: true,
+              target: 'pp_TenantDomain',
+              valuePreview: '<redacted>',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [{ objectid: 'envvar-def-1' }],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+
+    const deployApply = await runCli(
+      ['deploy', 'apply', '--plan', planPath, '--param', 'tenantDomain=contoso.example', '--yes', '--format', 'json']
+    );
+
+    expect(deployApply.code).toBe(0);
+    expect(deployApply.stderr).toBe('');
+
+    const result = normalizeCliAnalysisSnapshot(JSON.parse(deployApply.stdout)) as Record<string, any>;
+    expect(result.preflight.ok).toBe(true);
+    expect(result.plan.inputs).toContainEqual(
+      expect.objectContaining({
+        name: 'tenantDomain',
+        source: 'value',
+        value: '<redacted>',
+      })
+    );
+    expect(result.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'dataverse-envvar-set',
+        status: 'applied',
+        nextValue: 'contoso.example',
+      })
+    );
+  });
+
   it('covers project init and doctor through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
 

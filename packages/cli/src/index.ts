@@ -623,6 +623,7 @@ async function runDeployApply(args: string[]): Promise<number> {
     const result = await executeDeployPlan(expectedPlan.data, {
       mode: mutation.data.mode,
       confirmed: mutation.data.yes,
+      parameterOverrides: discoveryOptions.data.parameterOverrides,
     });
 
     if (!result.data) {

@@ -415,6 +415,128 @@ describe('deploy fixture-backed goldens', () => {
     );
   });
 
+  it('executes detached saved-plan operations when explicit parameter overrides replace redacted values', async () => {
+    const savedPlan: DeployPlan = {
+      projectRoot: '/tmp/detached-plan',
+      generatedAt: '2026-03-10T00:00:00.000Z',
+      executionStages: ['resolve', 'preflight', 'plan', 'apply', 'report'],
+      supportedAdapters: ['github-actions', 'azure-devops', 'power-platform-pipelines'],
+      target: {
+        stage: 'prod',
+        environmentAlias: 'prod',
+        solutionUniqueName: 'CoreManaged',
+      },
+      inputs: [
+        {
+          name: 'tenantDomain',
+          source: 'secret',
+          hasValue: true,
+          sensitive: true,
+          reference: 'tenant_domain',
+          mappings: [
+            {
+              kind: 'dataverse-envvar',
+              target: 'pp_TenantDomain',
+            },
+          ],
+        },
+      ],
+      providerBindings: [],
+      topology: [],
+      templateRegistries: [],
+      build: {},
+      assets: [],
+      bindings: {
+        inputs: [],
+        secrets: [],
+      },
+      operations: [
+        {
+          kind: 'dataverse-envvar-set',
+          parameter: 'tenantDomain',
+          source: 'secret',
+          sensitive: true,
+          target: 'pp_TenantDomain',
+          valuePreview: '<redacted>',
+        },
+      ],
+    };
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [{ objectid: 'envvar-def-1' }],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const updateSpy = vi.spyOn(client, 'update');
+
+    const result = await executeDeployPlan(savedPlan, {
+      mode: 'apply',
+      confirmed: true,
+      parameterOverrides: {
+        tenantDomain: 'contoso.example',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.plan.inputs).toEqual([
+      expect.objectContaining({
+        name: 'tenantDomain',
+        source: 'value',
+        hasValue: true,
+        value: '<redacted>',
+      }),
+    ]);
+    expect(result.data?.plan.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'dataverse-envvar-set',
+        source: 'value',
+        valuePreview: '<redacted>',
+      })
+    );
+    expect(result.data?.preflight.checks.some((check) => check.code === 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_REDACTED')).toBe(false);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(result.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'dataverse-envvar-set',
+        status: 'applied',
+        nextValue: 'contoso.example',
+      })
+    );
+  });
+
   it('executes the supported deploy slice as a machine-readable dry run', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const discovery = await discoverProject(fixtureRoot, {

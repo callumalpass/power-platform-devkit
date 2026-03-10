@@ -66,6 +66,7 @@ Apply from a previously saved deploy plan:
 pp deploy plan --project . --format json > ./dist/deploy-plan.json
 pp deploy apply --project . --plan ./dist/deploy-plan.json --yes --format json
 pp deploy apply --plan ./dist/deploy-plan.json --yes --format json
+pp deploy apply --plan ./dist/deploy-plan.json --param tenantDomain=contoso.example --yes --format json
 ```
 
 Live apply is guarded. Without `--yes`, `mode: apply` returns a machine-readable
@@ -79,7 +80,9 @@ from the saved plan artifact instead of rediscovering the source project.
 Detached saved-plan execution can only run operations whose saved `valuePreview`
 still contains the executable value. Sensitive operations remain redacted in the
 saved plan and fail preflight with a machine-readable error until the project is
-rediscovered.
+rediscovered or explicit `--param NAME=VALUE` overrides supply those parameter
+values at apply time. Detached plan overrides update the shared deploy result
+shape without reintroducing project discovery.
 
 The output includes:
 
