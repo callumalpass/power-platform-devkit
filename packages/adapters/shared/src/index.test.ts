@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveDeployConfirm, resolveDeployMode, resolveParameterOverrides, runResolvedDeploy, type DeployBindingPublisher } from './index';
+import {
+  publishAzurePipelineDeployBindings,
+  resolveDeployConfirm,
+  resolveDeployMode,
+  resolveParameterOverrides,
+  runResolvedDeploy,
+  type DeployBindingPublisher,
+} from './index';
 import { createFixtureDataverseClient, mockDataverseResolution } from '../../../../test/dataverse-fixture';
 import { resolveRepoPath } from '../../../../test/golden';
 
@@ -114,5 +121,112 @@ describe('adapter shared deploy option helpers', () => {
         }),
       ],
     });
+  });
+
+  it('publishes resolved bindings as Azure Pipelines output variables on hosted agents', async () => {
+    const commandWriter = vi.fn<(command: string) => void>();
+    const result = await publishAzurePipelineDeployBindings(
+      {
+        inputs: [
+          {
+            kind: 'deploy-input',
+            parameter: 'sqlEndpoint',
+            source: 'parameter',
+            sensitive: false,
+            status: 'resolved',
+            target: 'sql-endpoint',
+            value: 'sql.contoso.example',
+            valuePreview: 'sql.contoso.example',
+          },
+        ],
+        secrets: [
+          {
+            kind: 'deploy-secret',
+            parameter: 'apiToken',
+            source: 'secret',
+            sensitive: true,
+            status: 'resolved',
+            target: 'api-token',
+            reference: 'app_token',
+            value: 'super-secret',
+            valuePreview: '<redacted>',
+          },
+        ],
+      },
+      {
+        source: '@pp/adapter-shared-test',
+        environment: {
+          TF_BUILD: 'True',
+        },
+        commandWriter,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(commandWriter.mock.calls).toEqual([
+      ['##vso[task.setvariable variable=PP_DEPLOY_SQL_ENDPOINT;isOutput=true]sql.contoso.example\n'],
+      ['##vso[task.setvariable variable=PP_DEPLOY_API_TOKEN;isOutput=true;isSecret=true]super-secret\n'],
+    ]);
+  });
+
+  it('does not emit Azure Pipelines commands outside hosted agents', async () => {
+    const commandWriter = vi.fn<(command: string) => void>();
+    const result = await publishAzurePipelineDeployBindings(
+      {
+        inputs: [
+          {
+            kind: 'deploy-input',
+            parameter: 'sqlEndpoint',
+            source: 'parameter',
+            sensitive: false,
+            status: 'resolved',
+            target: 'sql-endpoint',
+            value: 'sql.contoso.example',
+            valuePreview: 'sql.contoso.example',
+          },
+        ],
+        secrets: [],
+      },
+      {
+        source: '@pp/adapter-shared-test',
+        environment: {},
+        commandWriter,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(commandWriter).not.toHaveBeenCalled();
+  });
+
+  it('returns a diagnostic when Azure Pipelines output publication fails', async () => {
+    const result = await publishAzurePipelineDeployBindings(
+      {
+        inputs: [
+          {
+            kind: 'deploy-input',
+            parameter: 'sqlEndpoint',
+            source: 'parameter',
+            sensitive: false,
+            status: 'resolved',
+            target: 'sql-endpoint',
+            value: 'line1\nline2',
+            valuePreview: 'line1 line2',
+          },
+        ],
+        secrets: [],
+      },
+      {
+        source: '@pp/adapter-shared-test',
+        environment: {
+          TF_BUILD: 'true',
+        },
+        commandWriter: () => {
+          throw new Error('stdout closed');
+        },
+      }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe('DEPLOY_ADAPTER_AZURE_PIPELINES_OUTPUT_WRITE_FAILED');
   });
 });

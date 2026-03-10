@@ -36,6 +36,7 @@ steps:
     displayName: Install dependencies
 
   - script: node ./scripts/run-azure-deploy.mjs
+    name: deploy
     displayName: Run shared deploy orchestration
     env:
       PP_DEPLOY_PROJECT_PATH: $(Build.SourcesDirectory)
@@ -44,3 +45,6 @@ steps:
       PP_DEPLOY_CONFIRM: ${{ parameters.confirm }}
       PP_DEPLOY_PARAMETER_OVERRIDES: ${{ parameters.parameterOverrides }}
       PP_TENANT_DOMAIN: $(PP_TENANT_DOMAIN)
+
+  - script: echo $(deploy.PP_DEPLOY_SQL_ENDPOINT)
+    displayName: Use a resolved deploy binding

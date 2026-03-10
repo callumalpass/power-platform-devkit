@@ -21,6 +21,8 @@ export type DeployBindingPublisher = (
   }
 ) => Promise<OperationResult<void>> | OperationResult<void>;
 
+export type AzurePipelineLoggingCommandWriter = (command: string) => void | Promise<void>;
+
 export function resolveDeployMode(
   explicitMode: DeployExecutionMode | undefined,
   environmentMode: string | undefined,
@@ -139,6 +141,50 @@ export function resolveDeployConfirm(
   );
 }
 
+export async function publishAzurePipelineDeployBindings(
+  bindings: ResolvedDeployBindings,
+  options: {
+    source: string;
+    environment?: NodeJS.ProcessEnv;
+    commandWriter?: AzurePipelineLoggingCommandWriter;
+  }
+): Promise<OperationResult<void>> {
+  const environment = options.environment ?? process.env;
+
+  if (!isAzurePipelinesEnvironment(environment)) {
+    return ok(undefined);
+  }
+
+  const entries = [...bindings.inputs, ...bindings.secrets].filter((entry) => entry.status === 'resolved' && entry.value !== undefined);
+
+  if (entries.length === 0) {
+    return ok(undefined);
+  }
+
+  try {
+    const writer = options.commandWriter ?? defaultAzurePipelineLoggingCommandWriter;
+
+    for (const entry of entries) {
+      await writer(formatAzurePipelineSetVariableCommand(entry.target, entry.value!, entry.sensitive));
+    }
+
+    return ok(undefined);
+  } catch (error) {
+    return fail(
+      createDiagnostic(
+        'error',
+        'DEPLOY_ADAPTER_AZURE_PIPELINES_OUTPUT_WRITE_FAILED',
+        'Could not publish resolved deploy bindings to Azure Pipelines output variables.',
+        {
+          source: options.source,
+          detail: error instanceof Error ? error.message : String(error),
+          hint: 'Ensure the adapter is running on an Azure Pipelines agent and stdout is writable.',
+        }
+      )
+    );
+  }
+}
+
 export async function runResolvedDeploy(options: ResolvedDeployAdapterOptions): Promise<OperationResult<DeployExecutionResult>> {
   const project = await discoverProject(options.projectPath, {
     stage: options.stage,
@@ -179,4 +225,37 @@ export async function runResolvedDeploy(options: ResolvedDeployAdapterOptions): 
     ...result,
     warnings: [...result.warnings, ...publication.diagnostics, ...publication.warnings],
   };
+}
+
+function isAzurePipelinesEnvironment(environment: NodeJS.ProcessEnv): boolean {
+  return (environment.TF_BUILD ?? '').trim().toLowerCase() === 'true';
+}
+
+function defaultAzurePipelineLoggingCommandWriter(command: string): void {
+  process.stdout.write(command);
+}
+
+function formatAzurePipelineSetVariableCommand(name: string, value: string | number | boolean, isSecret: boolean): string {
+  const variableName = normalizeAzurePipelineVariableName(name);
+  const escapedValue = escapeAzurePipelinesValue(value);
+  const properties = [`variable=${variableName}`, 'isOutput=true'];
+
+  if (isSecret) {
+    properties.push('isSecret=true');
+  }
+
+  return `##vso[task.setvariable ${properties.join(';')}]${escapedValue}\n`;
+}
+
+function normalizeAzurePipelineVariableName(name: string): string {
+  const normalized = name
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase();
+
+  return `PP_DEPLOY_${normalized || 'VALUE'}`;
+}
+
+function escapeAzurePipelinesValue(value: string | number | boolean): string {
+  return String(value).replace(/%/g, '%AZP25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 }

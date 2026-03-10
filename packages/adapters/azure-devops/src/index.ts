@@ -1,8 +1,10 @@
 import {
+  publishAzurePipelineDeployBindings,
   resolveDeployConfirm,
   resolveDeployMode,
   resolveParameterOverrides,
   runResolvedDeploy,
+  type DeployBindingPublisher,
   type ResolvedDeployAdapterOptions,
 } from '../../shared/src/index';
 import { fail, ok, type OperationResult } from '@pp/diagnostics';
@@ -102,5 +104,14 @@ export async function runAzureDevOpsDeploy(options: AzureDevOpsDeployOptions = {
     });
   }
 
-  return runResolvedDeploy(resolved.data);
+  const publishBindings: DeployBindingPublisher = async (bindings, context) =>
+    publishAzurePipelineDeployBindings(bindings, {
+      source: '@pp/adapter-azure-devops',
+      environment: context.environment,
+    });
+
+  return runResolvedDeploy({
+    ...resolved.data,
+    publishBindings,
+  });
 }

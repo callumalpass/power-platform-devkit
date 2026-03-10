@@ -70,7 +70,8 @@ The adapter packages call the shared deploy service rather than reimplementing d
 
 Each adapter discovers the project and invokes the shared deploy execution path, so CI wrappers stay thin.
 Library consumers that need the resolved binding values directly can also call `resolveDeployBindings()` from `@pp/deploy`; the JSON plan/result shape keeps that same information in a redacted `bindings` summary.
-GitHub Actions now also publishes resolved `deploy-input` and `deploy-secret` bindings into the step output file when `GITHUB_OUTPUT` is available, so later steps can consume the same adapter-facing values without reparsing the deploy result.
+GitHub Actions publishes resolved `deploy-input` and `deploy-secret` bindings into the step output file when `GITHUB_OUTPUT` is available, so later steps can consume the same adapter-facing values without reparsing the deploy result.
+Azure DevOps and Power Platform Pipelines publish the same resolved bindings as Azure Pipelines output variables when the wrapper is running on a hosted agent (`TF_BUILD=true`). Those host-native output variables are normalized to `PP_DEPLOY_<TARGET>` names such as `PP_DEPLOY_SQL_ENDPOINT`.
 
 The repo now includes turnkey Node entrypoints for those wrappers:
 
@@ -130,11 +131,15 @@ Example:
 ```yaml
 steps:
   - script: node ./scripts/run-azure-deploy.mjs
+    name: deploy
     env:
       PP_DEPLOY_STAGE: prod
       PP_DEPLOY_MODE: apply
       PP_DEPLOY_CONFIRM: true
       PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}'
+
+  - script: echo $(deploy.PP_DEPLOY_SQL_ENDPOINT)
+    displayName: Use a resolved deploy binding
 ```
 
 ### Power Platform Pipelines
@@ -148,11 +153,15 @@ Example:
 ```yaml
 steps:
   - script: node ./scripts/run-pp-pipeline-deploy.mjs
+    name: deploy
     env:
       PP_DEPLOY_STAGE: prod
       PP_DEPLOY_MODE: apply
       PP_DEPLOY_CONFIRM: true
       PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}'
+
+  - script: echo $(deploy.PP_DEPLOY_SQL_ENDPOINT)
+    displayName: Use a resolved deploy binding
 ```
 
 `*_PARAMETER_OVERRIDES` values must be JSON objects whose values are strings, numbers, or booleans. Invalid JSON or unsupported `mode` values fail before project discovery or deploy execution begins.
