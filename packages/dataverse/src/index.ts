@@ -15,6 +15,8 @@ import {
   type GlobalOptionSetCreateSpec,
   type GlobalOptionSetUpdateSpec,
   type ManyToManyRelationshipCreateSpec,
+  type MetadataApplyOperation,
+  type MetadataApplyPlan,
   type MetadataBuildOptions,
   type OneToManyRelationshipCreateSpec,
   type TableCreateSpec,
@@ -124,6 +126,23 @@ export interface DataverseMetadataWriteOptions extends MetadataBuildOptions {
 export interface DataverseMetadataWriteResult<T = unknown> extends DataverseWriteResult<T> {
   published?: boolean;
   publishTargets?: string[];
+}
+
+export interface DataverseMetadataApplyOperationResult {
+  kind: MetadataApplyOperation['kind'];
+  status: number;
+  entity?: unknown;
+  entityId?: string;
+  location?: string;
+  publishTargets?: string[];
+  optionSetPublishTargets?: string[];
+}
+
+export interface DataverseMetadataApplyResult {
+  operations: DataverseMetadataApplyOperationResult[];
+  published?: boolean;
+  publishTargets?: string[];
+  optionSetPublishTargets?: string[];
 }
 
 export type EntityDefinition = Record<string, unknown>;
@@ -884,6 +903,77 @@ export class DataverseClient {
     return buildMetadataWriteResult(response, readBack, publish, publishTargets);
   }
 
+  async applyMetadataPlan(
+    plan: MetadataApplyPlan,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataApplyResult>> {
+    const orderedOperations = orderMetadataApplyOperations(plan.operations);
+    const operationResults: DataverseMetadataApplyOperationResult[] = [];
+    const diagnostics: Diagnostic[] = [];
+    const warnings: Diagnostic[] = [];
+    const entityPublishTargets: string[] = [];
+    const optionSetPublishTargets: string[] = [];
+
+    for (const operation of orderedOperations) {
+      const result = await this.applyMetadataOperation(operation, {
+        ...options,
+        publish: false,
+      });
+
+      if (!result.success || !result.data) {
+        return fail(result.diagnostics, {
+          supportTier: 'preview',
+          warnings: [...warnings, ...result.warnings],
+        });
+      }
+
+      diagnostics.push(...result.diagnostics);
+      warnings.push(...result.warnings);
+      operationResults.push(result.data);
+      entityPublishTargets.push(...(result.data.publishTargets ?? []));
+      optionSetPublishTargets.push(...(result.data.optionSetPublishTargets ?? []));
+    }
+
+    let publishResponse: OperationResult<DataverseWriteResult> | undefined;
+
+    if (options.publish !== false) {
+      publishResponse = await this.publishMetadataTargets(
+        {
+          entities: uniqueStrings(entityPublishTargets),
+          optionSets: uniqueStrings(optionSetPublishTargets),
+        },
+        options.solutionUniqueName
+      );
+
+      if (publishResponse.success) {
+        warnings.push(...publishResponse.warnings);
+      } else {
+        warnings.push(
+          createDiagnostic('warning', 'DATAVERSE_METADATA_PUBLISH_FAILED', 'Metadata was applied, but publish did not complete successfully.', {
+            source: '@pp/dataverse',
+            detail: publishResponse.diagnostics.map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`).join('; '),
+          }),
+          ...demoteDiagnostics(publishResponse.diagnostics),
+          ...publishResponse.warnings
+        );
+      }
+    }
+
+    return ok(
+      compactObject({
+        operations: operationResults,
+        published: publishResponse ? publishResponse.success : undefined,
+        publishTargets: publishResponse ? uniqueStrings(entityPublishTargets) : undefined,
+        optionSetPublishTargets: publishResponse ? uniqueStrings(optionSetPublishTargets) : undefined,
+      }),
+      {
+        supportTier: 'preview',
+        diagnostics,
+        warnings,
+      }
+    );
+  }
+
   async publishXml(parameterXml: string, solutionUniqueName?: string): Promise<OperationResult<DataverseWriteResult>> {
     const response = await this.request<void>({
       path: 'PublishXml',
@@ -924,6 +1014,89 @@ export class DataverseClient {
   async publishOptionSets(names: string[], solutionUniqueName?: string): Promise<OperationResult<DataverseWriteResult>> {
     const optionSets = uniqueStrings(names).map((name) => `<optionset>${escapeXml(name)}</optionset>`).join('');
     return this.publishXml(`<importexportxml><optionsets>${optionSets}</optionsets></importexportxml>`, solutionUniqueName);
+  }
+
+  async publishMetadataTargets(
+    targets: { entities?: string[]; optionSets?: string[] },
+    solutionUniqueName?: string
+  ): Promise<OperationResult<DataverseWriteResult>> {
+    const entities = uniqueStrings(targets.entities ?? []);
+    const optionSets = uniqueStrings(targets.optionSets ?? []);
+
+    if (entities.length === 0 && optionSets.length === 0) {
+      return ok(
+        {
+          status: 204,
+          headers: {},
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+
+    const entityXml = entities.length > 0 ? `<entities>${entities.map((logicalName) => `<entity>${escapeXml(logicalName)}</entity>`).join('')}</entities>` : '';
+    const optionSetXml =
+      optionSets.length > 0 ? `<optionsets>${optionSets.map((name) => `<optionset>${escapeXml(name)}</optionset>`).join('')}</optionsets>` : '';
+
+    return this.publishXml(`<importexportxml>${entityXml}${optionSetXml}</importexportxml>`, solutionUniqueName);
+  }
+
+  private async applyMetadataOperation(
+    operation: MetadataApplyOperation,
+    options: DataverseMetadataWriteOptions
+  ): Promise<OperationResult<DataverseMetadataApplyOperationResult>> {
+    switch (operation.kind) {
+      case 'create-table': {
+        const result = await this.createTable(operation.spec, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result, [resolveLogicalName(operation.spec.schemaName, operation.spec.logicalName)]);
+      }
+      case 'add-column': {
+        const result = await this.createColumn(operation.tableLogicalName, operation.spec, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result, [operation.tableLogicalName]);
+      }
+      case 'create-option-set': {
+        const result = await this.createGlobalOptionSet(operation.spec, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result, undefined, [operation.spec.name]);
+      }
+      case 'update-option-set': {
+        const result = await this.updateGlobalOptionSet(operation.spec, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result, undefined, [operation.spec.name]);
+      }
+      case 'create-relationship': {
+        const result = await this.createOneToManyRelationship(operation.spec, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result, [operation.spec.referencedEntity, operation.spec.referencingEntity]);
+      }
+      case 'create-many-to-many': {
+        const result = await this.createManyToManyRelationship(operation.spec, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result, [operation.spec.entity1LogicalName, operation.spec.entity2LogicalName]);
+      }
+      case 'create-customer-relationship': {
+        const result = await this.createCustomerRelationship(operation.spec, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result, ['account', 'contact', operation.spec.tableLogicalName]);
+      }
+    }
   }
 
   private async metadataQuery<T>(
@@ -2529,6 +2702,34 @@ function combineReadResults<T>(
   });
 }
 
+function mapApplyOperationResult(
+  kind: MetadataApplyOperation['kind'],
+  result: OperationResult<DataverseMetadataWriteResult<unknown>>,
+  publishTargets?: string[],
+  optionSetPublishTargets?: string[]
+): OperationResult<DataverseMetadataApplyOperationResult> {
+  if (!result.success || !result.data) {
+    return result as unknown as OperationResult<DataverseMetadataApplyOperationResult>;
+  }
+
+  return ok(
+    compactObject({
+      kind,
+      status: result.data.status,
+      entity: result.data.entity,
+      entityId: result.data.entityId,
+      location: result.data.location,
+      publishTargets: publishTargets ? uniqueStrings(publishTargets) : undefined,
+      optionSetPublishTargets: optionSetPublishTargets ? uniqueStrings(optionSetPublishTargets) : undefined,
+    }),
+    {
+      supportTier: 'preview',
+      diagnostics: result.diagnostics,
+      warnings: result.warnings,
+    }
+  );
+}
+
 function escapeODataLiteral(value: string): string {
   return value.replaceAll("'", "''");
 }
@@ -2635,6 +2836,26 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
+function orderMetadataApplyOperations(operations: MetadataApplyOperation[]): MetadataApplyOperation[] {
+  const precedence: Record<MetadataApplyOperation['kind'], number> = {
+    'create-option-set': 10,
+    'update-option-set': 20,
+    'create-table': 30,
+    'add-column': 40,
+    'create-relationship': 50,
+    'create-many-to-many': 60,
+    'create-customer-relationship': 70,
+  };
+
+  return operations
+    .map((operation, index) => ({ operation, index }))
+    .sort((left, right) => {
+      const precedenceDelta = precedence[left.operation.kind] - precedence[right.operation.kind];
+      return precedenceDelta !== 0 ? precedenceDelta : left.index - right.index;
+    })
+    .map((entry) => entry.operation);
+}
+
 function resolveRelationshipReadKinds(kind: RelationshipMetadataKind | undefined): Array<Exclude<RelationshipMetadataKind, 'auto'>> {
   if (kind === 'one-to-many' || kind === 'many-to-many') {
     return [kind];
@@ -2670,6 +2891,9 @@ export {
   buildManyToManyRelationshipCreatePayload,
   buildOneToManyRelationshipCreatePayload,
   buildTableCreatePayload,
+  metadataApplyOperationSchema,
+  metadataApplyPlanSchema,
+  parseMetadataApplyPlan,
   parseCustomerRelationshipCreateSpec,
   parseColumnCreateSpec,
   parseGlobalOptionSetCreateSpec,
@@ -2683,6 +2907,8 @@ export {
   type GlobalOptionSetCreateSpec,
   type GlobalOptionSetUpdateSpec,
   type ManyToManyRelationshipCreateSpec,
+  type MetadataApplyOperation,
+  type MetadataApplyPlan,
   type MetadataBuildOptions,
   type OneToManyRelationshipCreateSpec,
   type TableCreateSpec,

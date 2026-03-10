@@ -247,6 +247,7 @@ Notes:
 Create metadata from structured spec files:
 
 ```bash
+pp dv metadata apply --env dev --file ./specs/schema.apply.yaml --solution Core
 pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
 pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
 pp dv metadata create-option-set --env dev --file ./specs/status.optionset.yaml --solution Core
@@ -284,9 +285,26 @@ Normalized inspection defaults:
 Common flags:
 
 - `--file` accepts JSON, YAML, or YML
+- `dv metadata apply --file` accepts a manifest whose `operations` entries point at isolated spec files; `add-column` entries also require `tableLogicalName`
 - `--solution` adds `MSCRM.SolutionUniqueName` to the metadata request
 - `--language-code` defaults to `1033`
 - publish happens by default after create; use `--no-publish` to skip it
+
+Example apply manifest:
+
+```yaml
+operations:
+  - kind: create-table
+    file: ./project.table.yaml
+  - kind: add-column
+    tableLogicalName: pp_project
+    file: ./project-number.column.yaml
+  - kind: add-column
+    tableLogicalName: pp_project
+    file: ./project-status.column.yaml
+  - kind: create-relationship
+    file: ./task-project.relationship.yaml
+```
 
 Example table spec:
 

@@ -2,7 +2,7 @@
 
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path';
+import { basename, dirname, extname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +42,7 @@ import {
   parseCustomerRelationshipCreateSpec,
   parseGlobalOptionSetCreateSpec,
   parseGlobalOptionSetUpdateSpec,
+  parseMetadataApplyPlan,
   parseManyToManyRelationshipCreateSpec,
   parseOneToManyRelationshipCreateSpec,
   parseTableCreateSpec,
@@ -50,6 +51,7 @@ import {
   normalizeGlobalOptionSetDefinition,
   normalizeRelationshipDefinition,
   resolveDataverseClient,
+  type MetadataApplyPlan,
   type AttributeMetadataView,
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
@@ -2844,7 +2846,7 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'DV_METADATA_ACTION_REQUIRED',
-        'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata option-set <name>`, `dv metadata relationship <schemaName>`, `dv metadata create-table`, `dv metadata add-column`, `dv metadata create-option-set`, `dv metadata update-option-set`, `dv metadata create-relationship`, `dv metadata create-many-to-many`, or `dv metadata create-customer-relationship`.'
+        'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata option-set <name>`, `dv metadata relationship <schemaName>`, `dv metadata apply`, `dv metadata create-table`, `dv metadata add-column`, `dv metadata create-option-set`, `dv metadata update-option-set`, `dv metadata create-relationship`, `dv metadata create-many-to-many`, or `dv metadata create-customer-relationship`.'
       )
     );
   }
@@ -2871,6 +2873,10 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
 
   if (action === 'relationship') {
     return runDataverseMetadataRelationship(args);
+  }
+
+  if (action === 'apply') {
+    return runDataverseMetadataApply(args);
   }
 
   if (action === 'create-table') {
@@ -3124,6 +3130,44 @@ async function runDataverseMetadataRelationship(args: string[]): Promise<number>
   const payload = view.data === 'raw' ? result.data : normalizeRelationshipDefinition(result.data);
   printWarnings(result);
   printByFormat(payload, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseMetadataApply(args: string[]): Promise<number> {
+  const plan = await readMetadataApplyPlanArgument(args);
+
+  if (!plan.success || !plan.data) {
+    return printFailure(plan);
+  }
+
+  const writeOptions = readMetadataCreateOptions(args);
+
+  if (!writeOptions.success || !writeOptions.data) {
+    return printFailure(writeOptions);
+  }
+
+  const orderedPlan = orderMetadataApplyPlanForCli(plan.data);
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.metadata.apply', { solution: writeOptions.data?.solutionUniqueName }, orderedPlan);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await resolution.data.client.applyMetadataPlan(orderedPlan, writeOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -5428,6 +5472,28 @@ function readRelationshipKind(args: string[]): OperationResult<RelationshipMetad
   return argumentFailure('DV_METADATA_RELATIONSHIP_KIND_INVALID', 'Unsupported --kind. Use `auto`, `one-to-many`, or `many-to-many`.');
 }
 
+function orderMetadataApplyPlanForCli(plan: MetadataApplyPlan): MetadataApplyPlan {
+  const precedence: Record<MetadataApplyPlan['operations'][number]['kind'], number> = {
+    'create-option-set': 10,
+    'update-option-set': 20,
+    'create-table': 30,
+    'add-column': 40,
+    'create-relationship': 50,
+    'create-many-to-many': 60,
+    'create-customer-relationship': 70,
+  };
+
+  return {
+    operations: plan.operations
+      .map((operation, index) => ({ operation, index }))
+      .sort((left, right) => {
+        const precedenceDelta = precedence[left.operation.kind] - precedence[right.operation.kind];
+        return precedenceDelta !== 0 ? precedenceDelta : left.index - right.index;
+      })
+      .map((entry) => entry.operation),
+  };
+}
+
 function mergeUniqueStrings(base: readonly string[], extra: string[] | undefined): string[] {
   return [...new Set([...base, ...(extra ?? [])])];
 }
@@ -5507,6 +5573,182 @@ async function readStructuredSpecArgument(
     return argumentFailure(missingCode, missingMessage);
   }
 
+  return readStructuredSpecFile(file);
+}
+
+async function readMetadataApplyPlanArgument(args: string[]): Promise<OperationResult<MetadataApplyPlan>> {
+  const manifestPath = readFlag(args, '--file');
+
+  if (!manifestPath) {
+    return argumentFailure('DV_METADATA_APPLY_FILE_REQUIRED', 'Usage: dv metadata apply --file FILE --environment <alias>');
+  }
+
+  const manifest = await readStructuredSpecFile(manifestPath);
+
+  if (!manifest.success || manifest.data === undefined) {
+    return manifest as OperationResult<MetadataApplyPlan>;
+  }
+
+  if (!isRecord(manifest.data)) {
+    return fail(
+      createDiagnostic('error', 'CLI_SPEC_INVALID', 'Structured spec files must parse to an object.', {
+        source: '@pp/cli',
+        path: manifestPath,
+      })
+    );
+  }
+
+  const operationsValue = manifest.data.operations;
+
+  if (!Array.isArray(operationsValue) || operationsValue.length === 0) {
+    return fail(
+      createDiagnostic('error', 'DV_METADATA_APPLY_OPERATIONS_REQUIRED', 'Metadata apply manifests require a non-empty operations array.', {
+        source: '@pp/cli',
+        path: manifestPath,
+      })
+    );
+  }
+
+  const loadedOperations: unknown[] = [];
+
+  for (let index = 0; index < operationsValue.length; index += 1) {
+    const entry = operationsValue[index];
+
+    if (!isRecord(entry)) {
+      return fail(
+        createDiagnostic('error', 'DV_METADATA_APPLY_OPERATION_INVALID', `Operation ${index + 1} must be an object.`, {
+          source: '@pp/cli',
+          path: manifestPath,
+        })
+      );
+    }
+
+    const kind = typeof entry.kind === 'string' ? entry.kind : undefined;
+    const specFile = typeof entry.file === 'string' ? entry.file : undefined;
+
+    if (!kind || !specFile) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'DV_METADATA_APPLY_OPERATION_INVALID',
+          `Operation ${index + 1} must include string values for kind and file.`,
+          {
+            source: '@pp/cli',
+            path: manifestPath,
+          }
+        )
+      );
+    }
+
+    const childPath = resolvePath(dirname(manifestPath), specFile);
+    const childSpec = await readStructuredSpecFile(childPath);
+
+    if (!childSpec.success || childSpec.data === undefined) {
+      return childSpec as unknown as OperationResult<MetadataApplyPlan>;
+    }
+
+    switch (kind) {
+      case 'create-table': {
+        const spec = parseTableCreateSpec(childSpec.data);
+
+        if (!spec.success || !spec.data) {
+          return spec as unknown as OperationResult<MetadataApplyPlan>;
+        }
+
+        loadedOperations.push({ kind, spec: spec.data });
+        break;
+      }
+      case 'add-column': {
+        const tableLogicalName = typeof entry.tableLogicalName === 'string' ? entry.tableLogicalName : undefined;
+
+        if (!tableLogicalName) {
+          return fail(
+            createDiagnostic(
+              'error',
+              'DV_METADATA_APPLY_TABLE_REQUIRED',
+              `Operation ${index + 1} must include tableLogicalName for add-column.`,
+              {
+                source: '@pp/cli',
+                path: manifestPath,
+              }
+            )
+          );
+        }
+
+        const spec = parseColumnCreateSpec(childSpec.data);
+
+        if (!spec.success || !spec.data) {
+          return spec as unknown as OperationResult<MetadataApplyPlan>;
+        }
+
+        loadedOperations.push({ kind, tableLogicalName, spec: spec.data });
+        break;
+      }
+      case 'create-option-set': {
+        const spec = parseGlobalOptionSetCreateSpec(childSpec.data);
+
+        if (!spec.success || !spec.data) {
+          return spec as unknown as OperationResult<MetadataApplyPlan>;
+        }
+
+        loadedOperations.push({ kind, spec: spec.data });
+        break;
+      }
+      case 'update-option-set': {
+        const spec = parseGlobalOptionSetUpdateSpec(childSpec.data);
+
+        if (!spec.success || !spec.data) {
+          return spec as unknown as OperationResult<MetadataApplyPlan>;
+        }
+
+        loadedOperations.push({ kind, spec: spec.data });
+        break;
+      }
+      case 'create-relationship': {
+        const spec = parseOneToManyRelationshipCreateSpec(childSpec.data);
+
+        if (!spec.success || !spec.data) {
+          return spec as unknown as OperationResult<MetadataApplyPlan>;
+        }
+
+        loadedOperations.push({ kind, spec: spec.data });
+        break;
+      }
+      case 'create-many-to-many': {
+        const spec = parseManyToManyRelationshipCreateSpec(childSpec.data);
+
+        if (!spec.success || !spec.data) {
+          return spec as unknown as OperationResult<MetadataApplyPlan>;
+        }
+
+        loadedOperations.push({ kind, spec: spec.data });
+        break;
+      }
+      case 'create-customer-relationship': {
+        const spec = parseCustomerRelationshipCreateSpec(childSpec.data);
+
+        if (!spec.success || !spec.data) {
+          return spec as unknown as OperationResult<MetadataApplyPlan>;
+        }
+
+        loadedOperations.push({ kind, spec: spec.data });
+        break;
+      }
+      default:
+        return fail(
+          createDiagnostic('error', 'DV_METADATA_APPLY_KIND_INVALID', `Unsupported metadata apply kind ${kind}.`, {
+            source: '@pp/cli',
+            path: manifestPath,
+          })
+        );
+    }
+  }
+
+  return parseMetadataApplyPlan({ operations: loadedOperations });
+}
+
+async function readStructuredSpecFile(file: string): Promise<OperationResult<unknown>> {
+
   try {
     const contents = await readFile(file, 'utf8');
     const parsed = parseStructuredText(contents, file);
@@ -5534,6 +5776,10 @@ async function readStructuredSpecArgument(
       })
     );
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function parseStructuredText(contents: string, sourcePath: string): OperationResult<unknown> {
@@ -5688,7 +5934,7 @@ function readSolutionCompareInput(args: string[], side: 'source' | 'target'): Op
       kind: 'folder' as const,
       value: readFlag(args, `--${side}-folder`),
     },
-  ].filter((option) => option.value);
+  ].filter((option): option is SolutionCompareInput => Boolean(option.value));
 
   if (options.length !== 1) {
     return argumentFailure(
@@ -5697,7 +5943,7 @@ function readSolutionCompareInput(args: string[], side: 'source' | 'target'): Op
     );
   }
 
-  return ok(options[0], {
+  return ok(options[0]!, {
     supportTier: 'preview',
   });
 }
@@ -5719,7 +5965,7 @@ async function resolveSolutionCompareAnalysis(
     const resolution = await resolveDataverseClientByFlag(args, `--${side}-env`);
 
     if (!resolution.success || !resolution.data) {
-      return resolution as OperationResult<SolutionAnalysis>;
+      return resolution as unknown as OperationResult<SolutionAnalysis>;
     }
 
     const analysis = await new SolutionService(resolution.data.client).analyze(uniqueName);
@@ -5828,6 +6074,7 @@ function printHelp(): void {
       '  dv metadata column <tableLogicalName> <columnLogicalName> --environment ALIAS [--view common|detailed|raw] [--select a,b] [--expand x,y] [--config-dir path]',
       '  dv metadata option-set <name> --environment ALIAS [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
       '  dv metadata relationship <schemaName> --environment ALIAS [--kind auto|one-to-many|many-to-many] [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata apply --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '  dv metadata create-table --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '  dv metadata add-column <tableLogicalName> --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '  dv metadata create-option-set --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',

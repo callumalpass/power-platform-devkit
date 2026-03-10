@@ -3969,6 +3969,87 @@ describe('cli fixture-backed workflows', () => {
     expect(envvarInspectHelp.stdout).not.toContain('ENVVAR_IDENTIFIER_REQUIRED');
   });
 
+  it('previews a multi-file dataverse metadata apply manifest through one command', async () => {
+    const tempDir = await createTempDir();
+    const manifestPath = join(tempDir, 'schema.apply.yaml');
+    const tablePath = join(tempDir, 'project.table.yaml');
+    const columnPath = join(tempDir, 'project-status.column.yaml');
+    const relationshipPath = join(tempDir, 'task-project.relationship.yaml');
+
+    await writeFile(
+      manifestPath,
+      [
+        'operations:',
+        '  - kind: create-relationship',
+        '    file: task-project.relationship.yaml',
+        '  - kind: add-column',
+        '    tableLogicalName: pp_project',
+        '    file: project-status.column.yaml',
+        '  - kind: create-table',
+        '    file: project.table.yaml',
+      ].join('\n')
+    );
+    await writeFile(
+      tablePath,
+      [
+        'schemaName: pp_Project',
+        'displayName: Project',
+        'pluralDisplayName: Projects',
+        'primaryName:',
+        '  schemaName: pp_Name',
+        '  displayName: Name',
+      ].join('\n')
+    );
+    await writeFile(
+      columnPath,
+      [
+        'kind: choice',
+        'schemaName: pp_Status',
+        'displayName: Status',
+        'options:',
+        '  - label: New',
+        '    value: 100000000',
+      ].join('\n')
+    );
+    await writeFile(
+      relationshipPath,
+      [
+        'schemaName: pp_project_task',
+        'referencedEntity: pp_project',
+        'referencingEntity: pp_task',
+        'lookup:',
+        '  schemaName: pp_ProjectId',
+        '  displayName: Project',
+      ].join('\n')
+    );
+
+    const preview = await runCli([
+      'dv',
+      'metadata',
+      'apply',
+      '--env',
+      'source',
+      '--file',
+      manifestPath,
+      '--dry-run',
+      '--format',
+      'json',
+    ]);
+
+    expect(preview.code).toBe(0);
+    expect(preview.stderr).toBe('');
+    expect(JSON.parse(preview.stdout)).toMatchObject({
+      action: 'dv.metadata.apply',
+      input: {
+        operations: [
+          { kind: 'create-table' },
+          { kind: 'add-column', tableLogicalName: 'pp_project' },
+          { kind: 'create-relationship' },
+        ],
+      },
+    });
+  });
+
   it('returns a stable not-found contract for missing environment variables', async () => {
     mockDataverseResolution({
       source: createFixtureDataverseClient({

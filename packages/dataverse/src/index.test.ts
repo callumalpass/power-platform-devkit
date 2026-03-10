@@ -645,6 +645,157 @@ describe('DataverseClient', () => {
     });
   });
 
+  it('applies a mixed metadata plan in dependency-safe order and publishes once', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          Name: 'pp_status',
+          MetadataId: '00000000-0000-0000-0000-000000000020',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'pp_project',
+          SchemaName: 'pp_Project',
+          MetadataId: '00000000-0000-0000-0000-000000000010',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'pp_statusreason',
+          SchemaName: 'pp_StatusReason',
+          MetadataId: '00000000-0000-0000-0000-000000000011',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          SchemaName: 'pp_project_task',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.applyMetadataPlan(
+      {
+        operations: [
+          {
+            kind: 'create-relationship',
+            spec: {
+              schemaName: 'pp_project_task',
+              referencedEntity: 'pp_project',
+              referencingEntity: 'pp_task',
+              lookup: {
+                schemaName: 'pp_ProjectId',
+                displayName: 'Project',
+              },
+              associatedMenuBehavior: 'useCollectionName',
+              associatedMenuGroup: 'details',
+              associatedMenuOrder: 10000,
+            },
+          },
+          {
+            kind: 'add-column',
+            tableLogicalName: 'pp_project',
+            spec: {
+              kind: 'choice',
+              schemaName: 'pp_StatusReason',
+              displayName: 'Status Reason',
+              globalOptionSetName: 'pp_status',
+            },
+          },
+          {
+            kind: 'create-table',
+            spec: {
+              schemaName: 'pp_Project',
+              displayName: 'Project',
+              pluralDisplayName: 'Projects',
+              primaryName: {
+                schemaName: 'pp_Name',
+                displayName: 'Name',
+                maxLength: 200,
+              },
+              hasActivities: false,
+              hasNotes: true,
+              isActivity: false,
+              ownership: 'userOwned',
+            },
+          },
+          {
+            kind: 'create-option-set',
+            spec: {
+              name: 'pp_status',
+              displayName: 'Status',
+              options: [{ label: 'New', value: 100000000 }],
+            },
+          },
+        ],
+      },
+      {
+        solutionUniqueName: 'Core',
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.published).toBe(true);
+    expect(result.data?.publishTargets).toEqual(['pp_project', 'pp_task']);
+    expect(result.data?.optionSetPublishTargets).toEqual(['pp_status']);
+    expect(result.data?.operations.map((operation) => operation.kind)).toEqual([
+      'create-option-set',
+      'create-table',
+      'add-column',
+      'create-relationship',
+    ]);
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'GlobalOptionSetDefinitions',
+      "GlobalOptionSetDefinitions(Name='pp_status')",
+      'EntityDefinitions',
+      "EntityDefinitions(LogicalName='pp_project')",
+      "EntityDefinitions(LogicalName='pp_project')/Attributes",
+      "EntityDefinitions(LogicalName='pp_project')/Attributes(LogicalName='pp_statusreason')",
+      'RelationshipDefinitions',
+      "RelationshipDefinitions(SchemaName='pp_project_task')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata",
+      'PublishXml',
+    ]);
+    expect(httpClient.requests[8]?.body).toEqual({
+      ParameterXml:
+        '<importexportxml><entities><entity>pp_project</entity><entity>pp_task</entity></entities><optionsets><optionset>pp_status</optionset></optionsets></importexportxml>',
+    });
+  });
+
   it('creates a many-to-many relationship and publishes both entities', async () => {
     const httpClient = new FakeHttpClient([
       ok({

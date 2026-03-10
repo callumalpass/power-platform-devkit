@@ -221,6 +221,42 @@ export const globalOptionSetUpdateSpecSchema = z.object({
   orderValues: z.array(z.number().int()).optional(),
 });
 
+export const metadataApplyOperationSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('create-table'),
+    spec: tableCreateSpecSchema,
+  }),
+  z.object({
+    kind: z.literal('add-column'),
+    tableLogicalName: z.string().min(1),
+    spec: columnCreateSpecSchema,
+  }),
+  z.object({
+    kind: z.literal('create-option-set'),
+    spec: globalOptionSetCreateSpecSchema,
+  }),
+  z.object({
+    kind: z.literal('update-option-set'),
+    spec: globalOptionSetUpdateSpecSchema,
+  }),
+  z.object({
+    kind: z.literal('create-relationship'),
+    spec: oneToManyRelationshipCreateSpecSchema,
+  }),
+  z.object({
+    kind: z.literal('create-many-to-many'),
+    spec: manyToManyRelationshipCreateSpecSchema,
+  }),
+  z.object({
+    kind: z.literal('create-customer-relationship'),
+    spec: customerRelationshipCreateSpecSchema,
+  }),
+]);
+
+export const metadataApplyPlanSchema = z.object({
+  operations: z.array(metadataApplyOperationSchema).min(1),
+});
+
 export type RequiredLevel = z.output<typeof requiredLevelSchema>;
 export type TableCreateSpec = z.output<typeof tableCreateSpecSchema>;
 export type ColumnCreateSpec = z.output<typeof columnCreateSpecSchema>;
@@ -229,6 +265,8 @@ export type OneToManyRelationshipCreateSpec = z.output<typeof oneToManyRelations
 export type ManyToManyRelationshipCreateSpec = z.output<typeof manyToManyRelationshipCreateSpecSchema>;
 export type CustomerRelationshipCreateSpec = z.output<typeof customerRelationshipCreateSpecSchema>;
 export type GlobalOptionSetUpdateSpec = z.output<typeof globalOptionSetUpdateSpecSchema>;
+export type MetadataApplyOperation = z.output<typeof metadataApplyOperationSchema>;
+export type MetadataApplyPlan = z.output<typeof metadataApplyPlanSchema>;
 
 export interface MetadataBuildOptions {
   languageCode?: number;
@@ -284,6 +322,15 @@ export function parseGlobalOptionSetUpdateSpec(input: unknown): OperationResult<
     input,
     'DATAVERSE_METADATA_OPTIONSET_SPEC_INVALID',
     'Global option set update spec is invalid.'
+  );
+}
+
+export function parseMetadataApplyPlan(input: unknown): OperationResult<MetadataApplyPlan> {
+  return parseSpec(
+    metadataApplyPlanSchema,
+    input,
+    'DATAVERSE_METADATA_APPLY_PLAN_INVALID',
+    'Metadata apply plan is invalid.'
   );
 }
 
