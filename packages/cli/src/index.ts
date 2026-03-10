@@ -288,6 +288,8 @@ async function runSolution(command: string | undefined, args: string[]): Promise
   switch (command) {
     case 'create':
       return runSolutionCreate(args);
+    case 'set-metadata':
+      return runSolutionSetMetadata(args);
     case 'list':
       return runSolutionList(args);
     case 'inspect':
@@ -432,6 +434,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     }
 
     if (!solution.data) {
+      const missingSolutionSuggestedNextActions = buildCanvasMissingSolutionSuggestions(envAlias, explicitSolutionUniqueName ?? solutionUniqueName);
       return printFailure(
         fail(
           [
@@ -452,9 +455,13 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
             ),
           ],
           {
-            supportTier: 'preview',
-            suggestedNextActions: buildCanvasMissingSolutionSuggestions(envAlias, explicitSolutionUniqueName ?? solutionUniqueName),
-            knownLimitations,
+            ...buildCanvasRemoteMutationResultMetadata({
+              envAlias,
+              solutionUniqueName,
+              makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+              suggestedNextActions: missingSolutionSuggestedNextActions,
+              knownLimitations,
+            }),
           }
         )
       );
@@ -481,6 +488,13 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
     derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
   });
+  const resultMetadata = buildCanvasRemoteMutationResultMetadata({
+    envAlias,
+    solutionUniqueName,
+    makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+    suggestedNextActions,
+    knownLimitations,
+  });
 
   if (mutation.data.mode !== 'apply') {
     printByFormat(
@@ -500,7 +514,8 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           fallback: fallbackDetails,
           suggestedNextActions,
           knownLimitations,
-        }
+        },
+        resultMetadata
       ),
       outputFormat(args, 'json')
     );
@@ -533,8 +548,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           {
             supportTier: 'preview',
             details: fallbackDetails,
-            suggestedNextActions,
-            knownLimitations,
+            ...resultMetadata,
           }
         )
       );
@@ -566,8 +580,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
         },
         handoff: fallbackDetails,
         launch: launched.data,
-        suggestedNextActions,
-        knownLimitations,
+        ...resultMetadata,
       },
       outputFormat(args, 'json')
     );
@@ -589,13 +602,44 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
         }
       ),
       {
-        supportTier: 'preview',
         details: fallbackDetails,
-        suggestedNextActions,
-        knownLimitations,
+        ...resultMetadata,
       }
     )
   );
+}
+
+function buildCanvasRemoteMutationResultMetadata(context: {
+  envAlias: string;
+  solutionUniqueName?: string;
+  makerEnvironmentId?: string;
+  suggestedNextActions: string[];
+  knownLimitations: string[];
+}): {
+  supportTier: 'preview';
+  suggestedNextActions: string[];
+  provenance: Array<{ kind: 'official-api' | 'inferred'; source: string; detail: string }>;
+  knownLimitations: string[];
+} {
+  const provenance: Array<{ kind: 'official-api' | 'inferred'; source: string; detail: string }> = [
+    {
+      kind: 'official-api',
+      source: '@pp/cli canvas remote mutation resolution',
+      detail: `Environment alias ${context.envAlias} was resolved through configured Dataverse metadata${context.solutionUniqueName ? ` and solution ${context.solutionUniqueName}` : ''}.`,
+    },
+    {
+      kind: 'inferred',
+      source: '@pp/cli canvas Maker fallback guidance',
+      detail: `Maker handoff URLs and verification commands were synthesized from the resolved environment${context.makerEnvironmentId ? ` (${context.makerEnvironmentId})` : ''} and command inputs.`,
+    },
+  ];
+
+  return {
+    supportTier: 'preview',
+    suggestedNextActions: context.suggestedNextActions,
+    provenance,
+    knownLimitations: context.knownLimitations,
+  };
 }
 
 function buildCanvasRemoteMutationSuggestions(
@@ -2789,6 +2833,52 @@ async function runSolutionInspect(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runSolutionSetMetadata(args: string[]): Promise<number> {
+  const uniqueName = positionalArgs(args)[0];
+
+  if (!uniqueName) {
+    return printFailure(
+      argumentFailure(
+        'SOLUTION_SET_METADATA_ARGS_REQUIRED',
+        'Usage: solution set-metadata <uniqueName> --env <alias> [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]'
+      )
+    );
+  }
+
+  const version = readFlag(args, '--version');
+  const publisherId = readFlag(args, '--publisher-id');
+  const publisherUniqueName = readFlag(args, '--publisher-unique-name');
+
+  if (!version && !publisherId && !publisherUniqueName) {
+    return printFailure(
+      argumentFailure(
+        'SOLUTION_METADATA_UPDATE_REQUIRED',
+        'Use --version, --publisher-id, or --publisher-unique-name when updating solution metadata.'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new SolutionService(resolution.data.client);
+  const result = await service.setMetadata(uniqueName, {
+    version,
+    publisherId,
+    publisherUniqueName,
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runSolutionComponents(args: string[]): Promise<number> {
   const uniqueName = positionalArgs(args)[0];
 
@@ -4512,6 +4602,7 @@ function printHelp(): void {
       '  dv metadata create-customer-relationship --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '',
       '  solution create <uniqueName> --env ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)',
+      '  solution set-metadata <uniqueName> --env ALIAS [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]',
       '  solution list --env ALIAS [--config-dir path]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',
       '  solution components <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',

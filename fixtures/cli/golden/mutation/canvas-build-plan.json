@@ -1,7 +1,11 @@
 {
   "action": "canvas.build",
   "confirmed": false,
+  "knownLimitations": [],
   "mode": "plan",
+  "provenance": [],
+  "suggestedNextActions": [],
+  "supportTier": "preview",
   "target": {
     "mode": "strict",
     "outPath": "<TMP_DIR>/FixtureCanvas.plan.msapp",

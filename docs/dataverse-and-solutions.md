@@ -418,6 +418,14 @@ pp solution create HarnessShell --env dev \
   --description "Disposable unmanaged shell for test work."
 ```
 
+Update solution metadata without dropping to raw `dv update`:
+
+```bash
+pp solution set-metadata HarnessShell --env dev \
+  --version 2026.3.10.34135 \
+  --publisher-unique-name HarnessPublisher
+```
+
 List the first 100 solutions:
 
 ```bash

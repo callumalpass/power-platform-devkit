@@ -3,6 +3,10 @@
 `pp` now treats output and mutation behavior as a shared CLI contract rather
 than command-by-command conventions.
 
+See also: [`docs/safety-and-provenance.md`](./safety-and-provenance.md) for the
+repo policy around result metadata, placeholder reporting, and `.ops`
+conventions.
+
 ## Output formats
 
 Supported `--format` values:
@@ -33,6 +37,20 @@ Commands still emit primary payloads on stdout and diagnostics on stderr.
 - human-oriented formats (`table`, `markdown`, `raw`) emit readable diagnostic
   summaries on stderr for the same cases
 - warnings stay off stdout so structured payloads remain parseable
+
+## Result metadata
+
+Structured diagnostics on stderr carry the shared metadata envelope:
+
+- `supportTier`
+- `suggestedNextActions`
+- `provenance`
+- `knownLimitations`
+
+For successful mutation previews, stdout should also carry those fields when the
+preview represents a partial, delegated, or placeholder workflow. That keeps
+dry-run and plan payloads from looking fully supported when they are really
+handoff contracts.
 
 ## Mutation flags
 

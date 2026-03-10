@@ -35,7 +35,32 @@
       "Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree."
     ]
   },
+  "knownLimitations": [
+    "Remote canvas coverage in pp is currently read-only.",
+    "pp does not yet return a remote canvas app id for create/import workflows."
+  ],
   "mode": "plan",
+  "provenance": [
+    {
+      "detail": "Environment alias fixture was resolved through configured Dataverse metadata and solution HarnessSolution.",
+      "kind": "official-api",
+      "source": "@pp/cli canvas remote mutation resolution"
+    },
+    {
+      "detail": "Maker handoff URLs and verification commands were synthesized from the resolved environment (env-123) and command inputs.",
+      "kind": "inferred",
+      "source": "@pp/cli canvas Maker fallback guidance"
+    }
+  ],
+  "suggestedNextActions": [
+    "Use Maker or solution tooling to import `./dist/Harness App.msapp` until `pp canvas import` exists.",
+    "Open https://make.powerapps.com/environments/env-123/solutions/solution-1/apps to continue the import from the solution-scoped apps view in Maker.",
+    "After the import step, run `pp canvas inspect \"Imported Harness Canvas\" --env fixture --solution HarnessSolution` to confirm the remote app id.",
+    "After the import step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the app is visible in Dataverse.",
+    "Run `pp solution components HarnessSolution --env fixture --format json` to verify that the imported app was added to the solution.",
+    "Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree."
+  ],
+  "supportTier": "preview",
   "target": {
     "envAlias": "fixture",
     "makerEnvironmentId": "env-123",

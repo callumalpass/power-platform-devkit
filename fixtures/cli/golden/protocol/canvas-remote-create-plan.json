@@ -32,7 +32,31 @@
       "Run `pp solution components HarnessSolution --env fixture --format json` to verify that the app was added to the solution."
     ]
   },
+  "knownLimitations": [
+    "Remote canvas coverage in pp is currently read-only.",
+    "pp does not yet return a remote canvas app id for create/import workflows."
+  ],
   "mode": "plan",
+  "provenance": [
+    {
+      "detail": "Environment alias fixture was resolved through configured Dataverse metadata and solution HarnessSolution.",
+      "kind": "official-api",
+      "source": "@pp/cli canvas remote mutation resolution"
+    },
+    {
+      "detail": "Maker handoff URLs and verification commands were synthesized from the resolved environment (env-123) and command inputs.",
+      "kind": "inferred",
+      "source": "@pp/cli canvas Maker fallback guidance"
+    }
+  ],
+  "suggestedNextActions": [
+    "Use Maker blank-app creation for now when you need a new remote canvas app.",
+    "Open https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1 to start the solution-scoped blank canvas app flow in Maker.",
+    "After saving in Maker, run `pp canvas inspect \"Harness Canvas\" --env fixture --solution HarnessSolution` to confirm the remote app id.",
+    "After the Maker step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.",
+    "Run `pp solution components HarnessSolution --env fixture --format json` to verify that the app was added to the solution."
+  ],
+  "supportTier": "preview",
   "target": {
     "envAlias": "fixture",
     "makerEnvironmentId": "env-123",

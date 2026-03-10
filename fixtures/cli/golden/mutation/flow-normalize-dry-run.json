@@ -1,7 +1,11 @@
 {
   "action": "flow.normalize",
   "confirmed": false,
+  "knownLimitations": [],
   "mode": "dry-run",
+  "provenance": [],
+  "suggestedNextActions": [],
+  "supportTier": "preview",
   "target": {
     "inputPath": "<TMP_DIR>/unpacked-dry-run",
     "outPath": "<TMP_DIR>/normalized-dry-run"

@@ -1,6 +1,6 @@
 import { stableStringify } from '@pp/artifacts';
 import { type OutputMode } from '@pp/config';
-import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult, type ResultOptions } from '@pp/diagnostics';
 import YAML from 'yaml';
 
 export type CliOutputFormat = OutputMode;
@@ -119,7 +119,8 @@ export function createMutationPreview(
   action: string,
   flags: MutationFlags,
   target: Record<string, unknown>,
-  input?: unknown
+  input?: unknown,
+  metadata: ResultOptions = {}
 ): Record<string, unknown> {
   return {
     action,
@@ -128,6 +129,10 @@ export function createMutationPreview(
     willMutate: false,
     target,
     input,
+    supportTier: metadata.supportTier ?? 'preview',
+    suggestedNextActions: metadata.suggestedNextActions ?? [],
+    provenance: metadata.provenance ?? [],
+    knownLimitations: metadata.knownLimitations ?? [],
   };
 }
 

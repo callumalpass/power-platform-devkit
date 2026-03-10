@@ -29,6 +29,18 @@
     "Remote canvas coverage in pp is currently read-only.",
     "pp does not yet return a remote canvas app id for create/import workflows."
   ],
+  "provenance": [
+    {
+      "detail": "Environment alias fixture was resolved through configured Dataverse metadata and solution HarnessSolution.",
+      "kind": "official-api",
+      "source": "@pp/cli canvas remote mutation resolution"
+    },
+    {
+      "detail": "Maker handoff URLs and verification commands were synthesized from the resolved environment (env-123) and command inputs.",
+      "kind": "inferred",
+      "source": "@pp/cli canvas Maker fallback guidance"
+    }
+  ],
   "success": false,
   "suggestedNextActions": [
     "Use Maker blank-app creation for now when you need a new remote canvas app.",

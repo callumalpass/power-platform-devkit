@@ -7,6 +7,7 @@ Start here:
 - [Quickstart](quickstart.md): build the repo, sign in, register an environment, and run the first Dataverse commands
 - [Auth and environments](auth-and-environments.md): auth profile types, browser login, device code, and environment aliases
 - [Command contract](command-contract.md): shared output formats, mutation flags, and project-scoped CLI overrides
+- [Safety and provenance](safety-and-provenance.md): result metadata expectations, mutation safety rules, and `.ops` task-path conventions
 - [Project config](project-config.md): `pp.config.*` structure, parameter resolution, and local analysis commands
 - [Deploy](deploy.md): deploy plan/apply orchestration, supported mappings, and adapter behavior
 - [Deploy examples](examples/deploy/github-actions-deploy.yml): concrete GitHub Actions, Azure DevOps, and Power Platform Pipelines wrapper templates under `docs/examples/deploy/`

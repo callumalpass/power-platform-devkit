@@ -636,6 +636,7 @@ pp dv query account --select name --top 10
 pp dv get connectionreference <id>
 
 pp solution list
+pp solution set-metadata core --version 1.2.3.4
 pp solution export core
 pp solution analyze core
 

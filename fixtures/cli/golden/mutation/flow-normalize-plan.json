@@ -1,7 +1,11 @@
 {
   "action": "flow.normalize",
   "confirmed": false,
+  "knownLimitations": [],
   "mode": "plan",
+  "provenance": [],
+  "suggestedNextActions": [],
+  "supportTier": "preview",
   "target": {
     "inputPath": "<TMP_DIR>/unpacked-plan",
     "outPath": "<TMP_DIR>/normalized-plan"

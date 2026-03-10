@@ -7,6 +7,7 @@ interface StubData {
   solution: {
     solutionid: string;
     uniquename: string;
+    friendlyname?: string;
     version?: string;
   };
   publishers?: Array<Record<string, unknown>>;
@@ -85,6 +86,40 @@ function createStubClient(data: StubData): DataverseClient {
         }
       );
     },
+    update: async <TRecord extends Record<string, unknown>, TResult = TRecord>(
+      table: string,
+      id: string,
+      entity: TRecord
+    ): Promise<OperationResult<{ status: number; headers: Record<string, string>; entity?: TResult; entityId?: string }>> => {
+      if (table === 'solutions') {
+        return ok(
+          {
+            status: 200,
+            headers: {},
+            entityId: id,
+            entity: {
+              solutionid: id,
+              uniquename: data.solution.uniquename,
+              friendlyname: data.solution.friendlyname,
+              version: entity.version ?? data.solution.version,
+            } as TResult,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      }
+
+      return ok(
+        {
+          status: 204,
+          headers: {},
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    },
   } as unknown as DataverseClient;
 }
 
@@ -102,6 +137,11 @@ describe('SolutionService', () => {
             solutioncomponentid: 'comp-1',
             objectid: 'obj-1',
             componenttype: 80,
+          },
+          {
+            solutioncomponentid: 'comp-2',
+            objectid: 'env-1',
+            componenttype: 380,
           },
         ],
         dependencies: [
@@ -143,6 +183,11 @@ describe('SolutionService', () => {
             solutioncomponentid: 'comp-1',
             objectid: 'obj-1',
             componenttype: 80,
+          },
+          {
+            solutioncomponentid: 'comp-2',
+            objectid: 'env-1',
+            componenttype: 380,
           },
         ],
         dependencies: [
@@ -266,6 +311,40 @@ describe('SolutionService', () => {
       uniquename: 'HarnessShell',
       friendlyname: 'Harness Shell',
       version: '1.0.0.0',
+    });
+  });
+
+  it('updates solution version and publisher through a first-class metadata flow', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'HarnessShell',
+          friendlyname: 'Harness Shell',
+          version: '1.0.0.0',
+        },
+        publishers: [
+          {
+            publisherid: 'pub-1',
+            uniquename: 'HarnessPublisher',
+          },
+        ],
+        components: [],
+        dependencies: [],
+      })
+    );
+
+    const result = await service.setMetadata('HarnessShell', {
+      version: '2026.3.10.34135',
+      publisherUniqueName: 'HarnessPublisher',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      solutionid: 'sol-1',
+      uniquename: 'HarnessShell',
+      friendlyname: 'Harness Shell',
+      version: '2026.3.10.34135',
     });
   });
 });

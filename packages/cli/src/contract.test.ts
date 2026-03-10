@@ -140,11 +140,19 @@ describe('cli contract', () => {
       action: 'dv.create',
       mode: 'dry-run',
       willMutate: false,
+      supportTier: 'preview',
+      suggestedNextActions: [],
+      provenance: [],
+      knownLimitations: [],
     });
     expect(planPreview).toMatchObject({
       action: 'dv.create',
       mode: 'plan',
       willMutate: false,
+      supportTier: 'preview',
+      suggestedNextActions: [],
+      provenance: [],
+      knownLimitations: [],
     });
     await expectGoldenJson(dryRunPreview, 'fixtures/cli/golden/contract/mutation-preview.json');
     await expectGoldenJson(planPreview, 'fixtures/cli/golden/contract/mutation-plan-preview.json');

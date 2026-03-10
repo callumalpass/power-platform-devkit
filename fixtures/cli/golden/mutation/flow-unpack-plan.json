@@ -1,7 +1,11 @@
 {
   "action": "flow.unpack",
   "confirmed": false,
+  "knownLimitations": [],
   "mode": "plan",
+  "provenance": [],
+  "suggestedNextActions": [],
+  "supportTier": "preview",
   "target": {
     "inputPath": "<REPO_ROOT>/fixtures/flow/raw/invoice-flow.raw.json",
     "outPath": "<TMP_DIR>/unpacked-plan"

@@ -1535,6 +1535,18 @@ describe('cli fixture-backed workflows', () => {
 
       expect(create.code).toBe(0);
       expect(create.stderr).toBe('');
+      expect(JSON.parse(create.stdout)).toMatchObject({
+        supportTier: 'preview',
+        knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
+        provenance: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'official-api',
+          }),
+          expect.objectContaining({
+            kind: 'inferred',
+          }),
+        ]),
+      });
       await expectGoldenJson(
         JSON.parse(create.stdout),
         `fixtures/cli/golden/protocol/canvas-remote-create-${previewCase.mode}.json`
@@ -1542,6 +1554,18 @@ describe('cli fixture-backed workflows', () => {
 
       expect(importResult.code).toBe(0);
       expect(importResult.stderr).toBe('');
+      expect(JSON.parse(importResult.stdout)).toMatchObject({
+        supportTier: 'preview',
+        knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
+        provenance: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'official-api',
+          }),
+          expect.objectContaining({
+            kind: 'inferred',
+          }),
+        ]),
+      });
       await expectGoldenJson(
         JSON.parse(importResult.stdout),
         `fixtures/cli/golden/protocol/canvas-remote-import-${previewCase.mode}.json`
@@ -2610,6 +2634,62 @@ describe('cli fixture-backed workflows', () => {
       uniquename: 'HarnessShell',
       friendlyname: 'Harness Shell',
       version: '1.0.0.0',
+    });
+  });
+
+  it('covers solution metadata updates through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'HarnessShell',
+              friendlyname: 'Harness Shell',
+              version: '1.0.0.0',
+            },
+          ],
+          publishers: [
+            {
+              publisherid: 'pub-1',
+              uniquename: 'HarnessPublisher',
+            },
+          ],
+        },
+        queryAll: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'HarnessShell',
+              friendlyname: 'Harness Shell',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+      }),
+    });
+
+    const update = await runCli([
+      'solution',
+      'set-metadata',
+      'HarnessShell',
+      '--env',
+      'source',
+      '--version',
+      '2026.3.10.34135',
+      '--publisher-unique-name',
+      'HarnessPublisher',
+      '--format',
+      'json',
+    ]);
+
+    expect(update.code).toBe(0);
+    expect(update.stderr).toBe('');
+    expect(JSON.parse(update.stdout)).toMatchObject({
+      solutionid: 'sol-1',
+      uniquename: 'HarnessShell',
+      friendlyname: 'Harness Shell',
+      version: '2026.3.10.34135',
     });
   });
 

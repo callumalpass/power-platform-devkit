@@ -1,7 +1,11 @@
 {
   "action": "canvas.build",
   "confirmed": false,
+  "knownLimitations": [],
   "mode": "dry-run",
+  "provenance": [],
+  "suggestedNextActions": [],
+  "supportTier": "preview",
   "target": {
     "mode": "strict",
     "outPath": "<TMP_DIR>/FixtureCanvas.dry-run.msapp",

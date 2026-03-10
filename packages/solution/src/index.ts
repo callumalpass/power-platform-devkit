@@ -22,6 +22,12 @@ export interface SolutionCreateOptions {
   publisherUniqueName?: string;
 }
 
+export interface SolutionSetMetadataOptions {
+  version?: string;
+  publisherId?: string;
+  publisherUniqueName?: string;
+}
+
 interface PublisherSummary {
   publisherid: string;
   uniquename?: string;
@@ -153,6 +159,107 @@ export class SolutionService {
         supportTier: 'preview',
         diagnostics: createResult.diagnostics,
         warnings: createResult.warnings,
+      }
+    );
+  }
+
+  async setMetadata(uniqueName: string, options: SolutionSetMetadataOptions = {}): Promise<OperationResult<SolutionSummary>> {
+    if (!options.version && !options.publisherId && !options.publisherUniqueName) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'SOLUTION_METADATA_UPDATE_REQUIRED',
+          'Provide --version, --publisher-id, or --publisher-unique-name when updating solution metadata.',
+          {
+            source: '@pp/solution',
+          }
+        ),
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+
+    const solution = await this.inspect(uniqueName);
+
+    if (!solution.success) {
+      return solution as unknown as OperationResult<SolutionSummary>;
+    }
+
+    if (!solution.data) {
+      return fail(
+        [
+          ...solution.diagnostics,
+          createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`, {
+            source: '@pp/solution',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: solution.warnings,
+        }
+      );
+    }
+
+    const publisherId = options.publisherId ?? (await this.resolvePublisherId(options.publisherUniqueName));
+
+    if ((options.publisherId || options.publisherUniqueName) && !publisherId) {
+      return fail(
+        [
+          ...solution.diagnostics,
+          createDiagnostic(
+            'error',
+            'SOLUTION_PUBLISHER_NOT_FOUND',
+            `Publisher ${options.publisherUniqueName ?? options.publisherId} was not found.`,
+            {
+              source: '@pp/solution',
+            }
+          ),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: solution.warnings,
+        }
+      );
+    }
+
+    const updateBody: Record<string, unknown> = {};
+
+    if (options.version) {
+      updateBody.version = options.version;
+    }
+
+    if (publisherId) {
+      updateBody['publisherid@odata.bind'] = `/publishers(${publisherId})`;
+    }
+
+    const update = await this.dataverseClient.update<
+      Record<string, unknown>,
+      {
+        solutionid?: string;
+        uniquename?: string;
+        friendlyname?: string;
+        version?: string;
+      }
+    >('solutions', solution.data.solutionid, updateBody, {
+      returnRepresentation: true,
+    });
+
+    if (!update.success) {
+      return update as unknown as OperationResult<SolutionSummary>;
+    }
+
+    return ok(
+      {
+        solutionid: update.data?.entity?.solutionid ?? solution.data.solutionid,
+        uniquename: update.data?.entity?.uniquename ?? solution.data.uniquename,
+        friendlyname: update.data?.entity?.friendlyname ?? solution.data.friendlyname,
+        version: update.data?.entity?.version ?? options.version ?? solution.data.version,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(solution.diagnostics, update.diagnostics),
+        warnings: mergeDiagnosticLists(solution.warnings, update.warnings),
       }
     );
   }

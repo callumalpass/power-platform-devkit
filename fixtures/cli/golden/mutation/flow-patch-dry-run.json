@@ -15,7 +15,11 @@
       "actions.ComposePayload.inputs.priority": "High"
     }
   },
+  "knownLimitations": [],
   "mode": "dry-run",
+  "provenance": [],
+  "suggestedNextActions": [],
+  "supportTier": "preview",
   "target": {
     "inputPath": "<TMP_DIR>/unpacked-dry-run",
     "outPath": "<TMP_DIR>/patched-dry-run",
