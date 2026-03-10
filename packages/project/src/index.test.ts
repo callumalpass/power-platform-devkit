@@ -205,6 +205,30 @@ describe('discoverProject', () => {
     expect(doctor.data?.summary.layoutProfile).toBe('source-first');
     expect(doctor.data?.layout.normalizedAssets.solutionBundle).toBe('artifacts/solutions/CoreLifecycle.zip');
     expect(doctor.data?.contract.canonicalBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
+    expect(doctor.data?.topology).toEqual({
+      defaultStage: 'dev',
+      selectedStage: 'dev',
+      defaultTargetSummary: 'Default target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)',
+      activeTargetSummary: 'Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)',
+      stageMappings: [
+        {
+          stage: 'dev',
+          isDefault: true,
+          isSelected: true,
+          environmentAlias: 'sandbox',
+          solutionAlias: 'CoreLifecycle',
+          solutionUniqueName: 'CoreLifecycle',
+          solutionMappings: ['CoreLifecycle -> sandbox / CoreLifecycle'],
+          parameterOverrides: [],
+          summary: 'dev (default stage, selected stage) -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)',
+        },
+      ],
+      explanation: [
+        'Default target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)',
+        'Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)',
+        'dev (default stage, selected stage) -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)',
+      ],
+    });
     expect(doctor.data?.contract.stageMappings).toEqual([
       {
         stage: 'dev',
@@ -355,6 +379,44 @@ describe('discoverProject', () => {
         },
       ],
     });
+    expect(report.data?.topology).toEqual({
+      defaultStage: 'prod',
+      selectedStage: 'prod',
+      defaultTargetSummary: 'Default target: stage prod -> environment prod -> solution core (CoreManaged)',
+      activeTargetSummary: 'Active target: stage prod -> environment prod -> solution core (CoreManaged)',
+      stageMappings: [
+        {
+          stage: 'dev',
+          isDefault: false,
+          isSelected: false,
+          environmentAlias: 'dev',
+          solutionAlias: 'core',
+          solutionUniqueName: 'CoreDev',
+          solutionMappings: ['core -> dev / CoreDev'],
+          parameterOverrides: [],
+          summary: 'dev -> environment dev -> solution core (CoreDev)',
+        },
+        {
+          stage: 'prod',
+          isDefault: true,
+          isSelected: true,
+          environmentAlias: 'prod',
+          solutionAlias: 'core',
+          solutionUniqueName: 'CoreManaged',
+          solutionMappings: ['core -> prod / CoreManaged (stage override)'],
+          parameterOverrides: ['releaseName'],
+          summary: 'prod (default stage, selected stage) -> environment prod -> solution core (CoreManaged)',
+        },
+      ],
+      explanation: [
+        'Default target: stage prod -> environment prod -> solution core (CoreManaged)',
+        'Active target: stage prod -> environment prod -> solution core (CoreManaged)',
+        'dev -> environment dev -> solution core (CoreDev)',
+        'prod (default stage, selected stage) -> environment prod -> solution core (CoreManaged); parameter overrides: releaseName.',
+      ],
+    });
+    expect(report.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_ACTIVE_TARGET')).toBe(true);
+    expect(report.data?.checks.filter((check) => check.code === 'PROJECT_DOCTOR_STAGE_MAPPING')).toHaveLength(2);
     expect(report.suggestedNextActions).toEqual(
       expect.arrayContaining([expect.stringContaining('artifacts/solutions/core.zip')])
     );

@@ -68,6 +68,16 @@
       "status": "pass"
     },
     {
+      "code": "PROJECT_DOCTOR_ACTIVE_TARGET",
+      "message": "Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)",
+      "status": "info"
+    },
+    {
+      "code": "PROJECT_DOCTOR_STAGE_MAPPING",
+      "message": "dev (default stage, selected stage) -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)",
+      "status": "info"
+    },
+    {
       "code": "PROJECT_DOCTOR_LAYOUT_PROFILE",
       "hint": "Keep editable sources and generated outputs in separate roots so the project intent stays obvious.",
       "message": "Layout profile is source-first: editable assets live in dedicated roots and generated bundles are already separate or absent.",
@@ -146,5 +156,31 @@
     "missingAssetCount": 0,
     "requiredParameterCount": 0,
     "unresolvedRequiredParameterCount": 0
+  },
+  "topology": {
+    "activeTargetSummary": "Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)",
+    "defaultStage": "dev",
+    "defaultTargetSummary": "Default target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)",
+    "explanation": [
+      "Default target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)",
+      "Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)",
+      "dev (default stage, selected stage) -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)"
+    ],
+    "selectedStage": "dev",
+    "stageMappings": [
+      {
+        "environmentAlias": "sandbox",
+        "isDefault": true,
+        "isSelected": true,
+        "parameterOverrides": [],
+        "solutionAlias": "CoreLifecycle",
+        "solutionMappings": [
+          "CoreLifecycle -> sandbox / CoreLifecycle"
+        ],
+        "solutionUniqueName": "CoreLifecycle",
+        "stage": "dev",
+        "summary": "dev (default stage, selected stage) -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)"
+      }
+    ]
   }
 }

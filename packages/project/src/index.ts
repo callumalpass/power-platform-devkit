@@ -200,6 +200,27 @@ export interface ProjectContractSummary {
   stageMappings: ProjectContractStageMapping[];
 }
 
+export interface ProjectDoctorTopologyStageSummary {
+  stage: string;
+  isDefault: boolean;
+  isSelected: boolean;
+  environmentAlias?: string;
+  solutionAlias?: string;
+  solutionUniqueName?: string;
+  solutionMappings: string[];
+  parameterOverrides: string[];
+  summary: string;
+}
+
+export interface ProjectDoctorTopologySummary {
+  defaultStage?: string;
+  selectedStage?: string;
+  defaultTargetSummary: string;
+  activeTargetSummary: string;
+  stageMappings: ProjectDoctorTopologyStageSummary[];
+  explanation: string[];
+}
+
 export interface ProjectDoctorCheck {
   status: 'pass' | 'warn' | 'fail' | 'info';
   code: string;
@@ -240,6 +261,7 @@ export interface ProjectDoctorReport {
   assets: ProjectAsset[];
   layout: ProjectLayoutAssessment;
   contract: ProjectContractSummary;
+  topology: ProjectDoctorTopologySummary;
   checks: ProjectDoctorCheck[];
 }
 
@@ -499,6 +521,8 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
 
   const assets = project?.assets ?? (await inspectAssets(resolvedRoot, {}));
   const layout = assessProjectLayout(project?.root ?? resolvedRoot, assets, project?.config);
+  const contract = buildProjectContractSummary(project?.config ?? {}, project?.topology ?? { stages: {} }, layout);
+  const topologySummary = buildProjectDoctorTopologySummary(contract);
 
   for (const asset of assets) {
     checks.push({
@@ -534,6 +558,24 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
         code: 'PROJECT_DOCTOR_TOPOLOGY_PRESENT',
         message: `Project topology defines ${Object.keys(project.topology.stages).length} stage(s).`,
       });
+
+      checks.push({
+        status: 'info',
+        code: 'PROJECT_DOCTOR_ACTIVE_TARGET',
+        message: topologySummary.activeTargetSummary,
+      });
+
+      for (const stageMapping of topologySummary.stageMappings) {
+        checks.push({
+          status: 'info',
+          code: 'PROJECT_DOCTOR_STAGE_MAPPING',
+          message: stageMapping.summary,
+          detail:
+            stageMapping.parameterOverrides.length > 0
+              ? `Parameter overrides: ${stageMapping.parameterOverrides.join(', ')}.`
+              : undefined,
+        });
+      }
     } else {
       checks.push({
         status: 'info',
@@ -601,7 +643,8 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
       },
       assets,
       layout,
-      contract: buildProjectContractSummary(project?.config ?? {}, project?.topology ?? { stages: {} }, layout),
+      contract,
+      topology: topologySummary,
       checks,
     },
     {
@@ -1560,6 +1603,56 @@ function buildProjectContractSummary(
         parameterOverrides: stage.parameterOverrides,
       })),
   };
+}
+
+function buildProjectDoctorTopologySummary(contract: ProjectContractSummary): ProjectDoctorTopologySummary {
+  const stageMappings = contract.stageMappings.map((stage) => {
+    const solutionMappings =
+      stage.solutionMappings.length > 0
+        ? stage.solutionMappings.map((solution) =>
+            `${solution.alias} -> ${solution.environmentAlias ?? '<unset>'} / ${solution.uniqueName}${solution.source === 'stage' ? ' (stage override)' : ''}`
+          )
+        : [
+            `${stage.solutionAlias ?? '<unset>'} -> ${stage.environmentAlias ?? '<unset>'} / ${stage.solutionUniqueName ?? '<unset>'}`,
+          ];
+    const stageFlags = [
+      stage.stage === contract.defaultTarget.stage ? 'default stage' : undefined,
+      stage.stage === contract.activeTarget.stage ? 'selected stage' : undefined,
+    ].filter(Boolean);
+
+    return {
+      stage: stage.stage,
+      isDefault: stage.stage === contract.defaultTarget.stage,
+      isSelected: stage.stage === contract.activeTarget.stage,
+      environmentAlias: stage.environmentAlias,
+      solutionAlias: stage.solutionAlias,
+      solutionUniqueName: stage.solutionUniqueName,
+      solutionMappings,
+      parameterOverrides: stage.parameterOverrides,
+      summary: `${stage.stage}${stageFlags.length > 0 ? ` (${stageFlags.join(', ')})` : ''} -> environment ${stage.environmentAlias ?? '<unset>'} -> solution ${stage.solutionAlias ?? '<unset>'} (${stage.solutionUniqueName ?? '<unset>'})`,
+    } satisfies ProjectDoctorTopologyStageSummary;
+  });
+
+  return {
+    defaultStage: contract.defaultTarget.stage,
+    selectedStage: contract.activeTarget.stage,
+    defaultTargetSummary: formatProjectDoctorTargetSummary('Default target', contract.defaultTarget),
+    activeTargetSummary: formatProjectDoctorTargetSummary('Active target', contract.activeTarget),
+    stageMappings,
+    explanation: [
+      formatProjectDoctorTargetSummary('Default target', contract.defaultTarget),
+      formatProjectDoctorTargetSummary('Active target', contract.activeTarget),
+      ...stageMappings.map((stage) =>
+        stage.parameterOverrides.length > 0
+          ? `${stage.summary}; parameter overrides: ${stage.parameterOverrides.join(', ')}.`
+          : stage.summary
+      ),
+    ],
+  };
+}
+
+function formatProjectDoctorTargetSummary(label: string, target: ProjectContractTarget): string {
+  return `${label}: stage ${target.stage ?? '<unset>'} -> environment ${target.environmentAlias ?? '<unset>'} -> solution ${target.solutionAlias ?? '<unset>'} (${target.solutionUniqueName ?? '<unset>'})`;
 }
 
 function resolveContractTarget(

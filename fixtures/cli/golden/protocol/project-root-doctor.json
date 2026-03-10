@@ -76,6 +76,22 @@
       "status": "pass"
     },
     {
+      "code": "PROJECT_DOCTOR_ACTIVE_TARGET",
+      "message": "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
+      "status": "info"
+    },
+    {
+      "code": "PROJECT_DOCTOR_STAGE_MAPPING",
+      "message": "dev -> environment dev -> solution core (CoreDev)",
+      "status": "info"
+    },
+    {
+      "code": "PROJECT_DOCTOR_STAGE_MAPPING",
+      "detail": "Parameter overrides: releaseName.",
+      "message": "prod (default stage, selected stage) -> environment prod -> solution core (CoreManaged)",
+      "status": "info"
+    },
+    {
       "code": "PROJECT_DOCTOR_LAYOUT_PROFILE",
       "hint": "Normalize the layout by keeping editable sources under `apps/`, `flows/`, `solutions/`, and `docs/`, then move packaged zips to `artifacts/solutions/core.zip`.",
       "message": "Layout profile is source-first, but the generated solution bundle is stored inside the editable solution area.",
@@ -236,5 +252,47 @@
     "missingAssetCount": 0,
     "requiredParameterCount": 3,
     "unresolvedRequiredParameterCount": 3
+  },
+  "topology": {
+    "activeTargetSummary": "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
+    "defaultStage": "prod",
+    "defaultTargetSummary": "Default target: stage prod -> environment prod -> solution core (CoreManaged)",
+    "explanation": [
+      "Default target: stage prod -> environment prod -> solution core (CoreManaged)",
+      "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
+      "dev -> environment dev -> solution core (CoreDev)",
+      "prod (default stage, selected stage) -> environment prod -> solution core (CoreManaged); parameter overrides: releaseName."
+    ],
+    "selectedStage": "prod",
+    "stageMappings": [
+      {
+        "environmentAlias": "dev",
+        "isDefault": false,
+        "isSelected": false,
+        "parameterOverrides": [],
+        "solutionAlias": "core",
+        "solutionMappings": [
+          "core -> dev / CoreDev"
+        ],
+        "solutionUniqueName": "CoreDev",
+        "stage": "dev",
+        "summary": "dev -> environment dev -> solution core (CoreDev)"
+      },
+      {
+        "environmentAlias": "prod",
+        "isDefault": true,
+        "isSelected": true,
+        "parameterOverrides": [
+          "releaseName"
+        ],
+        "solutionAlias": "core",
+        "solutionMappings": [
+          "core -> prod / CoreManaged (stage override)"
+        ],
+        "solutionUniqueName": "CoreManaged",
+        "stage": "prod",
+        "summary": "prod (default stage, selected stage) -> environment prod -> solution core (CoreManaged)"
+      }
+    ]
   }
 }
