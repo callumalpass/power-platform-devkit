@@ -262,6 +262,17 @@ describe('discoverProject', () => {
     const doctor = await doctorProject(root);
     expect(doctor.success).toBe(true);
     expect(doctor.data?.summary.layoutProfile).toBe('source-first');
+    expect(doctor.data?.summary.canonicalBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
+    expect(doctor.data?.summary.canonicalBundlePresent).toBe(false);
+    expect(doctor.data?.summary.activeTargetSummary).toBe(
+      'Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)'
+    );
+    expect(doctor.data?.summary.environmentAliasProvenance).toBe(
+      'Stage dev in pp.config.yaml selects environment alias sandbox. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.'
+    );
+    expect(doctor.data?.summary.bundleLifecycleSummary).toBe(
+      'The canonical bundle path is artifacts/solutions/CoreLifecycle.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/CoreLifecycle.zip or pp solution export CoreLifecycle --environment sandbox --out artifacts/solutions/CoreLifecycle.zip.'
+    );
     expect(doctor.data?.layout.normalizedAssets.solutionBundle).toBe('artifacts/solutions/CoreLifecycle.zip');
     expect(doctor.data?.contract.canonicalBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
     expect(doctor.data?.topology).toEqual({
@@ -413,6 +424,13 @@ describe('discoverProject', () => {
 
     expect(report.success).toBe(true);
     expect(report.data?.summary.layoutProfile).toBe('source-first-inline-bundle');
+    expect(report.data?.summary.canonicalBundlePresent).toBe(false);
+    expect(report.data?.summary.environmentAliasProvenance).toBe(
+      'Stage prod in pp.config.yaml selects environment alias prod. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.'
+    );
+    expect(report.data?.summary.bundleLifecycleSummary).toBe(
+      'The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.'
+    );
     expect(report.data?.layout.generatedBundlePaths).toContain('solutions/Core.zip');
     expect(report.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE')).toBe(true);
     expect(report.data?.contract).toMatchObject({

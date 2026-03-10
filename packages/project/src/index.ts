@@ -258,6 +258,11 @@ export interface ProjectDoctorSummary {
   requiredParameterCount: number;
   unresolvedRequiredParameterCount: number;
   layoutProfile: ProjectLayoutAssessment['profile'];
+  canonicalBundlePath: string;
+  canonicalBundlePresent: boolean;
+  activeTargetSummary: string;
+  environmentAliasProvenance?: string;
+  bundleLifecycleSummary: string;
 }
 
 export interface ProjectLayoutAssessment {
@@ -546,6 +551,11 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
   const layout = assessProjectLayout(project?.root ?? resolvedRoot, assets, project?.config);
   const contract = buildProjectContractSummary(project?.config ?? {}, project?.topology ?? { stages: {} }, layout);
   const topologySummary = buildProjectDoctorTopologySummary(contract);
+  const canonicalBundlePresent =
+    layout.generatedBundlePaths.includes(contract.canonicalBundlePath) ||
+    assets.some((asset) => asset.exists && asset.path === contract.canonicalBundlePath);
+  const environmentAliasProvenance = describeProjectEnvironmentAliasProvenance(contract.activeTarget, project?.configPath);
+  const bundleLifecycleSummary = describeProjectBundleLifecycle(contract, canonicalBundlePresent);
 
   for (const asset of assets) {
     checks.push({
@@ -663,6 +673,11 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
         requiredParameterCount: requiredParameters.length,
         unresolvedRequiredParameterCount: unresolvedRequiredParameters.length,
         layoutProfile: layout.profile,
+        canonicalBundlePath: contract.canonicalBundlePath,
+        canonicalBundlePresent,
+        activeTargetSummary: topologySummary.activeTargetSummary,
+        environmentAliasProvenance,
+        bundleLifecycleSummary,
       },
       assets,
       layout,

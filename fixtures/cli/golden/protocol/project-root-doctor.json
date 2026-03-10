@@ -234,7 +234,12 @@
   },
   "root": "<REPO_ROOT>",
   "summary": {
+    "activeTargetSummary": "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
+    "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.",
+    "canonicalBundlePath": "artifacts/solutions/core.zip",
+    "canonicalBundlePresent": false,
     "configuredAssetCount": 4,
+    "environmentAliasProvenance": "Stage prod in pp.config.yaml selects environment alias prod. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
     "existingAssetCount": 4,
     "hasConfig": true,
     "hasProviderBindings": true,

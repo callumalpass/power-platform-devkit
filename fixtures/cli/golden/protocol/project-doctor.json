@@ -146,7 +146,12 @@
   },
   "root": "<TMP_DIR>",
   "summary": {
+    "activeTargetSummary": "Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)",
+    "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/CoreLifecycle.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/CoreLifecycle.zip or pp solution export CoreLifecycle --environment sandbox --out artifacts/solutions/CoreLifecycle.zip.",
+    "canonicalBundlePath": "artifacts/solutions/CoreLifecycle.zip",
+    "canonicalBundlePresent": false,
     "configuredAssetCount": 4,
+    "environmentAliasProvenance": "Stage dev in pp.config.yaml selects environment alias sandbox. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
     "existingAssetCount": 4,
     "hasConfig": true,
     "hasProviderBindings": true,

@@ -1613,6 +1613,9 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.stdout).toContain('Discovery: Treat fixtures/analysis/project as the canonical local project');
     expect(doctor.stdout).toContain('# Project Doctor');
     expect(doctor.stdout).toContain(`- Canonical project root: \`${canonicalRoot}\``);
+    expect(doctor.stdout).toContain('- Bundle status: `not generated yet`');
+    expect(doctor.stdout).toContain('Environment alias provenance: Stage prod in pp.config.yaml selects environment alias prod.');
+    expect(doctor.stdout).toContain('Bundle lifecycle: The canonical bundle path is artifacts/solutions/core.zip');
     expect(doctor.stdout).toContain('Discovery: Treat fixtures/analysis/project as the canonical local project');
     expect(inspect.stdout).not.toContain('"summary"');
     expect(doctor.stdout).not.toContain('"canonicalProjectRoot"');
