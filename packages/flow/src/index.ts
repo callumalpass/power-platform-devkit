@@ -264,6 +264,16 @@ export interface FlowPackResult {
   summary: FlowArtifactSummary;
 }
 
+const FLOW_WORKFLOW_STATE_DEFAULT_STATUS = new Map<number, number>([
+  [0, 1],
+  [1, 2],
+  [2, 3],
+]);
+
+const FLOW_WORKFLOW_STATUS_STATE = new Map<number, number>(
+  Array.from(FLOW_WORKFLOW_STATE_DEFAULT_STATUS.entries()).map(([stateCode, statusCode]) => [statusCode, stateCode] as const)
+);
+
 export interface FlowExportResult {
   identifier: string;
   outPath: string;
@@ -2195,6 +2205,8 @@ function validateLoadedFlowArtifact(
     );
   }
 
+  diagnostics.push(...validateFlowWorkflowStateMetadata(artifact, path));
+
   const semantic = analyzeFlowSemantics(artifact, path);
   diagnostics.push(...semantic.diagnostics);
   warnings.push(...semantic.warnings);
@@ -2362,6 +2374,7 @@ function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspe
 
 function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResult<FlowArtifact> {
   const definition = asRecord(flow.clientData?.definition);
+  const workflowState = resolveSupportedFlowWorkflowState(flow.stateCode, flow.statusCode);
 
   if (!definition) {
     return fail(
@@ -2384,8 +2397,8 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
       description: flow.description,
       uniquename: flow.uniqueName,
       category: flow.category,
-      statecode: flow.stateCode,
-      statuscode: flow.statusCode,
+      ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
+      ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
       ...(flow.clientData ? { clientdata: stableStringify(cloneJsonValue(flow.clientData)) } : {}),
       properties: {
         definition: cloneJsonValue(definition),
@@ -2393,8 +2406,8 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
         ...(flow.description ? { description: flow.description } : {}),
         ...(flow.uniqueName ? { uniquename: flow.uniqueName } : {}),
         ...(flow.category !== undefined ? { category: flow.category } : {}),
-        ...(flow.stateCode !== undefined ? { statecode: flow.stateCode } : {}),
-        ...(flow.statusCode !== undefined ? { statuscode: flow.statusCode } : {}),
+        ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
+        ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
       },
     },
     `dataverse://workflows/${flow.id}`
@@ -2792,6 +2805,93 @@ function resolveFlowCreateTargetMismatch(artifact: FlowArtifact, explicitTarget:
   return !supportedIdentifiers.has(explicitTarget);
 }
 
+function validateFlowWorkflowStateMetadata(artifact: FlowArtifact, path: string): Diagnostic[] {
+  const state = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
+
+  if (state.valid) {
+    return [];
+  }
+
+  const detailParts = [
+    artifact.metadata.stateCode !== undefined ? `statecode=${artifact.metadata.stateCode}` : undefined,
+    artifact.metadata.statusCode !== undefined ? `statuscode=${artifact.metadata.statusCode}` : undefined,
+  ].filter((value): value is string => Boolean(value));
+
+  return [
+    createDiagnostic(
+      'error',
+      'FLOW_WORKFLOW_STATE_UNSUPPORTED',
+      `Flow artifact ${path} has an unsupported workflow state/status combination${detailParts.length > 0 ? ` (${detailParts.join(', ')})` : ''}.`,
+      {
+        source: '@pp/flow',
+        path,
+        hint: state.reason,
+      }
+    ),
+  ];
+}
+
+function resolveSupportedFlowWorkflowState(
+  stateCode: number | undefined,
+  statusCode: number | undefined
+): {
+  valid: boolean;
+  stateCode?: number;
+  statusCode?: number;
+  reason?: string;
+} {
+  if (stateCode === undefined && statusCode === undefined) {
+    return {
+      valid: true,
+    };
+  }
+
+  if (stateCode !== undefined && !FLOW_WORKFLOW_STATE_DEFAULT_STATUS.has(stateCode)) {
+    return {
+      valid: false,
+      reason: 'Supported workflow state codes are 0 (Draft), 1 (Activated), and 2 (Suspended).',
+    };
+  }
+
+  if (statusCode !== undefined && !FLOW_WORKFLOW_STATUS_STATE.has(statusCode)) {
+    return {
+      valid: false,
+      reason: 'Supported workflow status codes are 1 (Draft), 2 (Activated), and 3 (Suspended).',
+    };
+  }
+
+  if (stateCode !== undefined && statusCode !== undefined) {
+    const expectedStatusCode = FLOW_WORKFLOW_STATE_DEFAULT_STATUS.get(stateCode);
+
+    if (expectedStatusCode !== statusCode) {
+      return {
+        valid: false,
+        reason: `Workflow statecode ${stateCode} expects statuscode ${expectedStatusCode}.`,
+      };
+    }
+
+    return {
+      valid: true,
+      stateCode,
+      statusCode,
+    };
+  }
+
+  if (stateCode !== undefined) {
+    return {
+      valid: true,
+      stateCode,
+      statusCode: FLOW_WORKFLOW_STATE_DEFAULT_STATUS.get(stateCode),
+    };
+  }
+
+  return {
+    valid: true,
+    stateCode: statusCode !== undefined ? FLOW_WORKFLOW_STATUS_STATE.get(statusCode) : undefined,
+    statusCode,
+  };
+}
+
 function buildFlowDeployClientData(artifact: FlowArtifact): string {
   return stableStringify({
     ...(artifact.clientData ? cloneJsonValue(artifact.clientData) : {}),
@@ -2800,18 +2900,22 @@ function buildFlowDeployClientData(artifact: FlowArtifact): string {
 }
 
 function buildFlowDeployCreateEntity(artifact: FlowArtifact): Record<string, unknown> {
+  const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
+
   return {
     category: artifact.metadata.category ?? 5,
     name: artifact.metadata.displayName ?? artifact.metadata.name ?? artifact.metadata.uniqueName,
     ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
     uniquename: artifact.metadata.uniqueName,
     clientdata: buildFlowDeployClientData(artifact),
-    ...(artifact.metadata.stateCode !== undefined ? { statecode: artifact.metadata.stateCode } : {}),
-    ...(artifact.metadata.statusCode !== undefined ? { statuscode: artifact.metadata.statusCode } : {}),
+    ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
+    ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
   };
 }
 
 function buildFlowDeployUpdateEntity(artifact: FlowArtifact): Record<string, unknown> {
+  const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
+
   return {
     clientdata: buildFlowDeployClientData(artifact),
     ...(artifact.metadata.displayName || artifact.metadata.name
@@ -2821,12 +2925,13 @@ function buildFlowDeployUpdateEntity(artifact: FlowArtifact): Record<string, unk
       : {}),
     ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
     ...(artifact.metadata.category !== undefined ? { category: artifact.metadata.category } : {}),
-    ...(artifact.metadata.stateCode !== undefined ? { statecode: artifact.metadata.stateCode } : {}),
-    ...(artifact.metadata.statusCode !== undefined ? { statuscode: artifact.metadata.statusCode } : {}),
+    ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
+    ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
   };
 }
 
 function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, FlowJsonValue> {
+  const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
   const record: Record<string, FlowJsonValue> = {
     ...(artifact.unknown ? cloneJsonValue(artifact.unknown) : {}),
     ...(artifact.clientData || Object.keys(artifact.definition).length > 0
@@ -2841,8 +2946,8 @@ function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, Fl
       ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
       ...(artifact.metadata.uniqueName ? { uniquename: artifact.metadata.uniqueName } : {}),
       ...(artifact.metadata.category !== undefined ? { category: artifact.metadata.category } : {}),
-      ...(artifact.metadata.stateCode !== undefined ? { statecode: artifact.metadata.stateCode } : {}),
-      ...(artifact.metadata.statusCode !== undefined ? { statuscode: artifact.metadata.statusCode } : {}),
+      ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
+      ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
     },
   };
 

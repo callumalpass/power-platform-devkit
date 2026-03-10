@@ -157,6 +157,11 @@ or the artifact metadata (`uniqueName`, then `name`, then `displayName`, then
 metadata slice (`name`, `description`, `category`, `statecode`, and `statuscode`
 when present)
 back into Dataverse `workflows`.
+Supported workflow state/status metadata is now validated and normalized as part
+of that lifecycle: the current bounded surface accepts Draft `(0,1)`,
+Activated `(1,2)`, and Suspended `(2,3)` pairs, infers the missing side when
+only one of those codes is supplied locally, and fails invalid combinations
+before repack or remote mutation.
 When `--create-if-missing` is supplied, the same command can also provision a
 bounded missing cloud-flow shell using the artifact `metadata.uniqueName`,
 bounded workflow metadata, and the normalized `clientdata` definition.
@@ -203,6 +208,10 @@ The current pack/deploy boundary is:
 - preserves top-level unknown fields captured during normalization
 - intentionally does not reintroduce stripped noisy timestamps such as
   `createdTime` or `lastModifiedTime`
+- local validation now fails unsupported workflow `statecode` / `statuscode`
+  combinations, and repack/deploy/create normalize supported one-sided values
+  onto the canonical Draft `(0,1)`, Activated `(1,2)`, or Suspended `(2,3)`
+  pair before writing a raw export or Dataverse payload
 - remote deploy currently updates only a bounded workflow shell (`name`,
   `description`, `category`, `statecode`, `statuscode`) plus the normalized `clientdata`
   definition and any preserved bounded `clientdata` siblings after the shared

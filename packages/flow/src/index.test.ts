@@ -497,6 +497,92 @@ describe('FlowService', () => {
     });
   });
 
+  it('infers the supported workflow statuscode during deploy when only statecode is declared locally', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+    const updates: Array<{ table: string; id: string; entity: Record<string, unknown> }> = [];
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-state-1',
+                name: 'Stateful Flow',
+                uniquename: 'crd_StatefulFlow',
+                category: 5,
+                statecode: 1,
+                statuscode: 2,
+                clientdata: JSON.stringify({
+                  definition: {
+                    actions: {},
+                  },
+                }),
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+      update: async (table: string, id: string, entity: Record<string, unknown>) => {
+        updates.push({ table, id, entity });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Stateful Flow',
+            displayName: 'Stateful Flow',
+            uniqueName: 'crd_StatefulFlow',
+            stateCode: 1,
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [],
+          },
+          definition: {
+            actions: {},
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const result = await new FlowService(client).deployArtifact(artifactPath);
+
+    expect(result.success).toBe(true);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      table: 'workflows',
+      id: 'flow-state-1',
+      entity: {
+        statecode: 1,
+        statuscode: 2,
+      },
+    });
+  });
+
   it('promotes a remote flow from one environment into another through the shared artifact lifecycle', async () => {
     const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
     const sourceClient = createStubDataverseClient();
@@ -1167,6 +1253,91 @@ describe('FlowService', () => {
       },
     });
     expect((packedDocument.properties as { definition: Record<string, unknown> }).definition.lastModifiedTime).toBeUndefined();
+  });
+
+  it('normalizes supported workflow state/status pairs during repack', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+    const packedPath = join(dir, 'repacked.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Suspended Flow',
+            displayName: 'Suspended Flow',
+            uniqueName: 'crd_SuspendedFlow',
+            statusCode: 3,
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [],
+          },
+          definition: {
+            actions: {},
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const packed = await packFlowArtifact(artifactPath, packedPath);
+    const packedDocument = JSON.parse(await readFile(packedPath, 'utf8')) as Record<string, unknown>;
+
+    expect(packed.success).toBe(true);
+    expect(packedDocument).toMatchObject({
+      properties: {
+        statecode: 2,
+        statuscode: 3,
+      },
+    });
+  });
+
+  it('fails local validation for unsupported workflow state/status combinations', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Invalid State Flow',
+            displayName: 'Invalid State Flow',
+            uniqueName: 'crd_InvalidStateFlow',
+            stateCode: 1,
+            statusCode: 3,
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [],
+          },
+          definition: {
+            actions: {},
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'FLOW_WORKFLOW_STATE_UNSUPPORTED',
+        }),
+      ])
+    );
   });
 
   it('accepts supported Dataverse connector parameters across path and query buckets', async () => {
