@@ -141,5 +141,9 @@ function getBridgeDllPath(): string {
 }
 
 function getCanvasPackageRoot(): string {
+  if (typeof __filename === 'string') {
+    return join(dirname(__filename), '..');
+  }
+
   return join(dirname(fileURLToPath(import.meta.url)), '..');
 }

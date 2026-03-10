@@ -14,7 +14,7 @@ From the monorepo:
 ```bash
 pnpm install
 pnpm --filter @pp/cli build
-node packages/cli/dist/index.js version
+node packages/cli/dist/index.cjs version
 ```
 
 To produce a publishable tarball from the workspace:

@@ -28,7 +28,7 @@
     }
   },
   "bin": {
-    "pp": "./dist/index.js"
+    "pp": "./dist/index.cjs"
   },
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm,cjs --clean",

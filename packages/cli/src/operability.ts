@@ -93,6 +93,28 @@ export interface OperabilityDoctorReport {
   suggestedNextActions: string[];
 }
 
+function resolveCurrentModulePath(metaUrl: string): string | undefined {
+  if (typeof __filename === 'string') {
+    return __filename;
+  }
+
+  try {
+    return fileURLToPath(metaUrl);
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveCliPackageRoot(): string {
+  const modulePath = resolveCurrentModulePath(import.meta.url);
+
+  if (modulePath) {
+    return dirname(resolve(modulePath, '..', '..', 'package.json'));
+  }
+
+  return dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
+}
+
 export function renderCompletionScript(shell: 'bash' | 'zsh' | 'fish'): string {
   switch (shell) {
     case 'bash':
@@ -228,8 +250,8 @@ export async function collectOperabilityBundle(
         name: 'pp',
         packageName: CLI_PACKAGE_NAME,
         version: CLI_VERSION,
-        packageRoot: dirname(fileURLToPath(new URL('../package.json', import.meta.url))),
-        entryPath: fileURLToPath(import.meta.url),
+        packageRoot: resolveCliPackageRoot(),
+        entryPath: resolveCurrentModulePath(import.meta.url) ?? fileURLToPath(import.meta.url),
       },
       runtime: {
         nodeVersion: process.version,

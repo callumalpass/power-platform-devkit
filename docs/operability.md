@@ -10,7 +10,7 @@ From source:
 ```bash
 pnpm install
 pnpm build
-node packages/cli/dist/index.js version
+node packages/cli/dist/index.cjs version
 ```
 
 Package the CLI as a tarball:
@@ -30,7 +30,7 @@ For development, the quickest direct entrypoints are:
 
 ```bash
 pnpm --filter @pp/cli dev -- project inspect
-node packages/cli/dist/index.js project inspect
+node packages/cli/dist/index.cjs project inspect
 ```
 
 ## Command discovery

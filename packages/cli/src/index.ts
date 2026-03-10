@@ -9668,15 +9668,28 @@ function printDiagnosticsBundleHelp(): void {
 
 function isDirectExecution(metaUrl: string): boolean {
   const entryPath = process.argv[1];
+  const modulePath = resolveCurrentModulePath(metaUrl);
 
-  if (!entryPath) {
+  if (!entryPath || !modulePath) {
     return false;
   }
 
   try {
-    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(resolvePath(entryPath));
+    return realpathSync(modulePath) === realpathSync(resolvePath(entryPath));
   } catch {
     return false;
+  }
+}
+
+function resolveCurrentModulePath(metaUrl: string): string | undefined {
+  if (typeof __filename === 'string') {
+    return __filename;
+  }
+
+  try {
+    return fileURLToPath(metaUrl);
+  } catch {
+    return undefined;
   }
 }
 

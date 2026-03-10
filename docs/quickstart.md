@@ -19,7 +19,7 @@ pnpm --filter @pp/cli dev -- project doctor
 Once built, you can also call the CLI directly:
 
 ```bash
-node packages/cli/dist/index.js project doctor
+node packages/cli/dist/index.cjs project doctor
 ```
 
 Sanity-check the packaged CLI surface:
