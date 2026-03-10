@@ -794,6 +794,41 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('returns explicit diagnostics for unsupported remote canvas mutations', async () => {
+    const create = await runCli(['canvas', 'create', '--env', 'fixture', '--format', 'json']);
+    const importResult = await runCli(['canvas', 'import', './dist/Harness.msapp', '--env', 'fixture', '--format', 'json']);
+
+    expect(create.code).toBe(1);
+    expect(create.stdout).toBe('');
+    expect(JSON.parse(create.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'CANVAS_REMOTE_CREATE_NOT_IMPLEMENTED',
+          message: 'Remote canvas create is not implemented yet.',
+          source: '@pp/cli',
+        },
+      ],
+      knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
+    });
+
+    expect(importResult.code).toBe(1);
+    expect(importResult.stdout).toBe('');
+    expect(JSON.parse(importResult.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'CANVAS_REMOTE_IMPORT_NOT_IMPLEMENTED',
+          message: 'Remote canvas import is not implemented yet.',
+          source: '@pp/cli',
+        },
+      ],
+      suggestedNextActions: expect.arrayContaining([
+        'Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
+      ]),
+    });
+  });
+
   it('covers canvas inspect, validate, build, and diff through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const baseAppPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'base-app');

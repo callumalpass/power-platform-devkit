@@ -312,6 +312,10 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
   }
 
   switch (command) {
+    case 'create':
+      return runCanvasUnsupportedRemoteMutation('create');
+    case 'import':
+      return runCanvasUnsupportedRemoteMutation('import');
     case 'list':
       return runCanvasList(args);
     case 'templates':
@@ -329,6 +333,39 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
       printHelp();
       return 1;
   }
+}
+
+function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import'): number {
+  return printFailure(
+    fail(
+      createDiagnostic(
+        'error',
+        command === 'create' ? 'CANVAS_REMOTE_CREATE_NOT_IMPLEMENTED' : 'CANVAS_REMOTE_IMPORT_NOT_IMPLEMENTED',
+        `Remote canvas ${command} is not implemented yet.`,
+        {
+          source: '@pp/cli',
+          hint:
+            command === 'create'
+              ? 'Use pp canvas list/inspect for remote discovery today, or finish blank-app creation in Maker until a first-class pp canvas create command exists.'
+              : 'Build or obtain an .msapp outside the remote workflow today, then use Maker or solution tooling until a first-class pp canvas import command exists.',
+        }
+      ),
+      {
+        supportTier: 'preview',
+        suggestedNextActions:
+          command === 'create'
+            ? ['Use `pp canvas list --env <alias> --solution <solution>` to confirm existing remote apps.', 'Use Maker blank-app creation for now when you need a new remote canvas app.']
+            : [
+                'Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
+                'Use Maker or solution tooling for the remote import step until `pp canvas import` exists.',
+              ],
+        knownLimitations: [
+          'Remote canvas coverage in pp is currently read-only.',
+          'pp does not yet return a remote canvas app id for create/import workflows.',
+        ],
+      }
+    )
+  );
 }
 
 async function runCanvasTemplates(args: string[]): Promise<number> {
