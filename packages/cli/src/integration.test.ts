@@ -168,6 +168,18 @@ function normalizeCliAnalysisSnapshot<T>(value: T): T {
   );
 }
 
+function normalizeImportedRegistryRoundTrip<T>(value: T, ...tempPaths: string[]): T {
+  const normalized = normalizeCliSnapshot(value, ...tempPaths) as T;
+
+  if (typeof normalized !== 'object' || normalized === null) {
+    return normalized;
+  }
+
+  return mapSnapshotStrings(normalized, (entry) =>
+    entry === '<TMP_DIR>/normalized.json' ? '<REPO_ROOT>/fixtures/canvas/registries/import-source.json' : entry
+  );
+}
+
 async function unzipCanvasPackage(packagePath: string, root: string): Promise<string> {
   const unzipDir = join(root, 'unzipped');
   await mkdir(unzipDir, { recursive: true });
@@ -368,6 +380,63 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(diff.stdout), 'fixtures/canvas/golden/diff-report.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
+  });
+
+  it('covers canvas template imports through the CLI entrypoint and preserves re-import semantics', async () => {
+    const tempDir = await createTempDir();
+    const sourcePath = resolveRepoPath('fixtures', 'canvas', 'registries', 'import-source.json');
+    const normalizedPath = join(tempDir, 'normalized.json');
+    const reimportedPath = join(tempDir, 'reimported.json');
+    const importArgs = [
+      '--out',
+      normalizedPath,
+      '--kind',
+      'official-artifact',
+      '--source',
+      'canvas-import-fixture',
+      '--acquired-at',
+      '2026-03-10T00:00:00.000Z',
+      '--format',
+      'json',
+    ];
+
+    const imported = await runCli(['canvas', 'templates', 'import', sourcePath, ...importArgs]);
+
+    expect(imported.code).toBe(0);
+    expect(imported.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(imported.stdout), 'fixtures/cli/golden/protocol/canvas-template-import.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(await readJsonFile(normalizedPath), 'fixtures/cli/golden/protocol/canvas-template-import.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+
+    const reimported = await runCli([
+      'canvas',
+      'templates',
+      'import',
+      normalizedPath,
+      '--out',
+      reimportedPath,
+      '--kind',
+      'official-artifact',
+      '--source',
+      'canvas-import-fixture',
+      '--acquired-at',
+      '2026-03-10T00:00:00.000Z',
+      '--format',
+      'json',
+    ]);
+
+    expect(reimported.code).toBe(0);
+    expect(reimported.stderr).toBe('');
+    expect(normalizeImportedRegistryRoundTrip(JSON.parse(reimported.stdout), tempDir)).toEqual(
+      normalizeImportedRegistryRoundTrip(JSON.parse(imported.stdout), tempDir)
+    );
+    expect(normalizeImportedRegistryRoundTrip(await readJsonFile(reimportedPath), tempDir)).toEqual(
+      normalizeImportedRegistryRoundTrip(await readJsonFile(normalizedPath), tempDir)
+    );
   });
 
   it('covers unpacked .pa.yaml canvas roots through inspect, validate, and native build', async () => {

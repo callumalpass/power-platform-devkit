@@ -16,7 +16,7 @@ import {
   type BrowserProfile,
   type UserAuthProfile,
 } from '@pp/auth';
-import { CanvasService, type CanvasBuildMode } from '@pp/canvas';
+import { CanvasService, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
 import {
   createMutationPreview,
   readMutationFlags,
@@ -299,6 +299,8 @@ async function runEnvironmentVariable(command: string | undefined, args: string[
 
 async function runCanvas(command: string | undefined, args: string[]): Promise<number> {
   switch (command) {
+    case 'templates':
+      return runCanvasTemplates(args);
     case 'lint':
     case 'validate':
       return runCanvasValidate(args);
@@ -308,6 +310,18 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
       return runCanvasBuild(args);
     case 'diff':
       return runCanvasDiff(args);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runCanvasTemplates(args: string[]): Promise<number> {
+  const [command, ...rest] = args;
+
+  switch (command) {
+    case 'import':
+      return runCanvasTemplateImport(rest);
     default:
       printHelp();
       return 1;
@@ -2399,6 +2413,33 @@ async function runCanvasDiff(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runCanvasTemplateImport(args: string[]): Promise<number> {
+  const sourcePath = positionalArgs(args)[0];
+
+  if (!sourcePath) {
+    return printFailure(
+      argumentFailure(
+        'CANVAS_TEMPLATE_IMPORT_SOURCE_REQUIRED',
+        'Usage: canvas templates import <sourcePath> [--out FILE] [--kind official-api|official-artifact|harvested|inferred] [--source LABEL]'
+      )
+    );
+  }
+
+  const result = await new CanvasService().importRegistry({
+    sourcePath,
+    outPath: readFlag(args, '--out'),
+    provenance: readCanvasTemplateImportProvenance(args),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runFlowList(args: string[]): Promise<number> {
   const resolution = await resolveDataverseClientForCli(args);
 
@@ -3020,6 +3061,20 @@ function outputFormat(args: string[], fallback: OutputFormat): OutputFormat {
   return (readFlag(args, '--format') ?? fallback) as OutputFormat;
 }
 
+function readCanvasTemplateImportProvenance(args: string[]): Partial<CanvasTemplateProvenance> | undefined {
+  const provenance: Partial<CanvasTemplateProvenance> = {
+    kind: readFlag(args, '--kind') as CanvasTemplateProvenance['kind'] | undefined,
+    source: readFlag(args, '--source'),
+    acquiredAt: readFlag(args, '--acquired-at'),
+    sourceArtifact: readFlag(args, '--source-artifact'),
+    sourceAppId: readFlag(args, '--source-app-id'),
+    platformVersion: readFlag(args, '--platform-version'),
+    appVersion: readFlag(args, '--app-version'),
+  };
+
+  return Object.values(provenance).some((value) => value !== undefined) ? provenance : undefined;
+}
+
 function resolveProcessOutputFormat(): OutputFormat {
   return outputFormat(process.argv.slice(2), 'json');
 }
@@ -3471,6 +3526,7 @@ function printHelp(): void {
       '  canvas inspect <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas build <path> [--project path] [--out FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas diff <leftPath> <rightPath> [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas templates import <sourcePath> [--out FILE] [--kind official-api|official-artifact|harvested|inferred] [--source LABEL] [--acquired-at ISO] [--source-artifact PATH] [--source-app-id ID] [--platform-version VERSION] [--app-version VERSION] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow inspect <name|id|uniqueName|path> [--env ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',

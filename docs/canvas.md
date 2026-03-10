@@ -205,6 +205,7 @@ pp canvas lint ./apps/MyCanvas --project .
 pp canvas inspect ./apps/MyCanvas --project . --mode strict
 pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp
 pp canvas diff ./apps/MyCanvas ./apps/MyCanvas-next
+pp canvas templates import ./fixtures/canvas/registries/import-source.json --out ./tmp/runtime-registry.json --source imported-catalog --acquired-at 2026-03-10T00:00:00.000Z
 ```
 
 Useful flags:
@@ -214,6 +215,9 @@ Useful flags:
 - `--mode strict|seeded|registry`
 - `--cache-dir` for `cache:NAME` registry references
 - `--out` for build output
+- `canvas templates import` also accepts provenance overrides:
+  `--kind`, `--source`, `--acquired-at`, `--source-artifact`,
+  `--source-app-id`, `--platform-version`, and `--app-version`
 
 Path detection is automatic:
 

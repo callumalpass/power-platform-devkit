@@ -19,6 +19,8 @@ The committed fixtures currently cover:
   including topology resolution, provider bindings, parameter sourcing, and
   missing-input visibility
 - canvas template import, inspect, validate, build, and diff outputs
+- real CLI coverage for `canvas templates import`, including normalized output
+  pinning and import/re-import idempotence
 - unpacked canvas-app `.pa.yaml` source loading, property validation, native
   `.msapp` packaging, and extracted package-content snapshots from a committed
   source-root fixture
