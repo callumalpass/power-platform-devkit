@@ -4,21 +4,33 @@ import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } fro
 import { HttpClient, type HttpQueryValue, type HttpRequestOptions, type HttpResponse } from '@pp/http';
 import {
   buildColumnCreatePayload,
+  buildColumnUpdatePayload,
   buildCustomerRelationshipCreatePayload,
   buildGlobalOptionSetCreatePayload,
+  buildManyToManyRelationshipUpdatePayload,
   buildManyToManyRelationshipCreatePayload,
   buildOneToManyRelationshipCreatePayload,
+  buildOneToManyRelationshipUpdatePayload,
   buildTableCreatePayload,
+  buildTableUpdatePayload,
+  parseColumnUpdateSpec,
+  parseManyToManyRelationshipUpdateSpec,
+  parseOneToManyRelationshipUpdateSpec,
+  parseTableUpdateSpec,
   resolveLogicalName,
+  type ColumnUpdateSpec,
   type ColumnCreateSpec,
   type CustomerRelationshipCreateSpec,
   type GlobalOptionSetCreateSpec,
   type GlobalOptionSetUpdateSpec,
+  type ManyToManyRelationshipUpdateSpec,
   type ManyToManyRelationshipCreateSpec,
   type MetadataApplyOperation,
   type MetadataApplyPlan,
   type MetadataBuildOptions,
+  type OneToManyRelationshipUpdateSpec,
   type OneToManyRelationshipCreateSpec,
+  type TableUpdateSpec,
   type TableCreateSpec,
 } from './metadata-create';
 
@@ -948,6 +960,41 @@ export class DataverseClient {
     return buildMetadataWriteResult(response, entity, publish, [logicalName]);
   }
 
+  async updateTable(
+    logicalName: string,
+    spec: TableUpdateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<EntityDefinition>>> {
+    const current = await this.getTable(logicalName, {
+      includeAnnotations: options.includeAnnotations,
+    });
+
+    if (!current.success || !current.data) {
+      return current as unknown as OperationResult<DataverseMetadataWriteResult<EntityDefinition>>;
+    }
+
+    const response = await this.request<void>({
+      path: buildMetadataEntityPath(logicalName),
+      method: 'PUT',
+      body: mergeDataverseMetadataDefinition(current.data, buildTableUpdatePayload(spec, options)),
+      responseType: 'void',
+      headers: buildMetadataWriteHeaders(options),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseMetadataWriteResult<EntityDefinition>>;
+    }
+
+    const entity = await this.getTable(logicalName, {
+      includeAnnotations: options.includeAnnotations,
+    });
+    const publish = options.publish
+      ? await this.publishEntities([logicalName], options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(response, entity, publish, [logicalName]);
+  }
+
   async createColumn(
     tableLogicalName: string,
     spec: ColumnCreateSpec,
@@ -967,6 +1014,42 @@ export class DataverseClient {
     }
 
     const entity = await this.getColumn(tableLogicalName, logicalName, {
+      includeAnnotations: options.includeAnnotations,
+    });
+    const publish = options.publish
+      ? await this.publishEntities([tableLogicalName], options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(response, entity, publish, [tableLogicalName]);
+  }
+
+  async updateColumn(
+    tableLogicalName: string,
+    columnLogicalName: string,
+    spec: ColumnUpdateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<AttributeDefinition>>> {
+    const current = await this.getColumn(tableLogicalName, columnLogicalName, {
+      includeAnnotations: options.includeAnnotations,
+    });
+
+    if (!current.success || !current.data) {
+      return current as unknown as OperationResult<DataverseMetadataWriteResult<AttributeDefinition>>;
+    }
+
+    const response = await this.request<void>({
+      path: buildMetadataAttributePath(tableLogicalName, columnLogicalName),
+      method: 'PUT',
+      body: mergeDataverseMetadataDefinition(current.data, buildColumnUpdatePayload(spec, options)),
+      responseType: 'void',
+      headers: buildMetadataWriteHeaders(options),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseMetadataWriteResult<AttributeDefinition>>;
+    }
+
+    const entity = await this.getColumn(tableLogicalName, columnLogicalName, {
       includeAnnotations: options.includeAnnotations,
     });
     const publish = options.publish
@@ -1161,6 +1244,63 @@ export class DataverseClient {
       includeAnnotations: options.includeAnnotations,
     });
     const publishTargets = uniqueStrings([spec.entity1LogicalName, spec.entity2LogicalName]);
+    const publish = options.publish
+      ? await this.publishEntities(publishTargets, options.solutionUniqueName)
+      : undefined;
+
+    return buildMetadataWriteResult(response, entity, publish, publishTargets);
+  }
+
+  async updateRelationship(
+    schemaName: string,
+    kind: Exclude<RelationshipMetadataKind, 'auto'>,
+    spec: OneToManyRelationshipUpdateSpec | ManyToManyRelationshipUpdateSpec,
+    options: DataverseMetadataWriteOptions = {}
+  ): Promise<OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>> {
+    const current = await this.getRelationship(schemaName, {
+      kind,
+      includeAnnotations: options.includeAnnotations,
+    });
+
+    if (!current.success || !current.data) {
+      return current as unknown as OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>;
+    }
+
+    const response = await this.request<void>({
+      path: buildRelationshipPath(schemaName, kind),
+      method: 'PUT',
+      body:
+        kind === 'one-to-many'
+          ? mergeDataverseMetadataDefinition(current.data, buildOneToManyRelationshipUpdatePayload(spec as OneToManyRelationshipUpdateSpec, {
+              associatedMenuLabel: readLocalizedLabel(((current.data as Record<string, unknown>).AssociatedMenuConfiguration as Record<string, unknown> | undefined)?.Label),
+              lookupDisplayName: readLocalizedLabel(((current.data as Record<string, unknown>).Lookup as Record<string, unknown> | undefined)?.DisplayName),
+              associatedMenuBehavior: readAssociatedMenuBehavior((current.data as Record<string, unknown>).AssociatedMenuConfiguration),
+              associatedMenuGroup: readAssociatedMenuGroup((current.data as Record<string, unknown>).AssociatedMenuConfiguration),
+              associatedMenuOrder: readNumber(((current.data as Record<string, unknown>).AssociatedMenuConfiguration as Record<string, unknown> | undefined)?.Order),
+            }, options))
+          : mergeDataverseMetadataDefinition(current.data, buildManyToManyRelationshipUpdatePayload(spec as ManyToManyRelationshipUpdateSpec, {
+              entity1LogicalName: readString((current.data as Record<string, unknown>).Entity1LogicalName),
+              entity2LogicalName: readString((current.data as Record<string, unknown>).Entity2LogicalName),
+              entity1Menu: readAssociatedMenuConfig((current.data as Record<string, unknown>).Entity1AssociatedMenuConfiguration),
+              entity2Menu: readAssociatedMenuConfig((current.data as Record<string, unknown>).Entity2AssociatedMenuConfiguration),
+            }, options)),
+      responseType: 'void',
+      headers: buildMetadataWriteHeaders(options),
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>;
+    }
+
+    const entity = await this.getRelationship(schemaName, {
+      kind,
+      includeAnnotations: options.includeAnnotations,
+    });
+    const relationship = normalizeRelationshipDefinition(current.data);
+    const publishTargets =
+      kind === 'many-to-many'
+        ? uniqueStrings([relationship.entity1LogicalName ?? '', relationship.entity2LogicalName ?? ''])
+        : uniqueStrings([relationship.referencedEntity ?? '', relationship.referencingEntity ?? '']);
     const publish = options.publish
       ? await this.publishEntities(publishTargets, options.solutionUniqueName)
       : undefined;
@@ -1369,8 +1509,22 @@ export class DataverseClient {
         });
         return mapApplyOperationResult(operation.kind, result, [resolveLogicalName(operation.spec.schemaName, operation.spec.logicalName)]);
       }
+      case 'update-table': {
+        const result = await this.updateTable(operation.tableLogicalName, operation.spec, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result, [operation.tableLogicalName]);
+      }
       case 'add-column': {
         const result = await this.createColumn(operation.tableLogicalName, operation.spec, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result, [operation.tableLogicalName]);
+      }
+      case 'update-column': {
+        const result = await this.updateColumn(operation.tableLogicalName, operation.columnLogicalName, operation.spec, {
           ...options,
           publish: false,
         });
@@ -1396,6 +1550,13 @@ export class DataverseClient {
           publish: false,
         });
         return mapApplyOperationResult(operation.kind, result, [operation.spec.referencedEntity, operation.spec.referencingEntity]);
+      }
+      case 'update-relationship': {
+        const result = await this.updateRelationship(operation.schemaName, operation.relationshipKind, operation.spec as never, {
+          ...options,
+          publish: false,
+        });
+        return mapApplyOperationResult(operation.kind, result);
       }
       case 'create-many-to-many': {
         const result = await this.createManyToManyRelationship(operation.spec, {
@@ -3379,10 +3540,13 @@ function orderMetadataApplyOperations(operations: MetadataApplyOperation[]): Met
     'create-option-set': 10,
     'update-option-set': 20,
     'create-table': 30,
-    'add-column': 40,
-    'create-relationship': 50,
-    'create-many-to-many': 60,
-    'create-customer-relationship': 70,
+    'update-table': 40,
+    'add-column': 50,
+    'update-column': 60,
+    'create-relationship': 70,
+    'update-relationship': 80,
+    'create-many-to-many': 90,
+    'create-customer-relationship': 100,
   };
 
   return operations
@@ -3424,32 +3588,44 @@ function buildDataverseLabel(text: string, languageCode = 1033): Record<string, 
 
 export {
   buildColumnCreatePayload,
+  buildColumnUpdatePayload,
   buildCustomerRelationshipCreatePayload,
   buildGlobalOptionSetCreatePayload,
+  buildManyToManyRelationshipUpdatePayload,
   buildManyToManyRelationshipCreatePayload,
   buildOneToManyRelationshipCreatePayload,
+  buildOneToManyRelationshipUpdatePayload,
   buildTableCreatePayload,
+  buildTableUpdatePayload,
   metadataApplyOperationSchema,
   metadataApplyPlanSchema,
+  parseColumnUpdateSpec,
   parseMetadataApplyPlan,
+  parseManyToManyRelationshipUpdateSpec,
   parseCustomerRelationshipCreateSpec,
   parseColumnCreateSpec,
   parseGlobalOptionSetCreateSpec,
   parseGlobalOptionSetUpdateSpec,
+  parseOneToManyRelationshipUpdateSpec,
   parseManyToManyRelationshipCreateSpec,
   parseOneToManyRelationshipCreateSpec,
+  parseTableUpdateSpec,
   parseTableCreateSpec,
   resolveLogicalName,
   type ColumnCreateSpec,
+  type ColumnUpdateSpec,
   type CustomerRelationshipCreateSpec,
   type GlobalOptionSetCreateSpec,
   type GlobalOptionSetUpdateSpec,
   type ManyToManyRelationshipCreateSpec,
+  type ManyToManyRelationshipUpdateSpec,
   type MetadataApplyOperation,
   type MetadataApplyPlan,
   type MetadataBuildOptions,
   type OneToManyRelationshipCreateSpec,
+  type OneToManyRelationshipUpdateSpec,
   type TableCreateSpec,
+  type TableUpdateSpec,
 } from './metadata-create';
 
 function readManagedPrimitive<T extends string | number | boolean>(value: unknown): T | undefined {
@@ -3501,6 +3677,60 @@ function readLocalizedLabel(value: unknown): string | undefined {
   return undefined;
 }
 
+function readAssociatedMenuBehavior(
+  value: unknown
+): 'useCollectionName' | 'useLabel' | 'doNotDisplay' | undefined {
+  const behavior = readString(value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>).Behavior : undefined);
+
+  switch (behavior) {
+    case 'UseLabel':
+      return 'useLabel';
+    case 'DoNotDisplay':
+      return 'doNotDisplay';
+    case 'UseCollectionName':
+      return 'useCollectionName';
+    default:
+      return undefined;
+  }
+}
+
+function readAssociatedMenuGroup(value: unknown): 'details' | 'sales' | 'service' | 'marketing' | undefined {
+  const group = readString(value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>).Group : undefined);
+
+  switch (group) {
+    case 'Sales':
+      return 'sales';
+    case 'Service':
+      return 'service';
+    case 'Marketing':
+      return 'marketing';
+    case 'Details':
+      return 'details';
+    default:
+      return undefined;
+  }
+}
+
+function readAssociatedMenuConfig(value: unknown): {
+  label?: string;
+  behavior?: 'useCollectionName' | 'useLabel' | 'doNotDisplay';
+  group?: 'details' | 'sales' | 'service' | 'marketing';
+  order?: number;
+} | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return compactObject({
+    label: readLocalizedLabel(record.Label),
+    behavior: readAssociatedMenuBehavior(record),
+    group: readAssociatedMenuGroup(record),
+    order: readNumber(record.Order),
+  });
+}
+
 function readStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -3532,6 +3762,61 @@ function readNumber(value: unknown): number | undefined {
 
 function compactObject<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function mergeDataverseMetadataDefinition(current: unknown, overlay: Record<string, unknown>): Record<string, unknown> {
+  return mergeMetadataRecords(sanitizeDataverseMetadataDefinition(current), overlay);
+}
+
+function sanitizeDataverseMetadataDefinition(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([key]) => key === '@odata.type' || !key.startsWith('@odata.'))
+      .map(([key, entry]) => [key, sanitizeMetadataValue(entry)])
+  );
+}
+
+function sanitizeMetadataValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeMetadataValue(entry));
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  return sanitizeDataverseMetadataDefinition(value);
+}
+
+function mergeMetadataRecords(base: Record<string, unknown>, overlay: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base };
+
+  for (const [key, value] of Object.entries(overlay)) {
+    if (value === undefined) {
+      continue;
+    }
+
+    const existing = merged[key];
+
+    if (isPlainObject(existing) && isPlainObject(value)) {
+      merged[key] = mergeMetadataRecords(existing, value);
+      continue;
+    }
+
+    merged[key] = value;
+  }
+
+  return merged;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function serializeDataverseFunctionParameter(value: unknown): OperationResult<string> {

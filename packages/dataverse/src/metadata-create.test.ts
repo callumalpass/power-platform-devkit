@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildColumnCreatePayload,
+  buildColumnUpdatePayload,
   buildCustomerRelationshipCreatePayload,
+  buildManyToManyRelationshipUpdatePayload,
   buildManyToManyRelationshipCreatePayload,
+  buildOneToManyRelationshipUpdatePayload,
   buildOneToManyRelationshipCreatePayload,
   buildTableCreatePayload,
+  buildTableUpdatePayload,
   parseColumnCreateSpec,
+  parseColumnUpdateSpec,
   parseGlobalOptionSetUpdateSpec,
   parseTableCreateSpec,
+  parseTableUpdateSpec,
 } from './metadata-create';
 
 describe('metadata-create specs', () => {
@@ -63,6 +69,35 @@ describe('metadata-create specs', () => {
       removeValues: [100000009],
       orderValues: [100000000, 100000001],
     });
+  });
+
+  it('parses table and column update specs', () => {
+    const table = parseTableUpdateSpec({
+      displayName: 'Projects',
+      description: 'Updated table description',
+    });
+    const column = parseColumnUpdateSpec({
+      displayName: 'Project Status',
+      trueLabel: 'Enabled',
+      falseLabel: 'Disabled',
+    });
+
+    expect(table.success).toBe(true);
+    expect(column.success).toBe(true);
+    expect(column.data).toMatchObject({
+      displayName: 'Project Status',
+      trueLabel: 'Enabled',
+      falseLabel: 'Disabled',
+    });
+  });
+
+  it('rejects incomplete boolean label updates', () => {
+    const result = parseColumnUpdateSpec({
+      trueLabel: 'Enabled',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe('DATAVERSE_METADATA_COLUMN_UPDATE_SPEC_INVALID');
   });
 });
 
@@ -260,5 +295,117 @@ describe('metadata-create payloads', () => {
         ReferencingEntity: 'pp_project',
       },
     ]);
+  });
+
+  it('builds table and column update payloads', () => {
+    const tablePayload = buildTableUpdatePayload({
+      displayName: 'Projects',
+      pluralDisplayName: 'Projects',
+      description: 'Updated table description',
+    });
+    const columnPayload = buildColumnUpdatePayload({
+      displayName: 'Project Status',
+      requiredLevel: 'recommended',
+      trueLabel: 'Enabled',
+      falseLabel: 'Disabled',
+    });
+
+    expect(tablePayload).toMatchObject({
+      DisplayName: {
+        UserLocalizedLabel: {
+          Label: 'Projects',
+        },
+      },
+      DisplayCollectionName: {
+        UserLocalizedLabel: {
+          Label: 'Projects',
+        },
+      },
+    });
+    expect(columnPayload).toMatchObject({
+      DisplayName: {
+        UserLocalizedLabel: {
+          Label: 'Project Status',
+        },
+      },
+      RequiredLevel: {
+        Value: 'Recommended',
+      },
+      OptionSet: {
+        TrueOption: {
+          Label: {
+            UserLocalizedLabel: {
+              Label: 'Enabled',
+            },
+          },
+        },
+        FalseOption: {
+          Label: {
+            UserLocalizedLabel: {
+              Label: 'Disabled',
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('builds relationship update payloads', () => {
+    const oneToManyPayload = buildOneToManyRelationshipUpdatePayload(
+      {
+        associatedMenuLabel: 'Customers',
+        associatedMenuBehavior: 'useLabel',
+        cascade: {
+          delete: 'restrict',
+        },
+      },
+      {
+        associatedMenuLabel: 'Account',
+        lookupDisplayName: 'Account',
+        associatedMenuBehavior: 'useCollectionName',
+        associatedMenuGroup: 'details',
+        associatedMenuOrder: 10000,
+      }
+    );
+    const manyToManyPayload = buildManyToManyRelationshipUpdatePayload(
+      {
+        entity1Menu: {
+          label: 'Projects',
+        },
+      },
+      {
+        entity1LogicalName: 'pp_project',
+        entity2LogicalName: 'contact',
+        entity1Menu: {
+          label: 'Project',
+          behavior: 'useCollectionName',
+          group: 'details',
+          order: 10000,
+        },
+      }
+    );
+
+    expect(oneToManyPayload).toMatchObject({
+      AssociatedMenuConfiguration: {
+        Behavior: 'UseLabel',
+        Label: {
+          UserLocalizedLabel: {
+            Label: 'Customers',
+          },
+        },
+      },
+      CascadeConfiguration: {
+        Delete: 'Restrict',
+      },
+    });
+    expect(manyToManyPayload).toMatchObject({
+      Entity1AssociatedMenuConfiguration: {
+        Label: {
+          UserLocalizedLabel: {
+            Label: 'Projects',
+          },
+        },
+      },
+    });
   });
 });

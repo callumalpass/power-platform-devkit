@@ -221,15 +221,90 @@ export const globalOptionSetUpdateSpecSchema = z.object({
   orderValues: z.array(z.number().int()).optional(),
 });
 
+export const tableUpdateSpecSchema = z
+  .object({
+    displayName: z.string().min(1).optional(),
+    pluralDisplayName: z.string().min(1).optional(),
+    description: z.string().optional(),
+  })
+  .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
+    message: 'At least one table metadata field must be provided.',
+  });
+
+export const columnUpdateSpecSchema = z
+  .object({
+    displayName: z.string().min(1).optional(),
+    description: z.string().optional(),
+    requiredLevel: requiredLevelSchema.optional(),
+    trueLabel: z.string().min(1).optional(),
+    falseLabel: z.string().min(1).optional(),
+  })
+  .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
+    message: 'At least one column metadata field must be provided.',
+  })
+  .superRefine((value, ctx) => {
+    const hasTrueLabel = value.trueLabel !== undefined;
+    const hasFalseLabel = value.falseLabel !== undefined;
+
+    if (hasTrueLabel !== hasFalseLabel) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: hasTrueLabel ? ['falseLabel'] : ['trueLabel'],
+        message: 'Boolean label updates require both trueLabel and falseLabel.',
+      });
+    }
+  });
+
+export const oneToManyRelationshipUpdateSpecSchema = z
+  .object({
+    associatedMenuLabel: z.string().min(1).optional(),
+    associatedMenuBehavior: associatedMenuBehaviorSchema.optional(),
+    associatedMenuGroup: associatedMenuGroupSchema.optional(),
+    associatedMenuOrder: z.number().int().min(0).optional(),
+    cascade: z
+      .object({
+        assign: cascadeTypeSchema.optional(),
+        delete: cascadeTypeSchema.optional(),
+        merge: cascadeTypeSchema.optional(),
+        reparent: cascadeTypeSchema.optional(),
+        share: cascadeTypeSchema.optional(),
+        unshare: cascadeTypeSchema.optional(),
+      })
+      .optional(),
+  })
+  .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
+    message: 'At least one one-to-many relationship field must be provided.',
+  });
+
+export const manyToManyRelationshipUpdateSpecSchema = z
+  .object({
+    entity1Menu: associatedMenuConfigSchema.optional(),
+    entity2Menu: associatedMenuConfigSchema.optional(),
+  })
+  .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
+    message: 'At least one many-to-many relationship field must be provided.',
+  });
+
 export const metadataApplyOperationSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('create-table'),
     spec: tableCreateSpecSchema,
   }),
   z.object({
+    kind: z.literal('update-table'),
+    tableLogicalName: z.string().min(1),
+    spec: tableUpdateSpecSchema,
+  }),
+  z.object({
     kind: z.literal('add-column'),
     tableLogicalName: z.string().min(1),
     spec: columnCreateSpecSchema,
+  }),
+  z.object({
+    kind: z.literal('update-column'),
+    tableLogicalName: z.string().min(1),
+    columnLogicalName: z.string().min(1),
+    spec: columnUpdateSpecSchema,
   }),
   z.object({
     kind: z.literal('create-option-set'),
@@ -242,6 +317,12 @@ export const metadataApplyOperationSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('create-relationship'),
     spec: oneToManyRelationshipCreateSpecSchema,
+  }),
+  z.object({
+    kind: z.literal('update-relationship'),
+    schemaName: z.string().min(1),
+    relationshipKind: z.enum(['one-to-many', 'many-to-many']),
+    spec: z.union([oneToManyRelationshipUpdateSpecSchema, manyToManyRelationshipUpdateSpecSchema]),
   }),
   z.object({
     kind: z.literal('create-many-to-many'),
@@ -265,6 +346,10 @@ export type OneToManyRelationshipCreateSpec = z.output<typeof oneToManyRelations
 export type ManyToManyRelationshipCreateSpec = z.output<typeof manyToManyRelationshipCreateSpecSchema>;
 export type CustomerRelationshipCreateSpec = z.output<typeof customerRelationshipCreateSpecSchema>;
 export type GlobalOptionSetUpdateSpec = z.output<typeof globalOptionSetUpdateSpecSchema>;
+export type TableUpdateSpec = z.output<typeof tableUpdateSpecSchema>;
+export type ColumnUpdateSpec = z.output<typeof columnUpdateSpecSchema>;
+export type OneToManyRelationshipUpdateSpec = z.output<typeof oneToManyRelationshipUpdateSpecSchema>;
+export type ManyToManyRelationshipUpdateSpec = z.output<typeof manyToManyRelationshipUpdateSpecSchema>;
 export type MetadataApplyOperation = z.output<typeof metadataApplyOperationSchema>;
 export type MetadataApplyPlan = z.output<typeof metadataApplyPlanSchema>;
 
@@ -322,6 +407,32 @@ export function parseGlobalOptionSetUpdateSpec(input: unknown): OperationResult<
     input,
     'DATAVERSE_METADATA_OPTIONSET_SPEC_INVALID',
     'Global option set update spec is invalid.'
+  );
+}
+
+export function parseTableUpdateSpec(input: unknown): OperationResult<TableUpdateSpec> {
+  return parseSpec(tableUpdateSpecSchema, input, 'DATAVERSE_METADATA_TABLE_UPDATE_SPEC_INVALID', 'Table update spec is invalid.');
+}
+
+export function parseColumnUpdateSpec(input: unknown): OperationResult<ColumnUpdateSpec> {
+  return parseSpec(columnUpdateSpecSchema, input, 'DATAVERSE_METADATA_COLUMN_UPDATE_SPEC_INVALID', 'Column update spec is invalid.');
+}
+
+export function parseOneToManyRelationshipUpdateSpec(input: unknown): OperationResult<OneToManyRelationshipUpdateSpec> {
+  return parseSpec(
+    oneToManyRelationshipUpdateSpecSchema,
+    input,
+    'DATAVERSE_METADATA_RELATIONSHIP_UPDATE_SPEC_INVALID',
+    'One-to-many relationship update spec is invalid.'
+  );
+}
+
+export function parseManyToManyRelationshipUpdateSpec(input: unknown): OperationResult<ManyToManyRelationshipUpdateSpec> {
+  return parseSpec(
+    manyToManyRelationshipUpdateSpecSchema,
+    input,
+    'DATAVERSE_METADATA_RELATIONSHIP_UPDATE_SPEC_INVALID',
+    'Many-to-many relationship update spec is invalid.'
   );
 }
 
@@ -530,6 +641,34 @@ export function buildGlobalOptionSetCreatePayload(
   });
 }
 
+export function buildTableUpdatePayload(spec: TableUpdateSpec, options: MetadataBuildOptions = {}): Record<string, unknown> {
+  const languageCode = options.languageCode ?? 1033;
+
+  return compactObject({
+    DisplayName: spec.displayName ? buildLabel(spec.displayName, languageCode) : undefined,
+    DisplayCollectionName: spec.pluralDisplayName ? buildLabel(spec.pluralDisplayName, languageCode) : undefined,
+    Description: spec.description !== undefined ? buildLabel(spec.description, languageCode) : undefined,
+  });
+}
+
+export function buildColumnUpdatePayload(spec: ColumnUpdateSpec, options: MetadataBuildOptions = {}): Record<string, unknown> {
+  const languageCode = options.languageCode ?? 1033;
+
+  return compactObject({
+    DisplayName: spec.displayName ? buildLabel(spec.displayName, languageCode) : undefined,
+    Description: spec.description !== undefined ? buildLabel(spec.description, languageCode) : undefined,
+    RequiredLevel: spec.requiredLevel ? buildRequiredLevel(spec.requiredLevel) : undefined,
+    OptionSet:
+      spec.trueLabel && spec.falseLabel
+        ? {
+            TrueOption: buildOptionMetadata({ label: spec.trueLabel, value: 1 }, languageCode),
+            FalseOption: buildOptionMetadata({ label: spec.falseLabel, value: 0 }, languageCode),
+            OptionSetType: 'Boolean',
+          }
+        : undefined,
+  });
+}
+
 export function buildOneToManyRelationshipCreatePayload(
   spec: OneToManyRelationshipCreateSpec,
   options: MetadataBuildOptions = {}
@@ -631,6 +770,103 @@ export function buildCustomerRelationshipCreatePayload(
         languageCode
       ),
     ],
+  });
+}
+
+export function buildOneToManyRelationshipUpdatePayload(
+  spec: OneToManyRelationshipUpdateSpec,
+  currentRelationship: {
+    associatedMenuLabel?: string;
+    lookupDisplayName?: string;
+    associatedMenuBehavior?: z.output<typeof associatedMenuBehaviorSchema>;
+    associatedMenuGroup?: z.output<typeof associatedMenuGroupSchema>;
+    associatedMenuOrder?: number;
+  },
+  options: MetadataBuildOptions = {}
+): Record<string, unknown> {
+  const languageCode = options.languageCode ?? 1033;
+
+  const menuConfigured =
+    spec.associatedMenuLabel !== undefined ||
+    spec.associatedMenuBehavior !== undefined ||
+    spec.associatedMenuGroup !== undefined ||
+    spec.associatedMenuOrder !== undefined;
+
+  const fallbackLabel = currentRelationship.associatedMenuLabel ?? currentRelationship.lookupDisplayName ?? 'Related';
+
+  return compactObject({
+    AssociatedMenuConfiguration: menuConfigured
+      ? buildAssociatedMenuConfiguration(
+          {
+            label: spec.associatedMenuLabel ?? currentRelationship.associatedMenuLabel ?? currentRelationship.lookupDisplayName,
+            behavior: spec.associatedMenuBehavior ?? currentRelationship.associatedMenuBehavior ?? 'useCollectionName',
+            group: spec.associatedMenuGroup ?? currentRelationship.associatedMenuGroup ?? 'details',
+            order: spec.associatedMenuOrder ?? currentRelationship.associatedMenuOrder ?? 10000,
+          },
+          fallbackLabel,
+          languageCode
+        )
+      : undefined,
+    CascadeConfiguration: spec.cascade
+      ? compactObject({
+          Assign: spec.cascade.assign ? mapCascadeType(spec.cascade.assign) : undefined,
+          Delete: spec.cascade.delete ? mapCascadeType(spec.cascade.delete) : undefined,
+          Merge: spec.cascade.merge ? mapCascadeType(spec.cascade.merge) : undefined,
+          Reparent: spec.cascade.reparent ? mapCascadeType(spec.cascade.reparent) : undefined,
+          Share: spec.cascade.share ? mapCascadeType(spec.cascade.share) : undefined,
+          Unshare: spec.cascade.unshare ? mapCascadeType(spec.cascade.unshare) : undefined,
+        })
+      : undefined,
+  });
+}
+
+export function buildManyToManyRelationshipUpdatePayload(
+  spec: ManyToManyRelationshipUpdateSpec,
+  currentRelationship: {
+    entity1LogicalName?: string;
+    entity2LogicalName?: string;
+    entity1Menu?: {
+      label?: string;
+      behavior?: z.output<typeof associatedMenuBehaviorSchema>;
+      group?: z.output<typeof associatedMenuGroupSchema>;
+      order?: number;
+    };
+    entity2Menu?: {
+      label?: string;
+      behavior?: z.output<typeof associatedMenuBehaviorSchema>;
+      group?: z.output<typeof associatedMenuGroupSchema>;
+      order?: number;
+    };
+  },
+  options: MetadataBuildOptions = {}
+): Record<string, unknown> {
+  const languageCode = options.languageCode ?? 1033;
+
+  return compactObject({
+    Entity1AssociatedMenuConfiguration: spec.entity1Menu
+      ? buildAssociatedMenuConfiguration(
+          {
+            label: spec.entity1Menu.label ?? currentRelationship.entity1Menu?.label,
+            behavior: spec.entity1Menu.behavior ?? currentRelationship.entity1Menu?.behavior ?? 'useCollectionName',
+            group: spec.entity1Menu.group ?? currentRelationship.entity1Menu?.group ?? 'details',
+            order: spec.entity1Menu.order ?? currentRelationship.entity1Menu?.order ?? 10000,
+          },
+          currentRelationship.entity1LogicalName ?? 'Entity1',
+          languageCode
+        )
+      : undefined,
+    Entity2AssociatedMenuConfiguration: spec.entity2Menu
+      ? buildAssociatedMenuConfiguration(
+          {
+            label: spec.entity2Menu.label ?? currentRelationship.entity2Menu?.label,
+            behavior: spec.entity2Menu.behavior ?? currentRelationship.entity2Menu?.behavior ?? 'useCollectionName',
+            group: spec.entity2Menu.group ?? currentRelationship.entity2Menu?.group ?? 'details',
+            order: spec.entity2Menu.order ?? currentRelationship.entity2Menu?.order ?? 10000,
+          },
+          currentRelationship.entity2LogicalName ?? 'Entity2',
+          languageCode
+        )
+      : undefined,
   });
 }
 

@@ -794,6 +794,261 @@ OData-Version: 4.0\r
     });
   });
 
+  it('updates table metadata through a typed metadata PUT and publishes the entity', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': 'Microsoft.Dynamics.CRM.EntityMetadata',
+          LogicalName: 'pp_project',
+          SchemaName: 'pp_Project',
+          MetadataId: '00000000-0000-0000-0000-000000000010',
+          DisplayName: {
+            UserLocalizedLabel: {
+              Label: 'Project',
+            },
+          },
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': 'Microsoft.Dynamics.CRM.EntityMetadata',
+          LogicalName: 'pp_project',
+          SchemaName: 'pp_Project',
+          MetadataId: '00000000-0000-0000-0000-000000000010',
+          DisplayName: {
+            UserLocalizedLabel: {
+              Label: 'Projects',
+            },
+          },
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.updateTable(
+      'pp_project',
+      {
+        displayName: 'Projects',
+      },
+      {
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      "EntityDefinitions(LogicalName='pp_project')",
+      "EntityDefinitions(LogicalName='pp_project')",
+      "EntityDefinitions(LogicalName='pp_project')",
+      'PublishXml',
+    ]);
+    expect(httpClient.requests[1]?.method).toBe('PUT');
+    expect(httpClient.requests[1]?.body).toMatchObject({
+      LogicalName: 'pp_project',
+      DisplayName: {
+        UserLocalizedLabel: {
+          Label: 'Projects',
+        },
+      },
+    });
+  });
+
+  it('updates column metadata through a typed metadata PUT and publishes the parent entity', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': 'Microsoft.Dynamics.CRM.BooleanAttributeMetadata',
+          LogicalName: 'pp_active',
+          SchemaName: 'pp_Active',
+          MetadataId: '00000000-0000-0000-0000-000000000011',
+          DisplayName: {
+            UserLocalizedLabel: {
+              Label: 'Active',
+            },
+          },
+          OptionSet: {
+            TrueOption: {
+              Label: {
+                UserLocalizedLabel: {
+                  Label: 'Yes',
+                },
+              },
+            },
+            FalseOption: {
+              Label: {
+                UserLocalizedLabel: {
+                  Label: 'No',
+                },
+              },
+            },
+          },
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': 'Microsoft.Dynamics.CRM.BooleanAttributeMetadata',
+          LogicalName: 'pp_active',
+          SchemaName: 'pp_Active',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.updateColumn(
+      'pp_project',
+      'pp_active',
+      {
+        displayName: 'Enabled',
+        trueLabel: 'Enabled',
+        falseLabel: 'Disabled',
+      },
+      {
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(httpClient.requests[1]?.method).toBe('PUT');
+    expect(httpClient.requests[1]?.path).toBe("EntityDefinitions(LogicalName='pp_project')/Attributes(LogicalName='pp_active')");
+    expect(httpClient.requests[1]?.body).toMatchObject({
+      LogicalName: 'pp_active',
+      DisplayName: {
+        UserLocalizedLabel: {
+          Label: 'Enabled',
+        },
+      },
+      OptionSet: {
+        TrueOption: {
+          Label: {
+            UserLocalizedLabel: {
+              Label: 'Enabled',
+            },
+          },
+        },
+        FalseOption: {
+          Label: {
+            UserLocalizedLabel: {
+              Label: 'Disabled',
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('updates one-to-many relationships through a typed metadata PUT and publishes both entities', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': 'Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata',
+          SchemaName: 'pp_project_account',
+          ReferencedEntity: 'account',
+          ReferencingEntity: 'pp_project',
+          Lookup: {
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
+          },
+          AssociatedMenuConfiguration: {
+            Label: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
+            Behavior: 'UseCollectionName',
+            Group: 'Details',
+            Order: 10000,
+          },
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          '@odata.type': 'Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata',
+          SchemaName: 'pp_project_account',
+          ReferencedEntity: 'account',
+          ReferencingEntity: 'pp_project',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.updateRelationship(
+      'pp_project_account',
+      'one-to-many',
+      {
+        associatedMenuLabel: 'Customers',
+        associatedMenuBehavior: 'useLabel',
+      },
+      {
+        publish: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(httpClient.requests[1]?.method).toBe('PUT');
+    expect(httpClient.requests[1]?.path).toBe(
+      "RelationshipDefinitions(SchemaName='pp_project_account')/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata"
+    );
+    expect(httpClient.requests[1]?.body).toMatchObject({
+      SchemaName: 'pp_project_account',
+      AssociatedMenuConfiguration: {
+        Behavior: 'UseLabel',
+        Label: {
+          UserLocalizedLabel: {
+            Label: 'Customers',
+          },
+        },
+      },
+    });
+    expect(httpClient.requests[3]?.body).toEqual({
+      ParameterXml: '<importexportxml><entities><entity>account</entity><entity>pp_project</entity></entities></importexportxml>',
+    });
+  });
+
   it('applies a mixed metadata plan in dependency-safe order and publishes once', async () => {
     const httpClient = new FakeHttpClient([
       ok({

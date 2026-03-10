@@ -317,10 +317,13 @@ Create metadata from structured spec files:
 ```bash
 pp dv metadata apply --env dev --file ./specs/schema.apply.yaml --solution Core
 pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
+pp dv metadata update-table pp_project --env dev --file ./specs/project.table.update.yaml --solution Core
 pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
+pp dv metadata update-column pp_project pp_clientcode --env dev --file ./specs/client-code.column.update.yaml --solution Core
 pp dv metadata create-option-set --env dev --file ./specs/status.optionset.yaml --solution Core
 pp dv metadata update-option-set --env dev --file ./specs/status.update.yaml --solution Core
 pp dv metadata create-relationship --env dev --file ./specs/project-account.relationship.yaml --solution Core
+pp dv metadata update-relationship pp_project_account --env dev --kind one-to-many --file ./specs/project-account.relationship.update.yaml --solution Core
 pp dv metadata create-many-to-many --env dev --file ./specs/project-contact.m2m.yaml --solution Core
 pp dv metadata create-customer-relationship --env dev --file ./specs/project-customer.relationship.yaml --solution Core
 ```
@@ -333,6 +336,7 @@ Supported creation scope today:
 - one-to-many relationships with lookup creation
 - many-to-many relationship creation
 - customer lookup relationship creation through the Dataverse customer-relationship action
+- typed update flows for table labels/descriptions, column labels/required-level/boolean labels, and relationship menu or cascade metadata
 
 Inspect richer metadata definitions:
 
@@ -470,6 +474,30 @@ Update semantics:
 - `update` targets existing options by numeric `value`; `mergeLabels` defaults to `true` when omitted
 - `removeValues` and `orderValues` both operate on numeric option values
 
+Example table update spec:
+
+```yaml
+displayName: Projects
+pluralDisplayName: Projects
+description: Updated table description
+```
+
+Example column update spec:
+
+```yaml
+displayName: Client Code
+description: External client code used across systems
+requiredLevel: recommended
+```
+
+Boolean column labels can also be updated:
+
+```yaml
+displayName: Enabled
+trueLabel: Enabled
+falseLabel: Disabled
+```
+
 Example one-to-many relationship spec:
 
 ```yaml
@@ -494,6 +522,24 @@ entity1Menu:
 Optional `entity1Menu` and `entity2Menu` blocks let you control the associated
 menu label, behavior, group, and order for many-to-many navigation.
 
+Example one-to-many relationship update spec:
+
+```yaml
+associatedMenuLabel: Customers
+associatedMenuBehavior: useLabel
+cascade:
+  delete: restrict
+  share: cascade
+```
+
+Example many-to-many relationship update spec:
+
+```yaml
+entity1Menu:
+  label: Projects
+  behavior: useLabel
+```
+
 Example customer relationship spec:
 
 ```yaml
@@ -513,6 +559,7 @@ associated menu metadata for those generated relationships.
 Notes:
 
 - create commands return the initial Dataverse response plus the fetched definition when read-back succeeds
+- update commands read the current metadata definition, apply the typed overlay, and send the required Dataverse metadata `PUT`
 - read-back or publish problems are reported as warnings when the underlying create call has already succeeded
 - the authoring surface is intentionally smaller than raw Dataverse metadata JSON so `pp` can validate and shape payloads consistently
 
