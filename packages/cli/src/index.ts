@@ -3901,17 +3901,19 @@ function readProjectDiscoveryOptions(args: string[]): OperationResult<{ stage?: 
 }
 
 function readFlag(args: string[], name: string): string | undefined {
-  const index = args.indexOf(name);
+  for (const candidate of flagAliases(name)) {
+    const index = args.indexOf(candidate);
 
-  if (index === -1) {
-    return undefined;
+    if (index !== -1) {
+      return args[index + 1];
+    }
   }
 
-  return args[index + 1];
+  return undefined;
 }
 
 function hasFlag(args: string[], name: string): boolean {
-  return args.includes(name);
+  return flagAliases(name).some((candidate) => args.includes(candidate));
 }
 
 async function promptForEnter(message: string): Promise<void> {
@@ -3925,15 +3927,25 @@ async function promptForEnter(message: string): Promise<void> {
 
 function readRepeatedFlags(args: string[], name: string): string[] {
   const values: string[] = [];
+  const aliases = new Set(flagAliases(name));
 
   for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === name && args[index + 1]) {
+    if (aliases.has(args[index] ?? '') && args[index + 1]) {
       values.push(args[index + 1] as string);
       index += 1;
     }
   }
 
   return values;
+}
+
+function flagAliases(name: string): string[] {
+  switch (name) {
+    case '--env':
+      return ['--env', '--environment'];
+    default:
+      return [name];
+  }
 }
 
 function readParameterOverrides(args: string[]): OperationResult<Record<string, string>> {

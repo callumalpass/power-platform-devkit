@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readJsonFile } from '@pp/artifacts';
 import { AuthService } from '@pp/auth';
+import type { DataverseClient } from '@pp/dataverse';
 import { type DataverseFixture, createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
 import { expectGoldenJson, expectGoldenText, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
 import { main } from './index';
@@ -2544,6 +2545,61 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/solution/golden/inspect-report.json');
     await expectGoldenJson(JSON.parse(components.stdout), 'fixtures/solution/golden/components-report.json');
     await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/solution/golden/dependencies-report.json');
+  });
+
+  it('accepts --environment as an alias for --env on dv whoami', async () => {
+    const client = {
+      whoAmI: async () => ({
+        success: true,
+        data: {
+          BusinessUnitId: 'bu-1',
+          OrganizationId: 'org-1',
+          UserId: 'user-1',
+        },
+        supportTier: 'preview',
+      }),
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        client,
+        environment: {
+          url: 'https://source.example.crm.dynamics.com',
+        },
+        authProfile: {
+          name: 'source-user',
+        },
+      },
+    });
+
+    const whoami = await runCli(['dv', 'whoami', '--environment', 'source', '--format', 'json']);
+
+    expect(whoami.code).toBe(0);
+    expect(whoami.stderr).toBe('');
+    expect(JSON.parse(whoami.stdout)).toEqual({
+      environment: 'source',
+      url: 'https://source.example.crm.dynamics.com',
+      authProfile: 'source-user',
+      BusinessUnitId: 'bu-1',
+      OrganizationId: 'org-1',
+      UserId: 'user-1',
+    });
+  });
+
+  it('accepts --environment as an alias for --env on solution list', async () => {
+    const fixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(fixture.source),
+    });
+
+    const list = await runCli(['solution', 'list', '--environment', 'source', '--format', 'json']);
+
+    expect(list.code).toBe(0);
+    expect(list.stderr).toBe('');
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
   });
 
   it('covers solution creation through the CLI entrypoint', async () => {
