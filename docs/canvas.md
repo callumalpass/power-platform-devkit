@@ -198,6 +198,46 @@ Current validation rules across both source kinds:
   the registry exposes one
 - formula-like properties in the legacy JSON slice must still be strings
 
+## LSP workflows
+
+`@pp/canvas` now ships a canvas LSP entrypoint for editor consumers:
+
+```bash
+pnpm --filter @pp/canvas exec pp-canvas-lsp --project . --mode strict
+```
+
+Current editor features:
+
+- diagnostics come from the same `lintCanvasApp` pipeline used by batch linting
+- unsaved `Src/*.pa.yaml` edits are analyzed through in-memory file overlays so
+  editor diagnostics stay aligned with batch output for the current buffer
+- hover is available for supported control definitions, selected property
+  metadata, and resolved formula bindings
+- definition is available for resolved control references inside supported Power
+  Fx formulas
+- completion is available for formula symbols backed by the shared semantic
+  model
+
+Workspace behavior:
+
+- the server resolves the nearest `pp.config.*` and loads `templateRegistries`
+  from that project config
+- repeated `--registry FILE` flags add or override registry inputs for editor
+  sessions
+- metadata-backed references continue to flow from
+  `References/DataSources.json` in unpacked canvas roots
+
+Current support boundaries:
+
+- rich hover, definition, and completion are currently targeted at unpacked
+  `.pa.yaml` canvas roots where source spans exist
+- the older JSON manifest slice still participates in batch validation, but
+  editor navigation remains limited there
+- definition currently resolves control references; data-source and metadata
+  bindings do not yet jump to authored source locations
+- completion is intentionally narrow in the first pass and favors shared
+  semantic symbols over editor-only snippets
+
 ## CLI commands
 
 ```bash

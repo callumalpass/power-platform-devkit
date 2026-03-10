@@ -6,11 +6,24 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "pp-canvas-lsp": "./dist/lsp-server.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./lsp": {
+      "types": "./dist/lsp.d.ts",
+      "import": "./dist/lsp.js",
+      "require": "./dist/lsp.cjs"
+    },
+    "./lsp-server": {
+      "types": "./dist/lsp-server.d.ts",
+      "import": "./dist/lsp-server.js",
+      "require": "./dist/lsp-server.cjs"
     }
   },
   "scripts": {
@@ -20,6 +33,7 @@
   },
   "dependencies": {
     "@pp/artifacts": "workspace:*",
+    "@pp/config": "workspace:*",
     "@pp/diagnostics": "workspace:*",
     "yaml": "^2.7.1"
   }

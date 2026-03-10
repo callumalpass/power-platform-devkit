@@ -553,6 +553,15 @@ function buildTemplateMap(options: BuildCanvasSemanticModelOptions): Map<string,
     map.set(makeTemplateKey(template.templateName, template.templateVersion), buildCanvasTemplateSurface(template));
   }
 
+  for (const resolution of options.templateResolutions ?? []) {
+    if (!resolution.template) {
+      continue;
+    }
+
+    const surface = buildCanvasTemplateSurface(resolution.template);
+    map.set(makeTemplateKey(resolution.requested.name, resolution.requested.version ?? resolution.template.templateVersion), surface);
+  }
+
   return map;
 }
 

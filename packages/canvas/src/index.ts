@@ -5,7 +5,7 @@ import { CanvasAppService, type CanvasAppSummary as DataverseCanvasAppSummary, t
 import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type OperationResult, type ProvenanceClass } from '@pp/diagnostics';
 import { SolutionService } from '@pp/solution';
 import { buildCanvasMsappFromUnpackedSource } from './msapp-build';
-import { type CanvasDataSourceSummary, loadCanvasPaYamlSource, resolveCanvasPaYamlRoot } from './pa-yaml';
+import { type CanvasDataSourceSummary, loadCanvasPaYamlSource, resolveCanvasPaYamlRoot, type CanvasSourceReadOptions } from './pa-yaml';
 import { parsePowerFxExpression } from './power-fx';
 import { buildCanvasSemanticModel, collectCanvasFormulaChecks } from './semantic-model';
 import { buildCanvasTemplateSurface } from './template-surface';
@@ -32,6 +32,7 @@ export interface CanvasNodeSourceInfo {
   file: string;
   span?: CanvasSourceSpan;
   nameSpan?: CanvasSourceSpan;
+  propertyNameSpans?: Record<string, CanvasSourceSpan>;
   propertySpans?: Record<string, CanvasSourceSpan>;
   propertiesSpan?: CanvasSourceSpan;
   controlTypeSpan?: CanvasSourceSpan;
@@ -136,6 +137,8 @@ export interface CanvasRegistryLoadOptions {
   registries?: string[];
   cacheDir?: string;
 }
+
+export interface CanvasSourceLoadOptions extends CanvasRegistryLoadOptions, CanvasSourceReadOptions {}
 
 export interface CanvasRegistryImportRequest {
   sourcePath: string;
@@ -403,7 +406,7 @@ export class CanvasService {
 
   async inspect(
     path: string,
-    options: CanvasRegistryLoadOptions & {
+    options: CanvasSourceLoadOptions & {
       mode?: CanvasBuildMode;
     } = {}
   ): Promise<OperationResult<CanvasInspectReport>> {
@@ -412,7 +415,7 @@ export class CanvasService {
 
   async validate(
     path: string,
-    options: CanvasRegistryLoadOptions & {
+    options: CanvasSourceLoadOptions & {
       mode?: CanvasBuildMode;
     } = {}
   ): Promise<OperationResult<CanvasValidationReport>> {
@@ -421,7 +424,7 @@ export class CanvasService {
 
   async lint(
     path: string,
-    options: CanvasRegistryLoadOptions & {
+    options: CanvasSourceLoadOptions & {
       mode?: CanvasBuildMode;
     } = {}
   ): Promise<OperationResult<CanvasLintReport>> {
@@ -430,7 +433,7 @@ export class CanvasService {
 
   async build(
     path: string,
-    options: CanvasRegistryLoadOptions & {
+    options: CanvasSourceLoadOptions & {
       mode?: CanvasBuildMode;
       outPath?: string;
     } = {}
@@ -631,7 +634,7 @@ export async function importCanvasTemplateRegistry(
 
 export async function inspectCanvasApp(
   path: string,
-  options: CanvasRegistryLoadOptions & {
+  options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
   } = {}
 ): Promise<OperationResult<CanvasInspectReport>> {
@@ -661,7 +664,7 @@ export async function inspectCanvasApp(
 
 export async function validateCanvasApp(
   path: string,
-  options: CanvasRegistryLoadOptions & {
+  options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
   } = {}
 ): Promise<OperationResult<CanvasValidationReport>> {
@@ -680,7 +683,7 @@ export async function validateCanvasApp(
 
 export async function lintCanvasApp(
   path: string,
-  options: CanvasRegistryLoadOptions & {
+  options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
   } = {}
 ): Promise<OperationResult<CanvasLintReport>> {
@@ -722,7 +725,7 @@ export async function lintCanvasApp(
 
 export async function buildCanvasApp(
   path: string,
-  options: CanvasRegistryLoadOptions & {
+  options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
     outPath?: string;
   } = {}
@@ -906,11 +909,11 @@ export async function diffCanvasApps(leftPath: string, rightPath: string): Promi
   );
 }
 
-export async function loadCanvasSource(path: string): Promise<OperationResult<CanvasSourceModel>> {
+export async function loadCanvasSource(path: string, options: CanvasSourceReadOptions = {}): Promise<OperationResult<CanvasSourceModel>> {
   const paYamlRoot = await resolveCanvasPaYamlRoot(path);
 
   if (paYamlRoot) {
-    return loadCanvasPaYamlSource(paYamlRoot);
+    return loadCanvasPaYamlSource(paYamlRoot, options);
   }
 
   const manifestPath = await resolveCanvasManifestPath(path);
@@ -919,7 +922,7 @@ export async function loadCanvasSource(path: string): Promise<OperationResult<Ca
     return manifestPath as unknown as OperationResult<CanvasSourceModel>;
   }
 
-  const manifestDocument = await readCanvasJsonFile(manifestPath.data);
+  const manifestDocument = await readCanvasJsonFile(manifestPath.data, options);
 
   if (!manifestDocument.success || manifestDocument.data === undefined) {
     return manifestDocument as unknown as OperationResult<CanvasSourceModel>;
@@ -936,7 +939,7 @@ export async function loadCanvasSource(path: string): Promise<OperationResult<Ca
 
   for (const screenReference of manifest.data.screens) {
     const screenPath = resolve(root, screenReference.file);
-    const screenDocument = await readCanvasJsonFile(screenPath);
+    const screenDocument = await readCanvasJsonFile(screenPath, options);
 
     if (!screenDocument.success || screenDocument.data === undefined) {
       return screenDocument as unknown as OperationResult<CanvasSourceModel>;
@@ -1127,11 +1130,11 @@ export function summarizeCanvasTemplateRegistry(bundle: CanvasRegistryBundle): {
 
 async function prepareCanvasValidation(
   path: string,
-  options: CanvasRegistryLoadOptions & {
+  options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
   }
 ): Promise<OperationResult<PreparedCanvasValidation>> {
-  const source = await loadCanvasSource(path);
+  const source = await loadCanvasSource(path, options);
 
   if (!source.success || !source.data) {
     return source as unknown as OperationResult<PreparedCanvasValidation>;
@@ -1325,9 +1328,9 @@ async function resolveCanvasManifestPath(path: string): Promise<OperationResult<
   );
 }
 
-async function readCanvasJsonFile(path: string): Promise<OperationResult<unknown>> {
+async function readCanvasJsonFile(path: string, options: CanvasSourceReadOptions = {}): Promise<OperationResult<unknown>> {
   try {
-    const value = await readJsonFile<unknown>(path);
+    const value = options.sourceFiles?.[resolve(path)] !== undefined ? JSON.parse(options.sourceFiles[resolve(path)]!) : await readJsonFile<unknown>(path);
 
     return ok(value, {
       supportTier: 'preview',
@@ -2416,3 +2419,15 @@ export {
   type CanvasSemanticSymbolKind,
   type PowerFxAstNode,
 } from './semantic-model';
+export {
+  CanvasLspSession,
+  isJsonRpcError,
+  type CanvasLspSessionOptions,
+  type LspCompletionItem,
+  type LspDiagnostic,
+  type LspHover,
+  type LspLocation,
+  type LspPosition,
+  type LspPublishDiagnosticsParams,
+  type LspRange,
+} from './lsp';

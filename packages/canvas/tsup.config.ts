@@ -6,7 +6,7 @@ const esmRequireBanner = [
 ].join('\n');
 
 export default defineConfig(({ watch }) => ({
-  entry: ['src/index.ts'],
+  entry: ['src/index.ts', 'src/lsp.ts', 'src/lsp-server.ts'],
   clean: !watch,
   dts: true,
   format: ['esm', 'cjs'],

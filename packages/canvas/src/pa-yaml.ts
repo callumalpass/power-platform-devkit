@@ -16,6 +16,10 @@ import type {
   CanvasSourceSpan,
 } from './index';
 
+export interface CanvasSourceReadOptions {
+  sourceFiles?: Record<string, string>;
+}
+
 export interface CanvasDataSourceSummary {
   name: string;
   type?: string;
@@ -51,7 +55,7 @@ export async function resolveCanvasPaYamlRoot(path: string): Promise<string | un
   return undefined;
 }
 
-export async function loadCanvasPaYamlSource(path: string): Promise<OperationResult<CanvasSourceModel>> {
+export async function loadCanvasPaYamlSource(path: string, options: CanvasSourceReadOptions = {}): Promise<OperationResult<CanvasSourceModel>> {
   const root = await resolveCanvasPaYamlRoot(path);
 
   if (!root) {
@@ -66,7 +70,7 @@ export async function loadCanvasPaYamlSource(path: string): Promise<OperationRes
   const srcDir = join(root, 'Src');
   const appPath = join(srcDir, 'App.pa.yaml');
   const editorStatePath = join(srcDir, '_EditorState.pa.yaml');
-  const appDocument = await loadYamlFile(appPath);
+  const appDocument = await loadYamlFile(appPath, options);
 
   if (!appDocument.success || appDocument.data === undefined) {
     return appDocument as unknown as OperationResult<CanvasSourceModel>;
@@ -105,7 +109,7 @@ export async function loadCanvasPaYamlSource(path: string): Promise<OperationRes
 
   for (const fileName of screenFiles) {
     const screenPath = join(srcDir, fileName);
-    const screenDocument = await loadYamlFile(screenPath);
+    const screenDocument = await loadYamlFile(screenPath, options);
 
     if (!screenDocument.success || screenDocument.data === undefined) {
       return screenDocument as unknown as OperationResult<CanvasSourceModel>;
@@ -159,6 +163,7 @@ export async function loadCanvasPaYamlSource(path: string): Promise<OperationRes
         source: {
           ...createNodeSourceInfo(`screen:${screenName}`, screenFile, screenDocument.data.contents, screenYamlMap),
           nameSpan: createSpanFromNode(screenFile, screenDocument.data.contents, screenPair?.key),
+          propertyNameSpans: collectPropertyNameSpans(screenYamlMap.get('Properties', true), screenFile, screenDocument.data.contents),
           propertySpans: collectPropertySpans(screenYamlMap.get('Properties', true), screenFile, screenDocument.data.contents),
           childrenSpan: createSpanFromNode(screenFile, screenDocument.data.contents, screenYamlMap.get('Children', true)),
         },
@@ -166,10 +171,10 @@ export async function loadCanvasPaYamlSource(path: string): Promise<OperationRes
     }
   }
 
-  const screenOrder = await loadScreenOrder(editorStatePath);
+  const screenOrder = await loadScreenOrder(editorStatePath, options);
   const orderedScreens = orderScreensByEditorState(screens, screenOrder);
-  const propertiesDocument = await readOptionalJson<Record<string, unknown>>(join(root, 'Properties.json'));
-  const dataSources = await loadCanvasDataSources(join(root, 'References', 'DataSources.json'));
+  const propertiesDocument = await readOptionalJson<Record<string, unknown>>(join(root, 'Properties.json'), options);
+  const dataSources = await loadCanvasDataSources(join(root, 'References', 'DataSources.json'), options);
   const metadataCatalog = buildMetadataCatalog(dataSources);
   const version =
     readString(propertiesDocument?.AppVersion) ??
@@ -238,9 +243,9 @@ export async function loadCanvasPaYamlSource(path: string): Promise<OperationRes
   );
 }
 
-async function loadYamlFile(path: string): Promise<OperationResult<LoadedYamlFile>> {
+async function loadYamlFile(path: string, options: CanvasSourceReadOptions = {}): Promise<OperationResult<LoadedYamlFile>> {
   try {
-    const contents = await readFile(path, 'utf8');
+    const contents = await readTextFile(path, options);
     const document = YAML.parseDocument(contents);
     return ok(
       {
@@ -359,6 +364,7 @@ function normalizeChildren(
       source: {
         ...createNodeSourceInfo(`control:${screenName}/${name}`, file, contents, controlYamlMap),
         nameSpan: createSpanFromNode(file, contents, controlPair.key),
+        propertyNameSpans: collectPropertyNameSpans(controlYamlMap.get('Properties', true), file, contents),
         propertySpans: collectPropertySpans(controlYamlMap.get('Properties', true), file, contents),
         controlTypeSpan: createSpanFromNode(file, contents, getMapValue(controlYamlMap, 'Control')),
         childrenSpan: createSpanFromNode(file, contents, controlYamlMap.get('Children', true)),
@@ -451,13 +457,13 @@ function appendControlSummaries(
   }
 }
 
-async function loadScreenOrder(path: string): Promise<string[]> {
+async function loadScreenOrder(path: string, options: CanvasSourceReadOptions = {}): Promise<string[]> {
   if (!(await fileExists(path))) {
     return [];
   }
 
   try {
-    const contents = YAML.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+    const contents = YAML.parse(await readTextFile(path, options)) as Record<string, unknown>;
     const editorState = asRecord(contents.EditorState);
     const order = Array.isArray(editorState?.ScreensOrder) ? editorState.ScreensOrder : [];
     return order.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
@@ -478,8 +484,8 @@ function orderScreensByEditorState(screens: CanvasScreenDefinition[], screenOrde
   return [...ordered, ...remainder];
 }
 
-async function loadCanvasDataSources(path: string): Promise<CanvasDataSourceSummary[]> {
-  const document = await readOptionalJson<Record<string, unknown>>(path);
+async function loadCanvasDataSources(path: string, options: CanvasSourceReadOptions = {}): Promise<CanvasDataSourceSummary[]> {
+  const document = await readOptionalJson<Record<string, unknown>>(path, options);
   const entries = Array.isArray(document?.DataSources) ? document.DataSources : [];
 
   return entries
@@ -526,6 +532,25 @@ function collectPropertySpans(node: unknown, file: string, contents: string): Re
       .map((entry) => {
         const key = readScalarString(entry.key);
         const span = createSpanFromNode(file, contents, entry.value);
+        return key && span ? ([key, span] as const) : undefined;
+      })
+      .filter((entry): entry is readonly [string, CanvasSourceSpan] => Boolean(entry))
+      .sort(([left], [right]) => left.localeCompare(right))
+  );
+
+  return Object.keys(spans).length > 0 ? spans : undefined;
+}
+
+function collectPropertyNameSpans(node: unknown, file: string, contents: string): Record<string, CanvasSourceSpan> | undefined {
+  if (!node || !isMap(node)) {
+    return undefined;
+  }
+
+  const spans = Object.fromEntries(
+    node.items
+      .map((entry) => {
+        const key = readScalarString(entry.key);
+        const span = createSpanFromNode(file, contents, entry.key);
         return key && span ? ([key, span] as const) : undefined;
       })
       .filter((entry): entry is readonly [string, CanvasSourceSpan] => Boolean(entry))
@@ -675,16 +700,26 @@ function buildMetadataCatalog(dataSources: CanvasDataSourceSummary[]): CanvasMet
     : undefined;
 }
 
-async function readOptionalJson<T>(path: string): Promise<T | undefined> {
+async function readOptionalJson<T>(path: string, options: CanvasSourceReadOptions = {}): Promise<T | undefined> {
   if (!(await fileExists(path))) {
     return undefined;
   }
 
   try {
-    return await readJsonFile<T>(path);
+    return JSON.parse(await readTextFile(path, options)) as T;
   } catch {
     return undefined;
   }
+}
+
+async function readTextFile(path: string, options: CanvasSourceReadOptions): Promise<string> {
+  const override = options.sourceFiles?.[resolve(path)];
+
+  if (override !== undefined) {
+    return override;
+  }
+
+  return readFile(path, 'utf8');
 }
 
 async function fileExists(path: string): Promise<boolean> {
