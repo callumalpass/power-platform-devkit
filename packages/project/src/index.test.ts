@@ -127,7 +127,7 @@ describe('discoverProject', () => {
     });
 
     expect(plan.configPath).toBe(join(root, 'pp.config.yaml'));
-    expect(plan.actions).toHaveLength(5);
+    expect(plan.actions).toHaveLength(6);
     expect(plan.layout).toEqual({
       scaffoldProfile: 'source-first',
       scaffoldedAssetRoots: ['apps', 'flows', 'solutions', 'docs'],
@@ -151,11 +151,12 @@ describe('discoverProject', () => {
     expect(result.data?.created).toContain(join(root, 'flows'));
     expect(result.data?.created).toContain(join(root, 'solutions'));
     expect(result.data?.created).toContain(join(root, 'docs'));
+    expect(result.data?.created).toContain(join(root, 'artifacts', 'solutions'));
     expect(result.data?.layout.recommendedBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
     expect(result.suggestedNextActions).toEqual(
       expect.arrayContaining([
         'Run `pp project doctor` to inspect the scaffolded layout and any missing inputs.',
-        'When the repo also tracks packaged solution exports, keep unpacked source under `solutions/` and write generated zips to `artifacts/solutions/CoreLifecycle.zip`.',
+        'Keep unpacked solution source under `solutions/` and write generated zips to `artifacts/solutions/CoreLifecycle.zip`.',
       ])
     );
 

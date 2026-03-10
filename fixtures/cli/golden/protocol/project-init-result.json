@@ -24,6 +24,11 @@
       "action": "create",
       "kind": "directory",
       "path": "<TMP_DIR>/docs"
+    },
+    {
+      "action": "create",
+      "kind": "directory",
+      "path": "<TMP_DIR>/artifacts/solutions"
     }
   ],
   "config": {
@@ -74,6 +79,7 @@
     "<TMP_DIR>/flows",
     "<TMP_DIR>/solutions",
     "<TMP_DIR>/docs",
+    "<TMP_DIR>/artifacts/solutions",
     "<TMP_DIR>/pp.config.yaml"
   ],
   "layout": {

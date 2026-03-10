@@ -6521,7 +6521,7 @@ function printProjectInitHelp(): void {
       '',
       'Behavior:',
       '  - Writes `pp.config.yaml` unless a project config already exists and `--force` is not set.',
-      '  - Creates `apps/`, `flows/`, `solutions/`, and `docs/` when they do not already exist.',
+      '  - Creates `apps/`, `flows/`, `solutions/`, `docs/`, and `artifacts/solutions/` when they do not already exist.',
       '  - Seeds one default stage, one solution alias, and one primary Dataverse provider binding.',
       '  - The scaffold is source-first: reserve `solutions/` for editable solution source and place packaged exports under `artifacts/solutions/<Solution>.zip` when the repo tracks both.',
       '',

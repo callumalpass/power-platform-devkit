@@ -217,6 +217,7 @@ interface ProjectTopologyResolution {
 }
 
 const DEFAULT_ASSET_PATHS = ['apps', 'flows', 'solutions', 'docs'];
+const DEFAULT_SUPPORT_PATHS = [join('artifacts', 'solutions')];
 
 export function planProjectInit(root = process.cwd(), options: ProjectInitOptions = {}): ProjectInitPlan {
   const resolvedRoot = resolve(root);
@@ -248,6 +249,11 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
       ...DEFAULT_ASSET_PATHS.map((assetPath) => ({
         kind: 'directory' as const,
         path: join(resolvedRoot, assetPath),
+        action: 'create' as const,
+      })),
+      ...DEFAULT_SUPPORT_PATHS.map((supportPath) => ({
+        kind: 'directory' as const,
+        path: join(resolvedRoot, supportPath),
         action: 'create' as const,
       })),
     ],
@@ -293,6 +299,21 @@ export async function initProject(root = process.cwd(), options: ProjectInitOpti
     created.push(fullPath);
   }
 
+  for (const supportPath of DEFAULT_SUPPORT_PATHS) {
+    const fullPath = join(plan.root, supportPath);
+    const exists = await pathExists(fullPath);
+
+    if (exists) {
+      actions.push({ kind: 'directory', path: fullPath, action: 'exists' });
+      untouched.push(fullPath);
+      continue;
+    }
+
+    await mkdir(fullPath, { recursive: true });
+    actions.push({ kind: 'directory', path: fullPath, action: 'create' });
+    created.push(fullPath);
+  }
+
   await writeFile(plan.configPath, renderProjectConfig(plan.config, plan.configPath), 'utf8');
   actions.unshift({
     kind: 'config',
@@ -319,7 +340,7 @@ export async function initProject(root = process.cwd(), options: ProjectInitOpti
       supportTier: 'preview',
       suggestedNextActions: [
         'Run `pp project doctor` to inspect the scaffolded layout and any missing inputs.',
-        `When the repo also tracks packaged solution exports, keep unpacked source under \`solutions/\` and write generated zips to \`${plan.layout.recommendedBundlePath}\`.`,
+        `Keep unpacked solution source under \`solutions/\` and write generated zips to \`${plan.layout.recommendedBundlePath}\`.`,
         'Update provider bindings, parameters, and topology in the generated config to match your environment aliases and solution names.',
       ],
     }

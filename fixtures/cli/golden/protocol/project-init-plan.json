@@ -27,6 +27,11 @@
         "action": "create",
         "kind": "directory",
         "path": "<TMP_DIR>/docs"
+      },
+      {
+        "action": "create",
+        "kind": "directory",
+        "path": "<TMP_DIR>/artifacts/solutions"
       }
     ],
     "config": {
