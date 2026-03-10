@@ -3092,6 +3092,7 @@ describe('cli fixture-backed workflows', () => {
     expect(deploy.stderr).toBe('');
     expect(JSON.parse(deploy.stdout)).toMatchObject({
       targetIdentifier: 'crd_InvoiceFlow',
+      operation: 'updated',
       target: {
         id: 'flow-1',
         uniqueName: 'crd_InvoiceFlow',
@@ -3105,6 +3106,65 @@ describe('cli fixture-backed workflows', () => {
     });
     expect(workflows.success).toBe(true);
     expect(workflows.data?.[0]?.clientdata).toContain('"definition"');
+  });
+
+  it('creates a missing remote flow through the CLI when create-if-missing is enabled', async () => {
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+          },
+        ],
+      },
+      queryAll: {
+        workflows: [],
+        solutioncomponents: [],
+      },
+    });
+
+    mockDataverseResolution({
+      fixture: client,
+    });
+
+    const deploy = await runCli([
+      'flow',
+      'deploy',
+      resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json'),
+      '--env',
+      'fixture',
+      '--solution',
+      'Core',
+      '--create-if-missing',
+      '--format',
+      'json',
+    ]);
+
+    expect(deploy.code).toBe(0);
+    expect(deploy.stderr).toBe('');
+    expect(JSON.parse(deploy.stdout)).toMatchObject({
+      targetIdentifier: 'crd_InvoiceFlow',
+      operation: 'created',
+      target: {
+        uniqueName: 'crd_InvoiceFlow',
+        solutionUniqueName: 'Core',
+      },
+    });
+
+    const workflows = await client.queryAll<Record<string, unknown>>({
+      table: 'workflows',
+    });
+    expect(workflows.success).toBe(true);
+    expect(workflows.data).toHaveLength(1);
+    expect(workflows.data?.[0]).toMatchObject({
+      category: 5,
+      name: 'Invoice Flow',
+      uniquename: 'crd_InvoiceFlow',
+      statecode: 1,
+      statuscode: 2,
+    });
+    expect(String(workflows.data?.[0]?.clientdata)).toContain('"definition"');
   });
 
   it('covers invalid flow validation diagnostics through the CLI entrypoint', async () => {

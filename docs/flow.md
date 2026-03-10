@@ -121,6 +121,7 @@ pp flow graph ./flows/invoice
 pp flow patch ./flows/invoice --file ./patches/invoice.dev.json --out ./flows/invoice-dev
 pp flow pack ./flows/invoice-dev --out ./dist/invoice-flow.raw.json
 pp flow deploy ./flows/invoice-dev --env dev --solution Core
+pp flow deploy ./flows/invoice-dev --env dev --solution Core --create-if-missing
 ```
 
 ## Normalization behavior
@@ -141,6 +142,9 @@ that lifecycle one step further for an already-existing target cloud flow by
 validating the local artifact, resolving a remote workflow by `--target` or the
 artifact metadata (`uniqueName`, then `name`, then `displayName`, then `id`),
 and PATCHing the normalized definition back into Dataverse `workflows.clientdata`.
+When `--create-if-missing` is supplied, the same command can also provision a
+bounded missing cloud-flow shell using the artifact `metadata.uniqueName`,
+minimal workflow metadata, and the normalized `clientdata` definition.
 
 The current pack/deploy boundary is:
 
@@ -151,9 +155,14 @@ The current pack/deploy boundary is:
   `createdTime` or `lastModifiedTime`
 - remote deploy currently updates only an existing workflow record and only
   writes the normalized `clientdata` definition after the shared local
-  validator passes
-- flow creation, solution-packaged import/export, and broader workflow metadata
-  or state transitions still belong to later deploy-oriented work
+  validator passes, unless `--create-if-missing` is used
+- create-if-missing currently requires artifact `metadata.uniqueName`, creates
+  only a bounded workflow shell (`category`, `name`, `uniquename`,
+  `statecode`/`statuscode` when present, plus normalized `clientdata`), and
+  fails explicitly instead of guessing if the same flow already exists outside
+  the requested solution filter
+- solution-packaged import/export and broader workflow metadata or state
+  transitions still belong to later deploy-oriented work
 
 The flow package now also exposes a first-class parsed intermediate
 representation over the unpacked artifact. The current IR is intentionally

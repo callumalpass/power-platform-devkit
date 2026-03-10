@@ -4620,7 +4620,7 @@ async function runFlowDeploy(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'FLOW_DEPLOY_ARGS_REQUIRED',
-        'Usage: flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>]'
+        'Usage: flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing]'
       )
     );
   }
@@ -4640,6 +4640,7 @@ async function runFlowDeploy(args: string[]): Promise<number> {
       environment: resolution.data.environment.alias,
       solution: readFlag(args, '--solution'),
       target: readFlag(args, '--target') ?? 'artifact metadata',
+      createIfMissing: hasFlag(args, '--create-if-missing'),
     }
   );
 
@@ -4650,6 +4651,7 @@ async function runFlowDeploy(args: string[]): Promise<number> {
   const result = await new FlowService(resolution.data.client).deployArtifact(inputPath, {
     solutionUniqueName: readFlag(args, '--solution'),
     target: readFlag(args, '--target'),
+    createIfMissing: hasFlag(args, '--create-if-missing'),
   });
 
   if (!result.success || !result.data) {
@@ -6195,7 +6197,7 @@ function printHelp(): void {
       '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow pack <path> --out FILE.json [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow normalize <path> [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow validate <path> [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow graph <path> [--format table|json|yaml|ndjson|markdown|raw]',

@@ -283,6 +283,7 @@ describe('FlowService', () => {
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({
       targetIdentifier: 'crd_InvoiceFlow',
+      operation: 'updated',
       target: {
         id: 'flow-1',
         uniqueName: 'crd_InvoiceFlow',
@@ -300,6 +301,80 @@ describe('FlowService', () => {
       solutionUniqueName: 'Core',
     });
     expect(updates[0]?.entity.clientdata).toContain('"definition"');
+  });
+
+  it('creates a bounded remote workflow when the target is missing and create-if-missing is enabled', async () => {
+    const creates: Array<{ table: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
+    const client = {
+      ...createStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows' || options.table === 'solutioncomponents') {
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+        }
+
+        return ok([] as T[], {
+          supportTier: 'preview',
+        });
+      },
+      create: async (table: string, entity: Record<string, unknown>, options?: { solutionUniqueName?: string }) => {
+        creates.push({ table, entity, solutionUniqueName: options?.solutionUniqueName });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            entityId: 'flow-created-1',
+            entity: {
+              workflowid: 'flow-created-1',
+              name: 'Invoice Flow',
+              uniquename: 'crd_InvoiceFlow',
+              category: 5,
+              statecode: 1,
+              statuscode: 2,
+              clientdata: String(entity.clientdata),
+            },
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+    const service = new FlowService(client);
+
+    const result = await service.deployArtifact('fixtures/flow/raw/invoice-flow.raw.json', {
+      solutionUniqueName: 'Core',
+      createIfMissing: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      targetIdentifier: 'crd_InvoiceFlow',
+      operation: 'created',
+      target: {
+        id: 'flow-created-1',
+        uniqueName: 'crd_InvoiceFlow',
+        solutionUniqueName: 'Core',
+      },
+      updatedFields: ['category', 'name', 'uniquename', 'clientdata', 'statecode', 'statuscode'],
+      validation: {
+        valid: true,
+      },
+    });
+    expect(creates).toHaveLength(1);
+    expect(creates[0]).toMatchObject({
+      table: 'workflows',
+      solutionUniqueName: 'Core',
+    });
+    expect(creates[0]?.entity).toMatchObject({
+      category: 5,
+      name: 'Invoice Flow',
+      uniquename: 'crd_InvoiceFlow',
+      statecode: 1,
+      statuscode: 2,
+    });
+    expect(String(creates[0]?.entity.clientdata)).toContain('"definition"');
   });
 
   it('blocks remote deploy when local flow validation fails', async () => {
