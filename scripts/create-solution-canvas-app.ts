@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { basename, join, resolve } from 'node:path';
 import process from 'node:process';
 import { AuthService, resolveBrowserProfileDirectory, type BrowserProfile } from '../packages/auth/src/index';
@@ -48,12 +49,13 @@ async function main(): Promise<void> {
   const client = resolution.data.client;
   const canvasService = new CanvasService(client);
   const solutionId = await resolveSolutionId(client, options.solutionUniqueName);
-  const targetUrl =
-    options.targetUrl ??
-    buildSolutionAppsUrl({
-      makerEnvironmentId: options.makerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
-      solutionId,
-    });
+  const makerEnvironmentId = options.makerEnvironmentId ?? resolution.data.environment.makerEnvironmentId;
+  const targetUrl = resolveInitialTargetUrl({
+    explicitTargetUrl: options.targetUrl,
+    makerEnvironmentId,
+    solutionId,
+    appName: options.appName,
+  });
 
   const beforeApps = await listMatchingApps(canvasService, options.solutionUniqueName, options.appName);
   const beforeIds = new Set(beforeApps.map((app) => app.id));
@@ -75,9 +77,11 @@ async function main(): Promise<void> {
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: options.timeoutMs });
     await page.waitForTimeout(15_000);
 
-    await openCanvasAppCreateDialog(page, options.timeoutMs);
-    await page.getByLabel('App name').fill(options.appName, { timeout: options.timeoutMs });
-    await page.getByRole('button', { name: /^Create$/i }).click({ timeout: options.timeoutMs });
+    if (!isBlankAppTargetUrl(targetUrl)) {
+      await openCanvasAppCreateDialog(page, options.timeoutMs);
+      await page.getByLabel('App name').fill(options.appName, { timeout: options.timeoutMs });
+      await page.getByRole('button', { name: /^Create$/i }).click({ timeout: options.timeoutMs });
+    }
 
     await page.waitForURL(/\/canvas\/\?action=(new-blank|edit)/i, {
       waitUntil: 'domcontentloaded',
@@ -186,9 +190,50 @@ async function resolveSolutionId(
   return result.data[0].solutionid;
 }
 
-function buildSolutionAppsUrl(input: { makerEnvironmentId?: string; solutionId: string }): string {
+export function buildSolutionAppsUrl(input: { makerEnvironmentId?: string; solutionId: string }): string {
   assertResult(Boolean(input.makerEnvironmentId), '--maker-env-id or an environment alias with makerEnvironmentId is required.');
   return `https://make.powerapps.com/environments/${input.makerEnvironmentId}/solutions/${input.solutionId}/apps`;
+}
+
+export function buildBlankAppUrl(input: {
+  makerEnvironmentId?: string;
+  solutionId: string;
+  appName: string;
+}): string {
+  assertResult(Boolean(input.makerEnvironmentId), '--maker-env-id or an environment alias with makerEnvironmentId is required.');
+  const params = new URLSearchParams({
+    action: 'new-blank',
+    'form-factor': 'tablet',
+    name: input.appName,
+    'solution-id': input.solutionId,
+  });
+  return `https://make.powerapps.com/e/${encodeURIComponent(input.makerEnvironmentId!)}/canvas/?${params.toString()}`;
+}
+
+export function resolveInitialTargetUrl(input: {
+  explicitTargetUrl?: string;
+  makerEnvironmentId?: string;
+  solutionId: string;
+  appName: string;
+}): string {
+  if (input.explicitTargetUrl) {
+    return input.explicitTargetUrl;
+  }
+
+  if (input.makerEnvironmentId) {
+    return buildBlankAppUrl(input);
+  }
+
+  return buildSolutionAppsUrl(input);
+}
+
+export function isBlankAppTargetUrl(targetUrl: string): boolean {
+  try {
+    const url = new URL(targetUrl);
+    return url.pathname.endsWith('/canvas/') && url.searchParams.get('action') === 'new-blank';
+  } catch {
+    return false;
+  }
 }
 
 async function launchBrowserContext(
@@ -387,7 +432,10 @@ function assertResult(condition: unknown, message: string): asserts condition {
   }
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+const entrypoint = process.argv[1] ? resolve(process.argv[1]) : undefined;
+if (entrypoint === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}
