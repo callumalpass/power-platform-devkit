@@ -203,6 +203,8 @@ Current validation rules across both source kinds:
 ```bash
 pp canvas list --env dev --solution Core
 pp canvas inspect "My Canvas App" --env dev --solution Core
+pp canvas create --help
+pp canvas import --help
 pp canvas validate ./apps/MyCanvas --project .
 pp canvas lint ./apps/MyCanvas --project .
 pp canvas inspect ./apps/MyCanvas --project . --mode strict
@@ -223,6 +225,19 @@ Useful flags:
 - `canvas templates import` also accepts provenance overrides:
   `--kind`, `--source`, `--acquired-at`, `--source-artifact`,
   `--source-app-id`, `--platform-version`, and `--app-version`
+
+Remote mutation placeholders:
+
+- `pp canvas create --env <alias> [--solution UNIQUE_NAME] [--name DISPLAY_NAME]`
+  currently returns a stable machine-readable diagnostic instead of performing
+  blank-app creation
+- `pp canvas import <file.msapp> --env <alias> [--solution UNIQUE_NAME]`
+  currently returns a stable machine-readable diagnostic instead of importing a
+  remote app
+- both placeholder commands resolve the target environment first, validate the
+  requested solution when one is provided or inherited from `defaultSolution`,
+  and then return suggested next actions for Maker fallback plus `pp canvas
+  list`, `pp canvas inspect`, and `pp solution components` verification
 
 Path detection is automatic:
 
@@ -271,3 +286,10 @@ This is still a deliberately narrow support matrix rather than a general canvas
 compiler. The implemented workflow is real, but it only claims support for the
 declared normalized source shape and the pinned control/template versions that
 the registry marks as supported.
+
+Remote canvas operations are also intentionally limited today:
+
+- remote `list` and `inspect` are implemented
+- remote `create` and `import` are discoverable preview placeholders only
+- the CLI does not yet perform remote blank-app creation/import or return the
+  resulting remote app id
