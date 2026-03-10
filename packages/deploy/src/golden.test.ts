@@ -258,7 +258,7 @@ describe('deploy fixture-backed goldens', () => {
           ],
         },
         queryAll: {
-          solutioncomponents: [],
+          solutioncomponents: [{ objectid: 'envvar-def-1' }],
           dependencies: [],
           connectionreferences: [],
           environmentvariabledefinitions: [
@@ -351,7 +351,7 @@ describe('deploy fixture-backed goldens', () => {
           ],
         },
         queryAll: {
-          solutioncomponents: [],
+          solutioncomponents: [{ objectid: 'envvar-def-1' }],
           dependencies: [],
           connectionreferences: [],
           environmentvariabledefinitions: [
@@ -414,12 +414,12 @@ describe('deploy fixture-backed goldens', () => {
             version: '1.0.0.0',
           },
         ],
-      },
-      queryAll: {
-        solutioncomponents: [],
-        dependencies: [],
-        connectionreferences: [],
-        environmentvariabledefinitions: [
+        },
+        queryAll: {
+          solutioncomponents: [{ objectid: 'envvar-def-1' }],
+          dependencies: [],
+          connectionreferences: [],
+          environmentvariabledefinitions: [
           {
             environmentvariabledefinitionid: 'envvar-def-1',
             schemaname: 'pp_TenantDomain',
@@ -489,12 +489,12 @@ describe('deploy fixture-backed goldens', () => {
             version: '1.0.0.0',
           },
         ],
-      },
-      queryAll: {
-        solutioncomponents: [],
-        dependencies: [],
-        connectionreferences: [],
-        environmentvariabledefinitions: [
+        },
+        queryAll: {
+          solutioncomponents: [{ objectid: 'envvar-def-1' }],
+          dependencies: [],
+          connectionreferences: [],
+          environmentvariabledefinitions: [
           {
             environmentvariabledefinitionid: 'envvar-def-1',
             schemaname: 'pp_TenantDomain',
@@ -585,7 +585,7 @@ describe('deploy fixture-backed goldens', () => {
         ],
       },
       queryAll: {
-        solutioncomponents: [],
+        solutioncomponents: [{ objectid: 'envvar-def-1' }],
         dependencies: [],
         connectionreferences: [
           {
@@ -638,6 +638,122 @@ describe('deploy fixture-backed goldens', () => {
       nextValue: 'conn-target-sql',
       changed: true,
     });
+  });
+
+  it('creates missing dataverse environment variables through the shared deploy path when configured', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const discovery = await discoverProject(fixtureRoot, {
+      environment: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+        PP_SQL_ENDPOINT: 'sql.contoso.example',
+        PP_FEATURE_FLAG: 'true',
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    discovery.data!.parameters.featureFlag = {
+      name: 'featureFlag',
+      type: 'boolean',
+      source: 'environment',
+      value: true,
+      definition: {
+        type: 'boolean',
+        fromEnv: 'PP_FEATURE_FLAG',
+        required: true,
+        mapsTo: [
+          {
+            kind: 'dataverse-envvar-create',
+            target: 'pp_FeatureFlag',
+          },
+        ],
+      },
+      sensitive: false,
+      hasValue: true,
+      reference: undefined,
+      resolvedBy: undefined,
+    };
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [{ objectid: 'envvar-def-1' }],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const createSpy = vi.spyOn(client, 'create');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CREATE',
+        status: 'pass',
+        target: 'pp_FeatureFlag',
+      })
+    );
+    expect(result.data?.plan.operations.map((operation) => operation.kind)).toContain('dataverse-envvar-upsert');
+    expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-envvar-upsert')).toMatchObject({
+      status: 'applied',
+      targetExists: false,
+      currentValue: undefined,
+      nextValue: 'true',
+      changed: true,
+      message: 'Created and updated pp_FeatureFlag.',
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      'environmentvariabledefinitions',
+      expect.objectContaining({
+        schemaname: 'pp_FeatureFlag',
+        type: 100000002,
+      }),
+      expect.objectContaining({
+        solutionUniqueName: 'CoreManaged',
+      })
+    );
+    expect(createSpy).toHaveBeenCalledWith(
+      'environmentvariablevalues',
+      expect.objectContaining({
+        value: 'true',
+      })
+    );
   });
 
   it('blocks conflicting dataverse envvar targets before remote preflight or apply', async () => {

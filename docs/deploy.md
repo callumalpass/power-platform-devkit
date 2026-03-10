@@ -13,6 +13,8 @@ The shared deploy contract currently recognizes project parameters mapped with:
 mapsTo:
   - kind: dataverse-envvar
     target: pp_TenantDomain
+  - kind: dataverse-envvar-create
+    target: pp_FeatureFlag
   - kind: dataverse-connref
     target: pp_shared_sql
   - kind: deploy-secret
@@ -29,6 +31,7 @@ During `deploy apply`, `pp`:
 4. inspects environment variables and connection references in that solution
 5. resolves adapter-facing input and secret bindings into the shared operation result
 6. updates matching environment variable values and connection reference bindings for supported Dataverse mappings when the target differs, otherwise records a no-op skip
+7. creates missing environment variable definitions first for `dataverse-envvar-create` mappings, then applies the requested value through the same shared env-var execution path
 
 Preflight also rejects conflicting mappings before any remote inspection or apply work starts. If multiple parameters map to the same Dataverse environment variable, Dataverse connection reference, or adapter binding target, deploy returns a machine-readable failure instead of choosing an arbitrary winner.
 
@@ -185,9 +188,10 @@ steps:
 
 ## Current limits
 
-- `dataverse-envvar` and `dataverse-connref` are the supported Dataverse mutation kinds today.
+- `dataverse-envvar`, `dataverse-envvar-create`, and `dataverse-connref` are the supported Dataverse mutation kinds today.
 - `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
 - Mapped parameters without a resolved value now fail deploy preflight explicitly.
-- Missing target environment variables or connection references fail preflight.
+- Missing target environment variables still fail preflight for `dataverse-envvar`, while `dataverse-envvar-create` records a machine-readable creation check and creates the definition during live apply.
+- Missing target connection references fail preflight.
 - Duplicate target mappings within the same deploy family fail preflight explicitly.
 - Connection reference and missing-environment-variable findings from solution analysis are surfaced as warnings in preflight.

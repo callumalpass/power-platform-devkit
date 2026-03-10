@@ -37,6 +37,10 @@ export interface DataverseEnvvarDeployOperationPlan extends DeployOperationPlanB
   kind: 'dataverse-envvar-set';
 }
 
+export interface DataverseEnvvarUpsertDeployOperationPlan extends DeployOperationPlanBase {
+  kind: 'dataverse-envvar-upsert';
+}
+
 export interface DataverseConnectionReferenceDeployOperationPlan extends DeployOperationPlanBase {
   kind: 'dataverse-connref-set';
 }
@@ -51,6 +55,7 @@ export interface DeploySecretBindingOperationPlan extends DeployOperationPlanBas
 
 export type DeployOperationPlan =
   | DataverseEnvvarDeployOperationPlan
+  | DataverseEnvvarUpsertDeployOperationPlan
   | DataverseConnectionReferenceDeployOperationPlan
   | DeployInputBindingOperationPlan
   | DeploySecretBindingOperationPlan;
@@ -532,10 +537,31 @@ export async function executeDeploy(
       continue;
     }
 
-    if (isDataverseEnvvarOperation(operation.plan)) {
+    if (isDataverseEnvvarOperation(operation.plan) || isDataverseEnvvarUpsertOperation(operation.plan)) {
       const variable = variableBySchema.get(operation.plan.target.toLowerCase());
 
       if (!variable) {
+        if (isDataverseEnvvarUpsertOperation(operation.plan)) {
+          checks.push({
+            status: 'pass',
+            code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CREATE',
+            message: `Environment variable ${operation.plan.target} will be created in solution ${target.solutionUniqueName}.`,
+            target: operation.plan.target,
+            details: {
+              parameter: operation.plan.parameter,
+            },
+          });
+          applyOperations.push({
+            ...operation.plan,
+            status: 'planned',
+            targetExists: false,
+            nextValue,
+            changed: true,
+            message: mode === 'apply' ? 'Ready to create and apply.' : 'Preview will create the missing target.',
+          });
+          continue;
+        }
+
         checks.push({
           status: 'fail',
           code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_MISSING',
@@ -613,11 +639,15 @@ export async function executeDeploy(
   for (const operation of dataverseOperations) {
     const index = applyOperations.findIndex((entry) => entry.parameter === operation.plan.parameter && entry.target === operation.plan.target);
 
-    if (index === -1 || applyOperations[index]?.targetExists === false) {
+    if (index === -1) {
       continue;
     }
 
     const existingOperation = applyOperations[index]!;
+
+    if (existingOperation.targetExists === false && !isDataverseEnvvarUpsertOperation(operation.plan)) {
+      continue;
+    }
 
     if (existingOperation.changed === false) {
       applyOperations[index] = {
@@ -630,10 +660,34 @@ export async function executeDeploy(
 
     const nextValue = stringifyDeployValue(operation.value);
 
-    if (isDataverseEnvvarOperation(operation.plan)) {
-      const result = await environmentVariables.setValue(operation.plan.target, nextValue, {
-        solutionUniqueName: target.solutionUniqueName,
-      });
+    if (isDataverseEnvvarOperation(operation.plan) || isDataverseEnvvarUpsertOperation(operation.plan)) {
+      if (existingOperation.targetExists === false && isDataverseEnvvarUpsertOperation(operation.plan)) {
+        const createResult = await environmentVariables.createDefinition(operation.plan.target, {
+          type: inferEnvironmentVariableType(operation.value),
+          solutionUniqueName: target.solutionUniqueName,
+        });
+
+        if (!createResult.success || !createResult.data) {
+          diagnostics.push(...createResult.diagnostics);
+          warnings.push(...createResult.warnings);
+          applyOperations[index] = {
+            ...existingOperation,
+            status: 'failed',
+            message: `Failed to create ${operation.plan.target}.`,
+          };
+          continue;
+        }
+      }
+
+      const result = await environmentVariables.setValue(
+        operation.plan.target,
+        nextValue,
+        existingOperation.targetExists === false && isDataverseEnvvarUpsertOperation(operation.plan)
+          ? {}
+          : {
+              solutionUniqueName: target.solutionUniqueName,
+            }
+      );
 
       if (!result.success || !result.data) {
         diagnostics.push(...result.diagnostics);
@@ -652,7 +706,10 @@ export async function executeDeploy(
         currentValue: existingOperation.currentValue,
         nextValue: result.data.effectiveValue,
         changed: true,
-        message: `Updated ${operation.plan.target}.`,
+        message:
+          existingOperation.targetExists === false && isDataverseEnvvarUpsertOperation(operation.plan)
+            ? `Created and updated ${operation.plan.target}.`
+            : `Updated ${operation.plan.target}.`,
       };
       continue;
     }
@@ -729,6 +786,15 @@ function createDeployOperationPlan(
         target,
         valuePreview,
       };
+    case 'dataverse-envvar-create':
+      return {
+        kind: 'dataverse-envvar-upsert',
+        parameter: parameter.name,
+        source: parameter.source,
+        sensitive: parameter.sensitive,
+        target,
+        valuePreview,
+      };
     case 'dataverse-connref':
       return {
         kind: 'dataverse-connref-set',
@@ -775,6 +841,16 @@ function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCh
           status: 'fail',
           code: 'DEPLOY_PREFLIGHT_ENVVAR_SOURCE_MISSING',
           message: `Deploy parameter ${parameter.name} is unresolved but maps to Dataverse environment variable ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+          },
+        });
+      } else if (mapping.kind === 'dataverse-envvar-create') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to Dataverse environment variable create target ${mapping.target}.`,
           target: mapping.target,
           details: {
             parameter: parameter.name,
@@ -938,6 +1014,10 @@ function isDataverseEnvvarOperation(operation: DeployOperationPlan): operation i
   return operation.kind === 'dataverse-envvar-set';
 }
 
+function isDataverseEnvvarUpsertOperation(operation: DeployOperationPlan): operation is DataverseEnvvarUpsertDeployOperationPlan {
+  return operation.kind === 'dataverse-envvar-upsert';
+}
+
 function isDataverseConnectionReferenceOperation(
   operation: DeployOperationPlan
 ): operation is DataverseConnectionReferenceDeployOperationPlan {
@@ -946,8 +1026,8 @@ function isDataverseConnectionReferenceOperation(
 
 function isDataverseMutationOperation(
   operation: DeployOperationPlan
-): operation is DataverseEnvvarDeployOperationPlan | DataverseConnectionReferenceDeployOperationPlan {
-  return isDataverseEnvvarOperation(operation) || isDataverseConnectionReferenceOperation(operation);
+): operation is DataverseEnvvarDeployOperationPlan | DataverseEnvvarUpsertDeployOperationPlan | DataverseConnectionReferenceDeployOperationPlan {
+  return isDataverseEnvvarOperation(operation) || isDataverseEnvvarUpsertOperation(operation) || isDataverseConnectionReferenceOperation(operation);
 }
 
 function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean): DeployConfirmation {
@@ -968,6 +1048,18 @@ function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean
 
 function stringifyDeployValue(value: string | number | boolean): string {
   return typeof value === 'string' ? value : String(value);
+}
+
+function inferEnvironmentVariableType(value: string | number | boolean): 'string' | 'number' | 'boolean' {
+  if (typeof value === 'number') {
+    return 'number';
+  }
+
+  if (typeof value === 'boolean') {
+    return 'boolean';
+  }
+
+  return 'string';
 }
 
 function diffComparableDeployPlans(expectedPlan: DeployPlan, actualPlan: DeployPlan): string[] {
@@ -1124,7 +1216,7 @@ function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): Deploy
     const operationKinds = [...new Set(groupedOperations.map((operation) => operation.kind))];
     const parameterList = parameters.join(', ');
 
-    if (isDataverseEnvvarOperation(sample)) {
+    if (isDataverseEnvvarOperation(sample) || isDataverseEnvvarUpsertOperation(sample)) {
       conflicts.push({
         code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CONFLICT',
         message: `Environment variable ${sample.target} has conflicting deploy mappings from ${parameterList}.`,
@@ -1165,7 +1257,7 @@ function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): Deploy
 }
 
 function getDeployConflictKey(operation: DeployOperationPlan): string {
-  if (isDataverseEnvvarOperation(operation)) {
+  if (isDataverseEnvvarOperation(operation) || isDataverseEnvvarUpsertOperation(operation)) {
     return `dataverse-envvar:${operation.target.toLowerCase()}`;
   }
 

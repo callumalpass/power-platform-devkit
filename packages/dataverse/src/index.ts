@@ -286,6 +286,9 @@ interface SolutionComponentMembershipRecord {
   objectid?: string;
 }
 
+const DATAVERSE_HTTP_RETRIES = 5;
+const DATAVERSE_HTTP_RETRY_DELAY_MS = 1000;
+
 export class DataverseClient {
   private readonly httpClient: HttpClient;
 
@@ -299,6 +302,8 @@ export class DataverseClient {
           'odata-version': '4.0',
           'odata-maxversion': '4.0',
         },
+        retries: DATAVERSE_HTTP_RETRIES,
+        retryDelayMs: DATAVERSE_HTTP_RETRY_DELAY_MS,
       });
   }
 
@@ -1214,7 +1219,7 @@ export class EnvironmentVariableService {
       );
     }
 
-    const createResult = await this.dataverseClient.create<EnvironmentVariableDefinitionRecord, EnvironmentVariableDefinitionRecord>(
+    const createResult = await this.dataverseClient.create<Record<string, unknown>, EnvironmentVariableDefinitionRecord>(
       'environmentvariabledefinitions',
       {
         schemaname: schemaName,
@@ -1424,6 +1429,8 @@ export async function resolveDataverseClient(
         'odata-version': '4.0',
         'odata-maxversion': '4.0',
       },
+      retries: DATAVERSE_HTTP_RETRIES,
+      retryDelayMs: DATAVERSE_HTTP_RETRY_DELAY_MS,
       tokenProvider: tokenProvider.data,
     })
   );
