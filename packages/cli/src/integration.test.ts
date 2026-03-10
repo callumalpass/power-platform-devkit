@@ -1961,6 +1961,7 @@ describe('cli fixture-backed workflows', () => {
         targetUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
         browserProfile: 'maker-fixture',
         baselineMatches: [],
+        studioRuntimeTarget: 'frame:EmbeddedStudio',
         pageUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=edit&id=app-1',
         title: 'Power Apps Studio',
         frames: [{ name: 'EmbeddedStudio', url: 'https://make.powerapps.com/studio' }],
@@ -2064,6 +2065,7 @@ describe('cli fixture-backed workflows', () => {
         browserProfile: 'maker-fixture',
         baselineMatches: [],
         pageUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=edit&id=app-1',
+        studioRuntimeTarget: 'frame:EmbeddedStudio',
         title: 'Power Apps Studio',
         frames: [{ name: 'EmbeddedStudio', url: 'https://make.powerapps.com/studio' }],
         createdApp: {

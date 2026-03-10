@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildBlankAppUrl, buildSolutionAppsUrl, isBlankAppTargetUrl, resolveInitialTargetUrl } from './canvas-create-delegate';
+import {
+  buildBlankAppUrl,
+  buildSolutionAppsUrl,
+  getStudioRuntimeCandidates,
+  isBlankAppTargetUrl,
+  resolveInitialTargetUrl,
+  selectEmbeddedStudioFrame,
+} from './canvas-create-delegate';
 
 describe('create-solution-canvas-app URL routing', () => {
   it('prefers the solution-scoped blank-app deep link when Maker metadata is available', () => {
@@ -52,5 +59,31 @@ describe('create-solution-canvas-app URL routing', () => {
         })
       )
     ).toBe(false);
+  });
+
+  it('prefers the embedded Studio frame for runtime automation when present', () => {
+    const embeddedFrame = {
+      name: () => 'EmbeddedStudio',
+      url: () => 'https://authoring.powerapps.com/embed/',
+    };
+    const otherFrame = {
+      name: () => 'preloadStudio',
+      url: () => 'https://authoring.powerapps.com/embed/?preload=prefetch',
+    };
+    const page = {
+      frames: () => [otherFrame, embeddedFrame],
+    };
+
+    expect(selectEmbeddedStudioFrame(page.frames())).toBe(embeddedFrame);
+    expect(getStudioRuntimeCandidates(page as never)[0]).toBe(embeddedFrame);
+  });
+
+  it('falls back to embed-like frame urls when the named studio frame is absent', () => {
+    const frame = {
+      name: () => 'authoring-shell',
+      url: () => 'https://authoring.powerapps.com/v3/embed/',
+    };
+
+    expect(selectEmbeddedStudioFrame([frame] as never)).toBe(frame);
   });
 });

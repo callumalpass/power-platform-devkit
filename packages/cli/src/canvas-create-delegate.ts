@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { chromium, type BrowserContext, type Page } from 'playwright-core';
+import { chromium, type BrowserContext, type Frame, type Page } from 'playwright-core';
 import type { BrowserProfile } from '@pp/auth';
 import { type CanvasAppSummary, CanvasService } from '@pp/canvas';
 import type { DataverseClient } from '@pp/dataverse';
@@ -32,6 +32,7 @@ export interface DelegatedCanvasCreateSuccess {
   targetUrl: string;
   browserProfile: string;
   baselineMatches: CanvasAppSummary[];
+  studioRuntimeTarget: string;
   pageUrl?: string;
   title?: string;
   frames?: Array<{ name: string; url: string }>;
@@ -95,11 +96,11 @@ export async function runDelegatedCanvasCreate(
       waitUntil: 'domcontentloaded',
       timeout: options.timeoutMs,
     });
-    await waitForStudioRuntime(page, options.timeoutMs);
+    const runtimeTarget = await waitForStudioRuntime(page, options.timeoutMs);
     await dismissStudioOverlays(page, options.timeoutMs);
 
-    await saveStudioApp(page, options.settleMs);
-    await publishStudioApp(page, options.settleMs);
+    await saveStudioApp(runtimeTarget, options.settleMs);
+    await publishStudioApp(runtimeTarget, options.settleMs);
 
     const createdApp = await pollForPersistedCanvasApp(canvasService, options.solutionUniqueName, options.appName, beforeIds, options);
 
@@ -110,6 +111,7 @@ export async function runDelegatedCanvasCreate(
       targetUrl,
       browserProfile: options.browserProfileName,
       baselineMatches: beforeApps.data,
+      studioRuntimeTarget: describeStudioRuntimeTarget(runtimeTarget),
       pageUrl: page.url(),
       title: await page.title(),
       frames: page.frames().map((frame) => ({ name: frame.name(), url: frame.url() })),
@@ -134,6 +136,7 @@ export async function runDelegatedCanvasCreate(
       pageUrl: page.url(),
       title: await page.title().catch(() => undefined),
       frames: page.frames().map((frame) => ({ name: frame.name(), url: frame.url() })),
+      studioRuntimeProbe: await captureStudioRuntimeProbe(page).catch(() => undefined),
       error: error instanceof Error ? error.message : String(error),
       screenshotPath: sessionArtifacts.screenshotPath,
       sessionPath: sessionArtifacts.sessionPath,
@@ -248,31 +251,26 @@ async function openCanvasAppCreateDialog(page: Page, timeoutMs: number): Promise
   await page.waitForTimeout(3_000);
 }
 
-async function waitForStudioRuntime(page: Page, timeoutMs: number): Promise<void> {
-  await page.waitForFunction(
-    () => Boolean((globalThis as typeof globalThis & { AppMagic?: unknown }).AppMagic),
-    undefined,
-    { timeout: timeoutMs }
-  );
+async function waitForStudioRuntime(page: Page, timeoutMs: number): Promise<Page | Frame> {
+  const startedAt = Date.now();
+  let lastObservedTarget: string | undefined;
 
-  await page.waitForFunction(
-    async () => {
-      const appMagic = (globalThis as typeof globalThis & { AppMagic?: any }).AppMagic;
-      const shell = await appMagic?.context?._shellViewModelPromise;
-      const documentViewModel = shell?.documentViewModel;
-      if (!documentViewModel) {
-        return false;
+  while (Date.now() - startedAt < timeoutMs) {
+    const candidateTargets = getStudioRuntimeCandidates(page);
+
+    for (const candidate of candidateTargets) {
+      const ready = await isStudioRuntimeReady(candidate);
+      if (ready) {
+        return candidate;
       }
+      lastObservedTarget = describeStudioRuntimeTarget(candidate);
+    }
 
-      await Promise.race([
-        documentViewModel._loadedPromise ?? Promise.resolve(),
-        new Promise((resolve) => setTimeout(resolve, 5_000)),
-      ]);
+    await page.waitForTimeout(2_000);
+  }
 
-      return Boolean(shell?._fileSaveManager?.saveAsync);
-    },
-    undefined,
-    { timeout: timeoutMs }
+  throw new Error(
+    `Timed out after ${timeoutMs}ms waiting for Studio runtime readiness${lastObservedTarget ? ` on ${lastObservedTarget}` : ''}.`
   );
 }
 
@@ -300,8 +298,8 @@ async function dismissStudioOverlays(page: Page, timeoutMs: number): Promise<voi
   }
 }
 
-async function saveStudioApp(page: Page, settleMs: number): Promise<void> {
-  await page.evaluate(
+async function saveStudioApp(target: Page | Frame, settleMs: number): Promise<void> {
+  await target.evaluate(
     async ({ timeoutMs }) => {
       const shell = await (globalThis as typeof globalThis & { AppMagic?: any }).AppMagic?.context?._shellViewModelPromise;
       if (!shell?._fileSaveManager?.saveAsync) {
@@ -313,11 +311,11 @@ async function saveStudioApp(page: Page, settleMs: number): Promise<void> {
     },
     { timeoutMs: SAVE_TIMEOUT_MS }
   );
-  await page.waitForTimeout(settleMs);
+  await getOwningPage(target).waitForTimeout(settleMs);
 }
 
-async function publishStudioApp(page: Page, settleMs: number): Promise<void> {
-  await page
+async function publishStudioApp(target: Page | Frame, settleMs: number): Promise<void> {
+  await target
     .evaluate(
       async ({ timeoutMs }) => {
         const appMagic = (globalThis as typeof globalThis & { AppMagic?: any }).AppMagic;
@@ -331,7 +329,68 @@ async function publishStudioApp(page: Page, settleMs: number): Promise<void> {
       { timeoutMs: PUBLISH_TIMEOUT_MS }
     )
     .catch(() => undefined);
-  await page.waitForTimeout(settleMs);
+  await getOwningPage(target).waitForTimeout(settleMs);
+}
+
+export function getStudioRuntimeCandidates(page: Pick<Page, 'frames'>): Array<Page | Frame> {
+  const frames = page.frames();
+  const preferredFrame = selectEmbeddedStudioFrame(frames);
+  return preferredFrame ? [preferredFrame, page as Page] : [page as Page, ...frames];
+}
+
+export function selectEmbeddedStudioFrame<T extends Pick<Frame, 'name' | 'url'>>(frames: T[]): T | undefined {
+  return (
+    frames.find((frame) => frame.name() === 'EmbeddedStudio') ??
+    frames.find((frame) => /\/embed\/?/i.test(frame.url()))
+  );
+}
+
+function describeStudioRuntimeTarget(target: Page | Frame): string {
+  if ('name' in target) {
+    const name = target.name();
+    return name ? `frame:${name}` : `frame:${target.url()}`;
+  }
+
+  return 'page:top';
+}
+
+async function isStudioRuntimeReady(target: Page | Frame): Promise<boolean> {
+  return target
+    .evaluate(async () => {
+      const appMagic = (globalThis as typeof globalThis & { AppMagic?: any }).AppMagic;
+      const shell = await appMagic?.context?._shellViewModelPromise;
+      const documentViewModel = shell?.documentViewModel;
+      if (!documentViewModel) {
+        return false;
+      }
+
+      await Promise.race([
+        documentViewModel._loadedPromise ?? Promise.resolve(),
+        new Promise((resolve) => setTimeout(resolve, 5_000)),
+      ]);
+
+      return Boolean(shell?._fileSaveManager?.saveAsync);
+    })
+    .catch(() => false);
+}
+
+async function captureStudioRuntimeProbe(page: Page): Promise<Array<{ target: string; url: string; appMagicPresent: boolean }>> {
+  const candidates = [page, ...page.frames()];
+  const probes = await Promise.all(
+    candidates.map(async (candidate) => ({
+      target: describeStudioRuntimeTarget(candidate),
+      url: candidate.url(),
+      appMagicPresent: await candidate
+        .evaluate(() => Boolean((globalThis as typeof globalThis & { AppMagic?: unknown }).AppMagic))
+        .catch(() => false),
+    }))
+  );
+
+  return probes;
+}
+
+function getOwningPage(target: Page | Frame): Page {
+  return 'page' in target ? target.page() : target;
 }
 
 async function pollForPersistedCanvasApp(
