@@ -847,6 +847,11 @@ describe('FlowService', () => {
       sourceSolutionUniqueName: 'Core',
       solutionPackage: true,
       solutionPackageManaged: true,
+      publishWorkflows: false,
+      overwriteUnmanagedCustomizations: true,
+      holdingSolution: true,
+      skipProductUpdateDependencies: true,
+      importJobId: 'job-123',
       targetDataverseClient: targetClient,
     });
 
@@ -858,6 +863,13 @@ describe('FlowService', () => {
       targetSolutionUniqueName: 'Core',
       solutionPackage: {
         packageType: 'managed',
+      },
+      importOptions: {
+        publishWorkflows: false,
+        overwriteUnmanagedCustomizations: true,
+        holdingSolution: true,
+        skipProductUpdateDependencies: true,
+        importJobId: 'job-123',
       },
       validation: {
         valid: true,
@@ -875,12 +887,23 @@ describe('FlowService', () => {
     expect(targetRequests).toHaveLength(1);
     expect(targetRequests[0]?.path).toBe('ImportSolution');
     expect(targetRequests[0]?.body).toMatchObject({
-      PublishWorkflows: true,
-      OverwriteUnmanagedCustomizations: false,
-      HoldingSolution: false,
-      SkipProductUpdateDependencies: false,
+      PublishWorkflows: false,
+      OverwriteUnmanagedCustomizations: true,
+      HoldingSolution: true,
+      SkipProductUpdateDependencies: true,
+      ImportJobId: 'job-123',
       CustomizationFile: Buffer.from('solution-package').toString('base64'),
     });
+  });
+
+  it('rejects solution-package import overrides on artifact-mode promotion', async () => {
+    const result = await new FlowService(createStubDataverseClient()).promoteArtifact('Invoice Sync', {
+      publishWorkflows: false,
+      targetDataverseClient: createStubDataverseClient(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('FLOW_PROMOTE_PACKAGE_IMPORT_OPTIONS_UNSUPPORTED');
   });
 
   it('blocks remote deploy when local flow validation fails', async () => {

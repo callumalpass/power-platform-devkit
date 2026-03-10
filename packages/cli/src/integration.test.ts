@@ -4002,6 +4002,12 @@ describe('cli fixture-backed workflows', () => {
       'target',
       '--solution-package',
       '--managed-solution-package',
+      '--overwrite-unmanaged-customizations',
+      '--holding-solution',
+      '--skip-product-update-dependencies',
+      '--no-publish-workflows',
+      '--import-job-id',
+      'job-123',
       '--format',
       'json',
     ]);
@@ -4015,6 +4021,13 @@ describe('cli fixture-backed workflows', () => {
       targetSolutionUniqueName: 'Core',
       solutionPackage: {
         packageType: 'managed',
+      },
+      importOptions: {
+        publishWorkflows: false,
+        overwriteUnmanagedCustomizations: true,
+        holdingSolution: true,
+        skipProductUpdateDependencies: true,
+        importJobId: 'job-123',
       },
       validation: {
         valid: true,
@@ -4032,11 +4045,37 @@ describe('cli fixture-backed workflows', () => {
     expect(targetRequests).toHaveLength(1);
     expect(targetRequests[0]?.path).toBe('ImportSolution');
     expect(targetRequests[0]?.body).toMatchObject({
-      PublishWorkflows: true,
-      OverwriteUnmanagedCustomizations: false,
-      HoldingSolution: false,
-      SkipProductUpdateDependencies: false,
+      PublishWorkflows: false,
+      OverwriteUnmanagedCustomizations: true,
+      HoldingSolution: true,
+      SkipProductUpdateDependencies: true,
+      ImportJobId: 'job-123',
       CustomizationFile: Buffer.from('cli-solution-package').toString('base64'),
+    });
+  });
+
+  it('rejects solution-package import override flags on artifact-mode flow promote', async () => {
+    mockDataverseResolution({
+      source: { client: createFixtureDataverseClient() },
+      target: { client: createFixtureDataverseClient() },
+    });
+
+    const promote = await runCli([
+      'flow',
+      'promote',
+      'Invoice Sync',
+      '--source-environment',
+      'source',
+      '--target-environment',
+      'target',
+      '--no-publish-workflows',
+      '--format',
+      'json',
+    ]);
+
+    expect(promote.code).toBe(1);
+    expect(JSON.parse(promote.stderr)).toMatchObject({
+      code: 'FLOW_PROMOTE_PACKAGE_IMPORT_OPTIONS_UNSUPPORTED',
     });
   });
 

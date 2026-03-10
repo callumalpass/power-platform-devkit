@@ -22,7 +22,7 @@ pp flow inspect "Invoice Sync" --env dev
 pp flow inspect crd_InvoiceSync --env dev --solution Core
 pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote
 pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --target-solution Core
-pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --solution-package --managed-solution-package
+pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --solution-package --managed-solution-package --holding-solution --no-publish-workflows
 ```
 
 Current remote inspection returns:
@@ -176,7 +176,11 @@ normalized source artifact, exports the whole containing solution through the
 shared solution service, and imports that package into the target environment.
 `--managed-solution-package` switches that package export from unmanaged to
 managed. This route is intentionally whole-solution and does not support
-`--target` or `--create-if-missing`.
+`--target` or `--create-if-missing`, but it now forwards the same bounded
+solution-import controls as `pp solution import`:
+`--overwrite-unmanaged-customizations`, `--holding-solution`,
+`--skip-product-update-dependencies`, `--no-publish-workflows`, and
+`--import-job-id`.
 
 The current pack/deploy boundary is:
 
@@ -202,8 +206,8 @@ The current pack/deploy boundary is:
   metadata/state beyond that surface
 - `pp flow promote --solution-package` imports the whole selected solution that
   contains the flow, preserves the packaged solution unique name, requires
-  `--source-solution`, and does not support `--target` or
-  `--create-if-missing`
+  `--source-solution`, does not support `--target` or `--create-if-missing`,
+  and accepts the same bounded import controls as `pp solution import`
 - create-if-missing currently requires artifact `metadata.uniqueName`, creates
   only a bounded workflow shell (`category`, `name`, `uniquename`,
   `statecode`/`statuscode` when present, plus normalized `clientdata`), and

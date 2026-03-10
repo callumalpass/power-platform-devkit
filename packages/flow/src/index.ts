@@ -304,6 +304,11 @@ export interface FlowPromoteOptions {
   createIfMissing?: boolean;
   solutionPackage?: boolean;
   solutionPackageManaged?: boolean;
+  publishWorkflows?: boolean;
+  overwriteUnmanagedCustomizations?: boolean;
+  holdingSolution?: boolean;
+  skipProductUpdateDependencies?: boolean;
+  importJobId?: string;
   targetDataverseClient?: DataverseClient;
 }
 
@@ -344,6 +349,13 @@ export interface FlowSolutionPackagePromoteResult {
   targetSolutionUniqueName: string;
   solutionPackage: {
     packageType: 'managed' | 'unmanaged';
+  };
+  importOptions: {
+    publishWorkflows: boolean;
+    overwriteUnmanagedCustomizations: boolean;
+    holdingSolution: boolean;
+    skipProductUpdateDependencies: boolean;
+    importJobId?: string;
   };
   summary: FlowArtifactSummary;
   validation: {
@@ -1232,6 +1244,19 @@ export async function promoteRemoteFlowArtifact(
     sourceDataverseClient?: DataverseClient;
   } = {}
 ): Promise<OperationResult<FlowPromoteResult>> {
+  if (!options.solutionPackage && hasFlowSolutionPackageImportOverrides(options)) {
+    return fail(
+      createDiagnostic(
+        'error',
+        'FLOW_PROMOTE_PACKAGE_IMPORT_OPTIONS_UNSUPPORTED',
+        'Solution import override flags require --solution-package on flow promote.',
+        {
+          source: '@pp/flow',
+        }
+      )
+    );
+  }
+
   if (!options.sourceDataverseClient) {
     return fail(
       createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote flow promotion source inspection.', {
@@ -1458,6 +1483,13 @@ async function promoteRemoteFlowArtifactAsSolutionPackage(
   }
 
   const packageType = options.solutionPackageManaged ? 'managed' : 'unmanaged';
+  const importOptions = {
+    publishWorkflows: options.publishWorkflows ?? true,
+    overwriteUnmanagedCustomizations: options.overwriteUnmanagedCustomizations ?? false,
+    holdingSolution: options.holdingSolution ?? false,
+    skipProductUpdateDependencies: options.skipProductUpdateDependencies ?? false,
+    importJobId: options.importJobId,
+  };
   const tempRoot = await mkdtemp(join(tmpdir(), 'pp-flow-promote-solution-'));
 
   try {
@@ -1477,7 +1509,7 @@ async function promoteRemoteFlowArtifactAsSolutionPackage(
       });
     }
 
-    const importResult = await targetSolutionService.importSolution(exportResult.data.artifact.path);
+    const importResult = await targetSolutionService.importSolution(exportResult.data.artifact.path, importOptions);
 
     if (!importResult.success || !importResult.data) {
       return fail([...validation.diagnostics, ...exportResult.diagnostics, ...importResult.diagnostics], {
@@ -1505,6 +1537,7 @@ async function promoteRemoteFlowArtifactAsSolutionPackage(
         solutionPackage: {
           packageType,
         },
+        importOptions,
         summary: buildFlowArtifactSummary(artifact.metadata.sourcePath ?? `dataverse://workflows/${sourceFlow.id}`, artifact),
         validation: {
           valid: true,
@@ -2379,6 +2412,16 @@ function normalizeFlowRun(record: DataverseCloudFlowRunSummary): FlowRunSummary 
 
 function normalizeStatus(value: string | undefined): string {
   return (value ?? '').trim().toLowerCase();
+}
+
+function hasFlowSolutionPackageImportOverrides(options: FlowPromoteOptions): boolean {
+  return (
+    options.publishWorkflows !== undefined ||
+    options.overwriteUnmanagedCustomizations !== undefined ||
+    options.holdingSolution !== undefined ||
+    options.skipProductUpdateDependencies !== undefined ||
+    options.importJobId !== undefined
+  );
 }
 
 function summarizeFlowRuns(runs: FlowRunSummary[]): FlowRuntimeAnalyticsSummary {
