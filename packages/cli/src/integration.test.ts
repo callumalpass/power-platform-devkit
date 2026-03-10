@@ -5999,6 +5999,78 @@ describe('cli fixture-backed workflows', () => {
     expect(envvarInspectHelp.stdout).not.toContain('ENVVAR_IDENTIFIER_REQUIRED');
   });
 
+  it('keeps help-discoverable format support aligned with runtime on harness-reported commands', async () => {
+    const solutionFixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://fixture.crm.dynamics.com',
+              loginHint: 'fixture.user@example.com',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(solutionFixture.source),
+    });
+
+    const solutionHelp = await runCli(['solution', 'list', '--help']);
+    const solutionList = await runCli(['solution', 'list', '--environment', 'source', '--format', 'json']);
+    const authHelp = await runCli(['auth', 'profile', 'inspect', '--help']);
+    const authInspect = await runCli(['auth', 'profile', 'inspect', 'fixture-user', '--config-dir', configDir, '--format', 'json']);
+
+    expect(solutionHelp.code).toBe(0);
+    expect(solutionHelp.stderr).toBe('');
+    expect(solutionHelp.stdout).toContain('pp solution list --environment dev --format json');
+    expect(solutionHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
+    expect(solutionList.code).toBe(0);
+    expect(solutionList.stderr).toBe('');
+    expect(JSON.parse(solutionList.stdout)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          uniquename: 'Core',
+        }),
+      ])
+    );
+
+    expect(authHelp.code).toBe(0);
+    expect(authHelp.stderr).toBe('');
+    expect(authHelp.stdout).toContain(
+      'auth profile inspect <name> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
+    );
+    expect(authHelp.stdout).toContain(
+      'auth profile inspect --environment ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
+    );
+    expect(authInspect.code).toBe(0);
+    expect(authInspect.stderr).toBe('');
+    expect(JSON.parse(authInspect.stdout)).toMatchObject({
+      name: 'fixture-user',
+      type: 'user',
+      defaultResource: 'https://fixture.crm.dynamics.com',
+    });
+  });
+
   it('previews a multi-file dataverse metadata apply manifest through one command', async () => {
     const tempDir = await createTempDir();
     const manifestPath = join(tempDir, 'schema.apply.yaml');
