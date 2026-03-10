@@ -3996,8 +3996,12 @@ describe('cli fixture-backed workflows', () => {
 
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
-    expect(inspect.stdout).toContain('auth profile inspect <name> [--config-dir path]');
-    expect(inspect.stdout).toContain('auth profile inspect --environment ALIAS [--config-dir path]');
+    expect(inspect.stdout).toContain(
+      'auth profile inspect <name> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
+    );
+    expect(inspect.stdout).toContain(
+      'auth profile inspect --environment ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
+    );
     expect(inspect.stdout).not.toContain('AUTH_PROFILE_NAME_REQUIRED');
   });
 
