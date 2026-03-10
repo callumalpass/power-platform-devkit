@@ -1678,7 +1678,16 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
 }
 
 async function runModel(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printModelHelp();
+    return 0;
+  }
+
   switch (command) {
+    case 'create':
+      return runModelCreate(args);
+    case 'attach':
+      return runModelAttach(args);
     case 'list':
       return runModelList(args);
     case 'inspect':
@@ -6570,6 +6579,108 @@ async function runModelList(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runModelCreate(args: string[]): Promise<number> {
+  const uniqueName = positionalArgs(args)[0];
+  const environmentAlias = readFlag(args, '--environment');
+  const configOptions = readConfigOptions(args);
+
+  if (!uniqueName) {
+    return printFailure(
+      argumentFailure(
+        'MODEL_UNIQUENAME_REQUIRED',
+        'Usage: model create <uniqueName> --environment ALIAS [--name DISPLAY_NAME] [--solution UNIQUE_NAME]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const displayName = readFlag(args, '--name');
+  const explicitSolutionUniqueName = readFlag(args, '--solution');
+  const defaultSolutionUniqueName =
+    !explicitSolutionUniqueName && environmentAlias ? await readEnvironmentDefaultSolution(environmentAlias, configOptions) : undefined;
+  const solutionUniqueName = explicitSolutionUniqueName ?? defaultSolutionUniqueName;
+  const preview = maybeHandleMutationPreview(args, 'json', 'model.create', {
+    uniqueName,
+    environment: resolution.data.environment.alias,
+    solution: solutionUniqueName,
+  }, {
+    name: displayName ?? uniqueName,
+  });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new ModelService(resolution.data.client).create(uniqueName, {
+    name: displayName,
+    solutionUniqueName: solutionUniqueName,
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runModelAttach(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+  const environmentAlias = readFlag(args, '--environment');
+  const configOptions = readConfigOptions(args);
+  const explicitSolutionUniqueName = readFlag(args, '--solution');
+  const defaultSolutionUniqueName =
+    !explicitSolutionUniqueName && environmentAlias ? await readEnvironmentDefaultSolution(environmentAlias, configOptions) : undefined;
+  const solutionUniqueName = explicitSolutionUniqueName ?? defaultSolutionUniqueName;
+
+  if (!identifier || !solutionUniqueName) {
+    return printFailure(
+      argumentFailure(
+        'MODEL_ATTACH_ARGS_REQUIRED',
+        'Usage: model attach <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const addRequiredComponents = hasFlag(args, '--no-add-required-components') ? false : true;
+  const preview = maybeHandleMutationPreview(args, 'json', 'model.attach', {
+    identifier,
+    environment: resolution.data.environment.alias,
+    solution: solutionUniqueName,
+  }, {
+    addRequiredComponents,
+  });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new ModelService(resolution.data.client).attach(identifier, {
+    solutionUniqueName,
+    addRequiredComponents,
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runModelInspect(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
@@ -9321,6 +9432,8 @@ function printHelp(): void {
       '  flow errors <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow connrefs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow doctor <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model create <uniqueName> --environment ALIAS [--name DISPLAY_NAME] [--solution UNIQUE_NAME] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  model attach <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-add-required-components] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model inspect <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model composition <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -9360,6 +9473,41 @@ function printHelp(): void {
       '  --dry-run  render a mutation preview without side effects',
       '  --plan     render a mutation plan without side effects',
       '  --yes      record non-interactive confirmation for guarded workflows',
+    ].join('\n') + '\n'
+  );
+}
+
+function printModelHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: model <command> [options]',
+      '',
+      'Commands:',
+      '  create <uniqueName>         create a model-driven app through a solution-aware Dataverse workflow',
+      '  attach <name|id|uniqueName> attach an existing model-driven app to a solution through AddSolutionComponent',
+      '  list                        list model-driven apps',
+      '  inspect <name|id|uniqueName> inspect one model-driven app',
+      '  composition <name|id|uniqueName> emit a normalized composition graph',
+      '  impact <name|id|uniqueName> preview artifact impact within one model-driven app',
+      '  sitemap <name|id|uniqueName> list sitemap artifacts',
+      '  forms <name|id|uniqueName>   list form artifacts',
+      '  views <name|id|uniqueName>   list view artifacts',
+      '  dependencies <name|id|uniqueName> list dependency artifacts',
+      '  patch plan <name|id|uniqueName> preview bounded rename mutations',
+      '',
+      'Examples:',
+      '  pp model create SalesHub --environment dev --name "Sales Hub" --solution Core',
+      '  pp model attach SalesHub --environment dev --solution Core',
+      '  pp model inspect SalesHub --environment dev --solution Core',
+      '',
+      'Notes:',
+      '  - `model create` uses solution-scoped Dataverse creation when `--solution` or the environment alias defaultSolution is available.',
+      '  - `model attach` uses `--solution` when provided, otherwise the environment alias defaultSolution when configured.',
+      '  - `model attach` uses the supported solution component action rather than direct raw row writes.',
+      '  - Composition inspection and patch planning remain bounded to the current read-first model surface.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
     ].join('\n') + '\n'
   );
 }

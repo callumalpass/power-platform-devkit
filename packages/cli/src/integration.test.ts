@@ -7102,4 +7102,156 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(views.stdout), 'fixtures/model/golden/views-report.json');
     await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/model/golden/dependencies-report.json');
   });
+
+  it('creates and attaches model-driven apps through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+        queryAll: {
+          appmodules: [],
+          solutioncomponents: [],
+        },
+      }),
+    });
+
+    const created = await runCli([
+      'model',
+      'create',
+      'ServiceHub',
+      '--env',
+      'source',
+      '--solution',
+      'Core',
+      '--name',
+      'Service Hub',
+      '--format',
+      'json',
+    ]);
+    const attached = await runCli([
+      'model',
+      'attach',
+      'ServiceHub',
+      '--env',
+      'source',
+      '--solution',
+      'Core',
+      '--format',
+      'json',
+    ]);
+
+    expect(created.code).toBe(0);
+    expect(created.stderr).toBe('');
+    expect(JSON.parse(created.stdout)).toMatchObject({
+      id: 'fixture-appmodules-1',
+      uniqueName: 'ServiceHub',
+      name: 'Service Hub',
+    });
+
+    expect(attached.code).toBe(0);
+    expect(attached.stderr).toBe('');
+    expect(JSON.parse(attached.stdout)).toMatchObject({
+      attached: true,
+      solutionUniqueName: 'Core',
+      addRequiredComponents: true,
+      app: {
+        id: 'fixture-appmodules-1',
+        uniqueName: 'ServiceHub',
+        name: 'Service Hub',
+      },
+    });
+  });
+
+  it('derives the model-driven app solution from the environment alias defaultSolution', async () => {
+    const configDir = await createTempDir();
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+        queryAll: {
+          appmodules: [],
+          solutioncomponents: [],
+        },
+      }),
+    });
+
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          environments: {
+            source: {
+              alias: 'source',
+              url: 'https://source.crm.dynamics.com',
+              authProfile: 'source-user',
+              defaultSolution: 'Core',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const created = await runCli([
+      'model',
+      'create',
+      'ServiceHub',
+      '--env',
+      'source',
+      '--config-dir',
+      configDir,
+      '--name',
+      'Service Hub',
+      '--format',
+      'json',
+    ]);
+    const attached = await runCli([
+      'model',
+      'attach',
+      'ServiceHub',
+      '--env',
+      'source',
+      '--config-dir',
+      configDir,
+      '--format',
+      'json',
+    ]);
+
+    expect(created.code).toBe(0);
+    expect(created.stderr).toBe('');
+    expect(JSON.parse(created.stdout)).toMatchObject({
+      id: 'fixture-appmodules-1',
+      uniqueName: 'ServiceHub',
+      name: 'Service Hub',
+    });
+
+    expect(attached.code).toBe(0);
+    expect(attached.stderr).toBe('');
+    expect(JSON.parse(attached.stdout)).toMatchObject({
+      attached: true,
+      solutionUniqueName: 'Core',
+      addRequiredComponents: true,
+      app: {
+        id: 'fixture-appmodules-1',
+        uniqueName: 'ServiceHub',
+        name: 'Service Hub',
+      },
+    });
+  });
 });
