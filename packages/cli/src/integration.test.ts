@@ -2546,6 +2546,46 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/solution/golden/dependencies-report.json');
   });
 
+  it('covers solution creation through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          publishers: [
+            {
+              publisherid: 'pub-1',
+              uniquename: 'DefaultPublisher',
+            },
+          ],
+        },
+      }),
+    });
+
+    const create = await runCli([
+      'solution',
+      'create',
+      'HarnessShell',
+      '--env',
+      'source',
+      '--friendly-name',
+      'Harness Shell',
+      '--publisher-unique-name',
+      'DefaultPublisher',
+      '--description',
+      'Disposable harness solution',
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(0);
+    expect(create.stderr).toBe('');
+    expect(JSON.parse(create.stdout)).toMatchObject({
+      solutionid: 'fixture-solutions-1',
+      uniquename: 'HarnessShell',
+      friendlyname: 'Harness Shell',
+      version: '1.0.0.0',
+    });
+  });
+
   it('covers model-driven app inspection workflows through the CLI entrypoint', async () => {
     const fixture = (await readJsonFile(resolveRepoPath('fixtures', 'model', 'runtime', 'sales-hub.json'))) as DataverseFixture;
 

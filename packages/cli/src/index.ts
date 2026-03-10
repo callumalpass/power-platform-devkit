@@ -257,6 +257,8 @@ async function runDataverse(command: string | undefined, args: string[]): Promis
 
 async function runSolution(command: string | undefined, args: string[]): Promise<number> {
   switch (command) {
+    case 'create':
+      return runSolutionCreate(args);
     case 'list':
       return runSolutionList(args);
     case 'inspect':
@@ -2618,6 +2620,50 @@ async function runSolutionList(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runSolutionCreate(args: string[]): Promise<number> {
+  const uniqueName = positionalArgs(args)[0];
+
+  if (!uniqueName) {
+    return printFailure(
+      argumentFailure(
+        'SOLUTION_CREATE_ARGS_REQUIRED',
+        'Usage: solution create <uniqueName> --env <alias> [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)'
+      )
+    );
+  }
+
+  const publisherId = readFlag(args, '--publisher-id');
+  const publisherUniqueName = readFlag(args, '--publisher-unique-name');
+
+  if (!publisherId && !publisherUniqueName) {
+    return printFailure(
+      argumentFailure('SOLUTION_PUBLISHER_REQUIRED', 'Use --publisher-id or --publisher-unique-name when creating a solution.')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new SolutionService(resolution.data.client);
+  const result = await service.create(uniqueName, {
+    friendlyName: readFlag(args, '--friendly-name'),
+    version: readFlag(args, '--version'),
+    description: readFlag(args, '--description'),
+    publisherId,
+    publisherUniqueName,
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runSolutionInspect(args: string[]): Promise<number> {
   const uniqueName = positionalArgs(args)[0];
 
@@ -4355,6 +4401,7 @@ function printHelp(): void {
       '  dv metadata create-many-to-many --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '  dv metadata create-customer-relationship --env ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '',
+      '  solution create <uniqueName> --env ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)',
       '  solution list --env ALIAS [--config-dir path]',
       '  solution inspect <uniqueName> --env ALIAS [--config-dir path]',
       '  solution components <uniqueName> --env ALIAS [--format table|json|yaml|ndjson|markdown|raw]',

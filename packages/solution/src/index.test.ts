@@ -9,6 +9,7 @@ interface StubData {
     uniquename: string;
     version?: string;
   };
+  publishers?: Array<Record<string, unknown>>;
   components: Array<Record<string, unknown>>;
   dependencies: Array<Record<string, unknown>>;
   connectionReferences?: Array<Record<string, unknown>>;
@@ -21,6 +22,12 @@ function createStubClient(data: StubData): DataverseClient {
     query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
       if (options.table === 'solutions') {
         return ok([data.solution] as T[], {
+          supportTier: 'preview',
+        });
+      }
+
+      if (options.table === 'publishers') {
+        return ok((data.publishers ?? []) as T[], {
           supportTier: 'preview',
         });
       }
@@ -44,6 +51,39 @@ function createStubClient(data: StubData): DataverseClient {
         default:
           return ok([] as T[], { supportTier: 'preview' });
       }
+    },
+    create: async <TRecord extends Record<string, unknown>, TResult = TRecord>(
+      table: string,
+      entity: TRecord
+    ): Promise<OperationResult<{ status: number; headers: Record<string, string>; entity?: TResult; entityId?: string }>> => {
+      if (table === 'solutions') {
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            entityId: 'sol-created',
+            entity: {
+              solutionid: 'sol-created',
+              uniquename: entity.uniquename,
+              friendlyname: entity.friendlyname,
+              version: entity.version,
+            } as TResult,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      }
+
+      return ok(
+        {
+          status: 204,
+          headers: {},
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
     },
   } as unknown as DataverseClient;
 }
@@ -193,5 +233,39 @@ describe('SolutionService', () => {
     expect(result.data?.drift.versionChanged).toBe(true);
     expect(result.data?.drift.componentsOnlyInSource).toHaveLength(1);
     expect(result.data?.drift.componentsOnlyInTarget).toHaveLength(0);
+  });
+
+  it('creates a solution through the solutions entity set', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        publishers: [
+          {
+            publisherid: 'pub-1',
+            uniquename: 'DefaultPublisher',
+          },
+        ],
+        components: [],
+        dependencies: [],
+      })
+    );
+
+    const result = await service.create('HarnessShell', {
+      friendlyName: 'Harness Shell',
+      publisherUniqueName: 'DefaultPublisher',
+      description: 'Disposable harness solution',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      solutionid: 'sol-created',
+      uniquename: 'HarnessShell',
+      friendlyname: 'Harness Shell',
+      version: '1.0.0.0',
+    });
   });
 });

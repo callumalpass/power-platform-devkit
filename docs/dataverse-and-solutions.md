@@ -409,6 +409,15 @@ Notes:
 
 ## Solution commands
 
+Create an unmanaged remote solution shell:
+
+```bash
+pp solution create HarnessShell --env dev \
+  --friendly-name "Harness Shell" \
+  --publisher-unique-name DefaultPublisher \
+  --description "Disposable unmanaged shell for test work."
+```
+
 List the first 100 solutions:
 
 ```bash
@@ -480,6 +489,7 @@ Most current commands default to JSON output. Some project and analysis commands
 
 Implemented today:
 
+- solution create for unmanaged shells
 - Dataverse `WhoAmI`
 - generic Web API request execution
 - table query with select/top/filter/expand/orderby/count

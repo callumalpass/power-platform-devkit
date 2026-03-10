@@ -151,6 +151,8 @@ function inferIdKey(table: string, entity: Record<string, unknown>): string {
 
 function inferPreferredIdKey(table: string): string | undefined {
   switch (table) {
+    case 'solutions':
+      return 'solutionid';
     case 'connectionreferences':
       return 'connectionreferenceid';
     case 'environmentvariabledefinitions':

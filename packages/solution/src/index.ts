@@ -1,4 +1,4 @@
-import { ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import {
   ConnectionReferenceService,
   EnvironmentVariableService,
@@ -12,6 +12,19 @@ export interface SolutionSummary {
   uniquename: string;
   friendlyname?: string;
   version?: string;
+}
+
+export interface SolutionCreateOptions {
+  friendlyName?: string;
+  version?: string;
+  description?: string;
+  publisherId?: string;
+  publisherUniqueName?: string;
+}
+
+interface PublisherSummary {
+  publisherid: string;
+  uniquename?: string;
 }
 
 export interface SolutionComponentRecord {
@@ -88,6 +101,61 @@ export interface SolutionCompareResult {
 
 export class SolutionService {
   constructor(private readonly dataverseClient: DataverseClient) {}
+
+  async create(uniqueName: string, options: SolutionCreateOptions = {}): Promise<OperationResult<SolutionSummary>> {
+    const publisherId = options.publisherId ?? (await this.resolvePublisherId(options.publisherUniqueName));
+
+    if (!publisherId) {
+      return fail(
+        createDiagnostic('error', 'SOLUTION_PUBLISHER_REQUIRED', 'A publisher is required. Use --publisher-id or --publisher-unique-name.', {
+          source: '@pp/solution',
+        }),
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+
+    const createResult = await this.dataverseClient.create<
+      Record<string, unknown>,
+      {
+        solutionid?: string;
+        uniquename?: string;
+        friendlyname?: string;
+        version?: string;
+      }
+    >(
+      'solutions',
+      {
+        uniquename: uniqueName,
+        friendlyname: options.friendlyName ?? uniqueName,
+        version: options.version ?? '1.0.0.0',
+        ...(options.description ? { description: options.description } : {}),
+        'publisherid@odata.bind': `/publishers(${publisherId})`,
+      },
+      {
+        returnRepresentation: true,
+      }
+    );
+
+    if (!createResult.success) {
+      return createResult as unknown as OperationResult<SolutionSummary>;
+    }
+
+    return ok(
+      {
+        solutionid: createResult.data?.entity?.solutionid ?? createResult.data?.entityId ?? '',
+        uniquename: createResult.data?.entity?.uniquename ?? uniqueName,
+        friendlyname: createResult.data?.entity?.friendlyname ?? options.friendlyName ?? uniqueName,
+        version: createResult.data?.entity?.version ?? options.version ?? '1.0.0.0',
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: createResult.diagnostics,
+        warnings: createResult.warnings,
+      }
+    );
+  }
 
   async list(): Promise<OperationResult<SolutionSummary[]>> {
     return this.dataverseClient.query<SolutionSummary>({
@@ -304,6 +372,25 @@ export class SolutionService {
         warnings: mergeDiagnosticLists(sourceAnalysis.warnings, targetAnalysis.warnings),
       }
     );
+  }
+
+  private async resolvePublisherId(uniqueName: string | undefined): Promise<string | undefined> {
+    if (!uniqueName) {
+      return undefined;
+    }
+
+    const publishers = await this.dataverseClient.query<PublisherSummary>({
+      table: 'publishers',
+      select: ['publisherid', 'uniquename'],
+      filter: `uniquename eq '${escapeODataString(uniqueName)}'`,
+      top: 1,
+    });
+
+    if (!publishers.success) {
+      return undefined;
+    }
+
+    return publishers.data?.[0]?.publisherid;
   }
 }
 
