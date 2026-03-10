@@ -62,6 +62,11 @@ Preflight also rejects conflicting mappings before any remote inspection or appl
 For `flow-parameter`, the mapping must include `path`, the artifact must load successfully, and the target parameter must already exist in the flow artifact metadata.
 For `flow-connref`, the mapping must include `path`, the artifact must load successfully, and the target connection reference name must already exist in the flow artifact metadata.
 For `flow-envvar`, the mapping must include `path`, the artifact must load successfully, and the target environment variable name must already exist in the flow artifact metadata.
+For all flow-targeted mappings, preflight also runs the shared local
+`pp flow validate` semantic pass against each referenced artifact. Semantic
+errors fail preflight before any artifact mutation runs, while warning-only
+findings such as supported reliability warnings are surfaced as explicit
+preflight warnings.
 For the create-capable Dataverse mappings, preflight also rejects runs where the target already exists but its metadata does not match the configured create contract. That prevents a create/upsert mapping from silently updating a different target shape than the project declared.
 Dataverse conflict detection is scoped by the resolved environment and solution target, so the same schema or logical name can be deployed to different stage solution aliases without being treated as ambiguous.
 
@@ -242,6 +247,9 @@ steps:
 - `dataverse-connref-create` requires `connectorId` or `customConnectorId`; missing connector metadata fails preflight before any Dataverse write is attempted.
 - Existing targets for `dataverse-connref-create` now fail preflight when configured create metadata disagrees with the discovered reference metadata.
 - Duplicate target mappings within the same deploy family fail preflight explicitly.
+- Referenced flow artifacts now fail preflight when shared flow validation
+  reports semantic errors; warning-only validation findings surface as
+  explicit deploy warnings.
 - Detached saved-plan execution is limited by redaction: operations whose saved
   plan value is missing or redacted fail preflight instead of guessing.
 - Connection reference and missing-environment-variable findings from solution analysis are surfaced as warnings in preflight.

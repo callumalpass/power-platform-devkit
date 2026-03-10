@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ParameterMapping } from '@pp/config';
 import { ConnectionReferenceService, EnvironmentVariableService, resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
-import { loadFlowArtifact, patchFlowArtifact, type FlowArtifact } from '@pp/flow';
+import { loadFlowArtifact, patchFlowArtifact, validateFlowArtifact, type FlowArtifact, type FlowValidationReport } from '@pp/flow';
 import { summarizeResolvedParameter, type ProjectContext, type ResolvedProjectParameter } from '@pp/project';
 import { SolutionService } from '@pp/solution';
 import type {
@@ -80,6 +80,11 @@ export interface FlowConnectionReferenceDeployOperationPlan extends DeployOperat
   path: string;
 }
 
+export interface FlowEnvironmentVariableDeployOperationPlan extends DeployOperationPlanBase {
+  kind: 'flow-envvar-set';
+  path: string;
+}
+
 export type DeployOperationPlan =
   | DataverseEnvvarDeployOperationPlan
   | DataverseEnvvarUpsertDeployOperationPlan
@@ -88,7 +93,8 @@ export type DeployOperationPlan =
   | DeployInputBindingOperationPlan
   | DeploySecretBindingOperationPlan
   | FlowParameterDeployOperationPlan
-  | FlowConnectionReferenceDeployOperationPlan;
+  | FlowConnectionReferenceDeployOperationPlan
+  | FlowEnvironmentVariableDeployOperationPlan;
 
 export interface DeployPlan {
   projectRoot: string;
@@ -205,7 +211,8 @@ interface DeployTargetConflict {
     | 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CONFLICT'
     | 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT'
     | 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_TARGET_CONFLICT'
-    | 'DEPLOY_PREFLIGHT_FLOW_CONNREF_TARGET_CONFLICT';
+    | 'DEPLOY_PREFLIGHT_FLOW_CONNREF_TARGET_CONFLICT'
+    | 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_TARGET_CONFLICT';
   message: string;
   details: {
     target: string;
@@ -231,6 +238,11 @@ interface FlowConnectionReferenceDeployTargetInspection {
   currentValue?: string;
 }
 
+interface FlowEnvironmentVariableDeployTargetInspection {
+  operation: PreparedDeployOperation & { plan: FlowEnvironmentVariableDeployOperationPlan; value: DeployPrimitiveValue };
+  currentValue?: string;
+}
+
 interface PreparedDeployOperation {
   plan: DeployOperationPlan;
   value?: DeployPrimitiveValue;
@@ -249,6 +261,12 @@ function isPreparedFlowConnectionReferenceOperation(
   operation: PreparedDeployOperation
 ): operation is PreparedDeployOperation & { plan: FlowConnectionReferenceDeployOperationPlan; value?: DeployPrimitiveValue } {
   return isFlowConnectionReferenceOperation(operation.plan);
+}
+
+function isPreparedFlowEnvironmentVariableOperation(
+  operation: PreparedDeployOperation
+): operation is PreparedDeployOperation & { plan: FlowEnvironmentVariableDeployOperationPlan; value?: DeployPrimitiveValue } {
+  return isFlowEnvironmentVariableOperation(operation.plan);
 }
 
 interface ResolvedDeployMappingTarget {
@@ -483,17 +501,49 @@ async function executePreparedDeploy(context: {
   const conflicts = analyzeDeployTargetConflicts(preparedOperations.map((operation) => operation.plan));
   const dataverseOperations = preparedOperations.filter((operation) => isDataverseMutationOperation(operation.plan));
   const flowOperations = preparedOperations.filter(
-    (operation) => isPreparedFlowParameterOperation(operation) || isPreparedFlowConnectionReferenceOperation(operation)
+    (operation) =>
+      isPreparedFlowParameterOperation(operation) ||
+      isPreparedFlowConnectionReferenceOperation(operation) ||
+      isPreparedFlowEnvironmentVariableOperation(operation)
   );
   const adapterBindingOperations = preparedOperations.filter(
     (operation) =>
       !isDataverseMutationOperation(operation.plan) &&
       !isFlowParameterOperation(operation.plan) &&
-      !isFlowConnectionReferenceOperation(operation.plan)
+      !isFlowConnectionReferenceOperation(operation.plan) &&
+      !isFlowEnvironmentVariableOperation(operation.plan)
   );
   const runnableDataverseOperations: PreparedDeployOperation[] = [];
   const runnableFlowOperations: FlowParameterDeployTargetInspection[] = [];
   const runnableFlowConnectionReferenceOperations: FlowConnectionReferenceDeployTargetInspection[] = [];
+  const runnableFlowEnvironmentVariableOperations: FlowEnvironmentVariableDeployTargetInspection[] = [];
+  const flowValidationResults = new Map<string, OperationResult<FlowValidationReport>>();
+  const flowArtifactResults = new Map<string, OperationResult<FlowArtifact>>();
+  const invalidFlowArtifacts = new Set<string>();
+
+  async function getFlowValidation(path: string): Promise<OperationResult<FlowValidationReport>> {
+    const cached = flowValidationResults.get(path);
+
+    if (cached) {
+      return cached;
+    }
+
+    const result = await validateFlowArtifact(path);
+    flowValidationResults.set(path, result);
+    return result;
+  }
+
+  async function getFlowArtifact(path: string): Promise<OperationResult<FlowArtifact>> {
+    const cached = flowArtifactResults.get(path);
+
+    if (cached) {
+      return cached;
+    }
+
+    const result = await loadFlowArtifact(path);
+    flowArtifactResults.set(path, result);
+    return result;
+  }
 
   checks.push(
     ...conflicts.map((conflict) => ({
@@ -504,6 +554,47 @@ async function executePreparedDeploy(context: {
       details: conflict.details,
     }))
   );
+
+  for (const path of new Set(flowOperations.map((operation) => operation.plan.path))) {
+    const validation = await getFlowValidation(path);
+
+    diagnostics.push(...validation.diagnostics);
+    warnings.push(...validation.warnings);
+
+    if (!validation.success || !validation.data) {
+      continue;
+    }
+
+    if (!validation.data.valid) {
+      invalidFlowArtifacts.add(path);
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_FLOW_ASSET_VALIDATION_FAILED',
+        message: `Flow artifact ${path} failed semantic validation before deploy.`,
+        target: path,
+        details: {
+          path,
+          diagnosticCount: validation.diagnostics.length,
+          diagnosticCodes: validation.diagnostics.map((diagnostic) => diagnostic.code),
+        },
+      });
+      continue;
+    }
+
+    if (validation.warnings.length > 0) {
+      checks.push({
+        status: 'warn',
+        code: 'DEPLOY_PREFLIGHT_FLOW_ASSET_VALIDATION_WARNINGS',
+        message: `Flow artifact ${path} has validation warnings that should be reviewed before deploy.`,
+        target: path,
+        details: {
+          path,
+          warningCount: validation.warnings.length,
+          warningCodes: validation.warnings.map((warning) => warning.code),
+        },
+      });
+    }
+  }
 
   for (const operation of adapterBindingOperations) {
     if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
@@ -559,16 +650,27 @@ async function executePreparedDeploy(context: {
       continue;
     }
 
-    const artifact = await loadFlowArtifact(operation.plan.path);
+    if (invalidFlowArtifacts.has(operation.plan.path)) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Flow artifact failed semantic validation.',
+      });
+      continue;
+    }
+
+    const artifact = await getFlowArtifact(operation.plan.path);
 
     if (!artifact.success || !artifact.data) {
-      diagnostics.push(...artifact.diagnostics);
-      warnings.push(...artifact.warnings);
       checks.push({
         status: 'fail',
         code: isFlowParameterOperation(operation.plan)
           ? 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_ASSET_INVALID'
-          : 'DEPLOY_PREFLIGHT_FLOW_CONNREF_ASSET_INVALID',
+          : isFlowConnectionReferenceOperation(operation.plan)
+            ? 'DEPLOY_PREFLIGHT_FLOW_CONNREF_ASSET_INVALID'
+            : 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_ASSET_INVALID',
         message: `Flow artifact ${operation.plan.path} could not be loaded for deploy apply.`,
         target: operation.plan.target,
         details: {
@@ -582,6 +684,45 @@ async function executePreparedDeploy(context: {
         nextValue: stringifyDeployValue(operation.value),
         changed: false,
         message: 'Flow artifact could not be loaded.',
+      });
+      continue;
+    }
+
+    if (isFlowEnvironmentVariableOperation(operation.plan)) {
+      if (!artifact.data.metadata.environmentVariables.includes(operation.plan.target)) {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_TARGET_MISSING',
+          message: `Flow artifact ${operation.plan.path} does not reference environment variable ${operation.plan.target}.`,
+          target: operation.plan.target,
+          details: {
+            parameter: operation.plan.parameter,
+            path: operation.plan.path,
+          },
+        });
+        applyOperations.push({
+          ...operation.plan,
+          status: 'skipped',
+          nextValue: stringifyDeployValue(operation.value),
+          changed: false,
+          message: 'Target flow environment variable is missing.',
+        });
+        continue;
+      }
+
+      const currentValue = operation.plan.target;
+      applyOperations.push({
+        ...operation.plan,
+        status: 'planned',
+        targetExists: true,
+        currentValue,
+        nextValue: stringifyDeployValue(operation.value),
+        changed: currentValue !== stringifyDeployValue(operation.value),
+        message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
+      });
+      runnableFlowEnvironmentVariableOperations.push({
+        operation: operation as PreparedDeployOperation & { plan: FlowEnvironmentVariableDeployOperationPlan; value: DeployPrimitiveValue },
+        currentValue,
       });
       continue;
     }
@@ -759,7 +900,8 @@ async function executePreparedDeploy(context: {
   if (
     (runnableDataverseOperations.length === 0 &&
       runnableFlowOperations.length === 0 &&
-      runnableFlowConnectionReferenceOperations.length === 0) ||
+      runnableFlowConnectionReferenceOperations.length === 0 &&
+      runnableFlowEnvironmentVariableOperations.length === 0) ||
     !plan
   ) {
     return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
@@ -1209,6 +1351,57 @@ async function executePreparedDeploy(context: {
     };
   }
 
+  for (const inspection of runnableFlowEnvironmentVariableOperations) {
+    const index = applyOperations.findIndex(
+      (entry) =>
+        entry.kind === 'flow-envvar-set' &&
+        entry.parameter === inspection.operation.plan.parameter &&
+        entry.target === inspection.operation.plan.target &&
+        entry.path === inspection.operation.plan.path
+    );
+
+    if (index === -1) {
+      continue;
+    }
+
+    const existingOperation = applyOperations[index]!;
+
+    if (existingOperation.changed === false) {
+      applyOperations[index] = {
+        ...existingOperation,
+        status: 'skipped',
+        message: `${inspection.operation.plan.target} is already up to date in ${inspection.operation.plan.path}.`,
+      };
+      continue;
+    }
+
+    const result = await patchFlowArtifact(inspection.operation.plan.path, {
+      environmentVariables: {
+        [inspection.operation.plan.target]: stringifyDeployValue(inspection.operation.value),
+      },
+    });
+
+    if (!result.success) {
+      diagnostics.push(...result.diagnostics);
+      warnings.push(...result.warnings);
+      applyOperations[index] = {
+        ...existingOperation,
+        status: 'failed',
+        message: `Failed to update flow environment variable ${inspection.operation.plan.target}.`,
+      };
+      continue;
+    }
+
+    diagnostics.push(...result.diagnostics);
+    warnings.push(...result.warnings);
+    applyOperations[index] = {
+      ...existingOperation,
+      status: 'applied',
+      changed: true,
+      message: `Updated flow environment variable ${inspection.operation.plan.target}.`,
+    };
+  }
+
   for (const group of dataverseGroups) {
     const resolution = await resolveDataverseClient(group.environmentAlias);
 
@@ -1544,6 +1737,18 @@ function createDeployOperationPlan(
             valuePreview,
           }
         : undefined;
+    case 'flow-envvar':
+      return mapping.path
+        ? {
+            kind: 'flow-envvar-set',
+            parameter: parameter.name,
+            source: parameter.source,
+            sensitive: parameter.sensitive,
+            target: mapping.target,
+            path: resolveDeployFlowPath(project, mapping.path),
+            valuePreview,
+          }
+        : undefined;
     default:
       return undefined;
   }
@@ -1640,6 +1845,17 @@ function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCh
             path: mapping.path,
           },
         });
+      } else if (mapping.kind === 'flow-envvar') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to flow environment variable ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+            path: mapping.path,
+          },
+        });
       }
     }
   }
@@ -1667,6 +1883,16 @@ function collectStaticMappingChecks(project: ProjectContext): DeployPreflightChe
           status: 'fail',
           code: 'DEPLOY_PREFLIGHT_FLOW_CONNREF_PATH_MISSING',
           message: `Deploy parameter ${parameter.name} maps to flow connection reference ${mapping.target} without a flow artifact path.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+          },
+        });
+      } else if (mapping.kind === 'flow-envvar' && !mapping.path) {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_PATH_MISSING',
+          message: `Deploy parameter ${parameter.name} maps to flow environment variable ${mapping.target} without a flow artifact path.`,
           target: mapping.target,
           details: {
             parameter: parameter.name,
@@ -1792,6 +2018,16 @@ function collectSavedPlanMissingChecks(plan: DeployPlan): DeployPreflightCheck[]
           status: 'fail',
           code: 'DEPLOY_PREFLIGHT_FLOW_CONNREF_SOURCE_MISSING',
           message: `Saved deploy plan input ${input.name} is unresolved but maps to flow connection reference ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
+      } else if (mapping.kind === 'flow-envvar') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to flow environment variable ${mapping.target}.`,
           target: mapping.target,
           details: {
             parameter: input.name,
@@ -1943,6 +2179,10 @@ function isFlowConnectionReferenceOperation(
   operation: DeployOperationPlan
 ): operation is FlowConnectionReferenceDeployOperationPlan {
   return operation.kind === 'flow-connref-set';
+}
+
+function isFlowEnvironmentVariableOperation(operation: DeployOperationPlan): operation is FlowEnvironmentVariableDeployOperationPlan {
+  return operation.kind === 'flow-envvar-set';
 }
 
 function isDataverseMutationOperation(
@@ -2585,6 +2825,19 @@ function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): Deploy
       continue;
     }
 
+    if (isFlowEnvironmentVariableOperation(sample)) {
+      conflicts.push({
+        code: 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_TARGET_CONFLICT',
+        message: `Flow environment variable ${sample.target} in ${sample.path} has conflicting deploy mappings from ${parameterList}.`,
+        details: {
+          target: sample.target,
+          parameters,
+          operationKinds,
+        },
+      });
+      continue;
+    }
+
     conflicts.push({
       code: 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT',
       message: `Deploy binding target ${sample.target} has conflicting mappings from ${parameterList}.`,
@@ -2616,6 +2869,10 @@ function getDeployConflictKey(operation: DeployOperationPlan): string {
     return `flow-connref:${operation.path.toLowerCase()}:${operation.target.toLowerCase()}`;
   }
 
+  if (isFlowEnvironmentVariableOperation(operation)) {
+    return `flow-envvar:${operation.path.toLowerCase()}:${operation.target.toLowerCase()}`;
+  }
+
   return `binding:${operation.target.toLowerCase()}`;
 }
 
@@ -2637,6 +2894,8 @@ function matchesDeployConflict(operation: DeployOperationPlan, conflict: DeployT
       return isFlowParameterOperation(operation);
     case 'DEPLOY_PREFLIGHT_FLOW_CONNREF_TARGET_CONFLICT':
       return isFlowConnectionReferenceOperation(operation);
+    case 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_TARGET_CONFLICT':
+      return isFlowEnvironmentVariableOperation(operation);
     case 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT':
       return operation.kind === 'deploy-input-bind' || operation.kind === 'deploy-secret-bind';
   }

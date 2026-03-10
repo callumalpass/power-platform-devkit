@@ -16,6 +16,65 @@ function normalizeDeploySnapshot<T>(value: T): T {
   );
 }
 
+async function writeValidFlowArtifact(path: string): Promise<void> {
+  await writeFile(
+    path,
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        kind: 'pp.flow.artifact',
+        metadata: {
+          name: 'Deploy Test Flow',
+          connectionReferences: [
+            {
+              name: 'shared_office365',
+              connectionReferenceLogicalName: 'shared_office365',
+              connectionId: '/connections/office365',
+              apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+            },
+          ],
+          parameters: {
+            ApiBaseUrl: 'https://example.test',
+          },
+          environmentVariables: ['pp_ApiUrl'],
+        },
+        definition: {
+          parameters: {
+            ApiBaseUrl: {
+              defaultValue: 'https://example.test',
+            },
+            $connections: {
+              value: {
+                shared_office365: {
+                  connectionReferenceLogicalName: 'shared_office365',
+                  connectionId: '/connections/office365',
+                  apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                },
+              },
+            },
+          },
+          actions: {
+            SendMail: {
+              type: 'OpenApiConnection',
+              inputs: {
+                host: {
+                  connection: {
+                    name: "@parameters('$connections')['shared_office365']['connectionId']",
+                  },
+                },
+                body: "@{environmentVariables('pp_ApiUrl')}",
+              },
+            },
+          },
+        },
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+}
+
 describe('deploy fixture-backed goldens', () => {
   it('captures deploy plans from the committed analysis fixture project', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
@@ -235,7 +294,7 @@ describe('deploy fixture-backed goldens', () => {
   it('plans and applies flow artifact parameter mappings through shared deploy orchestration', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-'));
     await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
-    await cp(resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow', 'flow.json'), join(root, 'flows', 'invoice', 'flow.json'));
+    await writeValidFlowArtifact(join(root, 'flows', 'invoice', 'flow.json'));
     await writeFile(
       join(root, 'pp.config.yaml'),
       [
@@ -314,6 +373,64 @@ describe('deploy fixture-backed goldens', () => {
     expect(updatedArtifact.definition.parameters.ApiBaseUrl?.defaultValue).toBe('https://contoso.example');
   });
 
+  it('fails preflight when a mapped flow artifact fails semantic validation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-semantic-invalid-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await cp(resolveRepoPath('fixtures', 'flow', 'artifacts', 'semantic-diagnostic-flow', 'flow.json'), join(root, 'flows', 'invoice', 'flow.json'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  apiBaseUrl:',
+        '    type: string',
+        '    value: https://contoso.example',
+        '    mapsTo:',
+        '      - kind: flow-parameter',
+        '        path: flows/invoice/flow.json',
+        '        target: ApiBaseUrl',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_FLOW_ASSET_VALIDATION_FAILED',
+        target: join(root, 'flows', 'invoice', 'flow.json'),
+        details: expect.objectContaining({
+          diagnosticCount: 10,
+          diagnosticCodes: expect.arrayContaining([
+            'FLOW_RUN_AFTER_TARGET_MISSING',
+            'FLOW_PARAMETER_REFERENCE_UNRESOLVED',
+            'FLOW_CONNREF_REFERENCE_UNRESOLVED',
+          ]),
+        }),
+      })
+    );
+    expect(result.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-parameter-set',
+        parameter: 'apiBaseUrl',
+        status: 'skipped',
+        message: 'Flow artifact failed semantic validation.',
+      })
+    );
+  });
+
   it('fails preflight when multiple parameters map to the same flow artifact parameter target', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-conflict-'));
     await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
@@ -380,7 +497,7 @@ describe('deploy fixture-backed goldens', () => {
   it('plans and applies flow artifact connection reference mappings through shared deploy orchestration', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-connref-'));
     await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
-    await cp(resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow', 'flow.json'), join(root, 'flows', 'invoice', 'flow.json'));
+    await writeValidFlowArtifact(join(root, 'flows', 'invoice', 'flow.json'));
     await writeFile(
       join(root, 'pp.config.yaml'),
       [
@@ -537,6 +654,7 @@ describe('deploy fixture-backed goldens', () => {
           schemaVersion: 1,
           kind: 'pp.flow.artifact',
           metadata: {
+            name: 'Environment Variable Flow',
             connectionReferences: [],
             parameters: {},
             environmentVariables: ['pp_ApiUrl'],
@@ -634,6 +752,102 @@ describe('deploy fixture-backed goldens', () => {
     expect(updatedArtifact.definition.actions.SendMail.inputs.body).toBe("@{environmentVariables('pp_RuntimeUrl')}");
   });
 
+  it('surfaces warning-only flow validation results during deploy preflight', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-semantic-warning-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await writeFile(
+      join(root, 'flows', 'invoice', 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Concurrency Warning Flow',
+            connectionReferences: [],
+            parameters: {
+              ApiBaseUrl: 'https://example.test',
+            },
+            environmentVariables: [],
+          },
+          definition: {
+            triggers: {
+              Manual: {
+                type: 'Request',
+                runtimeConfiguration: {
+                  concurrency: {
+                    runs: 4,
+                  },
+                },
+              },
+            },
+            parameters: {
+              ApiBaseUrl: {
+                defaultValue: 'https://example.test',
+              },
+            },
+            actions: {
+              ComposeUrl: {
+                type: 'Compose',
+                inputs: "@{parameters('ApiBaseUrl')}",
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  apiBaseUrl:',
+        '    type: string',
+        '    value: https://contoso.example',
+        '    mapsTo:',
+        '      - kind: flow-parameter',
+        '        path: flows/invoice/flow.json',
+        '        target: ApiBaseUrl',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_FLOW_ASSET_VALIDATION_WARNINGS',
+        target: join(root, 'flows', 'invoice', 'flow.json'),
+        details: expect.objectContaining({
+          warningCount: 1,
+          warningCodes: ['FLOW_TRIGGER_CONCURRENCY_ENABLED'],
+        }),
+      })
+    );
+    expect(result.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-parameter-set',
+        parameter: 'apiBaseUrl',
+        status: 'planned',
+        changed: true,
+      })
+    );
+  });
+
   it('fails preflight when multiple parameters map to the same flow artifact environment variable target', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-envvar-conflict-'));
     await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
@@ -644,6 +858,7 @@ describe('deploy fixture-backed goldens', () => {
           schemaVersion: 1,
           kind: 'pp.flow.artifact',
           metadata: {
+            name: 'Environment Variable Flow',
             connectionReferences: [],
             parameters: {},
             environmentVariables: ['pp_ApiUrl'],

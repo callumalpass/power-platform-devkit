@@ -205,5 +205,10 @@ correlate diagnostics back to the normalized source model. It also returns an
 control-flow/data-flow totals from the stable IR surface, and each parsed node
 retains the supported expression occurrences that produced its reference slice.
 
+The shared deploy preflight now reuses this validator for `flow-parameter`,
+`flow-connref`, and `flow-envvar` mappings, so the same supported semantic
+errors fail before deploy-time artifact mutation and warning-only reliability
+findings appear in the deploy check set.
+
 This is the artifact-first foundation for the runtime diagnostics and doctor
 work that follows.
