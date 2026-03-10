@@ -1,9 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
+import type { ParameterMapping } from '@pp/config';
 import { ConnectionReferenceService, EnvironmentVariableService, resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { summarizeResolvedParameter, type ProjectContext, type ResolvedProjectParameter } from '@pp/project';
 import { SolutionService } from '@pp/solution';
-import type { ConnectionReferenceSummary, EnvironmentVariableSummary } from '@pp/dataverse';
+import type { ConnectionReferenceSummary, EnvironmentVariableCreateOptions, EnvironmentVariableSummary } from '@pp/dataverse';
 
 export interface DeployInput {
   name: string;
@@ -39,6 +40,7 @@ export interface DataverseEnvvarDeployOperationPlan extends DeployOperationPlanB
 
 export interface DataverseEnvvarUpsertDeployOperationPlan extends DeployOperationPlanBase {
   kind: 'dataverse-envvar-upsert';
+  createOptions?: DeployEnvironmentVariableCreateOptions;
 }
 
 export interface DataverseConnectionReferenceDeployOperationPlan extends DeployOperationPlanBase {
@@ -143,6 +145,14 @@ export interface DeployBindingSummary {
   secrets: DeployBindingSummaryEntry[];
 }
 
+export interface DeployEnvironmentVariableCreateOptions {
+  displayName?: string;
+  defaultValue?: string;
+  type?: string | number;
+  valueSchema?: string;
+  secretStore?: number;
+}
+
 export interface ResolvedDeployBindingEntry extends DeployBindingSummaryEntry {
   value?: string | number | boolean;
 }
@@ -172,6 +182,27 @@ interface PreparedDeployOperation {
   blockedCode?: 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_MISSING' | 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_REDACTED';
   blockedMessage?: string;
 }
+
+const SUPPORTED_ENVIRONMENT_VARIABLE_TYPE_ALIASES = new Set([
+  '100000000',
+  'string',
+  'text',
+  '100000001',
+  'number',
+  'decimal',
+  '100000002',
+  'boolean',
+  'bool',
+  'two-options',
+  'yes-no',
+  '100000003',
+  'json',
+  '100000004',
+  'data-source',
+  'datasource',
+  '100000005',
+  'secret',
+]);
 
 export interface DeployExecutionResult {
   mode: DeployExecutionMode;
@@ -602,6 +633,30 @@ async function executePreparedDeploy(context: {
 
       if (!variable) {
         if (isDataverseEnvvarUpsertOperation(operation.plan)) {
+          const invalidType = resolveInvalidEnvironmentVariableCreateType(operation.plan.createOptions?.type);
+
+          if (invalidType !== undefined) {
+            checks.push({
+              status: 'fail',
+              code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_TYPE_INVALID',
+              message: `Environment variable ${operation.plan.target} is configured with unsupported create type ${String(invalidType)}.`,
+              target: operation.plan.target,
+              details: {
+                parameter: operation.plan.parameter,
+                configuredType: invalidType,
+              },
+            });
+            applyOperations.push({
+              ...operation.plan,
+              status: 'skipped',
+              targetExists: false,
+              nextValue,
+              changed: false,
+              message: 'Configured environment variable create type is not supported.',
+            });
+            continue;
+          }
+
           checks.push({
             status: 'pass',
             code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CREATE',
@@ -723,7 +778,8 @@ async function executePreparedDeploy(context: {
     if (isDataverseEnvvarOperation(operation.plan) || isDataverseEnvvarUpsertOperation(operation.plan)) {
       if (existingOperation.targetExists === false && isDataverseEnvvarUpsertOperation(operation.plan)) {
         const createResult = await environmentVariables.createDefinition(operation.plan.target, {
-          type: inferEnvironmentVariableType(operation.value!),
+          ...toEnvironmentVariableCreateOptions(operation.plan.createOptions),
+          type: operation.plan.createOptions?.type ?? inferEnvironmentVariableType(operation.value!),
           solutionUniqueName: target.solutionUniqueName,
         });
 
@@ -815,7 +871,7 @@ function collectDeployOperations(project: ProjectContext): Array<{ plan: DeployO
     }
 
     for (const mapping of parameter.definition.mapsTo ?? []) {
-      const plan = createDeployOperationPlan(parameter, mapping.kind, mapping.target);
+      const plan = createDeployOperationPlan(parameter, mapping);
 
       if (plan) {
         operations.push({
@@ -866,19 +922,18 @@ function prepareSavedPlanOperations(plan: DeployPlan): PreparedDeployOperation[]
 
 function createDeployOperationPlan(
   parameter: ResolvedProjectParameter,
-  mappingKind: string,
-  target: string
+  mapping: ParameterMapping
 ): DeployOperationPlan | undefined {
   const valuePreview = parameter.sensitive ? '<redacted>' : parameter.value;
 
-  switch (mappingKind) {
+  switch (mapping.kind) {
     case 'dataverse-envvar':
       return {
         kind: 'dataverse-envvar-set',
         parameter: parameter.name,
         source: parameter.source,
         sensitive: parameter.sensitive,
-        target,
+        target: mapping.target,
         valuePreview,
       };
     case 'dataverse-envvar-create':
@@ -887,8 +942,9 @@ function createDeployOperationPlan(
         parameter: parameter.name,
         source: parameter.source,
         sensitive: parameter.sensitive,
-        target,
+        target: mapping.target,
         valuePreview,
+        createOptions: resolveDeployEnvironmentVariableCreateOptions(mapping),
       };
     case 'dataverse-connref':
       return {
@@ -896,7 +952,7 @@ function createDeployOperationPlan(
         parameter: parameter.name,
         source: parameter.source,
         sensitive: parameter.sensitive,
-        target,
+        target: mapping.target,
         valuePreview,
       };
     case 'deploy-input':
@@ -905,7 +961,7 @@ function createDeployOperationPlan(
         parameter: parameter.name,
         source: parameter.source,
         sensitive: parameter.sensitive,
-        target,
+        target: mapping.target,
         valuePreview,
       };
     case 'deploy-secret':
@@ -914,7 +970,7 @@ function createDeployOperationPlan(
         parameter: parameter.name,
         source: parameter.source,
         sensitive: parameter.sensitive,
-        target,
+        target: mapping.target,
         valuePreview,
       };
     default:
@@ -1240,6 +1296,60 @@ function inferEnvironmentVariableType(value: string | number | boolean): 'string
   }
 
   return 'string';
+}
+
+function resolveDeployEnvironmentVariableCreateOptions(mapping: ParameterMapping): DeployEnvironmentVariableCreateOptions | undefined {
+  if (mapping.kind !== 'dataverse-envvar-create') {
+    return undefined;
+  }
+
+  const options: DeployEnvironmentVariableCreateOptions = {
+    displayName: mapping.displayName,
+    defaultValue:
+      mapping.defaultValue === undefined
+        ? undefined
+        : typeof mapping.defaultValue === 'string'
+          ? mapping.defaultValue
+          : String(mapping.defaultValue),
+    type: mapping.type,
+    valueSchema: mapping.valueSchema,
+    secretStore: mapping.secretStore,
+  };
+
+  return Object.values(options).some((value) => value !== undefined) ? options : undefined;
+}
+
+function toEnvironmentVariableCreateOptions(
+  options: DeployEnvironmentVariableCreateOptions | undefined
+): Omit<EnvironmentVariableCreateOptions, 'solutionUniqueName'> {
+  if (!options) {
+    return {};
+  }
+
+  return {
+    displayName: options.displayName,
+    defaultValue: options.defaultValue,
+    type: options.type,
+    valueSchema: options.valueSchema,
+    secretStore: options.secretStore,
+  };
+}
+
+function resolveInvalidEnvironmentVariableCreateType(type: string | number | undefined): string | number | undefined {
+  if (type === undefined) {
+    return undefined;
+  }
+
+  if (typeof type === 'number') {
+    return Number.isInteger(type) ? undefined : type;
+  }
+
+  const normalized = String(type)
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
+
+  return SUPPORTED_ENVIRONMENT_VARIABLE_TYPE_ALIASES.has(normalized) ? undefined : type;
 }
 
 function diffComparableDeployPlans(expectedPlan: DeployPlan, actualPlan: DeployPlan): string[] {

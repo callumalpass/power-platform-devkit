@@ -850,6 +850,11 @@ describe('deploy fixture-backed goldens', () => {
           {
             kind: 'dataverse-envvar-create',
             target: 'pp_FeatureFlag',
+            displayName: 'Feature Flag',
+            defaultValue: false,
+            type: 'secret',
+            valueSchema: '{"type":"boolean"}',
+            secretStore: 0,
           },
         ],
       },
@@ -912,7 +917,19 @@ describe('deploy fixture-backed goldens', () => {
         target: 'pp_FeatureFlag',
       })
     );
-    expect(result.data?.plan.operations.map((operation) => operation.kind)).toContain('dataverse-envvar-upsert');
+    expect(result.data?.plan.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'dataverse-envvar-upsert',
+        target: 'pp_FeatureFlag',
+        createOptions: {
+          displayName: 'Feature Flag',
+          defaultValue: 'false',
+          type: 'secret',
+          valueSchema: '{"type":"boolean"}',
+          secretStore: 0,
+        },
+      })
+    );
     expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-envvar-upsert')).toMatchObject({
       status: 'applied',
       targetExists: false,
@@ -920,13 +937,24 @@ describe('deploy fixture-backed goldens', () => {
       nextValue: 'true',
       changed: true,
       message: 'Created and updated pp_FeatureFlag.',
+      createOptions: {
+        displayName: 'Feature Flag',
+        defaultValue: 'false',
+        type: 'secret',
+        valueSchema: '{"type":"boolean"}',
+        secretStore: 0,
+      },
     });
     expect(createSpy).toHaveBeenCalledWith(
       'environmentvariabledefinitions',
-      expect.objectContaining({
+      {
         schemaname: 'pp_FeatureFlag',
-        type: 100000002,
-      }),
+        displayname: 'Feature Flag',
+        defaultvalue: 'false',
+        type: 100000005,
+        valueschema: '{"type":"boolean"}',
+        secretstore: 0,
+      },
       expect.objectContaining({
         solutionUniqueName: 'CoreManaged',
       })
@@ -937,6 +965,96 @@ describe('deploy fixture-backed goldens', () => {
         value: 'true',
       })
     );
+  });
+
+  it('fails preflight when dataverse envvar create mappings configure an unsupported type', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-envvar-type-'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        'solutions:',
+        '  core:',
+        '    uniqueName: CoreManaged',
+        'parameters:',
+        '  featureFlag:',
+        '    type: string',
+        '    value: enabled',
+        '    mapsTo:',
+        '      - kind: dataverse-envvar-create',
+        '        target: pp_FeatureFlag',
+        '        displayName: Feature Flag',
+        '        type: unsupported-type',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [],
+        environmentvariablevalues: [],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const createSpy = vi.spyOn(client, 'create');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_TYPE_INVALID',
+        status: 'fail',
+        target: 'pp_FeatureFlag',
+        details: {
+          parameter: 'featureFlag',
+          configuredType: 'unsupported-type',
+        },
+      })
+    );
+    expect(result.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'dataverse-envvar-upsert',
+        target: 'pp_FeatureFlag',
+        status: 'skipped',
+        message: 'Configured environment variable create type is not supported.',
+        createOptions: {
+          displayName: 'Feature Flag',
+          type: 'unsupported-type',
+        },
+      })
+    );
+    expect(createSpy).not.toHaveBeenCalled();
   });
 
   it('blocks conflicting dataverse envvar targets before remote preflight or apply', async () => {
