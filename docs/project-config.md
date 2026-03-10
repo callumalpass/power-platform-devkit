@@ -15,6 +15,7 @@ If no config file is found, the project commands still run, but they fall back t
 ```bash
 pp project init
 pp project doctor
+pp project feedback
 ```
 
 `project init` intentionally stays small:
@@ -37,6 +38,12 @@ provider-specific artifacts.
 - whether required parameters remain unresolved
 - existing project-discovery diagnostics in a more explicit local-layout check list
 - a `contract` block that makes the solution-source vs. artifact-bundle split and per-stage target mapping explicit
+
+`project feedback` is the retrospective companion. It summarizes:
+
+- what feels coherent about the current local project anchor
+- what still feels awkward or under-explained in the repo layout
+- concrete follow-up tasks implied by the current config, layout, and topology
 
 ## Shape
 

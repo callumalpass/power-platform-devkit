@@ -177,6 +177,7 @@ Create a `pp.config.yaml` in your repo root, or let `pp` scaffold one:
 ```bash
 pp project init --name demo --env dev --solution Core
 pp project doctor
+pp project feedback
 ```
 
 The scaffold is intentionally lightweight. It creates:

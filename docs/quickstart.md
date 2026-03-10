@@ -104,6 +104,7 @@ Fastest path:
 ```bash
 pp project init --name demo --env dev --solution Core
 pp project doctor
+pp project feedback
 ```
 
 That creates a minimal `pp.config.yaml` plus the default local folders:
@@ -138,6 +139,7 @@ Then inspect the local repo context:
 
 ```bash
 pp project doctor
+pp project feedback
 pp project inspect
 pp analysis report
 pp analysis context --format json
