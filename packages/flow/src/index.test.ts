@@ -6,6 +6,7 @@ import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
 import {
   FlowService,
+  parseFlowIntermediateRepresentation,
   patchFlowArtifact,
   unpackFlowArtifact,
   validateFlowArtifact,
@@ -487,6 +488,175 @@ describe('FlowService', () => {
     expect(validation.warnings.map((item) => item.code)).toEqual([
       'FLOW_RETRY_POLICY_HIGH',
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
+    ]);
+    expect(validation.data?.intermediateRepresentation).toEqual({
+      nodeCount: 9,
+      triggerCount: 1,
+      actionCount: 8,
+      scopeCount: 1,
+    });
+  });
+
+  it('parses unpacked flow definitions into a stable intermediate representation', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'IR Flow',
+            parameters: {},
+            connectionReferences: [],
+            environmentVariables: [],
+          },
+          definition: {
+            triggers: {
+              Manual: {
+                type: 'Request',
+              },
+            },
+            actions: {
+              ScopeA: {
+                type: 'Scope',
+                actions: {
+                  ComposeInside: {
+                    type: 'Compose',
+                  },
+                },
+                else: {
+                  actions: {
+                    ComposeElse: {
+                      type: 'Compose',
+                    },
+                  },
+                },
+              },
+              SwitchA: {
+                type: 'Switch',
+                cases: {
+                  First: {
+                    actions: {
+                      ComposeCase: {
+                        type: 'Compose',
+                        runAfter: {
+                          ScopeA: ['Succeeded'],
+                        },
+                      },
+                    },
+                  },
+                },
+                default: {
+                  actions: {
+                    ComposeDefault: {
+                      type: 'Compose',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const parsed = await parseFlowIntermediateRepresentation(artifactPath);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toMatchObject({
+      artifactName: 'IR Flow',
+      nodeCount: 7,
+      triggerCount: 1,
+      actionCount: 6,
+      scopeCount: 2,
+    });
+    expect(parsed.data?.nodes).toEqual([
+      {
+        id: 'scope:actions.ScopeA',
+        name: 'ScopeA',
+        kind: 'scope',
+        type: 'Scope',
+        path: 'actions.ScopeA',
+        branch: 'root',
+        runAfter: [],
+        childIds: [
+          'action:actions.ScopeA.actions.ComposeInside',
+          'action:actions.ScopeA.else.actions.ComposeElse',
+        ],
+      },
+      {
+        id: 'action:actions.ScopeA.actions.ComposeInside',
+        name: 'ComposeInside',
+        kind: 'action',
+        type: 'Compose',
+        path: 'actions.ScopeA.actions.ComposeInside',
+        parentId: 'scope:actions.ScopeA',
+        branch: 'actions',
+        runAfter: [],
+        childIds: [],
+      },
+      {
+        id: 'action:actions.ScopeA.else.actions.ComposeElse',
+        name: 'ComposeElse',
+        kind: 'action',
+        type: 'Compose',
+        path: 'actions.ScopeA.else.actions.ComposeElse',
+        parentId: 'scope:actions.ScopeA',
+        branch: 'else',
+        runAfter: [],
+        childIds: [],
+      },
+      {
+        id: 'scope:actions.SwitchA',
+        name: 'SwitchA',
+        kind: 'scope',
+        type: 'Switch',
+        path: 'actions.SwitchA',
+        branch: 'root',
+        runAfter: [],
+        childIds: [
+          'action:actions.SwitchA.cases.First.actions.ComposeCase',
+          'action:actions.SwitchA.default.actions.ComposeDefault',
+        ],
+      },
+      {
+        id: 'action:actions.SwitchA.cases.First.actions.ComposeCase',
+        name: 'ComposeCase',
+        kind: 'action',
+        type: 'Compose',
+        path: 'actions.SwitchA.cases.First.actions.ComposeCase',
+        parentId: 'scope:actions.SwitchA',
+        branch: 'case:First',
+        runAfter: ['ScopeA'],
+        childIds: [],
+      },
+      {
+        id: 'action:actions.SwitchA.default.actions.ComposeDefault',
+        name: 'ComposeDefault',
+        kind: 'action',
+        type: 'Compose',
+        path: 'actions.SwitchA.default.actions.ComposeDefault',
+        parentId: 'scope:actions.SwitchA',
+        branch: 'default',
+        runAfter: [],
+        childIds: [],
+      },
+      {
+        id: 'trigger:triggers.Manual',
+        name: 'Manual',
+        kind: 'trigger',
+        type: 'Request',
+        path: 'triggers.Manual',
+        branch: 'root',
+        runAfter: [],
+        childIds: [],
+      },
     ]);
   });
 

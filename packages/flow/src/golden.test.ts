@@ -5,7 +5,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readJsonFile } from '@pp/artifacts';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
-import { FlowService, loadFlowArtifact, normalizeFlowArtifact, patchFlowArtifact, unpackFlowArtifact, validateFlowArtifact } from './index';
+import {
+  FlowService,
+  loadFlowArtifact,
+  normalizeFlowArtifact,
+  parseFlowIntermediateRepresentation,
+  patchFlowArtifact,
+  unpackFlowArtifact,
+  validateFlowArtifact,
+} from './index';
 import { expectGoldenJson, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
 
 const tempDirs: string[] = [];
@@ -209,6 +217,17 @@ describe('flow fixture-backed goldens', () => {
     expect(validation.data?.valid).toBe(false);
 
     await expectGoldenJson(snapshotFlowResult(validation), 'fixtures/flow/golden/semantic/validation-report.json', {
+      normalize: (value) => normalizeFlowSnapshot(value),
+    });
+  });
+
+  it('captures parsed flow intermediate representations as stable goldens', async () => {
+    const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'semantic-diagnostic-flow');
+    const parsed = await parseFlowIntermediateRepresentation(artifactPath);
+
+    expect(parsed.success).toBe(true);
+
+    await expectGoldenJson(parsed.data, 'fixtures/flow/golden/semantic/intermediate-representation.json', {
       normalize: (value) => normalizeFlowSnapshot(value),
     });
   });

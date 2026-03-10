@@ -1,0 +1,104 @@
+{
+  "actionCount": 8,
+  "artifactName": "Semantic Diagnostic Flow",
+  "nodeCount": 9,
+  "nodes": [
+    {
+      "branch": "root",
+      "childIds": [],
+      "id": "action:actions.ComposeBadAction",
+      "kind": "action",
+      "name": "ComposeBadAction",
+      "path": "actions.ComposeBadAction",
+      "runAfter": [],
+      "type": "Compose"
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "id": "action:actions.ComposeBadParam",
+      "kind": "action",
+      "name": "ComposeBadParam",
+      "path": "actions.ComposeBadParam",
+      "runAfter": [
+        "MissingStep"
+      ],
+      "type": "Compose"
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "id": "action:actions.ComposeBadVariable",
+      "kind": "action",
+      "name": "ComposeBadVariable",
+      "path": "actions.ComposeBadVariable",
+      "runAfter": [],
+      "type": "Compose"
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "id": "action:actions.InitCounter",
+      "kind": "action",
+      "name": "InitCounter",
+      "path": "actions.InitCounter",
+      "runAfter": [],
+      "type": "InitializeVariable"
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "id": "action:actions.RetryHot",
+      "kind": "action",
+      "name": "RetryHot",
+      "path": "actions.RetryHot",
+      "runAfter": [],
+      "type": "Compose"
+    },
+    {
+      "branch": "root",
+      "childIds": [
+        "action:actions.ScopeA.actions.SetCounter"
+      ],
+      "id": "scope:actions.ScopeA",
+      "kind": "scope",
+      "name": "ScopeA",
+      "path": "actions.ScopeA",
+      "runAfter": [],
+      "type": "Scope"
+    },
+    {
+      "branch": "actions",
+      "childIds": [],
+      "id": "action:actions.ScopeA.actions.SetCounter",
+      "kind": "action",
+      "name": "SetCounter",
+      "parentId": "scope:actions.ScopeA",
+      "path": "actions.ScopeA.actions.SetCounter",
+      "runAfter": [],
+      "type": "SetVariable"
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "id": "action:actions.SendMail",
+      "kind": "action",
+      "name": "SendMail",
+      "path": "actions.SendMail",
+      "runAfter": [],
+      "type": "OpenApiConnection"
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "id": "trigger:triggers.Manual",
+      "kind": "trigger",
+      "name": "Manual",
+      "path": "triggers.Manual",
+      "runAfter": [],
+      "type": "Request"
+    }
+  ],
+  "scopeCount": 1,
+  "triggerCount": 1
+}

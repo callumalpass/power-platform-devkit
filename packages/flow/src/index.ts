@@ -83,6 +83,7 @@ export interface FlowValidationReport {
   connectionReferences: FlowConnectionReference[];
   parameters: string[];
   environmentVariables: string[];
+  intermediateRepresentation: FlowIntermediateRepresentationSummary;
   semanticSummary: FlowSemanticSummary;
 }
 
@@ -105,6 +106,34 @@ export interface FlowSemanticSummary {
     actions: number;
     variables: number;
   };
+}
+
+export type FlowNodeKind = 'trigger' | 'action' | 'scope';
+
+export type FlowNodeBranch = 'root' | 'actions' | 'else' | 'default' | `case:${string}`;
+
+export interface FlowIntermediateNode {
+  id: string;
+  name: string;
+  kind: FlowNodeKind;
+  type?: string;
+  path: string;
+  parentId?: string;
+  branch: FlowNodeBranch;
+  runAfter: string[];
+  childIds: string[];
+}
+
+export interface FlowIntermediateRepresentationSummary {
+  nodeCount: number;
+  triggerCount: number;
+  actionCount: number;
+  scopeCount: number;
+}
+
+export interface FlowIntermediateRepresentation extends FlowIntermediateRepresentationSummary {
+  artifactName?: string;
+  nodes: FlowIntermediateNode[];
 }
 
 export interface FlowUnpackResult {
@@ -186,14 +215,19 @@ export interface FlowDoctorReport {
 }
 
 interface FlowNodeSummary {
+  id: string;
   name: string;
-  kind: 'trigger' | 'action';
+  kind: FlowNodeKind;
   type?: string;
   path: string;
+  parentId?: string;
+  branch: FlowNodeBranch;
   runAfter: string[];
+  childIds: string[];
 }
 
 interface FlowSemanticAnalysis {
+  intermediateRepresentation: FlowIntermediateRepresentationSummary;
   summary: FlowSemanticSummary;
   diagnostics: Diagnostic[];
   warnings: Diagnostic[];
@@ -604,6 +638,10 @@ export class FlowService {
     return inspectFlowArtifact(path);
   }
 
+  async parseArtifact(path: string): Promise<OperationResult<FlowIntermediateRepresentation>> {
+    return parseFlowIntermediateRepresentation(path);
+  }
+
   async unpack(inputPath: string, outPath: string): Promise<OperationResult<FlowUnpackResult>> {
     return unpackFlowArtifact(inputPath, outPath);
   }
@@ -759,6 +797,7 @@ export async function validateFlowArtifact(path: string): Promise<OperationResul
       connectionReferences: artifact.data.metadata.connectionReferences,
       parameters: Object.keys(artifact.data.metadata.parameters).sort(),
       environmentVariables: artifact.data.metadata.environmentVariables,
+      intermediateRepresentation: semantic.intermediateRepresentation,
       semanticSummary: semantic.summary,
     },
     {
@@ -767,6 +806,22 @@ export async function validateFlowArtifact(path: string): Promise<OperationResul
       warnings: [...artifact.warnings, ...warnings],
     }
   );
+}
+
+export async function parseFlowIntermediateRepresentation(
+  path: string
+): Promise<OperationResult<FlowIntermediateRepresentation>> {
+  const artifact = await loadFlowArtifact(path);
+
+  if (!artifact.success || !artifact.data) {
+    return artifact as unknown as OperationResult<FlowIntermediateRepresentation>;
+  }
+
+  return ok(buildFlowIntermediateRepresentation(artifact.data), {
+    supportTier: 'preview',
+    diagnostics: artifact.diagnostics,
+    warnings: artifact.warnings,
+  });
 }
 
 export async function patchFlowArtifact(
@@ -1180,9 +1235,11 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
   const diagnostics: Diagnostic[] = [];
   const warnings: Diagnostic[] = [];
   const definition = asRecord(artifact.definition) ?? {};
-  const triggerNodes = collectFlowNodes(asRecord(definition.triggers), 'trigger', 'triggers');
-  const actionNodes = collectFlowNodes(asRecord(definition.actions), 'action', 'actions');
-  const allNodes = new Map<string, FlowNodeSummary>([...triggerNodes, ...actionNodes]);
+  const intermediateRepresentation = buildFlowIntermediateRepresentation(artifact);
+  const allNodes = new Map(intermediateRepresentation.nodes.map((node) => [node.name, node] as const));
+  const triggerNodes = intermediateRepresentation.nodes.filter((node) => node.kind === 'trigger');
+  const actionNodes = intermediateRepresentation.nodes.filter((node) => node.kind !== 'trigger');
+  const actionNodeNames = new Set(actionNodes.map((node) => node.name));
   const parameterNames = new Set(Object.keys(normalizeFlowParameters(asRecord(definition.parameters) ?? artifact.metadata.parameters)));
   const definitionConnectionReferences = collectDefinitionConnectionReferences(definition);
   const metadataConnectionReferences = new Map(
@@ -1192,13 +1249,8 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
   const references = collectExpressionReferences(artifact.definition);
   const connectionReferenceUsages = collectConnectionReferenceUsages(artifact.definition);
   const hasDefinitionConnections = definitionConnectionReferences.size > 0;
-  let scopeCount = 0;
 
   for (const node of allNodes.values()) {
-    if (isFlowScopeType(node.type)) {
-      scopeCount += 1;
-    }
-
     for (const dependency of node.runAfter) {
       if (!allNodes.has(dependency)) {
         diagnostics.push(
@@ -1234,7 +1286,7 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
         }
         break;
       case 'action':
-        if (!actionNodes.has(reference.name)) {
+        if (!actionNodeNames.has(reference.name)) {
           diagnostics.push(
             createDiagnostic(
               'error',
@@ -1405,10 +1457,11 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
   }
 
   return {
+    intermediateRepresentation: summarizeFlowIntermediateRepresentation(intermediateRepresentation),
     summary: {
-      triggerCount: triggerNodes.size,
-      actionCount: actionNodes.size,
-      scopeCount,
+      triggerCount: triggerNodes.length,
+      actionCount: actionNodes.length,
+      scopeCount: intermediateRepresentation.scopeCount,
       initializedVariables: Array.from(variableNames).sort(),
       referenceCounts: {
         parameters: references.filter((reference) => reference.kind === 'parameter').length,
@@ -1458,45 +1511,105 @@ function collectEnvironmentVariablesFromValue(value: unknown): string[] {
   return Array.from(variables).sort();
 }
 
-function collectFlowNodes(
-  value: Record<string, unknown> | undefined,
-  kind: FlowNodeSummary['kind'],
-  pathPrefix: string,
-  target = new Map<string, FlowNodeSummary>()
-): Map<string, FlowNodeSummary> {
-  for (const [name, nested] of Object.entries(value ?? {})) {
-    const record = asRecord(nested);
+function buildFlowIntermediateRepresentation(artifact: FlowArtifact): FlowIntermediateRepresentation {
+  const definition = asRecord(artifact.definition) ?? {};
+  const nodes: FlowIntermediateNode[] = [];
+  const childIdsByParent = new Map<string, string[]>();
 
-    if (!record) {
-      continue;
+  const registerChildren = (parentId: string | undefined, childId: string): void => {
+    if (!parentId) {
+      return;
     }
 
-    target.set(name, {
-      name,
-      kind,
-      type: readString(record.type),
-      path: `${pathPrefix}.${name}`,
-      runAfter: Object.keys(asRecord(record.runAfter) ?? {}).sort(),
-    });
+    const siblings = childIdsByParent.get(parentId) ?? [];
+    siblings.push(childId);
+    childIdsByParent.set(parentId, siblings);
+  };
 
-    collectFlowNodes(asRecord(record.actions), 'action', `${pathPrefix}.${name}.actions`, target);
+  const collectNodes = (
+    value: Record<string, unknown> | undefined,
+    kind: 'trigger' | 'action',
+    pathPrefix: string,
+    parentId: string | undefined,
+    branch: FlowNodeBranch
+  ): void => {
+    for (const [name, nested] of Object.entries(value ?? {})) {
+      const record = asRecord(nested);
 
-    const elseRecord = asRecord(record.else);
-    collectFlowNodes(asRecord(elseRecord?.actions), 'action', `${pathPrefix}.${name}.else.actions`, target);
+      if (!record) {
+        continue;
+      }
 
-    const cases = asRecord(record.cases);
-    for (const [caseName, caseValue] of Object.entries(cases ?? {})) {
-      collectFlowNodes(asRecord(asRecord(caseValue)?.actions), 'action', `${pathPrefix}.${name}.cases.${caseName}.actions`, target);
+      const type = readString(record.type);
+      const nodeKind: FlowNodeKind = kind === 'trigger' ? 'trigger' : isFlowScopeType(type) ? 'scope' : 'action';
+      const path = `${pathPrefix}.${name}`;
+      const id = `${nodeKind}:${path}`;
+      nodes.push({
+        id,
+        name,
+        kind: nodeKind,
+        type,
+        path,
+        parentId,
+        branch,
+        runAfter: Object.keys(asRecord(record.runAfter) ?? {}).sort(),
+        childIds: [],
+      });
+      registerChildren(parentId, id);
+
+      collectNodes(asRecord(record.actions), 'action', `${path}.actions`, id, 'actions');
+
+      const elseRecord = asRecord(record.else);
+      collectNodes(asRecord(elseRecord?.actions), 'action', `${path}.else.actions`, id, 'else');
+
+      const cases = asRecord(record.cases);
+      for (const [caseName, caseValue] of Object.entries(cases ?? {})) {
+        collectNodes(asRecord(asRecord(caseValue)?.actions), 'action', `${path}.cases.${caseName}.actions`, id, `case:${caseName}`);
+      }
+
+      const defaultRecord = asRecord(record.default);
+      collectNodes(asRecord(defaultRecord?.actions), 'action', `${path}.default.actions`, id, 'default');
     }
+  };
 
-    const defaultRecord = asRecord(record.default);
-    collectFlowNodes(asRecord(defaultRecord?.actions), 'action', `${pathPrefix}.${name}.default.actions`, target);
-  }
+  collectNodes(asRecord(definition.triggers), 'trigger', 'triggers', undefined, 'root');
+  collectNodes(asRecord(definition.actions), 'action', 'actions', undefined, 'root');
 
-  return target;
+  const finalizedNodes = nodes
+    .map((node) => ({
+      ...node,
+      childIds: (childIdsByParent.get(node.id) ?? []).sort(),
+    }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+
+  const summary = summarizeFlowIntermediateRepresentation({
+    artifactName: artifact.metadata.displayName ?? artifact.metadata.name,
+    nodes: finalizedNodes,
+    nodeCount: finalizedNodes.length,
+    triggerCount: finalizedNodes.filter((node) => node.kind === 'trigger').length,
+    actionCount: finalizedNodes.filter((node) => node.kind !== 'trigger').length,
+    scopeCount: finalizedNodes.filter((node) => node.kind === 'scope').length,
+  });
+
+  return {
+    artifactName: artifact.metadata.displayName ?? artifact.metadata.name,
+    nodes: finalizedNodes,
+    ...summary,
+  };
 }
 
-function collectInitializedVariables(root: Record<string, FlowJsonValue>, nodes: Map<string, FlowNodeSummary>): Set<string> {
+function summarizeFlowIntermediateRepresentation(
+  model: Pick<FlowIntermediateRepresentation, 'nodes' | 'triggerCount' | 'actionCount' | 'scopeCount'>
+): FlowIntermediateRepresentationSummary {
+  return {
+    nodeCount: model.nodes.length,
+    triggerCount: model.triggerCount,
+    actionCount: model.actionCount,
+    scopeCount: model.scopeCount,
+  };
+}
+
+function collectInitializedVariables(root: Record<string, FlowJsonValue>, nodes: Map<string, FlowNodeSummary | FlowIntermediateNode>): Set<string> {
   const variables = new Set<string>();
 
   for (const node of nodes.values()) {

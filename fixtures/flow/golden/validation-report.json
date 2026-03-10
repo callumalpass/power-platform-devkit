@@ -10,6 +10,12 @@
   "environmentVariables": [
     "pp_ApiUrl"
   ],
+  "intermediateRepresentation": {
+    "actionCount": 1,
+    "nodeCount": 1,
+    "scopeCount": 0,
+    "triggerCount": 0
+  },
   "name": "Invoice Flow",
   "parameters": [
     "ApiBaseUrl",

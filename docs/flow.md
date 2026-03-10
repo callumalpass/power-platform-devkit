@@ -121,6 +121,18 @@ The current normalizer:
 - preserves unknown fields in `definition` and top-level `unknown`
 - applies stable JSON ordering through the shared artifact helpers
 
+The flow package now also exposes a first-class parsed intermediate
+representation over the unpacked artifact. The current IR is intentionally
+artifact-first and bounded:
+
+- every trigger, action, and scope receives a stable hierarchical id derived
+  from its normalized definition path
+- scope-like actions (`Scope`, `If`, `Switch`, `Foreach`, `Until`) are modeled
+  explicitly as scope nodes instead of anonymous JSON containers
+- parent-child relationships, branch membership (`actions`, `else`, `default`,
+  and named `case:*` branches), and declared `runAfter` dependencies are
+  preserved for downstream diagnostics and refactors
+
 ## Patch model
 
 The first bounded patch document supports:
@@ -175,6 +187,8 @@ Current validation checks:
 Validation now also returns a `semanticSummary` with trigger/action/scope
 counts, initialized variable names, and supported reference counts so fixture
 and CLI outputs can correlate diagnostics back to the normalized source model.
+It also returns an `intermediateRepresentation` summary with parsed node counts
+from the stable IR surface.
 
 This is the artifact-first foundation for the runtime diagnostics and doctor
 work that follows.

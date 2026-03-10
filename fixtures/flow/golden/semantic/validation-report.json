@@ -15,6 +15,12 @@
       }
     ],
     "environmentVariables": [],
+    "intermediateRepresentation": {
+      "actionCount": 0,
+      "nodeCount": 0,
+      "scopeCount": 0,
+      "triggerCount": 0
+    },
     "parameters": [
       "ApiBaseUrl"
     ],
