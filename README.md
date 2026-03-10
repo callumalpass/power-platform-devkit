@@ -103,6 +103,8 @@ pp dv whoami --env dev
 pp dv query accounts --env dev --select name,accountnumber --top 10
 pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
 pp dv request --env dev --path "EntityDefinitions?\$select=LogicalName,SchemaName"
+pp dv rows export accounts --env dev --select accountid,name --all --out ./artifacts/accounts.yaml
+pp dv rows apply --env dev --file ./specs/account-ops.yaml --solution Core
 pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
 pp dv metadata column account name --env dev --select LogicalName,SchemaName,AttributeType
@@ -121,6 +123,7 @@ pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-nam
 ```
 
 Metadata create commands consume JSON or YAML spec files rather than raw Dataverse metadata JSON. Publish is on by default; use `--no-publish` when you want to stage changes without publishing.
+`pp dv rows export` packages a query slice into a stable row-set artifact, and `pp dv rows apply` consumes a typed manifest for bounded create/update/upsert/delete batches without hand-authoring raw `$batch` payloads.
 
 ### 5. Add a local project config
 

@@ -125,6 +125,80 @@ requests:
       name: Updated from batch
 ```
 
+## `dv rows`
+
+Use `dv rows` for higher-level row-set workflows that do not require hand-written
+HTTP batch fragments.
+
+### `dv rows export`
+
+Export a query slice as a stable row-set artifact:
+
+```bash
+pp dv rows export accounts --env dev --select accountid,name --all --out ./artifacts/accounts.yaml
+pp dv rows export contacts --env dev --filter "statecode eq 0" --top 100
+```
+
+Supported flags:
+
+- `--select`
+- `--expand`
+- `--orderby`
+- `--top`
+- `--filter`
+- `--count`
+- `--all`
+- `--max-page-size`
+- `--annotations`
+- `--out`
+- `--format`
+
+When `--out` is provided, `.json` writes JSON and `.yaml` / `.yml` write YAML.
+Otherwise the row-set artifact is printed to stdout.
+
+### `dv rows apply`
+
+Apply a typed row-mutation manifest through Dataverse batch:
+
+```bash
+pp dv rows apply --env dev --file ./specs/account-ops.yaml
+pp dv rows apply --env dev --file ./specs/account-ops.yaml --continue-on-error --solution Core
+```
+
+Supported flags:
+
+- `--file`
+- `--continue-on-error`
+- `--solution`
+- `--annotations`
+- `--format`
+
+Example row manifest:
+
+```yaml
+table: accounts
+operations:
+  - kind: create
+    requestId: create-account
+    body:
+      name: Acme
+      accountnumber: A-1000
+  - kind: upsert
+    requestId: upsert-account
+    path: accounts(accountnumber='A-1000')
+    ifMatch: "*"
+    body:
+      telephone1: +1 555 0100
+  - kind: delete
+    requestId: delete-account
+    recordId: 00000000-0000-0000-0000-000000000001
+```
+
+Supported operation kinds are `create`, `update`, `upsert`, and `delete`.
+`update` / `upsert` can target either `path` directly or `table` plus
+`recordId`. `create` uses the collection path for the resolved table, and
+`delete` ignores `body`.
+
 ## `dv query`
 
 ```bash

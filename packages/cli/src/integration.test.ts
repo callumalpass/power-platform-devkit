@@ -457,6 +457,137 @@ describe('cli fixture-backed workflows', () => {
     expect(inspectHelp.stdout).toContain('pp canvas inspect "Harness Canvas" --environment dev --solution Core');
   });
 
+  it('prints stable help for Dataverse row workflows', async () => {
+    const rowsHelp = await runCli(['dv', 'rows', '--help']);
+    const exportHelp = await runCli(['dv', 'rows', 'export', '--help']);
+    const applyHelp = await runCli(['dv', 'rows', 'apply', '--help']);
+
+    expect(rowsHelp.code).toBe(0);
+    expect(rowsHelp.stderr).toBe('');
+    expect(rowsHelp.stdout).toContain('Usage: dv rows <command> [options]');
+    expect(rowsHelp.stdout).toContain('export <table>');
+    expect(rowsHelp.stdout).toContain('apply');
+
+    expect(exportHelp.code).toBe(0);
+    expect(exportHelp.stderr).toBe('');
+    expect(exportHelp.stdout).toContain('Usage: dv rows export <table> --environment ALIAS [options]');
+    expect(exportHelp.stdout).toContain('stable row-set artifact');
+    expect(exportHelp.stdout).toContain('--out ./accounts.yaml');
+
+    expect(applyHelp.code).toBe(0);
+    expect(applyHelp.stderr).toBe('');
+    expect(applyHelp.stdout).toContain('Usage: dv rows apply --file FILE --environment ALIAS [options]');
+    expect(applyHelp.stdout).toContain('Supports `create`, `update`, `upsert`, and `delete` operations.');
+    expect(applyHelp.stdout).toContain('--continue-on-error --solution Core');
+  });
+
+  it('exports Dataverse rows to a structured artifact and applies typed row manifests', async () => {
+    const tempDir = await createTempDir();
+    const exportPath = join(tempDir, 'accounts.yaml');
+    const applyPath = join(tempDir, 'accounts-apply.yaml');
+
+    mockDataverseResolution({
+      dev: {
+        exportRows: async () =>
+          ok(
+            {
+              kind: 'dataverse-row-set',
+              version: 1,
+              table: 'accounts',
+              exportedAt: '2026-03-10T12:00:00.000Z',
+              environmentUrl: 'https://dev.example.crm.dynamics.com',
+              query: {
+                all: true,
+                select: ['accountid', 'name'],
+              },
+              recordCount: 1,
+              records: [{ accountid: 'acc-1', name: 'Acme' }],
+            },
+            {
+              supportTier: 'preview',
+            }
+          ),
+        applyRows: async () =>
+          ok(
+            [
+              {
+                index: 0,
+                kind: 'create',
+                table: 'accounts',
+                path: 'accounts',
+                status: 201,
+                headers: {},
+                contentId: 'create-1',
+                entityId: 'acc-1',
+              },
+            ],
+            {
+              supportTier: 'preview',
+            }
+          ),
+      } as unknown as DataverseClient,
+    });
+
+    const exportResult = await runCli([
+      'dv',
+      'rows',
+      'export',
+      'accounts',
+      '--environment',
+      'dev',
+      '--select',
+      'accountid,name',
+      '--all',
+      '--out',
+      exportPath,
+    ]);
+
+    expect(exportResult.code).toBe(0);
+    expect(exportResult.stderr).toBe('');
+    expect(JSON.parse(exportResult.stdout)).toEqual({
+      outPath: exportPath,
+      table: 'accounts',
+      recordCount: 1,
+    });
+    expect(await readFile(exportPath, 'utf8')).toContain('kind: dataverse-row-set');
+    expect(await readFile(exportPath, 'utf8')).toContain('recordCount: 1');
+
+    await writeFile(
+      applyPath,
+      [
+        'table: accounts',
+        'operations:',
+        '  - kind: create',
+        '    requestId: create-1',
+        '    body:',
+        '      name: Acme',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const applyResult = await runCli(['dv', 'rows', 'apply', '--environment', 'dev', '--file', applyPath]);
+
+    expect(applyResult.code).toBe(0);
+    expect(applyResult.stderr).toBe('');
+    expect(JSON.parse(applyResult.stdout)).toEqual({
+      table: 'accounts',
+      operationCount: 1,
+      operations: [
+        {
+          index: 0,
+          kind: 'create',
+          table: 'accounts',
+          path: 'accounts',
+          status: 201,
+          headers: {},
+          contentId: 'create-1',
+          entityId: 'acc-1',
+        },
+      ],
+    });
+  });
+
   it('prints stable help for project commands without mutating the target path', async () => {
     const tempDir = await createTempDir();
     const before = await readdir(tempDir);

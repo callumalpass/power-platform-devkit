@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { realpathSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
@@ -42,6 +42,7 @@ import {
   parseColumnUpdateSpec,
   ConnectionReferenceService,
   type DataverseBatchRequest,
+  type DataverseRowApplyOperation,
   EnvironmentVariableService,
   parseCustomerRelationshipCreateSpec,
   parseGlobalOptionSetCreateSpec,
@@ -437,6 +438,20 @@ async function runDataverse(command: string | undefined, args: string[]): Promis
       return runDataverseFunction(args);
     case 'batch':
       return runDataverseBatch(args);
+    case 'rows':
+      if (args.includes('--help') || args.includes('help')) {
+        const [action] = positionalArgs(args);
+
+        if (action === 'export') {
+          printDataverseRowsExportHelp();
+        } else if (action === 'apply') {
+          printDataverseRowsApplyHelp();
+        } else {
+          printDataverseRowsHelp();
+        }
+        return 0;
+      }
+      return runDataverseRows(args);
     case 'query':
       return runDataverseQuery(args);
     case 'get':
@@ -2935,6 +2950,127 @@ async function runDataverseBatch(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseRows(args: string[]): Promise<number> {
+  const [action] = positionalArgs(args);
+
+  if (!action) {
+    return printFailure(
+      argumentFailure('DV_ROWS_ACTION_REQUIRED', 'Use `dv rows export <table>` or `dv rows apply --file FILE`.')
+    );
+  }
+
+  if (action === 'export') {
+    return runDataverseRowsExport(args);
+  }
+
+  if (action === 'apply') {
+    return runDataverseRowsApply(args);
+  }
+
+  return printFailure(argumentFailure('DV_ROWS_ACTION_INVALID', `Unsupported rows action ${action}.`));
+}
+
+async function runDataverseRowsExport(args: string[]): Promise<number> {
+  const table = positionalArgs(args)[1];
+
+  if (!table) {
+    return printFailure(argumentFailure('DV_ROWS_EXPORT_TABLE_REQUIRED', 'Usage: dv rows export <table> --environment <alias>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await resolution.data.client.exportRows<Record<string, unknown>>({
+    table,
+    select: readListFlag(args, '--select'),
+    top: readNumberFlag(args, '--top'),
+    filter: readFlag(args, '--filter'),
+    expand: readListFlag(args, '--expand'),
+    orderBy: readListFlag(args, '--orderby'),
+    count: hasFlag(args, '--count'),
+    maxPageSize: readNumberFlag(args, '--max-page-size'),
+    includeAnnotations: readListFlag(args, '--annotations'),
+    all: hasFlag(args, '--all'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  const outPath = readFlag(args, '--out');
+
+  if (outPath) {
+    await writeStructuredArtifact(outPath, result.data);
+    printByFormat(
+      {
+        outPath,
+        table: result.data.table,
+        recordCount: result.data.recordCount,
+      },
+      outputFormat(args, 'json')
+    );
+    return 0;
+  }
+
+  printWarnings(result);
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseRowsApply(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const plan = await readDataverseRowsApplyArgument(args);
+
+  if (!plan.success || !plan.data) {
+    return printFailure(plan);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'dv.rows.apply',
+    {
+      table: plan.data.table,
+      operationCount: plan.data.operations.length,
+      continueOnError: plan.data.continueOnError,
+    },
+    plan.data.operations
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await resolution.data.client.applyRows<Record<string, unknown>>(plan.data.operations, {
+    table: plan.data.table,
+    continueOnError: plan.data.continueOnError,
+    includeAnnotations: readListFlag(args, '--annotations'),
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(
+    {
+      table: plan.data.table,
+      operationCount: result.data?.length ?? 0,
+      operations: result.data ?? [],
+    },
+    outputFormat(args, 'json')
+  );
   return 0;
 }
 
@@ -7101,6 +7237,118 @@ async function readDataverseBatchArgument(args: string[]): Promise<OperationResu
   });
 }
 
+async function readDataverseRowsApplyArgument(
+  args: string[]
+): Promise<OperationResult<{ table?: string; continueOnError: boolean; operations: DataverseRowApplyOperation[] }>> {
+  const file = readFlag(args, '--file');
+
+  if (!file) {
+    return argumentFailure('DV_ROWS_APPLY_FILE_REQUIRED', 'Usage: dv rows apply --file FILE --environment <alias>');
+  }
+
+  const document = await readStructuredSpecFile(file);
+
+  if (!document.success || !document.data) {
+    return document as unknown as OperationResult<{ table?: string; continueOnError: boolean; operations: DataverseRowApplyOperation[] }>;
+  }
+
+  if (!isRecord(document.data)) {
+    return fail(
+      createDiagnostic('error', 'DV_ROWS_APPLY_SPEC_INVALID', 'Row apply files must parse to an object.', {
+        source: '@pp/cli',
+        path: file,
+      })
+    );
+  }
+
+  const defaultTable = typeof document.data.table === 'string' ? document.data.table : undefined;
+  const continueOnError = hasFlag(args, '--continue-on-error') || document.data.continueOnError === true;
+  const operationsValue = document.data.operations;
+
+  if (!Array.isArray(operationsValue) || operationsValue.length === 0) {
+    return fail(
+      createDiagnostic('error', 'DV_ROWS_APPLY_OPERATIONS_REQUIRED', 'Row apply files require a non-empty operations array.', {
+        source: '@pp/cli',
+        path: file,
+      })
+    );
+  }
+
+  const operations: DataverseRowApplyOperation[] = [];
+
+  for (let index = 0; index < operationsValue.length; index += 1) {
+    const entry = operationsValue[index];
+
+    if (!isRecord(entry)) {
+      return fail(
+        createDiagnostic('error', 'DV_ROWS_APPLY_OPERATION_INVALID', `Row operation ${index + 1} must be an object.`, {
+          source: '@pp/cli',
+          path: file,
+        })
+      );
+    }
+
+    const kind = entry.kind;
+
+    if (kind !== 'create' && kind !== 'update' && kind !== 'upsert' && kind !== 'delete') {
+      return fail(
+        createDiagnostic('error', 'DV_ROWS_APPLY_KIND_INVALID', `Row operation ${index + 1} has unsupported kind ${String(kind)}.`, {
+          source: '@pp/cli',
+          path: file,
+        })
+      );
+    }
+
+    if (entry.headers !== undefined && !isRecord(entry.headers)) {
+      return fail(
+        createDiagnostic('error', 'DV_ROWS_APPLY_HEADERS_INVALID', `Row operation ${index + 1} headers must be an object when provided.`, {
+          source: '@pp/cli',
+          path: file,
+        })
+      );
+    }
+
+    const body = entry.body;
+
+    if (body !== undefined && !isRecord(body)) {
+      return fail(
+        createDiagnostic('error', 'DV_ROWS_APPLY_BODY_INVALID', `Row operation ${index + 1} body must be an object when provided.`, {
+          source: '@pp/cli',
+          path: file,
+        })
+      );
+    }
+
+    operations.push({
+      kind,
+      requestId: typeof entry.requestId === 'string' ? entry.requestId : undefined,
+      table: typeof entry.table === 'string' ? entry.table : undefined,
+      recordId: typeof entry.recordId === 'string' ? entry.recordId : undefined,
+      path: typeof entry.path === 'string' ? entry.path : undefined,
+      body: body as Record<string, unknown> | undefined,
+      headers: entry.headers as Record<string, string> | undefined,
+      atomicGroup: typeof entry.atomicGroup === 'string' ? entry.atomicGroup : undefined,
+      ifMatch: typeof entry.ifMatch === 'string' ? entry.ifMatch : undefined,
+      ifNoneMatch: typeof entry.ifNoneMatch === 'string' ? entry.ifNoneMatch : undefined,
+      returnRepresentation: entry.returnRepresentation === true,
+      select: readStringArrayValue(entry.select),
+      expand: readStringArrayValue(entry.expand),
+      prefer: readStringArrayValue(entry.prefer),
+    });
+  }
+
+  return ok(
+    {
+      table: defaultTable,
+      continueOnError,
+      operations,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
 async function readMetadataApplyPlanArgument(args: string[]): Promise<OperationResult<MetadataApplyPlan>> {
   const manifestPath = readFlag(args, '--file');
 
@@ -7389,8 +7637,28 @@ async function readStructuredSpecFile(file: string): Promise<OperationResult<unk
   }
 }
 
+async function writeStructuredArtifact(path: string, value: unknown): Promise<void> {
+  const lowerPath = path.toLowerCase();
+
+  if (lowerPath.endsWith('.yaml') || lowerPath.endsWith('.yml')) {
+    await writeFile(path, YAML.stringify(value), 'utf8');
+    return;
+  }
+
+  await writeJsonFile(path, value as never);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readStringArrayValue(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = value.filter((entry): entry is string => typeof entry === 'string');
+  return entries.length > 0 ? entries : undefined;
 }
 
 function parseStructuredText(contents: string, sourcePath: string): OperationResult<unknown> {
@@ -7690,6 +7958,8 @@ function printHelp(): void {
       '  dv action <name> --environment ALIAS [--body JSON|--body-file FILE] [--bound-path PATH] [--response-type json|text|void] [--solution UNIQUE_NAME] [--header "Name: value"] [--config-dir path]',
       '  dv function <name> --environment ALIAS [--param key=value] [--param-json key=JSON] [--bound-path PATH] [--response-type json|text|void] [--header "Name: value"] [--config-dir path]',
       '  dv batch --environment ALIAS --file FILE [--continue-on-error] [--solution UNIQUE_NAME] [--config-dir path]',
+      '  dv rows export <table> --environment ALIAS [--select a,b] [--expand x,y] [--orderby expr] [--top N] [--filter expr] [--count] [--all] [--out FILE] [--config-dir path]',
+      '  dv rows apply --environment ALIAS --file FILE [--continue-on-error] [--solution UNIQUE_NAME] [--config-dir path]',
       '  dv query <table> --environment ALIAS [--select a,b] [--expand x,y] [--orderby expr] [--top N] [--filter expr] [--count] [--all|--page-info] [--config-dir path]',
       '  dv get <table> <id> --environment ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
       '  dv create <table> --environment ALIAS --body JSON|--body-file FILE [--return-representation] [--select a,b] [--expand x,y] [--config-dir path]',
@@ -7844,6 +8114,7 @@ function printDataverseHelp(): void {
       '  action <name>               invoke a Dataverse action with typed parameters',
       '  function <name>             invoke a Dataverse function with typed parameters',
       '  batch                       execute a Dataverse $batch manifest',
+      '  rows ...                    export row sets or apply typed row manifests',
       '  query <table>               query table rows through Dataverse',
       '  get <table> <id>            fetch one Dataverse row by id',
       '  create <table>              create one Dataverse row',
@@ -7873,6 +8144,65 @@ function printDataverseWhoAmIHelp(): void {
       'Examples:',
       '  pp dv whoami --environment dev',
       '  pp dv whoami --environment dev --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDataverseRowsHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: dv rows <command> [options]',
+      '',
+      'Commands:',
+      '  export <table>              export a Dataverse row set with query metadata',
+      '  apply                       apply a typed row-mutation manifest through Dataverse batch',
+      '',
+      'Examples:',
+      '  pp dv rows export accounts --environment dev --select accountid,name --all --out ./accounts.json',
+      '  pp dv rows apply --environment dev --file ./account-ops.yaml --solution Core',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDataverseRowsExportHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: dv rows export <table> --environment ALIAS [options]',
+      '',
+      'Behavior:',
+      '  - Queries Dataverse rows and packages them into a stable row-set artifact.',
+      '  - Includes query metadata so the exported file records how the slice was collected.',
+      '  - Writes JSON or YAML when `--out` is provided; otherwise prints the artifact to stdout.',
+      '',
+      'Examples:',
+      '  pp dv rows export accounts --environment dev --select accountid,name --top 100',
+      '  pp dv rows export accounts --environment dev --filter "statecode eq 0" --all --out ./accounts.yaml',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDataverseRowsApplyHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: dv rows apply --file FILE --environment ALIAS [options]',
+      '',
+      'Behavior:',
+      '  - Reads a typed row-mutation manifest instead of raw HTTP batch parts.',
+      '  - Supports `create`, `update`, `upsert`, and `delete` operations.',
+      '  - Uses Dataverse batch under the hood while preserving row-level paths and results.',
+      '',
+      'Examples:',
+      '  pp dv rows apply --environment dev --file ./account-ops.yaml',
+      '  pp dv rows apply --environment dev --file ./account-ops.yaml --continue-on-error --solution Core',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

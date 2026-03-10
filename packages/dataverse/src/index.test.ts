@@ -313,6 +313,142 @@ OData-Version: 4.0\r
     expect(String(httpClient.requests[0]?.rawBody)).toContain('PATCH /accounts(1) HTTP/1.1');
   });
 
+  it('exports row sets with stable query metadata', async () => {
+    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
+
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ accountid: '1', name: 'Acme' }],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.exportRows<{ accountid: string; name: string }>({
+      table: 'accounts',
+      select: ['accountid', 'name'],
+      filter: "statecode eq 0",
+      top: 25,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      kind: 'dataverse-row-set',
+      version: 1,
+      table: 'accounts',
+      exportedAt: '2026-03-10T12:00:00.000Z',
+      environmentUrl: 'https://example.crm.dynamics.com',
+      query: {
+        select: ['accountid', 'name'],
+        top: 25,
+        filter: 'statecode eq 0',
+      },
+      recordCount: 1,
+      records: [{ accountid: '1', name: 'Acme' }],
+    });
+  });
+
+  it('applies typed row operations through batch requests', async () => {
+    const boundary = 'batchresponse_789';
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {
+          'content-type': `multipart/mixed;boundary=${boundary}`,
+        },
+        data: `--${boundary}\r
+Content-Type: application/http\r
+Content-Transfer-Encoding: binary\r
+Content-ID: create-1\r
+\r
+HTTP/1.1 201 Created\r
+OData-EntityId: https://example.crm.dynamics.com/api/data/v9.2/accounts(00000000-0000-0000-0000-000000000001)\r
+Content-Type: application/json; charset=utf-8\r
+\r
+{"accountid":"00000000-0000-0000-0000-000000000001","name":"Acme"}\r
+--${boundary}\r
+Content-Type: application/http\r
+Content-Transfer-Encoding: binary\r
+Content-ID: upsert-1\r
+\r
+HTTP/1.1 204 No Content\r
+OData-Version: 4.0\r
+\r
+\r
+--${boundary}--`,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.applyRows<Record<string, unknown>>(
+      [
+        {
+          kind: 'create',
+          requestId: 'create-1',
+          table: 'accounts',
+          body: { name: 'Acme' },
+          returnRepresentation: true,
+        },
+        {
+          kind: 'upsert',
+          requestId: 'upsert-1',
+          path: "accounts(accountnumber='A-1000')",
+          body: { name: 'Acme 2' },
+          ifMatch: '*',
+        },
+      ],
+      {
+        continueOnError: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      {
+        index: 0,
+        kind: 'create',
+        table: 'accounts',
+        recordId: undefined,
+        path: 'accounts',
+        status: 201,
+        headers: {
+          'odata-entityid': 'https://example.crm.dynamics.com/api/data/v9.2/accounts(00000000-0000-0000-0000-000000000001)',
+          'content-type': 'application/json; charset=utf-8',
+        },
+        body: {
+          accountid: '00000000-0000-0000-0000-000000000001',
+          name: 'Acme',
+        },
+        contentId: 'create-1',
+        entityId: '00000000-0000-0000-0000-000000000001',
+        location: 'https://example.crm.dynamics.com/api/data/v9.2/accounts(00000000-0000-0000-0000-000000000001)',
+      },
+      {
+        index: 1,
+        kind: 'upsert',
+        table: undefined,
+        recordId: undefined,
+        path: "accounts(accountnumber='A-1000')",
+        status: 204,
+        headers: {
+          'odata-version': '4.0',
+        },
+        body: undefined,
+        contentId: 'upsert-1',
+        entityId: undefined,
+        location: undefined,
+      },
+    ]);
+    expect(httpClient.requests[0]?.headers?.prefer).toContain('odata.continue-on-error');
+    expect(String(httpClient.requests[0]?.rawBody)).toContain('POST /accounts HTTP/1.1');
+    expect(String(httpClient.requests[0]?.rawBody)).toContain('PATCH /accounts(accountnumber=\'A-1000\') HTTP/1.1');
+    expect(String(httpClient.requests[0]?.rawBody)).toContain('prefer: return=representation');
+    expect(String(httpClient.requests[0]?.rawBody)).toContain('if-match: *');
+  });
+
   it('adds solution headers to solution-scoped row writes', async () => {
     const httpClient = new FakeHttpClient([
       ok({

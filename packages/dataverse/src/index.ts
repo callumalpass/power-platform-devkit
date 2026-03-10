@@ -170,6 +170,64 @@ export interface DataverseBatchResponse<T = unknown> {
   contentId?: string;
 }
 
+export interface DataverseRowExport<T = Record<string, unknown>> {
+  kind: 'dataverse-row-set';
+  version: 1;
+  table: string;
+  exportedAt: string;
+  environmentUrl: string;
+  query: {
+    select?: string[];
+    top?: number;
+    filter?: string;
+    expand?: string[];
+    orderBy?: string[];
+    count?: boolean;
+    all?: boolean;
+  };
+  recordCount: number;
+  records: T[];
+}
+
+export interface DataverseRowExportOptions extends QueryOptions {
+  all?: boolean;
+}
+
+export interface DataverseRowApplyOperation {
+  kind: 'create' | 'update' | 'upsert' | 'delete';
+  requestId?: string;
+  table?: string;
+  recordId?: string;
+  path?: string;
+  body?: Record<string, unknown>;
+  headers?: Record<string, string>;
+  atomicGroup?: string;
+  ifMatch?: string;
+  ifNoneMatch?: string;
+  returnRepresentation?: boolean;
+  select?: string[];
+  expand?: string[];
+  prefer?: string[];
+}
+
+export interface DataverseRowApplyOptions extends DataverseBatchOptions {
+  table?: string;
+}
+
+export interface DataverseRowApplyResult<T = unknown> {
+  index: number;
+  kind: DataverseRowApplyOperation['kind'];
+  table?: string;
+  recordId?: string;
+  path: string;
+  status: number;
+  headers: Record<string, string>;
+  body?: T;
+  contentId?: string;
+  entityId?: string;
+  location?: string;
+}
+
 export interface DataverseMetadataWriteOptions extends MetadataBuildOptions {
   solutionUniqueName?: string;
   publish?: boolean;
@@ -597,6 +655,106 @@ export class DataverseClient {
       diagnostics: response.diagnostics,
       warnings: response.warnings,
     });
+  }
+
+  async exportRows<T = Record<string, unknown>>(options: DataverseRowExportOptions): Promise<OperationResult<DataverseRowExport<T>>> {
+    const queryResult = options.all ? await this.queryAll<T>(options) : await this.query<T>(options);
+
+    if (!queryResult.success) {
+      return queryResult as unknown as OperationResult<DataverseRowExport<T>>;
+    }
+
+    const records = queryResult.data ?? [];
+
+    return ok(
+      {
+        kind: 'dataverse-row-set',
+        version: 1,
+        table: options.table,
+        exportedAt: new Date().toISOString(),
+        environmentUrl: this.environment.url,
+        query: compactObject({
+          select: options.select,
+          top: options.top,
+          filter: options.filter,
+          expand: options.expand,
+          orderBy: options.orderBy,
+          count: options.count,
+          all: options.all ? true : undefined,
+        }),
+        recordCount: records.length,
+        records,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: queryResult.diagnostics,
+        warnings: queryResult.warnings,
+      }
+    );
+  }
+
+  async applyRows<TResult = Record<string, unknown>>(
+    operations: DataverseRowApplyOperation[],
+    options: DataverseRowApplyOptions = {}
+  ): Promise<OperationResult<DataverseRowApplyResult<TResult>[]>> {
+    if (operations.length === 0) {
+      return fail(
+        createDiagnostic('error', 'DATAVERSE_ROW_APPLY_EMPTY', 'Dataverse row apply requires at least one operation.', {
+          source: '@pp/dataverse',
+        })
+      );
+    }
+
+    const requests: DataverseBatchRequest[] = [];
+    const normalizedOperations: Array<DataverseRowApplyOperation & { table?: string; recordId?: string; path: string }> = [];
+
+    for (const operation of operations) {
+      const normalized = normalizeRowApplyOperation(operation, options.table);
+
+      if (!normalized.success || !normalized.data) {
+        return normalized as unknown as OperationResult<DataverseRowApplyResult<TResult>[]>;
+      }
+
+      normalizedOperations.push(normalized.data);
+      requests.push({
+        id: normalized.data.requestId,
+        method: mapRowApplyMethod(normalized.data.kind),
+        path: normalized.data.path,
+        headers: buildRowApplyHeaders(normalized.data),
+        body: normalized.data.kind === 'delete' ? undefined : normalized.data.body,
+        atomicGroup: normalized.data.atomicGroup,
+      });
+    }
+
+    const response = await this.executeBatch<TResult>(requests, options);
+
+    if (!response.success || !response.data) {
+      return response as unknown as OperationResult<DataverseRowApplyResult<TResult>[]>;
+    }
+
+    return ok(
+      response.data.map((entry, index) => {
+        const operation = normalizedOperations[index];
+        return {
+          index,
+          kind: operation.kind,
+          table: operation.table,
+          recordId: operation.recordId,
+          path: operation.path,
+          status: entry.status,
+          headers: entry.headers,
+          body: entry.body,
+          contentId: entry.contentId,
+          entityId: extractEntityId(entry.headers),
+          location: extractLocation(entry.headers),
+        };
+      }),
+      {
+        supportTier: 'preview',
+        diagnostics: response.diagnostics,
+        warnings: response.warnings,
+      }
+    );
   }
 
   async query<T>(options: QueryOptions): Promise<OperationResult<T[]>> {
@@ -3869,6 +4027,134 @@ function buildDataverseBatchHeaders(boundary: string, options: DataverseBatchOpt
     headers['MSCRM.SolutionUniqueName'] = options.solutionUniqueName;
   }
 
+  return headers;
+}
+
+function normalizeRowApplyOperation(
+  operation: DataverseRowApplyOperation,
+  defaultTable?: string
+): OperationResult<DataverseRowApplyOperation & { table?: string; recordId?: string; path: string }> {
+  const table = operation.table ?? defaultTable;
+
+  switch (operation.kind) {
+    case 'create': {
+      if (!table) {
+        return fail(
+          createDiagnostic('error', 'DATAVERSE_ROW_APPLY_TABLE_REQUIRED', 'Create row operations require a table or a plan-level default table.', {
+            source: '@pp/dataverse',
+          })
+        );
+      }
+
+      if (!operation.body || !isPlainObject(operation.body)) {
+        return fail(
+          createDiagnostic('error', 'DATAVERSE_ROW_APPLY_BODY_REQUIRED', 'Create row operations require an object body.', {
+            source: '@pp/dataverse',
+          })
+        );
+      }
+
+      return ok(
+        {
+          ...operation,
+          table,
+          path: buildCollectionPath(table, operation),
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+    case 'update':
+    case 'upsert': {
+      const path = operation.path ?? (table && operation.recordId ? buildEntityPath(table, operation.recordId, operation) : undefined);
+
+      if (!path) {
+        return fail(
+          createDiagnostic(
+            'error',
+            'DATAVERSE_ROW_APPLY_TARGET_REQUIRED',
+            `${operation.kind} row operations require either path or table plus recordId.`,
+            {
+              source: '@pp/dataverse',
+            }
+          )
+        );
+      }
+
+      if (!operation.body || !isPlainObject(operation.body)) {
+        return fail(
+          createDiagnostic('error', 'DATAVERSE_ROW_APPLY_BODY_REQUIRED', `${operation.kind} row operations require an object body.`, {
+            source: '@pp/dataverse',
+          })
+        );
+      }
+
+      return ok(
+        {
+          ...operation,
+          table,
+          path,
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+    case 'delete': {
+      const path = operation.path ?? (table && operation.recordId ? buildEntityPath(table, operation.recordId) : undefined);
+
+      if (!path) {
+        return fail(
+          createDiagnostic('error', 'DATAVERSE_ROW_APPLY_TARGET_REQUIRED', 'Delete row operations require either path or table plus recordId.', {
+            source: '@pp/dataverse',
+          })
+        );
+      }
+
+      return ok(
+        {
+          ...operation,
+          table,
+          path,
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+    default:
+      return fail(
+        createDiagnostic('error', 'DATAVERSE_ROW_APPLY_KIND_INVALID', `Unsupported row apply operation ${(operation as { kind?: string }).kind}.`, {
+          source: '@pp/dataverse',
+        })
+      );
+  }
+}
+
+function mapRowApplyMethod(kind: DataverseRowApplyOperation['kind']): DataverseBatchRequest['method'] {
+  switch (kind) {
+    case 'create':
+      return 'POST';
+    case 'update':
+    case 'upsert':
+      return 'PATCH';
+    case 'delete':
+      return 'DELETE';
+  }
+}
+
+function buildRowApplyHeaders(operation: DataverseRowApplyOperation): Record<string, string> {
+  const headers = buildDataverseHeaders({
+    path: operation.path ?? '',
+    method: mapRowApplyMethod(operation.kind),
+    headers: operation.headers,
+    ifMatch: operation.ifMatch,
+    ifNoneMatch: operation.ifNoneMatch,
+    prefer: mergePrefer(operation.prefer, shouldReturnRepresentation(operation) ? ['return=representation'] : undefined),
+  });
+
+  delete headers['MSCRM.SolutionUniqueName'];
   return headers;
 }
 
