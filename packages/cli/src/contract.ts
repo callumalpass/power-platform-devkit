@@ -138,6 +138,7 @@ function renderDiagnostics(result: OperationResult<unknown>, format: CliOutputFo
         success,
         diagnostics: result.diagnostics,
         warnings: result.warnings,
+        details: result.details,
         supportTier: result.supportTier,
         suggestedNextActions: result.suggestedNextActions ?? [],
         provenance: result.provenance,

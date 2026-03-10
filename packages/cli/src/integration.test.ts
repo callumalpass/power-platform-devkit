@@ -1037,6 +1037,17 @@ describe('cli fixture-backed workflows', () => {
           source: '@pp/cli',
         },
       ],
+      details: {
+        handoff: {
+          kind: 'maker-blank-app',
+          recommendedUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+        },
+        verification: {
+          inspectCommand: 'pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution',
+          listCommand: 'pp canvas list --env fixture --solution HarnessSolution',
+          solutionComponentsCommand: 'pp solution components HarnessSolution --env fixture --format json',
+        },
+      },
       suggestedNextActions: expect.arrayContaining([
         'Use Maker blank-app creation for now when you need a new remote canvas app.',
         'After saving in Maker, run `pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
@@ -1057,6 +1068,18 @@ describe('cli fixture-backed workflows', () => {
           source: '@pp/cli',
         },
       ],
+      details: {
+        handoff: {
+          kind: 'maker-solution-apps',
+          recommendedUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
+          importPath: './dist/Harness App.msapp',
+        },
+        verification: {
+          inspectCommand: 'pp canvas inspect "Harness App" --env fixture --solution HarnessSolution',
+          listCommand: 'pp canvas list --env fixture --solution HarnessSolution',
+          solutionComponentsCommand: 'pp solution components HarnessSolution --env fixture --format json',
+        },
+      },
       suggestedNextActions: expect.arrayContaining([
         'Use Maker or solution tooling to import `./dist/Harness App.msapp` until `pp canvas import` exists.',
         'After the import step, run `pp canvas inspect "Harness App" --env fixture --solution HarnessSolution` to confirm the remote app id.',
@@ -1505,10 +1528,21 @@ describe('cli fixture-backed workflows', () => {
         },
         input: {
           displayName: 'Harness Canvas',
-          makerUrls: {
-            blankAppUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
-            solutionAppsUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
-            solutionsUrl: 'https://make.powerapps.com/environments/env-123/solutions',
+          fallback: {
+            handoff: {
+              kind: 'maker-blank-app',
+              recommendedUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+              makerUrls: {
+                blankAppUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+                solutionAppsUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
+                solutionsUrl: 'https://make.powerapps.com/environments/env-123/solutions',
+              },
+            },
+            verification: {
+              inspectCommand: 'pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution',
+              listCommand: 'pp canvas list --env fixture --solution HarnessSolution',
+              solutionComponentsCommand: 'pp solution components HarnessSolution --env fixture --format json',
+            },
           },
           suggestedNextActions: expect.arrayContaining([
             'Use Maker blank-app creation for now when you need a new remote canvas app.',
@@ -1535,9 +1569,21 @@ describe('cli fixture-backed workflows', () => {
         input: {
           displayName: 'Imported Harness Canvas',
           importPath: './dist/Harness App.msapp',
-          makerUrls: {
-            solutionAppsUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
-            solutionsUrl: 'https://make.powerapps.com/environments/env-123/solutions',
+          fallback: {
+            handoff: {
+              kind: 'maker-solution-apps',
+              recommendedUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
+              importPath: './dist/Harness App.msapp',
+              makerUrls: {
+                solutionAppsUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
+                solutionsUrl: 'https://make.powerapps.com/environments/env-123/solutions',
+              },
+            },
+            verification: {
+              inspectCommand: 'pp canvas inspect "Imported Harness Canvas" --env fixture --solution HarnessSolution',
+              listCommand: 'pp canvas list --env fixture --solution HarnessSolution',
+              solutionComponentsCommand: 'pp solution components HarnessSolution --env fixture --format json',
+            },
           },
           suggestedNextActions: expect.arrayContaining([
             'Use Maker or solution tooling to import `./dist/Harness App.msapp` until `pp canvas import` exists.',

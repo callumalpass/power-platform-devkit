@@ -439,15 +439,17 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
     derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
   });
+  const fallbackDetails = buildCanvasRemoteMutationFallbackDetails(command, {
+    envAlias,
+    solutionUniqueName,
+    solutionId: resolvedSolutionId,
+    displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
+    importPath,
+    makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+    derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
+  });
 
   if (mutation.data.mode !== 'apply') {
-    const makerUrls = buildMakerCanvasUrls({
-      makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
-      solutionId: resolvedSolutionId,
-      solutionUniqueName,
-      displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
-    });
-
     printByFormat(
       createMutationPreview(
         `canvas.${command}.remote`,
@@ -462,7 +464,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
         {
           displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
           importPath,
-          makerUrls,
+          fallback: fallbackDetails,
           suggestedNextActions,
           knownLimitations,
         }
@@ -488,6 +490,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
       ),
       {
         supportTier: 'preview',
+        details: fallbackDetails,
         suggestedNextActions,
         knownLimitations,
       }
@@ -517,7 +520,7 @@ function buildCanvasRemoteMutationSuggestions(
   const resolvedSolutionSuggestion = context.derivedSolutionFromEnvironmentAlias && context.solutionUniqueName
     ? `Using default solution ${formatCliArg(context.solutionUniqueName)} from environment alias ${envAlias}, keep the Maker step and verification scoped to that solution.`
     : undefined;
-  const makerUrls = buildMakerCanvasUrls(context);
+  const fallback = buildCanvasRemoteMutationFallbackDetails(command, context);
 
   if (command === 'create') {
     const suggestions = ['Use Maker blank-app creation for now when you need a new remote canvas app.'];
@@ -526,24 +529,24 @@ function buildCanvasRemoteMutationSuggestions(
       suggestions.push(resolvedSolutionSuggestion);
     }
 
-    if (makerUrls.blankAppUrl) {
-      suggestions.push(`Open ${makerUrls.blankAppUrl} to start the solution-scoped blank canvas app flow in Maker.`);
-    } else if (makerUrls.solutionAppsUrl) {
-      suggestions.push(`Open ${makerUrls.solutionAppsUrl} to continue from the solution-scoped apps view in Maker.`);
-    } else if (makerUrls.solutionsUrl) {
-      suggestions.push(`Open ${makerUrls.solutionsUrl} to continue from the environment's Solutions view in Maker.`);
+    if (fallback.handoff.recommendedUrl && fallback.handoff.kind === 'maker-blank-app') {
+      suggestions.push(`Open ${fallback.handoff.recommendedUrl} to start the solution-scoped blank canvas app flow in Maker.`);
+    } else if (fallback.handoff.recommendedUrl && fallback.handoff.kind === 'maker-solution-apps') {
+      suggestions.push(`Open ${fallback.handoff.recommendedUrl} to continue from the solution-scoped apps view in Maker.`);
+    } else if (fallback.handoff.recommendedUrl && fallback.handoff.kind === 'maker-solutions') {
+      suggestions.push(`Open ${fallback.handoff.recommendedUrl} to continue from the environment's Solutions view in Maker.`);
     }
 
-    if (context.displayName) {
+    if (fallback.verification.inspectCommand) {
+      suggestions.push(`After saving in Maker, run \`${fallback.verification.inspectCommand}\` to confirm the remote app id.`);
+    }
+
+    suggestions.push(`After the Maker step, run \`${fallback.verification.listCommand ?? listCommand}\` to confirm the new app is visible in Dataverse.`);
+
+    if (fallback.verification.solutionComponentsCommand ?? solutionComponentsCommand) {
       suggestions.push(
-        `After saving in Maker, run \`pp canvas inspect ${formatCliArg(context.displayName)}${envSuffix}${solutionSuffix}\` to confirm the remote app id.`
+        `Run \`${fallback.verification.solutionComponentsCommand ?? solutionComponentsCommand}\` to verify that the app was added to the solution.`
       );
-    }
-
-    suggestions.push(`After the Maker step, run \`${listCommand}\` to confirm the new app is visible in Dataverse.`);
-
-    if (solutionComponentsCommand) {
-      suggestions.push(`Run \`${solutionComponentsCommand}\` to verify that the app was added to the solution.`);
     }
 
     return suggestions;
@@ -561,26 +564,99 @@ function buildCanvasRemoteMutationSuggestions(
     suggestions.push(resolvedSolutionSuggestion);
   }
 
-  if (makerUrls.solutionAppsUrl) {
-    suggestions.push(`Open ${makerUrls.solutionAppsUrl} to continue the import from the solution-scoped apps view in Maker.`);
-  } else if (makerUrls.solutionsUrl) {
-    suggestions.push(`Open ${makerUrls.solutionsUrl} to continue the import from the environment's Solutions view in Maker.`);
+  if (fallback.handoff.recommendedUrl && fallback.handoff.kind === 'maker-solution-apps') {
+    suggestions.push(`Open ${fallback.handoff.recommendedUrl} to continue the import from the solution-scoped apps view in Maker.`);
+  } else if (fallback.handoff.recommendedUrl && fallback.handoff.kind === 'maker-solutions') {
+    suggestions.push(`Open ${fallback.handoff.recommendedUrl} to continue the import from the environment's Solutions view in Maker.`);
   }
 
-  if (context.displayName) {
+  if (fallback.verification.inspectCommand) {
+    suggestions.push(`After the import step, run \`${fallback.verification.inspectCommand}\` to confirm the remote app id.`);
+  }
+
+  suggestions.push(`After the import step, run \`${fallback.verification.listCommand ?? listCommand}\` to confirm the app is visible in Dataverse.`);
+
+  if (fallback.verification.solutionComponentsCommand ?? solutionComponentsCommand) {
     suggestions.push(
-      `After the import step, run \`pp canvas inspect ${formatCliArg(context.displayName)}${envSuffix}${solutionSuffix}\` to confirm the remote app id.`
+      `Run \`${fallback.verification.solutionComponentsCommand ?? solutionComponentsCommand}\` to verify that the imported app was added to the solution.`
     );
-  }
-
-  suggestions.push(`After the import step, run \`${listCommand}\` to confirm the app is visible in Dataverse.`);
-
-  if (solutionComponentsCommand) {
-    suggestions.push(`Run \`${solutionComponentsCommand}\` to verify that the imported app was added to the solution.`);
   }
 
   suggestions.push('Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.');
   return suggestions;
+}
+
+function buildCanvasRemoteMutationFallbackDetails(
+  command: 'create' | 'import',
+  context: {
+    envAlias?: string;
+    solutionUniqueName?: string;
+    solutionId?: string;
+    displayName?: string;
+    importPath?: string;
+    makerEnvironmentId?: string;
+    derivedSolutionFromEnvironmentAlias?: string;
+  }
+): {
+  handoff: {
+    kind: 'maker-blank-app' | 'maker-solution-apps' | 'maker-solutions' | 'manual';
+    recommendedUrl?: string;
+    makerUrls: {
+      solutionsUrl?: string;
+      solutionAppsUrl?: string;
+      blankAppUrl?: string;
+    };
+    importPath?: string;
+    displayName?: string;
+    derivedSolutionFromEnvironmentAlias?: string;
+  };
+  verification: {
+    inspectCommand?: string;
+    listCommand?: string;
+    solutionComponentsCommand?: string;
+  };
+} {
+  const envAlias = context.envAlias ? formatCliArg(context.envAlias) : '<alias>';
+  const solutionSuffix = context.solutionUniqueName ? ` --solution ${formatCliArg(context.solutionUniqueName)}` : '';
+  const envSuffix = ` --env ${envAlias}`;
+  const makerUrls = buildMakerCanvasUrls(context);
+  const inspectCommand = context.displayName
+    ? `pp canvas inspect ${formatCliArg(context.displayName)}${envSuffix}${solutionSuffix}`
+    : undefined;
+  const listCommand = `pp canvas list${envSuffix}${solutionSuffix}`;
+  const solutionComponentsCommand = context.solutionUniqueName
+    ? `pp solution components ${formatCliArg(context.solutionUniqueName)}${envSuffix} --format json`
+    : undefined;
+
+  let kind: 'maker-blank-app' | 'maker-solution-apps' | 'maker-solutions' | 'manual' = 'manual';
+  let recommendedUrl: string | undefined;
+
+  if (command === 'create' && makerUrls.blankAppUrl) {
+    kind = 'maker-blank-app';
+    recommendedUrl = makerUrls.blankAppUrl;
+  } else if (makerUrls.solutionAppsUrl) {
+    kind = 'maker-solution-apps';
+    recommendedUrl = makerUrls.solutionAppsUrl;
+  } else if (makerUrls.solutionsUrl) {
+    kind = 'maker-solutions';
+    recommendedUrl = makerUrls.solutionsUrl;
+  }
+
+  return {
+    handoff: {
+      kind,
+      recommendedUrl,
+      makerUrls,
+      importPath: context.importPath,
+      displayName: context.displayName,
+      derivedSolutionFromEnvironmentAlias: context.derivedSolutionFromEnvironmentAlias,
+    },
+    verification: {
+      inspectCommand,
+      listCommand,
+      solutionComponentsCommand,
+    },
+  };
 }
 
 function buildMakerCanvasUrls(context: {

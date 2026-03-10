@@ -23,6 +23,7 @@ export interface OperationResult<T> {
   data?: T;
   diagnostics: Diagnostic[];
   warnings: Diagnostic[];
+  details?: unknown;
   suggestedNextActions?: string[];
   supportTier: SupportTier;
   provenance?: ProvenanceRecord[];
@@ -30,6 +31,7 @@ export interface OperationResult<T> {
 }
 
 export interface ResultOptions {
+  details?: unknown;
   supportTier?: SupportTier;
   suggestedNextActions?: string[];
   provenance?: ProvenanceRecord[];
@@ -56,6 +58,7 @@ export function ok<T>(data: T, options: ResultOptions & { diagnostics?: Diagnost
     data,
     diagnostics: options.diagnostics ?? [],
     warnings: options.warnings ?? [],
+    details: options.details,
     suggestedNextActions: options.suggestedNextActions,
     supportTier: options.supportTier ?? 'preview',
     provenance: options.provenance,
@@ -73,6 +76,7 @@ export function fail<T = never>(
     success: false,
     diagnostics: diagnosticList,
     warnings: options.warnings ?? [],
+    details: options.details,
     suggestedNextActions: options.suggestedNextActions,
     supportTier: options.supportTier ?? 'preview',
     provenance: options.provenance,

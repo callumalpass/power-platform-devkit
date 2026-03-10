@@ -242,6 +242,10 @@ Remote mutation placeholders:
   environment and solution, then returns a structured no-op preview with the
   Maker handoff URLs, verification commands, and known limitations instead of a
   failure
+- the structured preview now exposes a `fallback` object with machine-readable
+  Maker handoff metadata plus exact `inspect`, `list`, and `solution
+  components` verification commands, so agents do not need to parse those
+  commands back out of prose
 - `--name DISPLAY_NAME` lets the import placeholder return an exact
   post-import `pp canvas inspect ...` verification command even when the
   imported app name will differ from the `.msapp` basename
@@ -256,6 +260,9 @@ Remote mutation placeholders:
   requested solution when one is provided or inherited from `defaultSolution`,
   and then return suggested next actions for Maker fallback plus `pp canvas
   list`, `pp canvas inspect`, and `pp solution components` verification
+- the non-preview JSON/YAML/NDJSON failure payload now includes the same
+  machine-readable fallback metadata under `details`, alongside the existing
+  human-readable `suggestedNextActions`
 - when the target environment alias carries `makerEnvironmentId`, or the
   command provides `--maker-env-id`, the placeholder diagnostics include exact
   solution-scoped Maker URLs for the blank-app or import fallback path instead
