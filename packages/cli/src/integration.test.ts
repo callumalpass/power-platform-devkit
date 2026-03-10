@@ -3313,6 +3313,22 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
   });
 
+  it('dispatches solution list when the argv starts with a wrapper separator', async () => {
+    const fixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(fixture.source),
+    });
+
+    const list = await runCli(['--', 'solution', 'list', '--environment', 'source', '--format', 'json']);
+
+    expect(list.code).toBe(0);
+    expect(list.stderr).toBe('');
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
+  });
+
   it('exports and imports solution artifacts through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const requests: Array<{ path: string; body?: Record<string, unknown> }> = [];
@@ -3482,6 +3498,58 @@ describe('cli fixture-backed workflows', () => {
     );
 
     const inspect = await runCli(['auth', 'profile', 'inspect', '--env', 'fixture', '--config-dir', configDir, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(inspect.stdout)).toEqual({
+      name: 'fixture-user',
+      type: 'user',
+      tenantId: 'common',
+      clientId: '51f81489-12ee-4a9e-aaae-a2591f45987d',
+      tokenCacheKey: 'fixture-user',
+      defaultResource: 'https://fixture.crm.dynamics.com',
+      loginHint: 'fixture.user@example.com',
+      accountUsername: undefined,
+      homeAccountId: undefined,
+      localAccountId: undefined,
+      browserProfile: 'fixture-browser',
+      prompt: 'select_account',
+      fallbackToDeviceCode: true,
+      resolvedFromEnvironment: 'fixture',
+    });
+  });
+
+  it('dispatches auth profile inspect when the argv starts with a wrapper separator', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://fixture.crm.dynamics.com',
+              loginHint: 'fixture.user@example.com',
+              browserProfile: 'fixture-browser',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await runCli(['--', 'auth', 'profile', 'inspect', '--env', 'fixture', '--config-dir', configDir, '--format', 'json']);
 
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');

@@ -100,7 +100,7 @@ const ATTRIBUTE_COMMON_SELECT_FIELDS = [
 const POWER_PLATFORM_ENVIRONMENTS_API_VERSION = '2020-10-01';
 
 export async function main(argv: string[]): Promise<number> {
-  const [group, command, ...rest] = argv;
+  const [group, command, ...rest] = normalizeCliArgs(argv);
 
   if (!group || group === 'help' || group === '--help') {
     printHelp();
@@ -160,6 +160,14 @@ export async function main(argv: string[]): Promise<number> {
       printHelp();
       return 1;
   }
+}
+
+function normalizeCliArgs(argv: string[]): string[] {
+  if (argv[0] === '--') {
+    return argv.slice(1);
+  }
+
+  return argv;
 }
 
 async function runProject(command: string | undefined, args: string[]): Promise<number> {
