@@ -4,11 +4,17 @@ Canvas support starts with pinned template metadata. The current `@pp/canvas`
 surface now includes:
 
 - template registry documents and support-matrix resolution
-- normalized source loading from a declared JSON source tree
+- normalized source loading from both manifest JSON trees and unpacked
+  `.pa.yaml` app roots
 - `canvas validate`
+- `canvas lint`
 - `canvas inspect`
 - deterministic `canvas build`
 - structured `canvas diff`
+
+Live registry refresh is documented separately in
+[`docs/canvas-harvesting.md`](./canvas-harvesting.md). Normal `pp canvas`
+commands consume committed registries; they do not perform live harvesting.
 
 ## Why the registry exists
 
@@ -120,9 +126,11 @@ Current resolution rules are deterministic:
 - `strict`: seeded registries are checked first, then pinned registries, and
   missing metadata remains a hard failure
 
-## Supported source tree
+## Supported source roots
 
-The first supported source slice is intentionally explicit and narrow:
+`pp canvas` now accepts two offline source shapes:
+
+1. The older normalized manifest tree:
 
 ```text
 apps/MyCanvas/
@@ -133,22 +141,36 @@ apps/MyCanvas/
     Settings.json
 ```
 
-`canvas.json` declares app identity and screen file references:
+2. An unpacked canvas app root:
 
-```json
-{
-  "name": "MyCanvas",
-  "version": "1.0.0",
-  "screens": [
-    {
-      "name": "Home",
-      "file": "screens/Home.json"
-    }
-  ]
-}
+```text
+apps/MyCanvas/
+  Src/
+    App.pa.yaml
+    Screen1.pa.yaml
+    _EditorState.pa.yaml       # optional but used for screen ordering
+  References/
+    DataSources.json           # optional
+    Templates.json             # regenerated during native build
+  Controls/
+    1.json                     # required seed packaging metadata
+  Header.json
+  Properties.json
 ```
 
-Each screen file contains normalized control definitions:
+The JSON manifest slice stays supported for compatibility. The primary
+forward-looking path is the unpacked `.pa.yaml` root, where:
+
+- `Src/App.pa.yaml` and `Src/*.pa.yaml` are the authored source of truth
+- control constructors such as `Classic/Button@2.2.0` resolve through pinned
+  harvested registries
+- `inspect` and `validate` surface authored control inventory plus optional
+  `References/DataSources.json` summaries
+- `lint` is an alias for `validate` when you want a diagnostics-first workflow
+- allowed-property validation comes from harvested template metadata rather
+  than an inferred local schema
+
+The legacy manifest slice still uses explicit normalized screen JSON:
 
 ```json
 {
@@ -166,17 +188,20 @@ Each screen file contains normalized control definitions:
 }
 ```
 
-Current validation rules focus on the supported slice:
+Current validation rules across both source kinds:
 
-- manifest must exist and declare at least one screen
-- each control must declare `name`, `templateName`, and `templateVersion`
+- at least one screen must be present
+- each control must declare a resolvable template identity and version
 - template metadata must resolve in the selected build mode
-- `*Formula` properties must be strings
+- authored properties are checked against the harvested template surface when
+  the registry exposes one
+- formula-like properties in the legacy JSON slice must still be strings
 
 ## CLI commands
 
 ```bash
 pp canvas validate ./apps/MyCanvas --project .
+pp canvas lint ./apps/MyCanvas --project .
 pp canvas inspect ./apps/MyCanvas --project . --mode strict
 pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp
 pp canvas diff ./apps/MyCanvas ./apps/MyCanvas-next
@@ -190,9 +215,26 @@ Useful flags:
 - `--cache-dir` for `cache:NAME` registry references
 - `--out` for build output
 
-`canvas build` writes a deterministic JSON package payload to the requested
-`.msapp` path for the supported slice. That keeps fixture tests and diffs
-stable while the broader packaging surface matures.
+Path detection is automatic:
+
+- point at a directory containing `canvas.json` for the legacy manifest slice
+- point at an unpacked app root or `Src/` directory for the `.pa.yaml` slice
+
+`canvas build` behavior depends on the source kind:
+
+- unpacked `.pa.yaml` roots build a native `.msapp` zip by regenerating
+  `References/Templates.json` and control payloads from the pinned registry
+  while passing through the rest of the unpacked app baseline from the source
+  root
+- legacy manifest JSON roots still write the deterministic preview JSON package
+  payload used by the existing fixture/golden coverage
+
+Current native `.msapp` build expects an unpacked app root that still contains
+baseline packaging artifacts such as:
+
+- `Header.json`
+- `Properties.json`
+- `Controls/1.json`
 
 ## Project config wiring
 

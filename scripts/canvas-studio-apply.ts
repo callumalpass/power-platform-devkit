@@ -1,7 +1,9 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { chromium, type Frame, type Locator, type Page } from 'playwright-core';
+import { chromium, type Frame, type Page } from 'playwright-core';
 import {
+  buildCanvasControlCatalogSelectionCheckpoint,
+  selectCanvasControlCatalogEntries,
   summarizeCanvasControlCatalogDocument,
   type CanvasControlCatalogDocument,
   type CanvasControlCatalogEntry,
@@ -11,7 +13,11 @@ import type {
   CanvasControlInsertReportDocument as InsertReport,
   CanvasControlInsertReportEntry as InsertReportEntry,
 } from '../packages/canvas/src/harvest-fixture';
-import { buildCanvasControlSearchTerms } from '../packages/canvas/src/harvest-fixture';
+import { resolveCanvasControlInsertReportResumeSelection } from '../packages/canvas/src/harvest-fixture';
+import {
+  resolveCanvasControlCatalogStudioInsertPlan,
+  type CanvasStudioInsertPlan,
+} from '../packages/canvas/src/harvest-studio-plan';
 
 interface Options {
   studioUrl: string;
@@ -23,6 +29,10 @@ interface Options {
   fixtureContainerName: string;
   insertReportPath?: string;
   includeRetired: boolean;
+  catalogResumeReport?: string;
+  catalogFamily?: 'classic' | 'modern';
+  catalogStartAt?: string;
+  catalogLimit?: number;
   settleMs: number;
   debug: boolean;
   slowMoMs: number;
@@ -33,21 +43,275 @@ interface StudioYamlDescriptor {
   name: string;
 }
 
-interface InsertPaneCandidate {
-  index: number;
-  title: string;
-  text: string;
-  category?: string;
-  iconName?: string;
-  isCategory: boolean;
+interface StudioRuntimeStatus {
+  ready: boolean;
+  reason: string;
+  initialized: boolean;
+  hasShell: boolean;
+  hasDocument: boolean;
+  hasPaste: boolean;
+  hasControlGallery: boolean;
+  hasSaveManager: boolean;
+  hasPublish: boolean;
+  hasScreen1: boolean;
 }
 
-const DIRECT_INSERT_SKIP_REASONS: Record<string, string> = {
-  'classic:card': 'covered-by-form-children',
-  'classic:column': 'covered-by-data-table-columns',
-  'classic:display and edit form': 'redundant-doc-alias',
-  'classic:screen': 'covered-by-base-screen-template',
-};
+interface RuntimeInsertOutcome {
+  insertedName?: string;
+  resolvedScreenName?: string;
+  template: string;
+  variant?: string;
+  composite?: boolean;
+}
+
+const INSERT_CATALOG_CONTROL_SCRIPT = String.raw`async ({ entry, plan, targetScreenName, timeoutMs }) => {
+  const appMagic = window.AppMagic;
+  const shell = await appMagic?.context?._shellViewModelPromise;
+  const docVm = shell?.documentViewModel;
+  if (!docVm) {
+    throw new Error('Studio document view model is unavailable.');
+  }
+
+  await Promise.race([
+    docVm._loadedPromise ?? Promise.resolve(),
+    new Promise((resolve) => setTimeout(resolve, Math.min(timeoutMs, 15000))),
+  ]);
+
+  const resolveScreen = (name) => {
+    for (const candidateName of [name, 'Screen1']) {
+      try {
+        const candidate = docVm.getScreenOrComponentByName?.(candidateName);
+        if (candidate) {
+          return {
+            screen: candidate,
+            name: candidateName,
+          };
+        }
+      } catch {
+        // Keep trying.
+      }
+    }
+
+    return undefined;
+  };
+
+  const readSize = (value) => {
+    if (!value) {
+      return 0;
+    }
+    if (typeof value.size === 'number') {
+      return value.size;
+    }
+    if (typeof value.length === 'number') {
+      return value.length;
+    }
+    if (Array.isArray(value)) {
+      return value.length;
+    }
+    if (typeof value === 'object') {
+      return Object.keys(value).length;
+    }
+    return 0;
+  };
+
+  const readName = (value) => {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+    if (typeof value._name === 'string') {
+      return value._name;
+    }
+    if (typeof value.name === 'string') {
+      return value.name;
+    }
+    if (typeof value.controlName === 'string') {
+      return value.controlName;
+    }
+    return undefined;
+  };
+
+  const resolvedScreen = resolveScreen(targetScreenName);
+  if (!resolvedScreen) {
+    throw new Error('Could not resolve target screen ' + targetScreenName + ' or Screen1.');
+  }
+
+  const controlGallery = docVm._controlGallery;
+  if (!controlGallery?.addControlAsync) {
+    throw new Error('Studio control gallery runtime is unavailable.');
+  }
+
+  const insertResult = plan.composite
+    ? await controlGallery.addControlAsync(plan.template, plan.variant ?? '', {
+        screenLayout: {
+          screenViewModel: resolvedScreen.screen,
+        },
+      })
+    : await controlGallery.addControlAsync(plan.template, plan.variant ?? '', undefined, resolvedScreen.screen);
+
+  const idleDeadline = Date.now() + timeoutMs;
+  let lastBusyState = '';
+  while (Date.now() < idleDeadline) {
+    const controlsInCreation = readSize(controlGallery._controlsInCreation);
+    const visualWaiting = readSize(controlGallery._visualWaitingPromises);
+    if (Boolean(docVm._isInitialized) && controlsInCreation < 1 && visualWaiting < 1) {
+      return {
+        insertedName: readName(insertResult),
+        resolvedScreenName: resolvedScreen.name,
+        template: plan.template,
+        ...(plan.variant ? { variant: plan.variant } : {}),
+        ...(plan.composite ? { composite: true } : {}),
+      };
+    }
+    lastBusyState = 'controlsInCreation=' + controlsInCreation + ', visualWaiting=' + visualWaiting;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+
+  throw new Error(
+    'Studio did not settle after inserting ' +
+      entry.family +
+      '/' +
+      entry.name +
+      ': ' +
+      (lastBusyState || 'unknown busy state') +
+      '.'
+  );
+}`;
+
+const SAVE_RUNTIME_SCRIPT = String.raw`async ({ timeoutMs }) => {
+  const shell = await window.AppMagic?.context?._shellViewModelPromise;
+  if (!shell?._fileSaveManager?.saveAsync) {
+    throw new Error('Studio save runtime is unavailable.');
+  }
+
+  await shell._fileSaveManager.saveAsync(undefined, true);
+  await new Promise((resolve) => setTimeout(resolve, Math.min(timeoutMs, 4000)));
+}`;
+
+const PUBLISH_RUNTIME_SCRIPT = String.raw`async ({ timeoutMs }) => {
+  if (!window.AppMagic?.context?.publishAppAsync) {
+    throw new Error('Studio publish runtime is unavailable.');
+  }
+
+  await window.AppMagic.context.publishAppAsync(false);
+  await new Promise((resolve) => setTimeout(resolve, Math.min(timeoutMs, 5000)));
+}`;
+
+const INSPECT_STUDIO_RUNTIME_SCRIPT = String.raw`async () => {
+  const appMagic = window.AppMagic;
+  const shellPromise = appMagic?.context?._shellViewModelPromise;
+  if (!shellPromise) {
+    return {
+      ready: false,
+      reason: 'shell-promise-missing',
+      initialized: false,
+      hasShell: false,
+      hasDocument: false,
+      hasPaste: false,
+      hasControlGallery: false,
+      hasSaveManager: false,
+      hasPublish: Boolean(appMagic?.context?.publishAppAsync),
+      hasScreen1: false,
+    };
+  }
+
+  const shell = await shellPromise;
+  if (!shell) {
+    return {
+      ready: false,
+      reason: 'shell-missing',
+      initialized: false,
+      hasShell: false,
+      hasDocument: false,
+      hasPaste: false,
+      hasControlGallery: false,
+      hasSaveManager: false,
+      hasPublish: Boolean(appMagic?.context?.publishAppAsync),
+      hasScreen1: false,
+    };
+  }
+
+  const docVm = shell.documentViewModel;
+  if (!docVm) {
+    return {
+      ready: false,
+      reason: 'document-missing',
+      initialized: false,
+      hasShell: true,
+      hasDocument: false,
+      hasPaste: false,
+      hasControlGallery: false,
+      hasSaveManager: Boolean(shell._fileSaveManager?.saveAsync),
+      hasPublish: Boolean(appMagic?.context?.publishAppAsync),
+      hasScreen1: false,
+    };
+  }
+
+  await Promise.race([
+    docVm._loadedPromise ?? Promise.resolve(),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ]);
+
+  let hasScreen1 = false;
+  try {
+    hasScreen1 = Boolean(docVm.getScreenOrComponentByName?.('Screen1'));
+  } catch {
+    hasScreen1 = false;
+  }
+
+  const status = {
+    ready: false,
+    reason: 'not-ready',
+    initialized: Boolean(docVm._isInitialized),
+    hasShell: true,
+    hasDocument: true,
+    hasPaste: typeof docVm.doPasteYamlAsync === 'function',
+    hasControlGallery: typeof docVm._controlGallery?.addControlAsync === 'function',
+    hasSaveManager: typeof shell._fileSaveManager?.saveAsync === 'function',
+    hasPublish: typeof appMagic?.context?.publishAppAsync === 'function',
+    hasScreen1,
+  };
+
+  status.ready =
+    status.initialized &&
+    status.hasPaste &&
+    status.hasControlGallery &&
+    status.hasSaveManager &&
+    status.hasPublish &&
+    status.hasScreen1;
+  status.reason = status.ready
+    ? 'ready'
+    : !status.initialized
+      ? 'document-not-initialized'
+      : !status.hasScreen1
+        ? 'screen1-missing'
+        : !status.hasControlGallery
+          ? 'control-gallery-missing'
+          : !status.hasPaste
+            ? 'paste-runtime-missing'
+            : !status.hasSaveManager
+              ? 'save-runtime-missing'
+              : !status.hasPublish
+                ? 'publish-runtime-missing'
+                : 'not-ready';
+
+  return status;
+}`;
+
+const PASTE_YAML_RUNTIME_SCRIPT = String.raw`async ({ yaml, timeoutMs }) => {
+  const shell = await window.AppMagic?.context?._shellViewModelPromise;
+  const docVm = shell?.documentViewModel;
+  if (!docVm?.doPasteYamlAsync) {
+    throw new Error('Studio YAML paste runtime is unavailable.');
+  }
+
+  await Promise.race([
+    docVm._loadedPromise ?? Promise.resolve(),
+    new Promise((resolve) => setTimeout(resolve, Math.min(timeoutMs, 15000))),
+  ]);
+
+  const pasted = await docVm.doPasteYamlAsync(undefined, yaml);
+  return pasted === false ? { pasted: false } : { pasted: true };
+}`;
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
@@ -58,7 +322,7 @@ async function main(): Promise<void> {
     .map((entry) => entry.name)
     .sort((left, right) => left.localeCompare(right));
 
-  if (yamlFiles.length === 0) {
+  if (yamlFiles.length === 0 && !options.catalogJson) {
     throw new Error(`No .pa.yaml files were found in ${yamlDir}.`);
   }
 
@@ -78,40 +342,44 @@ async function main(): Promise<void> {
 
   try {
     const page = context.pages()[0] ?? (await context.newPage());
+    await Promise.all(
+      context
+        .pages()
+        .filter((candidate) => candidate !== page)
+        .map((candidate) => candidate.close().catch(() => undefined))
+    );
     await page.goto(options.studioUrl, {
       waitUntil: 'domcontentloaded',
       timeout: options.timeoutMs,
     });
 
-    await grantClipboardPermissions(page);
+    if (yamlFiles.length === 0) {
+      process.stdout.write('No fixture YAML files supplied; using the existing screen as the insertion anchor.\n');
+    }
 
     for (const file of yamlFiles) {
       const studioFrame = await waitForStudio(page, options.timeoutMs);
       await dismissStudioOverlays(studioFrame);
-      await page.waitForTimeout(options.settleMs);
-
       const content = normalizeStudioYaml(await readFile(resolve(yamlDir, file), 'utf8'));
       const descriptor = describeStudioYaml(content, file);
 
       process.stdout.write(`Applying ${descriptor.kind} ${descriptor.name} from ${file}...\n`);
       if (descriptor.kind === 'control') {
-        await applyControlYaml(page, studioFrame, descriptor.name, content, options.timeoutMs);
+        await applyControlYaml(studioFrame, descriptor.name, content, options.timeoutMs, options.settleMs);
       } else {
-        await applyScreenYaml(page, studioFrame, descriptor.name, content, options.timeoutMs);
+        await applyScreenYaml(studioFrame, descriptor.name, content, options.timeoutMs);
       }
-
       await page.waitForTimeout(options.settleMs);
     }
 
-    await page.waitForTimeout(options.settleMs);
     const studioFrame = await waitForStudio(page, options.timeoutMs);
     await dismissStudioOverlays(studioFrame);
 
     if (options.catalogJson) {
-      insertReport = await insertCatalogControls(page, studioFrame, options);
+      insertReport = await insertCatalogControls(studioFrame, options);
     }
 
-    await saveAndPublish(page, studioFrame, options.publish, options.settleMs);
+    await saveAndPublish(studioFrame, options.publish, options.timeoutMs, options.settleMs);
   } finally {
     await context.close();
   }
@@ -122,161 +390,154 @@ async function main(): Promise<void> {
   }
 }
 
-async function applyControlYaml(page: Page, studioFrame: Frame, controlName: string, content: string, timeoutMs: number): Promise<void> {
-  const existing = studioFrame.locator(`[title="${controlName}"]`).first();
-  if (await existing.isVisible({ timeout: 1000 }).catch(() => false)) {
-    await existing.click({ timeout: 5000, force: true });
-    await page.waitForTimeout(500);
-    await page.keyboard.press('Delete');
-    await page.waitForTimeout(2000);
-  }
-
-  await page.evaluate(async (text) => {
-    await navigator.clipboard.writeText(text);
-  }, content);
-
-  const screenNode = studioFrame.locator('[title="Screen1"]').first();
-  await screenNode.click({ timeout: 5000, force: true });
-  await page.waitForTimeout(500);
-  await pasteShortcut(page);
-  await page.waitForTimeout(5000);
-
-  await studioFrame.locator(`[title="${controlName}"]`).first().waitFor({
-    state: 'visible',
-    timeout: timeoutMs,
-  });
+async function evaluateStudioRuntime<Result, Input = undefined>(
+  studioFrame: Frame,
+  script: string,
+  input: Input
+): Promise<Result> {
+  return studioFrame.evaluate(
+    async ({ script, input }) => {
+      const factory = (0, eval)(script) as (value: Input) => Promise<Result> | Result;
+      return await factory(input as Input);
+    },
+    {
+      script,
+      input,
+    }
+  );
 }
 
-async function applyScreenYaml(page: Page, studioFrame: Frame, screenName: string, content: string, timeoutMs: number): Promise<void> {
-  if (await studioFrame.locator(`[title="${screenName}"]`).first().isVisible({ timeout: 1000 }).catch(() => false)) {
+async function applyControlYaml(
+  studioFrame: Frame,
+  controlName: string,
+  content: string,
+  timeoutMs: number,
+  settleMs: number
+): Promise<void> {
+  const existing = await studioFrame.locator(`[title="${controlName}"]`).first().isVisible({ timeout: 500 }).catch(() => false);
+  if (existing) {
+    await studioFrame.locator(`[title="${controlName}"]`).first().click({ timeout: 5000, force: true });
+    await studioFrame.page().waitForTimeout(300);
+    await studioFrame.page().keyboard.press('Delete');
+    await studioFrame.page().waitForTimeout(settleMs);
+  }
+
+  await selectTargetScreen(studioFrame, 'Screen1', timeoutMs);
+  await pasteYamlViaRuntime(studioFrame, content, timeoutMs, `control ${controlName}`);
+  await waitForTitledElement(studioFrame, controlName, timeoutMs);
+}
+
+async function applyScreenYaml(studioFrame: Frame, screenName: string, content: string, timeoutMs: number): Promise<void> {
+  if (await studioFrame.locator(`[title="${screenName}"]`).first().isVisible({ timeout: 500 }).catch(() => false)) {
     process.stdout.write(`Skipping ${screenName}; it already exists.\n`);
     return;
   }
 
-  await page.evaluate(async (text) => {
-    await navigator.clipboard.writeText(text);
-  }, content);
-
-  const screenNode = studioFrame.locator('[title="Screen1"]').first();
-  await screenNode.click({ timeout: 5000, force: true });
-  await page.waitForTimeout(500);
-  await pasteShortcut(page);
-  await page.waitForTimeout(5000);
-
-  await studioFrame.locator(`[title="${screenName}"]`).first().waitFor({
-    state: 'visible',
-    timeout: timeoutMs,
-  });
+  await pasteYamlViaRuntime(studioFrame, content, timeoutMs, `screen ${screenName}`);
+  await waitForTitledElement(studioFrame, screenName, timeoutMs);
 }
 
-async function insertCatalogControls(page: Page, studioFrame: Frame, options: Options): Promise<InsertReport> {
+async function insertCatalogControls(studioFrame: Frame, options: Options): Promise<InsertReport> {
   const catalogPath = resolve(options.catalogJson!);
   const catalog = JSON.parse(await readFile(catalogPath, 'utf8')) as CanvasControlCatalogDocument;
   const catalogCounts = catalog.counts ?? summarizeCanvasControlCatalogDocument(catalog);
-  const entries = catalog.controls.filter((entry) => options.includeRetired || !entry.status.includes('retired'));
+  const resumeReportPath = options.catalogResumeReport ? resolve(options.catalogResumeReport) : undefined;
+  const resumeSelection = resumeReportPath
+    ? resolveCanvasControlInsertReportResumeSelection(
+        catalog,
+        JSON.parse(await readFile(resumeReportPath, 'utf8')) as InsertReport
+      )
+    : undefined;
+  const selected = selectCanvasControlCatalogEntries(catalog, {
+    includeRetired: resumeSelection?.includeRetired ?? options.includeRetired,
+    family: resumeSelection?.family ?? options.catalogFamily,
+    startAt: resumeSelection?.startAt ?? options.catalogStartAt,
+    limit: resumeSelection?.limit ?? options.catalogLimit,
+  });
+  const selectionCheckpoint = buildCanvasControlCatalogSelectionCheckpoint(catalog, selected.selection);
   const reportEntries: InsertReportEntry[] = [];
 
-  for (const entry of entries) {
-    const key = makeCatalogKey(entry.family, entry.name);
-    const directInsertStrategy = DIRECT_INSERT_SKIP_REASONS[key];
+  process.stdout.write(
+    `Catalog selection: ${selected.selection.selectedControls} of ${selected.selection.matchingControls} matching controls` +
+      `${selected.selection.family ? ` in ${selected.selection.family}` : ''}` +
+      `${selected.selection.startAt ? ` starting at ${JSON.stringify(selected.selection.startAt)}` : ''}` +
+      `${selected.selection.limit ? ` with limit ${selected.selection.limit}` : ''}` +
+      `${selected.selection.remainingControls > 0 ? `; ${selected.selection.remainingControls} remain after this chunk` : ''}` +
+      '.\n'
+  );
 
-    if (directInsertStrategy) {
-      reportEntries.push({
-        family: entry.family,
-        name: entry.name,
-        docPath: entry.docPath,
-        status: entry.status,
-        outcome: 'covered',
-        strategy: directInsertStrategy,
-        attempts: [],
-      });
-      process.stdout.write(`Covering ${entry.family} ${entry.name} via ${directInsertStrategy}.\n`);
-      continue;
-    }
-
-    const attempts: InsertAttempt[] = [];
-    const searchTerms = buildSearchTerms(entry);
-    let chosenCandidate: InsertPaneCandidate | undefined;
-
-    for (const searchTerm of searchTerms) {
-      await focusFixtureContainer(page, studioFrame, options.fixtureContainerName, options.timeoutMs);
-      await ensureInsertPaneOpen(studioFrame, options.timeoutMs);
-      const candidates = await searchInsertCandidates(page, studioFrame, searchTerm);
-      attempts.push({
-        query: searchTerm,
-        candidates: candidates
-          .filter((candidate) => !candidate.isCategory)
-          .map((candidate) => ({
-            title: candidate.title,
-            category: candidate.category,
-            iconName: candidate.iconName,
-          })),
-      });
-
-      if (attempts[attempts.length - 1]?.candidates.length === 0) {
-        const insertButton = studioFrame.locator('button[aria-label="Insert"]').first();
-        const insertDisabled = await insertButton.isDisabled().catch(() => true);
-        const pane = getInsertPaneRoot(studioFrame);
-        const paneVisible = await pane.isVisible({ timeout: 500 }).catch(() => false);
-        const paneSearchVisible = await pane.locator('input[placeholder="Search"]').first().isVisible({ timeout: 500 }).catch(() => false);
-        const globalTreeCount = await studioFrame.locator('[role="treeitem"]').count().catch(() => 0);
-        const paneTreeCount = await pane.locator('[role="treeitem"]').count().catch(() => 0);
-        const paneText = ((await pane.textContent().catch(() => '')) ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
-        process.stdout.write(
-          `Search candidates for ${entry.family} ${entry.name} / ${searchTerm}: ${JSON.stringify(
-            candidates.map((candidate) => ({
-              title: candidate.title,
-              category: candidate.category,
-              iconName: candidate.iconName,
-              isCategory: candidate.isCategory,
-            }))
-          )} | insertDisabled=${insertDisabled} paneVisible=${paneVisible} paneSearchVisible=${paneSearchVisible} globalTreeCount=${globalTreeCount} paneTreeCount=${paneTreeCount} paneText=${JSON.stringify(
-            paneText
-          )}\n`
-        );
-      }
-
-      chosenCandidate = chooseInsertCandidate(entry, searchTerm, candidates);
-      if (chosenCandidate) {
-        break;
-      }
-    }
-
-    if (!chosenCandidate) {
+  for (const entry of selected.controls) {
+    const plan = resolveCanvasControlCatalogStudioInsertPlan(entry);
+    if (!plan) {
       reportEntries.push({
         family: entry.family,
         name: entry.name,
         docPath: entry.docPath,
         status: entry.status,
         outcome: 'not-found',
-        strategy: 'search-miss',
-        attempts,
+        strategy: 'runtime-plan-missing',
+        attempts: [],
+        error: `No runtime insert plan is pinned for ${entry.family}/${entry.name}.`,
       });
-      process.stdout.write(`Did not find ${entry.family} ${entry.name} in Insert/search.\n`);
+      process.stdout.write(`No runtime insert plan for ${entry.family} ${entry.name}.\n`);
       continue;
     }
 
-    try {
-      await studioFrame.locator('[role="treeitem"]').nth(chosenCandidate.index).click({ timeout: 5000, force: true });
-      await page.waitForTimeout(options.settleMs);
-      await dismissStudioOverlays(studioFrame);
+    if (plan.kind === 'cover') {
+      reportEntries.push({
+        family: entry.family,
+        name: entry.name,
+        docPath: entry.docPath,
+        status: entry.status,
+        outcome: 'covered',
+        strategy: plan.reason,
+        attempts: [],
+      });
+      process.stdout.write(`Covering ${entry.family} ${entry.name} via ${plan.reason}.\n`);
+      continue;
+    }
 
+    const attempts: InsertAttempt[] = [
+      {
+        query: formatPlanQuery(plan),
+        candidates: [
+          {
+            title: plan.template,
+            ...(plan.variant ? { category: plan.variant } : {}),
+            ...(plan.composite ? { iconName: 'composite' } : {}),
+          },
+        ],
+      },
+    ];
+
+    try {
+      const outcome = await insertCatalogControlViaRuntime(
+        studioFrame,
+        entry,
+        plan,
+        resolveTargetScreenName(options.fixtureContainerName),
+        options.timeoutMs
+      );
+      await studioFrame.page().waitForTimeout(options.settleMs);
       reportEntries.push({
         family: entry.family,
         name: entry.name,
         docPath: entry.docPath,
         status: entry.status,
         outcome: 'inserted',
-        strategy: 'insert-pane-search',
+        strategy: plan.composite ? 'runtime-addControlAsync-composite' : 'runtime-addControlAsync',
         attempts,
         chosenCandidate: {
-          title: chosenCandidate.title,
-          category: chosenCandidate.category,
-          iconName: chosenCandidate.iconName,
+          title: outcome.template,
+          ...(outcome.variant ? { category: outcome.variant } : {}),
+          ...(outcome.composite ? { iconName: 'composite' } : {}),
         },
       });
       process.stdout.write(
-        `Inserted ${entry.family} ${entry.name} via ${chosenCandidate.title}${chosenCandidate.category ? ` (${chosenCandidate.category})` : ''}.\n`
+        `Inserted ${entry.family} ${entry.name} via ${outcome.template}` +
+          `${outcome.variant ? ` (${outcome.variant})` : ''}` +
+          `${outcome.resolvedScreenName ? ` on ${outcome.resolvedScreenName}` : ''}` +
+          '.\n'
       );
     } catch (error) {
       reportEntries.push({
@@ -285,12 +546,12 @@ async function insertCatalogControls(page: Page, studioFrame: Frame, options: Op
         docPath: entry.docPath,
         status: entry.status,
         outcome: 'failed',
-        strategy: 'insert-pane-search',
+        strategy: plan.composite ? 'runtime-addControlAsync-composite' : 'runtime-addControlAsync',
         attempts,
         chosenCandidate: {
-          title: chosenCandidate.title,
-          category: chosenCandidate.category,
-          iconName: chosenCandidate.iconName,
+          title: plan.template,
+          ...(plan.variant ? { category: plan.variant } : {}),
+          ...(plan.composite ? { iconName: 'composite' } : {}),
         },
         error: error instanceof Error ? error.message : String(error),
       });
@@ -304,6 +565,9 @@ async function insertCatalogControls(page: Page, studioFrame: Frame, options: Op
     catalogPath,
     catalogGeneratedAt: catalog.generatedAt,
     catalogCounts,
+    selection: selected.selection,
+    selectionCheckpoint,
+    ...(resumeReportPath ? { resumedFromReportPath: resumeReportPath } : {}),
     fixtureContainerName: options.fixtureContainerName,
     entries: reportEntries,
     totals: {
@@ -316,265 +580,62 @@ async function insertCatalogControls(page: Page, studioFrame: Frame, options: Op
   };
 }
 
-function buildSearchTerms(entry: CanvasControlCatalogEntry): string[] {
-  return buildCanvasControlSearchTerms(entry);
-}
-
-function chooseInsertCandidate(
+async function insertCatalogControlViaRuntime(
+  studioFrame: Frame,
   entry: CanvasControlCatalogEntry,
-  searchTerm: string,
-  candidates: InsertPaneCandidate[]
-): InsertPaneCandidate | undefined {
-  const expectedTitles = new Set(buildSearchTerms(entry).map(normalizeLabel));
-  const insertable = candidates.filter((candidate) => !candidate.isCategory);
+  plan: Extract<CanvasStudioInsertPlan, { kind: 'add' }>,
+  targetScreenName: string,
+  timeoutMs: number
+): Promise<RuntimeInsertOutcome> {
+  await dismissStudioOverlays(studioFrame);
+  await selectTargetScreen(studioFrame, targetScreenName, timeoutMs).catch(() => undefined);
 
-  if (insertable.length === 0) {
-    return undefined;
-  }
-
-  const ranked = insertable
-    .map((candidate) => ({
-      candidate,
-      score: scoreCandidate(entry, searchTerm, expectedTitles, candidate),
-    }))
-    .filter((item) => item.score > 0)
-    .sort((left, right) => right.score - left.score);
-
-  return ranked[0]?.candidate;
-}
-
-function scoreCandidate(
-  entry: CanvasControlCatalogEntry,
-  searchTerm: string,
-  expectedTitles: Set<string>,
-  candidate: InsertPaneCandidate
-): number {
-  const title = normalizeLabel(candidate.title || candidate.text);
-  const search = normalizeLabel(searchTerm);
-  let score = 0;
-
-  if (expectedTitles.has(title)) {
-    score += 100;
-  }
-
-  if (title.includes(search) || search.includes(title)) {
-    score += 20;
-  }
-
-  if (entry.family === 'modern') {
-    if (candidate.iconName?.includes('#fluent-')) {
-      score += 40;
+  return evaluateStudioRuntime<RuntimeInsertOutcome, {
+    entry: Pick<CanvasControlCatalogEntry, 'family' | 'name'>;
+    plan: Extract<CanvasStudioInsertPlan, { kind: 'add' }>;
+    targetScreenName: string;
+    timeoutMs: number;
+  }>(
+    studioFrame,
+    INSERT_CATALOG_CONTROL_SCRIPT,
+    {
+      entry: {
+        family: entry.family,
+        name: entry.name,
+      },
+      plan,
+      targetScreenName,
+      timeoutMs,
     }
-    if (candidate.category === 'Classic') {
-      score -= 50;
-    }
-  }
-
-  if (entry.family === 'classic') {
-    if (candidate.category === 'Classic') {
-      score += 40;
-    }
-    if (candidate.iconName?.startsWith('#icon-') || candidate.iconName?.startsWith('#Basel_')) {
-      score += 30;
-    }
-    if (candidate.iconName?.includes('#fluent-')) {
-      score -= 40;
-    }
-  }
-
-  if (!candidate.iconName) {
-    score -= 10;
-  }
-
-  return score;
-}
-
-async function focusFixtureContainer(page: Page, studioFrame: Frame, containerName: string, timeoutMs: number): Promise<void> {
-  const target =
-    (await findAttachedTitledLocator(studioFrame, containerName, Math.min(timeoutMs, 5000)).catch(() => undefined)) ??
-    (await refocusScreenAndFindTarget(studioFrame, containerName, timeoutMs));
-  await target.click({ timeout: 5000, force: true });
-  await page.waitForTimeout(800);
-}
-
-async function ensureInsertPaneOpen(studioFrame: Frame, timeoutMs: number): Promise<void> {
-  const pane = getInsertPaneRoot(studioFrame);
-  const search = pane.locator('input[placeholder="Search"]').first();
-
-  if (await isInsertPaneReady(pane, search)) {
-    return;
-  }
-
-  const insertButton = studioFrame.locator('button[aria-label="Insert"]').first();
-  await insertButton.click({ timeout: 5000, force: true });
-  await pane.waitFor({ state: 'visible', timeout: timeoutMs });
-  await search.waitFor({ state: 'visible', timeout: timeoutMs });
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await isInsertPaneReady(pane, search)) {
-      return;
-    }
-    await studioFrame.page().waitForTimeout(500);
-  }
-
-  throw new Error('Timed out waiting for the Insert pane to open.');
-}
-
-async function searchInsertCandidates(page: Page, studioFrame: Frame, query: string): Promise<InsertPaneCandidate[]> {
-  const search = getInsertPaneRoot(studioFrame).locator('input[placeholder="Search"]').first();
-  await search.click({ timeout: 5000, force: true });
-  await search.fill('');
-  await page.waitForTimeout(200);
-  await search.fill(query);
-
-  let lastSignature = '';
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    await page.waitForTimeout(800);
-    const candidates = await collectInsertPaneCandidates(studioFrame);
-    const signature = JSON.stringify(candidates.map((candidate) => [candidate.title, candidate.category, candidate.iconName, candidate.isCategory]));
-    if (signature === lastSignature) {
-      return candidates.length > 0 ? candidates : collectGlobalTreeCandidates(studioFrame);
-    }
-    lastSignature = signature;
-  }
-
-  const candidates = await collectInsertPaneCandidates(studioFrame);
-  return candidates.length > 0 ? candidates : collectGlobalTreeCandidates(studioFrame);
-}
-
-async function collectInsertPaneCandidates(studioFrame: Frame): Promise<InsertPaneCandidate[]> {
-  return evaluateTreeItemCandidates(getInsertPaneRoot(studioFrame).locator('[role="treeitem"]'));
-}
-
-async function collectGlobalTreeCandidates(studioFrame: Frame): Promise<InsertPaneCandidate[]> {
-  return evaluateTreeItemCandidates(studioFrame.locator('[role="treeitem"]'));
-}
-
-async function evaluateTreeItemCandidates(locator: Locator): Promise<InsertPaneCandidate[]> {
-  return locator.evaluateAll((nodes) => {
-    let currentCategory = '';
-
-    return nodes
-      .map((node, index) => {
-        const categoryNode = node.querySelector('[class*="itemCategoryLabel"]');
-        const title = node.getAttribute('title') || node.getAttribute('aria-label') || '';
-        const text = (node.textContent ?? '').replace(/\s+/g, ' ').trim();
-        const iconName = node.querySelector('[data-icon-name]')?.getAttribute('data-icon-name') || undefined;
-        const isCategory = Boolean(categoryNode) || iconName === 'ChevronRight';
-        const category = isCategory ? undefined : currentCategory;
-
-        if (isCategory && title) {
-          currentCategory = title;
-        }
-
-        return {
-          index,
-          title,
-          text,
-          category,
-          iconName,
-          isCategory,
-        };
-      })
-      .filter((item) => item.title || item.text);
-  });
-}
-
-function getInsertPaneRoot(studioFrame: Frame): Locator {
-  return studioFrame.locator('[aria-label="Navigational side bar"]').first();
-}
-
-async function isInsertPaneReady(pane: Locator, search: Locator): Promise<boolean> {
-  const paneVisible = await pane.isVisible({ timeout: 500 }).catch(() => false);
-  const searchVisible = await search.isVisible({ timeout: 500 }).catch(() => false);
-
-  if (!paneVisible || !searchVisible) {
-    return false;
-  }
-
-  const paneText = ((await pane.textContent().catch(() => '')) ?? '').replace(/\s+/g, ' ').trim();
-  return paneText.includes('Insert') || paneText.includes('Recommended') || paneText.includes('Found ');
-}
-
-async function findAttachedTitledLocator(studioFrame: Frame, title: string, timeoutMs: number): Promise<Locator> {
-  const deadline = Date.now() + timeoutMs;
-  const locator = studioFrame.locator(`[title="${title}"]`);
-
-  while (Date.now() < deadline) {
-    const count = await locator.count().catch(() => 0);
-    if (count > 0) {
-      return locator.first();
-    }
-
-    await studioFrame.page().waitForTimeout(500);
-  }
-
-  throw new Error(`Timed out waiting for an attached element titled ${title}.`);
-}
-
-async function refocusScreenAndFindTarget(studioFrame: Frame, containerName: string, timeoutMs: number): Promise<Locator> {
-  const screen = await findAttachedTitledLocator(studioFrame, 'Screen1', timeoutMs);
-  await screen.click({ timeout: 5000, force: true });
-  await studioFrame.page().waitForTimeout(1000);
-
-  return (
-    (await findAttachedTitledLocator(studioFrame, containerName, Math.min(timeoutMs, 5000)).catch(() => undefined)) ??
-    screen
   );
 }
 
-async function saveAndPublish(page: Page, studioFrame: Frame, publish: boolean, settleMs: number): Promise<void> {
-  await clickAny([
-    studioFrame.locator('#commandBar_save'),
-    studioFrame.getByRole('button', { name: /Save/i }),
-    studioFrame.getByRole('menuitem', { name: /Save/i }),
-  ]);
-  await page.waitForTimeout(Math.max(settleMs, 8000));
+async function saveAndPublish(studioFrame: Frame, publish: boolean, timeoutMs: number, settleMs: number): Promise<void> {
+  await dismissStudioOverlays(studioFrame);
+  process.stdout.write('Saving app...\n');
+  await evaluateStudioRuntime<void, { timeoutMs: number }>(studioFrame, SAVE_RUNTIME_SCRIPT, { timeoutMs });
+  await studioFrame.page().waitForTimeout(settleMs);
 
   if (!publish) {
     return;
   }
 
-  await clickAny([
-    studioFrame.locator('#commandBar_publish'),
-    studioFrame.getByRole('button', { name: /Publish/i }),
-    studioFrame.getByRole('menuitem', { name: /Publish/i }),
-    studioFrame.getByText(/Publish this version/i).first(),
-  ]);
-  await page.waitForTimeout(3000);
-  await clickAny([
-    studioFrame.locator('#commandBar_publish'),
-    studioFrame.getByRole('button', { name: /Publish/i }),
-    studioFrame.getByRole('button', { name: /Confirm/i }),
-  ]);
-  await page.waitForTimeout(Math.max(settleMs * 2, 10000));
-}
-
-async function clickAny(locators: Locator[]): Promise<boolean> {
-  for (const locator of locators) {
-    const candidate = locator.first();
-
-    try {
-      if (await candidate.isVisible({ timeout: 1000 })) {
-        await candidate.click({ timeout: 5000 });
-        return true;
-      }
-    } catch {
-      // Try the next locator.
-    }
-  }
-
-  return false;
+  await dismissStudioOverlays(studioFrame);
+  process.stdout.write('Publishing app...\n');
+  await evaluateStudioRuntime<void, { timeoutMs: number }>(studioFrame, PUBLISH_RUNTIME_SCRIPT, { timeoutMs });
+  await studioFrame.page().waitForTimeout(Math.max(settleMs, 5000));
 }
 
 async function waitForStudio(page: Page, timeoutMs: number): Promise<Frame> {
   const deadline = Date.now() + timeoutMs;
+  let lastStatus: StudioRuntimeStatus | undefined;
 
   while (Date.now() < deadline) {
     const frame = page.frames().find((candidate) => candidate.name() === 'EmbeddedStudio');
     if (frame) {
-      const ready = await frame.locator('[title="Screen1"]').first().isVisible({ timeout: 1000 }).catch(() => false);
-      if (ready) {
+      await dismissStudioOverlays(frame);
+      lastStatus = await inspectStudioRuntime(frame);
+      if (lastStatus.ready) {
         return frame;
       }
     }
@@ -582,22 +643,113 @@ async function waitForStudio(page: Page, timeoutMs: number): Promise<Frame> {
     await page.waitForTimeout(1000);
   }
 
-  throw new Error('Timed out waiting for EmbeddedStudio frame.');
+  throw new Error(
+    `Timed out waiting for Power Apps Studio to become ready. ` +
+      `Last status: ${lastStatus ? JSON.stringify(lastStatus) : 'no EmbeddedStudio frame found'}.`
+  );
 }
 
-async function dismissStudioOverlays(studioFrame: Frame): Promise<void> {
+async function inspectStudioRuntime(studioFrame: Frame): Promise<StudioRuntimeStatus> {
+  const domReadOnly =
+    (await studioFrame
+      .getByText(/read-only because you already have editing control elsewhere/i)
+      .first()
+      .isVisible({ timeout: 200 })
+      .catch(() => false)) ||
+    (await studioFrame.getByRole('button', { name: /^Override$/i }).first().isVisible({ timeout: 200 }).catch(() => false));
+
+  if (domReadOnly) {
+    return {
+      ready: false,
+      reason: 'read-only-lock',
+      initialized: false,
+      hasShell: false,
+      hasDocument: false,
+      hasPaste: false,
+      hasControlGallery: false,
+      hasSaveManager: false,
+      hasPublish: false,
+      hasScreen1: false,
+    };
+  }
+
+  return evaluateStudioRuntime<StudioRuntimeStatus, undefined>(studioFrame, INSPECT_STUDIO_RUNTIME_SCRIPT, undefined);
+}
+
+async function dismissStudioOverlays(studioFrame: Frame): Promise<boolean> {
+  let clickedAny = false;
+
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const clicked =
-      (await studioFrame.getByRole('button', { name: /^Skip$/i }).first().click({ timeout: 1000 }).then(() => true).catch(() => false)) ||
-      (await studioFrame.getByRole('button', { name: /^Override$/i }).first().click({ timeout: 1000 }).then(() => true).catch(() => false)) ||
-      (await studioFrame.getByRole('button', { name: /^Got it$/i }).first().click({ timeout: 1000 }).then(() => true).catch(() => false));
+    const clicked = await clickAny(
+      studioFrame,
+      [/^Skip$/i, /^Got it$/i, /^Dismiss$/i, /^Done$/i, /^Override$/i, /^Continue$/i, /^Accept$/i],
+      750
+    );
 
     if (!clicked) {
-      return;
+      return clickedAny;
     }
 
+    clickedAny = true;
     await studioFrame.page().waitForTimeout(1500);
   }
+
+  return clickedAny;
+}
+
+async function clickAny(studioFrame: Frame, labels: RegExp[], timeoutMs: number): Promise<boolean> {
+  for (const label of labels) {
+    const locator = studioFrame.getByRole('button', { name: label }).first();
+    if (await locator.isVisible({ timeout: 100 }).catch(() => false)) {
+      await locator.click({ timeout: timeoutMs, force: true }).catch(() => undefined);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function pasteYamlViaRuntime(studioFrame: Frame, yaml: string, timeoutMs: number, description: string): Promise<void> {
+  const result = await evaluateStudioRuntime<{ pasted: boolean }, { yaml: string; timeoutMs: number }>(
+    studioFrame,
+    PASTE_YAML_RUNTIME_SCRIPT,
+    {
+      yaml,
+      timeoutMs,
+    }
+  );
+
+  if (!result.pasted) {
+    throw new Error(`Studio runtime declined to paste ${description}.`);
+  }
+}
+
+async function selectTargetScreen(studioFrame: Frame, targetScreenName: string, timeoutMs: number): Promise<void> {
+  const candidates = [targetScreenName, 'Screen1'];
+  for (const candidateName of candidates) {
+    const locator = studioFrame.locator(`[title="${candidateName}"]`).first();
+    if (await locator.isVisible({ timeout: 250 }).catch(() => false)) {
+      await locator.click({ timeout: Math.min(timeoutMs, 5000), force: true });
+      await studioFrame.page().waitForTimeout(500);
+      return;
+    }
+  }
+
+  throw new Error(`Could not find target screen ${targetScreenName} or Screen1 in Studio.`);
+}
+
+async function waitForTitledElement(studioFrame: Frame, title: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  const locator = studioFrame.locator(`[title="${title}"]`).first();
+
+  while (Date.now() < deadline) {
+    if (await locator.isVisible({ timeout: 200 }).catch(() => false)) {
+      return;
+    }
+    await studioFrame.page().waitForTimeout(500);
+  }
+
+  throw new Error(`Timed out waiting for ${title} to appear in Studio.`);
 }
 
 function normalizeStudioYaml(content: string): string {
@@ -643,15 +795,12 @@ function describeStudioYaml(content: string, fallbackFileName: string): StudioYa
   };
 }
 
-async function grantClipboardPermissions(page: Page): Promise<void> {
-  const origin = new URL(page.url()).origin;
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
-    origin,
-  });
+function resolveTargetScreenName(fixtureContainerName: string): string {
+  return /^screen/i.test(fixtureContainerName) ? fixtureContainerName : 'Screen1';
 }
 
-async function pasteShortcut(page: Page): Promise<void> {
-  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+V`);
+function formatPlanQuery(plan: Extract<CanvasStudioInsertPlan, { kind: 'add' }>): string {
+  return `${plan.template}${plan.variant ? `:${plan.variant}` : ''}${plan.composite ? ':composite' : ''}`;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -660,12 +809,40 @@ function parseArgs(argv: string[]): Options {
     return index >= 0 ? argv[index + 1] : undefined;
   };
   const has = (flag: string): boolean => argv.includes(flag);
+  const readPositiveInteger = (flag: string): number | undefined => {
+    const value = read(flag);
+    if (!value) {
+      return undefined;
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      throw new Error(`Invalid ${flag} value: ${value}. Expected a positive integer.`);
+    }
+
+    return parsed;
+  };
   const studioUrl = read('--studio-url');
   const browserProfileDir = read('--browser-profile-dir');
   const yamlDir = read('--yaml-dir');
+  const catalogJson = read('--catalog-json');
+  const catalogResumeReport = read('--catalog-resume-report');
+  const catalogFamily = readCatalogFamilyArg(read('--catalog-family'));
+  const catalogStartAt = read('--catalog-start-at');
+  const catalogLimit = readPositiveInteger('--catalog-limit');
 
   if (!studioUrl || !browserProfileDir || !yamlDir) {
     throw new Error('--studio-url, --browser-profile-dir, and --yaml-dir are required.');
+  }
+
+  if (!catalogJson && (catalogResumeReport || catalogFamily || catalogStartAt || catalogLimit)) {
+    throw new Error('--catalog-resume-report, --catalog-family, --catalog-start-at, and --catalog-limit require --catalog-json.');
+  }
+
+  if (catalogResumeReport && (has('--include-retired') || catalogFamily || catalogStartAt || catalogLimit)) {
+    throw new Error(
+      '--catalog-resume-report cannot be combined with --include-retired, --catalog-family, --catalog-start-at, or --catalog-limit.'
+    );
   }
 
   return {
@@ -674,22 +851,30 @@ function parseArgs(argv: string[]): Options {
     yamlDir,
     timeoutMs: Number(read('--timeout-ms') ?? '120000'),
     publish: !has('--skip-publish'),
-    catalogJson: read('--catalog-json'),
+    catalogJson,
+    catalogResumeReport,
     fixtureContainerName: read('--fixture-container-name') ?? 'HarvestFixtureContainer',
     insertReportPath: read('--insert-report'),
     includeRetired: has('--include-retired'),
+    catalogFamily,
+    catalogStartAt,
+    catalogLimit,
     settleMs: Number(read('--settle-ms') ?? '4000'),
     debug: has('--debug'),
     slowMoMs: Number(read('--slow-mo-ms') ?? '250'),
   };
 }
 
-function makeCatalogKey(family: CanvasControlCatalogEntry['family'], name: string): string {
-  return `${family}:${normalizeLabel(name)}`;
-}
+function readCatalogFamilyArg(value: string | undefined): 'classic' | 'modern' | undefined {
+  if (!value) {
+    return undefined;
+  }
 
-function normalizeLabel(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (value === 'classic' || value === 'modern') {
+    return value;
+  }
+
+  throw new Error(`Invalid --catalog-family value: ${value}. Expected classic or modern.`);
 }
 
 void main().catch((error) => {

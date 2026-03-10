@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildColumnCreatePayload,
+  buildCustomerRelationshipCreatePayload,
+  buildManyToManyRelationshipCreatePayload,
   buildOneToManyRelationshipCreatePayload,
   buildTableCreatePayload,
   parseColumnCreateSpec,
+  parseGlobalOptionSetUpdateSpec,
   parseTableCreateSpec,
 } from './metadata-create';
 
@@ -41,6 +44,25 @@ describe('metadata-create specs', () => {
 
     expect(result.success).toBe(false);
     expect(result.diagnostics[0]?.code).toBe('DATAVERSE_METADATA_COLUMN_SPEC_INVALID');
+  });
+
+  it('parses global option set update operations', () => {
+    const result = parseGlobalOptionSetUpdateSpec({
+      name: 'pp_status',
+      add: [{ label: 'Paused' }],
+      update: [{ value: 100000000, label: 'New', mergeLabels: false }],
+      removeValues: [100000009],
+      orderValues: [100000000, 100000001],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      name: 'pp_status',
+      add: [{ label: 'Paused' }],
+      update: [{ value: 100000000, label: 'New', mergeLabels: false }],
+      removeValues: [100000009],
+      orderValues: [100000000, 100000001],
+    });
   });
 });
 
@@ -95,15 +117,65 @@ describe('metadata-create payloads', () => {
     expect(payload.OptionSet).toBeUndefined();
   });
 
+  it('builds an autonumber column payload', () => {
+    const payload = buildColumnCreatePayload({
+      kind: 'autonumber',
+      schemaName: 'pp_ProjectNumber',
+      displayName: 'Project Number',
+      autoNumberFormat: 'PROJ-{SEQNUM:6}',
+      maxLength: 20,
+    });
+
+    expect(payload).toMatchObject({
+      '@odata.type': 'Microsoft.Dynamics.CRM.StringAttributeMetadata',
+      SchemaName: 'pp_ProjectNumber',
+      LogicalName: 'pp_projectnumber',
+      AutoNumberFormat: 'PROJ-{SEQNUM:6}',
+      MaxLength: 20,
+    });
+  });
+
+  it('builds file and image column payloads', () => {
+    const filePayload = buildColumnCreatePayload({
+      kind: 'file',
+      schemaName: 'pp_Specification',
+      displayName: 'Specification',
+      maxSizeInKB: 10240,
+    });
+    const imagePayload = buildColumnCreatePayload({
+      kind: 'image',
+      schemaName: 'pp_Thumbnail',
+      displayName: 'Thumbnail',
+      maxSizeInKB: 5120,
+      canStoreFullImage: true,
+    });
+
+    expect(filePayload).toMatchObject({
+      '@odata.type': 'Microsoft.Dynamics.CRM.FileAttributeMetadata',
+      AttributeTypeName: { Value: 'FileType' },
+      MaxSizeInKB: 10240,
+    });
+    expect(imagePayload).toMatchObject({
+      '@odata.type': 'Microsoft.Dynamics.CRM.ImageAttributeMetadata',
+      AttributeTypeName: { Value: 'ImageType' },
+      MaxSizeInKB: 5120,
+      CanStoreFullImage: true,
+    });
+  });
+
   it('builds a one-to-many relationship payload with a lookup definition', () => {
     const payload = buildOneToManyRelationshipCreatePayload({
       schemaName: 'pp_project_account',
       referencedEntity: 'account',
+      referencedAttribute: 'id',
       referencingEntity: 'pp_project',
       lookup: {
         schemaName: 'pp_AccountId',
         displayName: 'Account',
       },
+      associatedMenuBehavior: 'useCollectionName',
+      associatedMenuGroup: 'details',
+      associatedMenuOrder: 10000,
     });
 
     expect(payload).toMatchObject({
@@ -118,5 +190,55 @@ describe('metadata-create payloads', () => {
       SchemaName: 'pp_AccountId',
       LogicalName: 'pp_accountid',
     });
+  });
+
+  it('builds a many-to-many relationship payload', () => {
+    const payload = buildManyToManyRelationshipCreatePayload({
+      schemaName: 'pp_project_contact',
+      entity1LogicalName: 'pp_project',
+      entity2LogicalName: 'contact',
+      entity1Menu: {
+        label: 'Contacts',
+        behavior: 'useCollectionName',
+        group: 'details',
+        order: 10000,
+      },
+    });
+
+    expect(payload).toMatchObject({
+      '@odata.type': 'Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata',
+      SchemaName: 'pp_project_contact',
+      Entity1LogicalName: 'pp_project',
+      Entity2LogicalName: 'contact',
+      IntersectEntityName: 'pp_project_contact',
+    });
+  });
+
+  it('builds a customer relationship action payload', () => {
+    const payload = buildCustomerRelationshipCreatePayload({
+      tableLogicalName: 'pp_project',
+      lookup: {
+        schemaName: 'pp_CustomerId',
+        displayName: 'Customer',
+      },
+      accountReferencedAttribute: 'id',
+      contactReferencedAttribute: 'id',
+    });
+
+    expect(payload.Lookup).toMatchObject({
+      '@odata.type': 'Microsoft.Dynamics.CRM.ComplexLookupAttributeMetadata',
+      SchemaName: 'pp_CustomerId',
+      LogicalName: 'pp_customerid',
+    });
+    expect(payload.OneToManyRelationships).toMatchObject([
+      {
+        ReferencedEntity: 'account',
+        ReferencingEntity: 'pp_project',
+      },
+      {
+        ReferencedEntity: 'contact',
+        ReferencingEntity: 'pp_project',
+      },
+    ]);
   });
 });

@@ -19,6 +19,9 @@ The committed fixtures currently cover:
   including topology resolution, provider bindings, parameter sourcing, and
   missing-input visibility
 - canvas template import, inspect, validate, build, and diff outputs
+- unpacked canvas-app `.pa.yaml` source loading, property validation, native
+  `.msapp` packaging, and extracted package-content snapshots from a committed
+  source-root fixture
 - canvas formula-heavy happy-path packaging that carries data-source-, entity-,
   column-, and option-set-like Power Fx strings through inspect, validate, and
   build snapshots
@@ -36,7 +39,7 @@ The committed fixtures currently cover:
 - solution list, inspect, components, dependencies, analysis, and source-vs-target comparison outputs from committed Dataverse-like fixtures
 - model-driven app list, inspect, sitemap, forms, views, and dependency outputs from committed Dataverse-like fixtures
 - CLI contract rendering for structured outputs, machine-friendly failures, warning streams, and dry-run/plan mutation previews
-- CLI protocol outputs from the real command router for representative table, YAML, NDJSON, and human-readable failure paths over committed fixture workflows
+- CLI protocol outputs from the real command router for representative table, YAML, NDJSON, and human-readable paths over committed fixture workflows, including stderr diagnostic envelopes for project discovery and invalid canvas/flow validation slices
 - CLI workflows that drive those same local fixture paths end to end, including dry-run and plan previews for supported canvas and flow mutation commands plus model inspection workflows
 
 Run the focused lane:

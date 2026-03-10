@@ -144,6 +144,8 @@ const browserProfileSchema = z.object({
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
   directory: z.string().optional(),
+  lastBootstrapUrl: z.string().url().optional(),
+  lastBootstrappedAt: z.string().datetime().optional(),
 });
 
 const storedAuthProfileSchema = z.discriminatedUnion('type', [

@@ -1,4 +1,5 @@
-import { access, mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,6 +22,134 @@ async function createTempDir(): Promise<string> {
   return path;
 }
 
+async function writeUnpackedCanvasFixture(
+  root: string,
+  options: {
+    name: string;
+    screenYaml: string;
+    registry: Record<string, unknown>;
+  }
+): Promise<string> {
+  const appRoot = join(root, options.name);
+  await mkdir(join(appRoot, 'Src'), { recursive: true });
+  await mkdir(join(appRoot, 'Controls'), { recursive: true });
+  await mkdir(join(appRoot, 'References'), { recursive: true });
+  await mkdir(join(appRoot, 'Resources'), { recursive: true });
+
+  await writeFile(
+    join(appRoot, 'Src', 'App.pa.yaml'),
+    ['App:', '  Properties:', '    Theme: =PowerAppsTheme', ''].join('\n'),
+    'utf8'
+  );
+  await writeFile(join(appRoot, 'Src', 'Screen1.pa.yaml'), options.screenYaml, 'utf8');
+  await writeFile(
+    join(appRoot, 'Src', '_EditorState.pa.yaml'),
+    ['EditorState:', '  ScreensOrder:', '    - Screen1', ''].join('\n'),
+    'utf8'
+  );
+  await writeFile(
+    join(appRoot, 'Header.json'),
+    JSON.stringify(
+      {
+        DocVersion: '1.349',
+        MinVersionToLoad: '1.349',
+        MSAppStructureVersion: '2.4.0',
+        LastSavedDateTimeUTC: '03/10/2026 00:00:00',
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  await writeFile(join(appRoot, 'Properties.json'), JSON.stringify({ AppVersion: '1.0.0' }, null, 2), 'utf8');
+  await writeFile(
+    join(appRoot, 'Controls', '1.json'),
+    JSON.stringify(
+      {
+        TopParent: {
+          Name: 'App',
+        },
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  await writeFile(
+    join(appRoot, 'References', 'DataSources.json'),
+    JSON.stringify(
+      {
+        DataSources: [
+          {
+            Name: 'Accounts',
+            Type: 'Table',
+            DatasetName: 'default.cds',
+            EntityName: 'account',
+          },
+        ],
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  await writeFile(join(appRoot, 'References', 'Themes.json'), JSON.stringify({ CurrentTheme: 'defaultTheme' }, null, 2), 'utf8');
+  await writeFile(join(appRoot, 'Resources', 'PublishInfo.json'), JSON.stringify({ published: false }, null, 2), 'utf8');
+  await writeFile(join(appRoot, 'controls.json'), JSON.stringify(options.registry, null, 2), 'utf8');
+
+  return appRoot;
+}
+
+function createClassicButtonRegistry(): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    templates: [
+      {
+        templateName: 'Button',
+        templateVersion: '2.2.0',
+        aliases: {
+          constructors: ['Classic/Button'],
+        },
+        files: {
+          'References/Templates.json': {
+            name: 'Button',
+            version: '2.2.0',
+            templateXml: [
+              '<widget xmlns="http://openajax.org/metadata" xmlns:appMagic="http://schemas.microsoft.com/appMagic" id="http://microsoft.com/appmagic/button" name="button" version="2.2.0">',
+              '  <properties>',
+              '    <property name="Text" datatype="String" defaultValue="&quot;Button&quot;" isExpr="true">',
+              '      <appMagic:category>data</appMagic:category>',
+              '    </property>',
+              '    <property name="OnSelect" datatype="Behavior" defaultValue="" isExpr="true">',
+              '      <appMagic:category>behavior</appMagic:category>',
+              '    </property>',
+              '  </properties>',
+              '  <appMagic:includeProperties>',
+              '    <appMagic:includeProperty name="X" defaultValue="0" />',
+              '    <appMagic:includeProperty name="Y" defaultValue="0" />',
+              '    <appMagic:includeProperty name="Width" defaultValue="120" />',
+              '    <appMagic:includeProperty name="Height" defaultValue="40" />',
+              '  </appMagic:includeProperties>',
+              '</widget>',
+            ].join(''),
+          },
+        },
+        provenance: {
+          source: 'test-registry',
+        },
+      },
+    ],
+    supportMatrix: [
+      {
+        templateName: 'Button',
+        version: '2.2.0',
+        status: 'supported',
+        modes: ['strict', 'registry'],
+      },
+    ],
+  };
+}
+
 function normalizeCliSnapshot<T>(value: T, ...tempPaths: string[]): T {
   return mapSnapshotStrings(value, (entry) => {
     let normalized = entry.replaceAll(repoRoot, '<REPO_ROOT>').replaceAll('\\', '/');
@@ -37,6 +166,30 @@ function normalizeCliAnalysisSnapshot<T>(value: T): T {
   return mapSnapshotStrings(normalizeCliSnapshot(value), (entry) =>
     entry.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, '<GENERATED_AT>')
   );
+}
+
+async function unzipCanvasPackage(packagePath: string, root: string): Promise<string> {
+  const unzipDir = join(root, 'unzipped');
+  await mkdir(unzipDir, { recursive: true });
+  const unzipResult = spawnSync('unzip', ['-o', packagePath, '-d', unzipDir], {
+    encoding: 'utf8',
+  });
+
+  expect(unzipResult.status).toBe(0);
+  return unzipDir;
+}
+
+function normalizeNativeHeaderSnapshot<T>(value: T): T {
+  const normalized = normalizeCliSnapshot(value);
+
+  if (typeof normalized !== 'object' || normalized === null || !('LastSavedDateTimeUTC' in normalized)) {
+    return normalized;
+  }
+
+  return {
+    ...(normalized as Record<string, unknown>),
+    LastSavedDateTimeUTC: '<LAST_SAVED_DATE_TIME_UTC>',
+  } as T;
 }
 
 interface FlowRuntimeFixture {
@@ -124,13 +277,9 @@ describe('cli fixture-backed workflows', () => {
     });
 
     expect(projectInspect.code).toBe(0);
-    expect(projectInspect.stderr).toBe('');
     expect(report.code).toBe(0);
-    expect(report.stderr).toBe('');
     expect(context.code).toBe(0);
-    expect(context.stderr).toBe('');
     expect(deployPlan.code).toBe(0);
-    expect(deployPlan.stderr).toBe('');
 
     await expectGoldenJson(JSON.parse(projectInspect.stdout), 'fixtures/analysis/golden/project-inspect.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
@@ -144,6 +293,10 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(deployPlan.stdout), 'fixtures/analysis/golden/deploy-plan.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
     });
+    await expectGoldenJson(JSON.parse(projectInspect.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
+    await expectGoldenText(report.stderr, 'fixtures/cli/golden/protocol/project-discovery-diagnostics.raw.txt');
+    await expectGoldenJson(JSON.parse(context.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
+    await expectGoldenJson(JSON.parse(deployPlan.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
   });
 
   it('covers real CLI protocol outputs for representative success paths', async () => {
@@ -184,6 +337,7 @@ describe('cli fixture-backed workflows', () => {
 
     const inspect = await runCli(['canvas', 'inspect', baseAppPath, '--mode', 'strict', '--registry', registryPath, '--format', 'json']);
     const validate = await runCli(['canvas', 'validate', baseAppPath, '--mode', 'strict', '--registry', registryPath, '--format', 'json']);
+    const lint = await runCli(['canvas', 'lint', baseAppPath, '--mode', 'strict', '--registry', registryPath, '--format', 'json']);
     const build = await runCli(['canvas', 'build', baseAppPath, '--mode', 'strict', '--registry', registryPath, '--out', outPath, '--format', 'json']);
     const diff = await runCli(['canvas', 'diff', baseAppPath, changedAppPath, '--format', 'json']);
 
@@ -191,6 +345,9 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.stderr).toBe('');
     expect(validate.code).toBe(0);
     expect(validate.stderr).toBe('');
+    expect(lint.code).toBe(0);
+    expect(lint.stderr).toBe('');
+    expect(lint.stdout).toBe(validate.stdout);
     expect(build.code).toBe(0);
     expect(build.stderr).toBe('');
     expect(diff.code).toBe(0);
@@ -211,6 +368,126 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(diff.stdout), 'fixtures/canvas/golden/diff-report.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
+  });
+
+  it('covers unpacked .pa.yaml canvas roots through inspect, validate, and native build', async () => {
+    const tempDir = await createTempDir();
+    const registry = createClassicButtonRegistry();
+    const validAppPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'native-app');
+    const validRegistryPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'native-app', 'controls.json');
+    const outPath = join(tempDir, 'dist', 'NativeCanvas.msapp');
+
+    const inspect = await runCli([
+      'canvas',
+      'inspect',
+      validAppPath,
+      '--mode',
+      'strict',
+      '--registry',
+      validRegistryPath,
+      '--format',
+      'json',
+    ]);
+    const validate = await runCli([
+      'canvas',
+      'validate',
+      validAppPath,
+      '--mode',
+      'strict',
+      '--registry',
+      validRegistryPath,
+      '--format',
+      'json',
+    ]);
+    const build = await runCli([
+      'canvas',
+      'build',
+      validAppPath,
+      '--mode',
+      'strict',
+      '--registry',
+      validRegistryPath,
+      '--out',
+      outPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(validate.code).toBe(0);
+    expect(validate.stderr).toBe('');
+    expect(build.code).toBe(0);
+    expect(build.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/canvas/golden/native/inspect-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/canvas/golden/native/validation-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(build.stdout), 'fixtures/cli/golden/protocol/canvas-native-build.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+
+    const unzipDir = await unzipCanvasPackage(outPath, tempDir);
+    await expectGoldenJson(JSON.parse(await readFile(join(unzipDir, 'References', 'Templates.json'), 'utf8')), 'fixtures/canvas/golden/native/package-templates.json');
+    await expectGoldenJson(JSON.parse(await readFile(join(unzipDir, 'Controls', '4.json'), 'utf8')), 'fixtures/canvas/golden/native/package-screen-control.json');
+    await expectGoldenJson(JSON.parse(await readFile(join(unzipDir, 'Header.json'), 'utf8')), 'fixtures/canvas/golden/native/package-header.json', {
+      normalize: (value) => normalizeNativeHeaderSnapshot(value),
+    });
+    await expectGoldenText(await readFile(join(unzipDir, 'Src', '_EditorState.pa.yaml'), 'utf8'), 'fixtures/canvas/golden/native/package-editor-state.pa.yaml');
+
+    const invalidAppPath = await writeUnpackedCanvasFixture(tempDir, {
+      name: 'YamlCanvasInvalid',
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Save"',
+        '            InvalidThing: =1',
+        '',
+      ].join('\n'),
+      registry,
+    });
+    const invalidRegistryPath = join(invalidAppPath, 'controls.json');
+    const invalidValidate = await runCli([
+      'canvas',
+      'validate',
+      invalidAppPath,
+      '--mode',
+      'strict',
+      '--registry',
+      invalidRegistryPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(invalidValidate.code).toBe(1);
+
+    const invalidReport = JSON.parse(invalidValidate.stdout) as {
+      valid: boolean;
+      propertyChecks?: Array<{ controlPath: string; property: string; valid: boolean; source?: string }>;
+    };
+    const invalidDiagnostics = JSON.parse(invalidValidate.stderr) as {
+      diagnostics: Array<{ code: string }>;
+    };
+
+    expect(invalidReport.valid).toBe(false);
+    expect(invalidReport.propertyChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          controlPath: 'Screen1/Button1',
+          property: 'InvalidThing',
+          valid: false,
+          source: 'templateXml',
+        }),
+      ])
+    );
+    expect(invalidDiagnostics.diagnostics.some((diagnostic) => diagnostic.code === 'CANVAS_CONTROL_PROPERTY_INVALID')).toBe(true);
   });
 
   it('covers dry-run and plan previews for canvas and flow mutation commands without side effects', async () => {
@@ -391,9 +668,7 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(inspect.code).toBe(0);
-    expect(inspect.stderr).toBe('');
     expect(validate.code).toBe(1);
-    expect(validate.stderr).toBe('');
     expect(build.code).toBe(1);
     expect(build.stdout).toBe('');
 
@@ -406,6 +681,8 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(build.stderr), 'fixtures/canvas/golden/semantic/cli-build-failure.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
+    await expectGoldenJson(JSON.parse(inspect.stderr), 'fixtures/cli/golden/protocol/canvas-semantic-diagnostics.json');
+    await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/canvas-semantic-diagnostics.json');
   });
 
   it('covers real CLI failure protocol outputs for fixture-backed canvas and flow diagnostics', async () => {
@@ -448,26 +725,26 @@ describe('cli fixture-backed workflows', () => {
     const flowValidateYaml = await runCli(['flow', 'validate', flowArtifactPath, '--format', 'yaml']);
 
     expect(canvasValidate.code).toBe(1);
-    expect(canvasValidate.stderr).toBe('');
     expect(canvasBuild.code).toBe(1);
     expect(canvasBuild.stdout).toBe('');
     expect(flowValidateTable.code).toBe(1);
-    expect(flowValidateTable.stderr).toBe('');
     expect(flowValidateYaml.code).toBe(1);
-    expect(flowValidateYaml.stderr).toBe('');
 
     await expectGoldenText(canvasValidate.stdout, 'fixtures/cli/golden/protocol/canvas-validate-failure.table.txt', {
       normalize: (value) => normalizeCliSnapshot(value),
     });
+    await expectGoldenText(canvasValidate.stderr, 'fixtures/cli/golden/protocol/canvas-validate-diagnostics.table.txt');
     await expectGoldenText(canvasBuild.stderr, 'fixtures/cli/golden/protocol/canvas-build-failure.raw.txt', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
     await expectGoldenText(flowValidateTable.stdout, 'fixtures/cli/golden/protocol/flow-validate-failure.table.txt', {
       normalize: (value) => normalizeCliSnapshot(value),
     });
+    await expectGoldenText(flowValidateTable.stderr, 'fixtures/cli/golden/protocol/flow-validate-diagnostics.table.txt');
     await expectGoldenText(flowValidateYaml.stdout, 'fixtures/cli/golden/protocol/flow-validate-failure.yaml', {
       normalize: (value) => normalizeCliSnapshot(value),
     });
+    await expectGoldenText(flowValidateYaml.stderr, 'fixtures/cli/golden/protocol/flow-validate-diagnostics.yaml');
   });
 
   it('covers seeded-only and registry-only canvas mode failures through the CLI entrypoint', async () => {
@@ -550,16 +827,12 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(seededInspect.code).toBe(0);
-    expect(seededInspect.stderr).toBe('');
     expect(seededValidate.code).toBe(1);
-    expect(seededValidate.stderr).toBe('');
     expect(seededBuild.code).toBe(1);
     expect(seededBuild.stdout).toBe('');
 
     expect(registryInspect.code).toBe(0);
-    expect(registryInspect.stderr).toBe('');
     expect(registryValidate.code).toBe(1);
-    expect(registryValidate.stderr).toBe('');
     expect(registryBuild.code).toBe(1);
     expect(registryBuild.stdout).toBe('');
 
@@ -572,6 +845,8 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(seededBuild.stderr), 'fixtures/canvas/golden/modes/cli-seeded-build-failure.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
+    await expectGoldenJson(JSON.parse(seededInspect.stderr), 'fixtures/cli/golden/protocol/canvas-seeded-diagnostics.json');
+    await expectGoldenJson(JSON.parse(seededValidate.stderr), 'fixtures/cli/golden/protocol/canvas-seeded-diagnostics.json');
 
     await expectGoldenJson(JSON.parse(registryInspect.stdout), 'fixtures/canvas/golden/modes/cli-registry-inspect-report.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
@@ -582,6 +857,8 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(registryBuild.stderr), 'fixtures/canvas/golden/modes/cli-registry-build-failure.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
+    await expectGoldenJson(JSON.parse(registryInspect.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
+    await expectGoldenJson(JSON.parse(registryValidate.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
   });
 
   it('covers flow unpack, validate, patch, and normalize through the CLI entrypoint', async () => {
@@ -637,11 +914,11 @@ describe('cli fixture-backed workflows', () => {
     const validate = await runCli(['flow', 'validate', artifactPath, '--format', 'json']);
 
     expect(validate.code).toBe(1);
-    expect(validate.stderr).toBe('');
 
     await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/flow/golden/semantic/cli-validation-report.json', {
       normalize: (value) => normalizeCliSnapshot(value),
     });
+    await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/flow-validation-diagnostics.json');
   });
 
   it('covers remote flow runtime diagnostics through the CLI entrypoint', async () => {

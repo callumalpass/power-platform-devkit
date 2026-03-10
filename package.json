@@ -8,12 +8,16 @@
     "build": "pnpm -r --if-present build",
     "clean": "pnpm -r --if-present clean",
     "dev:cli": "pnpm --filter @pp/cli dev",
+    "fetch:canvas-catalog": "tsx scripts/fetch-canvas-control-catalog.ts",
+    "harvest:canvas": "tsx scripts/canvas-harvest.ts",
+    "smoke:live": "pnpm build && tsx scripts/smoke-live.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r --if-present typecheck"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "playwright-core": "^1.52.0",
     "tsup": "^8.4.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",

@@ -1,0 +1,1 @@
+ERROR PROJECT_PARAMETER_MISSING: Required project parameter sqlEndpoint is not resolved (hint=Set PP_SQL_ENDPOINT or provide an explicit value in the project config.)

@@ -2,6 +2,9 @@ import { stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
 import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type OperationResult, type ProvenanceClass } from '@pp/diagnostics';
+import { buildCanvasMsappFromUnpackedSource } from './msapp-build';
+import { type CanvasDataSourceSummary, loadCanvasPaYamlSource, resolveCanvasPaYamlRoot } from './pa-yaml';
+import { buildCanvasTemplateSurface } from './template-surface';
 
 export type CanvasBuildMode = 'strict' | 'seeded' | 'registry';
 export type CanvasSupportStatus = 'supported' | 'partial' | 'unsupported';
@@ -127,11 +130,14 @@ export interface CanvasControlDefinition {
   templateVersion: string;
   properties: Record<string, CanvasJsonValue>;
   children: CanvasControlDefinition[];
+  variantName?: string;
+  layoutName?: string;
 }
 
 export interface CanvasScreenDefinition {
   name: string;
   file: string;
+  properties?: Record<string, CanvasJsonValue>;
   controls: CanvasControlDefinition[];
 }
 
@@ -159,14 +165,36 @@ export interface CanvasTemplateUsageIssue {
 }
 
 export interface CanvasSourceModel {
+  kind?: 'json-manifest' | 'pa-yaml-unpacked';
   root: string;
   manifestPath: string;
   manifest: CanvasManifest;
+  appProperties?: Record<string, CanvasJsonValue>;
   screens: CanvasScreenDefinition[];
   controls: CanvasControlSummary[];
   templateRequirements: CanvasTemplateLookup[];
   sourceHash: string;
   seedRegistryPath?: string;
+  dataSources?: CanvasDataSourceSummary[];
+  editorStatePath?: string;
+  unpackedArtifacts?: {
+    headerPath?: string;
+    propertiesPath?: string;
+    appCheckerPath?: string;
+    appControlPath?: string;
+    controlsDir?: string;
+    referencesDir?: string;
+    resourcesDir?: string;
+  };
+}
+
+export interface CanvasPropertyCheck {
+  controlPath: string;
+  property: string;
+  templateName: string;
+  templateVersion: string;
+  valid: boolean;
+  source?: string;
 }
 
 export interface CanvasValidationReport {
@@ -183,10 +211,12 @@ export interface CanvasValidationReport {
     sourceHash: string;
     seedRegistryPath?: string;
   };
+  dataSources?: CanvasDataSourceSummary[];
   templateRequirements: CanvasTemplateRequirementResolution;
   unresolvedTemplates: CanvasTemplateUsageIssue[];
   unsupportedTemplates: CanvasTemplateUsageIssue[];
   formulas: CanvasFormulaCheck[];
+  propertyChecks?: CanvasPropertyCheck[];
   registries: CanvasRegistrySourceSummary[];
 }
 
@@ -482,6 +512,27 @@ export async function buildCanvasApp(
       contentHash: resolution.template.contentHash,
       matchedBy: resolution.matchedBy,
     }));
+  const outPath =
+    options.outPath ?? resolve(prepared.data.source.root, 'dist', `${prepared.data.source.manifest.name}.msapp`);
+
+  if (prepared.data.source.kind === 'pa-yaml-unpacked') {
+    const nativeBuild = await buildCanvasMsappFromUnpackedSource(
+      prepared.data.source,
+      prepared.data.report.templateRequirements,
+      outPath
+    );
+
+    if (!nativeBuild.success || !nativeBuild.data) {
+      return nativeBuild;
+    }
+
+    return ok(nativeBuild.data, {
+      supportTier: 'preview',
+      diagnostics: prepared.data.diagnostics,
+      warnings: prepared.data.warnings,
+    });
+  }
+
   const packagePayload = {
     schemaVersion: 1,
     kind: 'pp.canvas.package',
@@ -496,8 +547,6 @@ export async function buildCanvasApp(
     registries: prepared.data.report.registries,
     templates: resolvedTemplates,
   };
-  const outPath =
-    options.outPath ?? resolve(prepared.data.source.root, 'dist', `${prepared.data.source.manifest.name}.msapp`);
   const packageHash = sha256Hex(stringifyCanvasJson(packagePayload));
 
   await writeJsonFile(outPath, packagePayload as unknown as Parameters<typeof writeJsonFile>[1]);
@@ -614,6 +663,12 @@ export async function diffCanvasApps(leftPath: string, rightPath: string): Promi
 }
 
 export async function loadCanvasSource(path: string): Promise<OperationResult<CanvasSourceModel>> {
+  const paYamlRoot = await resolveCanvasPaYamlRoot(path);
+
+  if (paYamlRoot) {
+    return loadCanvasPaYamlSource(paYamlRoot);
+  }
+
   const manifestPath = await resolveCanvasManifestPath(path);
 
   if (!manifestPath.success || !manifestPath.data) {
@@ -676,6 +731,7 @@ export async function loadCanvasSource(path: string): Promise<OperationResult<Ca
 
   return ok(
     {
+      kind: 'json-manifest',
       root,
       manifestPath: manifestPath.data,
       manifest: manifest.data,
@@ -857,6 +913,8 @@ async function prepareCanvasValidation(
     registry: registry.data,
   });
   const formulas = collectFormulaChecks(source.data.screens);
+  const propertyChecks = collectPropertyChecks(source.data, templateRequirements);
+  const invalidPropertyChecks = propertyChecks.filter((property) => !property.valid);
   const unresolvedTemplates = collectUnresolvedTemplateIssues(source.data, templateRequirements);
   const unsupportedTemplates = collectUnsupportedTemplateIssues(source.data, templateRequirements, mode);
   const diagnostics = [
@@ -872,6 +930,18 @@ async function prepareCanvasValidation(
           `Formula property ${formula.property} on ${formula.controlPath} must be a string in the supported canvas slice.`,
           {
             source: '@pp/canvas',
+          }
+        )
+      ),
+    ...invalidPropertyChecks
+      .map((property) =>
+        createDiagnostic(
+          'error',
+          'CANVAS_CONTROL_PROPERTY_INVALID',
+          `Property ${property.property} is not valid for ${property.templateName}@${property.templateVersion} on ${property.controlPath}.`,
+          {
+            source: '@pp/canvas',
+            detail: property.source ? `Validated from ${property.source}.` : undefined,
           }
         )
       ),
@@ -922,10 +992,12 @@ async function prepareCanvasValidation(
           sourceHash: source.data.sourceHash,
           seedRegistryPath: source.data.seedRegistryPath,
         },
+        ...(source.data.dataSources && source.data.dataSources.length > 0 ? { dataSources: source.data.dataSources } : {}),
         templateRequirements,
         unresolvedTemplates,
         unsupportedTemplates,
         formulas,
+        ...(invalidPropertyChecks.length > 0 ? { propertyChecks: invalidPropertyChecks } : {}),
         registries: mergeRegistrySources(seeded.data.sources, registry.data.sources),
       },
       diagnostics,
@@ -1316,17 +1388,136 @@ function appendFormulaChecks(
     const path = `${prefix}/${control.name}`;
 
     for (const [property, value] of Object.entries(control.properties)) {
-      if (property.endsWith('Formula')) {
+      if (property.endsWith('Formula') || (typeof value === 'string' && value.trim().startsWith('='))) {
         destination.push({
           controlPath: path,
           property,
-          valid: typeof value === 'string',
+          valid:
+            typeof value === 'string' &&
+            (!value.trim().startsWith('=') || validatePowerFxSyntax(value)),
         });
       }
     }
 
     appendFormulaChecks(screenName, control.children, path, destination);
   }
+}
+
+function collectPropertyChecks(
+  source: CanvasSourceModel,
+  requirements: CanvasTemplateRequirementResolution
+): CanvasPropertyCheck[] {
+  const resolutions = new Map(
+    requirements.resolutions.map((resolution) => [`${resolution.requested.name}@${resolution.requested.version ?? ''}`, resolution])
+  );
+  const checks: CanvasPropertyCheck[] = [];
+
+  for (const screen of source.screens) {
+    appendPropertyChecks(screen.controls, screen.name, resolutions, checks);
+  }
+
+  return checks.sort((left, right) => left.controlPath.localeCompare(right.controlPath) || left.property.localeCompare(right.property));
+}
+
+function appendPropertyChecks(
+  controls: CanvasControlDefinition[],
+  prefix: string,
+  resolutions: Map<string, CanvasTemplateRequirementResolution['resolutions'][number]>,
+  destination: CanvasPropertyCheck[]
+): void {
+  for (const control of controls) {
+    const path = `${prefix}/${control.name}`;
+    const resolution = resolutions.get(`${control.templateName}@${control.templateVersion}`);
+    const template = resolution?.template;
+
+    if (template) {
+      const surface = buildCanvasTemplateSurface(template);
+      const allowed = new Set(surface.allowedProperties.map((property) => normalizeName(property)));
+
+      for (const property of Object.keys(control.properties).sort((left, right) => left.localeCompare(right))) {
+        destination.push({
+          controlPath: path,
+          property,
+          templateName: template.templateName,
+          templateVersion: template.templateVersion,
+          valid: !surface.strictValidation || allowed.has(normalizeName(property)),
+          source: surface.sources.join(', '),
+        });
+      }
+    }
+
+    appendPropertyChecks(control.children, path, resolutions, destination);
+  }
+}
+
+function validatePowerFxSyntax(expression: string): boolean {
+  const trimmed = expression.trim();
+
+  if (!trimmed.startsWith('=')) {
+    return true;
+  }
+
+  const source = trimmed.slice(1);
+  const stack: string[] = [];
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+
+    if (inDoubleQuote) {
+      if (char === '"' && next === '"') {
+        index += 1;
+        continue;
+      }
+
+      if (char === '"') {
+        inDoubleQuote = false;
+      }
+
+      continue;
+    }
+
+    if (inSingleQuote) {
+      if (char === '\'' && next === '\'') {
+        index += 1;
+        continue;
+      }
+
+      if (char === '\'') {
+        inSingleQuote = false;
+      }
+
+      continue;
+    }
+
+    if (char === '"') {
+      inDoubleQuote = true;
+      continue;
+    }
+
+    if (char === '\'') {
+      inSingleQuote = true;
+      continue;
+    }
+
+    if (char === '(' || char === '[' || char === '{') {
+      stack.push(char);
+      continue;
+    }
+
+    if (char === ')' || char === ']' || char === '}') {
+      const expected = char === ')' ? '(' : char === ']' ? '[' : '{';
+      const actual = stack.pop();
+
+      if (actual !== expected) {
+        return false;
+      }
+    }
+  }
+
+  return !inSingleQuote && !inDoubleQuote && stack.length === 0;
 }
 
 function collectUnresolvedTemplateIssues(
@@ -1699,7 +1890,7 @@ function normalizeJsonValue(value: unknown): CanvasJsonValue {
     typeof value === 'number' ||
     typeof value === 'boolean'
   ) {
-    return value;
+    return value as CanvasJsonValue;
   }
 
   if (Array.isArray(value)) {

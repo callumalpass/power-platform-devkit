@@ -19,6 +19,8 @@ describe('global config store', () => {
       {
         name: 'tenant-a',
         kind: 'edge',
+        lastBootstrapUrl: 'https://make.powerapps.com/',
+        lastBootstrappedAt: '2026-03-09T09:00:00.000Z',
       },
       options
     );
@@ -48,6 +50,8 @@ describe('global config store', () => {
 
     expect(config.success).toBe(true);
     expect(config.data?.config.browserProfiles['tenant-a']?.kind).toBe('edge');
+    expect(config.data?.config.browserProfiles['tenant-a']?.lastBootstrapUrl).toBe('https://make.powerapps.com/');
+    expect(config.data?.config.browserProfiles['tenant-a']?.lastBootstrappedAt).toBe('2026-03-09T09:00:00.000Z');
     expect(profile?.type).toBe('user');
     expect(profile && profile.type === 'user' ? profile.loginHint : undefined).toBe('user@example.com');
     expect(profile && profile.type === 'user' ? profile.browserProfile : undefined).toBe('tenant-a');

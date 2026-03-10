@@ -3,16 +3,26 @@
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
+import { createInterface } from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { renderMarkdownReport, generateContextPack } from '@pp/analysis';
-import { AuthService, summarizeBrowserProfile, summarizeProfile, type AuthProfile, type BrowserProfile, type UserAuthProfile } from '@pp/auth';
+import {
+  AuthService,
+  DEFAULT_BROWSER_BOOTSTRAP_URL,
+  summarizeBrowserProfile,
+  summarizeProfile,
+  type AuthProfile,
+  type BrowserProfile,
+  type UserAuthProfile,
+} from '@pp/auth';
 import { CanvasService, type CanvasBuildMode } from '@pp/canvas';
 import {
   createMutationPreview,
   readMutationFlags,
   renderFailure,
   renderOutput,
-  renderWarnings,
+  renderResultDiagnostics,
   type CliOutputFormat,
 } from './contract';
 import {
@@ -175,6 +185,8 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
         return runAuthBrowserProfileInspect(auth, rest);
       case 'add':
         return runAuthBrowserProfileSave(auth, rest);
+      case 'bootstrap':
+        return runAuthBrowserProfileBootstrap(auth, rest);
       case 'remove':
         return runAuthBrowserProfileRemove(auth, rest);
       default:
@@ -287,6 +299,7 @@ async function runEnvironmentVariable(command: string | undefined, args: string[
 
 async function runCanvas(command: string | undefined, args: string[]): Promise<number> {
   switch (command) {
+    case 'lint':
     case 'validate':
       return runCanvasValidate(args);
     case 'inspect':
@@ -378,6 +391,7 @@ async function runProjectInspect(args: string[]): Promise<number> {
   };
 
   printByFormat(payload, format);
+  printResultDiagnostics(project, format);
   return 0;
 }
 
@@ -398,6 +412,7 @@ async function runAnalysisReport(args: string[]): Promise<number> {
 
   if (format === 'markdown') {
     process.stdout.write(renderMarkdownReport(project.data) + '\n');
+    printResultDiagnostics(project, format);
     return 0;
   }
 
@@ -408,6 +423,8 @@ async function runAnalysisReport(args: string[]): Promise<number> {
   }
 
   printByFormat(context.data, format);
+  printResultDiagnostics(project, format);
+  printResultDiagnostics(context, format);
   return 0;
 }
 
@@ -434,6 +451,8 @@ async function runAnalysisContext(args: string[]): Promise<number> {
   }
 
   printByFormat(context.data, format);
+  printResultDiagnostics(project, format);
+  printResultDiagnostics(context, format);
   return 0;
 }
 
@@ -459,6 +478,8 @@ async function runDeployPlan(args: string[]): Promise<number> {
   }
 
   printByFormat(plan.data, format);
+  printResultDiagnostics(project, format);
+  printResultDiagnostics(plan, format);
   return 0;
 }
 
@@ -595,6 +616,104 @@ async function runAuthBrowserProfileRemove(auth: AuthService, args: string[]): P
   }
 
   printByFormat({ removed: removed.data ?? false, name }, 'json');
+  return 0;
+}
+
+async function runAuthBrowserProfileBootstrap(auth: AuthService, args: string[]): Promise<number> {
+  const name = positionalArgs(args)[0];
+
+  if (!name) {
+    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_NAME_REQUIRED', 'Browser profile name is required.'));
+  }
+
+  const url = readFlag(args, '--url') ?? DEFAULT_BROWSER_BOOTSTRAP_URL;
+  const noWait = hasFlag(args, '--no-wait');
+  const format = outputFormat(args, 'json');
+  const profile = await auth.getBrowserProfile(name);
+
+  try {
+    new URL(url);
+  } catch {
+    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_BOOTSTRAP_URL_INVALID', `Bootstrap URL must be an absolute URL. Received: ${url}`));
+  }
+
+  if (!profile.success) {
+    return printFailure(profile);
+  }
+
+  if (!profile.data) {
+    return printFailure(fail(createDiagnostic('error', 'AUTH_BROWSER_PROFILE_NOT_FOUND', `Browser profile ${name} was not found.`)));
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'auth.browser-profile.bootstrap',
+    { name, url },
+    {
+      ...summarizeBrowserProfile(profile.data, readConfigOptions(args)),
+      bootstrapUrl: url,
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  if (!noWait && !process.stdin.isTTY) {
+    return printFailure(
+      argumentFailure(
+        'AUTH_BROWSER_PROFILE_BOOTSTRAP_TTY_REQUIRED',
+        'Browser profile bootstrap requires an interactive terminal unless --no-wait is supplied.'
+      )
+    );
+  }
+
+  const launched = await auth.launchBrowserProfile(name, url);
+
+  if (!launched.success || !launched.data) {
+    return printFailure(launched);
+  }
+
+  if (noWait) {
+    printByFormat(
+      {
+        launched: true,
+        browserProfile: summarizeBrowserProfile(profile.data, readConfigOptions(args)),
+        bootstrapUrl: url,
+      },
+      format
+    );
+    return 0;
+  }
+
+  process.stderr.write(
+    [
+      `Opened browser profile ${name}.`,
+      `Target URL: ${url}`,
+      'Complete the one-time Microsoft / Power Apps web sign-in in that browser.',
+      'Wait until Power Apps is loaded, then close the browser window and press Enter here.',
+    ].join('\n') + '\n'
+  );
+
+  await promptForEnter('');
+
+  const marked = await auth.markBrowserProfileBootstrapped(name, {
+    url,
+  });
+
+  if (!marked.success || !marked.data) {
+    return printFailure(marked);
+  }
+
+  printByFormat(
+    {
+      bootstrapped: true,
+      browserProfile: summarizeBrowserProfile(marked.data, readConfigOptions(args)),
+      bootstrapUrl: url,
+    },
+    format
+  );
   return 0;
 }
 
@@ -2177,7 +2296,7 @@ async function runCanvasValidate(args: string[]): Promise<number> {
   const canvasPath = positionalArgs(args)[0];
 
   if (!canvasPath) {
-    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas validate <path> [--mode strict|seeded|registry]'));
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas validate|lint <path> [--mode strict|seeded|registry]'));
   }
 
   const context = await resolveCanvasCliContext(args);
@@ -2193,6 +2312,7 @@ async function runCanvasValidate(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return result.data.valid ? 0 : 1;
 }
 
@@ -2216,6 +2336,7 @@ async function runCanvasInspect(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2402,6 +2523,7 @@ async function runFlowValidate(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return result.data.valid ? 0 : 1;
 }
 
@@ -2850,8 +2972,26 @@ function printFailure(result: OperationResult<unknown>): number {
 }
 
 function printWarnings(result: OperationResult<unknown>): void {
-  if (result.warnings.length > 0) {
-    process.stderr.write(renderWarnings(result.warnings));
+  if ((result.warnings?.length ?? 0) === 0) {
+    return;
+  }
+
+  const warningOnly: OperationResult<unknown> = {
+    ...result,
+    diagnostics: [],
+  };
+  const rendered = renderResultDiagnostics(warningOnly, resolveProcessOutputFormat());
+
+  if (rendered.length > 0) {
+    process.stderr.write(rendered);
+  }
+}
+
+function printResultDiagnostics(result: OperationResult<unknown>, format: OutputFormat): void {
+  const diagnostics = renderResultDiagnostics(result, format);
+
+  if (diagnostics.length > 0) {
+    process.stderr.write(diagnostics);
   }
 }
 
@@ -2919,6 +3059,15 @@ function readFlag(args: string[], name: string): string | undefined {
 
 function hasFlag(args: string[], name: string): boolean {
   return args.includes(name);
+}
+
+async function promptForEnter(message: string): Promise<void> {
+  const rl = createInterface({ input, output });
+  try {
+    await rl.question(message);
+  } finally {
+    rl.close();
+  }
 }
 
 function readRepeatedFlags(args: string[], name: string): string[] {
@@ -3274,6 +3423,7 @@ function printHelp(): void {
       '  auth browser-profile list [--config-dir path]',
       '  auth browser-profile inspect <name> [--config-dir path]',
       '  auth browser-profile add --name NAME [--kind edge|chrome|chromium|custom] [--command PATH] [--arg ARG] [--directory PATH] [--config-dir path]',
+      '  auth browser-profile bootstrap <name> [--url URL] [--no-wait] [--config-dir path]',
       '  auth browser-profile remove <name> [--config-dir path]',
       '  auth login --name NAME --resource URL [--login-hint user@contoso.com] [--browser-profile NAME] [--force-prompt] [--device-code] [--config-dir path]',
       '  auth token --profile NAME [--resource URL] [--format raw|json]',
@@ -3317,6 +3467,7 @@ function printHelp(): void {
       '  envvar inspect <schemaName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar set <schemaName|displayName|id> --env ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas validate <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas lint <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas inspect <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas build <path> [--project path] [--out FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas diff <leftPath> <rightPath> [--format table|json|yaml|ndjson|markdown|raw]',

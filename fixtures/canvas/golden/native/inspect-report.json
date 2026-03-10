@@ -1,0 +1,125 @@
+{
+  "controls": [
+    {
+      "childCount": 0,
+      "path": "Screen1/Button1",
+      "propertyCount": 4,
+      "screen": "Screen1",
+      "templateName": "Classic/Button",
+      "templateVersion": "2.2.0"
+    }
+  ],
+  "dataSources": [
+    {
+      "datasetName": "default.cds",
+      "entityName": "account",
+      "name": "Accounts",
+      "type": "Table"
+    }
+  ],
+  "formulas": [
+    {
+      "controlPath": "Screen1/Button1",
+      "property": "OnSelect",
+      "valid": true
+    },
+    {
+      "controlPath": "Screen1/Button1",
+      "property": "Text",
+      "valid": true
+    },
+    {
+      "controlPath": "Screen1/Button1",
+      "property": "X",
+      "valid": true
+    },
+    {
+      "controlPath": "Screen1/Button1",
+      "property": "Y",
+      "valid": true
+    }
+  ],
+  "mode": "strict",
+  "registries": [
+    {
+      "generatedAt": "2026-03-10T00:00:00.000Z",
+      "hash": "ba46b7eb0b2aee9d10668115b398e1a9cc54594a6bc0b6380e2282ec3f391c52",
+      "path": "<REPO_ROOT>/fixtures/canvas/apps/native-app/controls.json",
+      "supportRuleCount": 1,
+      "templateCount": 1
+    }
+  ],
+  "screens": [
+    {
+      "controlCount": 1,
+      "file": "Src/Screen1.pa.yaml",
+      "name": "Screen1"
+    }
+  ],
+  "source": {
+    "controlCount": 1,
+    "displayName": "native-app",
+    "manifestPath": "<REPO_ROOT>/fixtures/canvas/apps/native-app/Src/App.pa.yaml",
+    "name": "native-app",
+    "root": "<REPO_ROOT>/fixtures/canvas/apps/native-app",
+    "screenCount": 1,
+    "sourceHash": "e68fd90e74d89bf4f61f38dc6b005440e862d39e6af90d50916b5c7b2027600f",
+    "version": "1.0.0"
+  },
+  "templateRequirements": {
+    "missing": [],
+    "mode": "strict",
+    "resolutions": [
+      {
+        "matchedBy": "constructor",
+        "requested": {
+          "name": "Classic/Button",
+          "version": "2.2.0"
+        },
+        "support": {
+          "matchedRule": {
+            "modes": [
+              "strict",
+              "registry"
+            ],
+            "status": "supported",
+            "templateName": "Button",
+            "version": "2.2.0"
+          },
+          "modes": [
+            "strict",
+            "registry"
+          ],
+          "notes": [],
+          "status": "supported"
+        },
+        "template": {
+          "aliases": {
+            "constructors": [
+              "Classic/Button"
+            ]
+          },
+          "contentHash": "07ca0664d45a3917a40ea5f581e39ad6bcd0397790795d8df071c8ba41e84217",
+          "files": {
+            "References/Templates.json": {
+              "name": "Button",
+              "templateXml": "<widget xmlns=\"http://openajax.org/metadata\" xmlns:appMagic=\"http://schemas.microsoft.com/appMagic\" id=\"http://microsoft.com/appmagic/button\" name=\"button\" version=\"2.2.0\">  <properties>    <property name=\"Text\" datatype=\"String\" defaultValue=\"&quot;Button&quot;\" isExpr=\"true\">      <appMagic:category>data</appMagic:category>    </property>    <property name=\"OnSelect\" datatype=\"Behavior\" defaultValue=\"\" isExpr=\"true\">      <appMagic:category>behavior</appMagic:category>    </property>  </properties>  <appMagic:includeProperties>    <appMagic:includeProperty name=\"X\" defaultValue=\"0\" />    <appMagic:includeProperty name=\"Y\" defaultValue=\"0\" />    <appMagic:includeProperty name=\"Width\" defaultValue=\"120\" />    <appMagic:includeProperty name=\"Height\" defaultValue=\"40\" />  </appMagic:includeProperties></widget>",
+              "version": "2.2.0"
+            }
+          },
+          "provenance": {
+            "importedFrom": "<REPO_ROOT>/fixtures/canvas/apps/native-app/controls.json",
+            "kind": "official-artifact",
+            "source": "fixture-native-registry"
+          },
+          "templateName": "Button",
+          "templateVersion": "2.2.0"
+        }
+      }
+    ],
+    "supported": true
+  },
+  "unresolvedTemplates": [],
+  "unsupportedTemplates": [],
+  "valid": true
+}

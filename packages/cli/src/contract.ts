@@ -62,41 +62,15 @@ export function renderOutput(value: unknown, format: CliOutputFormat): string {
 }
 
 export function renderFailure(result: OperationResult<unknown>, format: CliOutputFormat): string {
-  if (format === 'json' || format === 'yaml' || format === 'ndjson') {
-    return renderOutput(
-      {
-        success: false,
-        diagnostics: result.diagnostics,
-        warnings: result.warnings,
-        supportTier: result.supportTier,
-        suggestedNextActions: result.suggestedNextActions ?? [],
-        provenance: result.provenance,
-        knownLimitations: result.knownLimitations,
-      },
-      format
-    );
+  return renderDiagnostics(result, format, false);
+}
+
+export function renderResultDiagnostics(result: OperationResult<unknown>, format: CliOutputFormat): string {
+  if (result.diagnostics.length === 0 && result.warnings.length === 0) {
+    return '';
   }
 
-  if (format === 'table') {
-    return renderTable(
-      diagnosticRows([...result.diagnostics, ...result.warnings]).map((row) => ({
-        ...row,
-        path: row.path ?? '',
-        source: row.source ?? '',
-      }))
-    );
-  }
-
-  return ensureTrailingNewline(
-    [...result.diagnostics, ...result.warnings]
-      .map((diagnostic) => {
-        const details = [diagnostic.hint ? `hint=${diagnostic.hint}` : undefined, diagnostic.path ? `path=${diagnostic.path}` : undefined]
-          .filter(Boolean)
-          .join(' ');
-        return `${diagnostic.level.toUpperCase()} ${diagnostic.code}: ${diagnostic.message}${details ? ` (${details})` : ''}`;
-      })
-      .join('\n')
-  );
+  return renderDiagnostics(result, format, result.success);
 }
 
 export function renderWarnings(warnings: Diagnostic[]): string {
@@ -155,6 +129,46 @@ export function createMutationPreview(
     target,
     input,
   };
+}
+
+function renderDiagnostics(result: OperationResult<unknown>, format: CliOutputFormat, success: boolean): string {
+  if (format === 'json' || format === 'yaml' || format === 'ndjson') {
+    return renderOutput(
+      {
+        success,
+        diagnostics: result.diagnostics,
+        warnings: result.warnings,
+        supportTier: result.supportTier,
+        suggestedNextActions: result.suggestedNextActions ?? [],
+        provenance: result.provenance,
+        knownLimitations: result.knownLimitations,
+      },
+      format
+    );
+  }
+
+  const diagnostics = [...result.diagnostics, ...result.warnings];
+
+  if (format === 'table') {
+    return renderTable(
+      diagnosticRows(diagnostics).map((row) => ({
+        ...row,
+        path: row.path ?? '',
+        source: row.source ?? '',
+      }))
+    );
+  }
+
+  return ensureTrailingNewline(
+    diagnostics
+      .map((diagnostic) => {
+        const details = [diagnostic.hint ? `hint=${diagnostic.hint}` : undefined, diagnostic.path ? `path=${diagnostic.path}` : undefined]
+          .filter(Boolean)
+          .join(' ');
+        return `${diagnostic.level.toUpperCase()} ${diagnostic.code}: ${diagnostic.message}${details ? ` (${details})` : ''}`;
+      })
+      .join('\n')
+  );
 }
 
 function isOutputFormat(value: string): value is CliOutputFormat {

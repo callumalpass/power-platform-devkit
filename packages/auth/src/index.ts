@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { accessSync, constants as fsConstants } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
@@ -42,6 +43,8 @@ export interface BrowserLaunchSpec {
   args: string[];
   profileDir: string;
 }
+
+export const DEFAULT_BROWSER_BOOTSTRAP_URL = 'https://make.powerapps.com/';
 
 export interface TokenProvider {
   getAccessToken(resource: string): Promise<string>;
@@ -159,6 +162,64 @@ export class AuthService {
 
   async removeBrowserProfile(name: string): Promise<OperationResult<boolean>> {
     return removeBrowserProfile(name, this.options);
+  }
+
+  async launchBrowserProfile(name: string, url: string): Promise<OperationResult<BrowserLaunchSpec>> {
+    const profile = await this.getBrowserProfile(name);
+
+    if (!profile.success) {
+      return profile as unknown as OperationResult<BrowserLaunchSpec>;
+    }
+
+    if (!profile.data) {
+      return fail(
+        createDiagnostic('error', 'AUTH_BROWSER_PROFILE_NOT_FOUND', `Browser profile ${name} was not found.`, {
+          source: '@pp/auth',
+        })
+      );
+    }
+
+    try {
+      const spec = await launchBrowserProfile(profile.data, url, this.options);
+      return ok(spec, {
+        supportTier: 'preview',
+      });
+    } catch (error) {
+      return fail(
+        createDiagnostic('error', 'AUTH_BROWSER_PROFILE_LAUNCH_FAILED', `Failed to launch browser profile ${name}`, {
+          source: '@pp/auth',
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      );
+    }
+  }
+
+  async markBrowserProfileBootstrapped(
+    name: string,
+    bootstrap: {
+      url: string;
+      completedAt?: string;
+    }
+  ): Promise<OperationResult<BrowserProfile>> {
+    const profile = await this.getBrowserProfile(name);
+
+    if (!profile.success) {
+      return profile as unknown as OperationResult<BrowserProfile>;
+    }
+
+    if (!profile.data) {
+      return fail(
+        createDiagnostic('error', 'AUTH_BROWSER_PROFILE_NOT_FOUND', `Browser profile ${name} was not found.`, {
+          source: '@pp/auth',
+        })
+      );
+    }
+
+    return this.saveBrowserProfile({
+      ...profile.data,
+      lastBootstrapUrl: bootstrap.url,
+      lastBootstrappedAt: bootstrap.completedAt ?? new Date().toISOString(),
+    });
   }
 
   async loginProfile(
@@ -369,6 +430,8 @@ export function summarizeBrowserProfile(
     command: profile.command ?? (profile.kind === 'custom' ? undefined : resolveBrowserCommand(profile, process.platform)),
     args: profile.args ?? [],
     profileDir: resolveBrowserProfileDirectory(profile, options),
+    lastBootstrapUrl: profile.lastBootstrapUrl,
+    lastBootstrappedAt: profile.lastBootstrappedAt,
   };
 }
 
@@ -405,6 +468,26 @@ function ensureAccessToken(result: AuthenticationResult | null, profileName: str
   }
 
   return result.accessToken;
+}
+
+function formatAuthError(error: unknown): string {
+  if (error instanceof Error) {
+    const code = 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+    const errorCode = 'errorCode' in error && typeof error.errorCode === 'string' ? error.errorCode : undefined;
+    const parts = [error.message];
+
+    if (errorCode && !parts.some((part) => part.includes(errorCode))) {
+      parts.push(`errorCode=${errorCode}`);
+    }
+
+    if (code && !parts.some((part) => part.includes(code))) {
+      parts.push(`code=${code}`);
+    }
+
+    return parts.join(' ');
+  }
+
+  return String(error);
 }
 
 async function acquireAndPersistPublicClientToken(
@@ -456,8 +539,10 @@ async function acquirePublicClientToken(
             profile: updateProfileAccount(profile, silent.account ?? account),
           };
         }
-      } catch {
-        // Silent auth can fail if the cached account needs fresh interaction.
+      } catch (error) {
+        process.stderr.write(
+          `Silent authentication failed for profile ${profile.name}: ${formatAuthError(error)}. Falling back to interactive authentication.\n`
+        );
       }
     }
   }
@@ -486,7 +571,7 @@ async function acquirePublicClientToken(
     }
 
     process.stderr.write(
-      `Interactive authentication failed for profile ${profile.name}: ${error instanceof Error ? error.message : String(error)}. Falling back to device code.\n`
+      `Interactive authentication failed for profile ${profile.name}: ${formatAuthError(error)}. Falling back to device code.\n`
     );
     return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
   }
@@ -508,7 +593,6 @@ async function acquireTokenInteractively(
 
   const result = await app.acquireTokenInteractive({
     scopes,
-    redirectUri: 'http://localhost',
     prompt: resolvePrompt(profile.type === 'user' ? profile.prompt : undefined),
     loginHint: profile.loginHint,
     openBrowser: browserProfile ? async (url) => openManagedBrowser(url, browserProfile, options) : openSystemBrowser,
@@ -698,9 +782,18 @@ async function loadNamedBrowserProfile(name: string, options: ConfigStoreOptions
 }
 
 async function openManagedBrowser(url: string, profile: BrowserProfile, options: ConfigStoreOptions): Promise<void> {
+  await launchBrowserProfile(profile, url, options);
+}
+
+export async function launchBrowserProfile(
+  profile: BrowserProfile,
+  url: string,
+  options: ConfigStoreOptions = {}
+): Promise<BrowserLaunchSpec> {
   const spec = buildBrowserLaunchSpec(profile, url, options);
   await mkdir(spec.profileDir, { recursive: true });
   await spawnDetached(spec.command, spec.args);
+  return spec;
 }
 
 async function openSystemBrowser(url: string): Promise<void> {
@@ -737,13 +830,60 @@ function resolveBrowserCommand(profile: BrowserProfile, platform: NodeJS.Platfor
     case 'custom':
       throw new Error(`Browser profile ${profile.name} requires an explicit command because kind=custom`);
     case 'chrome':
-      return platform === 'darwin' ? 'open' : platform === 'win32' ? 'chrome' : 'google-chrome';
+      return platform === 'darwin'
+        ? 'open'
+        : platform === 'win32'
+          ? 'chrome'
+          : resolveLinuxBrowserCommand(['google-chrome', 'google-chrome-stable'], 'google-chrome');
     case 'chromium':
-      return platform === 'darwin' ? 'open' : platform === 'win32' ? 'chromium' : 'chromium';
+      return platform === 'darwin'
+        ? 'open'
+        : platform === 'win32'
+          ? 'chromium'
+          : resolveLinuxBrowserCommand(['chromium', 'chromium-browser'], 'chromium');
     case 'edge':
     default:
-      return platform === 'darwin' ? 'open' : platform === 'win32' ? 'msedge' : 'microsoft-edge';
+      return platform === 'darwin'
+        ? 'open'
+        : platform === 'win32'
+          ? 'msedge'
+          : resolveLinuxBrowserCommand(['microsoft-edge', 'microsoft-edge-stable'], 'microsoft-edge');
   }
+}
+
+function resolveLinuxBrowserCommand(candidates: string[], fallback: string): string {
+  for (const candidate of candidates) {
+    if (commandExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return fallback;
+}
+
+function commandExists(command: string): boolean {
+  const pathValue = process.env.PATH;
+
+  if (!pathValue) {
+    return false;
+  }
+
+  for (const entry of pathValue.split(':')) {
+    if (!entry) {
+      continue;
+    }
+
+    const target = join(entry, command);
+
+    try {
+      accessSync(target, fsConstants.X_OK);
+      return true;
+    } catch {
+      // Continue scanning PATH entries.
+    }
+  }
+
+  return false;
 }
 
 function buildBrowserArgs(

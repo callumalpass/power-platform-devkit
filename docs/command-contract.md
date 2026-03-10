@@ -27,10 +27,11 @@ singleton object becomes one line.
 
 Commands still emit primary payloads on stdout and diagnostics on stderr.
 
-- machine-oriented formats (`json`, `yaml`, `ndjson`) emit structured failure
-  envelopes on stderr
+- machine-oriented formats (`json`, `yaml`, `ndjson`) emit structured
+  diagnostic envelopes on stderr whenever commands surface diagnostics, even if
+  they also emit a primary payload on stdout
 - human-oriented formats (`table`, `markdown`, `raw`) emit readable diagnostic
-  summaries on stderr
+  summaries on stderr for the same cases
 - warnings stay off stdout so structured payloads remain parseable
 
 ## Mutation flags

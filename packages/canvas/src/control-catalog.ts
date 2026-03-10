@@ -28,6 +28,51 @@ export interface CanvasControlCatalogCounts {
   modern: number;
 }
 
+export interface CanvasControlCatalogSelectionControl {
+  family: 'classic' | 'modern';
+  name: string;
+}
+
+export interface CanvasControlCatalogSelectionOptions {
+  includeRetired?: boolean;
+  family?: 'classic' | 'modern';
+  startAt?: string;
+  limit?: number;
+}
+
+export interface CanvasControlCatalogSelectionSummary {
+  includeRetired: boolean;
+  family?: 'classic' | 'modern';
+  startAt?: string;
+  limit?: number;
+  matchingControls: number;
+  selectedControls: number;
+  remainingControls: number;
+  startIndex: number;
+  firstSelectedControl?: CanvasControlCatalogSelectionControl;
+  lastSelectedControl?: CanvasControlCatalogSelectionControl;
+}
+
+export interface CanvasControlCatalogSelectionResult {
+  controls: CanvasControlCatalogEntry[];
+  selection: CanvasControlCatalogSelectionSummary;
+}
+
+export interface CanvasControlCatalogResumeSelection {
+  includeRetired: boolean;
+  family?: 'classic' | 'modern';
+  startAt: string;
+  limit?: number;
+}
+
+export interface CanvasControlCatalogSelectionCheckpoint {
+  exhausted: boolean;
+  completedControls: number;
+  remainingControls: number;
+  nextControl?: CanvasControlCatalogSelectionControl;
+  resumeSelection?: CanvasControlCatalogResumeSelection;
+}
+
 export interface CanvasControlCatalogCompletenessOptions {
   minimumClassic?: number;
   minimumModern?: number;
@@ -129,6 +174,80 @@ export function summarizeCanvasControlCatalogDocument(document: CanvasControlCat
   return summarizeCanvasControlCatalogEntries(document.controls);
 }
 
+export function selectCanvasControlCatalogEntries(
+  document: CanvasControlCatalogDocument,
+  options: CanvasControlCatalogSelectionOptions = {}
+): CanvasControlCatalogSelectionResult {
+  const includeRetired = options.includeRetired ?? false;
+  const matchingControls = filterCanvasControlCatalogEntries(document, options);
+  const startIndex = options.startAt ? resolveCatalogSelectionStartIndex(matchingControls, options.startAt) : 0;
+  const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : undefined;
+  const controls = matchingControls.slice(startIndex, limit ? startIndex + limit : undefined);
+  const firstSelected = controls[0];
+  const lastSelected = controls[controls.length - 1];
+
+  return {
+    controls,
+    selection: {
+      includeRetired,
+      ...(options.family ? { family: options.family } : {}),
+      ...(options.startAt ? { startAt: options.startAt } : {}),
+      ...(limit ? { limit } : {}),
+      matchingControls: matchingControls.length,
+      selectedControls: controls.length,
+      remainingControls: Math.max(0, matchingControls.length - (startIndex + controls.length)),
+      startIndex,
+      ...(firstSelected
+        ? {
+            firstSelectedControl: {
+              family: firstSelected.family,
+              name: firstSelected.name,
+            },
+          }
+        : {}),
+      ...(lastSelected
+        ? {
+            lastSelectedControl: {
+              family: lastSelected.family,
+              name: lastSelected.name,
+            },
+          }
+        : {}),
+      },
+  };
+}
+
+export function buildCanvasControlCatalogSelectionCheckpoint(
+  document: CanvasControlCatalogDocument,
+  selection: CanvasControlCatalogSelectionSummary
+): CanvasControlCatalogSelectionCheckpoint {
+  const selectionOptions = summarizeSelectionOptions(selection);
+  const matchingControls = filterCanvasControlCatalogEntries(document, selectionOptions);
+  const resolvedSelection = selectCanvasControlCatalogEntries(document, selectionOptions).selection;
+  const completedControls = resolvedSelection.startIndex + resolvedSelection.selectedControls;
+  const nextEntry = matchingControls[completedControls];
+
+  return {
+    exhausted: !nextEntry,
+    completedControls,
+    remainingControls: Math.max(0, matchingControls.length - completedControls),
+    ...(nextEntry
+      ? {
+          nextControl: {
+            family: nextEntry.family,
+            name: nextEntry.name,
+          },
+          resumeSelection: {
+            includeRetired: resolvedSelection.includeRetired,
+            ...(resolvedSelection.family ? { family: resolvedSelection.family } : {}),
+            ...(resolvedSelection.limit ? { limit: resolvedSelection.limit } : {}),
+            startAt: `${nextEntry.family}/${nextEntry.name}`,
+          },
+        }
+      : {}),
+  };
+}
+
 export function assertCanvasControlCatalogLooksComplete(
   document: CanvasControlCatalogDocument,
   options: CanvasControlCatalogCompletenessOptions = {}
@@ -157,6 +276,26 @@ async function fetchText(url: string): Promise<string> {
   }
 
   return response.text();
+}
+
+function filterCanvasControlCatalogEntries(
+  document: CanvasControlCatalogDocument,
+  options: CanvasControlCatalogSelectionOptions
+): CanvasControlCatalogEntry[] {
+  const includeRetired = options.includeRetired ?? false;
+
+  return document.controls.filter(
+    (entry) => (includeRetired || !entry.status.includes('retired')) && (!options.family || entry.family === options.family)
+  );
+}
+
+function summarizeSelectionOptions(selection: CanvasControlCatalogSelectionSummary): CanvasControlCatalogSelectionOptions {
+  return {
+    includeRetired: selection.includeRetired,
+    ...(selection.family ? { family: selection.family } : {}),
+    ...(selection.startAt ? { startAt: selection.startAt } : {}),
+    ...(selection.limit ? { limit: selection.limit } : {}),
+  };
 }
 
 function extractSectionLines(markdown: string, heading: string): string[] {
@@ -196,6 +335,71 @@ function dedupeCatalogEntries(entries: CanvasControlCatalogEntry[]): CanvasContr
   }
 
   return deduped;
+}
+
+function resolveCatalogSelectionStartIndex(entries: CanvasControlCatalogEntry[], startAt: string): number {
+  const normalizedStartAt = normalizeSelectionToken(startAt);
+  if (!normalizedStartAt) {
+    return 0;
+  }
+
+  const familyAndName = parseExplicitSelectionReference(normalizedStartAt);
+  if (familyAndName) {
+    const entryIndex = entries.findIndex(
+      (entry) => entry.family === familyAndName.family && normalizeSelectionToken(entry.name) === familyAndName.name
+    );
+    if (entryIndex >= 0) {
+      return entryIndex;
+    }
+
+    throw new Error(
+      `Could not find catalog control ${familyAndName.family}/${familyAndName.rawName} in the selected catalog slice.`
+    );
+  }
+
+  const matchingIndexes = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => normalizeSelectionToken(entry.name) === normalizedStartAt);
+
+  if (matchingIndexes.length === 1) {
+    return matchingIndexes[0]!.index;
+  }
+
+  if (matchingIndexes.length > 1) {
+    const choices = matchingIndexes
+      .map(({ entry }) => `${entry.family}/${entry.name}`)
+      .sort((left, right) => left.localeCompare(right));
+    throw new Error(
+      `Catalog control selector ${JSON.stringify(startAt)} is ambiguous. Use family/name instead: ${choices.join(', ')}.`
+    );
+  }
+
+  throw new Error(`Could not find catalog control ${JSON.stringify(startAt)} in the selected catalog slice.`);
+}
+
+function parseExplicitSelectionReference(
+  normalizedReference: string
+): { family: 'classic' | 'modern'; name: string; rawName: string } | undefined {
+  const slashIndex = normalizedReference.indexOf('/');
+  if (slashIndex < 0) {
+    return undefined;
+  }
+
+  const family = normalizedReference.slice(0, slashIndex).trim();
+  const rawName = normalizedReference.slice(slashIndex + 1).trim();
+  if ((family !== 'classic' && family !== 'modern') || rawName.length === 0) {
+    return undefined;
+  }
+
+  return {
+    family,
+    name: normalizeSelectionToken(rawName),
+    rawName,
+  };
+}
+
+function normalizeSelectionToken(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 function summarizeCanvasControlCatalogEntries(entries: CanvasControlCatalogEntry[]): CanvasControlCatalogCounts {

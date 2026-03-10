@@ -148,6 +148,30 @@ Behavior:
 - browser-backed auth still falls back safely to normal behavior when no
   browser profile is configured
 
+For browser-driven Power Apps work, interactive token login is not always enough
+to seed a reusable maker-session cookie jar. If Studio automation still lands on
+Microsoft sign-in, bootstrap the browser profile once:
+
+```bash
+pp auth browser-profile bootstrap tenant-a
+```
+
+Useful options:
+
+```bash
+pp auth browser-profile bootstrap tenant-a --url https://make.powerapps.com/
+pp auth browser-profile bootstrap tenant-a --url 'https://make.powerapps.com/e/<env>/canvas/?action=edit&app-id=/providers/Microsoft.PowerApps/apps/<app-id>'
+```
+
+Behavior:
+
+- opens the managed browser profile at the target URL
+- you complete the one-time Microsoft / Power Apps web sign-in manually
+- when you confirm completion, `pp` records `lastBootstrapUrl` and
+  `lastBootstrappedAt` on the browser profile
+- `--no-wait` opens the profile and exits immediately without recording the
+  bootstrap completion
+
 ## Getting tokens directly
 
 If you want to inspect the raw token:

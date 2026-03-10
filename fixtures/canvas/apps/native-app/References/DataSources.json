@@ -1,0 +1,10 @@
+{
+  "DataSources": [
+    {
+      "Name": "Accounts",
+      "Type": "Table",
+      "DatasetName": "default.cds",
+      "EntityName": "account"
+    }
+  ]
+}

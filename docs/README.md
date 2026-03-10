@@ -10,6 +10,7 @@ Start here:
 - [Project config](project-config.md): `pp.config.*` structure, parameter resolution, and local analysis commands
 - [Dataverse and solutions](dataverse-and-solutions.md): `dv` and `solution` commands, query options, and environment setup
 - [Canvas registries](canvas.md): template registry schema, provenance rules, support matrix resolution, and project wiring
+- [Canvas harvesting](canvas-harvesting.md): manual TEST-environment refresh workflow for pinned canvas registries
 - [Flow artifacts](flow.md): remote flow discovery plus unpack/normalize/validate/patch workflows for canonical `flow.json` artifacts
 - [Model-driven apps](model.md): model app composition inspection for sitemaps, forms, views, tables, and dependency tracing
 - [Testing](testing.md): fixture-backed golden lanes, refresh commands, and the manual live smoke path

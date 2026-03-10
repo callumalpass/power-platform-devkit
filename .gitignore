@@ -4,3 +4,5 @@ coverage
 .DS_Store
 .turbo
 .ops/.mdbase/
+.ops/harness/runs/
+.ops/harness/runner/

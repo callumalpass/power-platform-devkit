@@ -7,7 +7,7 @@ describe('HttpClient', () => {
   });
 
   it('applies query params, serializes JSON bodies, and returns detailed responses', async () => {
-    const fetchMock = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       expect(String(input)).toBe('https://example.com/api/accounts?%24select=name&tag=active&tag=priority');
       expect(init?.method).toBe('POST');
       expect(init?.body).toBe(JSON.stringify({ name: 'Acme' }));

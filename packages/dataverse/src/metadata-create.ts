@@ -72,6 +72,12 @@ const booleanColumnSchema = baseColumnSchema.extend({
   falseLabel: z.string().min(1).default('False'),
 });
 
+const autoNumberColumnSchema = baseColumnSchema.extend({
+  kind: z.literal('autonumber'),
+  autoNumberFormat: z.string().min(1),
+  maxLength: z.number().int().min(1).max(4000).default(100),
+});
+
 const localChoiceColumnSchema = baseColumnSchema.extend({
   kind: z.literal('choice'),
   options: z.array(optionDefinitionSchema).min(1),
@@ -84,6 +90,18 @@ const globalChoiceColumnSchema = baseColumnSchema.extend({
   globalOptionSetName: z.string().min(1),
 });
 
+const fileColumnSchema = baseColumnSchema.extend({
+  kind: z.literal('file'),
+  maxSizeInKB: z.number().int().min(1).default(30720),
+});
+
+const imageColumnSchema = baseColumnSchema.extend({
+  kind: z.literal('image'),
+  maxSizeInKB: z.number().int().min(1).default(30720),
+  canStoreFullImage: z.boolean().default(false),
+  isPrimaryImage: z.boolean().optional(),
+});
+
 export const columnCreateSpecSchema = z.union([
   stringColumnSchema,
   memoColumnSchema,
@@ -92,8 +110,11 @@ export const columnCreateSpecSchema = z.union([
   moneyColumnSchema,
   dateTimeColumnSchema,
   booleanColumnSchema,
+  autoNumberColumnSchema,
   localChoiceColumnSchema,
   globalChoiceColumnSchema,
+  fileColumnSchema,
+  imageColumnSchema,
 ]);
 
 const primaryNameColumnSchema = z.object({
@@ -125,6 +146,13 @@ export const globalOptionSetCreateSpecSchema = z.object({
   options: z.array(optionDefinitionSchema).min(1),
 });
 
+const associatedMenuConfigSchema = z.object({
+  label: z.string().min(1).optional(),
+  behavior: associatedMenuBehaviorSchema.default('useCollectionName'),
+  group: associatedMenuGroupSchema.default('details'),
+  order: z.number().int().min(0).default(10000),
+});
+
 export const oneToManyRelationshipCreateSpecSchema = z.object({
   schemaName: z.string().min(1),
   referencedEntity: z.string().min(1),
@@ -147,11 +175,60 @@ export const oneToManyRelationshipCreateSpecSchema = z.object({
     .optional(),
 });
 
+export const manyToManyRelationshipCreateSpecSchema = z.object({
+  schemaName: z.string().min(1),
+  entity1LogicalName: z.string().min(1),
+  entity2LogicalName: z.string().min(1),
+  intersectEntityName: z.string().min(1).optional(),
+  entity1NavigationPropertyName: z.string().min(1).optional(),
+  entity2NavigationPropertyName: z.string().min(1).optional(),
+  entity1Menu: associatedMenuConfigSchema.optional(),
+  entity2Menu: associatedMenuConfigSchema.optional(),
+});
+
+export const customerRelationshipCreateSpecSchema = z.object({
+  tableLogicalName: z.string().min(1),
+  lookup: baseColumnSchema,
+  accountRelationshipSchemaName: z.string().min(1).optional(),
+  accountReferencedAttribute: z.string().min(1).default('id'),
+  accountMenu: associatedMenuConfigSchema.optional(),
+  contactRelationshipSchemaName: z.string().min(1).optional(),
+  contactReferencedAttribute: z.string().min(1).default('id'),
+  contactMenu: associatedMenuConfigSchema.optional(),
+});
+
+const optionPatchSchema = z.object({
+  label: z.string().min(1).optional(),
+  description: z.string().optional(),
+  color: z.string().optional(),
+});
+
+const optionInsertSchema = optionPatchSchema.extend({
+  value: z.number().int().nullable().optional(),
+  label: z.string().min(1),
+});
+
+const optionUpdateSchema = optionPatchSchema.extend({
+  value: z.number().int(),
+  mergeLabels: z.boolean().default(true),
+});
+
+export const globalOptionSetUpdateSpecSchema = z.object({
+  name: z.string().min(1),
+  add: z.array(optionInsertSchema).optional(),
+  update: z.array(optionUpdateSchema).optional(),
+  removeValues: z.array(z.number().int()).optional(),
+  orderValues: z.array(z.number().int()).optional(),
+});
+
 export type RequiredLevel = z.output<typeof requiredLevelSchema>;
 export type TableCreateSpec = z.output<typeof tableCreateSpecSchema>;
 export type ColumnCreateSpec = z.output<typeof columnCreateSpecSchema>;
 export type GlobalOptionSetCreateSpec = z.output<typeof globalOptionSetCreateSpecSchema>;
 export type OneToManyRelationshipCreateSpec = z.output<typeof oneToManyRelationshipCreateSpecSchema>;
+export type ManyToManyRelationshipCreateSpec = z.output<typeof manyToManyRelationshipCreateSpecSchema>;
+export type CustomerRelationshipCreateSpec = z.output<typeof customerRelationshipCreateSpecSchema>;
+export type GlobalOptionSetUpdateSpec = z.output<typeof globalOptionSetUpdateSpecSchema>;
 
 export interface MetadataBuildOptions {
   languageCode?: number;
@@ -180,6 +257,33 @@ export function parseOneToManyRelationshipCreateSpec(input: unknown): OperationR
     input,
     'DATAVERSE_METADATA_RELATIONSHIP_SPEC_INVALID',
     'One-to-many relationship creation spec is invalid.'
+  );
+}
+
+export function parseManyToManyRelationshipCreateSpec(input: unknown): OperationResult<ManyToManyRelationshipCreateSpec> {
+  return parseSpec(
+    manyToManyRelationshipCreateSpecSchema,
+    input,
+    'DATAVERSE_METADATA_RELATIONSHIP_SPEC_INVALID',
+    'Many-to-many relationship creation spec is invalid.'
+  );
+}
+
+export function parseCustomerRelationshipCreateSpec(input: unknown): OperationResult<CustomerRelationshipCreateSpec> {
+  return parseSpec(
+    customerRelationshipCreateSpecSchema,
+    input,
+    'DATAVERSE_METADATA_RELATIONSHIP_SPEC_INVALID',
+    'Customer relationship creation spec is invalid.'
+  );
+}
+
+export function parseGlobalOptionSetUpdateSpec(input: unknown): OperationResult<GlobalOptionSetUpdateSpec> {
+  return parseSpec(
+    globalOptionSetUpdateSpecSchema,
+    input,
+    'DATAVERSE_METADATA_OPTIONSET_SPEC_INVALID',
+    'Global option set update spec is invalid.'
   );
 }
 
@@ -314,6 +418,16 @@ export function buildColumnCreatePayload(spec: ColumnCreateSpec, options: Metada
           OptionSetType: 'Boolean',
         },
       });
+    case 'autonumber':
+      return compactObject({
+        ...base,
+        '@odata.type': 'Microsoft.Dynamics.CRM.StringAttributeMetadata',
+        AttributeType: 'String',
+        AttributeTypeName: { Value: 'StringType' },
+        AutoNumberFormat: spec.autoNumberFormat,
+        MaxLength: spec.maxLength,
+        FormatName: { Value: 'Text' },
+      });
     case 'choice':
       return compactObject({
         ...base,
@@ -329,6 +443,22 @@ export function buildColumnCreatePayload(spec: ColumnCreateSpec, options: Metada
             }
           : undefined,
         'GlobalOptionSet@odata.bind': spec.globalOptionSetName ? `/GlobalOptionSetDefinitions(Name='${spec.globalOptionSetName}')` : undefined,
+      });
+    case 'file':
+      return compactObject({
+        ...base,
+        '@odata.type': 'Microsoft.Dynamics.CRM.FileAttributeMetadata',
+        AttributeTypeName: { Value: 'FileType' },
+        MaxSizeInKB: spec.maxSizeInKB,
+      });
+    case 'image':
+      return compactObject({
+        ...base,
+        '@odata.type': 'Microsoft.Dynamics.CRM.ImageAttributeMetadata',
+        AttributeTypeName: { Value: 'ImageType' },
+        MaxSizeInKB: spec.maxSizeInKB,
+        CanStoreFullImage: spec.canStoreFullImage,
+        IsPrimaryImage: spec.isPrimaryImage,
       });
   }
 
@@ -365,12 +495,16 @@ export function buildOneToManyRelationshipCreatePayload(
     ReferencedEntity: spec.referencedEntity,
     ReferencedAttribute: normalizeReferencedAttribute(spec.referencedEntity, spec.referencedAttribute ?? 'id'),
     ReferencingEntity: spec.referencingEntity,
-    AssociatedMenuConfiguration: {
-      Behavior: mapAssociatedMenuBehavior(spec.associatedMenuBehavior ?? 'useCollectionName'),
-      Group: mapAssociatedMenuGroup(spec.associatedMenuGroup ?? 'details'),
-      Label: buildLabel(spec.associatedMenuLabel ?? spec.lookup.displayName, languageCode),
-      Order: spec.associatedMenuOrder,
-    },
+    AssociatedMenuConfiguration: buildAssociatedMenuConfiguration(
+      {
+        label: spec.associatedMenuLabel ?? spec.lookup.displayName,
+        behavior: spec.associatedMenuBehavior ?? 'useCollectionName',
+        group: spec.associatedMenuGroup ?? 'details',
+        order: spec.associatedMenuOrder,
+      },
+      spec.lookup.displayName,
+      languageCode
+    ),
     CascadeConfiguration: {
       Assign: mapCascadeType(spec.cascade?.assign ?? 'noCascade'),
       Delete: mapCascadeType(spec.cascade?.delete ?? 'removeLink'),
@@ -389,6 +523,66 @@ export function buildOneToManyRelationshipCreatePayload(
       Description: spec.lookup.description ? buildLabel(spec.lookup.description, languageCode) : undefined,
       RequiredLevel: buildRequiredLevel(spec.lookup.requiredLevel ?? 'none'),
     }),
+  });
+}
+
+export function buildManyToManyRelationshipCreatePayload(
+  spec: ManyToManyRelationshipCreateSpec,
+  options: MetadataBuildOptions = {}
+): Record<string, unknown> {
+  const languageCode = options.languageCode ?? 1033;
+
+  return compactObject({
+    '@odata.type': 'Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata',
+    SchemaName: spec.schemaName,
+    Entity1LogicalName: spec.entity1LogicalName,
+    Entity2LogicalName: spec.entity2LogicalName,
+    IntersectEntityName: spec.intersectEntityName ?? resolveLogicalName(spec.schemaName),
+    Entity1NavigationPropertyName: spec.entity1NavigationPropertyName,
+    Entity2NavigationPropertyName: spec.entity2NavigationPropertyName,
+    Entity1AssociatedMenuConfiguration: buildAssociatedMenuConfiguration(spec.entity1Menu, spec.entity1LogicalName, languageCode),
+    Entity2AssociatedMenuConfiguration: buildAssociatedMenuConfiguration(spec.entity2Menu, spec.entity2LogicalName, languageCode),
+  });
+}
+
+export function buildCustomerRelationshipCreatePayload(
+  spec: CustomerRelationshipCreateSpec,
+  options: MetadataBuildOptions = {}
+): Record<string, unknown> {
+  const languageCode = options.languageCode ?? 1033;
+  const lookupLogicalName = resolveLogicalName(spec.lookup.schemaName, spec.lookup.logicalName);
+
+  return compactObject({
+    Lookup: compactObject({
+      '@odata.type': 'Microsoft.Dynamics.CRM.ComplexLookupAttributeMetadata',
+      AttributeType: 'Lookup',
+      AttributeTypeName: { Value: 'LookupType' },
+      SchemaName: spec.lookup.schemaName,
+      LogicalName: lookupLogicalName,
+      DisplayName: buildLabel(spec.lookup.displayName, languageCode),
+      Description: spec.lookup.description ? buildLabel(spec.lookup.description, languageCode) : undefined,
+      RequiredLevel: buildRequiredLevel(spec.lookup.requiredLevel ?? 'none'),
+    }),
+    OneToManyRelationships: [
+      buildCustomerOneToManyRelationship(
+        spec.accountRelationshipSchemaName ?? `${spec.tableLogicalName}_${lookupLogicalName}_account`,
+        'account',
+        spec.accountReferencedAttribute ?? 'id',
+        spec.tableLogicalName,
+        spec.accountMenu,
+        spec.lookup.displayName,
+        languageCode
+      ),
+      buildCustomerOneToManyRelationship(
+        spec.contactRelationshipSchemaName ?? `${spec.tableLogicalName}_${lookupLogicalName}_contact`,
+        'contact',
+        spec.contactReferencedAttribute ?? 'id',
+        spec.tableLogicalName,
+        spec.contactMenu,
+        spec.lookup.displayName,
+        languageCode
+      ),
+    ],
   });
 }
 
@@ -428,6 +622,44 @@ function buildBaseColumnPayload(
     DisplayName: buildLabel(spec.displayName, languageCode),
     Description: spec.description ? buildLabel(spec.description, languageCode) : undefined,
     RequiredLevel: buildRequiredLevel(spec.requiredLevel ?? 'none'),
+  });
+}
+
+function buildAssociatedMenuConfiguration(
+  menu:
+    | {
+        label?: string;
+        behavior?: z.output<typeof associatedMenuBehaviorSchema>;
+        group?: z.output<typeof associatedMenuGroupSchema>;
+        order?: number;
+      }
+    | undefined,
+  fallbackLabel: string,
+  languageCode: number
+): Record<string, unknown> {
+  return {
+    Behavior: mapAssociatedMenuBehavior(menu?.behavior ?? 'useCollectionName'),
+    Group: mapAssociatedMenuGroup(menu?.group ?? 'details'),
+    Label: buildLabel(menu?.label ?? fallbackLabel, languageCode),
+    Order: menu?.order ?? 10000,
+  };
+}
+
+function buildCustomerOneToManyRelationship(
+  schemaName: string,
+  referencedEntity: string,
+  referencedAttribute: string,
+  referencingEntity: string,
+  menu: z.output<typeof associatedMenuConfigSchema> | undefined,
+  fallbackLabel: string,
+  languageCode: number
+): Record<string, unknown> {
+  return compactObject({
+    SchemaName: schemaName,
+    ReferencedEntity: referencedEntity,
+    ReferencedAttribute: normalizeReferencedAttribute(referencedEntity, referencedAttribute),
+    ReferencingEntity: referencingEntity,
+    AssociatedMenuConfiguration: buildAssociatedMenuConfiguration(menu, fallbackLabel, languageCode),
   });
 }
 

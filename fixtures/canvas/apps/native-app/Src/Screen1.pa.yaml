@@ -1,0 +1,10 @@
+Screens:
+  Screen1:
+    Children:
+      - Button1:
+          Control: Classic/Button@2.2.0
+          Properties:
+            Text: ="Ship it"
+            OnSelect: =Notify("Done")
+            X: =90
+            Y: =120

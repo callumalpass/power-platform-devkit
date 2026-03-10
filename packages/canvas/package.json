@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@pp/artifacts": "workspace:*",
-    "@pp/diagnostics": "workspace:*"
+    "@pp/diagnostics": "workspace:*",
+    "yaml": "^2.7.1"
   }
 }

@@ -1,0 +1,307 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { afterEach, describe, expect, it } from 'vitest';
+import { buildCanvasApp, loadCanvasSource, validateCanvasApp } from './index';
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0, tempDirs.length).map((path) => rm(path, { recursive: true, force: true })));
+});
+
+async function createTempDir(): Promise<string> {
+  const path = await mkdtemp(join(tmpdir(), 'pp-canvas-pa-yaml-'));
+  tempDirs.push(path);
+  return path;
+}
+
+async function writeUnpackedCanvasFixture(
+  root: string,
+  options: {
+    screenYaml: string;
+    registry: Record<string, unknown>;
+  }
+): Promise<string> {
+  const appRoot = join(root, 'YamlCanvas');
+  await mkdir(join(appRoot, 'Src'), { recursive: true });
+  await mkdir(join(appRoot, 'Controls'), { recursive: true });
+  await mkdir(join(appRoot, 'References'), { recursive: true });
+  await mkdir(join(appRoot, 'Resources'), { recursive: true });
+
+  await writeFile(
+    join(appRoot, 'Src', 'App.pa.yaml'),
+    [
+      '# header',
+      'App:',
+      '  Properties:',
+      '    Theme: =PowerAppsTheme',
+      '',
+    ].join('\n'),
+    'utf8'
+  );
+  await writeFile(join(appRoot, 'Src', 'Screen1.pa.yaml'), options.screenYaml, 'utf8');
+  await writeFile(
+    join(appRoot, 'Src', '_EditorState.pa.yaml'),
+    ['EditorState:', '  ScreensOrder:', '    - Screen1', ''].join('\n'),
+    'utf8'
+  );
+  await writeFile(
+    join(appRoot, 'Header.json'),
+    JSON.stringify(
+      {
+        DocVersion: '1.349',
+        MinVersionToLoad: '1.349',
+        MSAppStructureVersion: '2.4.0',
+        LastSavedDateTimeUTC: '03/10/2026 00:00:00',
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  await writeFile(join(appRoot, 'Properties.json'), JSON.stringify({ AppVersion: '1.0.0' }, null, 2), 'utf8');
+  await writeFile(
+    join(appRoot, 'Controls', '1.json'),
+    JSON.stringify(
+      {
+        TopParent: {
+          Name: 'App',
+        },
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  await writeFile(
+    join(appRoot, 'References', 'DataSources.json'),
+    JSON.stringify(
+      {
+        DataSources: [
+          {
+            Name: 'Accounts',
+            Type: 'Table',
+            DatasetName: 'default.cds',
+            EntityName: 'account',
+          },
+        ],
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  await writeFile(join(appRoot, 'References', 'Themes.json'), JSON.stringify({ CurrentTheme: 'defaultTheme' }, null, 2), 'utf8');
+  await writeFile(join(appRoot, 'Resources', 'PublishInfo.json'), JSON.stringify({ published: false }, null, 2), 'utf8');
+  await writeFile(join(appRoot, 'controls.json'), JSON.stringify(options.registry, null, 2), 'utf8');
+
+  return appRoot;
+}
+
+function createClassicButtonRegistry(): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    templates: [
+      {
+        templateName: 'Button',
+        templateVersion: '2.2.0',
+        aliases: {
+          constructors: ['Classic/Button'],
+        },
+        files: {
+          'References/Templates.json': {
+            name: 'Button',
+            version: '2.2.0',
+            templateXml: [
+              '<widget xmlns="http://openajax.org/metadata" xmlns:appMagic="http://schemas.microsoft.com/appMagic" id="http://microsoft.com/appmagic/button" name="button" version="2.2.0">',
+              '  <properties>',
+              '    <property name="Text" datatype="String" defaultValue="&quot;Button&quot;" isExpr="true">',
+              '      <appMagic:category>data</appMagic:category>',
+              '    </property>',
+              '    <property name="OnSelect" datatype="Behavior" defaultValue="" isExpr="true">',
+              '      <appMagic:category>behavior</appMagic:category>',
+              '    </property>',
+              '  </properties>',
+              '  <appMagic:includeProperties>',
+              '    <appMagic:includeProperty name="X" defaultValue="0" />',
+              '    <appMagic:includeProperty name="Y" defaultValue="0" />',
+              '    <appMagic:includeProperty name="Width" defaultValue="120" />',
+              '    <appMagic:includeProperty name="Height" defaultValue="40" />',
+              '  </appMagic:includeProperties>',
+              '</widget>',
+            ].join(''),
+          },
+        },
+        provenance: {
+          source: 'test-registry',
+        },
+      },
+    ],
+    supportMatrix: [
+      {
+        templateName: 'Button',
+        version: '2.2.0',
+        status: 'supported',
+        modes: ['strict', 'registry'],
+      },
+    ],
+  };
+}
+
+describe('canvas pa.yaml source support', () => {
+  it('loads unpacked pa.yaml sources and surfaces data sources', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Properties:',
+        '      LoadingSpinnerColor: =RGBA(56, 96, 178, 1)',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Save"',
+        '            X: =40',
+        '            Y: =80',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+
+    const source = await loadCanvasSource(appRoot);
+
+    expect(source.success).toBe(true);
+    expect(source.data?.kind).toBe('pa-yaml-unpacked');
+    expect(source.data?.templateRequirements).toEqual([
+      {
+        name: 'Classic/Button',
+        version: '2.2.0',
+      },
+    ]);
+    expect(source.data?.dataSources).toEqual([
+      {
+        name: 'Accounts',
+        type: 'Table',
+        datasetName: 'default.cds',
+        entityName: 'account',
+      },
+    ]);
+    expect(source.data?.screens[0]?.properties).toMatchObject({
+      LoadingSpinnerColor: '=RGBA(56, 96, 178, 1)',
+    });
+  });
+
+  it('validates control properties against harvested template metadata', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Save"',
+        '            InvalidThing: =1',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+
+    const validation = await validateCanvasApp(appRoot, {
+      mode: 'strict',
+      registries: ['./controls.json'],
+      root: appRoot,
+    });
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.data?.propertyChecks).toContainEqual({
+      controlPath: 'Screen1/Button1',
+      property: 'InvalidThing',
+      templateName: 'Button',
+      templateVersion: '2.2.0',
+      valid: false,
+      source: 'templateXml',
+    });
+    expect(validation.diagnostics.some((diagnostic) => diagnostic.code === 'CANVAS_CONTROL_PROPERTY_INVALID')).toBe(true);
+  });
+
+  it('builds a native msapp archive from unpacked pa.yaml sources', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Ship it"',
+        '            OnSelect: =Notify("Done")',
+        '            X: =90',
+        '            Y: =120',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+    const outPath = join(dir, 'dist', 'YamlCanvas.msapp');
+
+    const build = await buildCanvasApp(appRoot, {
+      mode: 'strict',
+      registries: ['./controls.json'],
+      root: appRoot,
+      outPath,
+    });
+
+    expect(build.success).toBe(true);
+    expect(build.data?.outPath).toBe(outPath);
+
+    const unzipDir = join(dir, 'unzipped');
+    await mkdir(unzipDir, { recursive: true });
+    const unzipResult = spawnSync('unzip', ['-o', outPath, '-d', unzipDir], {
+      encoding: 'utf8',
+    });
+
+    expect(unzipResult.status).toBe(0);
+
+    const templates = JSON.parse(await readFile(join(unzipDir, 'References', 'Templates.json'), 'utf8')) as {
+      UsedTemplates: Array<{ Name: string; Version: string }>;
+    };
+    const controls = JSON.parse(await readFile(join(unzipDir, 'Controls', '4.json'), 'utf8')) as {
+      TopParent: {
+        Children: Array<{
+          Name: string;
+          Rules: Array<{ Property: string; InvariantScript: string }>;
+        }>;
+      };
+    };
+
+    expect(templates.UsedTemplates).toMatchObject([
+      {
+        Name: 'Button',
+        Version: '2.2.0',
+      },
+    ]);
+    expect(controls.TopParent.Children[0]?.Name).toBe('Button1');
+    expect(controls.TopParent.Children[0]?.Rules).toEqual(
+      expect.arrayContaining([
+        {
+          Property: 'Text',
+          Category: 'Data',
+          InvariantScript: '"Ship it"',
+          RuleProviderType: 'Unknown',
+        },
+        {
+          Property: 'OnSelect',
+          Category: 'Behavior',
+          InvariantScript: 'Notify("Done")',
+          RuleProviderType: 'Unknown',
+        },
+      ])
+    );
+  });
+});
