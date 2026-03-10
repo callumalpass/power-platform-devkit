@@ -377,6 +377,12 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     return printFailure(argumentFailure('CANVAS_IMPORT_PATH_REQUIRED', 'Usage: canvas import <file.msapp> --env <alias> [--solution UNIQUE_NAME]'));
   }
 
+  const mutation = readMutationFlags(args);
+
+  if (!mutation.success || !mutation.data) {
+    return printFailure(mutation);
+  }
+
   const resolution = await resolveDataverseClient(envAlias, configOptions);
 
   if (!resolution.success || !resolution.data) {
@@ -424,6 +430,48 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     resolvedSolutionId = solution.data.solutionid;
   }
 
+  const suggestedNextActions = buildCanvasRemoteMutationSuggestions(command, {
+    envAlias,
+    solutionUniqueName,
+    solutionId: resolvedSolutionId,
+    displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
+    importPath,
+    makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+    derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
+  });
+
+  if (mutation.data.mode !== 'apply') {
+    const makerUrls = buildMakerCanvasUrls({
+      makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+      solutionId: resolvedSolutionId,
+      solutionUniqueName,
+      displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
+    });
+
+    printByFormat(
+      createMutationPreview(
+        `canvas.${command}.remote`,
+        mutation.data,
+        {
+          envAlias,
+          solutionUniqueName,
+          solutionId: resolvedSolutionId,
+          makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+          supported: false,
+        },
+        {
+          displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
+          importPath,
+          makerUrls,
+          suggestedNextActions,
+          knownLimitations,
+        }
+      ),
+      outputFormat(args, 'json')
+    );
+    return 0;
+  }
+
   return printFailure(
     fail(
       createDiagnostic(
@@ -440,15 +488,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
       ),
       {
         supportTier: 'preview',
-        suggestedNextActions: buildCanvasRemoteMutationSuggestions(command, {
-          envAlias,
-          solutionUniqueName,
-          solutionId: resolvedSolutionId,
-          displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
-          importPath,
-          makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
-          derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
-        }),
+        suggestedNextActions,
         knownLimitations,
       }
     )
@@ -4290,6 +4330,10 @@ function printCanvasCreateHelp(): void {
       '  - Remote canvas coverage in pp is currently read-only.',
       '  - pp does not yet return a remote canvas app id for create/import workflows.',
       '',
+      'Preview options:',
+      '  --dry-run                     Resolve env/solution context and print a structured no-op preview',
+      '  --plan                        Resolve env/solution context and print a structured fallback plan',
+      '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
     ].join('\n') + '\n'
@@ -4341,6 +4385,10 @@ function printCanvasImportHelp(): void {
       'Known limitations:',
       '  - Remote canvas coverage in pp is currently read-only.',
       '  - pp does not yet return a remote canvas app id for create/import workflows.',
+      '',
+      'Preview options:',
+      '  --dry-run                     Resolve env/solution context and print a structured no-op preview',
+      '  --plan                        Resolve env/solution context and print a structured fallback plan',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

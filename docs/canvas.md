@@ -238,6 +238,10 @@ Remote mutation placeholders:
 - `pp canvas import <file.msapp> --env <alias> [--solution UNIQUE_NAME] [--name DISPLAY_NAME]`
   currently returns a stable machine-readable diagnostic instead of importing a
   remote app
+- adding `--dry-run` or `--plan` to either placeholder resolves the target
+  environment and solution, then returns a structured no-op preview with the
+  Maker handoff URLs, verification commands, and known limitations instead of a
+  failure
 - `--name DISPLAY_NAME` lets the import placeholder return an exact
   post-import `pp canvas inspect ...` verification command even when the
   imported app name will differ from the `.msapp` basename
