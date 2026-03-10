@@ -1050,26 +1050,8 @@ describe('cli fixture-backed workflows', () => {
     expect(list.stderr).toBe('');
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
-    expect(JSON.parse(list.stdout)).toEqual([
-      {
-        id: 'canvas-1',
-        displayName: 'Harness Canvas',
-        name: 'crd_HarnessCanvas',
-        openUri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
-        appVersion: '1.2.3.4',
-        createdByClientVersion: '3.25000.1',
-        lastPublishTime: '2026-03-10T04:50:00.000Z',
-        status: 'Published',
-        tags: ['harness', 'solution'],
-        inSolution: true,
-      },
-    ]);
-    expect(JSON.parse(inspect.stdout)).toMatchObject({
-      id: 'canvas-1',
-      displayName: 'Harness Canvas',
-      openUri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
-      inSolution: true,
-    });
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/cli/golden/protocol/canvas-remote-list.json');
+    await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/canvas-remote-inspect.json');
   });
 
   it('returns explicit diagnostics for unsupported remote canvas mutations', async () => {
@@ -1119,66 +1101,11 @@ describe('cli fixture-backed workflows', () => {
 
     expect(create.code).toBe(1);
     expect(create.stdout).toBe('');
-    expect(JSON.parse(create.stderr)).toMatchObject({
-      success: false,
-      diagnostics: [
-        {
-          code: 'CANVAS_REMOTE_CREATE_NOT_IMPLEMENTED',
-          message: 'Remote canvas create is not implemented yet.',
-          source: '@pp/cli',
-        },
-      ],
-      details: {
-        handoff: {
-          kind: 'maker-blank-app',
-          recommendedUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
-        },
-        verification: {
-          inspectCommand: 'pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution',
-          listCommand: 'pp canvas list --env fixture --solution HarnessSolution',
-          solutionComponentsCommand: 'pp solution components HarnessSolution --env fixture --format json',
-        },
-      },
-      suggestedNextActions: expect.arrayContaining([
-        'Use Maker blank-app creation for now when you need a new remote canvas app.',
-        'After saving in Maker, run `pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
-        'After the Maker step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.',
-        'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the app was added to the solution.',
-      ]),
-      knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
-    });
+    await expectGoldenJson(JSON.parse(create.stderr), 'fixtures/cli/golden/protocol/canvas-remote-create-not-implemented.json');
 
     expect(importResult.code).toBe(1);
     expect(importResult.stdout).toBe('');
-    expect(JSON.parse(importResult.stderr)).toMatchObject({
-      success: false,
-      diagnostics: [
-        {
-          code: 'CANVAS_REMOTE_IMPORT_NOT_IMPLEMENTED',
-          message: 'Remote canvas import is not implemented yet.',
-          source: '@pp/cli',
-        },
-      ],
-      details: {
-        handoff: {
-          kind: 'maker-solution-apps',
-          recommendedUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
-          importPath: './dist/Harness App.msapp',
-        },
-        verification: {
-          inspectCommand: 'pp canvas inspect "Harness App" --env fixture --solution HarnessSolution',
-          listCommand: 'pp canvas list --env fixture --solution HarnessSolution',
-          solutionComponentsCommand: 'pp solution components HarnessSolution --env fixture --format json',
-        },
-      },
-      suggestedNextActions: expect.arrayContaining([
-        'Use Maker or solution tooling to import `./dist/Harness App.msapp` until `pp canvas import` exists.',
-        'After the import step, run `pp canvas inspect "Harness App" --env fixture --solution HarnessSolution` to confirm the remote app id.',
-        'After the import step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the app is visible in Dataverse.',
-        'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the imported app was added to the solution.',
-        'Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
-      ]),
-    });
+    await expectGoldenJson(JSON.parse(importResult.stderr), 'fixtures/cli/golden/protocol/canvas-remote-import-not-implemented.json');
   });
 
   it('lets placeholder canvas import guidance override the inferred display name', async () => {
@@ -1217,19 +1144,7 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(importResult.code).toBe(1);
-    expect(JSON.parse(importResult.stderr)).toMatchObject({
-      success: false,
-      diagnostics: [
-        {
-          code: 'CANVAS_REMOTE_IMPORT_NOT_IMPLEMENTED',
-          message: 'Remote canvas import is not implemented yet.',
-          source: '@pp/cli',
-        },
-      ],
-      suggestedNextActions: expect.arrayContaining([
-        'After the import step, run `pp canvas inspect "Imported Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
-      ]),
-    });
+    await expectGoldenJson(JSON.parse(importResult.stderr), 'fixtures/cli/golden/protocol/canvas-remote-import-custom-name.json');
   });
 
   it('requires remote targeting inputs for placeholder canvas mutations', async () => {
@@ -1605,84 +1520,17 @@ describe('cli fixture-backed workflows', () => {
 
       expect(create.code).toBe(0);
       expect(create.stderr).toBe('');
-      expect(JSON.parse(create.stdout)).toMatchObject({
-        action: 'canvas.create.remote',
-        mode: previewCase.mode,
-        confirmed: false,
-        willMutate: false,
-        target: {
-          envAlias: 'fixture',
-          solutionUniqueName: 'HarnessSolution',
-          solutionId: 'solution-1',
-          makerEnvironmentId: 'env-123',
-          supported: false,
-        },
-        input: {
-          displayName: 'Harness Canvas',
-          fallback: {
-            handoff: {
-              kind: 'maker-blank-app',
-              recommendedUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
-              makerUrls: {
-                blankAppUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
-                solutionAppsUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
-                solutionsUrl: 'https://make.powerapps.com/environments/env-123/solutions',
-              },
-            },
-            verification: {
-              inspectCommand: 'pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution',
-              listCommand: 'pp canvas list --env fixture --solution HarnessSolution',
-              solutionComponentsCommand: 'pp solution components HarnessSolution --env fixture --format json',
-            },
-          },
-          suggestedNextActions: expect.arrayContaining([
-            'Use Maker blank-app creation for now when you need a new remote canvas app.',
-            'After saving in Maker, run `pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
-          ]),
-          knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
-        },
-      });
+      await expectGoldenJson(
+        JSON.parse(create.stdout),
+        `fixtures/cli/golden/protocol/canvas-remote-create-${previewCase.mode}.json`
+      );
 
       expect(importResult.code).toBe(0);
       expect(importResult.stderr).toBe('');
-      expect(JSON.parse(importResult.stdout)).toMatchObject({
-        action: 'canvas.import.remote',
-        mode: previewCase.mode,
-        confirmed: false,
-        willMutate: false,
-        target: {
-          envAlias: 'fixture',
-          solutionUniqueName: 'HarnessSolution',
-          solutionId: 'solution-1',
-          makerEnvironmentId: 'env-123',
-          supported: false,
-        },
-        input: {
-          displayName: 'Imported Harness Canvas',
-          importPath: './dist/Harness App.msapp',
-          fallback: {
-            handoff: {
-              kind: 'maker-solution-apps',
-              recommendedUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
-              importPath: './dist/Harness App.msapp',
-              makerUrls: {
-                solutionAppsUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
-                solutionsUrl: 'https://make.powerapps.com/environments/env-123/solutions',
-              },
-            },
-            verification: {
-              inspectCommand: 'pp canvas inspect "Imported Harness Canvas" --env fixture --solution HarnessSolution',
-              listCommand: 'pp canvas list --env fixture --solution HarnessSolution',
-              solutionComponentsCommand: 'pp solution components HarnessSolution --env fixture --format json',
-            },
-          },
-          suggestedNextActions: expect.arrayContaining([
-            'Use Maker or solution tooling to import `./dist/Harness App.msapp` until `pp canvas import` exists.',
-            'After the import step, run `pp canvas inspect "Imported Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
-          ]),
-          knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
-        },
-      });
+      await expectGoldenJson(
+        JSON.parse(importResult.stdout),
+        `fixtures/cli/golden/protocol/canvas-remote-import-${previewCase.mode}.json`
+      );
     }
   });
 
@@ -1739,36 +1587,7 @@ describe('cli fixture-backed workflows', () => {
 
     expect(create.code).toBe(0);
     expect(create.stderr).toBe('');
-    expect(JSON.parse(create.stdout)).toMatchObject({
-      action: 'canvas.create.remote.handoff',
-      delegated: true,
-      launched: true,
-      browserProfile: 'maker-fixture',
-      target: {
-        envAlias: 'fixture',
-        solutionUniqueName: 'HarnessSolution',
-        solutionId: 'solution-1',
-        makerEnvironmentId: 'env-123',
-        supported: false,
-      },
-      handoff: {
-        handoff: {
-          kind: 'maker-blank-app',
-          recommendedUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
-        },
-        verification: {
-          inspectCommand: 'pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution',
-        },
-      },
-      launch: {
-        command: 'fake-browser',
-        profileDir: '/tmp/maker-fixture',
-      },
-      suggestedNextActions: expect.arrayContaining([
-        'Use Maker blank-app creation for now when you need a new remote canvas app.',
-        'After saving in Maker, run `pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
-      ]),
-    });
+    await expectGoldenJson(JSON.parse(create.stdout), 'fixtures/cli/golden/protocol/canvas-remote-create-open.json');
 
     expect(launchBrowserProfile).toHaveBeenCalledWith(
       'maker-fixture',
@@ -1812,15 +1631,10 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(missingBrowserProfile.code).toBe(1);
-    expect(JSON.parse(missingBrowserProfile.stderr)).toMatchObject({
-      success: false,
-      diagnostics: [
-        {
-          code: 'AUTH_BROWSER_PROFILE_NAME_REQUIRED',
-          message: 'Use --browser-profile NAME with --open so pp can launch the Maker handoff in a persisted browser profile.',
-        },
-      ],
-    });
+    await expectGoldenJson(
+      JSON.parse(missingBrowserProfile.stderr),
+      'fixtures/cli/golden/protocol/canvas-remote-create-open-missing-browser-profile.json'
+    );
   });
 
   it('returns a stable diagnostic when a Maker handoff URL cannot be opened yet', async () => {
@@ -1859,20 +1673,7 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(create.code).toBe(1);
-    expect(JSON.parse(create.stderr)).toMatchObject({
-      success: false,
-      diagnostics: [
-        {
-          code: 'CANVAS_MAKER_HANDOFF_URL_UNAVAILABLE',
-          message: 'A Maker handoff URL is not available for this canvas workflow yet.',
-          source: '@pp/cli',
-        },
-      ],
-      suggestedNextActions: expect.arrayContaining([
-        'Use Maker blank-app creation for now when you need a new remote canvas app.',
-      ]),
-      knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
-    });
+    await expectGoldenJson(JSON.parse(create.stderr), 'fixtures/cli/golden/protocol/canvas-remote-create-open-unavailable.json');
   });
 
   it('covers canvas inspect, validate, build, and diff through the CLI entrypoint', async () => {

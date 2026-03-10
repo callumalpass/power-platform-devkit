@@ -1,0 +1,36 @@
+{
+  "details": {
+    "handoff": {
+      "displayName": "Harness Canvas",
+      "kind": "manual",
+      "makerUrls": {}
+    },
+    "verification": {
+      "inspectCommand": "pp canvas inspect \"Harness Canvas\" --env fixture --solution HarnessSolution",
+      "listCommand": "pp canvas list --env fixture --solution HarnessSolution",
+      "solutionComponentsCommand": "pp solution components HarnessSolution --env fixture --format json"
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "CANVAS_MAKER_HANDOFF_URL_UNAVAILABLE",
+      "hint": "Provide --maker-env-id or configure makerEnvironmentId on the environment alias so pp can build an exact Maker handoff URL.",
+      "level": "error",
+      "message": "A Maker handoff URL is not available for this canvas workflow yet.",
+      "source": "@pp/cli"
+    }
+  ],
+  "knownLimitations": [
+    "Remote canvas coverage in pp is currently read-only.",
+    "pp does not yet return a remote canvas app id for create/import workflows."
+  ],
+  "success": false,
+  "suggestedNextActions": [
+    "Use Maker blank-app creation for now when you need a new remote canvas app.",
+    "After saving in Maker, run `pp canvas inspect \"Harness Canvas\" --env fixture --solution HarnessSolution` to confirm the remote app id.",
+    "After the Maker step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.",
+    "Run `pp solution components HarnessSolution --env fixture --format json` to verify that the app was added to the solution."
+  ],
+  "supportTier": "preview",
+  "warnings": []
+}

@@ -1,0 +1,44 @@
+{
+  "action": "canvas.create.remote",
+  "confirmed": false,
+  "input": {
+    "displayName": "Harness Canvas",
+    "fallback": {
+      "handoff": {
+        "displayName": "Harness Canvas",
+        "kind": "maker-blank-app",
+        "makerUrls": {
+          "blankAppUrl": "https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1",
+          "solutionAppsUrl": "https://make.powerapps.com/environments/env-123/solutions/solution-1/apps",
+          "solutionsUrl": "https://make.powerapps.com/environments/env-123/solutions"
+        },
+        "recommendedUrl": "https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1"
+      },
+      "verification": {
+        "inspectCommand": "pp canvas inspect \"Harness Canvas\" --env fixture --solution HarnessSolution",
+        "listCommand": "pp canvas list --env fixture --solution HarnessSolution",
+        "solutionComponentsCommand": "pp solution components HarnessSolution --env fixture --format json"
+      }
+    },
+    "knownLimitations": [
+      "Remote canvas coverage in pp is currently read-only.",
+      "pp does not yet return a remote canvas app id for create/import workflows."
+    ],
+    "suggestedNextActions": [
+      "Use Maker blank-app creation for now when you need a new remote canvas app.",
+      "Open https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1 to start the solution-scoped blank canvas app flow in Maker.",
+      "After saving in Maker, run `pp canvas inspect \"Harness Canvas\" --env fixture --solution HarnessSolution` to confirm the remote app id.",
+      "After the Maker step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.",
+      "Run `pp solution components HarnessSolution --env fixture --format json` to verify that the app was added to the solution."
+    ]
+  },
+  "mode": "dry-run",
+  "target": {
+    "envAlias": "fixture",
+    "makerEnvironmentId": "env-123",
+    "solutionId": "solution-1",
+    "solutionUniqueName": "HarnessSolution",
+    "supported": false
+  },
+  "willMutate": false
+}

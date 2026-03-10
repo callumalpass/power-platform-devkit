@@ -15,7 +15,7 @@ The repository now wires that split into GitHub Actions:
 
 The committed fixtures currently cover:
 
-- project inspect summaries and deploy-plan outputs from the fixture project,
+- project init/doctor protocol outputs plus project inspect summaries and deploy-plan outputs from the fixture project,
   including topology resolution, provider bindings, parameter sourcing, and
   missing-input visibility
 - canvas template import, inspect, validate, build, and diff outputs
@@ -42,6 +42,7 @@ The committed fixtures currently cover:
 - model-driven app list, inspect, sitemap, forms, views, and dependency outputs from committed Dataverse-like fixtures
 - CLI contract rendering for structured outputs, machine-friendly failures, warning streams, and dry-run/plan mutation previews
 - CLI protocol outputs from the real command router for representative table, YAML, NDJSON, and human-readable paths over committed fixture workflows, including stderr diagnostic envelopes for project discovery and invalid canvas/flow validation slices
+- remote canvas discovery and placeholder remote-mutation contracts, including list/inspect success payloads, not-yet-implemented create/import diagnostics, preview payloads, and Maker handoff/open flows
 - CLI workflows that drive those same local fixture paths end to end, including dry-run and plan previews for supported canvas and flow mutation commands plus model inspection workflows
 
 Run the focused lane:
