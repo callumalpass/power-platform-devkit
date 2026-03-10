@@ -532,8 +532,8 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
 async function runEnvironment(command: string | undefined, args: string[]): Promise<number> {
   const configOptions = readConfigOptions(args);
 
-  if (!command || command === 'help' || command === '--help' || args.includes('--help') || args.includes('help')) {
-    printHelp();
+  if (!command || command === 'help' || command === '--help') {
+    printEnvironmentHelp();
     return 0;
   }
 
@@ -547,13 +547,21 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
     case 'resolve-maker-id':
       return runEnvironmentResolveMakerId(configOptions, args);
     case 'cleanup-plan':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentCleanupPlanHelp();
+        return 0;
+      }
       return runEnvironmentCleanupPlan(configOptions, args);
     case 'cleanup':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentCleanupHelp();
+        return 0;
+      }
       return runEnvironmentCleanup(configOptions, args);
     case 'remove':
       return runEnvironmentRemove(configOptions, args);
     default:
-      printHelp();
+      printEnvironmentHelp();
       return 1;
   }
 }
@@ -9119,6 +9127,74 @@ function printSolutionListHelp(): void {
       'Examples:',
       '  pp solution list --environment dev',
       '  pp solution list --environment dev --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env <command> [options]',
+      '',
+      'Commands:',
+      '  list                         list saved environment aliases',
+      '  add --name ALIAS             add or update one environment alias',
+      '  inspect <alias>              inspect one saved alias',
+      '  resolve-maker-id <alias>     discover and persist the Maker environment id for an alias',
+      '  cleanup-plan <alias>         list disposable solutions matching a run prefix before bootstrap reset',
+      '  cleanup <alias>              delete disposable solutions matching a run prefix',
+      '  remove <alias>               remove one saved alias from local config',
+      '',
+      'Examples:',
+      '  pp env list',
+      '  pp env inspect dev',
+      '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json',
+      '  pp env cleanup test --prefix ppHarness20260310T013401820Z --dry-run --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentCleanupPlanHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Lists remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
+      '  - Intended for harness bootstrap or disposable-environment reset flows where stale disposable harness assets should be removed before reuse.',
+      '  - Returns candidate solutions together with next-step guidance for `pp env cleanup`.',
+      '  - Follow with `pp env cleanup <alias> --prefix PREFIX [--dry-run|--plan]` when you are ready to delete the matches.',
+      '  - Related command: env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Examples:',
+      '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z',
+      '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentCleanupHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Deletes remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
+      '  - Use `--dry-run` or `--plan` first to preview the matching solutions without mutating the environment.',
+      '  - Intended for clearing stale disposable harness assets before bootstrap reuses an environment.',
+      '',
+      'Examples:',
+      '  pp env cleanup test --prefix ppHarness20260310T013401820Z --dry-run --format json',
+      '  pp env cleanup test --prefix ppHarness20260310T013401820Z --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

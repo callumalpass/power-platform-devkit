@@ -5773,6 +5773,27 @@ describe('cli fixture-backed workflows', () => {
     expect(help.stderr).toBe('');
     expect(help.stdout).toContain('env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]');
     expect(help.stdout).toContain('env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]');
+    expect(help.stdout).toContain('stale disposable harness assets');
+  });
+
+  it('prints help for env cleanup', async () => {
+    const help = await runCli(['env', 'cleanup', '--help']);
+
+    expect(help.code).toBe(0);
+    expect(help.stderr).toBe('');
+    expect(help.stdout).toContain('env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]');
+    expect(help.stdout).toContain('Use `--dry-run` or `--plan` first to preview the matching solutions without mutating the environment.');
+  });
+
+  it('prints env group help with cleanup workflow examples', async () => {
+    const help = await runCli(['env', '--help']);
+
+    expect(help.code).toBe(0);
+    expect(help.stderr).toBe('');
+    expect(help.stdout).toContain('Usage: env <command> [options]');
+    expect(help.stdout).toContain('cleanup-plan <alias>');
+    expect(help.stdout).toContain('cleanup <alias>');
+    expect(help.stdout).toContain('pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json');
   });
 
   it('deletes matching disposable solutions through env cleanup', async () => {

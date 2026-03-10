@@ -93,9 +93,15 @@ pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column
 pp solution create Core --env dev --friendly-name "Core" --publisher-unique-name DefaultPublisher
 pp solution list --env dev
 pp solution inspect Core --env dev
+pp env cleanup-plan dev --prefix ppHarness20260310T013401820Z --format json
+pp env cleanup dev --prefix ppHarness20260310T013401820Z --dry-run --format json
 pp solution export Core --env dev --out ./artifacts/solutions/Core.zip --plan
 pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-name DefaultPublisher
 ```
+
+Use the `env cleanup-plan` / `env cleanup` pair when you need to reset
+run-scoped disposable solutions by prefix before a harness bootstrap reuses an
+environment.
 
 ## 6. Add a project config
 

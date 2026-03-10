@@ -217,6 +217,8 @@ Inspect and remove aliases:
 ```bash
 pp env inspect dev
 pp env resolve-maker-id dev
+pp env cleanup-plan dev --prefix ppHarness20260310T013401820Z --format json
+pp env cleanup dev --prefix ppHarness20260310T013401820Z --dry-run --format json
 pp env list
 pp env remove dev
 ```
@@ -226,6 +228,12 @@ the Power Platform environments API, persists the discovered
 `makerEnvironmentId` back onto that alias, and returns the updated alias
 record. Use this when a harness or Maker handoff needs exact `make.powerapps`
 deep links but the alias was originally registered without `--maker-env-id`.
+
+For disposable bootstrap flows, `pp env cleanup-plan <alias> --prefix <runPrefix>`
+lists solutions whose unique name or friendly name starts with that prefix.
+`pp env cleanup <alias> --prefix <runPrefix>` then deletes those matches through
+the typed `pp` solution path, with `--dry-run` or `--plan` available when you
+want a non-mutating preview first.
 
 ## Typical flows
 
