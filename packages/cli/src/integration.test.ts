@@ -3776,6 +3776,10 @@ describe('cli fixture-backed workflows', () => {
             name: 'Invoice Sync',
             uniquename: 'crd_InvoiceSync',
             category: 5,
+            type: 1,
+            mode: 0,
+            ondemand: false,
+            primaryentity: 'none',
             statecode: 1,
             statuscode: 2,
             clientdata: JSON.stringify({
@@ -3810,6 +3814,41 @@ describe('cli fixture-backed workflows', () => {
             solutioncomponentid: 'comp-1',
             objectid: 'flow-1',
             componenttype: 29,
+          },
+          {
+            solutioncomponentid: 'comp-2',
+            objectid: 'ref-1',
+            componenttype: 371,
+          },
+          {
+            solutioncomponentid: 'comp-3',
+            objectid: 'env-1',
+            componenttype: 380,
+          },
+        ],
+        connectionreferences: [
+          {
+            connectionreferenceid: 'ref-1',
+            connectionreferencelogicalname: 'shared_office365',
+            connectorid: '/providers/microsoft.powerapps/apis/shared_office365',
+            connectionid: '/connections/office365',
+            _solutionid_value: 'sol-1',
+          },
+        ],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'env-1',
+            schemaname: 'pp_ApiUrl',
+            defaultvalue: 'https://api.example.test',
+            _solutionid_value: 'sol-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'env-value-1',
+            value: 'https://api.example.test',
+            _environmentvariabledefinitionid_value: 'env-1',
+            statecode: 0,
           },
         ],
       },
@@ -3872,6 +3911,12 @@ describe('cli fixture-backed workflows', () => {
       source: {
         id: 'flow-1',
         uniqueName: 'crd_InvoiceSync',
+        workflowMetadata: {
+          type: 1,
+          mode: 0,
+          onDemand: false,
+          primaryEntity: 'none',
+        },
         solutionUniqueName: 'Core',
       },
     });
@@ -3881,6 +3926,12 @@ describe('cli fixture-backed workflows', () => {
       metadata: {
         id: 'flow-1',
         uniqueName: 'crd_InvoiceSync',
+        workflowMetadata: {
+          type: 1,
+          mode: 0,
+          onDemand: false,
+          primaryEntity: 'none',
+        },
         sourcePath: 'dataverse://workflows/flow-1',
       },
     });
@@ -4106,6 +4157,41 @@ describe('cli fixture-backed workflows', () => {
             objectid: 'flow-1',
             componenttype: 29,
           },
+          {
+            solutioncomponentid: 'comp-2',
+            objectid: 'ref-1',
+            componenttype: 371,
+          },
+          {
+            solutioncomponentid: 'comp-3',
+            objectid: 'env-1',
+            componenttype: 380,
+          },
+        ],
+        connectionreferences: [
+          {
+            connectionreferenceid: 'ref-1',
+            connectionreferencelogicalname: 'shared_office365',
+            connectorid: '/providers/microsoft.powerapps/apis/shared_office365',
+            connectionid: '/connections/office365',
+            _solutionid_value: 'sol-1',
+          },
+        ],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'env-1',
+            schemaname: 'pp_ApiUrl',
+            defaultvalue: 'https://api.example.test',
+            _solutionid_value: 'sol-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'env-value-1',
+            value: 'https://api.example.test',
+            _environmentvariabledefinitionid_value: 'env-1',
+            statecode: 0,
+          },
         ],
       },
     });
@@ -4125,7 +4211,6 @@ describe('cli fixture-backed workflows', () => {
       '--format',
       'json',
     ]);
-
     expect(deploy.code).toBe(0);
     expect(deploy.stderr).toBe('');
     expect(JSON.parse(deploy.stdout)).toMatchObject({
@@ -4136,7 +4221,7 @@ describe('cli fixture-backed workflows', () => {
         uniqueName: 'crd_InvoiceFlow',
         solutionUniqueName: 'Core',
       },
-      updatedFields: ['clientdata'],
+      updatedFields: ['clientdata', 'name', 'description', 'category', 'statecode', 'statuscode'],
     });
 
     const workflows = await client.queryAll<Record<string, unknown>>({
@@ -4158,7 +4243,43 @@ describe('cli fixture-backed workflows', () => {
       },
       queryAll: {
         workflows: [],
-        solutioncomponents: [],
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'comp-2',
+            objectid: 'ref-1',
+            componenttype: 371,
+          },
+          {
+            solutioncomponentid: 'comp-3',
+            objectid: 'env-1',
+            componenttype: 380,
+          },
+        ],
+        connectionreferences: [
+          {
+            connectionreferenceid: 'ref-1',
+            connectionreferencelogicalname: 'shared_office365',
+            connectorid: '/providers/microsoft.powerapps/apis/shared_office365',
+            connectionid: '/connections/office365',
+            _solutionid_value: 'sol-1',
+          },
+        ],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'env-1',
+            schemaname: 'pp_ApiUrl',
+            defaultvalue: 'https://api.example.test',
+            _solutionid_value: 'sol-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'env-value-1',
+            value: 'https://api.example.test',
+            _environmentvariabledefinitionid_value: 'env-1',
+            statecode: 0,
+          },
+        ],
       },
     });
 
@@ -4286,6 +4407,41 @@ describe('cli fixture-backed workflows', () => {
             objectid: 'target-flow-1',
             componenttype: 29,
           },
+          {
+            solutioncomponentid: 'comp-target-2',
+            objectid: 'ref-target-1',
+            componenttype: 371,
+          },
+          {
+            solutioncomponentid: 'comp-target-3',
+            objectid: 'env-target-1',
+            componenttype: 380,
+          },
+        ],
+        connectionreferences: [
+          {
+            connectionreferenceid: 'ref-target-1',
+            connectionreferencelogicalname: 'shared_office365',
+            connectorid: '/providers/microsoft.powerapps/apis/shared_office365',
+            connectionid: '/connections/office365',
+            _solutionid_value: 'sol-target',
+          },
+        ],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'env-target-1',
+            schemaname: 'pp_ApiUrl',
+            defaultvalue: 'https://api.example.test',
+            _solutionid_value: 'sol-target',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'env-target-value-1',
+            value: 'https://api.example.test',
+            _environmentvariabledefinitionid_value: 'env-target-1',
+            statecode: 0,
+          },
         ],
       },
     });
@@ -4310,7 +4466,6 @@ describe('cli fixture-backed workflows', () => {
       '--format',
       'json',
     ]);
-
     expect(promote.code).toBe(0);
     expect(promote.stderr).toBe('');
     expect(JSON.parse(promote.stdout)).toMatchObject({

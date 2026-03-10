@@ -33,6 +33,7 @@
   },
   "kind": "pp.flow.artifact",
   "metadata": {
+    "category": 5,
     "connectionReferences": [
       {
         "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
@@ -41,6 +42,7 @@
         "name": "shared_exchangeonline"
       }
     ],
+    "description": "Synchronize invoice payloads to downstream systems.",
     "displayName": "Invoice Flow",
     "environmentVariables": [
       "pp_ApiUrl"

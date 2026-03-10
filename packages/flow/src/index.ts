@@ -34,12 +34,20 @@ export interface FlowConnectionReference extends DataverseCloudFlowConnectionRef
   apiId?: string;
 }
 
+export interface FlowWorkflowShellMetadata {
+  type?: number;
+  mode?: number;
+  onDemand?: boolean;
+  primaryEntity?: string;
+}
+
 export interface FlowSummary {
   id: string;
   name?: string;
   description?: string;
   uniqueName?: string;
   category?: number;
+  workflowMetadata?: FlowWorkflowShellMetadata;
   stateCode?: number;
   statusCode?: number;
   definitionAvailable: boolean;
@@ -62,6 +70,7 @@ export interface FlowArtifact {
     description?: string;
     uniqueName?: string;
     category?: number;
+    workflowMetadata?: FlowWorkflowShellMetadata;
     stateCode?: number;
     statusCode?: number;
     sourcePath?: string;
@@ -281,6 +290,7 @@ export interface FlowExportResult {
     id: string;
     name?: string;
     uniqueName?: string;
+    workflowMetadata?: FlowWorkflowShellMetadata;
     solutionUniqueName?: string;
   };
   summary: FlowArtifactSummary;
@@ -300,6 +310,7 @@ export interface FlowDeployResult {
     id: string;
     name?: string;
     uniqueName?: string;
+    workflowMetadata?: FlowWorkflowShellMetadata;
     solutionUniqueName?: string;
   };
   updatedFields: string[];
@@ -331,6 +342,7 @@ export interface FlowArtifactPromoteResult {
     id: string;
     name?: string;
     uniqueName?: string;
+    workflowMetadata?: FlowWorkflowShellMetadata;
     solutionUniqueName?: string;
   };
   targetIdentifier: string;
@@ -339,6 +351,7 @@ export interface FlowArtifactPromoteResult {
     id: string;
     name?: string;
     uniqueName?: string;
+    workflowMetadata?: FlowWorkflowShellMetadata;
     solutionUniqueName?: string;
   };
   summary: FlowArtifactSummary;
@@ -1368,6 +1381,7 @@ export async function promoteRemoteFlowArtifact(
         id: sourceFlow.data.id,
         name: sourceFlow.data.name,
         uniqueName: sourceFlow.data.uniqueName,
+        workflowMetadata: sourceFlow.data.workflowMetadata,
         solutionUniqueName: options.sourceSolutionUniqueName,
       },
       targetIdentifier: deployed.data.targetIdentifier,
@@ -1383,7 +1397,7 @@ export async function promoteRemoteFlowArtifact(
       warnings: deployed.warnings,
       knownLimitations: [
         ...(deployed.knownLimitations ?? []),
-        'Remote flow promotion currently transfers only a bounded workflow shell (`name`, `description`, `category`, `statecode`, `statuscode`) plus the normalized clientdata payload.',
+        'Remote flow promotion currently transfers only a bounded workflow shell (`name`, `description`, `category`, `type`, `mode`, `ondemand`, `primaryentity`, `statecode`, `statuscode`) plus the normalized clientdata payload.',
       ],
       provenance: [
         {
@@ -1542,6 +1556,7 @@ async function promoteRemoteFlowArtifactAsSolutionPackage(
           id: sourceFlow.id,
           name: sourceFlow.name,
           uniqueName: sourceFlow.uniqueName,
+          workflowMetadata: sourceFlow.workflowMetadata,
           solutionUniqueName: options.sourceSolutionUniqueName,
         },
         operation: 'imported-solution',
@@ -1686,6 +1701,7 @@ export async function exportRemoteFlowArtifact(
         id: flow.data.id,
         name: flow.data.name,
         uniqueName: flow.data.uniqueName,
+        workflowMetadata: flow.data.workflowMetadata,
         solutionUniqueName: options.solutionUniqueName,
       },
       summary: buildFlowArtifactSummary(destination, artifact.data),
@@ -1894,6 +1910,12 @@ async function deployLoadedFlowArtifact(
             id: create.data?.entity?.workflowid ?? create.data?.entityId ?? '',
             name: create.data?.entity?.name ?? artifact.metadata.displayName ?? artifact.metadata.name ?? createIdentifier,
             uniqueName: create.data?.entity?.uniquename ?? createIdentifier,
+            workflowMetadata: normalizeFlowWorkflowShellMetadata({
+              type: create.data?.entity?.type,
+              mode: create.data?.entity?.mode,
+              onDemand: create.data?.entity?.ondemand,
+              primaryEntity: create.data?.entity?.primaryentity,
+            }),
             solutionUniqueName: options.solutionUniqueName,
           },
           updatedFields: Object.keys(createEntity),
@@ -1909,7 +1931,7 @@ async function deployLoadedFlowArtifact(
           warnings: [...warnings, ...remoteFlow.warnings, ...globalFlow.warnings, ...create.warnings],
           knownLimitations: [
             'Create-if-missing provisions only a bounded workflow shell with normalized clientdata and bounded workflow metadata.',
-            'Flow creation does not yet cover broader workflow metadata/state transitions or solution-packaged import/export workflows.',
+            'Flow creation does not yet cover broader workflow metadata/state transitions beyond the bounded shell or solution-packaged import/export workflows.',
           ],
           provenance: [
             {
@@ -1969,8 +1991,9 @@ async function deployLoadedFlowArtifact(
       operation: 'updated',
       target: {
         id: remoteFlow.data.id,
-        name: remoteFlow.data.name,
-        uniqueName: remoteFlow.data.uniqueName,
+        name: artifact.metadata.displayName ?? artifact.metadata.name ?? remoteFlow.data.name,
+        uniqueName: artifact.metadata.uniqueName ?? remoteFlow.data.uniqueName,
+        workflowMetadata: artifact.metadata.workflowMetadata ?? remoteFlow.data.workflowMetadata,
         solutionUniqueName: options.solutionUniqueName,
       },
       updatedFields: Object.keys(updateEntity),
@@ -1985,8 +2008,8 @@ async function deployLoadedFlowArtifact(
       diagnostics: [...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics],
       warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
       knownLimitations: [
-        'Remote flow deploy currently syncs only a bounded workflow shell (`name`, `description`, `category`, `statecode`, `statuscode`) plus the normalized clientdata payload.',
-        'Flow creation, solution import/export packaging, and broader workflow metadata/state transitions still require later lifecycle work.',
+        'Remote flow deploy currently syncs only a bounded workflow shell (`name`, `description`, `category`, `type`, `mode`, `ondemand`, `primaryentity`, `statecode`, `statuscode`) plus the normalized clientdata payload.',
+        'Flow creation, solution import/export packaging, and broader workflow metadata/state transitions beyond that bounded shell still require later lifecycle work.',
       ],
       provenance: [
         {
@@ -2362,6 +2385,12 @@ function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspe
     description: record.description,
     uniqueName: record.uniqueName,
     category: record.category,
+    workflowMetadata: normalizeFlowWorkflowShellMetadata({
+      type: record.type,
+      mode: record.mode,
+      onDemand: record.onDemand,
+      primaryEntity: record.primaryEntity,
+    }),
     stateCode: record.stateCode,
     statusCode: record.statusCode,
     definitionAvailable: record.definitionAvailable,
@@ -2375,6 +2404,7 @@ function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspe
 function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResult<FlowArtifact> {
   const definition = asRecord(flow.clientData?.definition);
   const workflowState = resolveSupportedFlowWorkflowState(flow.stateCode, flow.statusCode);
+  const workflowMetadata = buildRawFlowWorkflowShellFields(flow.workflowMetadata);
 
   if (!definition) {
     return fail(
@@ -2397,6 +2427,7 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
       description: flow.description,
       uniquename: flow.uniqueName,
       category: flow.category,
+      ...workflowMetadata,
       ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
       ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
       ...(flow.clientData ? { clientdata: stableStringify(cloneJsonValue(flow.clientData)) } : {}),
@@ -2406,6 +2437,7 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
         ...(flow.description ? { description: flow.description } : {}),
         ...(flow.uniqueName ? { uniquename: flow.uniqueName } : {}),
         ...(flow.category !== undefined ? { category: flow.category } : {}),
+        ...workflowMetadata,
         ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
         ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
       },
@@ -2694,6 +2726,19 @@ function normalizeCanonicalFlowArtifact(record: Record<string, unknown>, sourceP
         description: readString(metadata.description),
         uniqueName: readString(metadata.uniqueName),
         category: readNumber(metadata.category),
+        workflowMetadata: normalizeFlowWorkflowShellMetadata({
+          ...(asRecord(metadata.workflowMetadata) ?? {}),
+          type: readNumber(metadata.type) ?? readNumber(asRecord(metadata.workflowMetadata)?.type),
+          mode: readNumber(metadata.mode) ?? readNumber(asRecord(metadata.workflowMetadata)?.mode),
+          onDemand:
+            readBoolean(metadata.onDemand) ??
+            readBoolean(metadata.ondemand) ??
+            readBoolean(asRecord(metadata.workflowMetadata)?.onDemand),
+          primaryEntity:
+            readString(metadata.primaryEntity) ??
+            readString(metadata.primaryentity) ??
+            readString(asRecord(metadata.workflowMetadata)?.primaryEntity),
+        }),
         stateCode: readNumber(metadata.stateCode),
         statusCode: readNumber(metadata.statusCode),
         sourcePath: readString(metadata.sourcePath) ?? sourcePath,
@@ -2745,6 +2790,12 @@ function normalizeRawFlowArtifact(record: Record<string, unknown>, sourcePath: s
         description: readString(record.description) ?? readString(properties.description),
         uniqueName: readString(record.uniquename) ?? readString(properties.uniquename),
         category: readNumber(record.category) ?? readNumber(properties.category),
+        workflowMetadata: normalizeFlowWorkflowShellMetadata({
+          type: readNumber(record.type) ?? readNumber(properties.type),
+          mode: readNumber(record.mode) ?? readNumber(properties.mode),
+          onDemand: readBoolean(record.ondemand) ?? readBoolean(properties.ondemand),
+          primaryEntity: readString(record.primaryentity) ?? readString(properties.primaryentity),
+        }),
         stateCode: readNumber(record.statecode) ?? readNumber(properties.statecode),
         statusCode: readNumber(record.statuscode) ?? readNumber(properties.statuscode),
         sourcePath,
@@ -2892,6 +2943,42 @@ function resolveSupportedFlowWorkflowState(
   };
 }
 
+function normalizeFlowWorkflowShellMetadata(value: {
+  type?: number;
+  mode?: number;
+  onDemand?: boolean;
+  primaryEntity?: string;
+}): FlowWorkflowShellMetadata | undefined {
+  const workflowMetadata = {
+    ...(value.type !== undefined ? { type: value.type } : {}),
+    ...(value.mode !== undefined ? { mode: value.mode } : {}),
+    ...(value.onDemand !== undefined ? { onDemand: value.onDemand } : {}),
+    ...(value.primaryEntity ? { primaryEntity: value.primaryEntity } : {}),
+  };
+
+  return Object.keys(workflowMetadata).length > 0 ? workflowMetadata : undefined;
+}
+
+function buildRawFlowWorkflowShellFields(workflowMetadata: FlowWorkflowShellMetadata | undefined): Record<string, FlowJsonValue> {
+  return {
+    ...(workflowMetadata?.type !== undefined ? { type: workflowMetadata.type } : {}),
+    ...(workflowMetadata?.mode !== undefined ? { mode: workflowMetadata.mode } : {}),
+    ...(workflowMetadata?.onDemand !== undefined ? { ondemand: workflowMetadata.onDemand } : {}),
+    ...(workflowMetadata?.primaryEntity ? { primaryentity: workflowMetadata.primaryEntity } : {}),
+  };
+}
+
+function buildDataverseFlowWorkflowShellFields(
+  workflowMetadata: FlowWorkflowShellMetadata | undefined
+): Record<string, unknown> {
+  return {
+    ...(workflowMetadata?.type !== undefined ? { type: workflowMetadata.type } : {}),
+    ...(workflowMetadata?.mode !== undefined ? { mode: workflowMetadata.mode } : {}),
+    ...(workflowMetadata?.onDemand !== undefined ? { ondemand: workflowMetadata.onDemand } : {}),
+    ...(workflowMetadata?.primaryEntity ? { primaryentity: workflowMetadata.primaryEntity } : {}),
+  };
+}
+
 function buildFlowDeployClientData(artifact: FlowArtifact): string {
   return stableStringify({
     ...(artifact.clientData ? cloneJsonValue(artifact.clientData) : {}),
@@ -2904,6 +2991,7 @@ function buildFlowDeployCreateEntity(artifact: FlowArtifact): Record<string, unk
 
   return {
     category: artifact.metadata.category ?? 5,
+    ...buildDataverseFlowWorkflowShellFields(artifact.metadata.workflowMetadata),
     name: artifact.metadata.displayName ?? artifact.metadata.name ?? artifact.metadata.uniqueName,
     ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
     uniquename: artifact.metadata.uniqueName,
@@ -2925,6 +3013,7 @@ function buildFlowDeployUpdateEntity(artifact: FlowArtifact): Record<string, unk
       : {}),
     ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
     ...(artifact.metadata.category !== undefined ? { category: artifact.metadata.category } : {}),
+    ...buildDataverseFlowWorkflowShellFields(artifact.metadata.workflowMetadata),
     ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
     ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
   };
@@ -2932,12 +3021,14 @@ function buildFlowDeployUpdateEntity(artifact: FlowArtifact): Record<string, unk
 
 function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, FlowJsonValue> {
   const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
+  const workflowMetadata = buildRawFlowWorkflowShellFields(artifact.metadata.workflowMetadata);
   const record: Record<string, FlowJsonValue> = {
     ...(artifact.unknown ? cloneJsonValue(artifact.unknown) : {}),
     ...(artifact.metadata.name ? { name: artifact.metadata.name } : {}),
     ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
     ...(artifact.metadata.uniqueName ? { uniquename: artifact.metadata.uniqueName } : {}),
     ...(artifact.metadata.category !== undefined ? { category: artifact.metadata.category } : {}),
+    ...workflowMetadata,
     ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
     ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
     ...(artifact.clientData || Object.keys(artifact.definition).length > 0
@@ -2952,6 +3043,7 @@ function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, Fl
       ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
       ...(artifact.metadata.uniqueName ? { uniquename: artifact.metadata.uniqueName } : {}),
       ...(artifact.metadata.category !== undefined ? { category: artifact.metadata.category } : {}),
+      ...workflowMetadata,
       ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
       ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
     },
@@ -4048,6 +4140,7 @@ function buildFlowArtifactFromInspectResult(flow: FlowInspectResult): FlowArtifa
       name: flow.uniqueName ?? flow.name,
       displayName: flow.name,
       uniqueName: flow.uniqueName,
+      workflowMetadata: flow.workflowMetadata,
       stateCode: flow.stateCode,
       statusCode: flow.statusCode,
       connectionReferences: flow.connectionReferences,
@@ -5029,6 +5122,10 @@ function readString(value: unknown): string | undefined {
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

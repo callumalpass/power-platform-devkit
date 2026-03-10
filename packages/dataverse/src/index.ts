@@ -590,6 +590,10 @@ export interface CloudFlowRecord {
   name?: string;
   description?: string;
   category?: number;
+  type?: number;
+  mode?: number;
+  ondemand?: boolean;
+  primaryentity?: string;
   statecode?: number;
   statuscode?: number;
   uniquename?: string;
@@ -609,6 +613,10 @@ export interface CloudFlowSummary {
   description?: string;
   uniqueName?: string;
   category?: number;
+  type?: number;
+  mode?: number;
+  onDemand?: boolean;
+  primaryEntity?: string;
   stateCode?: number;
   statusCode?: number;
   definitionAvailable: boolean;
@@ -2525,7 +2533,20 @@ export class CloudFlowService {
   async list(): Promise<OperationResult<CloudFlowInspectResult[]>> {
     const workflows = await this.dataverseClient.queryAll<CloudFlowRecord>({
       table: 'workflows',
-      select: ['workflowid', 'name', 'description', 'category', 'statecode', 'statuscode', 'uniquename', 'clientdata'],
+      select: [
+        'workflowid',
+        'name',
+        'description',
+        'category',
+        'type',
+        'mode',
+        'ondemand',
+        'primaryentity',
+        'statecode',
+        'statuscode',
+        'uniquename',
+        'clientdata',
+      ],
       filter: 'category eq 5',
     });
 
@@ -3736,6 +3757,10 @@ function normalizeCloudFlow(record: CloudFlowRecord): CloudFlowInspectResult {
     description: record.description,
     uniqueName: record.uniquename,
     category: record.category,
+    type: record.type,
+    mode: record.mode,
+    onDemand: record.ondemand,
+    primaryEntity: record.primaryentity,
     stateCode: record.statecode,
     statusCode: record.statuscode,
     definitionAvailable: parsed.definition !== undefined,

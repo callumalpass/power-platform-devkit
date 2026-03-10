@@ -59,6 +59,10 @@ function createStubDataverseClient(): DataverseClient {
                 description: 'Synchronize invoices from Dataverse to downstream systems.',
                 uniquename: 'crd_InvoiceSync',
                 category: 5,
+                type: 1,
+                mode: 0,
+                ondemand: false,
+                primaryentity: 'none',
                 statecode: 1,
                 statuscode: 2,
                 clientdata: JSON.stringify({
@@ -263,6 +267,12 @@ describe('FlowService', () => {
         description: 'Synchronize invoices from Dataverse to downstream systems.',
         uniqueName: 'crd_InvoiceSync',
         category: 5,
+        workflowMetadata: {
+          type: 1,
+          mode: 0,
+          onDemand: false,
+          primaryEntity: 'none',
+        },
         sourcePath: 'dataverse://workflows/flow-1',
         connectionReferences: [
           {
@@ -391,6 +401,184 @@ describe('FlowService', () => {
           },
         },
       },
+    });
+  });
+
+  it('preserves bounded workflow shell metadata through export, repack, and remote update/create paths', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'workflow-shell.raw.json');
+    const repackedPath = join(dir, 'workflow-shell.repacked.json');
+    const updates: Array<Record<string, unknown>> = [];
+    const creates: Array<Record<string, unknown>> = [];
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          properties: {
+            definition: {
+              actions: {},
+            },
+            displayName: 'Workflow Shell Flow',
+            name: 'Workflow Shell Flow',
+            uniquename: 'crd_WorkflowShellFlow',
+            category: 5,
+            type: 1,
+            mode: 0,
+            ondemand: false,
+            primaryentity: 'none',
+            statecode: 1,
+            statuscode: 2,
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const updateClient = {
+      ...createStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-shell-1',
+                name: 'Workflow Shell Flow',
+                uniquename: 'crd_WorkflowShellFlow',
+                category: 5,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+        }
+
+        return createStubDataverseClient().queryAll(options);
+      },
+      update: async (_table: string, _id: string, entity: Record<string, unknown>) => {
+        updates.push(entity);
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const createClient = {
+      ...createStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows' || options.table === 'solutioncomponents') {
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+        }
+
+        return createStubDataverseClient().queryAll(options);
+      },
+      create: async (_table: string, entity: Record<string, unknown>) => {
+        creates.push(entity);
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            entityId: 'created-shell-1',
+            entity: {
+              ...entity,
+              workflowid: 'created-shell-1',
+              uniquename: 'crd_WorkflowShellFlow',
+            },
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const packed = await packFlowArtifact(artifactPath, repackedPath);
+    const updateResult = await new FlowService(updateClient).deployArtifact(artifactPath);
+    const createResult = await new FlowService(createClient).deployArtifact(artifactPath, {
+      createIfMissing: true,
+    });
+    const repacked = JSON.parse(await readFile(repackedPath, 'utf8')) as Record<string, unknown>;
+
+    expect(packed.success).toBe(true);
+    expect(repacked).toMatchObject({
+      type: 1,
+      mode: 0,
+      ondemand: false,
+      primaryentity: 'none',
+      properties: {
+        type: 1,
+        mode: 0,
+        ondemand: false,
+        primaryentity: 'none',
+      },
+    });
+
+    expect(updateResult.success).toBe(true);
+    expect(updateResult.data).toMatchObject({
+      operation: 'updated',
+      target: {
+        workflowMetadata: {
+          type: 1,
+          mode: 0,
+          onDemand: false,
+          primaryEntity: 'none',
+        },
+      },
+      updatedFields: ['clientdata', 'name', 'category', 'type', 'mode', 'ondemand', 'primaryentity', 'statecode', 'statuscode'],
+    });
+    expect(updates[0]).toMatchObject({
+      type: 1,
+      mode: 0,
+      ondemand: false,
+      primaryentity: 'none',
+    });
+
+    expect(createResult.success).toBe(true);
+    expect(createResult.data).toMatchObject({
+      operation: 'created',
+      target: {
+        workflowMetadata: {
+          type: 1,
+          mode: 0,
+          onDemand: false,
+          primaryEntity: 'none',
+        },
+      },
+      updatedFields: [
+        'category',
+        'type',
+        'mode',
+        'ondemand',
+        'primaryentity',
+        'name',
+        'uniquename',
+        'clientdata',
+        'statecode',
+        'statuscode',
+      ],
+    });
+    expect(creates[0]).toMatchObject({
+      type: 1,
+      mode: 0,
+      ondemand: false,
+      primaryentity: 'none',
     });
   });
 

@@ -28,6 +28,8 @@ pp flow promote "Invoice Sync" --source-environment dev --source-solution Core -
 Current remote inspection returns:
 
 - flow id, name, bounded description metadata, and unique name
+- bounded workflow-shell metadata for `type`, `mode`, `ondemand`, and
+  `primaryentity` when present
 - state and status codes
 - whether client-definition data was present
 - parsed connection reference names
@@ -92,6 +94,12 @@ The canonical unpacked artifact is `flow.json`:
     "displayName": "Invoice Flow",
     "description": "Synchronize invoice payloads to downstream systems.",
     "category": 5,
+    "workflowMetadata": {
+      "type": 1,
+      "mode": 0,
+      "onDemand": false,
+      "primaryEntity": "none"
+    },
     "connectionReferences": [
       {
         "name": "shared_office365",
@@ -154,8 +162,8 @@ now carries that lifecycle one step further for an already-existing target cloud
 flow by validating the local artifact, resolving a remote workflow by `--target`
 or the artifact metadata (`uniqueName`, then `name`, then `displayName`, then
 `id`), and PATCHing the normalized definition plus a bounded workflow-shell
-metadata slice (`name`, `description`, `category`, `statecode`, and `statuscode`
-when present)
+metadata slice (`name`, `description`, `category`, `type`, `mode`,
+`ondemand`, `primaryentity`, `statecode`, and `statuscode` when present)
 back into Dataverse `workflows`.
 Supported workflow state/status metadata is now validated and normalized as part
 of that lifecycle: the current bounded surface accepts Draft `(0,1)`,
@@ -201,10 +209,11 @@ The current pack/deploy boundary is:
   of flattening them away
 - writes a raw `properties.definition` payload plus supported metadata fields
   such as `displayName`, `name`, `description`, `uniquename`, `category`,
-  `statecode`, and `statuscode`
+  `type`, `mode`, `ondemand`, `primaryentity`, `statecode`, and `statuscode`
 - repack also restores the supported top-level raw workflow shell fields
-  (`name`, `description`, `uniquename`, `category`, `statecode`,
-  `statuscode`) instead of narrowing them down to `properties.*` only
+  (`name`, `description`, `uniquename`, `category`, `type`, `mode`,
+  `ondemand`, `primaryentity`, `statecode`, `statuscode`) instead of
+  narrowing them down to `properties.*` only
 - repack also restores that bounded preserved `clientdata` context alongside
   `properties.definition` so local export/edit/repack flows can round-trip the
   supported remote payload shape
@@ -216,11 +225,12 @@ The current pack/deploy boundary is:
   onto the canonical Draft `(0,1)`, Activated `(1,2)`, or Suspended `(2,3)`
   pair before writing a raw export or Dataverse payload
 - remote deploy currently updates only a bounded workflow shell (`name`,
-  `description`, `category`, `statecode`, `statuscode`) plus the normalized `clientdata`
-  definition and any preserved bounded `clientdata` siblings after the shared
-  local validator passes, and when a destination solution scope is supplied it
-  also checks that projected connection references and environment variables
-  exist there before mutation, unless `--create-if-missing` is used
+  `description`, `category`, `type`, `mode`, `ondemand`, `primaryentity`,
+  `statecode`, `statuscode`) plus the normalized `clientdata` definition and
+  any preserved bounded `clientdata` siblings after the shared local validator
+  passes, and when a destination solution scope is supplied it also checks that
+  projected connection references and environment variables exist there before
+  mutation, unless `--create-if-missing` is used
 - remote promotion currently transfers that same bounded workflow shell plus
   the normalized definition, including the same solution-scoped target checks
   for artifact-mode promotion; it does not package or migrate broader workflow
@@ -230,7 +240,8 @@ The current pack/deploy boundary is:
   `--source-solution`, does not support `--target` or `--create-if-missing`,
   and accepts the same bounded import controls as `pp solution import`
 - create-if-missing currently requires artifact `metadata.uniqueName`, creates
-  only a bounded workflow shell (`category`, `name`, `description`, `uniquename`,
+  only a bounded workflow shell (`category`, `name`, `description`,
+  `uniquename`, `type`, `mode`, `ondemand`, `primaryentity`,
   `statecode`/`statuscode` when present, plus normalized `clientdata`), and
   fails explicitly instead of guessing if the same flow already exists outside
   the requested solution filter
