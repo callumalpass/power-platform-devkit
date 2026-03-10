@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { createDiagnostic, fail } from '@pp/diagnostics';
 import { expectGoldenJson, expectGoldenText } from '../../../test/golden';
-import { createMutationPreview, readMutationFlags, readOutputFormat, renderFailure, renderOutput, renderWarnings } from './contract';
+import {
+  createMutationPreview,
+  readMutationFlags,
+  readOutputFormat,
+  renderFailure,
+  renderOutput,
+  renderResultDiagnostics,
+  renderWarnings,
+} from './contract';
 
 describe('cli contract', () => {
   it('captures fixture-backed structured output rendering', async () => {
@@ -53,6 +61,41 @@ describe('cli contract', () => {
     await expectGoldenText(renderFailure(failure, 'table'), 'fixtures/cli/golden/contract/failure.table.txt');
     await expectGoldenText(renderFailure(failure, 'raw'), 'fixtures/cli/golden/contract/failure.raw.txt');
     await expectGoldenText(renderWarnings(failure.warnings), 'fixtures/cli/golden/contract/warnings.txt');
+  });
+
+  it('captures success-side diagnostic rendering across protocol formats', async () => {
+    const success = {
+      success: true,
+      data: { command: 'project.inspect' },
+      diagnostics: [
+        createDiagnostic('error', 'TEST_SUCCESS_DIAGNOSTIC', 'Success payload still carries diagnostics', {
+          source: '@pp/test',
+          path: 'fixtures/analysis/project/pp.config.yaml',
+          hint: 'Diagnostics should stay on stderr without changing stdout.',
+        }),
+      ],
+      warnings: [
+        createDiagnostic('warning', 'TEST_SUCCESS_WARNING', 'Success payload still carries warnings', {
+          source: '@pp/test',
+          hint: 'Warnings should render beside diagnostics.',
+        }),
+      ],
+      supportTier: 'preview' as const,
+      suggestedNextActions: ['Review the diagnostics channel', 'Keep stdout machine-parseable'],
+      provenance: [
+        {
+          kind: 'inferred' as const,
+          source: 'success-diagnostics-fixture',
+          detail: 'direct contract coverage for success-side stderr rendering',
+        },
+      ],
+      knownLimitations: ['This fixture only exercises the renderer contract.'],
+    };
+
+    expect(renderResultDiagnostics({ ...success, diagnostics: [], warnings: [] }, 'json')).toBe('');
+    await expectGoldenText(renderResultDiagnostics(success, 'json'), 'fixtures/cli/golden/contract/success-diagnostics.json');
+    await expectGoldenText(renderResultDiagnostics(success, 'table'), 'fixtures/cli/golden/contract/success-diagnostics.table.txt');
+    await expectGoldenText(renderResultDiagnostics(success, 'raw'), 'fixtures/cli/golden/contract/success-diagnostics.raw.txt');
   });
 
   it('parses consistent mutation flags and snapshots mutation previews', async () => {

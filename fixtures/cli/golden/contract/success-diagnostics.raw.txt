@@ -1,0 +1,2 @@
+ERROR TEST_SUCCESS_DIAGNOSTIC: Success payload still carries diagnostics (hint=Diagnostics should stay on stderr without changing stdout. path=fixtures/analysis/project/pp.config.yaml)
+WARNING TEST_SUCCESS_WARNING: Success payload still carries warnings (hint=Warnings should render beside diagnostics.)

@@ -1,0 +1,4 @@
+level    code                     message                                    source    path
+-------  -----------------------  -----------------------------------------  --------  ----------------------------------------
+error    TEST_SUCCESS_DIAGNOSTIC  Success payload still carries diagnostics  @pp/test  fixtures/analysis/project/pp.config.yaml
+warning  TEST_SUCCESS_WARNING     Success payload still carries warnings     @pp/test

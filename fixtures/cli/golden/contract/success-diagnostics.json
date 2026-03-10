@@ -1,0 +1,37 @@
+{
+  "diagnostics": [
+    {
+      "code": "TEST_SUCCESS_DIAGNOSTIC",
+      "hint": "Diagnostics should stay on stderr without changing stdout.",
+      "level": "error",
+      "message": "Success payload still carries diagnostics",
+      "path": "fixtures/analysis/project/pp.config.yaml",
+      "source": "@pp/test"
+    }
+  ],
+  "knownLimitations": [
+    "This fixture only exercises the renderer contract."
+  ],
+  "provenance": [
+    {
+      "detail": "direct contract coverage for success-side stderr rendering",
+      "kind": "inferred",
+      "source": "success-diagnostics-fixture"
+    }
+  ],
+  "success": true,
+  "suggestedNextActions": [
+    "Review the diagnostics channel",
+    "Keep stdout machine-parseable"
+  ],
+  "supportTier": "preview",
+  "warnings": [
+    {
+      "code": "TEST_SUCCESS_WARNING",
+      "hint": "Warnings should render beside diagnostics.",
+      "level": "warning",
+      "message": "Success payload still carries warnings",
+      "source": "@pp/test"
+    }
+  ]
+}
