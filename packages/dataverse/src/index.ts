@@ -1279,7 +1279,10 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseMetadataWriteResult<EntityDefinition>>;
+      return enrichMetadataWriteFailure(response, {
+        endpoint: 'EntityDefinitions',
+        operation: 'create Dataverse table metadata',
+      }) as unknown as OperationResult<DataverseMetadataWriteResult<EntityDefinition>>;
     }
 
     const entity = await this.getTable(logicalName, {
@@ -1314,7 +1317,10 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseMetadataWriteResult<EntityDefinition>>;
+      return enrichMetadataWriteFailure(response, {
+        endpoint: buildMetadataEntityPath(logicalName),
+        operation: 'update Dataverse table metadata',
+      }) as unknown as OperationResult<DataverseMetadataWriteResult<EntityDefinition>>;
     }
 
     const entity = await this.getTable(logicalName, {
@@ -1342,7 +1348,10 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseMetadataWriteResult<AttributeDefinition>>;
+      return enrichMetadataWriteFailure(response, {
+        endpoint: buildAttributeCollectionPath(tableLogicalName),
+        operation: 'create Dataverse column metadata',
+      }) as unknown as OperationResult<DataverseMetadataWriteResult<AttributeDefinition>>;
     }
 
     const entity = await this.getColumn(tableLogicalName, logicalName, {
@@ -1378,7 +1387,10 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseMetadataWriteResult<AttributeDefinition>>;
+      return enrichMetadataWriteFailure(response, {
+        endpoint: buildMetadataAttributePath(tableLogicalName, columnLogicalName),
+        operation: 'update Dataverse column metadata',
+      }) as unknown as OperationResult<DataverseMetadataWriteResult<AttributeDefinition>>;
     }
 
     const entity = await this.getColumn(tableLogicalName, columnLogicalName, {
@@ -1404,7 +1416,10 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>;
+      return enrichMetadataWriteFailure(response, {
+        endpoint: 'GlobalOptionSetDefinitions',
+        operation: 'create Dataverse global option set metadata',
+      }) as unknown as OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>;
     }
 
     const entity = await this.getGlobalOptionSet(spec.name, {
@@ -1454,7 +1469,10 @@ export class DataverseClient {
       });
 
       if (!lastResponse.success) {
-        return lastResponse as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
+        return enrichMetadataWriteFailure(lastResponse, {
+          endpoint: 'InsertOptionValue',
+          operation: 'update Dataverse global option set metadata',
+        }) as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
       }
     }
 
@@ -1475,7 +1493,10 @@ export class DataverseClient {
       });
 
       if (!lastResponse.success) {
-        return lastResponse as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
+        return enrichMetadataWriteFailure(lastResponse, {
+          endpoint: 'UpdateOptionValue',
+          operation: 'update Dataverse global option set metadata',
+        }) as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
       }
     }
 
@@ -1492,7 +1513,10 @@ export class DataverseClient {
       });
 
       if (!lastResponse.success) {
-        return lastResponse as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
+        return enrichMetadataWriteFailure(lastResponse, {
+          endpoint: 'DeleteOptionValue',
+          operation: 'update Dataverse global option set metadata',
+        }) as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
       }
     }
 
@@ -1509,7 +1533,10 @@ export class DataverseClient {
       });
 
       if (!lastResponse.success) {
-        return lastResponse as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
+        return enrichMetadataWriteFailure(lastResponse, {
+          endpoint: 'OrderOption',
+          operation: 'update Dataverse global option set metadata',
+        }) as unknown as OperationResult<DataverseMetadataWriteResult<GlobalOptionSetDefinition>>;
       }
     }
 
@@ -1541,7 +1568,10 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>;
+      return enrichMetadataWriteFailure(response, {
+        endpoint: 'RelationshipDefinitions',
+        operation: 'create Dataverse relationship metadata',
+      }) as unknown as OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>;
     }
 
     const entity = await this.getRelationship(spec.schemaName, {
@@ -1568,7 +1598,10 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>;
+      return enrichMetadataWriteFailure(response, {
+        endpoint: 'RelationshipDefinitions',
+        operation: 'create Dataverse relationship metadata',
+      }) as unknown as OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>;
     }
 
     const entity = await this.getRelationship(spec.schemaName, {
@@ -1621,7 +1654,10 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>;
+      return enrichMetadataWriteFailure(response, {
+        endpoint: buildRelationshipPath(schemaName, kind),
+        operation: 'update Dataverse relationship metadata',
+      }) as unknown as OperationResult<DataverseMetadataWriteResult<RelationshipDefinition>>;
     }
 
     const entity = await this.getRelationship(schemaName, {
@@ -1653,7 +1689,10 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>;
+      return enrichMetadataWriteFailure(response, {
+        endpoint: 'CreateCustomerRelationships',
+        operation: 'create Dataverse customer relationship metadata',
+      }) as unknown as OperationResult<DataverseMetadataWriteResult<Record<string, unknown>>>;
     }
 
     const lookupLogicalName = resolveLogicalName(spec.lookup.schemaName, spec.lookup.logicalName);
@@ -4274,6 +4313,67 @@ function buildMetadataWriteResult<T>(
   );
 }
 
+function enrichMetadataWriteFailure<T>(
+  result: OperationResult<HttpResponse<unknown>>,
+  context: { endpoint: string; operation: string }
+): OperationResult<T> {
+  const authorizationDiagnostic = result.diagnostics.find(
+    (diagnostic) => diagnostic.code === 'HTTP_REQUEST_FAILED' && extractHttpStatusCode(diagnostic.message) === 403
+  );
+
+  if (!authorizationDiagnostic) {
+    return result as unknown as OperationResult<T>;
+  }
+
+  const parsedError = parseDataverseErrorDetail(authorizationDiagnostic.detail);
+  const roleGuidance =
+    'Ask a Dataverse admin to grant a role such as System Customizer or System Administrator, or equivalent metadata customization privileges for tables, columns, and relationships.';
+  const detailParts = [
+    `Endpoint: ${context.endpoint}.`,
+    parsedError?.code ? `Dataverse error code: ${parsedError.code}.` : undefined,
+    parsedError?.message ? `Dataverse message: ${parsedError.message}` : undefined,
+    !parsedError?.message && authorizationDiagnostic.detail
+      ? `Raw response: ${authorizationDiagnostic.detail}`
+      : undefined,
+    roleGuidance,
+  ].filter(Boolean);
+
+  return fail(
+    [
+      createDiagnostic(
+        'error',
+        'DATAVERSE_METADATA_WRITE_FORBIDDEN',
+        `Dataverse rejected ${context.operation} with 403 Forbidden. The caller likely lacks metadata customization privileges in this environment.`,
+        {
+          source: '@pp/dataverse',
+          detail: detailParts.join(' '),
+        }
+      ),
+      ...result.diagnostics,
+    ],
+    {
+      supportTier: result.supportTier,
+      warnings: result.warnings,
+      details: compactObject({
+        category: 'metadata-write-forbidden',
+        endpoint: context.endpoint,
+        operation: context.operation,
+        httpStatus: 403,
+        dataverseErrorCode: parsedError?.code,
+        dataverseErrorMessage: parsedError?.message,
+        roleGuidance,
+      }),
+      suggestedNextActions: [
+        'Confirm the signed-in user has Dataverse metadata customization privileges for tables, columns, and relationships in this environment.',
+        'If the environment is locked down, ask a Dataverse admin to assign System Customizer, System Administrator, or an equivalent custom role before retrying.',
+        'Capture the acting identity with `pp dv whoami --env <alias>` and include it with this failure when escalating to an admin.',
+      ],
+      provenance: result.provenance,
+      knownLimitations: result.knownLimitations,
+    }
+  );
+}
+
 function combineReadResults<T>(
   results: Array<OperationResult<unknown>>,
   entity: T,
@@ -4303,6 +4403,32 @@ function combineReadResults<T>(
     supportTier: 'preview',
     warnings,
   });
+}
+
+function extractHttpStatusCode(message: string): number | undefined {
+  const statusMatch = message.match(/\breturned\s+(\d{3})\b/);
+  return statusMatch ? Number(statusMatch[1]) : undefined;
+}
+
+function parseDataverseErrorDetail(detail: string | undefined): { code?: string; message?: string } | undefined {
+  if (!detail) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(detail) as Record<string, unknown>;
+    const nestedError =
+      parsed.error && typeof parsed.error === 'object' && !Array.isArray(parsed.error)
+        ? (parsed.error as Record<string, unknown>)
+        : undefined;
+
+    return compactObject({
+      code: readString(nestedError?.code) ?? readString(parsed.ErrorCode) ?? readString(parsed.code),
+      message: readString(nestedError?.message) ?? readString(parsed.Message) ?? readString(parsed.ExceptionMessage) ?? readString(parsed.message),
+    });
+  } catch {
+    return undefined;
+  }
 }
 
 function mapApplyOperationResult(

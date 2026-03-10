@@ -766,6 +766,66 @@ OData-Version: 4.0\r
     expect(String(fetchMock.mock.calls[2]?.[0])).toBe('https://example.crm.dynamics.com/api/data/v9.2/EntityDefinitions');
   });
 
+  it('surfaces metadata role guidance when Dataverse rejects table creation with 403', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'POST EntityDefinitions returned 403', {
+          source: '@pp/http',
+          detail: JSON.stringify({
+            error: {
+              code: '0x80040220',
+              message: 'Principal user is missing prvCreateEntity privilege.',
+            },
+          }),
+        })
+      ),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.createTable({
+      schemaName: 'pp_Project',
+      displayName: 'Project',
+      pluralDisplayName: 'Projects',
+      primaryName: {
+        schemaName: 'pp_Name',
+        displayName: 'Name',
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics[0]).toMatchObject({
+      code: 'DATAVERSE_METADATA_WRITE_FORBIDDEN',
+      message:
+        'Dataverse rejected create Dataverse table metadata with 403 Forbidden. The caller likely lacks metadata customization privileges in this environment.',
+      source: '@pp/dataverse',
+    });
+    expect(result.diagnostics[0]?.detail).toContain('Endpoint: EntityDefinitions.');
+    expect(result.diagnostics[0]?.detail).toContain('Dataverse error code: 0x80040220.');
+    expect(result.diagnostics[0]?.detail).toContain('Principal user is missing prvCreateEntity privilege.');
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'HTTP_REQUEST_FAILED',
+          message: 'POST EntityDefinitions returned 403',
+        }),
+      ])
+    );
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Confirm the signed-in user has Dataverse metadata customization privileges for tables, columns, and relationships in this environment.',
+        'If the environment is locked down, ask a Dataverse admin to assign System Customizer, System Administrator, or an equivalent custom role before retrying.',
+      ])
+    );
+    expect(result.details).toMatchObject({
+      category: 'metadata-write-forbidden',
+      endpoint: 'EntityDefinitions',
+      operation: 'create Dataverse table metadata',
+      httpStatus: 403,
+      dataverseErrorCode: '0x80040220',
+      dataverseErrorMessage: 'Principal user is missing prvCreateEntity privilege.',
+    });
+  });
+
   it('creates a global option set and publishes the option set definition', async () => {
     const httpClient = new FakeHttpClient([
       ok({
