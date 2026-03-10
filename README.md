@@ -115,6 +115,7 @@ pp dv metadata create-relationship --env dev --file ./specs/project-account.rela
 pp dv metadata create-many-to-many --env dev --file ./specs/project-contact.m2m.yaml --solution Core
 pp dv metadata create-customer-relationship --env dev --file ./specs/project-customer.relationship.yaml --solution Core
 pp solution list --env dev
+pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-name DefaultPublisher
 ```
 
 Metadata create commands consume JSON or YAML spec files rather than raw Dataverse metadata JSON. Publish is on by default; use `--no-publish` when you want to stage changes without publishing.

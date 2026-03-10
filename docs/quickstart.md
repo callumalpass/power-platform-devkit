@@ -81,6 +81,7 @@ pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column
 ```bash
 pp solution list --env dev
 pp solution inspect Core --env dev
+pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-name DefaultPublisher
 ```
 
 ## 6. Add a project config
