@@ -2597,6 +2597,32 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('returns a stable not-found contract for missing environment variables', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        queryAll: {
+          environmentvariabledefinitions: [],
+          environmentvariablevalues: [],
+        },
+      }),
+    });
+
+    const inspect = await runCli(['envvar', 'inspect', 'definitely_missing', '--env', 'source', '--format', 'json']);
+
+    expect(inspect.code).toBe(1);
+    expect(inspect.stdout).toBe('');
+    expect(JSON.parse(inspect.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'ENVVAR_NOT_FOUND',
+          message: 'Environment variable definitely_missing was not found.',
+        },
+      ],
+      supportTier: 'preview',
+    });
+  });
+
   it('covers solution creation through the CLI entrypoint', async () => {
     mockDataverseResolution({
       source: createFixtureDataverseClient({
