@@ -21,6 +21,7 @@
   "dependencies": {
     "@pp/dataverse": "workspace:*",
     "@pp/diagnostics": "workspace:*",
+    "@pp/flow": "workspace:*",
     "@pp/project": "workspace:*",
     "@pp/solution": "workspace:*"
   }

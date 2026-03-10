@@ -28,6 +28,9 @@ mapsTo:
     target: pp_shared_sql
     displayName: Shared SQL
     connectorId: /providers/Microsoft.PowerApps/apis/shared_sql
+  - kind: flow-parameter
+    path: flows/invoice-sync/flow.json
+    target: ApiBaseUrl
   - kind: deploy-secret
     target: api-token
   - kind: deploy-input
@@ -45,8 +48,10 @@ During `deploy apply`, `pp`:
 7. updates matching environment variable values and connection reference bindings for supported Dataverse mappings when the target differs, otherwise records a no-op skip
 8. creates missing environment variable definitions first for `dataverse-envvar-create` mappings, honoring any configured create metadata (`displayName`, `type`, `defaultValue`, `valueSchema`, `secretStore`), then applies the requested value through the same shared env-var execution path
 9. creates missing connection references first for `dataverse-connref-create` mappings, honoring configured create metadata (`displayName`, `connectorId`, `customConnectorId`), then records the requested connection binding through the same shared connection-reference execution path
+10. patches local flow artifact parameter defaults in place for `flow-parameter` mappings when the configured flow artifact already declares that parameter
 
 Preflight also rejects conflicting mappings before any remote inspection or apply work starts. If multiple parameters map to the same Dataverse environment variable, Dataverse connection reference, or adapter binding target, deploy returns a machine-readable failure instead of choosing an arbitrary winner.
+For `flow-parameter`, the mapping must include `path`, the artifact must load successfully, and the target parameter must already exist in the flow artifact metadata.
 For the create-capable Dataverse mappings, preflight also rejects runs where the target already exists but its metadata does not match the configured create contract. That prevents a create/upsert mapping from silently updating a different target shape than the project declared.
 Dataverse conflict detection is scoped by the resolved environment and solution target, so the same schema or logical name can be deployed to different stage solution aliases without being treated as ambiguous.
 
@@ -216,6 +221,7 @@ steps:
 ## Current limits
 
 - `dataverse-envvar`, `dataverse-envvar-create`, `dataverse-connref`, and `dataverse-connref-create` are the supported Dataverse mutation kinds today.
+- `flow-parameter` is the first non-Dataverse operation kind. It patches local flow artifacts in place through the same shared orchestration model.
 - Those Dataverse mapping kinds can set `environment` and `solution` to target a specific Dataverse environment alias and named solution alias instead of always using the stage defaults.
 - `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
 - Mapped parameters without a resolved value now fail deploy preflight explicitly.

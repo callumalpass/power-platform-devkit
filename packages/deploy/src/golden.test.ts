@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -230,6 +230,151 @@ describe('deploy fixture-backed goldens', () => {
         },
       })
     );
+  });
+
+  it('plans and applies flow artifact parameter mappings through shared deploy orchestration', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await cp(resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow', 'flow.json'), join(root, 'flows', 'invoice', 'flow.json'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  apiBaseUrl:',
+        '    type: string',
+        '    value: https://contoso.example',
+        '    mapsTo:',
+        '      - kind: flow-parameter',
+        '        path: flows/invoice/flow.json',
+        '        target: ApiBaseUrl',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const plan = buildDeployPlan(discovery.data!);
+    expect(plan.success).toBe(true);
+    expect(plan.data?.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-parameter-set',
+        parameter: 'apiBaseUrl',
+        target: 'ApiBaseUrl',
+        path: join(root, 'flows', 'invoice', 'flow.json'),
+        valuePreview: 'https://contoso.example',
+      })
+    );
+
+    const preview = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(preview.success).toBe(true);
+    expect(preview.data?.preflight.ok).toBe(true);
+    expect(preview.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-parameter-set',
+        parameter: 'apiBaseUrl',
+        target: 'ApiBaseUrl',
+        currentValue: 'https://example.test',
+        nextValue: 'https://contoso.example',
+        status: 'planned',
+        changed: true,
+      })
+    );
+
+    const apply = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(apply.success).toBe(true);
+    expect(apply.data?.preflight.ok).toBe(true);
+    expect(apply.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-parameter-set',
+        parameter: 'apiBaseUrl',
+        status: 'applied',
+        changed: true,
+      })
+    );
+
+    const updatedArtifact = JSON.parse(await readFile(join(root, 'flows', 'invoice', 'flow.json'), 'utf8')) as {
+      metadata: { parameters: Record<string, unknown> };
+      definition: { parameters: Record<string, { defaultValue?: unknown }> };
+    };
+    expect(updatedArtifact.metadata.parameters.ApiBaseUrl).toBe('https://contoso.example');
+    expect(updatedArtifact.definition.parameters.ApiBaseUrl?.defaultValue).toBe('https://contoso.example');
+  });
+
+  it('fails preflight when multiple parameters map to the same flow artifact parameter target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-conflict-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await cp(resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow', 'flow.json'), join(root, 'flows', 'invoice', 'flow.json'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  apiBaseUrl:',
+        '    type: string',
+        '    value: https://contoso.example',
+        '    mapsTo:',
+        '      - kind: flow-parameter',
+        '        path: flows/invoice/flow.json',
+        '        target: ApiBaseUrl',
+        '  apiBaseUrlFallback:',
+        '    type: string',
+        '    value: https://fallback.contoso.example',
+        '    mapsTo:',
+        '      - kind: flow-parameter',
+        '        path: flows/invoice/flow.json',
+        '        target: ApiBaseUrl',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_TARGET_CONFLICT',
+        target: 'ApiBaseUrl',
+      })
+    );
+    expect(result.data?.apply.operations).toEqual([
+      expect.objectContaining({
+        kind: 'flow-parameter-set',
+        parameter: 'apiBaseUrl',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
+      expect.objectContaining({
+        kind: 'flow-parameter-set',
+        parameter: 'apiBaseUrlFallback',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
+    ]);
   });
 
   it('executes a saved deploy plan directly without rediscovering the source project', async () => {

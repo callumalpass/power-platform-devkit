@@ -1,7 +1,9 @@
+import { resolve as resolvePath } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { ParameterMapping } from '@pp/config';
 import { ConnectionReferenceService, EnvironmentVariableService, resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
+import { loadFlowArtifact, patchFlowArtifact, type FlowArtifact } from '@pp/flow';
 import { summarizeResolvedParameter, type ProjectContext, type ResolvedProjectParameter } from '@pp/project';
 import { SolutionService } from '@pp/solution';
 import type {
@@ -68,13 +70,19 @@ export interface DeploySecretBindingOperationPlan extends DeployOperationPlanBas
   kind: 'deploy-secret-bind';
 }
 
+export interface FlowParameterDeployOperationPlan extends DeployOperationPlanBase {
+  kind: 'flow-parameter-set';
+  path: string;
+}
+
 export type DeployOperationPlan =
   | DataverseEnvvarDeployOperationPlan
   | DataverseEnvvarUpsertDeployOperationPlan
   | DataverseConnectionReferenceDeployOperationPlan
   | DataverseConnectionReferenceUpsertDeployOperationPlan
   | DeployInputBindingOperationPlan
-  | DeploySecretBindingOperationPlan;
+  | DeploySecretBindingOperationPlan
+  | FlowParameterDeployOperationPlan;
 
 export interface DeployPlan {
   projectRoot: string;
@@ -189,7 +197,8 @@ interface DeployTargetConflict {
   code:
     | 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CONFLICT'
     | 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CONFLICT'
-    | 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT';
+    | 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT'
+    | 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_TARGET_CONFLICT';
   message: string;
   details: {
     target: string;
@@ -205,12 +214,23 @@ export interface ResolvedDeployBindings {
 
 type DeployPrimitiveValue = string | number | boolean;
 
+interface FlowParameterDeployTargetInspection {
+  operation: PreparedDeployOperation & { plan: FlowParameterDeployOperationPlan; value: DeployPrimitiveValue };
+  currentValue?: FlowArtifact['metadata']['parameters'][string];
+}
+
 interface PreparedDeployOperation {
   plan: DeployOperationPlan;
   value?: DeployPrimitiveValue;
   executable: boolean;
   blockedCode?: 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_MISSING' | 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_REDACTED';
   blockedMessage?: string;
+}
+
+function isPreparedFlowParameterOperation(
+  operation: PreparedDeployOperation
+): operation is PreparedDeployOperation & { plan: FlowParameterDeployOperationPlan; value?: DeployPrimitiveValue } {
+  return isFlowParameterOperation(operation.plan);
 }
 
 interface ResolvedDeployMappingTarget {
@@ -291,7 +311,12 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
     };
   });
   const operations = collectDeployOperations(project).map(({ plan }) => plan);
-  const diagnostics: Diagnostic[] = [];
+  const diagnostics: Diagnostic[] = collectStaticMappingChecks(project).map((check) =>
+    createDiagnostic('error', check.code, check.message, {
+      source: '@pp/deploy',
+      ...check.details,
+    })
+  );
   const dataverseOperations = operations.filter(isDataverseMutationOperation);
 
   if (dataverseOperations.some((operation) => !resolveOperationEnvironmentAlias(operation, project.topology.activeEnvironment))) {
@@ -368,7 +393,7 @@ export async function executeDeploy(
   const confirmation = resolveDeployConfirmation(mode, options.confirmed === true);
   const diagnostics = [...planResult.diagnostics];
   const warnings = [...planResult.warnings];
-  const checks: DeployPreflightCheck[] = [...collectMissingMappingChecks(project)];
+  const checks: DeployPreflightCheck[] = [...collectStaticMappingChecks(project), ...collectMissingMappingChecks(project)];
   const target = planResult.data?.target ?? {
     stage: project.topology.selectedStage,
     environmentAlias: project.topology.activeEnvironment,
@@ -439,8 +464,12 @@ async function executePreparedDeploy(context: {
   const applyOperations: DeployOperationResult[] = [];
   const conflicts = analyzeDeployTargetConflicts(preparedOperations.map((operation) => operation.plan));
   const dataverseOperations = preparedOperations.filter((operation) => isDataverseMutationOperation(operation.plan));
-  const adapterBindingOperations = preparedOperations.filter((operation) => !isDataverseMutationOperation(operation.plan));
+  const flowOperations = preparedOperations.filter(isPreparedFlowParameterOperation);
+  const adapterBindingOperations = preparedOperations.filter(
+    (operation) => !isDataverseMutationOperation(operation.plan) && !isFlowParameterOperation(operation.plan)
+  );
   const runnableDataverseOperations: PreparedDeployOperation[] = [];
+  const runnableFlowOperations: FlowParameterDeployTargetInspection[] = [];
 
   checks.push(
     ...conflicts.map((conflict) => ({
@@ -481,6 +510,90 @@ async function executePreparedDeploy(context: {
         operation.plan.kind === 'deploy-secret-bind'
           ? 'Resolved secret binding for adapter consumption.'
           : 'Resolved input binding for adapter consumption.',
+    });
+  }
+
+  for (const operation of flowOperations) {
+    if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: operation.value === undefined ? undefined : stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Blocked by conflicting deploy target mappings.',
+      });
+      continue;
+    }
+
+    if (!operation.executable || operation.value === undefined) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        changed: false,
+        message: operation.blockedMessage ?? 'Saved deploy plan does not include an executable value for this operation.',
+      });
+      continue;
+    }
+
+    const artifact = await loadFlowArtifact(operation.plan.path);
+
+    if (!artifact.success || !artifact.data) {
+      diagnostics.push(...artifact.diagnostics);
+      warnings.push(...artifact.warnings);
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_ASSET_INVALID',
+        message: `Flow artifact ${operation.plan.path} could not be loaded for deploy apply.`,
+        target: operation.plan.target,
+        details: {
+          parameter: operation.plan.parameter,
+          path: operation.plan.path,
+        },
+      });
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Flow artifact could not be loaded.',
+      });
+      continue;
+    }
+
+    if (!Object.hasOwn(artifact.data.metadata.parameters, operation.plan.target)) {
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_TARGET_MISSING',
+        message: `Flow artifact ${operation.plan.path} does not define parameter ${operation.plan.target}.`,
+        target: operation.plan.target,
+        details: {
+          parameter: operation.plan.parameter,
+          path: operation.plan.path,
+        },
+      });
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Target flow parameter is missing.',
+      });
+      continue;
+    }
+
+    const currentValue = artifact.data.metadata.parameters[operation.plan.target];
+    applyOperations.push({
+      ...operation.plan,
+      status: 'planned',
+      targetExists: true,
+      currentValue: stringifyDeployArtifactValue(currentValue),
+      nextValue: stringifyDeployValue(operation.value),
+      changed: !isDeepStrictEqual(currentValue, operation.value),
+      message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
+    });
+    runnableFlowOperations.push({
+      operation: operation as PreparedDeployOperation & { plan: FlowParameterDeployOperationPlan; value: DeployPrimitiveValue },
+      currentValue,
     });
   }
 
@@ -576,7 +689,7 @@ async function executePreparedDeploy(context: {
     });
   }
 
-  if (runnableDataverseOperations.length === 0 || !plan) {
+  if ((runnableDataverseOperations.length === 0 && runnableFlowOperations.length === 0) || !plan) {
     return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
@@ -922,6 +1035,57 @@ async function executePreparedDeploy(context: {
     });
   }
 
+  for (const inspection of runnableFlowOperations) {
+    const index = applyOperations.findIndex(
+      (entry) =>
+        entry.kind === 'flow-parameter-set' &&
+        entry.parameter === inspection.operation.plan.parameter &&
+        entry.target === inspection.operation.plan.target &&
+        entry.path === inspection.operation.plan.path
+    );
+
+    if (index === -1) {
+      continue;
+    }
+
+    const existingOperation = applyOperations[index]!;
+
+    if (existingOperation.changed === false) {
+      applyOperations[index] = {
+        ...existingOperation,
+        status: 'skipped',
+        message: `${inspection.operation.plan.target} is already up to date in ${inspection.operation.plan.path}.`,
+      };
+      continue;
+    }
+
+    const result = await patchFlowArtifact(inspection.operation.plan.path, {
+      parameters: {
+        [inspection.operation.plan.target]: inspection.operation.value,
+      },
+    });
+
+    if (!result.success) {
+      diagnostics.push(...result.diagnostics);
+      warnings.push(...result.warnings);
+      applyOperations[index] = {
+        ...existingOperation,
+        status: 'failed',
+        message: `Failed to update flow parameter ${inspection.operation.plan.target}.`,
+      };
+      continue;
+    }
+
+    diagnostics.push(...result.diagnostics);
+    warnings.push(...result.warnings);
+    applyOperations[index] = {
+      ...existingOperation,
+      status: 'applied',
+      changed: true,
+      message: `Updated flow parameter ${inspection.operation.plan.target}.`,
+    };
+  }
+
   for (const group of dataverseGroups) {
     const resolution = await resolveDataverseClient(group.environmentAlias);
 
@@ -933,7 +1097,9 @@ async function executePreparedDeploy(context: {
     const environmentVariables = new EnvironmentVariableService(resolution.data.client);
 
     for (const operation of group.operations) {
-    const index = applyOperations.findIndex((entry) => entry.parameter === operation.plan.parameter && entry.target === operation.plan.target);
+    const index = applyOperations.findIndex(
+      (entry) => entry.kind === operation.plan.kind && entry.parameter === operation.plan.parameter && entry.target === operation.plan.target
+    );
 
     if (index === -1) {
       continue;
@@ -1231,6 +1397,18 @@ function createDeployOperationPlan(
         target: mapping.target,
         valuePreview,
       };
+    case 'flow-parameter':
+      return mapping.path
+        ? {
+            kind: 'flow-parameter-set',
+            parameter: parameter.name,
+            source: parameter.source,
+            sensitive: parameter.sensitive,
+            target: mapping.target,
+            path: resolveDeployFlowPath(project, mapping.path),
+            valuePreview,
+          }
+        : undefined;
     default:
       return undefined;
   }
@@ -1300,6 +1478,39 @@ function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCh
           status: 'fail',
           code: 'DEPLOY_PREFLIGHT_SECRET_SOURCE_MISSING',
           message: `Deploy parameter ${parameter.name} is unresolved but maps to deploy secret ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+          },
+        });
+      } else if (mapping.kind === 'flow-parameter') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to flow parameter ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+            path: mapping.path,
+          },
+        });
+      }
+    }
+  }
+
+  return checks;
+}
+
+function collectStaticMappingChecks(project: ProjectContext): DeployPreflightCheck[] {
+  const checks: DeployPreflightCheck[] = [];
+
+  for (const parameter of Object.values(project.parameters)) {
+    for (const mapping of parameter.definition.mapsTo ?? []) {
+      if (mapping.kind === 'flow-parameter' && !mapping.path) {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_PATH_MISSING',
+          message: `Deploy parameter ${parameter.name} maps to flow parameter ${mapping.target} without a flow artifact path.`,
           target: mapping.target,
           details: {
             parameter: parameter.name,
@@ -1405,6 +1616,16 @@ function collectSavedPlanMissingChecks(plan: DeployPlan): DeployPreflightCheck[]
           status: 'fail',
           code: 'DEPLOY_PREFLIGHT_SECRET_SOURCE_MISSING',
           message: `Saved deploy plan input ${input.name} is unresolved but maps to deploy secret ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
+      } else if (mapping.kind === 'flow-parameter') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to flow parameter ${mapping.target}.`,
           target: mapping.target,
           details: {
             parameter: input.name,
@@ -1548,6 +1769,10 @@ function isDataverseConnectionReferenceUpsertOperation(
   return operation.kind === 'dataverse-connref-upsert';
 }
 
+function isFlowParameterOperation(operation: DeployOperationPlan): operation is FlowParameterDeployOperationPlan {
+  return operation.kind === 'flow-parameter-set';
+}
+
 function isDataverseMutationOperation(
   operation: DeployOperationPlan
 ): operation is
@@ -1581,6 +1806,18 @@ function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean
 
 function stringifyDeployValue(value: string | number | boolean): string {
   return typeof value === 'string' ? value : String(value);
+}
+
+function stringifyDeployArtifactValue(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return JSON.stringify(value);
 }
 
 function isDeployValueRedacted(value: string | number | boolean): value is string {
@@ -1646,6 +1883,10 @@ function resolveDeployMappingTarget(project: ProjectContext, mapping: ParameterM
     solutionAlias: resolvedSolution?.alias ?? project.topology.activeSolution?.alias,
     solutionUniqueName: resolvedSolution?.uniqueName ?? project.topology.activeSolution?.uniqueName,
   };
+}
+
+function resolveDeployFlowPath(project: ProjectContext, path: string): string {
+  return resolvePath(project.root, path);
 }
 
 function resolveDeployEnvironmentVariableCreateOptions(mapping: ParameterMapping): DeployEnvironmentVariableCreateOptions | undefined {
@@ -2146,6 +2387,19 @@ function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): Deploy
       continue;
     }
 
+    if (isFlowParameterOperation(sample)) {
+      conflicts.push({
+        code: 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_TARGET_CONFLICT',
+        message: `Flow parameter ${sample.target} in ${sample.path} has conflicting deploy mappings from ${parameterList}.`,
+        details: {
+          target: sample.target,
+          parameters,
+          operationKinds,
+        },
+      });
+      continue;
+    }
+
     conflicts.push({
       code: 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT',
       message: `Deploy binding target ${sample.target} has conflicting mappings from ${parameterList}.`,
@@ -2169,6 +2423,10 @@ function getDeployConflictKey(operation: DeployOperationPlan): string {
     return `dataverse-connref:${(operation.environmentAlias ?? '').toLowerCase()}:${(operation.solutionUniqueName ?? operation.solutionAlias ?? '').toLowerCase()}:${operation.target.toLowerCase()}`;
   }
 
+  if (isFlowParameterOperation(operation)) {
+    return `flow-parameter:${operation.path.toLowerCase()}:${operation.target.toLowerCase()}`;
+  }
+
   return `binding:${operation.target.toLowerCase()}`;
 }
 
@@ -2186,6 +2444,8 @@ function matchesDeployConflict(operation: DeployOperationPlan, conflict: DeployT
       return isDataverseEnvvarOperation(operation) || isDataverseEnvvarUpsertOperation(operation);
     case 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CONFLICT':
       return isDataverseConnectionReferenceOperation(operation) || isDataverseConnectionReferenceUpsertOperation(operation);
+    case 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_TARGET_CONFLICT':
+      return isFlowParameterOperation(operation);
     case 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT':
       return operation.kind === 'deploy-input-bind' || operation.kind === 'deploy-secret-bind';
   }
