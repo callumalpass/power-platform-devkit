@@ -9,17 +9,22 @@
       "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
       "connectionReferenceLogicalName": "shared_office365",
       "name": "shared_office365"
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "connectionReferenceLogicalName": "shared_sharepointonline",
+      "name": "shared_sharepointonline"
     }
   ],
   "environmentVariables": [
     "pp_ApiUrl"
   ],
   "intermediateRepresentation": {
-    "actionCount": 14,
+    "actionCount": 16,
     "controlFlowEdgeCount": 0,
-    "dynamicContentReferenceCount": 11,
-    "expressionCount": 11,
-    "nodeCount": 15,
+    "dynamicContentReferenceCount": 13,
+    "expressionCount": 13,
+    "nodeCount": 17,
     "scopeCount": 1,
     "templateExpressionCount": 2,
     "triggerCount": 1,
@@ -32,16 +37,16 @@
   ],
   "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
   "semanticSummary": {
-    "actionCount": 14,
+    "actionCount": 16,
     "controlFlowEdgeCount": 0,
-    "dynamicContentReferenceCount": 11,
-    "expressionCount": 11,
+    "dynamicContentReferenceCount": 13,
+    "expressionCount": 13,
     "initializedVariables": [
       "Counter"
     ],
     "referenceCounts": {
       "actions": 1,
-      "connectionReferences": 4,
+      "connectionReferences": 6,
       "environmentVariables": 1,
       "parameters": 2,
       "variables": 3

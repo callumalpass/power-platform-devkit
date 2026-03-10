@@ -57,6 +57,20 @@
       "source": "@pp/flow"
     },
     {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointCreateBadTitleShape parameter item/Title for CreateItem must be a string expression or literal, not object.",
+      "path": "actions.SharePointCreateBadTitleShape.inputs.parameters.item/Title",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointCreateMissingDataset is missing required parameter dataset for CreateItem.",
+      "path": "actions.SharePointCreateMissingDataset.inputs.parameters.dataset",
+      "source": "@pp/flow"
+    },
+    {
       "code": "FLOW_ACTION_REFERENCE_UNRESOLVED",
       "level": "error",
       "message": "Flow expression references missing action MissingAction.",

@@ -357,6 +357,11 @@ describe('FlowService', () => {
                 connectionReferenceLogicalName: 'shared_declared_only',
                 apiId: '/providers/microsoft.powerapps/apis/shared_declared_only',
               },
+              {
+                name: 'shared_sharepointonline',
+                connectionReferenceLogicalName: 'shared_sharepointonline',
+                apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+              },
             ],
             parameters: {
               ApiBaseUrl: 'https://example.test',
@@ -372,13 +377,18 @@ describe('FlowService', () => {
                     apiId: '/providers/microsoft.powerapps/apis/shared_exchangeonline',
                     connectionId: '/connections/office365',
                   },
-                  shared_definition_only: {
-                    connectionReferenceLogicalName: 'shared_definition_only',
-                    apiId: '/providers/microsoft.powerapps/apis/shared_definition_only',
-                    connectionId: '/connections/definition-only',
+                    shared_definition_only: {
+                      connectionReferenceLogicalName: 'shared_definition_only',
+                      apiId: '/providers/microsoft.powerapps/apis/shared_definition_only',
+                      connectionId: '/connections/definition-only',
+                    },
+                    shared_sharepointonline: {
+                      connectionReferenceLogicalName: 'shared_sharepointonline',
+                      apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                      connectionId: '/connections/sharepointonline',
+                    },
                   },
                 },
-              },
             },
             triggers: {
               Manual: {
@@ -497,6 +507,41 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointCreateMissingDataset: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    table: 'Documents',
+                    'item/Title': 'Draft item',
+                  },
+                },
+              },
+              SharePointCreateBadTitleShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                    'item/Title': {
+                      value: 'Draft item',
+                    },
+                  },
+                },
+              },
               SetGhost: {
                 type: 'SetVariable',
                 inputs: {
@@ -531,23 +576,23 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 14,
+      actionCount: 16,
       scopeCount: 1,
-      expressionCount: 11,
+      expressionCount: 13,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 11,
+      dynamicContentReferenceCount: 13,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 4,
+        connectionReferences: 6,
       },
     });
     expect(validation.diagnostics.map((item) => item.code)).toEqual([
@@ -559,6 +604,8 @@ describe('FlowService', () => {
       'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING',
       'FLOW_CONNECTOR_API_ID_MISSING',
       'FLOW_CONNECTOR_OPERATION_ID_MISSING',
+      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
       'FLOW_ACTION_REFERENCE_UNRESOLVED',
       'FLOW_PARAMETER_REFERENCE_UNRESOLVED',
       'FLOW_VARIABLE_REFERENCE_UNRESOLVED',
@@ -575,14 +622,14 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 15,
+      nodeCount: 17,
       triggerCount: 1,
-      actionCount: 14,
+      actionCount: 16,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 11,
+      expressionCount: 13,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 11,
+      dynamicContentReferenceCount: 13,
       variableReadCount: 3,
       variableWriteCount: 3,
     });

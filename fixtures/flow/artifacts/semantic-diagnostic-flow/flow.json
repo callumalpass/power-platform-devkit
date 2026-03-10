@@ -13,6 +13,11 @@
         "name": "shared_declared_only",
         "connectionReferenceLogicalName": "shared_declared_only",
         "apiId": "/providers/microsoft.powerapps/apis/shared_declared_only"
+      },
+      {
+        "name": "shared_sharepointonline",
+        "connectionReferenceLogicalName": "shared_sharepointonline",
+        "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline"
       }
     ],
     "parameters": {
@@ -33,6 +38,11 @@
             "connectionReferenceLogicalName": "shared_definition_only",
             "apiId": "/providers/microsoft.powerapps/apis/shared_definition_only",
             "connectionId": "/connections/definition-only"
+          },
+          "shared_sharepointonline": {
+            "connectionReferenceLogicalName": "shared_sharepointonline",
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connectionId": "/connections/sharepointonline"
           }
         }
       }
@@ -155,6 +165,41 @@
             ],
             "emailMessage/Subject": "Subject",
             "emailMessage/Body": "Body"
+          }
+        }
+      },
+      "SharePointCreateMissingDataset": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "CreateItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "table": "Documents",
+            "item/Title": "Draft item"
+          }
+        }
+      },
+      "SharePointCreateBadTitleShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "CreateItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "table": "Documents",
+            "item/Title": {
+              "value": "Draft item"
+            }
           }
         }
       },

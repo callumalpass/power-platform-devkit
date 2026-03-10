@@ -302,6 +302,7 @@ interface FlowConnectorActionContract {
 interface FlowSupportedConnectorOperationParameter {
   name: string;
   kind: 'string';
+  bucket?: 'parameters' | 'queries' | 'pathParameters';
 }
 
 interface FlowSupportedConnectorOperation {
@@ -346,6 +347,15 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
       { name: 'emailMessage/To', kind: 'string' },
       { name: 'emailMessage/Subject', kind: 'string' },
       { name: 'emailMessage/Body', kind: 'string' },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'CreateItem',
+    requiredParameters: [
+      { name: 'dataset', kind: 'string' },
+      { name: 'table', kind: 'string' },
+      { name: 'item/Title', kind: 'string' },
     ],
   },
 ];
@@ -1620,26 +1630,66 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
 
       if (supportedOperation) {
         const inputs = asRecord(nodeRecord?.inputs);
-        const parameters = asRecord(inputs?.parameters);
+        const missingBuckets = new Set<string>();
 
-        if (!parameters) {
-          diagnostics.push(
-            createDiagnostic(
-              'error',
-              'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING',
-              `Connector action ${name} does not declare the supported inputs.parameters object required by ${supportedOperation.operationId}.`,
-              {
-                source: '@pp/flow',
-                path: `${node.path}.inputs.parameters`,
-              }
-            )
-          );
-        } else {
-          for (const parameter of supportedOperation.requiredParameters) {
-            const value = parameters[parameter.name];
-            const parameterPath = `${node.path}.inputs.parameters.${parameter.name}`;
+        for (const parameter of supportedOperation.requiredParameters) {
+          const bucket = parameter.bucket ?? 'parameters';
+          const bucketRecord = readConnectorInputBucket(inputs, bucket);
+          const bucketPath = `${node.path}.${describeConnectorInputBucket(bucket)}`;
+          const parameterPath = describeConnectorParameterPath(node.path, bucket, parameter.name);
 
-            if (value === undefined) {
+          if (!bucketRecord) {
+            if (!missingBuckets.has(bucket)) {
+              diagnostics.push(
+                createDiagnostic(
+                  'error',
+                  bucket === 'parameters' ? 'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING' : 'FLOW_CONNECTOR_INPUT_BUCKET_MISSING',
+                  `Connector action ${name} does not declare the supported ${describeConnectorInputBucket(bucket)} object required by ${supportedOperation.operationId}.`,
+                  {
+                    source: '@pp/flow',
+                    path: bucketPath,
+                  }
+                )
+              );
+              missingBuckets.add(bucket);
+            }
+            continue;
+          }
+
+          const value = bucketRecord[parameter.name];
+
+          if (value === undefined) {
+            diagnostics.push(
+              createDiagnostic(
+                'error',
+                'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+                `Connector action ${name} is missing required parameter ${parameter.name} for ${supportedOperation.operationId}.`,
+                {
+                  source: '@pp/flow',
+                  path: parameterPath,
+                }
+              )
+            );
+            continue;
+          }
+
+          if (parameter.kind === 'string') {
+            if (typeof value !== 'string') {
+              diagnostics.push(
+                createDiagnostic(
+                  'error',
+                  'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+                  `Connector action ${name} parameter ${parameter.name} for ${supportedOperation.operationId} must be a string expression or literal, not ${describeFlowJsonShape(value)}.`,
+                  {
+                    source: '@pp/flow',
+                    path: parameterPath,
+                  }
+                )
+              );
+              continue;
+            }
+
+            if (!value.trim()) {
               diagnostics.push(
                 createDiagnostic(
                   'error',
@@ -1651,38 +1701,6 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
                   }
                 )
               );
-              continue;
-            }
-
-            if (parameter.kind === 'string') {
-              if (typeof value !== 'string') {
-                diagnostics.push(
-                  createDiagnostic(
-                    'error',
-                    'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-                    `Connector action ${name} parameter ${parameter.name} for ${supportedOperation.operationId} must be a string expression or literal, not ${describeFlowJsonShape(value)}.`,
-                    {
-                      source: '@pp/flow',
-                      path: parameterPath,
-                    }
-                  )
-                );
-                continue;
-              }
-
-              if (!value.trim()) {
-                diagnostics.push(
-                  createDiagnostic(
-                    'error',
-                    'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-                    `Connector action ${name} is missing required parameter ${parameter.name} for ${supportedOperation.operationId}.`,
-                    {
-                      source: '@pp/flow',
-                      path: parameterPath,
-                    }
-                  )
-                );
-              }
             }
           }
         }
@@ -2154,6 +2172,33 @@ function describeFlowJsonShape(value: unknown): string {
   }
 
   return typeof value;
+}
+
+function readConnectorInputBucket(
+  inputs: Record<string, unknown> | undefined,
+  bucket: 'parameters' | 'queries' | 'pathParameters'
+): Record<string, unknown> | undefined {
+  return asRecord(inputs?.[bucket]);
+}
+
+function describeConnectorInputBucket(bucket: 'parameters' | 'queries' | 'pathParameters'): string {
+  if (bucket === 'pathParameters') {
+    return 'inputs.pathParameters';
+  }
+
+  if (bucket === 'queries') {
+    return 'inputs.queries';
+  }
+
+  return 'inputs.parameters';
+}
+
+function describeConnectorParameterPath(
+  nodePath: string,
+  bucket: 'parameters' | 'queries' | 'pathParameters',
+  name: string
+): string {
+  return `${nodePath}.${describeConnectorInputBucket(bucket)}.${name}`;
 }
 
 function extractWholeFlowExpression(value: string): string | undefined {
