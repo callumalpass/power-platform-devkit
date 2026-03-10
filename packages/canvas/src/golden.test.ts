@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -342,6 +342,71 @@ describe('canvas fixture-backed goldens', () => {
       normalize: (value) => normalizeNativeHeaderSnapshot(value, tempDir),
     });
     await expectGoldenText(await readFile(join(unzipDir, 'Src', '_EditorState.pa.yaml'), 'utf8'), 'fixtures/canvas/golden/native/package-editor-state.pa.yaml');
+  });
+
+  it('auto-loads embedded controls registries for unpacked apps and reports changed pa.yaml properties in diffs', async () => {
+    const tempDir = await createTempDir();
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'native-app');
+    const changedAppPath = join(tempDir, 'native-app-diff');
+    const outPath = join(tempDir, 'NativeCanvas.msapp');
+
+    await cp(appPath, changedAppPath, { recursive: true });
+    await writeFile(
+      join(changedAppPath, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: =\"Shipped\"',
+        '            OnSelect: =Notify(\"Done\")',
+        '            X: =90',
+        '            Y: =120',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const inspect = await inspectCanvasApp(appPath, {
+      mode: 'strict',
+    });
+    const validation = await validateCanvasApp(appPath, {
+      mode: 'strict',
+    });
+    const build = await buildCanvasApp(appPath, {
+      mode: 'strict',
+      root: appPath,
+      outPath,
+    });
+    const diff = await diffCanvasApps(appPath, changedAppPath);
+
+    expect(inspect.success).toBe(true);
+    expect(inspect.data?.registries).toHaveLength(1);
+    expect(inspect.data?.registries[0]?.path).toContain('/fixtures/canvas/apps/native-app/controls.json');
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(true);
+    expect(build.success).toBe(true);
+    expect(diff.success).toBe(true);
+    expect(diff.data).toEqual({
+      left: appPath,
+      right: changedAppPath,
+      appChanged: true,
+      screensAdded: [],
+      screensRemoved: [],
+      controls: [
+        {
+          controlPath: 'Screen1/Button1',
+          kind: 'changed',
+          changedProperties: ['properties.Text'],
+        },
+      ],
+      templateChanges: {
+        added: [],
+        removed: [],
+      },
+    });
   });
 
   it('captures semantic validation diagnostics and build failures for invalid canvas fixtures', async () => {

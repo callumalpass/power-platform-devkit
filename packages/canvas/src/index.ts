@@ -349,6 +349,7 @@ export interface CanvasSourceModel {
   templateRequirements: CanvasTemplateLookup[];
   sourceHash: string;
   seedRegistryPath?: string;
+  embeddedRegistryPaths?: string[];
   dataSources?: CanvasDataSourceSummary[];
   metadataCatalog?: CanvasMetadataCatalog;
   editorStatePath?: string;
@@ -1739,6 +1740,8 @@ export async function diffCanvasApps(leftPath: string, rightPath: string): Promi
 
     if (before && after) {
       const changedProperties: string[] = [];
+      const beforeControl = findCanvasControlByPath(left.data, controlPath);
+      const afterControl = findCanvasControlByPath(right.data, controlPath);
 
       if (before.templateName !== after.templateName) {
         changedProperties.push('templateName');
@@ -1748,7 +1751,9 @@ export async function diffCanvasApps(leftPath: string, rightPath: string): Promi
         changedProperties.push('templateVersion');
       }
 
-      if (before.propertyCount !== after.propertyCount) {
+      if (beforeControl && afterControl) {
+        changedProperties.push(...diffCanvasControlProperties(beforeControl.properties, afterControl.properties));
+      } else if (before.propertyCount !== after.propertyCount) {
         changedProperties.push('properties');
       }
 
@@ -1791,6 +1796,41 @@ export async function diffCanvasApps(leftPath: string, rightPath: string): Promi
       warnings: [...left.warnings, ...right.warnings],
     }
   );
+}
+
+function mergeCanvasRegistryLoadOptions(
+  options: CanvasSourceLoadOptions,
+  source: CanvasSourceModel
+): CanvasRegistryLoadOptions {
+  const registries = [...(options.registries ?? [])];
+
+  for (const path of source.embeddedRegistryPaths ?? []) {
+    if (!registries.includes(path)) {
+      registries.push(path);
+    }
+  }
+
+  return {
+    root: options.root,
+    cacheDir: options.cacheDir,
+    registries,
+  };
+}
+
+function diffCanvasControlProperties(
+  before: Record<string, CanvasJsonValue>,
+  after: Record<string, CanvasJsonValue>
+): string[] {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  const changes: string[] = [];
+
+  for (const key of Array.from(keys).sort()) {
+    if (stableStringify(before[key]) !== stableStringify(after[key])) {
+      changes.push(`properties.${key}`);
+    }
+  }
+
+  return changes;
 }
 
 interface LoadedCanvasWorkspace {
@@ -2459,7 +2499,7 @@ export function resolveCanvasTemplateRegistryPaths(
   options: CanvasRegistryLoadOptions = {}
 ): OperationResult<string[]> {
   const root = resolve(options.root ?? process.cwd());
-  const paths: string[] = [];
+  const paths = new Set<string>();
 
   for (const entry of options.registries ?? []) {
     if (entry.startsWith('cache:')) {
@@ -2477,14 +2517,14 @@ export function resolveCanvasTemplateRegistryPaths(
         );
       }
 
-      paths.push(resolve(options.cacheDir, `${entry.slice('cache:'.length)}.json`));
+      paths.add(resolve(options.cacheDir, `${entry.slice('cache:'.length)}.json`));
       continue;
     }
 
-    paths.push(resolve(root, entry));
+    paths.add(resolve(root, entry));
   }
 
-  return ok(paths, {
+  return ok(Array.from(paths), {
     supportTier: 'preview',
   });
 }
@@ -2602,9 +2642,10 @@ async function prepareCanvasValidation(
   }
 
   const mode = options.mode ?? 'strict';
+  const registryOptions = mergeCanvasRegistryLoadOptions(options, source.data);
   const [seeded, registry] = await Promise.all([
     loadCanvasSeedRegistry(source.data),
-    loadCanvasTemplateRegistryBundle(options),
+    loadCanvasTemplateRegistryBundle(registryOptions),
   ]);
 
   if (!seeded.success || !seeded.data) {

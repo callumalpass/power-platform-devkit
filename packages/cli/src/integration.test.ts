@@ -1,4 +1,4 @@
-import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -3146,6 +3146,70 @@ describe('cli fixture-backed workflows', () => {
     });
     await expectGoldenJson(JSON.parse(diff.stdout), 'fixtures/canvas/golden/diff-report.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+  });
+
+  it('auto-loads embedded controls registries for unpacked apps and reports property-level native diffs through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'native-app');
+    const changedAppPath = join(tempDir, 'native-app-diff');
+    const outPath = join(tempDir, 'NativeCanvas.msapp');
+
+    await cp(appPath, changedAppPath, { recursive: true });
+    await writeFile(
+      join(changedAppPath, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: =\"Shipped\"',
+        '            OnSelect: =Notify(\"Done\")',
+        '            X: =90',
+        '            Y: =120',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const inspect = await runCli(['canvas', 'inspect', appPath, '--mode', 'strict', '--format', 'json']);
+    const validate = await runCli(['canvas', 'validate', appPath, '--mode', 'strict', '--format', 'json']);
+    const build = await runCli(['canvas', 'build', appPath, '--mode', 'strict', '--out', outPath, '--format', 'json']);
+    const diff = await runCli(['canvas', 'diff', appPath, changedAppPath, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(inspect.stdout).registries).toHaveLength(1);
+    expect(JSON.parse(inspect.stdout).registries[0]?.path).toContain('/fixtures/canvas/apps/native-app/controls.json');
+
+    expect(validate.code).toBe(0);
+    expect(validate.stderr).toBe('');
+    expect(JSON.parse(validate.stdout).valid).toBe(true);
+
+    expect(build.code).toBe(0);
+    expect(build.stderr).toBe('');
+
+    expect(diff.code).toBe(0);
+    expect(diff.stderr).toBe('');
+    expect(JSON.parse(diff.stdout)).toEqual({
+      left: appPath,
+      right: changedAppPath,
+      appChanged: true,
+      screensAdded: [],
+      screensRemoved: [],
+      controls: [
+        {
+          controlPath: 'Screen1/Button1',
+          kind: 'changed',
+          changedProperties: ['properties.Text'],
+        },
+      ],
+      templateChanges: {
+        added: [],
+        removed: [],
+      },
     });
   });
 

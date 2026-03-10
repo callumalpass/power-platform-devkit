@@ -222,6 +222,7 @@ export async function loadCanvasPaYamlSource(path: string, options: CanvasSource
       templateRequirements,
       sourceHash,
       seedRegistryPath: (await fileExists(join(root, 'seed.templates.json'))) ? join(root, 'seed.templates.json') : undefined,
+      embeddedRegistryPaths: (await fileExists(join(root, 'controls.json'))) ? [join(root, 'controls.json')] : undefined,
       dataSources,
       metadataCatalog,
       editorStatePath: (await fileExists(editorStatePath)) ? editorStatePath : undefined,

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { realpathSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
@@ -6881,7 +6881,12 @@ async function resolveCanvasCliContext(args: string[], canvasTarget?: string): P
     return discoveryOptions as unknown as OperationResult<CanvasCliContext>;
   }
 
-  const projectPath = readFlag(args, '--project') ?? process.cwd();
+  const explicitProjectPath = readFlag(args, '--project');
+  const workspacePath = readFlag(args, '--workspace');
+  const resolvedCanvasTarget = canvasTarget ? resolvePath(canvasTarget) : undefined;
+  const preferCanvasTargetProjectRoot =
+    !explicitProjectPath && !workspacePath && resolvedCanvasTarget ? await pathExists(resolvedCanvasTarget) : false;
+  const projectPath = explicitProjectPath ?? (preferCanvasTargetProjectRoot ? resolvedCanvasTarget! : process.cwd());
   const project = await discoverProject(projectPath, discoveryOptions.data);
 
   if (!project.success || !project.data) {
@@ -6895,7 +6900,6 @@ async function resolveCanvasCliContext(args: string[], canvasTarget?: string): P
   }
 
   const registries = readRepeatedFlags(args, '--registry');
-  const workspacePath = readFlag(args, '--workspace');
   let path = canvasTarget ? resolvePath(canvasTarget) : resolvePath(projectPath);
   let resolvedRegistries = registries.length > 0 ? registries : project.data.templateRegistries;
   let diagnostics = project.diagnostics;
@@ -8124,6 +8128,15 @@ async function readJsonFileForCli(
         detail: error instanceof Error ? error.message : String(error),
       })
     );
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
   }
 }
 

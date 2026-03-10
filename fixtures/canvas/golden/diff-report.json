@@ -3,7 +3,7 @@
   "controls": [
     {
       "changedProperties": [
-        "properties"
+        "properties.Width"
       ],
       "controlPath": "Home/Layout/Submit",
       "kind": "changed"
