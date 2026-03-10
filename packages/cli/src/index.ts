@@ -1315,6 +1315,8 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
       return runFlowUnpack(args);
     case 'pack':
       return runFlowPack(args);
+    case 'deploy':
+      return runFlowDeploy(args);
     case 'normalize':
       return runFlowNormalize(args);
     case 'validate':
@@ -4611,6 +4613,54 @@ async function runFlowPack(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runFlowDeploy(args: string[]): Promise<number> {
+  const inputPath = positionalArgs(args)[0];
+
+  if (!inputPath) {
+    return printFailure(
+      argumentFailure(
+        'FLOW_DEPLOY_ARGS_REQUIRED',
+        'Usage: flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'flow.deploy',
+    {
+      inputPath,
+      environment: resolution.data.environment.alias,
+      solution: readFlag(args, '--solution'),
+      target: readFlag(args, '--target') ?? 'artifact metadata',
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new FlowService(resolution.data.client).deployArtifact(inputPath, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    target: readFlag(args, '--target'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runFlowNormalize(args: string[]): Promise<number> {
   const inputPath = positionalArgs(args)[0];
 
@@ -6145,6 +6195,7 @@ function printHelp(): void {
       '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow pack <path> --out FILE.json [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow normalize <path> [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow validate <path> [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow graph <path> [--format table|json|yaml|ndjson|markdown|raw]',

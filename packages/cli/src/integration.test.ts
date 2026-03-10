@@ -666,7 +666,7 @@ describe('cli fixture-backed workflows', () => {
     );
     await writeFile(
       join(tempDir, 'flows', 'invoice', 'flow.json'),
-      await readFile(resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow', 'flow.json'), 'utf8'),
+      await readFile(resolveRepoPath('fixtures', 'flow', 'golden', 'unpacked.flow.json'), 'utf8'),
       'utf8'
     );
 
@@ -3039,6 +3039,72 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(normalize.stdout), 'fixtures/flow/golden/normalized-after-patch.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
+  });
+
+  it('deploys a validated flow artifact through the CLI entrypoint', async () => {
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+          },
+        ],
+      },
+      queryAll: {
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Invoice Flow',
+            uniquename: 'crd_InvoiceFlow',
+            category: 5,
+            statecode: 1,
+            statuscode: 2,
+          },
+        ],
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'comp-1',
+            objectid: 'flow-1',
+            componenttype: 29,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({
+      fixture: client,
+    });
+
+    const deploy = await runCli([
+      'flow',
+      'deploy',
+      resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json'),
+      '--env',
+      'fixture',
+      '--solution',
+      'Core',
+      '--format',
+      'json',
+    ]);
+
+    expect(deploy.code).toBe(0);
+    expect(deploy.stderr).toBe('');
+    expect(JSON.parse(deploy.stdout)).toMatchObject({
+      targetIdentifier: 'crd_InvoiceFlow',
+      target: {
+        id: 'flow-1',
+        uniqueName: 'crd_InvoiceFlow',
+        solutionUniqueName: 'Core',
+      },
+      updatedFields: ['clientdata'],
+    });
+
+    const workflows = await client.queryAll<Record<string, unknown>>({
+      table: 'workflows',
+    });
+    expect(workflows.success).toBe(true);
+    expect(workflows.data?.[0]?.clientdata).toContain('"definition"');
   });
 
   it('covers invalid flow validation diagnostics through the CLI entrypoint', async () => {

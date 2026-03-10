@@ -261,6 +261,28 @@ export interface FlowPackResult {
   summary: FlowArtifactSummary;
 }
 
+export interface FlowDeployOptions {
+  target?: string;
+  solutionUniqueName?: string;
+}
+
+export interface FlowDeployResult {
+  path: string;
+  targetIdentifier: string;
+  target: {
+    id: string;
+    name?: string;
+    uniqueName?: string;
+    solutionUniqueName?: string;
+  };
+  updatedFields: string[];
+  summary: FlowArtifactSummary;
+  validation: {
+    valid: true;
+    warningCount: number;
+  };
+}
+
 export interface FlowPatchResult {
   path: string;
   outPath: string;
@@ -1006,6 +1028,13 @@ export class FlowService {
     return packFlowArtifact(path, outPath);
   }
 
+  async deployArtifact(path: string, options: FlowDeployOptions = {}): Promise<OperationResult<FlowDeployResult>> {
+    return deployFlowArtifact(path, {
+      ...options,
+      dataverseClient: this.dataverseClient,
+    });
+  }
+
   async normalize(path: string, outPath?: string): Promise<OperationResult<FlowUnpackResult>> {
     return normalizeFlowArtifact(path, outPath);
   }
@@ -1069,6 +1098,166 @@ export async function unpackFlowArtifact(inputPath: string, outPath: string): Pr
       supportTier: 'preview',
       diagnostics: artifact.diagnostics,
       warnings: artifact.warnings,
+    }
+  );
+}
+
+export async function deployFlowArtifact(
+  path: string,
+  options: FlowDeployOptions & { dataverseClient?: DataverseClient } = {}
+): Promise<OperationResult<FlowDeployResult>> {
+  if (!options.dataverseClient) {
+    return fail(
+      createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote flow deploy.', {
+        source: '@pp/flow',
+      })
+    );
+  }
+
+  const artifact = await loadFlowArtifact(path);
+
+  if (!artifact.success || !artifact.data) {
+    return artifact as unknown as OperationResult<FlowDeployResult>;
+  }
+
+  const validation = await validateFlowArtifact(path);
+
+  if (!validation.success || !validation.data) {
+    return validation as unknown as OperationResult<FlowDeployResult>;
+  }
+
+  if (!validation.data.valid) {
+    return fail(
+      [
+        ...artifact.diagnostics,
+        ...validation.diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_DEPLOY_VALIDATION_FAILED',
+          `Flow artifact ${path} failed local validation and was not deployed.`,
+          {
+            source: '@pp/flow',
+            path,
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: [...artifact.warnings, ...validation.warnings],
+      }
+    );
+  }
+
+  const targetIdentifier = resolveFlowDeployTargetIdentifier(artifact.data, options.target);
+
+  if (!targetIdentifier) {
+    return fail(
+      [
+        ...artifact.diagnostics,
+        ...validation.diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_DEPLOY_TARGET_REQUIRED',
+          `Flow artifact ${path} does not declare a targetable id, name, or unique name; pass --target to deploy it.`,
+          {
+            source: '@pp/flow',
+            path,
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: [...artifact.warnings, ...validation.warnings],
+      }
+    );
+  }
+
+  const flowService = new FlowService(options.dataverseClient);
+  const remoteFlow = await flowService.inspect(targetIdentifier, {
+    solutionUniqueName: options.solutionUniqueName,
+  });
+
+  if (!remoteFlow.success) {
+    return remoteFlow as unknown as OperationResult<FlowDeployResult>;
+  }
+
+  if (!remoteFlow.data) {
+    return fail(
+      [
+        ...artifact.diagnostics,
+        ...validation.diagnostics,
+        ...remoteFlow.diagnostics,
+        createDiagnostic('error', 'FLOW_DEPLOY_TARGET_NOT_FOUND', `Flow ${targetIdentifier} was not found in the target environment.`, {
+          source: '@pp/flow',
+          path,
+        }),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: [...artifact.warnings, ...validation.warnings, ...remoteFlow.warnings],
+      }
+    );
+  }
+
+  const update = await options.dataverseClient.update(
+    'workflows',
+    remoteFlow.data.id,
+    {
+      clientdata: stableStringify({
+        definition: cloneJsonValue(artifact.data.definition),
+      }),
+    },
+    options.solutionUniqueName
+      ? {
+          solutionUniqueName: options.solutionUniqueName,
+        }
+      : {}
+  );
+
+  if (!update.success) {
+    return fail([...artifact.diagnostics, ...validation.diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics], {
+      supportTier: 'preview',
+      warnings: [...artifact.warnings, ...validation.warnings, ...remoteFlow.warnings, ...update.warnings],
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse workflows PATCH',
+        },
+      ],
+    });
+  }
+
+  return ok(
+    {
+      path,
+      targetIdentifier,
+      target: {
+        id: remoteFlow.data.id,
+        name: remoteFlow.data.name,
+        uniqueName: remoteFlow.data.uniqueName,
+        solutionUniqueName: options.solutionUniqueName,
+      },
+      updatedFields: ['clientdata'],
+      summary: buildFlowArtifactSummary(path, artifact.data),
+      validation: {
+        valid: true,
+        warningCount: validation.warnings.length,
+      },
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: [...artifact.diagnostics, ...validation.diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics],
+      warnings: [...artifact.warnings, ...validation.warnings, ...remoteFlow.warnings, ...update.warnings],
+      knownLimitations: [
+        'Remote flow deploy currently updates only an existing workflow record and only writes the normalized clientdata definition.',
+        'Flow creation, solution import/export packaging, and broader workflow metadata/state transitions still require later lifecycle work.',
+      ],
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse workflows PATCH',
+        },
+      ],
     }
   );
 }
@@ -1663,6 +1852,16 @@ function buildFlowArtifactSummary(path: string, artifact: FlowArtifact): FlowArt
     parameterCount: Object.keys(artifact.metadata.parameters).length,
     environmentVariableCount: artifact.metadata.environmentVariables.length,
   };
+}
+
+function resolveFlowDeployTargetIdentifier(artifact: FlowArtifact, explicitTarget?: string): string | undefined {
+  return (
+    explicitTarget ??
+    artifact.metadata.uniqueName ??
+    artifact.metadata.name ??
+    artifact.metadata.displayName ??
+    artifact.metadata.id
+  );
 }
 
 function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, FlowJsonValue> {

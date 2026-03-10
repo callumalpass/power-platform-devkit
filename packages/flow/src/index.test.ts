@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
+import { resolveRepoPath } from '../../../test/golden';
 import {
   FlowService,
   packFlowArtifact,
@@ -180,6 +181,16 @@ function createStubDataverseClient(): DataverseClient {
           });
       }
     },
+    update: async () =>
+      ok(
+        {
+          status: 204,
+          headers: {},
+        },
+        {
+          supportTier: 'preview',
+        }
+      ),
   } as unknown as DataverseClient;
 }
 
@@ -206,6 +217,115 @@ describe('FlowService', () => {
     expect(inspect.data?.connectionReferences[0]).toMatchObject({
       name: 'shared_office365',
     });
+  });
+
+  it('deploys a validated local flow artifact into an existing remote workflow', async () => {
+    const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
+    const client = {
+      ...createStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Invoice Flow',
+                uniquename: 'crd_InvoiceFlow',
+                category: 5,
+                statecode: 1,
+                statuscode: 2,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'flow-1',
+                componenttype: 29,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok([] as T[], {
+          supportTier: 'preview',
+        });
+      },
+      update: async (table: string, id: string, entity: Record<string, unknown>, options?: { solutionUniqueName?: string }) => {
+        updates.push({ table, id, entity, solutionUniqueName: options?.solutionUniqueName });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+    const service = new FlowService(client);
+
+    const result = await service.deployArtifact('fixtures/flow/raw/invoice-flow.raw.json', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      targetIdentifier: 'crd_InvoiceFlow',
+      target: {
+        id: 'flow-1',
+        uniqueName: 'crd_InvoiceFlow',
+        solutionUniqueName: 'Core',
+      },
+      updatedFields: ['clientdata'],
+      validation: {
+        valid: true,
+      },
+    });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      table: 'workflows',
+      id: 'flow-1',
+      solutionUniqueName: 'Core',
+    });
+    expect(updates[0]?.entity.clientdata).toContain('"definition"');
+  });
+
+  it('blocks remote deploy when local flow validation fails', async () => {
+    let updated = false;
+    const client = {
+      ...createStubDataverseClient(),
+      update: async () => {
+        updated = true;
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+    const service = new FlowService(client);
+
+    const result = await service.deployArtifact('fixtures/flow/artifacts/semantic-diagnostic-flow');
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === 'FLOW_DEPLOY_VALIDATION_FAILED')).toBe(true);
+    expect(updated).toBe(false);
   });
 
   it('unpacks and validates raw flow exports into canonical artifacts', async () => {
@@ -507,6 +627,196 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(true);
     expect(validation.diagnostics).toEqual([]);
     expect(validation.warnings).toEqual([]);
+  });
+
+  it('accepts supported Office 365 mail and calendar connector parameters', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Office 365 Connector Flow',
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [
+              {
+                name: 'shared_office365',
+                connectionReferenceLogicalName: 'shared_office365',
+                apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+              },
+            ],
+          },
+          definition: {
+            parameters: {
+              '$connections': {
+                value: {
+                  shared_office365: {
+                    connectionReferenceLogicalName: 'shared_office365',
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connectionId: '/connections/office365',
+                  },
+                },
+              },
+            },
+            actions: {
+              OfficeGetEmail: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetEmailV2',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connection: {
+                      name: "@parameters('$connections')['shared_office365']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    messageId: 'AAMkAGI2TAAA=',
+                    includeAttachments: '@equals(1, 1)',
+                    mailboxAddress: 'agent@example.test',
+                  },
+                },
+              },
+              OfficeDeleteEmail: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'DeleteEmail_V2',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connection: {
+                      name: "@parameters('$connections')['shared_office365']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    messageId: 'AAMkAGI2TAAA=',
+                  },
+                },
+              },
+              OfficeMoveEmail: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'MoveV2',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connection: {
+                      name: "@parameters('$connections')['shared_office365']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    messageId: 'AAMkAGI2TAAA=',
+                    folderPath: 'Archive',
+                    mailboxAddress: 'agent@example.test',
+                  },
+                },
+              },
+              OfficeMarkAsRead: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'MarkAsRead_V3',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connection: {
+                      name: "@parameters('$connections')['shared_office365']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    messageId: 'AAMkAGI2TAAA=',
+                    isRead: false,
+                  },
+                },
+              },
+              OfficeCreateEvent: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'V4CalendarPostItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connection: {
+                      name: "@parameters('$connections')['shared_office365']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    table: 'AAMkAGI2TAAA=',
+                    subject: 'Flow validation review',
+                    start: '2026-03-11T09:00:00',
+                    end: '2026-03-11T09:30:00',
+                    timeZone: 'UTC',
+                    requiredAttendees: 'agent@example.test',
+                  },
+                },
+              },
+              OfficeUpdateEvent: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'V4CalendarPatchItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connection: {
+                      name: "@parameters('$connections')['shared_office365']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    table: 'AAMkAGI2TAAA=',
+                    id: 'AAMkAGI2TBBB=',
+                    subject: 'Updated flow validation review',
+                    start: '2026-03-11T09:30:00',
+                    end: '2026-03-11T10:00:00',
+                    timeZone: 'UTC',
+                    optionalAttendees: 'observer@example.test',
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(true);
+    expect(validation.diagnostics).toEqual([]);
+    expect(validation.warnings).toEqual([]);
+  });
+
+  it('reports bounded Office 365 mail and calendar connector diagnostics', async () => {
+    const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'office365-semantic-diagnostic-flow');
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+          path: 'actions.OfficeGetEmailMissingMessageId.inputs.parameters.messageId',
+        }),
+        expect.objectContaining({
+          code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+          path: 'actions.OfficeMoveEmailBadFolderPathShape.inputs.parameters.folderPath',
+        }),
+        expect.objectContaining({
+          code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+          path: 'actions.OfficeMarkAsReadBadIsReadShape.inputs.parameters.isRead',
+        }),
+        expect.objectContaining({
+          code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+          path: 'actions.OfficeCreateEventMissingTimeZone.inputs.parameters.timeZone',
+        }),
+        expect.objectContaining({
+          code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+          path: 'actions.OfficeUpdateEventBadRequiredAttendeesShape.inputs.parameters.requiredAttendees',
+        }),
+      ])
+    );
   });
 
   it('accepts supported SharePoint item and file connector parameters', async () => {

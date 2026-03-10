@@ -32,8 +32,8 @@ Current remote inspection returns:
 - environment-variable references detected from expressions
 
 The current remote slice intentionally targets Dataverse `workflows` plus
-solution-component filtering. It does not yet claim a full deploy/runtime
-surface.
+solution-component filtering plus a bounded existing-flow deploy path. It does
+not yet claim a full create/import/promotion surface.
 
 ## Runtime commands
 
@@ -120,6 +120,7 @@ pp flow validate ./flows/invoice
 pp flow graph ./flows/invoice
 pp flow patch ./flows/invoice --file ./patches/invoice.dev.json --out ./flows/invoice-dev
 pp flow pack ./flows/invoice-dev --out ./dist/invoice-flow.raw.json
+pp flow deploy ./flows/invoice-dev --env dev --solution Core
 ```
 
 ## Normalization behavior
@@ -135,15 +136,24 @@ The current normalizer:
 `pp flow pack <path> --out <file.json>` now repacks a canonical
 `pp.flow.artifact` back into a raw export-shaped JSON payload so a local flow
 can move through unpack, patch, validate, and repack without hand-editing the
-Maker export shape. The current packer:
+Maker export shape. `pp flow deploy <path> --environment ALIAS` now carries
+that lifecycle one step further for an already-existing target cloud flow by
+validating the local artifact, resolving a remote workflow by `--target` or the
+artifact metadata (`uniqueName`, then `name`, then `displayName`, then `id`),
+and PATCHing the normalized definition back into Dataverse `workflows.clientdata`.
+
+The current pack/deploy boundary is:
 
 - writes a raw `properties.definition` payload plus supported metadata fields
   such as `displayName`, `name`, `uniquename`, `statecode`, and `statuscode`
 - preserves top-level unknown fields captured during normalization
 - intentionally does not reintroduce stripped noisy timestamps such as
   `createdTime` or `lastModifiedTime`
-- stops at local raw-export generation; remote import/promotion still belongs
-  to later deploy-oriented work
+- remote deploy currently updates only an existing workflow record and only
+  writes the normalized `clientdata` definition after the shared local
+  validator passes
+- flow creation, solution-packaged import/export, and broader workflow metadata
+  or state transitions still belong to later deploy-oriented work
 
 The flow package now also exposes a first-class parsed intermediate
 representation over the unpacked artifact. The current IR is intentionally
