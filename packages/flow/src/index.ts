@@ -299,6 +299,17 @@ interface FlowConnectorActionContract {
   connectionReferenceSupported: boolean;
 }
 
+interface FlowSupportedConnectorOperationParameter {
+  name: string;
+  kind: 'string';
+}
+
+interface FlowSupportedConnectorOperation {
+  apiId: string;
+  operationId: string;
+  requiredParameters: FlowSupportedConnectorOperationParameter[];
+}
+
 export interface FlowDynamicContentReference {
   kind: 'parameter' | 'environmentVariable' | 'action' | 'variable' | 'connectionReference';
   name: string;
@@ -326,6 +337,18 @@ const NOISY_FLOW_KEYS = new Set([
   'creator',
   'owners',
 ]);
+
+const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+    operationId: 'SendEmailV2',
+    requiredParameters: [
+      { name: 'emailMessage/To', kind: 'string' },
+      { name: 'emailMessage/Subject', kind: 'string' },
+      { name: 'emailMessage/Body', kind: 'string' },
+    ],
+  },
+];
 
 export class FlowService {
   constructor(private readonly dataverseClient?: DataverseClient) {}
@@ -1589,6 +1612,81 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
           );
         }
       }
+
+      const connectionReference = connectorContract.connectionReferenceName
+        ? allConnectionReferences.get(connectorContract.connectionReferenceName)
+        : undefined;
+      const supportedOperation = resolveSupportedConnectorOperation(connectorContract, connectionReference);
+
+      if (supportedOperation) {
+        const inputs = asRecord(nodeRecord?.inputs);
+        const parameters = asRecord(inputs?.parameters);
+
+        if (!parameters) {
+          diagnostics.push(
+            createDiagnostic(
+              'error',
+              'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING',
+              `Connector action ${name} does not declare the supported inputs.parameters object required by ${supportedOperation.operationId}.`,
+              {
+                source: '@pp/flow',
+                path: `${node.path}.inputs.parameters`,
+              }
+            )
+          );
+        } else {
+          for (const parameter of supportedOperation.requiredParameters) {
+            const value = parameters[parameter.name];
+            const parameterPath = `${node.path}.inputs.parameters.${parameter.name}`;
+
+            if (value === undefined) {
+              diagnostics.push(
+                createDiagnostic(
+                  'error',
+                  'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+                  `Connector action ${name} is missing required parameter ${parameter.name} for ${supportedOperation.operationId}.`,
+                  {
+                    source: '@pp/flow',
+                    path: parameterPath,
+                  }
+                )
+              );
+              continue;
+            }
+
+            if (parameter.kind === 'string') {
+              if (typeof value !== 'string') {
+                diagnostics.push(
+                  createDiagnostic(
+                    'error',
+                    'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+                    `Connector action ${name} parameter ${parameter.name} for ${supportedOperation.operationId} must be a string expression or literal, not ${describeFlowJsonShape(value)}.`,
+                    {
+                      source: '@pp/flow',
+                      path: parameterPath,
+                    }
+                  )
+                );
+                continue;
+              }
+
+              if (!value.trim()) {
+                diagnostics.push(
+                  createDiagnostic(
+                    'error',
+                    'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+                    `Connector action ${name} is missing required parameter ${parameter.name} for ${supportedOperation.operationId}.`,
+                    {
+                      source: '@pp/flow',
+                      path: parameterPath,
+                    }
+                  )
+                );
+              }
+            }
+          }
+        }
+      }
     }
 
     if (concurrencyRuns !== undefined && concurrencyRuns > 1) {
@@ -2022,6 +2120,40 @@ function extractConnectionReferenceName(value: string | undefined): string | und
 function normalizeConnectorApiId(value: string | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase();
   return normalized ? normalized : undefined;
+}
+
+function normalizeConnectorOperationId(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : undefined;
+}
+
+function resolveSupportedConnectorOperation(
+  connectorContract: FlowConnectorActionContract,
+  connectionReference: FlowDefinitionConnectionReference | FlowConnectionReference | undefined
+): FlowSupportedConnectorOperation | undefined {
+  const apiId = normalizeConnectorApiId(connectorContract.apiId ?? connectionReference?.apiId);
+  const operationId = normalizeConnectorOperationId(connectorContract.operationId);
+
+  if (!apiId || !operationId) {
+    return undefined;
+  }
+
+  return FLOW_SUPPORTED_CONNECTOR_OPERATIONS.find(
+    (operation) =>
+      normalizeConnectorApiId(operation.apiId) === apiId && normalizeConnectorOperationId(operation.operationId) === operationId
+  );
+}
+
+function describeFlowJsonShape(value: unknown): string {
+  if (Array.isArray(value)) {
+    return 'array';
+  }
+
+  if (value === null) {
+    return 'null';
+  }
+
+  return typeof value;
 }
 
 function extractWholeFlowExpression(value: string): string | undefined {

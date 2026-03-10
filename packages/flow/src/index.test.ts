@@ -464,6 +464,39 @@ describe('FlowService', () => {
                   },
                 },
               },
+              ConnectorMissingParameters: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'SendEmailV2',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connection: {
+                      name: "@parameters('$connections')['shared_office365']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    'emailMessage/To': 'agent@example.test',
+                    'emailMessage/Body': 'Hello from flow validation',
+                  },
+                },
+              },
+              ConnectorBadParameterShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'SendEmailV2',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connection: {
+                      name: "@parameters('$connections')['shared_office365']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    'emailMessage/To': ['agent@example.test'],
+                    'emailMessage/Subject': 'Subject',
+                    'emailMessage/Body': 'Body',
+                  },
+                },
+              },
               SetGhost: {
                 type: 'SetVariable',
                 inputs: {
@@ -498,29 +531,32 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 12,
+      actionCount: 14,
       scopeCount: 1,
-      expressionCount: 9,
+      expressionCount: 11,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 9,
+      dynamicContentReferenceCount: 11,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 2,
+        connectionReferences: 4,
       },
     });
     expect(validation.diagnostics.map((item) => item.code)).toEqual([
       'FLOW_RUN_AFTER_TARGET_MISSING',
+      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
       'FLOW_CONNECTOR_API_ID_MISMATCH',
       'FLOW_CONNECTOR_OPERATION_ID_MISSING',
+      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+      'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING',
       'FLOW_CONNECTOR_API_ID_MISSING',
       'FLOW_CONNECTOR_OPERATION_ID_MISSING',
       'FLOW_ACTION_REFERENCE_UNRESOLVED',
@@ -539,14 +575,14 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 13,
+      nodeCount: 15,
       triggerCount: 1,
-      actionCount: 12,
+      actionCount: 14,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 9,
+      expressionCount: 11,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 9,
+      dynamicContentReferenceCount: 11,
       variableReadCount: 3,
       variableWriteCount: 3,
     });

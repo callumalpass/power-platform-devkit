@@ -1,10 +1,10 @@
 {
-  "actionCount": 12,
+  "actionCount": 14,
   "artifactName": "Semantic Diagnostic Flow",
   "controlFlowEdgeCount": 0,
-  "dynamicContentReferenceCount": 9,
-  "expressionCount": 9,
-  "nodeCount": 13,
+  "dynamicContentReferenceCount": 11,
+  "expressionCount": 11,
+  "nodeCount": 15,
   "nodes": [
     {
       "branch": "root",
@@ -253,6 +253,51 @@
           {
             "kind": "connectionReference",
             "name": "shared_office365",
+            "path": "definition.actions.ConnectorBadParameterShape.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_office365']['connectionId']",
+            "path": "definition.actions.ConnectorBadParameterShape.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_office365",
+                "path": "definition.actions.ConnectorBadParameterShape.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.ConnectorBadParameterShape",
+      "kind": "action",
+      "name": "ConnectorBadParameterShape",
+      "path": "actions.ConnectorBadParameterShape",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_office365",
             "path": "definition.actions.ConnectorMismatch.inputs.host.connection.name"
           }
         ],
@@ -277,6 +322,51 @@
       "kind": "action",
       "name": "ConnectorMismatch",
       "path": "actions.ConnectorMismatch",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_office365",
+            "path": "definition.actions.ConnectorMissingParameters.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_office365']['connectionId']",
+            "path": "definition.actions.ConnectorMissingParameters.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_office365",
+                "path": "definition.actions.ConnectorMissingParameters.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.ConnectorMissingParameters",
+      "kind": "action",
+      "name": "ConnectorMissingParameters",
+      "path": "actions.ConnectorMissingParameters",
       "runAfter": [],
       "type": "OpenApiConnection",
       "variableUsage": {

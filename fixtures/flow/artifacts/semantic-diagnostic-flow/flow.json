@@ -123,6 +123,41 @@
           }
         }
       },
+      "ConnectorMissingParameters": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "SendEmailV2",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+            "connection": {
+              "name": "@parameters('$connections')['shared_office365']['connectionId']"
+            }
+          },
+          "parameters": {
+            "emailMessage/To": "agent@example.test",
+            "emailMessage/Body": "Hello from flow validation"
+          }
+        }
+      },
+      "ConnectorBadParameterShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "SendEmailV2",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+            "connection": {
+              "name": "@parameters('$connections')['shared_office365']['connectionId']"
+            }
+          },
+          "parameters": {
+            "emailMessage/To": [
+              "agent@example.test"
+            ],
+            "emailMessage/Subject": "Subject",
+            "emailMessage/Body": "Body"
+          }
+        }
+      },
       "SetGhost": {
         "type": "SetVariable",
         "inputs": {

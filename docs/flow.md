@@ -190,6 +190,13 @@ Current validation checks:
   - `inputs.host.apiId` is present
   - a supported `operationId` is present
   - the action-level `apiId` matches the resolved connection-reference `apiId`
+- supported connector-operation contracts now validate the first bounded
+  parameter-shape slice for `shared_office365` `SendEmailV2` actions:
+  - `inputs.parameters` must exist as an object
+  - `emailMessage/To`, `emailMessage/Subject`, and `emailMessage/Body` must be
+    present
+  - those required fields must remain string literals or string-valued
+    expressions, not arrays or nested objects
 - unsupported connector connection-name shapes fail explicitly instead of being
   guessed during contract validation
 - supported workflow-expression parsing covers both whole-expression values

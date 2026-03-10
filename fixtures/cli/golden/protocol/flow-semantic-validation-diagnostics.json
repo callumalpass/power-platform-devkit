@@ -8,6 +8,55 @@
       "source": "@pp/flow"
     },
     {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action ConnectorBadParameterShape parameter emailMessage/To for SendEmailV2 must be a string expression or literal, not array.",
+      "path": "actions.ConnectorBadParameterShape.inputs.parameters.emailMessage/To",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_API_ID_MISMATCH",
+      "level": "error",
+      "message": "Connector action ConnectorMismatch declares apiId /providers/microsoft.powerapps/apis/shared_sharepointonline but connection reference shared_office365 resolves to /providers/microsoft.powerapps/apis/shared_office365.",
+      "path": "actions.ConnectorMismatch.inputs.host.apiId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_OPERATION_ID_MISSING",
+      "level": "error",
+      "message": "Connector action ConnectorMismatch does not declare a supported operationId.",
+      "path": "actions.ConnectorMismatch.inputs.operationId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action ConnectorMissingParameters is missing required parameter emailMessage/Subject for SendEmailV2.",
+      "path": "actions.ConnectorMissingParameters.inputs.parameters.emailMessage/Subject",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING",
+      "level": "error",
+      "message": "Connector action ConnectorUnsupportedShape does not declare the supported inputs.parameters object required by SendEmailV2.",
+      "path": "actions.ConnectorUnsupportedShape.inputs.parameters",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_API_ID_MISSING",
+      "level": "error",
+      "message": "Connector action SendMail does not declare inputs.host.apiId.",
+      "path": "actions.SendMail.inputs.host.apiId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_OPERATION_ID_MISSING",
+      "level": "error",
+      "message": "Connector action SendMail does not declare a supported operationId.",
+      "path": "actions.SendMail.inputs.operationId",
+      "source": "@pp/flow"
+    },
+    {
       "code": "FLOW_ACTION_REFERENCE_UNRESOLVED",
       "level": "error",
       "message": "Flow expression references missing action MissingAction.",
@@ -26,6 +75,55 @@
       "level": "error",
       "message": "Flow expression references missing variable MissingVariable.",
       "path": "definition.actions.ComposeBadVariable.inputs",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_CONNECTION_REFERENCE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action ConnectorUnsupportedShape uses an unsupported connection reference shape; expected @parameters('$connections')['<name>']['connectionId'].",
+      "path": "definition.actions.ConnectorUnsupportedShape.inputs.host.connection.name",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_REFERENCE_UNRESOLVED",
+      "level": "error",
+      "message": "Flow expression references missing connection reference shared_missing.",
+      "path": "definition.actions.SendMail.inputs.host.connection.name",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_VARIABLE_TARGET_UNRESOLVED",
+      "level": "error",
+      "message": "Flow variable operation targets missing variable Ghost.",
+      "path": "definition.actions.SetGhost.inputs.name",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_DEFINITION_ENTRY_MISSING",
+      "level": "error",
+      "message": "Flow connection reference shared_declared_only is declared in metadata but missing from definition.parameters.$connections.",
+      "path": "definition.parameters.$connections.value.shared_declared_only",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_METADATA_MISSING",
+      "level": "error",
+      "message": "Flow definition references connection shared_definition_only in $connections but metadata.connectionReferences does not declare it.",
+      "path": "definition.parameters.$connections.value.shared_definition_only",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_API_ID_MISMATCH",
+      "level": "error",
+      "message": "Flow connection reference shared_office365 has mismatched apiId values between metadata and definition.",
+      "path": "definition.parameters.$connections.value.shared_office365.apiId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_LOGICAL_NAME_MISMATCH",
+      "level": "error",
+      "message": "Flow connection reference shared_office365 has mismatched logical names between metadata and definition.",
+      "path": "definition.parameters.$connections.value.shared_office365.connectionReferenceLogicalName",
       "source": "@pp/flow"
     }
   ],
