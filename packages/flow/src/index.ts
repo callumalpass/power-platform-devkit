@@ -448,6 +448,21 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
   },
   {
     apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'GetItems',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'table', kind: 'string', required: true },
+      { name: '$filter', kind: 'string' },
+      { name: '$orderby', kind: 'string' },
+      { name: '$top', kind: 'integer' },
+      { name: 'view', kind: 'string' },
+      { name: 'folderPath', kind: 'string' },
+      { name: 'includeNestedItems', kind: 'boolean' },
+      { name: 'limitColumnsByView', kind: 'boolean' },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
     operationId: 'PatchItem',
     parameters: [
       { name: 'dataset', kind: 'string', required: true },

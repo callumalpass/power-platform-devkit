@@ -142,6 +142,20 @@
       "to": "connectionReference:shared_sharepointonline"
     },
     {
+      "from": "action:actions.SharePointGetItemsBadLimitColumnsShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointGetItemsBadLimitColumnsShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
+      "from": "action:actions.SharePointGetItemsMissingTable",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointGetItemsMissingTable.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
       "from": "action:actions.SharePointPatchItemBadTitleShape",
       "kind": "connectionReferenceReference",
       "path": "definition.actions.SharePointPatchItemBadTitleShape.inputs.host.connection.name",
@@ -1007,6 +1021,54 @@
       "childIds": [],
       "dependentIds": [],
       "dependsOn": [],
+      "id": "action:actions.SharePointGetItemsBadLimitColumnsShape",
+      "kind": "action",
+      "name": "SharePointGetItemsBadLimitColumnsShape",
+      "path": "actions.SharePointGetItemsBadLimitColumnsShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SharePointGetItemsMissingTable",
+      "kind": "action",
+      "name": "SharePointGetItemsMissingTable",
+      "path": "actions.SharePointGetItemsMissingTable",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
       "id": "action:actions.SharePointPatchItemBadTitleShape",
       "kind": "action",
       "name": "SharePointPatchItemBadTitleShape",
@@ -1099,10 +1161,10 @@
     ]
   },
   "summary": {
-    "actionCount": 30,
+    "actionCount": 32,
     "edgeCounts": {
       "actionReference": 1,
-      "connectionReferenceReference": 20,
+      "connectionReferenceReference": 22,
       "containment": 1,
       "environmentVariableReference": 1,
       "parameterReference": 2,
@@ -1110,7 +1172,7 @@
       "variableReference": 3,
       "variableWrite": 3
     },
-    "nodeCount": 31,
+    "nodeCount": 33,
     "scopeCount": 1,
     "triggerCount": 1,
     "unresolvedEdgeCount": 6

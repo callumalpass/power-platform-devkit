@@ -229,6 +229,41 @@
           }
         }
       },
+      "SharePointGetItemsMissingTable": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetItems",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "$top": 25
+          }
+        }
+      },
+      "SharePointGetItemsBadLimitColumnsShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetItems",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "table": "Documents",
+            "limitColumnsByView": {
+              "enabled": true
+            }
+          }
+        }
+      },
       "SharePointPatchItemBadTitleShape": {
         "type": "OpenApiConnection",
         "inputs": {

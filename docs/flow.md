@@ -218,6 +218,13 @@ Current validation checks:
   - `shared_sharepointonline` `GetItem` with required
     `inputs.parameters.dataset`, `inputs.parameters.table`, and
     `inputs.parameters.id`, plus optional `inputs.parameters.view`
+  - `shared_sharepointonline` `GetItems` with required
+    `inputs.parameters.dataset` and `inputs.parameters.table`, plus bounded
+    optional query/list settings including `inputs.parameters.$filter`,
+    `inputs.parameters.$orderby`, `inputs.parameters.$top`,
+    `inputs.parameters.view`, `inputs.parameters.folderPath`,
+    `inputs.parameters.includeNestedItems`, and
+    `inputs.parameters.limitColumnsByView`
   - `shared_sharepointonline` `PatchItem` with required
     `inputs.parameters.dataset`, `inputs.parameters.table`, and
     `inputs.parameters.id`, plus a required row payload expressed either as

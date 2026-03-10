@@ -157,6 +157,20 @@
     {
       "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
       "level": "error",
+      "message": "Connector action SharePointGetItemsBadLimitColumnsShape parameter limitColumnsByView for GetItems must be a boolean literal or expression, not object.",
+      "path": "actions.SharePointGetItemsBadLimitColumnsShape.inputs.parameters.limitColumnsByView",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointGetItemsMissingTable is missing required parameter table for GetItems.",
+      "path": "actions.SharePointGetItemsMissingTable.inputs.parameters.table",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
       "message": "Connector action SharePointPatchItemBadTitleShape parameter item/Title for PatchItem must be a scalar literal or whole expression, not object.",
       "path": "actions.SharePointPatchItemBadTitleShape.inputs.parameters.item/Title",
       "source": "@pp/flow"

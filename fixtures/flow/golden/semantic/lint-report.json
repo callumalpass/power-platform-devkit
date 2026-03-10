@@ -26,11 +26,11 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 30,
+      "actionCount": 32,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 27,
-      "expressionCount": 27,
-      "nodeCount": 31,
+      "dynamicContentReferenceCount": 29,
+      "expressionCount": 29,
+      "nodeCount": 33,
       "scopeCount": 1,
       "templateExpressionCount": 2,
       "triggerCount": 1,
@@ -43,16 +43,16 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 30,
+      "actionCount": 32,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 27,
-      "expressionCount": 27,
+      "dynamicContentReferenceCount": 29,
+      "expressionCount": 29,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
-        "connectionReferences": 20,
+        "connectionReferences": 22,
         "environmentVariables": 1,
         "parameters": 2,
         "variables": 3
@@ -220,6 +220,20 @@
       "level": "error",
       "message": "Connector action SharePointGetItemMissingId is missing required parameter id for GetItem.",
       "path": "actions.SharePointGetItemMissingId.inputs.parameters.id",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointGetItemsBadLimitColumnsShape parameter limitColumnsByView for GetItems must be a boolean literal or expression, not object.",
+      "path": "actions.SharePointGetItemsBadLimitColumnsShape.inputs.parameters.limitColumnsByView",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointGetItemsMissingTable is missing required parameter table for GetItems.",
+      "path": "actions.SharePointGetItemsMissingTable.inputs.parameters.table",
       "source": "@pp/flow"
     },
     {

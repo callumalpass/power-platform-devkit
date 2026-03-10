@@ -1,10 +1,10 @@
 {
-  "actionCount": 30,
+  "actionCount": 32,
   "artifactName": "Semantic Diagnostic Flow",
   "controlFlowEdgeCount": 0,
-  "dynamicContentReferenceCount": 27,
-  "expressionCount": 27,
-  "nodeCount": 31,
+  "dynamicContentReferenceCount": 29,
+  "expressionCount": 29,
+  "nodeCount": 33,
   "nodes": [
     {
       "branch": "root",
@@ -1324,6 +1324,96 @@
       "kind": "action",
       "name": "SharePointGetItemMissingId",
       "path": "actions.SharePointGetItemMissingId",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointGetItemsBadLimitColumnsShape.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointGetItemsBadLimitColumnsShape.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointGetItemsBadLimitColumnsShape.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointGetItemsBadLimitColumnsShape",
+      "kind": "action",
+      "name": "SharePointGetItemsBadLimitColumnsShape",
+      "path": "actions.SharePointGetItemsBadLimitColumnsShape",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointGetItemsMissingTable.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointGetItemsMissingTable.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointGetItemsMissingTable.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointGetItemsMissingTable",
+      "kind": "action",
+      "name": "SharePointGetItemsMissingTable",
+      "path": "actions.SharePointGetItemsMissingTable",
       "runAfter": [],
       "type": "OpenApiConnection",
       "variableUsage": {
