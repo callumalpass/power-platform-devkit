@@ -1,5 +1,5 @@
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
-import { executeDeploy, type DeployExecutionMode, type DeployExecutionResult } from '@pp/deploy';
+import { executeDeploy, resolveDeployBindings, type DeployExecutionMode, type DeployExecutionResult, type ResolvedDeployBindings } from '@pp/deploy';
 import { discoverProject } from '@pp/project';
 
 export interface ResolvedDeployAdapterOptions {
@@ -9,7 +9,17 @@ export interface ResolvedDeployAdapterOptions {
   environment: NodeJS.ProcessEnv;
   mode?: DeployExecutionMode;
   confirm?: boolean;
+  publishBindings?: DeployBindingPublisher;
 }
+
+export type DeployBindingPublisher = (
+  bindings: ResolvedDeployBindings,
+  context: {
+    mode: DeployExecutionMode;
+    environment: NodeJS.ProcessEnv;
+    result: DeployExecutionResult;
+  }
+) => Promise<OperationResult<void>> | OperationResult<void>;
 
 export function resolveDeployMode(
   explicitMode: DeployExecutionMode | undefined,
@@ -146,8 +156,27 @@ export async function runResolvedDeploy(options: ResolvedDeployAdapterOptions): 
     });
   }
 
-  return executeDeploy(project.data, {
+  const result = await executeDeploy(project.data, {
     mode: options.mode,
     confirmed: options.confirm,
   });
+
+  if (!result.success || !result.data || !options.publishBindings) {
+    return result;
+  }
+
+  const publication = await options.publishBindings(resolveDeployBindings(project.data), {
+    mode: result.data.mode,
+    environment: options.environment,
+    result: result.data,
+  });
+
+  if (publication.success) {
+    return result;
+  }
+
+  return {
+    ...result,
+    warnings: [...result.warnings, ...publication.diagnostics, ...publication.warnings],
+  };
 }

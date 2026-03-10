@@ -70,6 +70,7 @@ The adapter packages call the shared deploy service rather than reimplementing d
 
 Each adapter discovers the project and invokes the shared deploy execution path, so CI wrappers stay thin.
 Library consumers that need the resolved binding values directly can also call `resolveDeployBindings()` from `@pp/deploy`; the JSON plan/result shape keeps that same information in a redacted `bindings` summary.
+GitHub Actions now also publishes resolved `deploy-input` and `deploy-secret` bindings into the step output file when `GITHUB_OUTPUT` is available, so later steps can consume the same adapter-facing values without reparsing the deploy result.
 
 The repo now includes turnkey Node entrypoints for those wrappers:
 
@@ -105,13 +106,17 @@ Explicit function options win over environment variables. If no explicit `projec
 Example:
 
 ```yaml
-- name: Deploy with shared orchestration
+- id: deploy
+  name: Deploy with shared orchestration
   env:
     INPUT_STAGE: prod
     INPUT_MODE: apply
     INPUT_CONFIRM: true
     INPUT_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}'
   run: node ./scripts/run-github-deploy.mjs
+
+- name: Use a resolved deploy binding
+  run: echo "${{ steps.deploy.outputs['sql-endpoint'] }}"
 ```
 
 ### Azure DevOps
