@@ -6,12 +6,73 @@ import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type Operatio
 import { SolutionService } from '@pp/solution';
 import { buildCanvasMsappFromUnpackedSource } from './msapp-build';
 import { type CanvasDataSourceSummary, loadCanvasPaYamlSource, resolveCanvasPaYamlRoot } from './pa-yaml';
+import { buildCanvasSemanticModel, collectCanvasFormulaChecks } from './semantic-model';
 import { buildCanvasTemplateSurface } from './template-surface';
 
 export type CanvasBuildMode = 'strict' | 'seeded' | 'registry';
 export type CanvasSupportStatus = 'supported' | 'partial' | 'unsupported';
 export type CanvasTemplateMatchType = 'templateName' | 'displayName' | 'constructor' | 'yamlName';
 export type CanvasJsonValue = null | boolean | number | string | CanvasJsonValue[] | { [key: string]: CanvasJsonValue };
+
+export interface CanvasSourcePosition {
+  offset: number;
+  line: number;
+  column: number;
+}
+
+export interface CanvasSourceSpan {
+  file: string;
+  start: CanvasSourcePosition;
+  end: CanvasSourcePosition;
+}
+
+export interface CanvasNodeSourceInfo {
+  id: string;
+  file: string;
+  span?: CanvasSourceSpan;
+  nameSpan?: CanvasSourceSpan;
+  propertySpans?: Record<string, CanvasSourceSpan>;
+  propertiesSpan?: CanvasSourceSpan;
+  controlTypeSpan?: CanvasSourceSpan;
+  childrenSpan?: CanvasSourceSpan;
+}
+
+export interface CanvasColumnMetadata {
+  name: string;
+  logicalName?: string;
+  displayName?: string;
+  type?: string;
+}
+
+export interface CanvasRelationshipMetadata {
+  name: string;
+  target?: string;
+  columnName?: string;
+}
+
+export interface CanvasOptionValueMetadata {
+  name: string;
+  value?: string | number;
+}
+
+export interface CanvasOptionSetMetadata {
+  name: string;
+  values: CanvasOptionValueMetadata[];
+}
+
+export interface CanvasEntityMetadata {
+  name: string;
+  logicalName?: string;
+  displayName?: string;
+  columns: CanvasColumnMetadata[];
+  relationships: CanvasRelationshipMetadata[];
+  optionSets: CanvasOptionSetMetadata[];
+}
+
+export interface CanvasMetadataCatalog {
+  entities: CanvasEntityMetadata[];
+  optionSets: CanvasOptionSetMetadata[];
+}
 
 export interface CanvasTemplateAliases {
   displayNames?: string[];
@@ -134,6 +195,7 @@ export interface CanvasControlDefinition {
   children: CanvasControlDefinition[];
   variantName?: string;
   layoutName?: string;
+  source?: CanvasNodeSourceInfo;
 }
 
 export interface CanvasScreenDefinition {
@@ -141,6 +203,7 @@ export interface CanvasScreenDefinition {
   file: string;
   properties?: Record<string, CanvasJsonValue>;
   controls: CanvasControlDefinition[];
+  source?: CanvasNodeSourceInfo;
 }
 
 export interface CanvasControlSummary {
@@ -178,7 +241,10 @@ export interface CanvasSourceModel {
   sourceHash: string;
   seedRegistryPath?: string;
   dataSources?: CanvasDataSourceSummary[];
+  metadataCatalog?: CanvasMetadataCatalog;
   editorStatePath?: string;
+  appSource?: CanvasNodeSourceInfo;
+  appPropertySpans?: Record<string, CanvasSourceSpan>;
   unpackedArtifacts?: {
     headerPath?: string;
     propertiesPath?: string;
@@ -1026,7 +1092,10 @@ async function prepareCanvasValidation(
     seeded: seeded.data,
     registry: registry.data,
   });
-  const formulas = collectFormulaChecks(source.data.screens);
+  const semanticModel = buildCanvasSemanticModel(source.data, {
+    templateResolutions: templateRequirements.resolutions,
+  });
+  const formulas = collectCanvasFormulaChecks(semanticModel);
   const propertyChecks = collectPropertyChecks(source.data, templateRequirements);
   const invalidPropertyChecks = propertyChecks.filter((property) => !property.valid);
   const unresolvedTemplates = collectUnresolvedTemplateIssues(source.data, templateRequirements);
@@ -1041,7 +1110,7 @@ async function prepareCanvasValidation(
         createDiagnostic(
           'error',
           'CANVAS_FORMULA_PROPERTY_INVALID',
-          `Formula property ${formula.property} on ${formula.controlPath} must be a string in the supported canvas slice.`,
+          `Formula property ${formula.property} on ${formula.controlPath} is not supported by the current Power Fx semantic slice.`,
           {
             source: '@pp/canvas',
           }
@@ -2203,3 +2272,17 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     ? (value as Record<string, unknown>)
     : undefined;
 }
+
+export {
+  buildCanvasSemanticModel,
+  collectCanvasFormulaChecks,
+  findCanvasSemanticControl,
+  type BuildCanvasSemanticModelOptions,
+  type CanvasFormulaBinding,
+  type CanvasFormulaSemantic,
+  type CanvasSemanticControl,
+  type CanvasSemanticModel,
+  type CanvasSemanticSymbol,
+  type CanvasSemanticSymbolKind,
+  type PowerFxAstNode,
+} from './semantic-model';

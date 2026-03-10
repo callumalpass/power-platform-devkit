@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildCanvasApp, loadCanvasSource, validateCanvasApp } from './index';
+import { buildCanvasApp, buildCanvasSemanticModel, loadCanvasSource, validateCanvasApp } from './index';
 
 const tempDirs: string[] = [];
 
@@ -85,6 +85,37 @@ async function writeUnpackedCanvasFixture(
             Type: 'Table',
             DatasetName: 'default.cds',
             EntityName: 'account',
+            Metadata: {
+              Name: 'Accounts',
+              LogicalName: 'account',
+              Columns: [
+                { Name: 'Account Name', Type: 'Text' },
+                { Name: 'Category', Type: 'Choice' },
+              ],
+              Relationships: [{ Name: 'Primary Contact', Target: 'Contacts' }],
+              OptionSets: [
+                {
+                  Name: 'Account Category',
+                  Values: [{ Name: 'Preferred', Value: 1000 }],
+                },
+              ],
+            },
+          },
+          {
+            Name: 'Contacts',
+            Type: 'Table',
+            DatasetName: 'default.cds',
+            EntityName: 'contact',
+            Metadata: {
+              Name: 'Contacts',
+              LogicalName: 'contact',
+              Columns: [
+                { Name: 'Email', Type: 'Text' },
+                { Name: 'Full Name', Type: 'Text' },
+              ],
+              Relationships: [],
+              OptionSets: [],
+            },
           },
         ],
       },
@@ -181,14 +212,13 @@ describe('canvas pa.yaml source support', () => {
         version: '2.2.0',
       },
     ]);
-    expect(source.data?.dataSources).toEqual([
-      {
-        name: 'Accounts',
-        type: 'Table',
-        datasetName: 'default.cds',
-        entityName: 'account',
-      },
-    ]);
+    expect(source.data?.dataSources).toHaveLength(2);
+    expect(source.data?.dataSources?.[0]).toMatchObject({
+      name: 'Accounts',
+      type: 'Table',
+      datasetName: 'default.cds',
+      entityName: 'account',
+    });
     expect(source.data?.screens[0]?.properties).toMatchObject({
       LoadingSpinnerColor: '=RGBA(56, 96, 178, 1)',
     });
@@ -228,6 +258,76 @@ describe('canvas pa.yaml source support', () => {
       source: 'templateXml',
     });
     expect(validation.diagnostics.some((diagnostic) => diagnostic.code === 'CANVAS_CONTROL_PROPERTY_INVALID')).toBe(true);
+  });
+
+  it('retains source spans and semantic bindings for pa.yaml formulas', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: =LookUp(Contacts, Email = User().Email, \'Full Name\')',
+        '            OnSelect: =If(IsBlank(varSelectedAccount), "none", \'Account Category\'.Preferred)',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+
+    const source = await loadCanvasSource(appRoot);
+
+    expect(source.success).toBe(true);
+    expect(source.data?.appPropertySpans?.Theme?.start.line).toBe(4);
+    expect(source.data?.screens[0]?.source?.span?.start.line).toBe(3);
+    expect(source.data?.screens[0]?.controls[0]?.source?.propertySpans?.Text?.start.line).toBe(7);
+    expect(source.data?.metadataCatalog?.entities.map((entity) => entity.name)).toEqual(['Accounts', 'Contacts']);
+
+    const semantic = buildCanvasSemanticModel(source.data!);
+    const textFormula = semantic.formulas.find((formula) => formula.property === 'Text');
+    const onSelectFormula = semantic.formulas.find((formula) => formula.property === 'OnSelect');
+
+    expect(textFormula?.valid).toBe(true);
+    expect(textFormula?.bindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'function', name: 'LookUp', resolved: true }),
+        expect.objectContaining({ kind: 'dataSource', name: 'Contacts', resolved: true, metadataBacked: true }),
+      ])
+    );
+    expect(onSelectFormula?.bindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'optionValue', name: 'Preferred', resolved: true, metadataBacked: true }),
+        expect.objectContaining({ kind: 'variable', name: 'varSelectedAccount', resolved: true }),
+      ])
+    );
+  });
+
+  it('fails explicitly on unsupported Power Fx semantics', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            OnSelect: =Set(varX, 1); Notify("done")',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+
+    const source = await loadCanvasSource(appRoot);
+    const semantic = buildCanvasSemanticModel(source.data!);
+
+    expect(semantic.formulas[0]).toMatchObject({
+      property: 'OnSelect',
+      valid: false,
+    });
+    expect(semantic.formulas[0]?.unsupportedReason).toMatch(/Unsupported Power Fx character|Unexpected token/);
   });
 
   it('builds a native msapp archive from unpacked pa.yaml sources', async () => {
