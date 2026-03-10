@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
 import {
@@ -245,6 +245,13 @@ export interface FlowIntermediateRepresentation extends FlowIntermediateRepresen
 export interface FlowUnpackResult {
   inputPath: string;
   outPath: string;
+  summary: FlowArtifactSummary;
+}
+
+export interface FlowPackResult {
+  path: string;
+  outPath: string;
+  format: 'raw-json';
   summary: FlowArtifactSummary;
 }
 
@@ -937,6 +944,10 @@ export class FlowService {
     return unpackFlowArtifact(inputPath, outPath);
   }
 
+  async pack(path: string, outPath: string): Promise<OperationResult<FlowPackResult>> {
+    return packFlowArtifact(path, outPath);
+  }
+
   async normalize(path: string, outPath?: string): Promise<OperationResult<FlowUnpackResult>> {
     return normalizeFlowArtifact(path, outPath);
   }
@@ -1018,6 +1029,32 @@ export async function normalizeFlowArtifact(path: string, outPath?: string): Pro
     {
       inputPath: path,
       outPath: destination,
+      summary: buildFlowArtifactSummary(destination, artifact.data),
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: artifact.diagnostics,
+      warnings: artifact.warnings,
+    }
+  );
+}
+
+export async function packFlowArtifact(path: string, outPath: string): Promise<OperationResult<FlowPackResult>> {
+  const artifact = await loadFlowArtifact(path);
+
+  if (!artifact.success || !artifact.data) {
+    return artifact as unknown as OperationResult<FlowPackResult>;
+  }
+
+  const destination = resolve(outPath);
+  await mkdir(dirname(destination), { recursive: true });
+  await writeJsonFile(destination, buildRawFlowArtifactDocument(artifact.data) as unknown as Parameters<typeof writeJsonFile>[1]);
+
+  return ok(
+    {
+      path,
+      outPath: destination,
+      format: 'raw-json',
       summary: buildFlowArtifactSummary(destination, artifact.data),
     },
     {
@@ -1442,6 +1479,26 @@ function buildFlowArtifactSummary(path: string, artifact: FlowArtifact): FlowArt
     parameterCount: Object.keys(artifact.metadata.parameters).length,
     environmentVariableCount: artifact.metadata.environmentVariables.length,
   };
+}
+
+function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, FlowJsonValue> {
+  const record: Record<string, FlowJsonValue> = {
+    ...(artifact.unknown ? cloneJsonValue(artifact.unknown) : {}),
+    properties: {
+      definition: cloneJsonValue(artifact.definition),
+      ...(artifact.metadata.displayName ? { displayName: artifact.metadata.displayName } : {}),
+      ...(artifact.metadata.name ? { name: artifact.metadata.name } : {}),
+      ...(artifact.metadata.uniqueName ? { uniquename: artifact.metadata.uniqueName } : {}),
+      ...(artifact.metadata.stateCode !== undefined ? { statecode: artifact.metadata.stateCode } : {}),
+      ...(artifact.metadata.statusCode !== undefined ? { statuscode: artifact.metadata.statusCode } : {}),
+    },
+  };
+
+  if (artifact.metadata.id) {
+    record.id = artifact.metadata.id;
+  }
+
+  return record;
 }
 
 function parseFlowClientData(clientdata: string | undefined): {

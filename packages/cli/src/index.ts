@@ -1289,6 +1289,8 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
       return runFlowInspect(args);
     case 'unpack':
       return runFlowUnpack(args);
+    case 'pack':
+      return runFlowPack(args);
     case 'normalize':
       return runFlowNormalize(args);
     case 'validate':
@@ -4209,6 +4211,30 @@ async function runFlowUnpack(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runFlowPack(args: string[]): Promise<number> {
+  const inputPath = positionalArgs(args)[0];
+  const outPath = readFlag(args, '--out');
+
+  if (!inputPath || !outPath) {
+    return printFailure(argumentFailure('FLOW_PACK_ARGS_REQUIRED', 'Usage: flow pack <path> --out <file.json>'));
+  }
+
+  const preview = maybeHandleMutationPreview(args, 'json', 'flow.pack', { inputPath, outPath });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new FlowService().pack(inputPath, outPath);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runFlowNormalize(args: string[]): Promise<number> {
   const inputPath = positionalArgs(args)[0];
 
@@ -5532,6 +5558,7 @@ function printHelp(): void {
       '  flow list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow pack <path> --out FILE.json [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow normalize <path> [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow validate <path> [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow graph <path> [--format table|json|yaml|ndjson|markdown|raw]',

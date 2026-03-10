@@ -6,6 +6,7 @@ import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
 import {
   FlowService,
+  packFlowArtifact,
   parseFlowIntermediateRepresentation,
   patchFlowArtifact,
   unpackFlowArtifact,
@@ -273,6 +274,86 @@ describe('FlowService', () => {
       definition: Record<string, unknown>;
     };
     expect(normalized.definition.lastModifiedTime).toBeUndefined();
+  });
+
+  it('packs canonical flow artifacts back into a raw export shape without losing normalized semantics', async () => {
+    const dir = await createTempDir();
+    const rawPath = join(dir, 'invoice-flow.raw.json');
+    const unpackedPath = join(dir, 'unpacked');
+    const packedPath = join(dir, 'repacked.json');
+
+    await writeFile(
+      rawPath,
+      JSON.stringify(
+        {
+          extraTopLevel: {
+            preserve: true,
+          },
+          properties: {
+            displayName: 'Invoice Flow',
+            name: 'Invoice Flow',
+            uniquename: 'crd_InvoiceFlow',
+            statecode: 1,
+            statuscode: 2,
+            definition: {
+              parameters: {
+                '$connections': {
+                  value: {
+                    shared_office365: {
+                      connectionReferenceLogicalName: 'shared_office365',
+                      connectionId: '/connections/office365',
+                      apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    },
+                  },
+                },
+                ApiBaseUrl: {
+                  defaultValue: 'https://example.test',
+                },
+              },
+              actions: {
+                SendMail: {
+                  type: 'Compose',
+                  inputs: {
+                    body: "@{environmentVariables('pp_ApiUrl')}",
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const unpack = await unpackFlowArtifact(rawPath, unpackedPath);
+    const packed = await packFlowArtifact(unpackedPath, packedPath);
+    const reloaded = await validateFlowArtifact(packedPath);
+    const packedDocument = JSON.parse(await readFile(packedPath, 'utf8')) as Record<string, unknown>;
+
+    expect(unpack.success).toBe(true);
+    expect(packed.success).toBe(true);
+    expect(reloaded.success).toBe(true);
+    expect(reloaded.data?.valid).toBe(true);
+    expect(packed.data).toMatchObject({
+      path: unpackedPath,
+      outPath: packedPath,
+      format: 'raw-json',
+    });
+    expect(packedDocument).toMatchObject({
+      extraTopLevel: {
+        preserve: true,
+      },
+      properties: {
+        displayName: 'Invoice Flow',
+        name: 'Invoice Flow',
+        uniquename: 'crd_InvoiceFlow',
+        statecode: 1,
+        statuscode: 2,
+      },
+    });
+    expect((packedDocument.properties as { definition: Record<string, unknown> }).definition.lastModifiedTime).toBeUndefined();
   });
 
   it('accepts supported Dataverse connector parameters across path and query buckets', async () => {

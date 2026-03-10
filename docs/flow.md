@@ -110,6 +110,7 @@ pp flow normalize ./flows/invoice
 pp flow validate ./flows/invoice
 pp flow graph ./flows/invoice
 pp flow patch ./flows/invoice --file ./patches/invoice.dev.json --out ./flows/invoice-dev
+pp flow pack ./flows/invoice-dev --out ./dist/invoice-flow.raw.json
 ```
 
 ## Normalization behavior
@@ -121,6 +122,19 @@ The current normalizer:
   `lastModifiedTime`
 - preserves unknown fields in `definition` and top-level `unknown`
 - applies stable JSON ordering through the shared artifact helpers
+
+`pp flow pack <path> --out <file.json>` now repacks a canonical
+`pp.flow.artifact` back into a raw export-shaped JSON payload so a local flow
+can move through unpack, patch, validate, and repack without hand-editing the
+Maker export shape. The current packer:
+
+- writes a raw `properties.definition` payload plus supported metadata fields
+  such as `displayName`, `name`, `uniquename`, `statecode`, and `statuscode`
+- preserves top-level unknown fields captured during normalization
+- intentionally does not reintroduce stripped noisy timestamps such as
+  `createdTime` or `lastModifiedTime`
+- stops at local raw-export generation; remote import/promotion still belongs
+  to later deploy-oriented work
 
 The flow package now also exposes a first-class parsed intermediate
 representation over the unpacked artifact. The current IR is intentionally

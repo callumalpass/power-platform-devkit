@@ -2064,8 +2064,8 @@ describe('cli fixture-backed workflows', () => {
           'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
         browserProfile: 'maker-fixture',
         baselineMatches: [],
-        pageUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=edit&id=app-1',
         studioRuntimeTarget: 'frame:EmbeddedStudio',
+        pageUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=edit&id=app-1',
         title: 'Power Apps Studio',
         frames: [{ name: 'EmbeddedStudio', url: 'https://make.powerapps.com/studio' }],
         createdApp: {
@@ -2969,16 +2969,18 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(registryValidate.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
   });
 
-  it('covers flow unpack, validate, patch, and normalize through the CLI entrypoint', async () => {
+  it('covers flow unpack, pack, validate, patch, and normalize through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');
     const patchPath = resolveRepoPath('fixtures', 'flow', 'patches', 'invoice-flow.patch.json');
     const unpackedPath = join(tempDir, 'unpacked');
+    const packedPath = join(tempDir, 'repacked.json');
     const patchedPath = join(tempDir, 'patched');
     const normalizedPath = join(tempDir, 'normalized');
 
     const inspect = await runCli(['flow', 'inspect', rawPath, '--format', 'json']);
     const unpack = await runCli(['flow', 'unpack', rawPath, '--out', unpackedPath, '--format', 'json']);
+    const pack = await runCli(['flow', 'pack', unpackedPath, '--out', packedPath, '--format', 'json']);
     const validate = await runCli(['flow', 'validate', unpackedPath, '--format', 'json']);
     const graph = await runCli([
       'flow',
@@ -2994,6 +2996,8 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.stderr).toBe('');
     expect(unpack.code).toBe(0);
     expect(unpack.stderr).toBe('');
+    expect(pack.code).toBe(0);
+    expect(pack.stderr).toBe('');
     expect(validate.code).toBe(0);
     expect(validate.stderr).toBe('');
     expect(graph.code).toBe(0);
@@ -3010,6 +3014,12 @@ describe('cli fixture-backed workflows', () => {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
     await expectGoldenJson(await readJsonFile(join(unpackedPath, 'flow.json')), 'fixtures/flow/golden/unpacked.flow.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(pack.stdout), 'fixtures/flow/golden/pack-result.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(await readJsonFile(packedPath), 'fixtures/flow/golden/packed.raw.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
     await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/flow/golden/validation-report.json', {

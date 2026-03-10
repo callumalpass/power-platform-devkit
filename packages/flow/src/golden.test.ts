@@ -10,6 +10,7 @@ import {
   type FlowPatchDocument,
   loadFlowArtifact,
   normalizeFlowArtifact,
+  packFlowArtifact,
   parseFlowIntermediateRepresentation,
   patchFlowArtifact,
   unpackFlowArtifact,
@@ -146,6 +147,25 @@ describe('flow fixture-backed goldens', () => {
       normalize: (value) => normalizeFlowSnapshot(value, tempDir),
     });
     await expectGoldenJson(normalized.data, 'fixtures/flow/golden/normalized-after-patch.json', {
+      normalize: (value) => normalizeFlowSnapshot(value, tempDir),
+    });
+  });
+
+  it('captures packed raw flow exports as stable goldens', async () => {
+    const tempDir = await createTempDir();
+    const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');
+    const unpackedPath = join(tempDir, 'unpacked');
+    const packedPath = join(tempDir, 'repacked.json');
+
+    await unpackFlowArtifact(rawPath, unpackedPath);
+    const packed = await packFlowArtifact(unpackedPath, packedPath);
+
+    expect(packed.success).toBe(true);
+
+    await expectGoldenJson(packed.data, 'fixtures/flow/golden/pack-result.json', {
+      normalize: (value) => normalizeFlowSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(await readJsonFile(packedPath), 'fixtures/flow/golden/packed.raw.json', {
       normalize: (value) => normalizeFlowSnapshot(value, tempDir),
     });
   });
