@@ -1703,4 +1703,191 @@ describe('deploy fixture-backed goldens', () => {
     expect(queryAllSpy).not.toHaveBeenCalled();
     expect(updateSpy).not.toHaveBeenCalled();
   });
+
+  it('targets stage solution aliases per mapping without treating same-name targets in different solutions as conflicts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-solution-targets-'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        '  environment: prod',
+        '  solution: core',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        '      solutions:',
+        '        core:',
+        '          uniqueName: CoreManaged',
+        '        integration:',
+        '          environment: ops',
+        '          uniqueName: IntegrationManaged',
+        'parameters:',
+        '  coreTenantDomain:',
+        '    type: string',
+        '    value: core.contoso.example',
+        '    mapsTo:',
+        '      - kind: dataverse-envvar',
+        '        solution: core',
+        '        target: pp_TenantDomain',
+        '  integrationTenantDomain:',
+        '    type: string',
+        '    value: integration.contoso.example',
+        '    mapsTo:',
+        '      - kind: dataverse-envvar',
+        '        solution: integration',
+        '        target: pp_TenantDomain',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    expect(buildDeployPlan(discovery.data!).data?.operations).toEqual([
+      expect.objectContaining({
+        kind: 'dataverse-envvar-set',
+        parameter: 'coreTenantDomain',
+        environmentAlias: 'prod',
+        solutionAlias: 'core',
+        solutionUniqueName: 'CoreManaged',
+        target: 'pp_TenantDomain',
+      }),
+      expect.objectContaining({
+        kind: 'dataverse-envvar-set',
+        parameter: 'integrationTenantDomain',
+        environmentAlias: 'ops',
+        solutionAlias: 'integration',
+        solutionUniqueName: 'IntegrationManaged',
+        target: 'pp_TenantDomain',
+      }),
+    ]);
+
+    const prodClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'component-prod-1',
+            objectid: 'envvar-def-prod-1',
+            componenttype: 380,
+          },
+        ],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-prod-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-prod-1',
+            value: 'old-core.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-prod-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+    const opsClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-ops-1',
+            uniquename: 'IntegrationManaged',
+            friendlyname: 'Integration Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'component-ops-1',
+            objectid: 'envvar-def-ops-1',
+            componenttype: 380,
+          },
+        ],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-ops-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-ops-1',
+            value: 'old-integration.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-ops-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({
+      prod: prodClient,
+      ops: opsClient,
+    });
+    const prodUpdateSpy = vi.spyOn(prodClient, 'update');
+    const opsUpdateSpy = vi.spyOn(opsClient, 'update');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.preflight.checks).not.toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CONFLICT',
+        target: 'pp_TenantDomain',
+      })
+    );
+    expect(result.data?.apply.operations.filter((operation) => operation.kind === 'dataverse-envvar-set')).toEqual([
+      expect.objectContaining({
+        parameter: 'coreTenantDomain',
+        environmentAlias: 'prod',
+        solutionAlias: 'core',
+        solutionUniqueName: 'CoreManaged',
+        status: 'applied',
+        nextValue: 'core.contoso.example',
+      }),
+      expect.objectContaining({
+        parameter: 'integrationTenantDomain',
+        environmentAlias: 'ops',
+        solutionAlias: 'integration',
+        solutionUniqueName: 'IntegrationManaged',
+        status: 'applied',
+        nextValue: 'integration.contoso.example',
+      }),
+    ]);
+    expect(prodUpdateSpy).toHaveBeenCalledTimes(1);
+    expect(opsUpdateSpy).toHaveBeenCalledTimes(1);
+  });
 });

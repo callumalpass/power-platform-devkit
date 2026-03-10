@@ -12,6 +12,7 @@ The shared deploy contract currently recognizes project parameters mapped with:
 ```yaml
 mapsTo:
   - kind: dataverse-envvar
+    solution: core
     target: pp_TenantDomain
   - kind: dataverse-envvar-create
     target: pp_FeatureFlag
@@ -35,16 +36,18 @@ mapsTo:
 During `deploy apply`, `pp`:
 
 1. resolves the active project stage, environment alias, and solution
-2. resolves the Dataverse client for the active environment alias
-3. analyzes the target solution for preflight facts
-4. inspects environment variables and connection references in that solution
-5. resolves adapter-facing input and secret bindings into the shared operation result
-6. updates matching environment variable values and connection reference bindings for supported Dataverse mappings when the target differs, otherwise records a no-op skip
-7. creates missing environment variable definitions first for `dataverse-envvar-create` mappings, honoring any configured create metadata (`displayName`, `type`, `defaultValue`, `valueSchema`, `secretStore`), then applies the requested value through the same shared env-var execution path
-8. creates missing connection references first for `dataverse-connref-create` mappings, honoring configured create metadata (`displayName`, `connectorId`, `customConnectorId`), then records the requested connection binding through the same shared connection-reference execution path
+2. resolves per-operation Dataverse environment/solution targets from the stage default or an explicit mapping `solution` alias
+3. resolves the Dataverse client for each affected environment alias
+4. analyzes each target solution for preflight facts
+5. inspects environment variables and connection references in those solutions
+6. resolves adapter-facing input and secret bindings into the shared operation result
+7. updates matching environment variable values and connection reference bindings for supported Dataverse mappings when the target differs, otherwise records a no-op skip
+8. creates missing environment variable definitions first for `dataverse-envvar-create` mappings, honoring any configured create metadata (`displayName`, `type`, `defaultValue`, `valueSchema`, `secretStore`), then applies the requested value through the same shared env-var execution path
+9. creates missing connection references first for `dataverse-connref-create` mappings, honoring configured create metadata (`displayName`, `connectorId`, `customConnectorId`), then records the requested connection binding through the same shared connection-reference execution path
 
 Preflight also rejects conflicting mappings before any remote inspection or apply work starts. If multiple parameters map to the same Dataverse environment variable, Dataverse connection reference, or adapter binding target, deploy returns a machine-readable failure instead of choosing an arbitrary winner.
 For the create-capable Dataverse mappings, preflight also rejects runs where the target already exists but its metadata does not match the configured create contract. That prevents a create/upsert mapping from silently updating a different target shape than the project declared.
+Dataverse conflict detection is scoped by the resolved environment and solution target, so the same schema or logical name can be deployed to different stage solution aliases without being treated as ambiguous.
 
 ## Local usage
 
@@ -93,6 +96,7 @@ shape without reintroducing project discovery.
 The output includes:
 
 - `plan`: resolved deploy target, inputs, and supported operations
+- Dataverse operations now carry resolved `environmentAlias`, `solutionAlias`, and `solutionUniqueName` fields when that target was known during planning.
 - `bindings`: adapter-facing deploy inputs and secrets as a machine-readable summary with secret values redacted
 - `confirmation`: whether live apply required confirmation and whether it was provided
 - `preflight`: machine-readable checks and pass/warn/fail status
@@ -211,6 +215,7 @@ steps:
 ## Current limits
 
 - `dataverse-envvar`, `dataverse-envvar-create`, `dataverse-connref`, and `dataverse-connref-create` are the supported Dataverse mutation kinds today.
+- Those Dataverse mapping kinds can set `solution` to target a named solution alias from the active stage instead of always using the stage default solution.
 - `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
 - Mapped parameters without a resolved value now fail deploy preflight explicitly.
 - Missing target environment variables still fail preflight for `dataverse-envvar`, while `dataverse-envvar-create` records a machine-readable creation check and creates the definition during live apply.

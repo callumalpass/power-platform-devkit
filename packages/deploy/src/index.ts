@@ -35,6 +35,9 @@ interface DeployOperationPlanBase {
   parameter: string;
   source: ResolvedProjectParameter['source'];
   sensitive: boolean;
+  environmentAlias?: string;
+  solutionAlias?: string;
+  solutionUniqueName?: string;
   target: string;
   valuePreview?: string | number | boolean;
 }
@@ -285,7 +288,7 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
   const diagnostics: Diagnostic[] = [];
   const dataverseOperations = operations.filter(isDataverseMutationOperation);
 
-  if (dataverseOperations.length > 0 && !project.topology.activeEnvironment) {
+  if (dataverseOperations.some((operation) => !resolveOperationEnvironmentAlias(operation, project.topology.activeEnvironment))) {
     diagnostics.push(
       createDiagnostic('error', 'DEPLOY_TARGET_ENVIRONMENT_MISSING', 'Deploy target environment is not resolved from the project topology.', {
         source: '@pp/deploy',
@@ -293,7 +296,7 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
     );
   }
 
-  if (dataverseOperations.length > 0 && !project.topology.activeSolution?.uniqueName) {
+  if (dataverseOperations.some((operation) => !resolveOperationSolutionUniqueName(operation, project.topology.activeSolution?.uniqueName))) {
     diagnostics.push(
       createDiagnostic('error', 'DEPLOY_TARGET_SOLUTION_MISSING', 'Deploy target solution is not resolved from the project topology.', {
         source: '@pp/deploy',
@@ -487,6 +490,53 @@ async function executePreparedDeploy(context: {
       continue;
     }
 
+    const operationEnvironmentAlias = resolveOperationEnvironmentAlias(operation.plan, target.environmentAlias);
+    const operationSolutionUniqueName = resolveOperationSolutionUniqueName(operation.plan, target.solutionUniqueName);
+
+    if (!operationEnvironmentAlias) {
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_ENVIRONMENT_MISSING',
+        message: `Deploy target environment is not resolved for ${operation.plan.target}.`,
+        target: operation.plan.target,
+        details: {
+          parameter: operation.plan.parameter,
+          operationKind: operation.plan.kind,
+          solution: operation.plan.solutionAlias,
+        },
+      });
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: operation.value === undefined ? undefined : stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Deploy target environment is not resolved.',
+      });
+      continue;
+    }
+
+    if (!operationSolutionUniqueName) {
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_SOLUTION_MISSING',
+        message: `Deploy target solution is not resolved for ${operation.plan.target}.`,
+        target: operation.plan.target,
+        details: {
+          parameter: operation.plan.parameter,
+          operationKind: operation.plan.kind,
+          solution: operation.plan.solutionAlias,
+        },
+      });
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: operation.value === undefined ? undefined : stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Deploy target solution is not resolved.',
+      });
+      continue;
+    }
+
     if (!operation.executable) {
       applyOperations.push({
         ...operation.plan,
@@ -499,22 +549,6 @@ async function executePreparedDeploy(context: {
     }
 
     runnableDataverseOperations.push(operation);
-  }
-
-  if (runnableDataverseOperations.length > 0 && !target.environmentAlias) {
-    checks.push({
-      status: 'fail',
-      code: 'DEPLOY_PREFLIGHT_ENVIRONMENT_MISSING',
-      message: 'Deploy target environment is not resolved.',
-    });
-  }
-
-  if (runnableDataverseOperations.length > 0 && !target.solutionUniqueName) {
-    checks.push({
-      status: 'fail',
-      code: 'DEPLOY_PREFLIGHT_SOLUTION_MISSING',
-      message: 'Deploy target solution is not resolved.',
-    });
   }
 
   if (preparedOperations.length === 0) {
@@ -536,340 +570,340 @@ async function executePreparedDeploy(context: {
     });
   }
 
-  if (runnableDataverseOperations.length === 0 || !target.environmentAlias || !target.solutionUniqueName || !plan) {
+  if (runnableDataverseOperations.length === 0 || !plan) {
     return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
     });
   }
+  const dataverseGroups = groupPreparedDataverseOperations(runnableDataverseOperations, target);
 
-  const resolution = await resolveDataverseClient(target.environmentAlias);
+  for (const group of dataverseGroups) {
+    const resolution = await resolveDataverseClient(group.environmentAlias);
 
-  if (!resolution.success || !resolution.data) {
-    diagnostics.push(...resolution.diagnostics);
-    warnings.push(...resolution.warnings);
-    checks.push({
-      status: 'fail',
-      code: 'DEPLOY_PREFLIGHT_DATAVERSE_RESOLUTION_FAILED',
-      message: `Could not resolve Dataverse environment alias ${target.environmentAlias}.`,
-      target: target.environmentAlias,
-    });
-    return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
-      supportTier: 'preview',
-      diagnostics,
-      warnings,
-    });
-  }
-
-  const solutionService = new SolutionService(resolution.data.client);
-  const connectionReferences = new ConnectionReferenceService(resolution.data.client);
-  const environmentVariables = new EnvironmentVariableService(resolution.data.client);
-  const [analysis, references, variables] = await Promise.all([
-    solutionService.analyze(target.solutionUniqueName),
-    connectionReferences.list({ solutionUniqueName: target.solutionUniqueName }),
-    environmentVariables.list({ solutionUniqueName: target.solutionUniqueName }),
-  ]);
-
-  if (!analysis.success) {
-    diagnostics.push(...analysis.diagnostics);
-    warnings.push(...analysis.warnings);
-    checks.push({
-      status: 'fail',
-      code: 'DEPLOY_PREFLIGHT_SOLUTION_ANALYZE_FAILED',
-      message: `Failed to analyze solution ${target.solutionUniqueName} before deploy.`,
-      target: target.solutionUniqueName,
-    });
-  }
-
-  if (!variables.success) {
-    diagnostics.push(...variables.diagnostics);
-    warnings.push(...variables.warnings);
-    checks.push({
-      status: 'fail',
-      code: 'DEPLOY_PREFLIGHT_ENVVAR_DISCOVERY_FAILED',
-      message: `Failed to inspect environment variables for solution ${target.solutionUniqueName}.`,
-      target: target.solutionUniqueName,
-    });
-  }
-
-  if (!references.success) {
-    diagnostics.push(...references.diagnostics);
-    warnings.push(...references.warnings);
-    checks.push({
-      status: 'fail',
-      code: 'DEPLOY_PREFLIGHT_CONNREF_DISCOVERY_FAILED',
-      message: `Failed to inspect connection references for solution ${target.solutionUniqueName}.`,
-      target: target.solutionUniqueName,
-    });
-  }
-
-  const solutionAnalysis = analysis.success ? analysis.data : undefined;
-  const discoveredReferences: ConnectionReferenceSummary[] = references.success ? references.data ?? [] : [];
-  const discoveredVariables: EnvironmentVariableSummary[] = variables.success ? variables.data ?? [] : [];
-  const referenceByLogicalName = new Map(
-    discoveredReferences
-      .filter((reference) => reference.logicalName)
-      .map((reference) => [reference.logicalName!.toLowerCase(), reference] as const)
-  );
-  const variableBySchema = new Map(
-    discoveredVariables
-      .filter((variable) => variable.schemaName)
-      .map((variable) => [variable.schemaName!.toLowerCase(), variable] as const)
-  );
-
-  if (analysis.success) {
-    if (!solutionAnalysis) {
+    if (!resolution.success || !resolution.data) {
+      diagnostics.push(...resolution.diagnostics);
+      warnings.push(...resolution.warnings);
       checks.push({
         status: 'fail',
-        code: 'DEPLOY_PREFLIGHT_SOLUTION_NOT_FOUND',
-        message: `Solution ${target.solutionUniqueName} was not found in ${target.environmentAlias}.`,
-        target: target.solutionUniqueName,
+        code: 'DEPLOY_PREFLIGHT_DATAVERSE_RESOLUTION_FAILED',
+        message: `Could not resolve Dataverse environment alias ${group.environmentAlias}.`,
+        target: group.environmentAlias,
+        details: {
+          solution: group.solutionUniqueName,
+        },
       });
-    } else {
+      continue;
+    }
+
+    const solutionService = new SolutionService(resolution.data.client);
+    const connectionReferences = new ConnectionReferenceService(resolution.data.client);
+    const environmentVariables = new EnvironmentVariableService(resolution.data.client);
+    const [analysis, references, variables] = await Promise.all([
+      solutionService.analyze(group.solutionUniqueName),
+      connectionReferences.list({ solutionUniqueName: group.solutionUniqueName }),
+      environmentVariables.list({ solutionUniqueName: group.solutionUniqueName }),
+    ]);
+
+    if (!analysis.success) {
+      diagnostics.push(...analysis.diagnostics);
+      warnings.push(...analysis.warnings);
       checks.push({
-        status: 'pass',
-        code: 'DEPLOY_PREFLIGHT_SOLUTION_FOUND',
-        message: `Solution ${target.solutionUniqueName} is available in ${target.environmentAlias}.`,
-        target: target.solutionUniqueName,
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_SOLUTION_ANALYZE_FAILED',
+        message: `Failed to analyze solution ${group.solutionUniqueName} before deploy.`,
+        target: group.solutionUniqueName,
       });
+    }
 
-      if (solutionAnalysis.invalidConnectionReferences.length > 0) {
-        checks.push({
-          status: 'warn',
-          code: 'DEPLOY_PREFLIGHT_CONNECTION_REFS_INVALID',
-          message: `Solution ${target.solutionUniqueName} has ${solutionAnalysis.invalidConnectionReferences.length} invalid connection reference(s).`,
-          target: target.solutionUniqueName,
-        });
-      }
+    if (!variables.success) {
+      diagnostics.push(...variables.diagnostics);
+      warnings.push(...variables.warnings);
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_ENVVAR_DISCOVERY_FAILED',
+        message: `Failed to inspect environment variables for solution ${group.solutionUniqueName}.`,
+        target: group.solutionUniqueName,
+      });
+    }
 
-      if (solutionAnalysis.missingEnvironmentVariables.length > 0) {
+    if (!references.success) {
+      diagnostics.push(...references.diagnostics);
+      warnings.push(...references.warnings);
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_CONNREF_DISCOVERY_FAILED',
+        message: `Failed to inspect connection references for solution ${group.solutionUniqueName}.`,
+        target: group.solutionUniqueName,
+      });
+    }
+
+    const solutionAnalysis = analysis.success ? analysis.data : undefined;
+    const discoveredReferences: ConnectionReferenceSummary[] = references.success ? references.data ?? [] : [];
+    const discoveredVariables: EnvironmentVariableSummary[] = variables.success ? variables.data ?? [] : [];
+    const referenceByLogicalName = new Map(
+      discoveredReferences
+        .filter((reference) => reference.logicalName)
+        .map((reference) => [reference.logicalName!.toLowerCase(), reference] as const)
+    );
+    const variableBySchema = new Map(
+      discoveredVariables
+        .filter((variable) => variable.schemaName)
+        .map((variable) => [variable.schemaName!.toLowerCase(), variable] as const)
+    );
+
+    if (analysis.success) {
+      if (!solutionAnalysis) {
         checks.push({
-          status: 'warn',
-          code: 'DEPLOY_PREFLIGHT_ENVVARS_MISSING_VALUES',
-          message: `Solution ${target.solutionUniqueName} has ${solutionAnalysis.missingEnvironmentVariables.length} environment variable(s) without an effective value.`,
-          target: target.solutionUniqueName,
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_SOLUTION_NOT_FOUND',
+          message: `Solution ${group.solutionUniqueName} was not found in ${group.environmentAlias}.`,
+          target: group.solutionUniqueName,
         });
+      } else {
+        checks.push({
+          status: 'pass',
+          code: 'DEPLOY_PREFLIGHT_SOLUTION_FOUND',
+          message: `Solution ${group.solutionUniqueName} is available in ${group.environmentAlias}.`,
+          target: group.solutionUniqueName,
+        });
+
+        if (solutionAnalysis.invalidConnectionReferences.length > 0) {
+          checks.push({
+            status: 'warn',
+            code: 'DEPLOY_PREFLIGHT_CONNECTION_REFS_INVALID',
+            message: `Solution ${group.solutionUniqueName} has ${solutionAnalysis.invalidConnectionReferences.length} invalid connection reference(s).`,
+            target: group.solutionUniqueName,
+          });
+        }
+
+        if (solutionAnalysis.missingEnvironmentVariables.length > 0) {
+          checks.push({
+            status: 'warn',
+            code: 'DEPLOY_PREFLIGHT_ENVVARS_MISSING_VALUES',
+            message: `Solution ${group.solutionUniqueName} has ${solutionAnalysis.missingEnvironmentVariables.length} environment variable(s) without an effective value.`,
+            target: group.solutionUniqueName,
+          });
+        }
       }
     }
-  }
 
-  for (const operation of runnableDataverseOperations) {
-    const nextValue = stringifyDeployValue(operation.value!);
+    for (const operation of group.operations) {
+      const nextValue = stringifyDeployValue(operation.value!);
 
-    if (isDataverseEnvvarOperation(operation.plan) || isDataverseEnvvarUpsertOperation(operation.plan)) {
-      const variable = variableBySchema.get(operation.plan.target.toLowerCase());
+      if (isDataverseEnvvarOperation(operation.plan) || isDataverseEnvvarUpsertOperation(operation.plan)) {
+        const variable = variableBySchema.get(operation.plan.target.toLowerCase());
 
-      if (!variable) {
+        if (!variable) {
+          if (isDataverseEnvvarUpsertOperation(operation.plan)) {
+            const invalidType = resolveInvalidEnvironmentVariableCreateType(operation.plan.createOptions?.type);
+
+            if (invalidType !== undefined) {
+              checks.push({
+                status: 'fail',
+                code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_TYPE_INVALID',
+                message: `Environment variable ${operation.plan.target} is configured with unsupported create type ${String(invalidType)}.`,
+                target: operation.plan.target,
+                details: {
+                  parameter: operation.plan.parameter,
+                  configuredType: invalidType,
+                },
+              });
+              applyOperations.push({
+                ...operation.plan,
+                status: 'skipped',
+                targetExists: false,
+                nextValue,
+                changed: false,
+                message: 'Configured environment variable create type is not supported.',
+              });
+              continue;
+            }
+
+            checks.push({
+              status: 'pass',
+              code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CREATE',
+              message: `Environment variable ${operation.plan.target} will be created in solution ${group.solutionUniqueName}.`,
+              target: operation.plan.target,
+              details: {
+                parameter: operation.plan.parameter,
+              },
+            });
+            applyOperations.push({
+              ...operation.plan,
+              status: 'planned',
+              targetExists: false,
+              nextValue,
+              changed: true,
+              message: mode === 'apply' ? 'Ready to create and apply.' : 'Preview will create the missing target.',
+            });
+            continue;
+          }
+
+          checks.push({
+            status: 'fail',
+            code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_MISSING',
+            message: `Environment variable ${operation.plan.target} was not found in solution ${group.solutionUniqueName}.`,
+            target: operation.plan.target,
+            details: {
+              parameter: operation.plan.parameter,
+            },
+          });
+          applyOperations.push({
+            ...operation.plan,
+            status: 'skipped',
+            targetExists: false,
+            nextValue,
+            message: 'Target environment variable is missing.',
+          });
+          continue;
+        }
+
         if (isDataverseEnvvarUpsertOperation(operation.plan)) {
-          const invalidType = resolveInvalidEnvironmentVariableCreateType(operation.plan.createOptions?.type);
+          const metadataMismatch = resolveEnvironmentVariableCreateMetadataMismatch(variable, operation.plan.createOptions);
 
-          if (invalidType !== undefined) {
+          if (metadataMismatch) {
             checks.push({
               status: 'fail',
-              code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_TYPE_INVALID',
-              message: `Environment variable ${operation.plan.target} is configured with unsupported create type ${String(invalidType)}.`,
+              code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_METADATA_MISMATCH',
+              message: `Environment variable ${operation.plan.target} does not match the configured create metadata.`,
               target: operation.plan.target,
               details: {
                 parameter: operation.plan.parameter,
-                configuredType: invalidType,
+                ...metadataMismatch,
               },
             });
             applyOperations.push({
               ...operation.plan,
               status: 'skipped',
-              targetExists: false,
+              targetExists: true,
+              currentValue: variable.effectiveValue,
               nextValue,
               changed: false,
-              message: 'Configured environment variable create type is not supported.',
+              message: 'Existing environment variable metadata does not match the configured create mapping.',
+            });
+            continue;
+          }
+        }
+
+        applyOperations.push({
+          ...operation.plan,
+          status: 'planned',
+          targetExists: true,
+          currentValue: variable.effectiveValue,
+          nextValue,
+          changed: variable.effectiveValue !== nextValue,
+          message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
+        });
+        continue;
+      }
+
+      if (isDataverseConnectionReferenceOperation(operation.plan) || isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
+        const reference = referenceByLogicalName.get(operation.plan.target.toLowerCase());
+
+        if (!reference) {
+          if (isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
+            const missingConnector = resolveMissingConnectionReferenceConnector(operation.plan.createOptions);
+
+            if (missingConnector) {
+              checks.push({
+                status: 'fail',
+                code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_CONNECTOR_MISSING',
+                message: `Connection reference ${operation.plan.target} is configured without connector metadata for creation.`,
+                target: operation.plan.target,
+                details: {
+                  parameter: operation.plan.parameter,
+                },
+              });
+              applyOperations.push({
+                ...operation.plan,
+                status: 'skipped',
+                targetExists: false,
+                nextValue,
+                changed: false,
+                message: 'Configured connection reference create mapping is missing connector metadata.',
+              });
+              continue;
+            }
+
+            checks.push({
+              status: 'pass',
+              code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CREATE',
+              message: `Connection reference ${operation.plan.target} will be created in solution ${group.solutionUniqueName}.`,
+              target: operation.plan.target,
+              details: {
+                parameter: operation.plan.parameter,
+              },
+            });
+            applyOperations.push({
+              ...operation.plan,
+              status: 'planned',
+              targetExists: false,
+              nextValue,
+              changed: true,
+              message: mode === 'apply' ? 'Ready to create and apply.' : 'Preview will create the missing target.',
             });
             continue;
           }
 
           checks.push({
-            status: 'pass',
-            code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CREATE',
-            message: `Environment variable ${operation.plan.target} will be created in solution ${target.solutionUniqueName}.`,
-            target: operation.plan.target,
-            details: {
-              parameter: operation.plan.parameter,
-            },
-          });
-          applyOperations.push({
-            ...operation.plan,
-            status: 'planned',
-            targetExists: false,
-            nextValue,
-            changed: true,
-            message: mode === 'apply' ? 'Ready to create and apply.' : 'Preview will create the missing target.',
-          });
-          continue;
-        }
-
-        checks.push({
-          status: 'fail',
-          code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_MISSING',
-          message: `Environment variable ${operation.plan.target} was not found in solution ${target.solutionUniqueName}.`,
-          target: operation.plan.target,
-          details: {
-            parameter: operation.plan.parameter,
-          },
-        });
-        applyOperations.push({
-          ...operation.plan,
-          status: 'skipped',
-          targetExists: false,
-          nextValue,
-          message: 'Target environment variable is missing.',
-        });
-        continue;
-      }
-
-      if (isDataverseEnvvarUpsertOperation(operation.plan)) {
-        const metadataMismatch = resolveEnvironmentVariableCreateMetadataMismatch(variable, operation.plan.createOptions);
-
-        if (metadataMismatch) {
-          checks.push({
             status: 'fail',
-            code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_METADATA_MISMATCH',
-            message: `Environment variable ${operation.plan.target} does not match the configured create metadata.`,
+            code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_MISSING',
+            message: `Connection reference ${operation.plan.target} was not found in solution ${group.solutionUniqueName}.`,
             target: operation.plan.target,
             details: {
               parameter: operation.plan.parameter,
-              ...metadataMismatch,
             },
           });
           applyOperations.push({
             ...operation.plan,
             status: 'skipped',
-            targetExists: true,
-            currentValue: variable.effectiveValue,
+            targetExists: false,
             nextValue,
-            changed: false,
-            message: 'Existing environment variable metadata does not match the configured create mapping.',
+            message: 'Target connection reference is missing.',
           });
           continue;
         }
-      }
 
-      applyOperations.push({
-        ...operation.plan,
-        status: 'planned',
-        targetExists: true,
-        currentValue: variable.effectiveValue,
-        nextValue,
-        changed: variable.effectiveValue !== nextValue,
-        message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
-      });
-      continue;
-    }
-
-    if (isDataverseConnectionReferenceOperation(operation.plan) || isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
-      const reference = referenceByLogicalName.get(operation.plan.target.toLowerCase());
-
-      if (!reference) {
         if (isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
-          const missingConnector = resolveMissingConnectionReferenceConnector(operation.plan.createOptions);
+          const metadataMismatch = resolveConnectionReferenceCreateMetadataMismatch(reference, operation.plan.createOptions);
 
-          if (missingConnector) {
+          if (metadataMismatch) {
             checks.push({
               status: 'fail',
-              code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_CONNECTOR_MISSING',
-              message: `Connection reference ${operation.plan.target} is configured without connector metadata for creation.`,
+              code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_METADATA_MISMATCH',
+              message: `Connection reference ${operation.plan.target} does not match the configured create metadata.`,
               target: operation.plan.target,
               details: {
                 parameter: operation.plan.parameter,
+                ...metadataMismatch,
               },
             });
             applyOperations.push({
               ...operation.plan,
               status: 'skipped',
-              targetExists: false,
+              targetExists: true,
+              currentValue: reference.connectionId,
               nextValue,
               changed: false,
-              message: 'Configured connection reference create mapping is missing connector metadata.',
+              message: 'Existing connection reference metadata does not match the configured create mapping.',
             });
             continue;
           }
-
-          checks.push({
-            status: 'pass',
-            code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CREATE',
-            message: `Connection reference ${operation.plan.target} will be created in solution ${target.solutionUniqueName}.`,
-            target: operation.plan.target,
-            details: {
-              parameter: operation.plan.parameter,
-            },
-          });
-          applyOperations.push({
-            ...operation.plan,
-            status: 'planned',
-            targetExists: false,
-            nextValue,
-            changed: true,
-            message: mode === 'apply' ? 'Ready to create and apply.' : 'Preview will create the missing target.',
-          });
-          continue;
         }
 
-        checks.push({
-          status: 'fail',
-          code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_MISSING',
-          message: `Connection reference ${operation.plan.target} was not found in solution ${target.solutionUniqueName}.`,
-          target: operation.plan.target,
-          details: {
-            parameter: operation.plan.parameter,
-          },
-        });
         applyOperations.push({
           ...operation.plan,
-          status: 'skipped',
-          targetExists: false,
+          status: 'planned',
+          targetExists: true,
+          currentValue: reference.connectionId,
           nextValue,
-          message: 'Target connection reference is missing.',
+          changed: reference.connectionId !== nextValue,
+          message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
         });
-        continue;
       }
-
-      if (isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
-        const metadataMismatch = resolveConnectionReferenceCreateMetadataMismatch(reference, operation.plan.createOptions);
-
-        if (metadataMismatch) {
-          checks.push({
-            status: 'fail',
-            code: 'DEPLOY_PREFLIGHT_CONNREF_CREATE_METADATA_MISMATCH',
-            message: `Connection reference ${operation.plan.target} does not match the configured create metadata.`,
-            target: operation.plan.target,
-            details: {
-              parameter: operation.plan.parameter,
-              ...metadataMismatch,
-            },
-          });
-          applyOperations.push({
-            ...operation.plan,
-            status: 'skipped',
-            targetExists: true,
-            currentValue: reference.connectionId,
-            nextValue,
-            changed: false,
-            message: 'Existing connection reference metadata does not match the configured create mapping.',
-          });
-          continue;
-        }
-      }
-
-      applyOperations.push({
-        ...operation.plan,
-        status: 'planned',
-        targetExists: true,
-        currentValue: reference.connectionId,
-        nextValue,
-        changed: reference.connectionId !== nextValue,
-        message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
-      });
-      continue;
     }
-
   }
 
   const preflightOk = checks.every((check) => check.status !== 'fail');
@@ -882,7 +916,17 @@ async function executePreparedDeploy(context: {
     });
   }
 
-  for (const operation of runnableDataverseOperations) {
+  for (const group of dataverseGroups) {
+    const resolution = await resolveDataverseClient(group.environmentAlias);
+
+    if (!resolution.success || !resolution.data) {
+      continue;
+    }
+
+    const connectionReferences = new ConnectionReferenceService(resolution.data.client);
+    const environmentVariables = new EnvironmentVariableService(resolution.data.client);
+
+    for (const operation of group.operations) {
     const index = applyOperations.findIndex((entry) => entry.parameter === operation.plan.parameter && entry.target === operation.plan.target);
 
     if (index === -1) {
@@ -915,7 +959,7 @@ async function executePreparedDeploy(context: {
         const createResult = await environmentVariables.createDefinition(operation.plan.target, {
           ...toEnvironmentVariableCreateOptions(operation.plan.createOptions),
           type: operation.plan.createOptions?.type ?? inferEnvironmentVariableType(operation.value!),
-          solutionUniqueName: target.solutionUniqueName,
+          solutionUniqueName: group.solutionUniqueName,
         });
 
         if (!createResult.success || !createResult.data) {
@@ -936,7 +980,7 @@ async function executePreparedDeploy(context: {
         existingOperation.targetExists === false && isDataverseEnvvarUpsertOperation(operation.plan)
           ? {}
           : {
-              solutionUniqueName: target.solutionUniqueName,
+              solutionUniqueName: group.solutionUniqueName,
             }
       );
 
@@ -971,7 +1015,7 @@ async function executePreparedDeploy(context: {
       if (existingOperation.targetExists === false && isDataverseConnectionReferenceUpsertOperation(operation.plan)) {
         const createResult = await connectionReferences.create(operation.plan.target, nextValue, {
           ...toConnectionReferenceCreateOptions(operation.plan.createOptions),
-          solutionUniqueName: target.solutionUniqueName,
+          solutionUniqueName: group.solutionUniqueName,
         });
 
         if (!createResult.success || !createResult.data) {
@@ -998,7 +1042,7 @@ async function executePreparedDeploy(context: {
       }
 
       const result = await connectionReferences.setConnectionId(operation.plan.target, nextValue, {
-        solutionUniqueName: target.solutionUniqueName,
+        solutionUniqueName: group.solutionUniqueName,
       });
 
       if (!result.success || !result.data) {
@@ -1022,7 +1066,7 @@ async function executePreparedDeploy(context: {
       };
       continue;
     }
-
+    }
   }
 
   return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
@@ -1041,7 +1085,7 @@ function collectDeployOperations(project: ProjectContext): Array<{ plan: DeployO
     }
 
     for (const mapping of parameter.definition.mapsTo ?? []) {
-      const plan = createDeployOperationPlan(parameter, mapping);
+      const plan = createDeployOperationPlan(project, parameter, mapping);
 
       if (plan) {
         operations.push({
@@ -1102,10 +1146,15 @@ function prepareSavedPlanOperations(
 }
 
 function createDeployOperationPlan(
+  project: ProjectContext,
   parameter: ResolvedProjectParameter,
   mapping: ParameterMapping
 ): DeployOperationPlan | undefined {
   const valuePreview = parameter.sensitive ? '<redacted>' : parameter.value;
+  const resolvedSolution = resolveDeployMappingSolutionTarget(project, mapping.solution);
+  const environmentAlias = resolvedSolution?.environment ?? project.topology.activeEnvironment;
+  const solutionAlias = resolvedSolution?.alias ?? project.topology.activeSolution?.alias;
+  const solutionUniqueName = resolvedSolution?.uniqueName ?? project.topology.activeSolution?.uniqueName;
 
   switch (mapping.kind) {
     case 'dataverse-envvar':
@@ -1114,6 +1163,9 @@ function createDeployOperationPlan(
         parameter: parameter.name,
         source: parameter.source,
         sensitive: parameter.sensitive,
+        environmentAlias,
+        solutionAlias,
+        solutionUniqueName,
         target: mapping.target,
         valuePreview,
       };
@@ -1123,6 +1175,9 @@ function createDeployOperationPlan(
         parameter: parameter.name,
         source: parameter.source,
         sensitive: parameter.sensitive,
+        environmentAlias,
+        solutionAlias,
+        solutionUniqueName,
         target: mapping.target,
         valuePreview,
         createOptions: resolveDeployEnvironmentVariableCreateOptions(mapping),
@@ -1133,6 +1188,9 @@ function createDeployOperationPlan(
         parameter: parameter.name,
         source: parameter.source,
         sensitive: parameter.sensitive,
+        environmentAlias,
+        solutionAlias,
+        solutionUniqueName,
         target: mapping.target,
         valuePreview,
       };
@@ -1142,6 +1200,9 @@ function createDeployOperationPlan(
         parameter: parameter.name,
         source: parameter.source,
         sensitive: parameter.sensitive,
+        environmentAlias,
+        solutionAlias,
+        solutionUniqueName,
         target: mapping.target,
         valuePreview,
         createOptions: resolveDeployConnectionReferenceCreateOptions(mapping),
@@ -1520,6 +1581,14 @@ function isDeployValueRedacted(value: string | number | boolean): value is strin
   return typeof value === 'string' && value === '<redacted>';
 }
 
+function resolveOperationEnvironmentAlias(operation: DeployOperationPlan, fallbackEnvironmentAlias?: string): string | undefined {
+  return operation.environmentAlias ?? fallbackEnvironmentAlias;
+}
+
+function resolveOperationSolutionUniqueName(operation: DeployOperationPlan, fallbackSolutionUniqueName?: string): string | undefined {
+  return operation.solutionUniqueName ?? fallbackSolutionUniqueName;
+}
+
 function inferEnvironmentVariableType(value: string | number | boolean): 'string' | 'number' | 'boolean' {
   if (typeof value === 'number') {
     return 'number';
@@ -1530,6 +1599,29 @@ function inferEnvironmentVariableType(value: string | number | boolean): 'string
   }
 
   return 'string';
+}
+
+function resolveDeployMappingSolutionTarget(
+  project: ProjectContext,
+  solutionAlias: string | undefined
+): ProjectContext['topology']['activeSolution'] | ProjectContext['topology']['stages'][string]['solutions'][string] | undefined {
+  if (!solutionAlias) {
+    return project.topology.activeSolution;
+  }
+
+  const activeStage = project.topology.selectedStage ? project.topology.stages[project.topology.selectedStage] : undefined;
+
+  if (activeStage?.solutions[solutionAlias]) {
+    return activeStage.solutions[solutionAlias];
+  }
+
+  for (const stage of Object.values(project.topology.stages)) {
+    if (stage.solutions[solutionAlias]) {
+      return stage.solutions[solutionAlias];
+    }
+  }
+
+  return undefined;
 }
 
 function resolveDeployEnvironmentVariableCreateOptions(mapping: ParameterMapping): DeployEnvironmentVariableCreateOptions | undefined {
@@ -1946,6 +2038,38 @@ function applySavedPlanOperationOverride(
   };
 }
 
+function groupPreparedDataverseOperations(
+  operations: PreparedDeployOperation[],
+  target: DeployTarget
+): Array<{ environmentAlias: string; solutionUniqueName: string; operations: PreparedDeployOperation[] }> {
+  const grouped = new Map<string, { environmentAlias: string; solutionUniqueName: string; operations: PreparedDeployOperation[] }>();
+
+  for (const operation of operations) {
+    const environmentAlias = resolveOperationEnvironmentAlias(operation.plan, target.environmentAlias);
+    const solutionUniqueName = resolveOperationSolutionUniqueName(operation.plan, target.solutionUniqueName);
+
+    if (!environmentAlias || !solutionUniqueName) {
+      continue;
+    }
+
+    const key = `${environmentAlias.toLowerCase()}::${solutionUniqueName.toLowerCase()}`;
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.operations.push(operation);
+      continue;
+    }
+
+    grouped.set(key, {
+      environmentAlias,
+      solutionUniqueName,
+      operations: [operation],
+    });
+  }
+
+  return [...grouped.values()];
+}
+
 function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): DeployTargetConflict[] {
   const grouped = new Map<string, DeployOperationPlan[]>();
 
@@ -2014,27 +2138,31 @@ function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): Deploy
 
 function getDeployConflictKey(operation: DeployOperationPlan): string {
   if (isDataverseEnvvarOperation(operation) || isDataverseEnvvarUpsertOperation(operation)) {
-    return `dataverse-envvar:${operation.target.toLowerCase()}`;
+    return `dataverse-envvar:${(operation.environmentAlias ?? '').toLowerCase()}:${(operation.solutionUniqueName ?? operation.solutionAlias ?? '').toLowerCase()}:${operation.target.toLowerCase()}`;
   }
 
   if (isDataverseConnectionReferenceOperation(operation) || isDataverseConnectionReferenceUpsertOperation(operation)) {
-    return `dataverse-connref:${operation.target.toLowerCase()}`;
+    return `dataverse-connref:${(operation.environmentAlias ?? '').toLowerCase()}:${(operation.solutionUniqueName ?? operation.solutionAlias ?? '').toLowerCase()}:${operation.target.toLowerCase()}`;
   }
 
   return `binding:${operation.target.toLowerCase()}`;
 }
 
 function matchesDeployConflict(operation: DeployOperationPlan, conflict: DeployTargetConflict): boolean {
-  return getDeployConflictKey(operation) === getDeployConflictComparisonKey(conflict);
-}
+  if (!conflict.details.parameters.includes(operation.parameter)) {
+    return false;
+  }
 
-function getDeployConflictComparisonKey(conflict: DeployTargetConflict): string {
+  if (operation.target.toLowerCase() !== conflict.details.target.toLowerCase()) {
+    return false;
+  }
+
   switch (conflict.code) {
     case 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CONFLICT':
-      return `dataverse-envvar:${conflict.details.target.toLowerCase()}`;
+      return isDataverseEnvvarOperation(operation) || isDataverseEnvvarUpsertOperation(operation);
     case 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CONFLICT':
-      return `dataverse-connref:${conflict.details.target.toLowerCase()}`;
+      return isDataverseConnectionReferenceOperation(operation) || isDataverseConnectionReferenceUpsertOperation(operation);
     case 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT':
-      return `binding:${conflict.details.target.toLowerCase()}`;
+      return operation.kind === 'deploy-input-bind' || operation.kind === 'deploy-secret-bind';
   }
 }

@@ -125,9 +125,12 @@
   ],
   "operations": [
     {
+      "environmentAlias": "prod",
       "kind": "dataverse-envvar-set",
       "parameter": "tenantDomain",
       "sensitive": false,
+      "solutionAlias": "core",
+      "solutionUniqueName": "CoreManaged",
       "source": "environment",
       "target": "pp_TenantDomain",
       "valuePreview": "contoso.example"

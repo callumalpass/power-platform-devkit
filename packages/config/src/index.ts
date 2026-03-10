@@ -15,6 +15,7 @@ const primitiveValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 const parameterMappingSchema = z.object({
   kind: z.string(),
   target: z.string(),
+  solution: z.string().optional(),
   displayName: z.string().optional(),
   connectorId: z.string().optional(),
   customConnectorId: z.string().optional(),

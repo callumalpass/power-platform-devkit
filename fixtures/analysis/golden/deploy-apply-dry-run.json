@@ -15,11 +15,14 @@
       {
         "changed": true,
         "currentValue": "old.example",
+        "environmentAlias": "prod",
         "kind": "dataverse-envvar-set",
         "message": "Preview only.",
         "nextValue": "contoso.example",
         "parameter": "tenantDomain",
         "sensitive": false,
+        "solutionAlias": "core",
+        "solutionUniqueName": "CoreManaged",
         "source": "environment",
         "status": "planned",
         "target": "pp_TenantDomain",
@@ -194,9 +197,12 @@
     ],
     "operations": [
       {
+        "environmentAlias": "prod",
         "kind": "dataverse-envvar-set",
         "parameter": "tenantDomain",
         "sensitive": false,
+        "solutionAlias": "core",
+        "solutionUniqueName": "CoreManaged",
         "source": "environment",
         "target": "pp_TenantDomain",
         "valuePreview": "contoso.example"
