@@ -22,6 +22,9 @@ Once built, you can also call the CLI directly:
 node packages/cli/dist/index.cjs project doctor
 ```
 
+`pnpm install` now prepares the CLI bundle automatically in a normal checkout.
+If install scripts are disabled, run `pnpm --filter @pp/cli build` first.
+
 Sanity-check the packaged CLI surface:
 
 ```bash

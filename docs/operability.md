@@ -9,9 +9,11 @@ From source:
 
 ```bash
 pnpm install
-pnpm build
 node packages/cli/dist/index.cjs version
 ```
+
+`pnpm install` now prepares the CLI bundle automatically in a normal checkout.
+If install scripts are disabled, run `pnpm --filter @pp/cli build` first.
 
 Package the CLI as a tarball:
 

@@ -13,9 +13,11 @@ From the monorepo:
 
 ```bash
 pnpm install
-pnpm --filter @pp/cli build
 node packages/cli/dist/index.cjs version
 ```
+
+If your checkout skips install scripts, run `pnpm --filter @pp/cli build`
+before using `packages/cli/dist`.
 
 To produce a publishable tarball from the workspace:
 

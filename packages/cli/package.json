@@ -33,10 +33,26 @@
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm,cjs --clean",
     "clean": "rm -rf dist",
+    "prepare": "pnpm build",
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
+    "@pp/analysis": "workspace:*",
+    "@pp/artifacts": "workspace:*",
+    "@pp/auth": "workspace:*",
+    "@pp/canvas": "workspace:*",
+    "@pp/config": "workspace:*",
+    "@pp/dataverse": "workspace:*",
+    "@pp/deploy": "workspace:*",
+    "@pp/diagnostics": "workspace:*",
+    "@pp/flow": "workspace:*",
+    "@pp/http": "workspace:*",
+    "@pp/model": "workspace:*",
+    "@pp/powerbi": "workspace:*",
+    "@pp/project": "workspace:*",
+    "@pp/sharepoint": "workspace:*",
+    "@pp/solution": "workspace:*",
     "playwright-core": "^1.52.0",
     "yaml": "^2.7.1"
   }

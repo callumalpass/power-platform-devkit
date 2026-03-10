@@ -79,9 +79,12 @@ pnpm pp -- project inspect
 2. From the built workspace:
 
 ```bash
-pnpm build
+pnpm install
 node packages/cli/dist/index.js project inspect
 ```
+
+If your environment disables install scripts, run `pnpm --filter @pp/cli build`
+once before using `packages/cli/dist`.
 
 3. As `pp` once the CLI package is linked or installed:
 
