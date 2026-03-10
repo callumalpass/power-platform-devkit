@@ -2964,6 +2964,58 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('covers connection reference validation with live display-name fields through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-1',
+              uniquename: 'HarnessShell',
+              friendlyname: 'Harness Shell',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          connectionreferences: [
+            {
+              connectionreferenceid: 'connref-1',
+              connectionreferencelogicalname: 'pp_shared_sql',
+              connectionreferencedisplayname: 'Shared SQL',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_sql',
+              connectionid: 'connection-1',
+              _solutionid_value: 'solution-1',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+    });
+
+    const validate = await runCli(['connref', 'validate', '--env', 'source', '--solution', 'HarnessShell', '--format', 'json']);
+
+    expect(validate.code).toBe(0);
+    expect(validate.stderr).toBe('');
+    expect(JSON.parse(validate.stdout)).toEqual([
+      {
+        reference: {
+          id: 'connref-1',
+          logicalName: 'pp_shared_sql',
+          displayName: 'Shared SQL',
+          connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+          connectionId: 'connection-1',
+          solutionId: 'solution-1',
+          stateCode: 0,
+          connected: true,
+        },
+        valid: true,
+        diagnostics: [],
+        suggestedNextActions: [],
+      },
+    ]);
+  });
+
   it('covers model-driven app inspection workflows through the CLI entrypoint', async () => {
     const fixture = (await readJsonFile(resolveRepoPath('fixtures', 'model', 'runtime', 'sales-hub.json'))) as DataverseFixture;
 
