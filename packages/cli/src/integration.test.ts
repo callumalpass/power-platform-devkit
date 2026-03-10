@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -379,6 +379,45 @@ describe('cli fixture-backed workflows', () => {
     expect(inspectHelp.stdout).toContain('Usage: canvas inspect <path|displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [options]');
     expect(inspectHelp.stdout).toContain('With `--env`, inspects a remote canvas app by display name, logical name, or id.');
     expect(inspectHelp.stdout).toContain('pp canvas inspect "Harness Canvas" --env dev --solution Core');
+  });
+
+  it('prints stable help for project commands without mutating the target path', async () => {
+    const tempDir = await createTempDir();
+    const before = await readdir(tempDir);
+
+    const projectHelp = await runCli(['project', '--help']);
+    const initHelp = await runCli(['project', 'init', tempDir, '--help']);
+    const doctorHelp = await runCli(['project', 'doctor', tempDir, '--help']);
+    const inspectHelp = await runCli(['project', 'inspect', tempDir, '--help']);
+
+    const after = await readdir(tempDir);
+
+    expect(projectHelp.code).toBe(0);
+    expect(projectHelp.stderr).toBe('');
+    expect(projectHelp.stdout).toContain('Usage: project <command> [options]');
+    expect(projectHelp.stdout).toContain('init [path]');
+    expect(projectHelp.stdout).toContain('doctor [path]');
+    expect(projectHelp.stdout).toContain('inspect [path]');
+
+    expect(initHelp.code).toBe(0);
+    expect(initHelp.stderr).toBe('');
+    expect(initHelp.stdout).toContain(
+      'Usage: project init [path] [--name NAME] [--env ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [options]'
+    );
+    expect(initHelp.stdout).toContain('`--help` only prints this text and never inspects or mutates the target path.');
+    expect(initHelp.stdout).toContain('`pp.config.yaml`');
+
+    expect(doctorHelp.code).toBe(0);
+    expect(doctorHelp.stderr).toBe('');
+    expect(doctorHelp.stdout).toContain('Usage: project doctor [path] [--stage STAGE] [--param NAME=VALUE] [options]');
+    expect(doctorHelp.stdout).toContain('Reads project context without mutating the filesystem.');
+
+    expect(inspectHelp.code).toBe(0);
+    expect(inspectHelp.stderr).toBe('');
+    expect(inspectHelp.stdout).toContain('Usage: project inspect [path] [--stage STAGE] [--param NAME=VALUE] [options]');
+    expect(inspectHelp.stdout).toContain('Reads project context without mutating the filesystem.');
+
+    expect(after).toEqual(before);
   });
 
   it('renders analysis report and context outputs from the fixture project', async () => {

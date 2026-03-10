@@ -130,13 +130,11 @@ export async function main(argv: string[]): Promise<number> {
     return runModel(command, rest);
   }
 
+  if (group === 'project') {
+    return runProject(command, rest);
+  }
+
   switch (`${group} ${command ?? ''}`.trim()) {
-    case 'project init':
-      return runProjectInit(rest);
-    case 'project doctor':
-      return runProjectDoctor(rest);
-    case 'project inspect':
-      return runProjectInspect(rest);
     case 'analysis report':
       return runAnalysisReport(rest);
     case 'analysis context':
@@ -145,6 +143,37 @@ export async function main(argv: string[]): Promise<number> {
       return runDeployPlan(rest);
     case 'deploy apply':
       return runDeployApply(rest);
+    default:
+      printHelp();
+      return 1;
+  }
+}
+
+async function runProject(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printProjectHelp();
+    return 0;
+  }
+
+  switch (command) {
+    case 'init':
+      if (args.includes('--help') || args.includes('help')) {
+        printProjectInitHelp();
+        return 0;
+      }
+      return runProjectInit(args);
+    case 'doctor':
+      if (args.includes('--help') || args.includes('help')) {
+        printProjectDoctorHelp();
+        return 0;
+      }
+      return runProjectDoctor(args);
+    case 'inspect':
+      if (args.includes('--help') || args.includes('help')) {
+        printProjectInspectHelp();
+        return 0;
+      }
+      return runProjectInspect(args);
     default:
       printHelp();
       return 1;
@@ -4693,6 +4722,99 @@ function printCanvasInspectHelp(): void {
       'Examples:',
       '  pp canvas inspect "Harness Canvas" --env dev --solution Core',
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printProjectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: project <command> [options]',
+      '',
+      'Commands:',
+      '  init [path]                 scaffold a minimal local pp project layout',
+      '  doctor [path]               validate project config, assets, and required inputs',
+      '  inspect [path]              inspect resolved project topology and asset roots',
+      '',
+      'Examples:',
+      '  pp project init ./demo --name Demo --env dev --solution Core',
+      '  pp project doctor ./demo --stage prod --format json',
+      '  pp project inspect ./demo --stage prod --param releaseName=2026.03.10 --format json',
+      '',
+      'Notes:',
+      '  - Use `pp project init --plan` or `--dry-run` to preview scaffold changes without writing files.',
+      '  - `pp project doctor` and `pp project inspect` are read-only local-structure workflows.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printProjectInitHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: project init [path] [--name NAME] [--env ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [options]',
+      '',
+      'Status:',
+      '  Scaffolds a minimal local pp project layout.',
+      '',
+      'Behavior:',
+      '  - Writes `pp.config.yaml` unless a project config already exists and `--force` is not set.',
+      '  - Creates `apps/`, `flows/`, `solutions/`, and `docs/` when they do not already exist.',
+      '  - Seeds one default stage, one solution alias, and one primary Dataverse provider binding.',
+      '',
+      'Safety:',
+      '  - `--help` only prints this text and never inspects or mutates the target path.',
+      '  - Use `--plan` or `--dry-run` for a structured no-op preview before applying the scaffold.',
+      '',
+      'Options:',
+      '  --name NAME                Project name to store in `pp.config.yaml`',
+      '  --env ALIAS                Default Dataverse environment alias',
+      '  --solution UNIQUE_NAME     Default solution alias and unique name seed',
+      '  --stage STAGE              Default topology stage name',
+      '  --force                    Replace an existing project config file',
+      '  --dry-run                  Render a mutation preview without side effects',
+      '  --plan                     Render a mutation plan without side effects',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printProjectDoctorHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: project doctor [path] [--stage STAGE] [--param NAME=VALUE] [options]',
+      '',
+      'Status:',
+      '  Validates a local pp project layout.',
+      '',
+      'Behavior:',
+      '  - Reports config presence, asset-path checks, provider bindings, topology, registries, and unresolved required parameters.',
+      '  - Reads project context without mutating the filesystem.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printProjectInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: project inspect [path] [--stage STAGE] [--param NAME=VALUE] [options]',
+      '',
+      'Status:',
+      '  Inspects resolved local project topology and asset roots.',
+      '',
+      'Behavior:',
+      '  - Returns project summary, resolved topology, parameters, provider bindings, asset inventory, registries, build metadata, and docs metadata.',
+      '  - Reads project context without mutating the filesystem.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
