@@ -5,6 +5,12 @@
 - `deploy plan`: local project resolution into a structured deploy plan
 - `deploy apply`: shared orchestration with machine-readable preflight, apply, and report output
 
+It also now has a release-orchestration layer on top of that shared deploy
+engine:
+
+- `deploy release plan`: evaluate a multi-stage release manifest without side effects
+- `deploy release apply`: run the same manifest through the shared deploy engine with approvals, validation, audit, and rollback handling
+
 ## Supported apply slice
 
 The shared deploy contract currently recognizes project parameters mapped with:
@@ -133,6 +139,71 @@ rediscovered or explicit `--param NAME=VALUE` overrides supply those parameter
 values at apply time. Detached plan overrides update the shared deploy result
 shape without reintroducing project discovery.
 
+## Release orchestration
+
+Release manifests wrap the existing deploy orchestration model into staged
+promotion. Each stage can point at a project plus stage or a pre-saved deploy
+plan, then add:
+
+- approval gates
+- post-deploy validation gates
+- rollback-on-failure policy
+
+Minimal example:
+
+```yaml
+schemaVersion: 1
+kind: pp.release
+name: enterprise-rollout
+projectRoot: .
+stages:
+  - id: test
+    stage: test
+    validations:
+      - kind: preflight-ok
+      - kind: apply-summary
+        maxFailed: 0
+  - id: prod
+    stage: prod
+    approvals:
+      - id: cab-prod
+    rollback:
+      onFailure: true
+```
+
+Plan a release:
+
+```bash
+pp deploy release plan --file ./release.yaml --format json
+```
+
+Apply a release with explicit approvals:
+
+```bash
+pp deploy release apply --file ./release.yaml --approve cab-prod --yes --format json
+```
+
+The release result includes:
+
+- manifest metadata
+- per-stage approval status
+- the nested deploy result for each executed stage
+- validation outcomes
+- rollback planning or rollback execution details
+- release-level audit entries
+
+Supported validation gate kinds today:
+
+- `preflight-ok`
+- `apply-summary`
+- `operation-status`
+
+Rollback is modeled explicitly per deploy operation. The shared release service
+will only execute rollback when the underlying deploy result preserved a
+concrete prior value that can be replayed through the same deploy engine.
+Unsupported rollback cases are reported in the release output instead of being
+treated as implicitly safe.
+
 The output includes:
 
 - `plan`: resolved deploy target, inputs, and supported operations
@@ -258,6 +329,7 @@ steps:
 - `flow-parameter`, `flow-connref`, and `flow-envvar` are the supported flow-artifact operation kinds today. They patch local flow artifacts in place through the same shared orchestration model.
 - `sharepoint-file-text` is the supported SharePoint mutation kind today. It replaces the full contents of a resolved file target with UTF-8 text through Microsoft Graph.
 - `powerbi-dataset-refresh` is the supported Power BI mutation kind today. It submits a dataset refresh request through the Power BI REST API.
+- Release rollback is only executable for operation kinds that preserve a prior value in the deploy result. SharePoint file writes, Power BI refresh requests, and create-first Dataverse upserts currently report explicit rollback limits rather than simulating symmetric rollback.
 - Those Dataverse mapping kinds can set `environment` and `solution` to target a specific Dataverse environment alias and named solution alias instead of always using the stage defaults.
 - `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
 - Mapped parameters without a resolved value now fail deploy preflight explicitly.

@@ -65,7 +65,14 @@ import {
   type DataverseMetadataSnapshot,
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
-import { buildDeployPlan, executeDeploy, executeDeployPlan, type DeployPlan } from '@pp/deploy';
+import {
+  buildDeployPlan,
+  executeDeploy,
+  executeDeployPlan,
+  executeReleaseManifest,
+  type DeployPlan,
+  type ReleaseManifest,
+} from '@pp/deploy';
 import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { HttpClient } from '@pp/http';
@@ -207,6 +214,8 @@ export async function main(argv: string[]): Promise<number> {
       return runDeployPlan(rest);
     case 'deploy apply':
       return runDeployApply(rest);
+    case 'deploy release':
+      return runDeployRelease(rest);
     default:
       printHelp();
       return 1;
@@ -1932,6 +1941,51 @@ async function runDeployApply(args: string[]): Promise<number> {
   printResultDiagnostics(project, format);
   printResultDiagnostics(result, format);
   return result.data.preflight.ok && result.data.apply.summary.failed === 0 ? 0 : 1;
+}
+
+async function runDeployRelease(args: string[]): Promise<number> {
+  const [action, ...rest] = args;
+
+  if (!action || action === 'help' || action === '--help') {
+    printHelp();
+    return 0;
+  }
+
+  const format = outputFormat(rest, 'json');
+  const manifestPath = readFlag(rest, '--file') ?? positionalArgs(rest)[0];
+
+  if (!manifestPath) {
+    return printFailure(argumentFailure('RELEASE_MANIFEST_REQUIRED', 'Use `deploy release <plan|apply> --file <manifest.yml>`.'));
+  }
+
+  const manifest = await loadReleaseManifestFile(manifestPath);
+
+  if (!manifest.success || !manifest.data) {
+    return printFailure(manifest);
+  }
+
+  const discoveryOptions = readProjectDiscoveryOptions(rest);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const yes = hasFlag(rest, '--yes');
+  const mode: 'plan' | 'dry-run' | 'apply' = action === 'plan' ? 'plan' : hasFlag(rest, '--dry-run') ? 'dry-run' : 'apply';
+  const result = await executeReleaseManifest(manifest.data, {
+    mode,
+    confirmed: yes,
+    approvedStages: readRepeatedFlags(rest, '--approve'),
+    parameterOverrides: discoveryOptions.data.parameterOverrides,
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, format);
+  printResultDiagnostics(result, format);
+  return result.data.summary.failed === 0 && result.data.summary.blocked === 0 && result.data.summary.rollbackFailed === 0 ? 0 : 1;
 }
 
 async function runAuthProfileList(auth: AuthService, args: string[]): Promise<number> {
@@ -7456,6 +7510,49 @@ async function loadDeployPlanFile(path: string): Promise<OperationResult<DeployP
   });
 }
 
+async function loadReleaseManifestFile(path: string): Promise<OperationResult<ReleaseManifest>> {
+  let raw: string;
+
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'RELEASE_MANIFEST_READ_FAILED', `Could not read release manifest ${path}.`, {
+        source: '@pp/cli',
+        path,
+        hint: error instanceof Error ? error.message : undefined,
+      })
+    );
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = YAML.parse(raw);
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'RELEASE_MANIFEST_INVALID', `Release manifest ${path} is not valid YAML or JSON.`, {
+        source: '@pp/cli',
+        path,
+        hint: error instanceof Error ? error.message : undefined,
+      })
+    );
+  }
+
+  if (!isReleaseManifestShape(parsed)) {
+    return fail(
+      createDiagnostic('error', 'RELEASE_MANIFEST_SHAPE_INVALID', `Release manifest ${path} does not match the expected release manifest shape.`, {
+        source: '@pp/cli',
+        path,
+      })
+    );
+  }
+
+  return ok(resolveReleaseManifestPaths(parsed, path), {
+    supportTier: 'preview',
+  });
+}
+
 function isDeployPlanShape(value: unknown): value is DeployPlan {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -7463,6 +7560,48 @@ function isDeployPlanShape(value: unknown): value is DeployPlan {
 
   const candidate = value as Partial<DeployPlan>;
   return typeof candidate.generatedAt === 'string' && typeof candidate.projectRoot === 'string' && Array.isArray(candidate.operations);
+}
+
+function isReleaseManifestShape(value: unknown): value is ReleaseManifest {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<ReleaseManifest>;
+  return candidate.schemaVersion === 1 && candidate.kind === 'pp.release' && typeof candidate.name === 'string' && Array.isArray(candidate.stages);
+}
+
+function resolveReleaseManifestPaths(manifest: ReleaseManifest, manifestPath: string): ReleaseManifest {
+  const manifestDir = dirname(resolvePath(manifestPath));
+  return {
+    ...manifest,
+    projectRoot: manifest.projectRoot
+      ? isAbsolute(manifest.projectRoot)
+        ? manifest.projectRoot
+        : resolvePath(manifestDir, manifest.projectRoot)
+      : manifest.projectRoot,
+    bundle: manifest.bundle
+      ? {
+          ...manifest.bundle,
+          manifestPath: resolvePath(manifestPath),
+        }
+      : {
+          manifestPath: resolvePath(manifestPath),
+        },
+    stages: manifest.stages.map((stage) => ({
+      ...stage,
+      projectPath: stage.projectPath
+        ? isAbsolute(stage.projectPath)
+          ? stage.projectPath
+          : resolvePath(manifestDir, stage.projectPath)
+        : stage.projectPath,
+      planPath: stage.planPath
+        ? isAbsolute(stage.planPath)
+          ? stage.planPath
+          : resolvePath(manifestDir, stage.planPath)
+        : stage.planPath,
+    })),
+  };
 }
 
 function readMetadataCreateOptions(
@@ -8616,6 +8755,8 @@ function printHelp(): void {
       '  analysis policy [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  deploy plan [--project path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  deploy apply [--project path] [--stage STAGE] [--param NAME=VALUE] [--dry-run|--plan|--plan FILE] [--yes] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  deploy release plan --file MANIFEST.yml [--approve GATE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  deploy release apply --file MANIFEST.yml [--approve GATE] [--param NAME=VALUE] [--dry-run] [--yes] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

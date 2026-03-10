@@ -3,10 +3,11 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ParameterMapping } from '@pp/config';
 import { AuthService, createTokenProvider } from '@pp/auth';
 import { ConnectionReferenceService, EnvironmentVariableService, resolveDataverseClient } from '@pp/dataverse';
-import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { loadFlowArtifact, patchFlowArtifact, validateFlowArtifact, type FlowArtifact, type FlowValidationReport } from '@pp/flow';
 import { HttpClient } from '@pp/http';
 import {
+  discoverProject,
   resolvePowerBiTarget,
   resolveSharePointTarget,
   summarizeResolvedParameter,
@@ -3926,4 +3927,891 @@ function matchesDeployConflict(operation: DeployOperationPlan, conflict: DeployT
     case 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT':
       return operation.kind === 'deploy-input-bind' || operation.kind === 'deploy-secret-bind';
   }
+}
+
+export type ReleaseExecutionMode = DeployExecutionMode;
+
+export interface ReleaseManifest {
+  schemaVersion: 1;
+  kind: 'pp.release';
+  name: string;
+  projectRoot?: string;
+  bundle?: {
+    id?: string;
+    manifestPath?: string;
+    generatedAt?: string;
+  };
+  metadata?: Record<string, string | number | boolean>;
+  stages: ReleaseStageManifest[];
+}
+
+export interface ReleaseStageManifest {
+  id: string;
+  label?: string;
+  projectPath?: string;
+  stage?: string;
+  planPath?: string;
+  approvals?: ReleaseApprovalGate[];
+  validations?: ReleaseValidationGate[];
+  rollback?: ReleaseRollbackPolicy;
+}
+
+export interface ReleaseApprovalGate {
+  id: string;
+  required?: boolean;
+  instructions?: string;
+}
+
+export type ReleaseValidationGate =
+  | {
+      id?: string;
+      kind: 'preflight-ok';
+      message?: string;
+    }
+  | {
+      id?: string;
+      kind: 'apply-summary';
+      message?: string;
+      minApplied?: number;
+      maxFailed?: number;
+      maxSkipped?: number;
+      minChanged?: number;
+      maxCreated?: number;
+    }
+  | {
+      id?: string;
+      kind: 'operation-status';
+      message?: string;
+      target?: string;
+      parameter?: string;
+      operationKind?: DeployOperationPlan['kind'];
+      allowedStatuses: DeployOperationResult['status'][];
+    };
+
+export interface ReleaseRollbackPolicy {
+  onFailure?: boolean;
+}
+
+export interface ReleaseApprovalResult {
+  gate: ReleaseApprovalGate;
+  required: boolean;
+  approved: boolean;
+  status: 'approved' | 'blocked';
+}
+
+export interface ReleaseValidationResult {
+  gate: ReleaseValidationGate;
+  status: 'pass' | 'fail';
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ReleaseRollbackOperationResult {
+  parameter: string;
+  target: string;
+  kind: DeployOperationPlan['kind'];
+  changed: boolean;
+  support: 'supported' | 'unsupported' | 'not-needed';
+  reason?: string;
+  rollbackValuePreview?: string | number | boolean;
+}
+
+export interface ReleaseRollbackResult {
+  requested: boolean;
+  status: 'not-requested' | 'planned' | 'applied' | 'blocked' | 'failed';
+  supported: number;
+  unsupported: number;
+  operations: ReleaseRollbackOperationResult[];
+  plan?: DeployPlan;
+  execution?: DeployExecutionResult;
+}
+
+export interface ReleaseAuditEntry {
+  timestamp: string;
+  stageId?: string;
+  event:
+    | 'release-started'
+    | 'stage-started'
+    | 'stage-approved'
+    | 'stage-blocked'
+    | 'stage-deploy-completed'
+    | 'stage-validation-passed'
+    | 'stage-validation-failed'
+    | 'stage-rollback-planned'
+    | 'stage-rollback-applied'
+    | 'stage-rollback-failed'
+    | 'stage-completed'
+    | 'release-completed';
+  status: 'info' | 'pass' | 'warn' | 'fail';
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ReleaseStageExecutionResult {
+  stage: ReleaseStageManifest;
+  mode: ReleaseExecutionMode;
+  target?: DeployTarget;
+  approval: {
+    ok: boolean;
+    gates: ReleaseApprovalResult[];
+  };
+  deploy?: DeployExecutionResult;
+  validations: {
+    ok: boolean;
+    checks: ReleaseValidationResult[];
+  };
+  rollback: ReleaseRollbackResult;
+  status: 'completed' | 'failed' | 'blocked' | 'rolled-back' | 'rollback-failed' | 'skipped';
+}
+
+export interface ReleaseExecutionResult {
+  manifest: ReleaseManifest;
+  mode: ReleaseExecutionMode;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  summary: {
+    totalStages: number;
+    completed: number;
+    failed: number;
+    blocked: number;
+    rolledBack: number;
+    rollbackFailed: number;
+    skipped: number;
+  };
+  stages: ReleaseStageExecutionResult[];
+  audit: ReleaseAuditEntry[];
+}
+
+export async function executeReleaseManifest(
+  manifest: ReleaseManifest,
+  options: {
+    mode?: ReleaseExecutionMode;
+    confirmed?: boolean;
+    approvedStages?: string[];
+    parameterOverrides?: Record<string, string>;
+  } = {}
+): Promise<OperationResult<ReleaseExecutionResult>> {
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
+  const mode = options.mode ?? 'apply';
+  const approvedStages = new Set((options.approvedStages ?? []).map((value) => value.toLowerCase()));
+  const stages: ReleaseStageExecutionResult[] = [];
+  const audit: ReleaseAuditEntry[] = [
+    {
+      timestamp: startedAt,
+      event: 'release-started',
+      status: 'info',
+      message: `Started release ${manifest.name}.`,
+      details: {
+        mode,
+        stageCount: manifest.stages.length,
+      },
+    },
+  ];
+  const diagnostics: Diagnostic[] = [];
+  const warnings: Diagnostic[] = [];
+  let haltRemainingStages = false;
+
+  for (const stage of manifest.stages) {
+    if (haltRemainingStages) {
+      stages.push({
+        stage,
+        mode,
+        approval: {
+          ok: false,
+          gates: [],
+        },
+        validations: {
+          ok: false,
+          checks: [],
+        },
+        rollback: {
+          requested: false,
+          status: 'not-requested',
+          supported: 0,
+          unsupported: 0,
+          operations: [],
+        },
+        status: 'skipped',
+      });
+      continue;
+    }
+
+    const stageStartedAt = new Date().toISOString();
+    audit.push({
+      timestamp: stageStartedAt,
+      stageId: stage.id,
+      event: 'stage-started',
+      status: 'info',
+      message: `Started release stage ${stage.id}.`,
+      details: {
+        projectPath: stage.projectPath,
+        planPath: stage.planPath,
+        stage: stage.stage,
+      },
+    });
+
+    const approval = evaluateReleaseStageApprovals(stage, approvedStages);
+
+    if (approval.ok) {
+      audit.push({
+        timestamp: new Date().toISOString(),
+        stageId: stage.id,
+        event: 'stage-approved',
+        status: 'pass',
+        message: `Release stage ${stage.id} passed approval gates.`,
+      });
+    } else {
+      audit.push({
+        timestamp: new Date().toISOString(),
+        stageId: stage.id,
+        event: 'stage-blocked',
+        status: 'fail',
+        message: `Release stage ${stage.id} is blocked by missing approvals.`,
+        details: {
+          gates: approval.gates.filter((gate) => gate.status === 'blocked').map((gate) => gate.gate.id),
+        },
+      });
+      stages.push({
+        stage,
+        mode,
+        approval,
+        validations: {
+          ok: false,
+          checks: [],
+        },
+        rollback: {
+          requested: false,
+          status: 'not-requested',
+          supported: 0,
+          unsupported: 0,
+          operations: [],
+        },
+        status: 'blocked',
+      });
+      haltRemainingStages = true;
+      continue;
+    }
+
+    const deployExecution = await executeReleaseStageDeploy(stage, manifest, {
+      mode,
+      confirmed: options.confirmed,
+      parameterOverrides: options.parameterOverrides,
+    });
+
+    diagnostics.push(...deployExecution.diagnostics);
+    warnings.push(...deployExecution.warnings);
+
+    if (!deployExecution.success || !deployExecution.data) {
+      stages.push({
+        stage,
+        mode,
+        approval,
+        validations: {
+          ok: false,
+          checks: [],
+        },
+        rollback: {
+          requested: false,
+          status: 'not-requested',
+          supported: 0,
+          unsupported: 0,
+          operations: [],
+        },
+        status: 'failed',
+      });
+      audit.push({
+        timestamp: new Date().toISOString(),
+        stageId: stage.id,
+        event: 'stage-deploy-completed',
+        status: 'fail',
+        message: `Release stage ${stage.id} failed before deploy output was produced.`,
+      });
+      haltRemainingStages = true;
+      continue;
+    }
+
+    audit.push({
+      timestamp: new Date().toISOString(),
+      stageId: stage.id,
+      event: 'stage-deploy-completed',
+      status: deployExecution.data.preflight.ok && deployExecution.data.apply.summary.failed === 0 ? 'pass' : 'fail',
+      message: `Release stage ${stage.id} completed deploy orchestration.`,
+      details: {
+        preflightOk: deployExecution.data.preflight.ok,
+        apply: deployExecution.data.apply.summary,
+      },
+    });
+
+    const validationResult = evaluateReleaseStageValidations(stage, deployExecution.data);
+    audit.push({
+      timestamp: new Date().toISOString(),
+      stageId: stage.id,
+      event: validationResult.ok ? 'stage-validation-passed' : 'stage-validation-failed',
+      status: validationResult.ok ? 'pass' : 'fail',
+      message: validationResult.ok
+        ? `Release stage ${stage.id} passed post-deploy validation.`
+        : `Release stage ${stage.id} failed post-deploy validation.`,
+      details: {
+        failedChecks: validationResult.checks.filter((check) => check.status === 'fail').map((check) => check.message),
+      },
+    });
+
+    const stageFailed = !deployExecution.data.preflight.ok || deployExecution.data.apply.summary.failed > 0 || !validationResult.ok;
+    const rollback = await maybeExecuteReleaseRollback(stage, deployExecution.data, {
+      mode,
+      confirmed: options.confirmed,
+    });
+
+    if (rollback.requested && rollback.status === 'planned') {
+      audit.push({
+        timestamp: new Date().toISOString(),
+        stageId: stage.id,
+        event: 'stage-rollback-planned',
+        status: 'warn',
+        message: `Release stage ${stage.id} produced a rollback plan.`,
+        details: {
+          supported: rollback.supported,
+          unsupported: rollback.unsupported,
+        },
+      });
+    }
+
+    if (rollback.status === 'applied') {
+      audit.push({
+        timestamp: new Date().toISOString(),
+        stageId: stage.id,
+        event: 'stage-rollback-applied',
+        status: 'pass',
+        message: `Release stage ${stage.id} applied rollback.`,
+        details: {
+          supported: rollback.supported,
+          unsupported: rollback.unsupported,
+        },
+      });
+    } else if (rollback.status === 'failed' || rollback.status === 'blocked') {
+      audit.push({
+        timestamp: new Date().toISOString(),
+        stageId: stage.id,
+        event: 'stage-rollback-failed',
+        status: 'fail',
+        message:
+          rollback.status === 'blocked'
+            ? `Release stage ${stage.id} could not execute rollback for all changed operations.`
+            : `Release stage ${stage.id} rollback execution failed.`,
+        details: {
+          supported: rollback.supported,
+          unsupported: rollback.unsupported,
+        },
+      });
+    }
+
+    const stageStatus: ReleaseStageExecutionResult['status'] = !stageFailed
+      ? 'completed'
+      : rollback.status === 'applied'
+        ? 'rolled-back'
+        : rollback.status === 'failed' || rollback.status === 'blocked'
+          ? 'rollback-failed'
+          : 'failed';
+
+    stages.push({
+      stage,
+      mode,
+      target: deployExecution.data.target,
+      approval,
+      deploy: deployExecution.data,
+      validations: validationResult,
+      rollback,
+      status: stageStatus,
+    });
+
+    audit.push({
+      timestamp: new Date().toISOString(),
+      stageId: stage.id,
+      event: 'stage-completed',
+      status: stageStatus === 'completed' || stageStatus === 'rolled-back' ? 'pass' : 'fail',
+      message: `Release stage ${stage.id} finished with status ${stageStatus}.`,
+    });
+
+    if (stageFailed) {
+      haltRemainingStages = true;
+    }
+  }
+
+  const finishedAt = new Date().toISOString();
+  audit.push({
+    timestamp: finishedAt,
+    event: 'release-completed',
+    status: stages.some((stage) => stage.status === 'failed' || stage.status === 'blocked' || stage.status === 'rollback-failed')
+      ? 'fail'
+      : 'pass',
+    message: `Release ${manifest.name} finished.`,
+  });
+
+  return ok(
+    {
+      manifest,
+      mode,
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedAtMs,
+      summary: {
+        totalStages: stages.length,
+        completed: stages.filter((stage) => stage.status === 'completed').length,
+        failed: stages.filter((stage) => stage.status === 'failed').length,
+        blocked: stages.filter((stage) => stage.status === 'blocked').length,
+        rolledBack: stages.filter((stage) => stage.status === 'rolled-back').length,
+        rollbackFailed: stages.filter((stage) => stage.status === 'rollback-failed').length,
+        skipped: stages.filter((stage) => stage.status === 'skipped').length,
+      },
+      stages,
+      audit,
+    },
+    {
+      diagnostics,
+      warnings,
+      supportTier: 'preview',
+      knownLimitations: [
+        'Rollback is only executable for operation kinds that preserve a concrete prior value in the deploy result.',
+        'SharePoint file uploads, Power BI dataset refreshes, and create-first Dataverse operations currently report rollback support limits instead of pretending to be symmetric.',
+      ],
+    }
+  );
+}
+
+function evaluateReleaseStageApprovals(stage: ReleaseStageManifest, approvedStages: Set<string>): {
+  ok: boolean;
+  gates: ReleaseApprovalResult[];
+} {
+  const gates = (stage.approvals ?? []).map((gate) => {
+    const required = gate.required !== false;
+    const approved = !required || approvedStages.has(gate.id.toLowerCase()) || approvedStages.has(stage.id.toLowerCase());
+    return {
+      gate,
+      required,
+      approved,
+      status: approved ? 'approved' : 'blocked',
+    } satisfies ReleaseApprovalResult;
+  });
+
+  return {
+    ok: gates.every((gate) => gate.approved),
+    gates,
+  };
+}
+
+async function executeReleaseStageDeploy(
+  stage: ReleaseStageManifest,
+  manifest: ReleaseManifest,
+  options: {
+    mode: ReleaseExecutionMode;
+    confirmed?: boolean;
+    parameterOverrides?: Record<string, string>;
+  }
+): Promise<OperationResult<DeployExecutionResult>> {
+  if (stage.planPath) {
+    const savedPlan = await loadReleaseDeployPlan(stage.planPath);
+
+    if (!savedPlan.success || !savedPlan.data) {
+      return savedPlan as unknown as OperationResult<DeployExecutionResult>;
+    }
+
+    return executeDeployPlan(savedPlan.data, {
+      mode: options.mode,
+      confirmed: options.confirmed,
+      parameterOverrides: options.parameterOverrides,
+    });
+  }
+
+  const projectPath = resolveReleaseProjectPath(manifest, stage);
+  const project = await discoverProject(projectPath, {
+    stage: stage.stage,
+    parameterOverrides: options.parameterOverrides,
+    environment: process.env,
+  });
+
+  if (!project.success || !project.data) {
+    return project as unknown as OperationResult<DeployExecutionResult>;
+  }
+
+  return executeDeploy(project.data, {
+    mode: options.mode,
+    confirmed: options.confirmed,
+  });
+}
+
+function evaluateReleaseStageValidations(stage: ReleaseStageManifest, deploy: DeployExecutionResult): {
+  ok: boolean;
+  checks: ReleaseValidationResult[];
+} {
+  const checks = (stage.validations ?? []).map((gate) => evaluateReleaseValidationGate(gate, deploy));
+  return {
+    ok: checks.every((check) => check.status === 'pass'),
+    checks,
+  };
+}
+
+function evaluateReleaseValidationGate(gate: ReleaseValidationGate, deploy: DeployExecutionResult): ReleaseValidationResult {
+  if (gate.kind === 'preflight-ok') {
+    return {
+      gate,
+      status: deploy.preflight.ok ? 'pass' : 'fail',
+      message: gate.message ?? (deploy.preflight.ok ? 'Deploy preflight succeeded.' : 'Deploy preflight failed.'),
+      details: {
+        checkCount: deploy.preflight.checks.length,
+      },
+    };
+  }
+
+  if (gate.kind === 'apply-summary') {
+    const summary = deploy.apply.summary;
+    const failures: string[] = [];
+
+    if (gate.minApplied !== undefined && summary.applied < gate.minApplied) {
+      failures.push(`expected applied >= ${gate.minApplied} but got ${summary.applied}`);
+    }
+    if (gate.maxFailed !== undefined && summary.failed > gate.maxFailed) {
+      failures.push(`expected failed <= ${gate.maxFailed} but got ${summary.failed}`);
+    }
+    if (gate.maxSkipped !== undefined && summary.skipped > gate.maxSkipped) {
+      failures.push(`expected skipped <= ${gate.maxSkipped} but got ${summary.skipped}`);
+    }
+    if (gate.minChanged !== undefined && summary.changed < gate.minChanged) {
+      failures.push(`expected changed >= ${gate.minChanged} but got ${summary.changed}`);
+    }
+    if (gate.maxCreated !== undefined && summary.created > gate.maxCreated) {
+      failures.push(`expected created <= ${gate.maxCreated} but got ${summary.created}`);
+    }
+
+    return {
+      gate,
+      status: failures.length === 0 ? 'pass' : 'fail',
+      message: gate.message ?? (failures.length === 0 ? 'Deploy apply summary matched validation gate.' : failures.join('; ')),
+      details: {
+        attempted: summary.attempted,
+        applied: summary.applied,
+        created: summary.created,
+        failed: summary.failed,
+        skipped: summary.skipped,
+        changed: summary.changed,
+        resolved: summary.resolved,
+      },
+    };
+  }
+
+  const matches = deploy.apply.operations.filter((operation) => {
+    if (gate.target && operation.target !== gate.target) {
+      return false;
+    }
+    if (gate.parameter && operation.parameter !== gate.parameter) {
+      return false;
+    }
+    if (gate.operationKind && operation.kind !== gate.operationKind) {
+      return false;
+    }
+    return true;
+  });
+
+  if (matches.length === 0) {
+    return {
+      gate,
+      status: 'fail',
+      message: gate.message ?? 'No deploy operations matched the validation selector.',
+    };
+  }
+
+  const failing = matches.filter((operation) => !gate.allowedStatuses.includes(operation.status));
+  return {
+    gate,
+    status: failing.length === 0 ? 'pass' : 'fail',
+    message:
+      gate.message ??
+      (failing.length === 0
+        ? 'Matched deploy operations stayed within the allowed statuses.'
+        : `Matched deploy operations had disallowed statuses: ${failing.map((operation) => `${operation.kind}:${operation.status}`).join(', ')}`),
+    details: {
+      matched: matches.length,
+      failing: failing.map((operation) => ({
+        kind: operation.kind,
+        target: operation.target,
+        status: operation.status,
+      })),
+    },
+  };
+}
+
+async function maybeExecuteReleaseRollback(
+  stage: ReleaseStageManifest,
+  deploy: DeployExecutionResult,
+  options: {
+    mode: ReleaseExecutionMode;
+    confirmed?: boolean;
+  }
+): Promise<ReleaseRollbackResult> {
+  if (stage.rollback?.onFailure !== true) {
+    return {
+      requested: false,
+      status: 'not-requested',
+      supported: 0,
+      unsupported: 0,
+      operations: [],
+    };
+  }
+
+  const rollbackPlan = buildReleaseRollbackPlan(deploy, options.mode);
+  const supported = rollbackPlan.operations.filter((operation) => operation.support === 'supported').length;
+  const unsupported = rollbackPlan.operations.filter((operation) => operation.support === 'unsupported').length;
+
+  if (!rollbackPlan.plan) {
+    return {
+      requested: true,
+      status: unsupported > 0 ? 'blocked' : 'not-requested',
+      supported,
+      unsupported,
+      operations: rollbackPlan.operations,
+    };
+  }
+
+  if (options.mode !== 'apply') {
+    return {
+      requested: true,
+      status: 'planned',
+      supported,
+      unsupported,
+      operations: rollbackPlan.operations,
+      plan: rollbackPlan.plan,
+    };
+  }
+
+  const execution = await executeDeployPlan(rollbackPlan.plan, {
+    mode: 'apply',
+    confirmed: options.confirmed,
+  });
+
+  if (!execution.success || !execution.data) {
+    return {
+      requested: true,
+      status: 'failed',
+      supported,
+      unsupported,
+      operations: rollbackPlan.operations,
+      plan: rollbackPlan.plan,
+    };
+  }
+
+  return {
+    requested: true,
+    status: execution.data.preflight.ok && execution.data.apply.summary.failed === 0 ? 'applied' : 'failed',
+    supported,
+    unsupported,
+    operations: rollbackPlan.operations,
+    plan: rollbackPlan.plan,
+    execution: execution.data,
+  };
+}
+
+function buildReleaseRollbackPlan(
+  deploy: DeployExecutionResult,
+  mode: ReleaseExecutionMode
+): {
+  operations: ReleaseRollbackOperationResult[];
+  plan?: DeployPlan;
+} {
+  const rollbackOperations: DeployOperationPlan[] = [];
+  const operations = deploy.apply.operations.map((operation) => {
+    const shouldRollback =
+      (mode === 'apply' ? operation.status === 'applied' : operation.status === 'planned') && operation.changed === true;
+
+    if (!shouldRollback) {
+      return {
+        parameter: operation.parameter,
+        target: operation.target,
+        kind: operation.kind,
+        changed: false,
+        support: 'not-needed',
+        reason: 'Operation did not change target state in this execution mode.',
+      } satisfies ReleaseRollbackOperationResult;
+    }
+
+    const rollbackOperation = toRollbackOperationPlan(operation);
+
+    if (!rollbackOperation) {
+      return {
+        parameter: operation.parameter,
+        target: operation.target,
+        kind: operation.kind,
+        changed: true,
+        support: 'unsupported',
+        reason: describeRollbackUnsupportedReason(operation),
+      } satisfies ReleaseRollbackOperationResult;
+    }
+
+    rollbackOperations.push(rollbackOperation);
+    return {
+      parameter: operation.parameter,
+      target: operation.target,
+      kind: operation.kind,
+      changed: true,
+      support: 'supported',
+      rollbackValuePreview: rollbackOperation.valuePreview,
+    } satisfies ReleaseRollbackOperationResult;
+  });
+
+  if (rollbackOperations.length === 0) {
+    return {
+      operations,
+    };
+  }
+
+  return {
+    operations,
+    plan: {
+      ...deploy.plan,
+      generatedAt: new Date().toISOString(),
+      operations: rollbackOperations,
+    },
+  };
+}
+
+function toRollbackOperationPlan(operation: DeployOperationResult): DeployOperationPlan | undefined {
+  if (operation.currentValue === undefined) {
+    return undefined;
+  }
+
+  if (operation.kind === 'dataverse-envvar-set') {
+    return {
+      ...operation,
+      kind: 'dataverse-envvar-set',
+      valuePreview: operation.currentValue,
+    };
+  }
+
+  if (operation.kind === 'dataverse-envvar-upsert') {
+    if (operation.created === true) {
+      return undefined;
+    }
+    return {
+      ...operation,
+      kind: 'dataverse-envvar-set',
+      valuePreview: operation.currentValue,
+    };
+  }
+
+  if (operation.kind === 'dataverse-connref-set') {
+    return {
+      ...operation,
+      kind: 'dataverse-connref-set',
+      valuePreview: operation.currentValue,
+    };
+  }
+
+  if (operation.kind === 'dataverse-connref-upsert') {
+    if (operation.created === true) {
+      return undefined;
+    }
+    return {
+      ...operation,
+      kind: 'dataverse-connref-set',
+      valuePreview: operation.currentValue,
+    };
+  }
+
+  if (operation.kind === 'flow-parameter-set') {
+    return {
+      ...operation,
+      kind: 'flow-parameter-set',
+      valuePreview: operation.currentValue,
+    };
+  }
+
+  if (operation.kind === 'flow-connref-set') {
+    return {
+      ...operation,
+      kind: 'flow-connref-set',
+      valuePreview: operation.currentValue,
+    };
+  }
+
+  if (operation.kind === 'flow-envvar-set') {
+    return {
+      ...operation,
+      kind: 'flow-envvar-set',
+      valuePreview: operation.currentValue,
+    };
+  }
+
+  return undefined;
+}
+
+function describeRollbackUnsupportedReason(operation: DeployOperationResult): string {
+  switch (operation.kind) {
+    case 'dataverse-envvar-upsert':
+    case 'dataverse-connref-upsert':
+      return operation.created === true
+        ? 'Create-first Dataverse operations do not yet have a symmetric delete rollback path.'
+        : 'Rollback needs a preserved prior value and compatible set operation.';
+    case 'sharepoint-file-text-set':
+      return 'SharePoint file deploy does not persist previous content for rollback.';
+    case 'powerbi-dataset-refresh':
+      return 'A dataset refresh request is not a symmetric rollback operation.';
+    case 'deploy-input-bind':
+    case 'deploy-secret-bind':
+      return 'Adapter binding resolution is not a remote mutation.';
+    default:
+      return 'Rollback is not supported for this deploy operation kind.';
+  }
+}
+
+function resolveReleaseProjectPath(manifest: ReleaseManifest, stage: ReleaseStageManifest): string {
+  if (stage.projectPath) {
+    return stage.projectPath;
+  }
+
+  if (manifest.projectRoot) {
+    return manifest.projectRoot;
+  }
+
+  return process.cwd();
+}
+
+async function loadReleaseDeployPlan(path: string): Promise<OperationResult<DeployPlan>> {
+  try {
+    const raw = await import('node:fs/promises').then((fs) => fs.readFile(path, 'utf8'));
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!parsed || typeof parsed !== 'object') {
+      return fail(createDiagnostic('error', 'RELEASE_DEPLOY_PLAN_INVALID', `Deploy plan ${path} is not an object.`, { source: '@pp/deploy' }));
+    }
+
+    if (!isDeployPlanShapeForRelease(parsed)) {
+      return fail(
+        createDiagnostic('error', 'RELEASE_DEPLOY_PLAN_INVALID', `Deploy plan ${path} does not match the expected deploy plan shape.`, {
+          source: '@pp/deploy',
+          path,
+        })
+      );
+    }
+
+    return ok(parsed, {
+      supportTier: 'preview',
+    });
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'RELEASE_DEPLOY_PLAN_READ_FAILED', `Could not load deploy plan ${path}.`, {
+        source: '@pp/deploy',
+        path,
+        hint: error instanceof Error ? error.message : undefined,
+      })
+    );
+  }
+}
+
+function isDeployPlanShapeForRelease(value: unknown): value is DeployPlan {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<DeployPlan>;
+  return typeof candidate.projectRoot === 'string' && typeof candidate.generatedAt === 'string' && Array.isArray(candidate.operations);
 }

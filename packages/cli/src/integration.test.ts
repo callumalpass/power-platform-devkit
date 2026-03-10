@@ -1060,6 +1060,114 @@ describe('cli fixture-backed workflows', () => {
     );
   });
 
+  it('covers staged release planning through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const manifestPath = join(tempDir, 'release.yaml');
+
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: test',
+        'topology:',
+        '  defaultStage: test',
+        '  stages:',
+        '    test:',
+        '      environment: test',
+        '      solution: core',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        'solutions:',
+        '  core:',
+        '    uniqueName: CoreManaged',
+        'parameters:',
+        '  tenantDomain:',
+        '    type: string',
+        '    value: contoso.example',
+        '    mapsTo:',
+        '      - kind: dataverse-envvar',
+        '        target: pp_TenantDomain',
+      ].join('\n'),
+      'utf8'
+    );
+
+    await writeFile(
+      manifestPath,
+      [
+        'schemaVersion: 1',
+        "kind: 'pp.release'",
+        'name: release-preview',
+        'projectRoot: .',
+        'stages:',
+        '  - id: test',
+        '    stage: test',
+        '    validations:',
+        '      - kind: preflight-ok',
+        '  - id: prod',
+        '    stage: prod',
+        '    approvals:',
+        '      - id: prod-approval',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const fixtureClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [{ objectid: 'envvar-def-1' }],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({
+      test: fixtureClient,
+      prod: fixtureClient,
+    });
+
+    const releasePlan = await runCli(['deploy', 'release', 'plan', '--file', manifestPath, '--format', 'json']);
+
+    expect(releasePlan.code).toBe(1);
+    expect(releasePlan.stderr).toBe('');
+
+    const result = JSON.parse(releasePlan.stdout) as {
+      summary: { totalStages: number; completed: number; blocked: number };
+      stages: Array<{ status: string; approval: { ok: boolean } }>;
+    };
+    expect(result.summary.totalStages).toBe(2);
+    expect(result.stages[0]?.status).toBe('completed');
+    expect(result.stages[1]?.status).toBe('blocked');
+    expect(result.stages[1]?.approval.ok).toBe(false);
+  });
+
   it('covers detached saved-plan deploy apply without rediscovering a project', async () => {
     const tempDir = await createTempDir();
     const planPath = join(tempDir, 'deploy-plan.json');
