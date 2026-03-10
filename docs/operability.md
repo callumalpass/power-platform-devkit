@@ -1,7 +1,7 @@
 # Operability
 
-This guide covers installation, command discovery, diagnostics, and large-repo
-usage for `pp`.
+This guide covers installation, command discovery, diagnostics, packaging, and
+large-repo usage for `pp`.
 
 ## Install and package
 
@@ -21,6 +21,10 @@ pnpm pack:cli
 
 That builds `@pp/cli` and produces an npm package tarball from
 `packages/cli/`.
+
+The repo is still source-first operationally. For orientation on package roles
+and maturity, pair this guide with [architecture.md](architecture.md) and
+[supported-surfaces.md](supported-surfaces.md).
 
 For development, the quickest direct entrypoints are:
 
@@ -105,3 +109,10 @@ For CI or agent-driven flows:
 - persist `pp diagnostics bundle` output as a build artifact when a job fails
 - use `pp version` in logs so support reports can tie behavior to a concrete
   CLI build
+
+## Repo docs to keep nearby
+
+- [quickstart.md](quickstart.md) for first-run setup
+- [project-config.md](project-config.md) for local project topology and parameters
+- [deploy.md](deploy.md) for deploy contracts and adapter behavior
+- [testing.md](testing.md) for contributor validation lanes

@@ -1,8 +1,14 @@
 # pp
 
-TypeScript monorepo for an agent-oriented Power Platform toolkit.
+`pp` is a Power Platform engineering toolkit built as a TypeScript monorepo.
+It is aimed at agent, operator, and contributor workflows that need a repo-local
+project model, explicit command contracts, and automation surfaces that are
+more scriptable than the Maker UI alone.
 
-The repository is structured around small workspace packages rather than a single CLI application. The CLI currently exposes the first useful slice of that architecture: auth profile management, Dataverse environment aliases, Dataverse read operations, metadata authoring, solution inspection, project discovery, lightweight project scaffolding and validation, stage-aware topology inspection, analysis context generation, and deploy-plan generation.
+The repository is organized as small workspace packages rather than one large
+application. The CLI is the main entrypoint today, but the same packages also
+power local analysis, deploy planning/apply, CI adapters, canvas tooling, and
+an MCP surface.
 
 ## Current scope
 
@@ -22,12 +28,29 @@ Implemented today:
 - a typed extension contract and registry for provider, analysis, deploy-adapter, CLI, and MCP contributions
 - read-only live smoke coverage through `pnpm smoke:live`
 
-Scaffolded but not yet implemented in depth:
+Preview or intentionally bounded:
 
-- canvas compilation
-- flow artifact handling
-- SharePoint and Power BI provider logic
-- broader CI/CD packaging beyond the current thin wrappers and examples
+- remote canvas create/import still fall back to a Maker handoff or explicit not-yet-implemented diagnostics
+- flow deploy/promotion is intentionally bounded to the current normalized artifact contract, not the full cloud-flow lifecycle
+- SharePoint and Power BI currently expose targeted inspection and deploy-adjacent workflows, not full authoring surfaces
+- broader distribution, packaging, and marketplace-style extension delivery remain early
+
+## Documentation map
+
+Start with the path that matches your role:
+
+- new user: [docs/quickstart.md](docs/quickstart.md)
+- operator or CI owner: [docs/operability.md](docs/operability.md)
+- project author: [docs/project-config.md](docs/project-config.md)
+- Dataverse and solution workflows: [docs/dataverse-and-solutions.md](docs/dataverse-and-solutions.md)
+- canvas workflows: [docs/canvas.md](docs/canvas.md)
+- flow workflows: [docs/flow.md](docs/flow.md)
+- model-driven inspection: [docs/model.md](docs/model.md)
+- auth and environment setup: [docs/auth-and-environments.md](docs/auth-and-environments.md)
+- deploy planning and apply: [docs/deploy.md](docs/deploy.md)
+- support tiers and product boundaries: [docs/supported-surfaces.md](docs/supported-surfaces.md)
+- package and architecture layout: [docs/architecture.md](docs/architecture.md)
+- full documentation index: [docs/README.md](docs/README.md)
 
 ## Workspace layout
 
@@ -38,6 +61,9 @@ Scaffolded but not yet implemented in depth:
 - extensibility: `extensions`
 - interfaces: `cli`, `mcp`
 - adapters: `github-actions`, `azure-devops`, `power-platform-pipelines`
+
+The package-level responsibilities and data flow are described in
+[docs/architecture.md](docs/architecture.md).
 
 ## Running the CLI
 
@@ -62,7 +88,9 @@ node packages/cli/dist/index.js project inspect
 pp project inspect
 ```
 
-The examples below use `pp` for brevity. When working directly from the repo, replace `pp` with either `pnpm --filter @pp/cli dev --` or `node packages/cli/dist/index.js`.
+The examples below use `pp` for brevity. When working directly from the repo,
+replace `pp` with either `pnpm --filter @pp/cli dev --` or
+`node packages/cli/dist/index.js`.
 
 For packaging and operator workflows:
 
@@ -74,7 +102,7 @@ pp diagnostics doctor
 pp diagnostics bundle --format json > pp-diagnostics.json
 ```
 
-## Getting started
+## Quickstart
 
 ### 1. Install and build
 
@@ -108,7 +136,7 @@ pp env add --name dev --url https://example.crm.dynamics.com --profile dev-user
 pp env inspect dev
 ```
 
-### 4. Query Dataverse
+### 4. Query Dataverse and solutions
 
 ```bash
 pp dv whoami --env dev
@@ -130,12 +158,17 @@ pp dv metadata update-option-set --env dev --file ./specs/status.update.yaml --s
 pp dv metadata create-relationship --env dev --file ./specs/project-account.relationship.yaml --solution Core
 pp dv metadata create-many-to-many --env dev --file ./specs/project-contact.m2m.yaml --solution Core
 pp dv metadata create-customer-relationship --env dev --file ./specs/project-customer.relationship.yaml --solution Core
+pp solution create Core --env dev --friendly-name "Core" --publisher-unique-name DefaultPublisher
 pp solution list --env dev
+pp solution inspect Core --env dev
+pp solution export Core --env dev --out ./artifacts/solutions/Core.zip --plan
 pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-name DefaultPublisher
 ```
 
 Metadata create commands consume JSON or YAML spec files rather than raw Dataverse metadata JSON. Publish is on by default; use `--no-publish` when you want to stage changes without publishing.
 `pp dv rows export` packages a query slice into a stable row-set artifact, and `pp dv rows apply` consumes a typed manifest for bounded create/update/upsert/delete batches without hand-authoring raw `$batch` payloads.
+The solution lifecycle surface now also covers create/delete, source-vs-target
+compare, pack/unpack, export/import, and solution-scoped component analysis.
 
 ### 5. Add a local project config
 
@@ -193,6 +226,14 @@ pp analysis context --format json
 pp deploy plan
 ```
 
+From there, move into the domain docs rather than relying on `--help` alone:
+
+- [docs/dataverse-and-solutions.md](docs/dataverse-and-solutions.md)
+- [docs/canvas.md](docs/canvas.md)
+- [docs/flow.md](docs/flow.md)
+- [docs/model.md](docs/model.md)
+- [docs/deploy.md](docs/deploy.md)
+
 ## Auth and environments
 
 Global config is stored in `~/.config/pp/config.json` by default. Use `--config-dir` on auth and environment commands when you want an isolated config store for testing or automation.
@@ -220,7 +261,7 @@ pp auth profile add-client-secret \
 
 More detail is in [docs/auth-and-environments.md](docs/auth-and-environments.md).
 
-## Extension architecture
+## Architecture and extensions
 
 The repo now includes [`@pp/extensions`](/home/calluma/projects/pp/packages/extensions/src/index.ts), a narrow extension contract for:
 
@@ -232,9 +273,10 @@ The repo now includes [`@pp/extensions`](/home/calluma/projects/pp/packages/exte
 
 Extensions declare compatibility, support tier, support model, and trust level up front. The registry enforces those rules during loading so repo-local and third-party additions participate in the same diagnostics and policy model as built-in capabilities.
 
-More detail is in [docs/extensions.md](docs/extensions.md).
+More detail is in [docs/extensions.md](docs/extensions.md) and
+[docs/architecture.md](docs/architecture.md).
 
-## Project analysis
+## Local project, analysis, and deploy workflows
 
 The `project`, `analysis`, and `deploy` commands work entirely from local repo state:
 
@@ -250,6 +292,23 @@ The `project`, `analysis`, and `deploy` commands work entirely from local repo s
 The project config format and parameter resolution rules are documented in [docs/project-config.md](docs/project-config.md).
 Deploy usage and CI examples are documented in [docs/deploy.md](docs/deploy.md).
 Install/completion/diagnostics guidance is documented in [docs/operability.md](docs/operability.md).
+
+## Contributor workflow
+
+Normal contributor checks:
+
+```bash
+pnpm install
+pnpm build
+pnpm test
+pnpm typecheck
+```
+
+Focused references:
+
+- [docs/testing.md](docs/testing.md) for fixture-backed goldens and live smoke
+- [docs/command-contract.md](docs/command-contract.md) for stdout/stderr and format rules
+- [docs/safety-and-provenance.md](docs/safety-and-provenance.md) for mutation and artifact expectations
 
 ## Live smoke
 

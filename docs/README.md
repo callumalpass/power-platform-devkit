@@ -5,6 +5,8 @@ This folder documents the parts of `pp` that are implemented and usable today.
 Start here:
 
 - [Quickstart](quickstart.md): build the repo, sign in, register an environment, and run the first Dataverse commands
+- [Architecture](architecture.md): package layout, ownership boundaries, and how the repo fits together
+- [Supported surfaces](supported-surfaces.md): what is stable, preview, experimental, or intentionally bounded
 - [Operability](operability.md): install/package the CLI, enable shell completion, collect diagnostics bundles, and run `pp` safely in larger repos
 - [Auth and environments](auth-and-environments.md): auth profile types, browser login, device code, and environment aliases
 - [Command contract](command-contract.md): shared output formats, mutation flags, and project-scoped CLI overrides
@@ -19,6 +21,14 @@ Start here:
 - [Flow artifacts](flow.md): remote flow discovery plus unpack/normalize/validate/patch workflows for canonical `flow.json` artifacts
 - [Model-driven apps](model.md): model app composition inspection for sitemaps, forms, views, tables, and dependency tracing
 - [Testing](testing.md): fixture-backed golden lanes, refresh commands, and the manual live smoke path
+
+Suggested reading order for new contributors:
+
+1. [Quickstart](quickstart.md)
+2. [Architecture](architecture.md)
+3. [Supported surfaces](supported-surfaces.md)
+4. [Project config](project-config.md)
+5. The domain doc for the workflow you are changing
 
 The docs intentionally describe the current implemented surface, not the full long-term architecture in the external spec.
 

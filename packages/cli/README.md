@@ -2,6 +2,11 @@
 
 Power Platform CLI package for the `pp` command.
 
+This package is the main user-facing entrypoint into the monorepo, but it is
+not the whole product by itself. Most command behavior is delegated into
+workspace packages such as `@pp/project`, `@pp/dataverse`, `@pp/solution`,
+`@pp/flow`, `@pp/canvas`, and `@pp/deploy`.
+
 ## Install
 
 From the monorepo:
@@ -50,3 +55,10 @@ pp diagnostics --help
 ```
 
 Repo-level documentation lives under [`docs/`](/home/calluma/projects/pp/docs/README.md).
+
+Recommended docs:
+
+- [`docs/quickstart.md`](/home/calluma/projects/pp/docs/quickstart.md)
+- [`docs/architecture.md`](/home/calluma/projects/pp/docs/architecture.md)
+- [`docs/supported-surfaces.md`](/home/calluma/projects/pp/docs/supported-surfaces.md)
+- [`docs/operability.md`](/home/calluma/projects/pp/docs/operability.md)

@@ -31,6 +31,10 @@ pp diagnostics doctor
 
 The examples below use `pp` for brevity.
 
+If you are new to the repo, read [architecture.md](architecture.md) after this
+quickstart and [supported-surfaces.md](supported-surfaces.md) before adopting a
+workflow that looks preview or experimental.
+
 ## 2. Sign in
 
 Create a reusable named auth profile with browser login:
@@ -86,8 +90,10 @@ pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column
 ## 5. Inspect solutions
 
 ```bash
+pp solution create Core --env dev --friendly-name "Core" --publisher-unique-name DefaultPublisher
 pp solution list --env dev
 pp solution inspect Core --env dev
+pp solution export Core --env dev --out ./artifacts/solutions/Core.zip --plan
 pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-name DefaultPublisher
 ```
 
@@ -137,6 +143,14 @@ pp analysis report
 pp analysis context --format json
 pp deploy plan
 ```
+
+Deeper workflow docs:
+
+- [auth-and-environments.md](auth-and-environments.md)
+- [dataverse-and-solutions.md](dataverse-and-solutions.md)
+- [canvas.md](canvas.md)
+- [flow.md](flow.md)
+- [deploy.md](deploy.md)
 
 ## 7. Use isolated config when needed
 
