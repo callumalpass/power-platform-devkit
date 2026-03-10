@@ -66,28 +66,13 @@
       "title": "Recommended bundle placement is still not canonical everywhere"
     },
     {
-      "detail": "This feedback can now restate the route as dev -> dev / CoreDev; prod -> prod / CoreManaged, but operators still need the same stage-to-environment-to-solution wording in other project diagnostics.",
+      "detail": "Operators still have to piece together stage selection, environment alias provenance, and bundle creation timing outside this command. Current route: pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged. The alias resolves later through the external pp environment registry and its auth context. The canonical bundle artifacts/solutions/core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/core.zip` or `pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip`.",
       "evidence": [
         "dev",
-        "prod"
-      ],
-      "title": "Adjacent commands still need the same mapping explanation"
-    },
-    {
-      "detail": "The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.",
-      "evidence": [
-        "artifacts/solutions/core.zip",
-        "solutions"
-      ],
-      "title": "Bundle artifact lifecycle is still easy to miss"
-    },
-    {
-      "detail": "Stage prod in pp.config.yaml selects environment alias prod. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
-      "evidence": [
         "prod",
-        "pp.config.yaml"
+        "artifacts/solutions/core.zip"
       ],
-      "title": "Environment alias provenance is still easy to miss"
+      "title": "Deployment route still needs one canonical explanation"
     },
     {
       "detail": "The local model is structurally coherent, but these required parameters still block a fully deployable project: sqlEndpoint.",
@@ -104,16 +89,8 @@
       "title": "Tighten layout validation around canonical bundle output"
     },
     {
-      "rationale": "Operators should not have to translate between feedback output and other commands to explain how a stage resolves to an environment alias and solution target.",
-      "title": "Keep stage-to-environment-to-solution wording aligned across project diagnostics"
-    },
-    {
-      "rationale": "Operators should see whether the bundle path is already populated and which pack or export action is expected to create it.",
-      "title": "Explain when canonical bundle artifacts should exist"
-    },
-    {
-      "rationale": "The project stores alias names locally, but operators still need to know that live environment resolution comes from the external pp environment registry and auth profiles.",
-      "title": "Explain environment alias provenance alongside active targets"
+      "rationale": "Operators should get one canonical explanation from selected stage to environment alias to solution target to bundle creation instead of translating between separate diagnostics.",
+      "title": "Keep one deployment-route explanation across project diagnostics"
     }
   ],
   "root": "<REPO_ROOT>/fixtures/analysis/project",
@@ -124,6 +101,7 @@
     "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.",
     "canonicalBundlePath": "artifacts/solutions/core.zip",
     "canonicalBundlePresent": false,
+    "deploymentRouteSummary": "pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged. The alias resolves later through the external pp environment registry and its auth context. The canonical bundle artifacts/solutions/core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/core.zip` or `pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip`.",
     "editableAssetRoots": [
       "apps",
       "flows",
@@ -155,7 +133,7 @@
       "title": "Source-first asset contract"
     },
     {
-      "detail": "The project already explains the current deployment route as stage prod -> environment prod -> solution CoreManaged.",
+      "detail": "pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged. The alias resolves later through the external pp environment registry and its auth context. The canonical bundle artifacts/solutions/core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/core.zip` or `pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip`.",
       "evidence": [
         "dev:dev:CoreDev",
         "prod:prod:CoreManaged"

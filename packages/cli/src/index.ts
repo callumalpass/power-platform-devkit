@@ -7805,10 +7805,7 @@ function renderProjectFeedbackOutput(report: ProjectFeedbackReport, format: Extr
     { field: 'layout profile', value: report.summary.layoutProfile },
     { field: 'canonical bundle path', value: report.summary.canonicalBundlePath },
     { field: 'bundle status', value: report.summary.canonicalBundlePresent ? 'present' : 'not generated yet' },
-    { field: 'selected stage', value: report.summary.selectedStage ?? '<unset>' },
-    { field: 'active environment', value: report.summary.activeEnvironment ?? '<unset>' },
-    { field: 'active solution', value: report.summary.activeSolution ?? '<unset>' },
-    { field: 'active mapping', value: report.summary.activeTargetSummary },
+    { field: 'deployment route', value: report.summary.deploymentRouteSummary },
   ];
   const discoveryNote = summarizeProjectDiscoveryNote(report.discovery);
   const workflowWinsRows = report.workflowWins.map((item) => ({ title: item.title, detail: item.detail }));
@@ -7851,12 +7848,7 @@ function renderProjectFeedbackOutput(report: ProjectFeedbackReport, format: Extr
     `- Layout profile: \`${report.summary.layoutProfile}\``,
     `- Canonical bundle path: \`${report.summary.canonicalBundlePath}\``,
     `- Bundle status: \`${report.summary.canonicalBundlePresent ? 'present' : 'not generated yet'}\``,
-    `- Selected stage: \`${report.summary.selectedStage ?? '<unset>'}\``,
-    `- Active environment: \`${report.summary.activeEnvironment ?? '<unset>'}\``,
-    `- Active solution: \`${report.summary.activeSolution ?? '<unset>'}\``,
-    `- Active mapping: ${report.summary.activeTargetSummary}`,
-    ...(report.summary.environmentAliasProvenance ? [`- Environment alias provenance: ${report.summary.environmentAliasProvenance}`] : []),
-    `- Bundle lifecycle: ${report.summary.bundleLifecycleSummary}`,
+    `- Deployment route: ${report.summary.deploymentRouteSummary}`,
     ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
     '',
     '## Workflow Wins',

@@ -1586,14 +1586,21 @@ describe('cli fixture-backed workflows', () => {
     expect(feedback.stdout).toContain('# Project Feedback');
     expect(feedback.stdout).toContain(`- Canonical project root: \`${fixtureRoot}\``);
     expect(feedback.stdout).toContain('- Bundle status: `not generated yet`');
-    expect(feedback.stdout).toContain('- Active mapping: stage prod -> environment prod -> solution CoreManaged');
-    expect(feedback.stdout).toContain('Environment alias provenance: Stage prod in pp.config.yaml selects environment alias prod.');
-    expect(feedback.stdout).toContain('Bundle lifecycle: The canonical bundle path is artifacts/solutions/core.zip');
+    expect(feedback.stdout).toContain(
+      '- Deployment route: pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged.'
+    );
+    expect(feedback.stdout).toContain('The alias resolves later through the external pp environment registry and its auth context.');
+    expect(feedback.stdout).toContain(
+      'The canonical bundle artifacts/solutions/core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/core.zip`'
+    );
     expect(feedback.stdout).toContain('## Workflow Wins');
     expect(feedback.stdout).toContain('## Frictions');
     expect(feedback.stdout).toContain('Stage-to-environment-to-solution mapping');
-    expect(feedback.stdout).toContain('Bundle artifact lifecycle is still easy to miss');
-    expect(feedback.stdout).toContain('Environment alias provenance is still easy to miss');
+    expect(feedback.stdout).toContain('Deployment route still needs one canonical explanation');
+    expect(feedback.stdout).not.toContain('- Active environment:');
+    expect(feedback.stdout).not.toContain('- Active solution:');
+    expect(feedback.stdout).not.toContain('- Active mapping:');
+    expect(feedback.stdout).not.toContain('Environment alias provenance is still easy to miss');
     expect(feedback.stdout).not.toContain('"canonicalProjectRoot"');
     expect(feedback.stderr).toContain('PROJECT_PARAMETER_MISSING');
   });

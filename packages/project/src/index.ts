@@ -307,6 +307,7 @@ export interface ProjectFeedbackSummary {
   canonicalBundlePath: string;
   canonicalBundlePresent: boolean;
   activeTargetSummary: string;
+  deploymentRouteSummary: string;
   environmentAliasProvenance?: string;
   bundleLifecycleSummary: string;
   unresolvedRequiredParameters: string[];
@@ -730,6 +731,11 @@ export async function feedbackProject(
   });
   const environmentAliasProvenance = describeProjectEnvironmentAliasProvenance(contract.activeTarget, project.configPath);
   const bundleLifecycleSummary = describeProjectBundleLifecycle(contract, canonicalBundlePresent);
+  const deploymentRouteSummary = describeProjectFeedbackDeploymentRoute(
+    contract,
+    project.configPath,
+    canonicalBundlePresent
+  );
 
   const workflowWins: ProjectFeedbackObservation[] = [];
   const frictions: ProjectFeedbackObservation[] = [];
@@ -752,13 +758,9 @@ export async function feedbackProject(
   }
 
   if (contract.stageMappings.length > 0) {
-    const activeStage = contract.activeTarget.stage ?? project.topology.selectedStage;
     workflowWins.push({
       title: 'Stage-to-environment-to-solution mapping',
-      detail:
-        activeStage !== undefined
-          ? `The project already explains the current deployment route as ${activeTargetSummary}.`
-          : `The project defines ${contract.stageMappings.length} stage mapping(s) that tie stage names to environment aliases and solution targets through the local config anchor.`,
+      detail: deploymentRouteSummary,
       evidence: contract.stageMappings.map((stage) =>
         `${stage.stage}:${stage.environmentAlias ?? '<unset>'}:${stage.solutionUniqueName ?? '<unset>'}`
       ),
@@ -778,46 +780,18 @@ export async function feedbackProject(
   }
 
   if (contract.stageMappings.length > 0) {
-    const mappingPreview = contract.stageMappings
-      .map(
-        (stage) =>
-          `${stage.stage} -> ${stage.environmentAlias ?? '<unset>'} / ${stage.solutionUniqueName ?? '<unset>'}`
-      )
-      .join('; ');
     frictions.push({
-      title: 'Adjacent commands still need the same mapping explanation',
-      detail: `This feedback can now restate the route as ${mappingPreview}, but operators still need the same stage-to-environment-to-solution wording in other project diagnostics.`,
-      evidence: contract.stageMappings.flatMap((stage) => (stage.stage ? [stage.stage] : [])),
+      title: 'Deployment route still needs one canonical explanation',
+      detail: `Operators still have to piece together stage selection, environment alias provenance, and bundle creation timing outside this command. Current route: ${deploymentRouteSummary}`,
+      evidence: [
+        ...contract.stageMappings.flatMap((stage) => (stage.stage ? [stage.stage] : [])),
+        contract.canonicalBundlePath,
+      ],
     });
     recommendedTasks.push({
-      title: 'Keep stage-to-environment-to-solution wording aligned across project diagnostics',
-      rationale: 'Operators should not have to translate between feedback output and other commands to explain how a stage resolves to an environment alias and solution target.',
-    });
-  }
-
-  if (contract.canonicalBundlePath) {
-    frictions.push({
-      title: 'Bundle artifact lifecycle is still easy to miss',
-      detail: bundleLifecycleSummary,
-      evidence: [contract.canonicalBundlePath, contract.solutionSourceRoot],
-    });
-    recommendedTasks.push({
-      title: 'Explain when canonical bundle artifacts should exist',
+      title: 'Keep one deployment-route explanation across project diagnostics',
       rationale:
-        'Operators should see whether the bundle path is already populated and which pack or export action is expected to create it.',
-    });
-  }
-
-  if (environmentAliasProvenance) {
-    frictions.push({
-      title: 'Environment alias provenance is still easy to miss',
-      detail: environmentAliasProvenance,
-      evidence: [contract.activeTarget.environmentAlias ?? '<unset>', relative(project.root, project.configPath ?? project.root) || '.'],
-    });
-    recommendedTasks.push({
-      title: 'Explain environment alias provenance alongside active targets',
-      rationale:
-        'The project stores alias names locally, but operators still need to know that live environment resolution comes from the external pp environment registry and auth profiles.',
+        'Operators should get one canonical explanation from selected stage to environment alias to solution target to bundle creation instead of translating between separate diagnostics.',
     });
   }
 
@@ -854,6 +828,7 @@ export async function feedbackProject(
         canonicalBundlePath: contract.canonicalBundlePath,
         canonicalBundlePresent,
         activeTargetSummary,
+        deploymentRouteSummary,
         environmentAliasProvenance,
         bundleLifecycleSummary,
         unresolvedRequiredParameters,
@@ -1808,6 +1783,27 @@ function describeProjectBundleLifecycle(contract: ProjectContractSummary, bundle
   }
 
   return `The canonical bundle path is ${contract.canonicalBundlePath}, but that zip is a generated artifact and may be absent until you pack local source from ${contract.solutionSourceRoot} or export the solution from Dataverse. Typical creation paths are ${packCommand} or ${exportCommand}.`;
+}
+
+function describeProjectFeedbackDeploymentRoute(
+  contract: ProjectContractSummary,
+  configPath: string | undefined,
+  bundlePresent: boolean
+): string {
+  const configLabel = configPath ? basename(configPath) : 'pp.config.*';
+  const solutionIdentifier = contract.activeTarget.solutionUniqueName ?? contract.activeTarget.solutionAlias ?? '<solution>';
+  const environmentAlias = contract.activeTarget.environmentAlias ?? '<alias>';
+  const stageLabel = contract.activeTarget.stage
+    ? `${configLabel} maps stage ${contract.activeTarget.stage}`
+    : `${configLabel} maps the active target`;
+  const targetLabel = `to environment alias ${environmentAlias} and solution ${solutionIdentifier}.`;
+  const registryLabel =
+    'The alias resolves later through the external pp environment registry and its auth context.';
+  const bundleLabel = bundlePresent
+    ? `The canonical bundle ${contract.canonicalBundlePath} is already present.`
+    : `The canonical bundle ${contract.canonicalBundlePath} is not generated yet; create it with \`pp solution pack <solution-folder> --out ${contract.canonicalBundlePath}\` or \`pp solution export ${solutionIdentifier} --environment ${environmentAlias} --out ${contract.canonicalBundlePath}\`.`;
+
+  return `${stageLabel} ${targetLabel} ${registryLabel} ${bundleLabel}`;
 }
 
 function resolveContractTarget(
