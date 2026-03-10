@@ -6,6 +6,7 @@ import { saveAuthProfile, saveEnvironmentAlias } from '@pp/config';
 import { createDiagnostic, ok, fail, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http';
 import {
+  CloudFlowService,
   CanvasAppService,
   ConnectionReferenceService,
   DataverseClient,
@@ -2142,6 +2143,178 @@ describe('ALM services', () => {
 });
 
 describe('normalizeMetadataQueryOptions', () => {
+  it('lists, inspects, and reads cloud-flow runs through a typed service', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              workflowid: 'flow-2',
+              name: 'Other Flow',
+              uniquename: 'crd_OtherFlow',
+              category: 5,
+            },
+            {
+              workflowid: 'flow-1',
+              name: 'Invoice Sync',
+              uniquename: 'crd_InvoiceSync',
+              category: 5,
+              statecode: 1,
+              statuscode: 2,
+              clientdata: JSON.stringify({
+                definition: {
+                  parameters: {
+                    '$connections': {
+                      value: {
+                        shared_office365: {
+                          connectionId: '/connections/office365',
+                          connectionReferenceLogicalName: 'shared_office365',
+                        },
+                      },
+                    },
+                    ApiBaseUrl: {
+                      defaultValue: 'https://example.test',
+                    },
+                  },
+                  actions: {
+                    SendMail: {
+                      inputs: {
+                        subject: "@{parameters('ApiBaseUrl')}",
+                        body: "@{environmentVariables('pp_ApiUrl')}",
+                      },
+                    },
+                  },
+                },
+              }),
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              workflowid: 'flow-2',
+              name: 'Other Flow',
+              uniquename: 'crd_OtherFlow',
+              category: 5,
+            },
+            {
+              workflowid: 'flow-1',
+              name: 'Invoice Sync',
+              uniquename: 'crd_InvoiceSync',
+              category: 5,
+              statecode: 1,
+              statuscode: 2,
+              clientdata: JSON.stringify({
+                definition: {
+                  parameters: {
+                    '$connections': {
+                      value: {
+                        shared_office365: {
+                          connectionId: '/connections/office365',
+                          connectionReferenceLogicalName: 'shared_office365',
+                        },
+                      },
+                    },
+                    ApiBaseUrl: {
+                      defaultValue: 'https://example.test',
+                    },
+                  },
+                  actions: {
+                    SendMail: {
+                      inputs: {
+                        subject: "@{parameters('ApiBaseUrl')}",
+                        body: "@{environmentVariables('pp_ApiUrl')}",
+                      },
+                    },
+                  },
+                },
+              }),
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              flowrunid: 'run-2',
+              workflowid: 'flow-1',
+              workflowname: 'Invoice Sync',
+              status: 'Succeeded',
+              starttime: '2026-03-10T04:49:00.000Z',
+            },
+            {
+              flowrunid: 'run-1',
+              workflowid: 'flow-1',
+              workflowname: 'Invoice Sync',
+              status: 'Failed',
+              starttime: '2026-03-10T04:50:00.000Z',
+              endtime: '2026-03-10T04:52:00.000Z',
+              durationinms: 120000,
+              retrycount: 1,
+              errorcode: 'ConnectorAuthFailed',
+              errormessage: 'shared_office365 connection is not authorized',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new CloudFlowService(client);
+
+    const listed = await service.list();
+    const inspected = await service.inspect('crd_InvoiceSync');
+    const runs = await service.runs({
+      workflowId: 'flow-1',
+      workflowName: 'Invoice Sync',
+      workflowUniqueName: 'crd_InvoiceSync',
+      status: 'Failed',
+    });
+
+    expect(listed.success).toBe(true);
+    expect(listed.data?.map((flow) => flow.id)).toEqual(['flow-1', 'flow-2']);
+    expect(listed.data?.[0]).toMatchObject({
+      id: 'flow-1',
+      parameters: ['ApiBaseUrl'],
+      environmentVariables: ['pp_ApiUrl'],
+      connectionReferences: [
+        {
+          name: 'shared_office365',
+          connectionReferenceLogicalName: 'shared_office365',
+        },
+      ],
+    });
+    expect(inspected.success).toBe(true);
+    expect(inspected.data).toMatchObject({
+      id: 'flow-1',
+      uniqueName: 'crd_InvoiceSync',
+      definitionAvailable: true,
+    });
+    expect(runs.success).toBe(true);
+    expect(runs.data).toEqual([
+      {
+        id: 'run-1',
+        workflowId: 'flow-1',
+        workflowName: 'Invoice Sync',
+        status: 'Failed',
+        startTime: '2026-03-10T04:50:00.000Z',
+        endTime: '2026-03-10T04:52:00.000Z',
+        durationMs: 120000,
+        retryCount: 1,
+        errorCode: 'ConnectorAuthFailed',
+        errorMessage: 'shared_office365 connection is not authorized',
+      },
+    ]);
+  });
+
   it('lists and inspects canvas apps through a typed service', async () => {
     const httpClient = new FakeHttpClient([
       ok({

@@ -3,9 +3,15 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
 import {
+  CloudFlowService as DataverseCloudFlowService,
   ConnectionReferenceService,
   EnvironmentVariableService,
   type DataverseClient,
+  type CloudFlowConnectionReference as DataverseCloudFlowConnectionReference,
+  type CloudFlowInspectResult as DataverseCloudFlowInspectResult,
+  type CloudFlowRecord as DataverseCloudFlowRecord,
+  type CloudFlowRunRecord as DataverseCloudFlowRunRecord,
+  type CloudFlowRunSummary as DataverseCloudFlowRunSummary,
   type ConnectionReferenceValidationResult,
   type EnvironmentVariableSummary,
 } from '@pp/dataverse';
@@ -19,17 +25,9 @@ import {
 
 export type FlowJsonValue = null | boolean | number | string | FlowJsonValue[] | { [key: string]: FlowJsonValue };
 
-export interface FlowRecord {
-  workflowid: string;
-  name?: string;
-  category?: number;
-  statecode?: number;
-  statuscode?: number;
-  uniquename?: string;
-  clientdata?: string;
-}
+export interface FlowRecord extends DataverseCloudFlowRecord {}
 
-export interface FlowConnectionReference {
+export interface FlowConnectionReference extends DataverseCloudFlowConnectionReference {
   name: string;
   connectionReferenceLogicalName?: string;
   connectionId?: string;
@@ -364,19 +362,7 @@ export interface FlowPatchResult {
   summary: FlowArtifactSummary;
 }
 
-export interface FlowRunRecord {
-  flowrunid?: string;
-  name?: string;
-  workflowid?: string;
-  workflowname?: string;
-  status?: string;
-  starttime?: string;
-  endtime?: string;
-  durationinms?: number;
-  retrycount?: number;
-  errorcode?: string;
-  errormessage?: string;
-}
+export interface FlowRunRecord extends DataverseCloudFlowRunRecord {}
 
 export interface FlowRunSummary {
   id: string;
@@ -615,11 +601,7 @@ export class FlowService {
       );
     }
 
-    const workflows = await this.dataverseClient.queryAll<FlowRecord>({
-      table: 'workflows',
-      select: ['workflowid', 'name', 'category', 'statecode', 'statuscode', 'uniquename', 'clientdata'],
-      filter: 'category eq 5',
-    });
+    const workflows = await new DataverseCloudFlowService(this.dataverseClient).list();
 
     if (!workflows.success) {
       return workflows as unknown as OperationResult<FlowSummary[]>;
@@ -645,9 +627,7 @@ export class FlowService {
       warnings = [...warnings, ...components.warnings];
     }
 
-    const records = (workflows.data ?? [])
-      .filter((record) => !allowedIds || allowedIds.has(record.workflowid))
-      .map((record) => normalizeRemoteFlow(record));
+    const records = (workflows.data ?? []).filter((record) => !allowedIds || allowedIds.has(record.id)).map(normalizeRemoteFlow);
 
     return ok(records, {
       supportTier: 'preview',
@@ -707,22 +687,19 @@ export class FlowService {
       );
     }
 
-    const runs = await this.dataverseClient.queryAll<FlowRunRecord>({
-      table: 'flowruns',
-      select: ['flowrunid', 'name', 'workflowid', 'workflowname', 'status', 'starttime', 'endtime', 'durationinms', 'retrycount', 'errorcode', 'errormessage'],
+    const runs = await new DataverseCloudFlowService(this.dataverseClient).runs({
+      workflowId: flow.data.id,
+      workflowName: flow.data.name,
+      workflowUniqueName: flow.data.uniqueName,
+      status: options.status,
+      since: options.since,
     });
 
     if (!runs.success) {
       return runs as unknown as OperationResult<FlowRunSummary[]>;
     }
 
-    const remoteFlow = flow.data;
-    const filtered = (runs.data ?? [])
-      .filter((run) => matchesFlowRun(run, remoteFlow))
-      .filter((run) => !options.status || normalizeStatus(run.status) === normalizeStatus(options.status))
-      .filter((run) => !options.since || isAfterRelativeTime(run.starttime, options.since))
-      .map(normalizeFlowRun)
-      .sort(compareRunsDescending);
+    const filtered = (runs.data ?? []).map(normalizeFlowRun);
 
     return ok(filtered, {
       supportTier: 'experimental',
@@ -1841,25 +1818,15 @@ async function deployLoadedFlowArtifact(
         });
       }
 
-      const created = normalizeRemoteFlow({
-        workflowid: create.data?.entity?.workflowid ?? create.data?.entityId ?? '',
-        name: create.data?.entity?.name ?? artifact.metadata.displayName ?? artifact.metadata.name ?? createIdentifier,
-        uniquename: create.data?.entity?.uniquename ?? createIdentifier,
-        category: create.data?.entity?.category ?? 5,
-        statecode: create.data?.entity?.statecode ?? artifact.metadata.stateCode,
-        statuscode: create.data?.entity?.statuscode ?? artifact.metadata.statusCode,
-        clientdata: create.data?.entity?.clientdata ?? buildFlowDeployClientData(artifact),
-      });
-
       return ok(
         {
           path,
           targetIdentifier: createIdentifier,
           operation: 'created',
           target: {
-            id: created.id,
-            name: created.name,
-            uniqueName: created.uniqueName,
+            id: create.data?.entity?.workflowid ?? create.data?.entityId ?? '',
+            name: create.data?.entity?.name ?? artifact.metadata.displayName ?? artifact.metadata.name ?? createIdentifier,
+            uniqueName: create.data?.entity?.uniquename ?? createIdentifier,
             solutionUniqueName: options.solutionUniqueName,
           },
           updatedFields: Object.keys(createEntity),
@@ -2153,21 +2120,19 @@ export async function patchFlowArtifact(
   );
 }
 
-function normalizeRemoteFlow(record: FlowRecord): FlowInspectResult {
-  const parsed = parseFlowClientData(record.clientdata);
-
+function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspectResult {
   return {
-    id: record.workflowid,
+    id: record.id,
     name: record.name,
-    uniqueName: record.uniquename,
+    uniqueName: record.uniqueName,
     category: record.category,
-    stateCode: record.statecode,
-    statusCode: record.statuscode,
-    definitionAvailable: parsed.definition !== undefined,
-    connectionReferences: parsed.connectionReferences,
-    parameters: parsed.parameters,
-    environmentVariables: parsed.environmentVariables,
-    clientData: parsed.clientData,
+    stateCode: record.stateCode,
+    statusCode: record.statusCode,
+    definitionAvailable: record.definitionAvailable,
+    connectionReferences: record.connectionReferences,
+    parameters: record.parameters,
+    environmentVariables: record.environmentVariables,
+    clientData: record.clientData as Record<string, FlowJsonValue> | undefined,
   };
 }
 
@@ -2210,31 +2175,23 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
   );
 }
 
-function normalizeFlowRun(record: FlowRunRecord): FlowRunSummary {
+function normalizeFlowRun(record: DataverseCloudFlowRunSummary): FlowRunSummary {
   return {
-    id: record.flowrunid ?? record.name ?? 'unknown-run',
-    workflowId: record.workflowid,
-    workflowName: record.workflowname,
+    id: record.id,
+    workflowId: record.workflowId,
+    workflowName: record.workflowName,
     status: record.status,
-    startTime: record.starttime,
-    endTime: record.endtime,
-    durationMs: record.durationinms,
-    retryCount: record.retrycount,
-    errorCode: record.errorcode,
-    errorMessage: record.errormessage,
+    startTime: record.startTime,
+    endTime: record.endTime,
+    durationMs: record.durationMs,
+    retryCount: record.retryCount,
+    errorCode: record.errorCode,
+    errorMessage: record.errorMessage,
   };
-}
-
-function matchesFlowRun(record: FlowRunRecord, flow: FlowInspectResult): boolean {
-  return record.workflowid === flow.id || record.workflowname === flow.name || record.workflowname === flow.uniqueName;
 }
 
 function normalizeStatus(value: string | undefined): string {
   return (value ?? '').trim().toLowerCase();
-}
-
-function compareRunsDescending(left: FlowRunSummary, right: FlowRunSummary): number {
-  return (right.startTime ?? '').localeCompare(left.startTime ?? '');
 }
 
 function summarizeFlowRuns(runs: FlowRunSummary[]): FlowRuntimeAnalyticsSummary {

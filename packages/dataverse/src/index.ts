@@ -585,6 +585,75 @@ export interface ModelDrivenAppSitemapSummary {
   name?: string;
 }
 
+export interface CloudFlowRecord {
+  workflowid: string;
+  name?: string;
+  category?: number;
+  statecode?: number;
+  statuscode?: number;
+  uniquename?: string;
+  clientdata?: string;
+}
+
+export interface CloudFlowConnectionReference {
+  name: string;
+  connectionReferenceLogicalName?: string;
+  connectionId?: string;
+  apiId?: string;
+}
+
+export interface CloudFlowSummary {
+  id: string;
+  name?: string;
+  uniqueName?: string;
+  category?: number;
+  stateCode?: number;
+  statusCode?: number;
+  definitionAvailable: boolean;
+  connectionReferences: CloudFlowConnectionReference[];
+  parameters: string[];
+  environmentVariables: string[];
+}
+
+export interface CloudFlowInspectResult extends CloudFlowSummary {
+  clientData?: Record<string, unknown>;
+}
+
+export interface CloudFlowRunRecord {
+  flowrunid?: string;
+  name?: string;
+  workflowid?: string;
+  workflowname?: string;
+  status?: string;
+  starttime?: string;
+  endtime?: string;
+  durationinms?: number;
+  retrycount?: number;
+  errorcode?: string;
+  errormessage?: string;
+}
+
+export interface CloudFlowRunSummary {
+  id: string;
+  workflowId?: string;
+  workflowName?: string;
+  status?: string;
+  startTime?: string;
+  endTime?: string;
+  durationMs?: number;
+  retryCount?: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface CloudFlowRunListOptions {
+  workflowId?: string;
+  workflowName?: string;
+  workflowUniqueName?: string;
+  status?: string;
+  since?: string;
+}
+
 interface SolutionComponentMembershipRecord {
   objectid?: string;
 }
@@ -2448,6 +2517,72 @@ export class CanvasAppService {
   }
 }
 
+export class CloudFlowService {
+  constructor(private readonly dataverseClient: DataverseClient) {}
+
+  async list(): Promise<OperationResult<CloudFlowInspectResult[]>> {
+    const workflows = await this.dataverseClient.queryAll<CloudFlowRecord>({
+      table: 'workflows',
+      select: ['workflowid', 'name', 'category', 'statecode', 'statuscode', 'uniquename', 'clientdata'],
+      filter: 'category eq 5',
+    });
+
+    if (!workflows.success) {
+      return workflows as unknown as OperationResult<CloudFlowInspectResult[]>;
+    }
+
+    return ok(
+      sortRecords((workflows.data ?? []).map(normalizeCloudFlow), (record) => record.name ?? record.uniqueName ?? record.id),
+      {
+        supportTier: 'preview',
+        diagnostics: workflows.diagnostics,
+        warnings: workflows.warnings,
+      }
+    );
+  }
+
+  async inspect(identifier: string): Promise<OperationResult<CloudFlowInspectResult | undefined>> {
+    const workflows = await this.list();
+
+    if (!workflows.success) {
+      return workflows as unknown as OperationResult<CloudFlowInspectResult | undefined>;
+    }
+
+    return ok((workflows.data ?? []).find((workflow) => matchesCloudFlow(workflow, identifier)), {
+      supportTier: 'preview',
+      diagnostics: workflows.diagnostics,
+      warnings: workflows.warnings,
+    });
+  }
+
+  async runs(options: CloudFlowRunListOptions = {}): Promise<OperationResult<CloudFlowRunSummary[]>> {
+    const runs = await this.dataverseClient.queryAll<CloudFlowRunRecord>({
+      table: 'flowruns',
+      select: ['flowrunid', 'name', 'workflowid', 'workflowname', 'status', 'starttime', 'endtime', 'durationinms', 'retrycount', 'errorcode', 'errormessage'],
+    });
+
+    if (!runs.success) {
+      return runs as unknown as OperationResult<CloudFlowRunSummary[]>;
+    }
+
+    const filtered = (runs.data ?? [])
+      .filter((run) => matchesCloudFlowRun(run, options))
+      .filter((run) => !options.status || normalizeCloudFlowStatus(run.status) === normalizeCloudFlowStatus(options.status))
+      .filter((run) => !options.since || isAfterRelativeTime(run.starttime, options.since))
+      .map(normalizeCloudFlowRun)
+      .sort(compareCloudFlowRunsDescending);
+
+    return ok(filtered, {
+      supportTier: 'experimental',
+      diagnostics: runs.diagnostics,
+      warnings: runs.warnings,
+      knownLimitations: [
+        'FlowRun data may be delayed or incomplete depending on ingestion and retention settings.',
+      ],
+    });
+  }
+}
+
 export class ModelDrivenAppService {
   constructor(private readonly dataverseClient: DataverseClient) {}
 
@@ -3590,6 +3725,39 @@ function normalizeCanvasApp(record: CanvasAppRecord): CanvasAppSummary {
   };
 }
 
+function normalizeCloudFlow(record: CloudFlowRecord): CloudFlowInspectResult {
+  const parsed = parseCloudFlowClientData(record.clientdata);
+
+  return {
+    id: record.workflowid,
+    name: record.name,
+    uniqueName: record.uniquename,
+    category: record.category,
+    stateCode: record.statecode,
+    statusCode: record.statuscode,
+    definitionAvailable: parsed.definition !== undefined,
+    connectionReferences: parsed.connectionReferences,
+    parameters: parsed.parameters,
+    environmentVariables: parsed.environmentVariables,
+    clientData: parsed.clientData,
+  };
+}
+
+function normalizeCloudFlowRun(record: CloudFlowRunRecord): CloudFlowRunSummary {
+  return {
+    id: record.flowrunid ?? record.name ?? 'unknown-run',
+    workflowId: record.workflowid,
+    workflowName: record.workflowname,
+    status: record.status,
+    startTime: record.starttime,
+    endTime: record.endtime,
+    durationMs: record.durationinms,
+    retryCount: record.retrycount,
+    errorCode: record.errorcode,
+    errorMessage: record.errormessage,
+  };
+}
+
 function normalizeModelDrivenApp(record: ModelDrivenAppRecord): ModelDrivenAppSummary {
   return {
     id: record.appmoduleid,
@@ -3658,9 +3826,63 @@ function matchesCanvasApp(app: CanvasAppSummary, identifier: string): boolean {
   return app.id.toLowerCase() === normalized || app.name?.toLowerCase() === normalized || app.displayName?.toLowerCase() === normalized;
 }
 
+function matchesCloudFlow(flow: CloudFlowSummary, identifier: string): boolean {
+  const normalized = identifier.toLowerCase();
+  return flow.id.toLowerCase() === normalized || flow.uniqueName?.toLowerCase() === normalized || flow.name?.toLowerCase() === normalized;
+}
+
+function matchesCloudFlowRun(record: CloudFlowRunRecord, options: CloudFlowRunListOptions): boolean {
+  const names = [options.workflowName, options.workflowUniqueName]
+    .map((value) => value?.toLowerCase())
+    .filter((value): value is string => Boolean(value));
+
+  if (options.workflowId && record.workflowid === options.workflowId) {
+    return true;
+  }
+
+  if (names.length > 0 && record.workflowname) {
+    return names.includes(record.workflowname.toLowerCase());
+  }
+
+  return !options.workflowId && names.length === 0;
+}
+
 function matchesModelDrivenApp(app: ModelDrivenAppSummary, identifier: string): boolean {
   const normalized = identifier.toLowerCase();
   return app.id.toLowerCase() === normalized || app.uniqueName?.toLowerCase() === normalized || app.name?.toLowerCase() === normalized;
+}
+
+function normalizeCloudFlowStatus(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function compareCloudFlowRunsDescending(left: CloudFlowRunSummary, right: CloudFlowRunSummary): number {
+  return (right.startTime ?? '').localeCompare(left.startTime ?? '');
+}
+
+function isAfterRelativeTime(value: string | undefined, relative: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.valueOf())) {
+    return false;
+  }
+
+  const match = relative.match(/^(\d+)([dh])$/i);
+
+  if (!match) {
+    return true;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2]?.toLowerCase();
+  const now = Date.now();
+  const offset = unit === 'h' ? amount * 60 * 60 * 1000 : amount * 24 * 60 * 60 * 1000;
+
+  return date.valueOf() >= now - offset;
 }
 
 function matchesModelDrivenAppComponent(component: ModelDrivenAppComponentRecord, appId: string): boolean {
@@ -3676,6 +3898,172 @@ function parseSemicolonList(value: string | undefined): string[] {
     ?.split(';')
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0) ?? [];
+}
+
+function parseCloudFlowClientData(clientdata: string | undefined): {
+  clientData?: Record<string, unknown>;
+  definition?: Record<string, unknown>;
+  connectionReferences: CloudFlowConnectionReference[];
+  parameters: string[];
+  environmentVariables: string[];
+} {
+  if (!clientdata) {
+    return {
+      connectionReferences: [],
+      parameters: [],
+      environmentVariables: [],
+    };
+  }
+
+  try {
+    return parseCloudFlowClientDataValue(JSON.parse(clientdata) as unknown);
+  } catch {
+    return {
+      connectionReferences: [],
+      parameters: [],
+      environmentVariables: [],
+    };
+  }
+}
+
+function parseCloudFlowClientDataValue(value: unknown): {
+  clientData?: Record<string, unknown>;
+  definition?: Record<string, unknown>;
+  connectionReferences: CloudFlowConnectionReference[];
+  parameters: string[];
+  environmentVariables: string[];
+} {
+  const record = isRecord(value) ? value : undefined;
+  const definition = (isRecord(record?.definition) ? record.definition : undefined) ?? (isRecord(record?.properties) ? readRecord(record.properties.definition) : undefined);
+  const definitionParameters = readRecord(definition?.parameters);
+  const definitionConnections = readRecord(readRecord(definitionParameters?.['$connections'])?.value);
+
+  return {
+    clientData: record ? normalizeUnknownRecord(record) : undefined,
+    definition: definition ? normalizeUnknownRecord(definition) : undefined,
+    connectionReferences: normalizeCloudFlowConnectionReferences(
+      record?.connectionReferences ?? readRecord(record?.properties)?.connectionReferences ?? definitionConnections
+    ),
+    parameters: collectCloudFlowParameterNames(definition ?? {}),
+    environmentVariables: collectCloudFlowEnvironmentVariables(definition ?? {}),
+  };
+}
+
+function normalizeCloudFlowConnectionReferences(value: unknown): CloudFlowConnectionReference[] {
+  const records = Array.isArray(value)
+    ? value
+    : isRecord(value)
+      ? Object.entries(value).map(([name, nested]) => ({ name, ...(readRecord(nested) ?? {}) }))
+      : [];
+
+  const normalized: CloudFlowConnectionReference[] = [];
+
+  for (const item of records) {
+    const record = readRecord(item);
+
+    if (!record) {
+      continue;
+    }
+
+    const api = readRecord(record.api);
+    const name = readString(record.name);
+
+    if (!name) {
+      continue;
+    }
+
+    normalized.push({
+      name,
+      connectionReferenceLogicalName:
+        readString(record.connectionReferenceLogicalName) ??
+        readString(record.connectionreferencelogicalname) ??
+        readString(record.logicalName),
+      connectionId: readString(record.connectionId) ?? readString(record.id) ?? readString(record.connectionid),
+      apiId: readString(record.apiId) ?? readString(api?.id) ?? readString(record.connectorId),
+    });
+  }
+
+  return normalized.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function collectCloudFlowParameterNames(value: unknown): string[] {
+  const seen = new Set<string>();
+
+  visitCloudFlowStrings(value, (entry) => {
+    for (const match of entry.matchAll(/parameters\('([^']+)'\)/g)) {
+      const name = match[1]?.trim();
+
+      if (name) {
+        seen.add(name);
+      }
+    }
+  });
+
+  return [...seen].sort((left, right) => left.localeCompare(right));
+}
+
+function collectCloudFlowEnvironmentVariables(value: unknown): string[] {
+  const seen = new Set<string>();
+
+  visitCloudFlowStrings(value, (entry) => {
+    for (const match of entry.matchAll(/environmentVariables\('([^']+)'\)/g)) {
+      const name = match[1]?.trim();
+
+      if (name) {
+        seen.add(name);
+      }
+    }
+  });
+
+  return [...seen].sort((left, right) => left.localeCompare(right));
+}
+
+function visitCloudFlowStrings(value: unknown, visitor: (value: string) => void): void {
+  if (typeof value === 'string') {
+    visitor(value);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      visitCloudFlowStrings(entry, visitor);
+    }
+    return;
+  }
+
+  if (isRecord(value)) {
+    for (const entry of Object.values(value)) {
+      visitCloudFlowStrings(entry, visitor);
+    }
+  }
+}
+
+function normalizeUnknownRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, entry]) => [key, normalizeUnknownValue(entry)] as const)
+      .filter(([, entry]) => entry !== undefined)
+  );
+}
+
+function normalizeUnknownValue(value: unknown): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeUnknownValue(entry));
+  }
+
+  if (isRecord(value)) {
+    return normalizeUnknownRecord(value);
+  }
+
+  return undefined;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
 }
 
 async function resolveSolutionId(client: DataverseClient, uniqueName: string): Promise<OperationResult<string | undefined>> {
