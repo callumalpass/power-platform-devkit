@@ -184,8 +184,18 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
   const configOptions = readConfigOptions(args);
   const auth = new AuthService(configOptions);
 
+  if (!command || command === 'help' || command === '--help') {
+    printHelp();
+    return 0;
+  }
+
   if (command === 'profile') {
     const [action, ...rest] = args;
+
+    if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
+      printHelp();
+      return 0;
+    }
 
     switch (action) {
       case 'list':
@@ -213,6 +223,11 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
   if (command === 'browser-profile') {
     const [action, ...rest] = args;
 
+    if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
+      printHelp();
+      return 0;
+    }
+
     switch (action) {
       case 'list':
         return runAuthBrowserProfileList(auth, rest);
@@ -231,10 +246,18 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
   }
 
   if (command === 'login') {
+    if (args.includes('--help') || args.includes('help')) {
+      printHelp();
+      return 0;
+    }
     return runAuthLogin(auth, args);
   }
 
   if (command === 'token') {
+    if (args.includes('--help') || args.includes('help')) {
+      printHelp();
+      return 0;
+    }
     return runAuthToken(auth, args);
   }
 

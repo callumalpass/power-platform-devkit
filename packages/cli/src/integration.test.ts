@@ -2601,6 +2601,15 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('prints help for auth profile inspect --help without running validation', async () => {
+    const inspect = await runCli(['auth', 'profile', 'inspect', '--help']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(inspect.stdout).toContain('auth profile inspect <name> [--config-dir path]');
+    expect(inspect.stdout).not.toContain('AUTH_PROFILE_NAME_REQUIRED');
+  });
+
   it('returns a stable not-found contract for missing environment variables', async () => {
     mockDataverseResolution({
       source: createFixtureDataverseClient({
