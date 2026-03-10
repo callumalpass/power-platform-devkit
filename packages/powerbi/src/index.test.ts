@@ -181,4 +181,97 @@ describe('PowerBiClient', () => {
       },
     });
   });
+
+  it('posts a dataset refresh request after resolving the dataset target', async () => {
+    const requests: Array<{ method: string | undefined; path: string; body?: unknown }> = [];
+    const client = new PowerBiClient({
+      requestJson: async <T>(options: { method?: string; path: string; body?: unknown }): Promise<OperationResult<T>> => {
+        requests.push({
+          method: options.method,
+          path: options.path,
+          body: options.body,
+        });
+
+        if (options.path === '/v1.0/myorg/groups') {
+          return ok(
+            {
+              value: [
+                {
+                  id: 'workspace-1',
+                  name: 'Finance',
+                },
+              ],
+            } as T,
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.path === '/v1.0/myorg/groups/workspace-1/datasets') {
+          return ok(
+            {
+              value: [
+                {
+                  id: 'dataset-1',
+                  name: 'Budget Model',
+                  isRefreshable: true,
+                },
+              ],
+            } as T,
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.path === '/v1.0/myorg/groups/workspace-1/reports') {
+          return ok(
+            {
+              value: [],
+            } as T,
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.path.endsWith('/datasources')) {
+          return ok(
+            {
+              value: [],
+            } as T,
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.path.endsWith('/refreshSchedule')) {
+          return ok(
+            {
+              enabled: true,
+              timezone: 'UTC',
+              times: ['06:00'],
+              days: ['Monday'],
+            } as T,
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok(undefined as T, { supportTier: 'preview' });
+      },
+    } as never);
+
+    const result = await client.triggerDatasetRefresh('Finance', 'Budget Model', {
+      notifyOption: 'MailOnFailure',
+      type: 'full',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      workspaceId: 'workspace-1',
+      datasetId: 'dataset-1',
+    });
+    expect(requests.at(-1)).toEqual({
+      method: 'POST',
+      path: '/v1.0/myorg/groups/workspace-1/datasets/dataset-1/refreshes',
+      body: {
+        notifyOption: 'MailOnFailure',
+        type: 'full',
+      },
+    });
+  });
 });

@@ -1,10 +1,20 @@
 import { resolve as resolvePath } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { ParameterMapping } from '@pp/config';
+import { AuthService, createTokenProvider } from '@pp/auth';
 import { ConnectionReferenceService, EnvironmentVariableService, resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { loadFlowArtifact, patchFlowArtifact, validateFlowArtifact, type FlowArtifact, type FlowValidationReport } from '@pp/flow';
-import { summarizeResolvedParameter, type ProjectContext, type ResolvedProjectParameter } from '@pp/project';
+import { HttpClient } from '@pp/http';
+import {
+  resolvePowerBiTarget,
+  resolveSharePointTarget,
+  summarizeResolvedParameter,
+  type ProjectContext,
+  type ResolvedProjectParameter,
+} from '@pp/project';
+import { PowerBiClient } from '@pp/powerbi';
+import { SharePointClient } from '@pp/sharepoint';
 import { SolutionService } from '@pp/solution';
 import type {
   ConnectionReferenceCreateOptions,
@@ -85,6 +95,25 @@ export interface FlowEnvironmentVariableDeployOperationPlan extends DeployOperat
   path: string;
 }
 
+export interface SharePointFileTextDeployOperationPlan extends DeployOperationPlanBase {
+  kind: 'sharepoint-file-text-set';
+  authProfile: string;
+  bindingName?: string;
+  site: string;
+  drive?: string;
+  file: string;
+}
+
+export interface PowerBiDatasetRefreshDeployOperationPlan extends DeployOperationPlanBase {
+  kind: 'powerbi-dataset-refresh';
+  authProfile: string;
+  bindingName?: string;
+  workspace: string;
+  dataset: string;
+  notifyOption?: string;
+  refreshType?: string;
+}
+
 export type DeployOperationPlan =
   | DataverseEnvvarDeployOperationPlan
   | DataverseEnvvarUpsertDeployOperationPlan
@@ -94,7 +123,9 @@ export type DeployOperationPlan =
   | DeploySecretBindingOperationPlan
   | FlowParameterDeployOperationPlan
   | FlowConnectionReferenceDeployOperationPlan
-  | FlowEnvironmentVariableDeployOperationPlan;
+  | FlowEnvironmentVariableDeployOperationPlan
+  | SharePointFileTextDeployOperationPlan
+  | PowerBiDatasetRefreshDeployOperationPlan;
 
 export interface DeployPlan {
   projectRoot: string;
@@ -212,7 +243,9 @@ interface DeployTargetConflict {
     | 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT'
     | 'DEPLOY_PREFLIGHT_FLOW_PARAMETER_TARGET_CONFLICT'
     | 'DEPLOY_PREFLIGHT_FLOW_CONNREF_TARGET_CONFLICT'
-    | 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_TARGET_CONFLICT';
+    | 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_TARGET_CONFLICT'
+    | 'DEPLOY_PREFLIGHT_SHAREPOINT_TARGET_CONFLICT'
+    | 'DEPLOY_PREFLIGHT_POWERBI_TARGET_CONFLICT';
   message: string;
   details: {
     target: string;
@@ -264,6 +297,16 @@ interface PreparedDeployOperation {
   blockedCode?: 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_MISSING' | 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_REDACTED';
   blockedMessage?: string;
 }
+
+type PreparedSharePointFileTextOperation = PreparedDeployOperation & {
+  plan: SharePointFileTextDeployOperationPlan;
+  value?: DeployPrimitiveValue;
+};
+
+type PreparedPowerBiDatasetRefreshOperation = PreparedDeployOperation & {
+  plan: PowerBiDatasetRefreshDeployOperationPlan;
+  value?: DeployPrimitiveValue;
+};
 
 function isPreparedFlowParameterOperation(
   operation: PreparedDeployOperation
@@ -361,12 +404,15 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
     };
   });
   const operations = collectDeployOperations(project).map(({ plan }) => plan);
-  const diagnostics: Diagnostic[] = collectStaticMappingChecks(project).map((check) =>
-    createDiagnostic('error', check.code, check.message, {
-      source: '@pp/deploy',
-      ...check.details,
-    })
-  );
+  const diagnostics: Diagnostic[] = [
+    ...collectStaticMappingChecks(project).map((check) =>
+      createDiagnostic('error', check.code, check.message, {
+        source: '@pp/deploy',
+        ...check.details,
+      })
+    ),
+    ...collectProviderOperationDiagnostics(project),
+  ];
   const dataverseOperations = operations.filter(isDataverseMutationOperation);
 
   if (dataverseOperations.some((operation) => !resolveOperationEnvironmentAlias(operation, project.topology.activeEnvironment))) {
@@ -520,12 +566,20 @@ async function executePreparedDeploy(context: {
       isPreparedFlowConnectionReferenceOperation(operation) ||
       isPreparedFlowEnvironmentVariableOperation(operation)
   );
+  const sharePointOperations = preparedOperations.filter(
+    (operation): operation is PreparedSharePointFileTextOperation => isSharePointFileTextOperation(operation.plan)
+  );
+  const powerBiOperations = preparedOperations.filter(
+    (operation): operation is PreparedPowerBiDatasetRefreshOperation => isPowerBiDatasetRefreshOperation(operation.plan)
+  );
   const adapterBindingOperations = preparedOperations.filter(
     (operation) =>
       !isDataverseMutationOperation(operation.plan) &&
       !isFlowParameterOperation(operation.plan) &&
       !isFlowConnectionReferenceOperation(operation.plan) &&
-      !isFlowEnvironmentVariableOperation(operation.plan)
+      !isFlowEnvironmentVariableOperation(operation.plan) &&
+      !isSharePointFileTextOperation(operation.plan) &&
+      !isPowerBiDatasetRefreshOperation(operation.plan)
   );
   const runnableDataverseOperations: PreparedDeployOperation[] = [];
   const runnableFlowOperations: FlowParameterDeployTargetInspection[] = [];
@@ -534,6 +588,8 @@ async function executePreparedDeploy(context: {
   const flowValidationResults = new Map<string, OperationResult<FlowValidationReport>>();
   const flowArtifactResults = new Map<string, OperationResult<FlowArtifact>>();
   const invalidFlowArtifacts = new Set<string>();
+  const sharePointInspectionResults = new Map<string, Awaited<ReturnType<SharePointClient['inspectDriveItem']>>>();
+  const powerBiInspectionResults = new Map<string, Awaited<ReturnType<PowerBiClient['inspectDataset']>>>();
   const solutionTargetInspectionPromises = new Map<string, Promise<DeploySolutionTargetInspection>>();
   const reportedSolutionTargetInspections = new Set<string>();
 
@@ -558,6 +614,66 @@ async function executePreparedDeploy(context: {
 
     const result = await loadFlowArtifact(path);
     flowArtifactResults.set(path, result);
+    return result;
+  }
+
+  async function getSharePointInspection(
+    operation: SharePointFileTextDeployOperationPlan
+  ): Promise<Awaited<ReturnType<SharePointClient['inspectDriveItem']>>> {
+    const key = `${operation.authProfile.toLowerCase()}::${operation.site.toLowerCase()}::${(operation.drive ?? '').toLowerCase()}::${operation.file.toLowerCase()}`;
+    const cached = sharePointInspectionResults.get(key);
+
+    if (cached) {
+      return cached;
+    }
+
+    const clientResult = await createAuthenticatedProviderClient(
+      'https://graph.microsoft.com',
+      operation.authProfile,
+      (httpClient) => new SharePointClient(httpClient)
+    );
+
+    if (!clientResult.success || !clientResult.data) {
+      const failed = {
+        ...clientResult,
+      } as Awaited<ReturnType<SharePointClient['inspectDriveItem']>>;
+      sharePointInspectionResults.set(key, failed);
+      return failed;
+    }
+
+    const result = await clientResult.data.inspectDriveItem(operation.site, operation.file, {
+      drive: operation.drive,
+    });
+    sharePointInspectionResults.set(key, result);
+    return result;
+  }
+
+  async function getPowerBiInspection(
+    operation: PowerBiDatasetRefreshDeployOperationPlan
+  ): Promise<Awaited<ReturnType<PowerBiClient['inspectDataset']>>> {
+    const key = `${operation.authProfile.toLowerCase()}::${operation.workspace.toLowerCase()}::${operation.dataset.toLowerCase()}`;
+    const cached = powerBiInspectionResults.get(key);
+
+    if (cached) {
+      return cached;
+    }
+
+    const clientResult = await createAuthenticatedProviderClient(
+      'https://api.powerbi.com',
+      operation.authProfile,
+      (httpClient) => new PowerBiClient(httpClient)
+    );
+
+    if (!clientResult.success || !clientResult.data) {
+      const failed = {
+        ...clientResult,
+      } as Awaited<ReturnType<PowerBiClient['inspectDataset']>>;
+      powerBiInspectionResults.set(key, failed);
+      return failed;
+    }
+
+    const result = await clientResult.data.inspectDataset(operation.workspace, operation.dataset);
+    powerBiInspectionResults.set(key, result);
     return result;
   }
 
@@ -641,6 +757,83 @@ async function executePreparedDeploy(context: {
     }
   }
 
+  for (const operation of sharePointOperations) {
+    const inspection = await getSharePointInspection(operation.plan);
+    diagnostics.push(...inspection.diagnostics);
+    warnings.push(...inspection.warnings);
+
+    if (!inspection.success || !inspection.data) {
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_SHAREPOINT_TARGET_INVALID',
+        message: `Failed to inspect SharePoint file target ${operation.plan.target} before deploy.`,
+        target: operation.plan.target,
+        details: {
+          parameter: operation.plan.parameter,
+          site: operation.plan.site,
+          drive: operation.plan.drive,
+          file: operation.plan.file,
+        },
+      });
+      continue;
+    }
+
+    checks.push({
+      status: 'pass',
+      code: 'DEPLOY_PREFLIGHT_SHAREPOINT_TARGET_FOUND',
+      message: `SharePoint file target ${operation.plan.target} is available for deploy.`,
+      target: operation.plan.target,
+      details: {
+        fileId: inspection.data.id,
+      },
+    });
+  }
+
+  for (const operation of powerBiOperations) {
+    const inspection = await getPowerBiInspection(operation.plan);
+    diagnostics.push(...inspection.diagnostics);
+    warnings.push(...inspection.warnings);
+
+    if (!inspection.success || !inspection.data) {
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_POWERBI_TARGET_INVALID',
+        message: `Failed to inspect Power BI dataset target ${operation.plan.target} before deploy.`,
+        target: operation.plan.target,
+        details: {
+          parameter: operation.plan.parameter,
+          workspace: operation.plan.workspace,
+          dataset: operation.plan.dataset,
+        },
+      });
+      continue;
+    }
+
+    if (inspection.data.isRefreshable === false) {
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_POWERBI_DATASET_NOT_REFRESHABLE',
+        message: `Power BI dataset ${operation.plan.target} is not refreshable.`,
+        target: operation.plan.target,
+        details: {
+          workspace: operation.plan.workspace,
+          dataset: operation.plan.dataset,
+        },
+      });
+      continue;
+    }
+
+    checks.push({
+      status: 'pass',
+      code: 'DEPLOY_PREFLIGHT_POWERBI_TARGET_FOUND',
+      message: `Power BI dataset ${operation.plan.target} is available for deploy.`,
+      target: operation.plan.target,
+      details: {
+        datasetId: inspection.data.id,
+      },
+    });
+  }
+
   for (const operation of adapterBindingOperations) {
     if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
       applyOperations.push({
@@ -670,6 +863,226 @@ async function executePreparedDeploy(context: {
         operation.plan.kind === 'deploy-secret-bind'
           ? 'Resolved secret binding for adapter consumption.'
           : 'Resolved input binding for adapter consumption.',
+    });
+  }
+
+  for (const operation of sharePointOperations) {
+    if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        changed: false,
+        message: 'Blocked by conflicting deploy target mappings.',
+      });
+      continue;
+    }
+
+    if (!operation.executable || operation.value === undefined) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        changed: false,
+        message: operation.blockedMessage ?? 'Saved deploy plan does not include an executable value for this operation.',
+      });
+      continue;
+    }
+
+    const inspection = await getSharePointInspection(operation.plan);
+
+    if (!inspection.success || !inspection.data) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'SharePoint target could not be inspected.',
+      });
+      continue;
+    }
+
+    if (mode !== 'apply') {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'planned',
+        currentValue: inspection.data.webUrl ?? inspection.data.id,
+        nextValue: stringifyDeployValue(operation.value),
+        changed: true,
+        message: 'SharePoint file update is ready to apply.',
+      });
+      continue;
+    }
+
+    const clientResult = await createAuthenticatedProviderClient(
+      'https://graph.microsoft.com',
+      operation.plan.authProfile,
+      (httpClient) => new SharePointClient(httpClient)
+    );
+
+    diagnostics.push(...clientResult.diagnostics);
+    warnings.push(...clientResult.warnings);
+
+    if (!clientResult.success || !clientResult.data) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'failed',
+        currentValue: inspection.data.webUrl ?? inspection.data.id,
+        nextValue: stringifyDeployValue(operation.value),
+        changed: false,
+        message: `Failed to authenticate SharePoint deploy target ${operation.plan.target}.`,
+      });
+      continue;
+    }
+
+    const result = await clientResult.data.setDriveItemText(
+      operation.plan.site,
+      operation.plan.file,
+      stringifyDeployValue(operation.value),
+      {
+        drive: operation.plan.drive,
+      }
+    );
+
+    diagnostics.push(...result.diagnostics);
+    warnings.push(...result.warnings);
+
+    if (!result.success || !result.data) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'failed',
+        currentValue: inspection.data.webUrl ?? inspection.data.id,
+        nextValue: stringifyDeployValue(operation.value),
+        changed: false,
+        message: `Failed to update SharePoint file target ${operation.plan.target}.`,
+      });
+      continue;
+    }
+
+    applyOperations.push({
+      ...operation.plan,
+      status: 'applied',
+      currentValue: inspection.data.webUrl ?? inspection.data.id,
+      nextValue: result.data.webUrl ?? result.data.id,
+      changed: true,
+      message: `Updated SharePoint file target ${operation.plan.target}.`,
+    });
+  }
+
+  for (const operation of powerBiOperations) {
+    if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        changed: false,
+        message: 'Blocked by conflicting deploy target mappings.',
+      });
+      continue;
+    }
+
+    if (!operation.executable || operation.value === undefined) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        changed: false,
+        message: operation.blockedMessage ?? 'Saved deploy plan does not include an executable value for this operation.',
+      });
+      continue;
+    }
+
+    if (typeof operation.value === 'boolean' && operation.value === false) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        changed: false,
+        message: 'Power BI dataset refresh was disabled by a false parameter value.',
+      });
+      continue;
+    }
+
+    const inspection = await getPowerBiInspection(operation.plan);
+
+    if (!inspection.success || !inspection.data) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Power BI target could not be inspected.',
+      });
+      continue;
+    }
+
+    if (inspection.data.isRefreshable === false) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        currentValue: inspection.data.id,
+        nextValue: stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Power BI dataset is not refreshable.',
+      });
+      continue;
+    }
+
+    if (mode !== 'apply') {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'planned',
+        currentValue: inspection.data.id,
+        nextValue: 'refresh-requested',
+        changed: true,
+        message: 'Power BI dataset refresh is ready to apply.',
+      });
+      continue;
+    }
+
+    const clientResult = await createAuthenticatedProviderClient(
+      'https://api.powerbi.com',
+      operation.plan.authProfile,
+      (httpClient) => new PowerBiClient(httpClient)
+    );
+
+    diagnostics.push(...clientResult.diagnostics);
+    warnings.push(...clientResult.warnings);
+
+    if (!clientResult.success || !clientResult.data) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'failed',
+        currentValue: inspection.data.id,
+        nextValue: 'refresh-requested',
+        changed: false,
+        message: `Failed to authenticate Power BI deploy target ${operation.plan.target}.`,
+      });
+      continue;
+    }
+
+    const result = await clientResult.data.triggerDatasetRefresh(operation.plan.workspace, operation.plan.dataset, {
+      notifyOption: operation.plan.notifyOption,
+      type: operation.plan.refreshType,
+    });
+
+    diagnostics.push(...result.diagnostics);
+    warnings.push(...result.warnings);
+
+    if (!result.success || !result.data) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'failed',
+        currentValue: inspection.data.id,
+        nextValue: 'refresh-requested',
+        changed: false,
+        message: `Failed to request Power BI dataset refresh for ${operation.plan.target}.`,
+      });
+      continue;
+    }
+
+    applyOperations.push({
+      ...operation.plan,
+      status: 'applied',
+      currentValue: inspection.data.id,
+      nextValue: 'refresh-requested',
+      changed: true,
+      message: `Requested Power BI dataset refresh for ${operation.plan.target}.`,
     });
   }
 
@@ -1807,9 +2220,172 @@ function createDeployOperationPlan(
             valuePreview,
           }
         : undefined;
+    case 'sharepoint-file-text':
+      return createSharePointFileTextOperationPlan(project, parameter, mapping, valuePreview);
+    case 'powerbi-dataset-refresh':
+      return createPowerBiDatasetRefreshOperationPlan(project, parameter, mapping, valuePreview);
     default:
       return undefined;
   }
+}
+
+function createSharePointFileTextOperationPlan(
+  project: ProjectContext,
+  parameter: ResolvedProjectParameter,
+  mapping: ParameterMapping,
+  valuePreview: string | number | boolean | undefined
+): SharePointFileTextDeployOperationPlan | undefined {
+  const resolvedTarget = resolveSharePointTarget(project, mapping.target, {
+    expectedKind: 'sharepoint-file',
+    site: mapping.site,
+    drive: mapping.drive,
+  });
+
+  if (!resolvedTarget.success || !resolvedTarget.data?.file) {
+    return undefined;
+  }
+
+  if (!resolvedTarget.data.authProfile) {
+    return undefined;
+  }
+
+  return {
+    kind: 'sharepoint-file-text-set',
+    parameter: parameter.name,
+    source: parameter.source,
+    sensitive: parameter.sensitive,
+    target: mapping.target,
+    valuePreview,
+    authProfile: resolvedTarget.data.authProfile,
+    bindingName: resolvedTarget.data.bindingName,
+    site: resolvedTarget.data.site.value,
+    drive: resolvedTarget.data.drive?.value,
+    file: resolvedTarget.data.file.value,
+  };
+}
+
+function createPowerBiDatasetRefreshOperationPlan(
+  project: ProjectContext,
+  parameter: ResolvedProjectParameter,
+  mapping: ParameterMapping,
+  valuePreview: string | number | boolean | undefined
+): PowerBiDatasetRefreshDeployOperationPlan | undefined {
+  const resolvedTarget = resolvePowerBiTarget(project, mapping.target, {
+    expectedKind: 'powerbi-dataset',
+    workspace: mapping.workspace,
+  });
+
+  if (!resolvedTarget.success || !resolvedTarget.data?.dataset) {
+    return undefined;
+  }
+
+  if (!resolvedTarget.data.authProfile) {
+    return undefined;
+  }
+
+  return {
+    kind: 'powerbi-dataset-refresh',
+    parameter: parameter.name,
+    source: parameter.source,
+    sensitive: parameter.sensitive,
+    target: mapping.target,
+    valuePreview,
+    authProfile: resolvedTarget.data.authProfile,
+    bindingName: resolvedTarget.data.bindingName,
+    workspace: resolvedTarget.data.workspace.value,
+    dataset: resolvedTarget.data.dataset.value,
+    notifyOption: mapping.notifyOption,
+    refreshType: mapping.refreshType,
+  };
+}
+
+function collectProviderOperationDiagnostics(project: ProjectContext): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  for (const parameter of Object.values(project.parameters)) {
+    for (const mapping of parameter.definition.mapsTo ?? []) {
+      if (mapping.kind === 'sharepoint-file-text') {
+        diagnostics.push(...resolveSharePointDeployMappingDiagnostics(project, parameter, mapping));
+      } else if (mapping.kind === 'powerbi-dataset-refresh') {
+        diagnostics.push(...resolvePowerBiDeployMappingDiagnostics(project, parameter, mapping));
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+function resolveSharePointDeployMappingDiagnostics(
+  project: ProjectContext,
+  parameter: ResolvedProjectParameter,
+  mapping: ParameterMapping
+): Diagnostic[] {
+  const resolvedTarget = resolveSharePointTarget(project, mapping.target, {
+    expectedKind: 'sharepoint-file',
+    site: mapping.site,
+    drive: mapping.drive,
+  });
+
+  if (!resolvedTarget.success) {
+    return resolvedTarget.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      source: diagnostic.source ?? '@pp/deploy',
+      detail: diagnostic.detail ?? `Deploy parameter ${parameter.name} could not resolve SharePoint target ${mapping.target}.`,
+    }));
+  }
+
+  if (!resolvedTarget.data?.authProfile) {
+    return [
+      createDiagnostic(
+        'error',
+        'DEPLOY_PREFLIGHT_SHAREPOINT_AUTH_PROFILE_MISSING',
+        `Deploy parameter ${parameter.name} maps to SharePoint target ${mapping.target} without an auth profile.`,
+        {
+          source: '@pp/deploy',
+          hint: 'Set `metadata.authProfile` on the SharePoint provider binding or map the target with an auth-backed binding.',
+          detail: `Target: ${mapping.target}`,
+        }
+      ),
+    ];
+  }
+
+  return [];
+}
+
+function resolvePowerBiDeployMappingDiagnostics(
+  project: ProjectContext,
+  parameter: ResolvedProjectParameter,
+  mapping: ParameterMapping
+): Diagnostic[] {
+  const resolvedTarget = resolvePowerBiTarget(project, mapping.target, {
+    expectedKind: 'powerbi-dataset',
+    workspace: mapping.workspace,
+  });
+
+  if (!resolvedTarget.success) {
+    return resolvedTarget.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      source: diagnostic.source ?? '@pp/deploy',
+      detail: diagnostic.detail ?? `Deploy parameter ${parameter.name} could not resolve Power BI target ${mapping.target}.`,
+    }));
+  }
+
+  if (!resolvedTarget.data?.authProfile) {
+    return [
+      createDiagnostic(
+        'error',
+        'DEPLOY_PREFLIGHT_POWERBI_AUTH_PROFILE_MISSING',
+        `Deploy parameter ${parameter.name} maps to Power BI target ${mapping.target} without an auth profile.`,
+        {
+          source: '@pp/deploy',
+          hint: 'Set `metadata.authProfile` on the Power BI provider binding or map the target with an auth-backed binding.',
+          detail: `Target: ${mapping.target}`,
+        }
+      ),
+    ];
+  }
+
+  return [];
 }
 
 function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCheck[] {
@@ -1914,6 +2490,29 @@ function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCh
             path: mapping.path,
           },
         });
+      } else if (mapping.kind === 'sharepoint-file-text') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_SHAREPOINT_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to SharePoint file ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+            site: mapping.site,
+            drive: mapping.drive,
+          },
+        });
+      } else if (mapping.kind === 'powerbi-dataset-refresh') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_POWERBI_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to Power BI dataset ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+            workspace: mapping.workspace,
+          },
+        });
       }
     }
   }
@@ -1956,6 +2555,34 @@ function collectStaticMappingChecks(project: ProjectContext): DeployPreflightChe
             parameter: parameter.name,
           },
         });
+      } else if (mapping.kind === 'sharepoint-file-text') {
+        const diagnostics = resolveSharePointDeployMappingDiagnostics(project, parameter, mapping);
+
+        for (const diagnostic of diagnostics) {
+          checks.push({
+            status: 'fail',
+            code: diagnostic.code,
+            message: diagnostic.message,
+            target: mapping.target,
+            details: {
+              parameter: parameter.name,
+            },
+          });
+        }
+      } else if (mapping.kind === 'powerbi-dataset-refresh') {
+        const diagnostics = resolvePowerBiDeployMappingDiagnostics(project, parameter, mapping);
+
+        for (const diagnostic of diagnostics) {
+          checks.push({
+            status: 'fail',
+            code: diagnostic.code,
+            message: diagnostic.message,
+            target: mapping.target,
+            details: {
+              parameter: parameter.name,
+            },
+          });
+        }
       }
     }
   }
@@ -2091,6 +2718,26 @@ function collectSavedPlanMissingChecks(plan: DeployPlan): DeployPreflightCheck[]
             parameter: input.name,
           },
         });
+      } else if (mapping.kind === 'sharepoint-file-text') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_SHAREPOINT_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to SharePoint file ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
+      } else if (mapping.kind === 'powerbi-dataset-refresh') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_POWERBI_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to Power BI dataset ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
       }
     }
   }
@@ -2209,6 +2856,44 @@ function summarizeApplyOperations(operations: DeployOperationResult[]): DeployAp
   );
 }
 
+async function createAuthenticatedProviderClient<TClient>(
+  baseUrl: string,
+  authProfileName: string,
+  createClient: (httpClient: HttpClient) => TClient
+): Promise<OperationResult<TClient>> {
+  const auth = new AuthService();
+  const profileResult = await auth.getProfile(authProfileName);
+
+  if (!profileResult.success) {
+    return profileResult as unknown as OperationResult<TClient>;
+  }
+
+  if (!profileResult.data) {
+    return {
+      success: false,
+      diagnostics: [
+        createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${authProfileName} was not found.`, {
+          source: '@pp/deploy',
+        }),
+      ],
+      warnings: [],
+      supportTier: 'preview',
+    };
+  }
+
+  const tokenProviderResult = createTokenProvider(profileResult.data);
+
+  if (!tokenProviderResult.success || !tokenProviderResult.data) {
+    return tokenProviderResult as unknown as OperationResult<TClient>;
+  }
+
+  return ok(createClient(new HttpClient({ baseUrl, tokenProvider: tokenProviderResult.data })), {
+    supportTier: tokenProviderResult.supportTier,
+    diagnostics: [...profileResult.diagnostics, ...tokenProviderResult.diagnostics],
+    warnings: [...(profileResult.warnings ?? []), ...(tokenProviderResult.warnings ?? [])],
+  });
+}
+
 function isDataverseEnvvarOperation(operation: DeployOperationPlan): operation is DataverseEnvvarDeployOperationPlan {
   return operation.kind === 'dataverse-envvar-set';
 }
@@ -2241,6 +2926,14 @@ function isFlowConnectionReferenceOperation(
 
 function isFlowEnvironmentVariableOperation(operation: DeployOperationPlan): operation is FlowEnvironmentVariableDeployOperationPlan {
   return operation.kind === 'flow-envvar-set';
+}
+
+function isSharePointFileTextOperation(operation: DeployOperationPlan): operation is SharePointFileTextDeployOperationPlan {
+  return operation.kind === 'sharepoint-file-text-set';
+}
+
+function isPowerBiDatasetRefreshOperation(operation: DeployOperationPlan): operation is PowerBiDatasetRefreshDeployOperationPlan {
+  return operation.kind === 'powerbi-dataset-refresh';
 }
 
 function isDataverseMutationOperation(
@@ -3134,6 +3827,32 @@ function analyzeDeployTargetConflicts(operations: DeployOperationPlan[]): Deploy
       continue;
     }
 
+    if (isSharePointFileTextOperation(sample)) {
+      conflicts.push({
+        code: 'DEPLOY_PREFLIGHT_SHAREPOINT_TARGET_CONFLICT',
+        message: `SharePoint file target ${sample.target} has conflicting deploy mappings from ${parameterList}.`,
+        details: {
+          target: sample.target,
+          parameters,
+          operationKinds,
+        },
+      });
+      continue;
+    }
+
+    if (isPowerBiDatasetRefreshOperation(sample)) {
+      conflicts.push({
+        code: 'DEPLOY_PREFLIGHT_POWERBI_TARGET_CONFLICT',
+        message: `Power BI dataset target ${sample.target} has conflicting deploy mappings from ${parameterList}.`,
+        details: {
+          target: sample.target,
+          parameters,
+          operationKinds,
+        },
+      });
+      continue;
+    }
+
     conflicts.push({
       code: 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT',
       message: `Deploy binding target ${sample.target} has conflicting mappings from ${parameterList}.`,
@@ -3169,6 +3888,14 @@ function getDeployConflictKey(operation: DeployOperationPlan): string {
     return `flow-envvar:${operation.path.toLowerCase()}:${operation.target.toLowerCase()}`;
   }
 
+  if (isSharePointFileTextOperation(operation)) {
+    return `sharepoint:${operation.authProfile.toLowerCase()}:${operation.site.toLowerCase()}:${(operation.drive ?? '').toLowerCase()}:${operation.file.toLowerCase()}`;
+  }
+
+  if (isPowerBiDatasetRefreshOperation(operation)) {
+    return `powerbi:${operation.authProfile.toLowerCase()}:${operation.workspace.toLowerCase()}:${operation.dataset.toLowerCase()}`;
+  }
+
   return `binding:${operation.target.toLowerCase()}`;
 }
 
@@ -3192,6 +3919,10 @@ function matchesDeployConflict(operation: DeployOperationPlan, conflict: DeployT
       return isFlowConnectionReferenceOperation(operation);
     case 'DEPLOY_PREFLIGHT_FLOW_ENVVAR_TARGET_CONFLICT':
       return isFlowEnvironmentVariableOperation(operation);
+    case 'DEPLOY_PREFLIGHT_SHAREPOINT_TARGET_CONFLICT':
+      return isSharePointFileTextOperation(operation);
+    case 'DEPLOY_PREFLIGHT_POWERBI_TARGET_CONFLICT':
+      return isPowerBiDatasetRefreshOperation(operation);
     case 'DEPLOY_PREFLIGHT_BINDING_TARGET_CONFLICT':
       return operation.kind === 'deploy-input-bind' || operation.kind === 'deploy-secret-bind';
   }

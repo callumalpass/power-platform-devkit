@@ -257,6 +257,15 @@ binding metadata to resolve project-local names into concrete targets:
 - `metadata.authProfile` is optional on SharePoint and Power BI bindings; when
   present, the CLI uses it as the default auth profile for those targets
 
+Provider-aware deploy mappings also reuse those bindings:
+
+- `sharepoint-file-text` targets a `sharepoint-file` binding and uploads UTF-8
+  text content to the resolved file target
+- `powerbi-dataset-refresh` targets a `powerbi-dataset` binding and submits a
+  refresh request for the resolved dataset
+- deploy mappings can also provide `site`, `drive`, or `workspace` when the
+  mapping uses a literal provider target instead of a named binding
+
 ## Project commands
 
 ### Init

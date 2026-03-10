@@ -56,6 +56,11 @@ export interface SharePointPermissionReference {
   linkType?: string;
 }
 
+export interface SharePointFileMutationOptions {
+  drive?: string;
+  contentType?: string;
+}
+
 interface GraphCollectionResponse<T> {
   value: T[];
 }
@@ -272,6 +277,46 @@ export class SharePointClient {
       supportTier: permissionsResult.supportTier,
       diagnostics: permissionsResult.diagnostics,
       warnings: permissionsResult.warnings,
+    });
+  }
+
+  async setDriveItemText(
+    siteReference: string,
+    itemReference: string,
+    content: string,
+    options: SharePointFileMutationOptions = {}
+  ): Promise<OperationResult<SharePointDriveItemReference>> {
+    const siteIdResult = await this.resolveSiteId(siteReference);
+
+    if (!siteIdResult.success || !siteIdResult.data) {
+      return siteIdResult as unknown as OperationResult<SharePointDriveItemReference>;
+    }
+
+    const driveIdResult = await this.resolveDriveId(siteIdResult.data, options.drive);
+
+    if (!driveIdResult.success || !driveIdResult.data) {
+      return driveIdResult as unknown as OperationResult<SharePointDriveItemReference>;
+    }
+
+    const uploadResult = await this.httpClient.requestJson<GraphDriveItem>({
+      method: 'PUT',
+      path: isLikelyPath(itemReference)
+        ? `/v1.0/drives/${encodeURIComponent(driveIdResult.data)}/root:${normalizeDrivePath(itemReference)}:/content`
+        : `/v1.0/drives/${encodeURIComponent(driveIdResult.data)}/items/${encodeURIComponent(itemReference)}/content`,
+      rawBody: content,
+      headers: {
+        'content-type': options.contentType ?? 'text/plain; charset=utf-8',
+      },
+    });
+
+    if (!uploadResult.success || !uploadResult.data) {
+      return uploadResult as unknown as OperationResult<SharePointDriveItemReference>;
+    }
+
+    return ok(normalizeDriveItem(uploadResult.data), {
+      supportTier: uploadResult.supportTier,
+      diagnostics: uploadResult.diagnostics,
+      warnings: uploadResult.warnings,
     });
   }
 

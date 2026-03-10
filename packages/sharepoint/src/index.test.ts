@@ -122,4 +122,79 @@ describe('SharePointClient', () => {
       lastModifiedDateTime: undefined,
     });
   });
+
+  it('uploads UTF-8 text content to a SharePoint file target', async () => {
+    const requests: Array<{ method: string | undefined; path: string; rawBody?: string | Uint8Array }> = [];
+    const client = new SharePointClient({
+      requestJson: async <T>(options: {
+        method?: string;
+        path: string;
+        rawBody?: string | Uint8Array;
+      }): Promise<OperationResult<T>> => {
+        requests.push({
+          method: options.method,
+          path: options.path,
+          rawBody: options.rawBody,
+        });
+
+        if (options.path === '/v1.0/sites/site-1/drive') {
+          return ok(
+            {
+              id: 'drive-1',
+            } as T,
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok(
+          {
+            id: 'item-1',
+            name: 'release.txt',
+            parentReference: {
+              driveId: 'drive-1',
+              path: '/drives/drive-1/root:/Shared Documents',
+            },
+            file: {
+              mimeType: 'text/plain',
+              hashes: {
+                quickXorHash: '123',
+              },
+            },
+          } as T,
+          { supportTier: 'preview' }
+        );
+      },
+    } as never);
+
+    const result = await client.setDriveItemText('site-1', '/Shared Documents/release.txt', 'release-2026.03.11');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      id: 'item-1',
+      name: 'release.txt',
+      driveId: 'drive-1',
+      parentPath: '/drives/drive-1/root:/Shared Documents',
+      file: {
+        mimeType: 'text/plain',
+        hashCount: 1,
+      },
+      folder: undefined,
+      webUrl: undefined,
+      size: undefined,
+      createdDateTime: undefined,
+      lastModifiedDateTime: undefined,
+    });
+    expect(requests).toEqual([
+      {
+        method: undefined,
+        path: '/v1.0/sites/site-1/drive',
+        rawBody: undefined,
+      },
+      {
+        method: 'PUT',
+        path: '/v1.0/drives/drive-1/root:/Shared%20Documents/release.txt:/content',
+        rawBody: 'release-2026.03.11',
+      },
+    ]);
+  });
 });

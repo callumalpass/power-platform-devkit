@@ -19,10 +19,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pp/auth": "workspace:*",
     "@pp/dataverse": "workspace:*",
     "@pp/diagnostics": "workspace:*",
     "@pp/flow": "workspace:*",
+    "@pp/http": "workspace:*",
+    "@pp/powerbi": "workspace:*",
     "@pp/project": "workspace:*",
+    "@pp/sharepoint": "workspace:*",
     "@pp/solution": "workspace:*"
   }
 }

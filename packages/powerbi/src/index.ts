@@ -52,6 +52,11 @@ export interface PowerBiReport {
   embedUrl?: string;
 }
 
+export interface PowerBiDatasetRefreshRequest {
+  notifyOption?: string;
+  type?: string;
+}
+
 interface PowerBiCollection<T> {
   value: T[];
 }
@@ -239,6 +244,44 @@ export class PowerBiClient {
       diagnostics: [...workspaceResult.diagnostics, ...reportResult.diagnostics],
       warnings: [...(workspaceResult.warnings ?? []), ...(reportResult.warnings ?? [])],
     });
+  }
+
+  async triggerDatasetRefresh(
+    workspaceReference: string,
+    datasetReference: string,
+    request: PowerBiDatasetRefreshRequest = {}
+  ): Promise<OperationResult<{ workspaceId: string; datasetId: string }>> {
+    const datasetResult = await this.inspectDataset(workspaceReference, datasetReference);
+
+    if (!datasetResult.success || !datasetResult.data) {
+      return datasetResult as unknown as OperationResult<{ workspaceId: string; datasetId: string }>;
+    }
+
+    const refreshResult = await this.httpClient.requestJson<void>({
+      method: 'POST',
+      path: `/v1.0/myorg/groups/${encodeURIComponent(datasetResult.data.workspaceId)}/datasets/${encodeURIComponent(datasetResult.data.id)}/refreshes`,
+      body: {
+        ...(request.notifyOption ? { notifyOption: request.notifyOption } : {}),
+        ...(request.type ? { type: request.type } : {}),
+      },
+      responseType: 'void',
+    });
+
+    if (!refreshResult.success) {
+      return refreshResult as unknown as OperationResult<{ workspaceId: string; datasetId: string }>;
+    }
+
+    return ok(
+      {
+        workspaceId: datasetResult.data.workspaceId,
+        datasetId: datasetResult.data.id,
+      },
+      {
+        supportTier: refreshResult.supportTier,
+        diagnostics: [...datasetResult.diagnostics, ...refreshResult.diagnostics],
+        warnings: [...(datasetResult.warnings ?? []), ...(refreshResult.warnings ?? [])],
+      }
+    );
   }
 
   private async matchNamedWorkspace(reference: string): Promise<OperationResult<PowerBiWorkspaceResponse>> {

@@ -37,6 +37,12 @@ mapsTo:
   - kind: flow-envvar
     path: flows/invoice-sync/flow.json
     target: pp_ApiUrl
+  - kind: sharepoint-file-text
+    target: financeBudgetFile
+  - kind: powerbi-dataset-refresh
+    target: financeSemanticModel
+    notifyOption: MailOnFailure
+    refreshType: full
   - kind: deploy-secret
     target: api-token
   - kind: deploy-input
@@ -57,11 +63,19 @@ During `deploy apply`, `pp`:
 10. patches local flow artifact parameter defaults in place for `flow-parameter` mappings when the configured flow artifact already declares that parameter
 11. renames local flow artifact connection-reference bindings in place for `flow-connref` mappings when the configured flow artifact already declares that connection reference
 12. rewrites local flow artifact environment-variable references in place for `flow-envvar` mappings when the configured flow artifact already declares that environment variable
+13. uploads UTF-8 text content to a resolved SharePoint file target for `sharepoint-file-text` mappings
+14. requests a dataset refresh against a resolved Power BI dataset target for `powerbi-dataset-refresh` mappings
 
 Preflight also rejects conflicting mappings before any remote inspection or apply work starts. If multiple parameters map to the same Dataverse environment variable, Dataverse connection reference, or adapter binding target, deploy returns a machine-readable failure instead of choosing an arbitrary winner.
 For `flow-parameter`, the mapping must include `path`, the artifact must load successfully, and the target parameter must already exist in the flow artifact metadata.
 For `flow-connref`, the mapping must include `path`, the artifact must load successfully, and the target connection reference name must already exist in the flow artifact metadata.
 For `flow-envvar`, the mapping must include `path`, the artifact must load successfully, and the target environment variable name must already exist in the flow artifact metadata.
+For `sharepoint-file-text`, the mapping target must resolve to a `sharepoint-file`
+binding or literal plus `site`, and the resolved binding must carry an
+auth-backed `metadata.authProfile`.
+For `powerbi-dataset-refresh`, the mapping target must resolve to a
+`powerbi-dataset` binding or literal plus `workspace`, and the resolved binding
+must carry an auth-backed `metadata.authProfile`.
 For all flow-targeted mappings, preflight also runs the shared local
 `pp flow validate` semantic pass against each referenced artifact. Semantic
 errors fail preflight before any artifact mutation runs, while warning-only
@@ -242,6 +256,8 @@ steps:
 
 - `dataverse-envvar`, `dataverse-envvar-create`, `dataverse-connref`, and `dataverse-connref-create` are the supported Dataverse mutation kinds today.
 - `flow-parameter`, `flow-connref`, and `flow-envvar` are the supported flow-artifact operation kinds today. They patch local flow artifacts in place through the same shared orchestration model.
+- `sharepoint-file-text` is the supported SharePoint mutation kind today. It replaces the full contents of a resolved file target with UTF-8 text through Microsoft Graph.
+- `powerbi-dataset-refresh` is the supported Power BI mutation kind today. It submits a dataset refresh request through the Power BI REST API.
 - Those Dataverse mapping kinds can set `environment` and `solution` to target a specific Dataverse environment alias and named solution alias instead of always using the stage defaults.
 - `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
 - Mapped parameters without a resolved value now fail deploy preflight explicitly.
