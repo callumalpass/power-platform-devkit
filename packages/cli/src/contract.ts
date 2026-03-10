@@ -83,6 +83,10 @@ export function renderWarnings(warnings: Diagnostic[]): string {
           parts.push(`hint=${warning.hint}`);
         }
 
+        if (warning.detail) {
+          parts.push(`detail=${warning.detail}`);
+        }
+
         return parts.join(' ');
       })
       .join('\n')
@@ -161,6 +165,8 @@ function renderDiagnostics(result: OperationResult<unknown>, format: CliOutputFo
         ...row,
         path: row.path ?? '',
         source: row.source ?? '',
+        hint: row.hint ?? '',
+        detail: row.detail ?? '',
       }))
     );
   }
@@ -168,7 +174,11 @@ function renderDiagnostics(result: OperationResult<unknown>, format: CliOutputFo
   return ensureTrailingNewline(
     diagnostics
       .map((diagnostic) => {
-        const details = [diagnostic.hint ? `hint=${diagnostic.hint}` : undefined, diagnostic.path ? `path=${diagnostic.path}` : undefined]
+        const details = [
+          diagnostic.hint ? `hint=${diagnostic.hint}` : undefined,
+          diagnostic.detail ? `detail=${diagnostic.detail}` : undefined,
+          diagnostic.path ? `path=${diagnostic.path}` : undefined,
+        ]
           .filter(Boolean)
           .join(' ');
         return `${diagnostic.level.toUpperCase()} ${diagnostic.code}: ${diagnostic.message}${details ? ` (${details})` : ''}`;
@@ -285,6 +295,8 @@ function diagnosticRows(diagnostics: Diagnostic[]): Array<Record<string, string 
     message: diagnostic.message,
     source: diagnostic.source,
     path: diagnostic.path,
+    hint: diagnostic.hint,
+    detail: diagnostic.detail,
   }));
 }
 

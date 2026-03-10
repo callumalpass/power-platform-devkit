@@ -306,10 +306,15 @@ describe('discoverProject', () => {
     expect(discovery.data?.configPath).toBe(join(fixtureProjectRoot, 'pp.config.yaml'));
 
     expect(doctor.success).toBe(true);
+    expect(doctor.data?.inspectedPath).toBe(root);
+    expect(doctor.data?.canonicalProjectRoot).toBe(fixtureProjectRoot);
     expect(doctor.data?.discovery?.autoSelectedProjectRoot).toBe('fixtures/analysis/project');
     expect(doctor.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')).toBe(true);
     expect(doctor.data?.checks.find((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')?.detail).toContain(
       'Treat fixtures/analysis/project as the canonical local project for this invocation'
+    );
+    expect(doctor.data?.checks.find((check) => check.code === 'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED')?.detail).toContain(
+      'the only descendant project was used as the local anchor'
     );
   });
 

@@ -25,6 +25,7 @@
       "path": "<REPO_ROOT>/fixtures/analysis/project/docs"
     }
   ],
+  "canonicalProjectRoot": "<REPO_ROOT>/fixtures/analysis/project",
   "checks": [
     {
       "code": "PROJECT_DOCTOR_CONFIG_PRESENT",
@@ -106,6 +107,7 @@
     },
     {
       "code": "PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED",
+      "detail": "No project config was found at or above <REPO_ROOT>, so the only descendant project was used as the local anchor. Treat fixtures/analysis/project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path. It defines its own config, 4 asset path(s), 2 stage(s), 2 provider binding(s), 1 docs path(s). Config: fixtures/analysis/project/pp.config.yaml. Assets: apps, docs, flows, solutionBundle. Stages: dev, prod. Provider bindings: financeSharePoint, primaryDataverse. Docs: docs.",
       "hint": "Use fixtures/analysis/project when you want to scope commands to that local project explicitly.",
       "message": "Auto-selected descendant project config fixtures/analysis/project/pp.config.yaml.",
       "path": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
@@ -200,6 +202,7 @@
     "resolvedRoot": "<REPO_ROOT>/fixtures/analysis/project",
     "usedDefaultLayout": false
   },
+  "inspectedPath": "<REPO_ROOT>",
   "layout": {
     "editableAssetRoots": [
       "apps",

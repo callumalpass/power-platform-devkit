@@ -249,6 +249,7 @@ pp project doctor /path/to/repo --stage prod --format json
 
 Returns a repo-local layout report with:
 
+- the inspected path plus `canonicalProjectRoot` so descendant auto-selection names the effective local project anchor directly in stdout
 - summary flags for config, assets, topology, provider bindings, registries, and required inputs
 - a per-check assessment list (`pass`, `warn`, `fail`, `info`)
 - the resolved asset inventory used by `pp`

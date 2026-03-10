@@ -232,6 +232,8 @@ export interface ProjectLayoutAssessment {
 
 export interface ProjectDoctorReport {
   root: string;
+  inspectedPath: string;
+  canonicalProjectRoot: string;
   configPath?: string;
   discovery?: ProjectDiscoveryDetails;
   summary: ProjectDoctorSummary;
@@ -536,6 +538,7 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
       message: diagnostic.message,
       path: diagnostic.path,
       hint: diagnostic.hint,
+      detail: diagnostic.detail,
     });
   }
 
@@ -545,6 +548,8 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
   return ok(
     {
       root: resolvedRoot,
+      inspectedPath: resolvedRoot,
+      canonicalProjectRoot: project?.root ?? resolvedRoot,
       configPath: project?.configPath,
       discovery:
         project && (project.discovery.usedDefaultLayout || project.discovery.autoSelectedProjectRoot)
