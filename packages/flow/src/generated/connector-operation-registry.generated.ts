@@ -5,14 +5,14 @@
 import type { FlowConnectorOperationRegistryDocument } from '../connector-operation-registry';
 
 export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDocument = {
-  "generatedAt": "2026-03-10T12:01:15.415Z",
+  "generatedAt": "2026-03-10T17:13:49.708Z",
   "sourcePath": "packages/flow/connector-operation-openapi.source.json",
   "sourcePaths": [
     "packages/flow/connector-operation-openapi.source.json",
     "packages/flow/connector-operation-registry.source.json"
   ],
   "derivedOperationCount": 15,
-  "overlayOperationCount": 33,
+  "overlayOperationCount": 19,
   "operations": [
     {
       "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
@@ -57,6 +57,14 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "required": true
         },
         {
+          "name": "partitionId",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
+        {
           "name": "recordId",
           "kind": "string",
           "buckets": [
@@ -64,14 +72,6 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
             "pathParameters"
           ],
           "required": true
-        },
-        {
-          "name": "partitionId",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
         }
       ]
     },
@@ -80,22 +80,12 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "GetItem",
       "parameters": [
         {
-          "name": "entityName",
+          "name": "$expand",
           "kind": "string",
           "buckets": [
             "parameters",
-            "pathParameters"
-          ],
-          "required": true
-        },
-        {
-          "name": "recordId",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "pathParameters"
-          ],
-          "required": true
+            "queries"
+          ]
         },
         {
           "name": "$select",
@@ -106,12 +96,13 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           ]
         },
         {
-          "name": "$expand",
+          "name": "entityName",
           "kind": "string",
           "buckets": [
             "parameters",
-            "queries"
-          ]
+            "pathParameters"
+          ],
+          "required": true
         },
         {
           "name": "partitionId",
@@ -120,6 +111,15 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
             "parameters",
             "queries"
           ]
+        },
+        {
+          "name": "recordId",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "pathParameters"
+          ],
+          "required": true
         },
         {
           "name": "x-ms-odata-metadata-full",
@@ -135,87 +135,6 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
       "operationId": "ListRecords",
       "parameters": [
-        {
-          "name": "entityName",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "pathParameters"
-          ],
-          "required": true
-        },
-        {
-          "name": "$select",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
-        },
-        {
-          "name": "$filter",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
-        },
-        {
-          "name": "$orderby",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
-        },
-        {
-          "name": "$expand",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
-        },
-        {
-          "name": "fetchXml",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
-        },
-        {
-          "name": "$top",
-          "kind": "integer",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
-        },
-        {
-          "name": "$skiptoken",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
-        },
-        {
-          "name": "partitionId",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
-        },
-        {
-          "name": "returntotalrecordcount",
-          "kind": "boolean",
-          "buckets": [
-            "parameters",
-            "queries"
-          ]
-        },
         {
           "name": "x-ms-odata-metadata-full",
           "kind": "boolean",
@@ -269,13 +188,13 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "DeleteEmail_V2",
       "parameters": [
         {
+          "name": "mailboxAddress",
+          "kind": "string"
+        },
+        {
           "name": "messageId",
           "kind": "string",
           "required": true
-        },
-        {
-          "name": "mailboxAddress",
-          "kind": "string"
         }
       ]
     },
@@ -284,13 +203,12 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "GetEmailV2",
       "parameters": [
         {
-          "name": "messageId",
-          "kind": "string",
-          "required": true
+          "name": "extractSensitivityLabel",
+          "kind": "boolean"
         },
         {
-          "name": "mailboxAddress",
-          "kind": "string"
+          "name": "fetchSensitivityLabelMetadata",
+          "kind": "boolean"
         },
         {
           "name": "includeAttachments",
@@ -301,12 +219,13 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "kind": "string"
         },
         {
-          "name": "extractSensitivityLabel",
-          "kind": "boolean"
+          "name": "mailboxAddress",
+          "kind": "string"
         },
         {
-          "name": "fetchSensitivityLabelMetadata",
-          "kind": "boolean"
+          "name": "messageId",
+          "kind": "string",
+          "required": true
         }
       ]
     },
@@ -315,8 +234,8 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "MarkAsRead_V3",
       "parameters": [
         {
-          "name": "messageId",
-          "kind": "string",
+          "name": "isRead",
+          "kind": "boolean",
           "required": true
         },
         {
@@ -324,8 +243,8 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "kind": "string"
         },
         {
-          "name": "isRead",
-          "kind": "boolean",
+          "name": "messageId",
+          "kind": "string",
           "required": true
         }
       ]
@@ -335,11 +254,6 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "MoveV2",
       "parameters": [
         {
-          "name": "messageId",
-          "kind": "string",
-          "required": true
-        },
-        {
           "name": "folderPath",
           "kind": "string",
           "required": true
@@ -347,6 +261,11 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
         {
           "name": "mailboxAddress",
           "kind": "string"
+        },
+        {
+          "name": "messageId",
+          "kind": "string",
+          "required": true
         }
       ]
     },
@@ -355,7 +274,7 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "SendEmailV2",
       "parameters": [
         {
-          "name": "emailMessage/To",
+          "name": "emailMessage/Body",
           "kind": "string",
           "required": true
         },
@@ -365,7 +284,7 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "required": true
         },
         {
-          "name": "emailMessage/Body",
+          "name": "emailMessage/To",
           "kind": "string",
           "required": true
         }
@@ -376,7 +295,7 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "V4CalendarPatchItem",
       "parameters": [
         {
-          "name": "table",
+          "name": "end",
           "kind": "string",
           "required": true
         },
@@ -386,9 +305,12 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "required": true
         },
         {
-          "name": "subject",
-          "kind": "string",
-          "required": true
+          "name": "optionalAttendees",
+          "kind": "string"
+        },
+        {
+          "name": "requiredAttendees",
+          "kind": "string"
         },
         {
           "name": "start",
@@ -396,7 +318,12 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "required": true
         },
         {
-          "name": "end",
+          "name": "subject",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "table",
           "kind": "string",
           "required": true
         },
@@ -404,14 +331,6 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "name": "timeZone",
           "kind": "string",
           "required": true
-        },
-        {
-          "name": "requiredAttendees",
-          "kind": "string"
-        },
-        {
-          "name": "optionalAttendees",
-          "kind": "string"
         }
       ]
     },
@@ -420,7 +339,20 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "V4CalendarPostItem",
       "parameters": [
         {
-          "name": "table",
+          "name": "end",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "optionalAttendees",
+          "kind": "string"
+        },
+        {
+          "name": "requiredAttendees",
+          "kind": "string"
+        },
+        {
+          "name": "start",
           "kind": "string",
           "required": true
         },
@@ -430,12 +362,7 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "required": true
         },
         {
-          "name": "start",
-          "kind": "string",
-          "required": true
-        },
-        {
-          "name": "end",
+          "name": "table",
           "kind": "string",
           "required": true
         },
@@ -443,14 +370,6 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "name": "timeZone",
           "kind": "string",
           "required": true
-        },
-        {
-          "name": "requiredAttendees",
-          "kind": "string"
-        },
-        {
-          "name": "optionalAttendees",
-          "kind": "string"
         }
       ]
     },
@@ -651,13 +570,13 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "required": true
         },
         {
+          "name": "inferContentType",
+          "kind": "boolean"
+        },
+        {
           "name": "path",
           "kind": "string",
           "required": true
-        },
-        {
-          "name": "inferContentType",
-          "kind": "boolean"
         }
       ]
     },
@@ -691,16 +610,6 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "GetFileItems",
       "parameters": [
         {
-          "name": "dataset",
-          "kind": "string",
-          "required": true
-        },
-        {
-          "name": "table",
-          "kind": "string",
-          "required": true
-        },
-        {
           "name": "$filter",
           "kind": "string"
         },
@@ -713,8 +622,18 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "kind": "integer"
         },
         {
+          "name": "dataset",
+          "kind": "string",
+          "required": true
+        },
+        {
           "name": "folderPath",
           "kind": "string"
+        },
+        {
+          "name": "table",
+          "kind": "string",
+          "required": true
         },
         {
           "name": "view",
@@ -800,13 +719,13 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "required": true
         },
         {
-          "name": "table",
-          "kind": "string",
+          "name": "id",
+          "kind": "integer",
           "required": true
         },
         {
-          "name": "id",
-          "kind": "integer",
+          "name": "table",
+          "kind": "string",
           "required": true
         },
         {
@@ -820,16 +739,6 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "operationId": "GetItems",
       "parameters": [
         {
-          "name": "dataset",
-          "kind": "string",
-          "required": true
-        },
-        {
-          "name": "table",
-          "kind": "string",
-          "required": true
-        },
-        {
           "name": "$filter",
           "kind": "string"
         },
@@ -842,8 +751,9 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "kind": "integer"
         },
         {
-          "name": "view",
-          "kind": "string"
+          "name": "dataset",
+          "kind": "string",
+          "required": true
         },
         {
           "name": "folderPath",
@@ -856,6 +766,15 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
         {
           "name": "limitColumnsByView",
           "kind": "boolean"
+        },
+        {
+          "name": "table",
+          "kind": "string",
+          "required": true
+        },
+        {
+          "name": "view",
+          "kind": "string"
         }
       ]
     },

@@ -71,6 +71,7 @@
     "id": "flow-1",
     "name": "Invoice Sync",
     "parameters": [
+      "$connections",
       "ApiBaseUrl"
     ],
     "stateCode": 1,

@@ -3,6 +3,7 @@
     {
       "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
       "sourcePath": "connector-openapi/office365.swagger.json",
+      "bucketMode": "flattened",
       "includeOperations": [
         "DeleteEmail_V2",
         "GetEmailV2",
@@ -16,11 +17,13 @@
     {
       "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
       "sourcePath": "connector-openapi/sharepoint.swagger.json",
+      "bucketMode": "flattened",
       "includeOperations": ["GetFileContent", "GetFileContentByPath", "GetFileItems", "GetItem", "GetItems"]
     },
     {
       "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
       "sourcePath": "connector-openapi/dataverse.swagger.json",
+      "bucketMode": "native-plus-parameters",
       "includeOperations": ["DeleteRecord", "GetItem", "ListRecords"]
     }
   ]

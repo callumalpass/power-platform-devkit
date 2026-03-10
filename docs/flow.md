@@ -353,11 +353,19 @@ Current validation checks:
     with a thin local overlay in
     `packages/flow/connector-operation-registry.source.json` via
     `pnpm --filter @pp/flow generate:connector-registry`
+  - the OpenAPI manifest can now declare connector bucket normalization modes
+    for the bounded supported slice so official definitions can derive the
+    Power Automate artifact bucket shape directly:
+    `flattened` for connectors whose path/query inputs land in
+    `inputs.parameters`, and `native-plus-parameters` for connectors like the
+    current Dataverse slice that accept both compact `inputs.parameters` and
+    explicit `inputs.pathParameters` / `inputs.queries`
   - the first bounded OpenAPI-ingested slice currently covers selected
     `shared_office365`, `shared_sharepointonline`, and
-    `shared_commondataserviceforapps` operations while the overlay preserves
-    Power Automate-specific bucket and shape quirks plus the wider supported
-    inventory
+    `shared_commondataserviceforapps` operations, and the remaining overlay is
+    now thinner because Office 365 plus selected SharePoint and Dataverse
+    bucket quirks derive from the manifest instead of being duplicated as full
+    local operation tables
   - `shared_office365` `SendEmailV2` with required
     `inputs.parameters.emailMessage/To`,
     `inputs.parameters.emailMessage/Subject`, and

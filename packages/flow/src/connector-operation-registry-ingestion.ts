@@ -47,6 +47,7 @@ export interface FlowConnectorOperationOpenApiSource {
   apiId: string;
   sourcePath: string;
   includeOperations?: string[];
+  bucketMode?: 'native' | 'flattened' | 'native-plus-parameters';
 }
 
 export interface FlowConnectorOperationOpenApiSourceManifest {
@@ -120,6 +121,7 @@ export function deriveFlowConnectorOperationsFromOpenApiSource(input: {
   apiId: string;
   document: OpenApiDocument;
   includeOperations?: string[];
+  bucketMode?: FlowConnectorOperationOpenApiSource['bucketMode'];
 }): FlowSupportedConnectorOperation[] {
   const includedOperationIds = input.includeOperations ? new Set(input.includeOperations) : undefined;
   const operations: FlowSupportedConnectorOperation[] = [];
@@ -139,7 +141,7 @@ export function deriveFlowConnectorOperationsFromOpenApiSource(input: {
       operations.push({
         apiId: input.apiId,
         operationId: operation.operationId,
-        parameters: normalizeOpenApiOperationParameters(operation.parameters ?? []),
+        parameters: normalizeOpenApiOperationParameters(operation.parameters ?? [], input.bucketMode),
       });
     }
   }
@@ -178,6 +180,7 @@ async function collectDerivedOperations(
         apiId: source.apiId,
         document,
         includeOperations: source.includeOperations,
+        bucketMode: source.bucketMode,
       })
     );
   }
@@ -185,11 +188,14 @@ async function collectDerivedOperations(
   return operations.sort(compareOperations);
 }
 
-function normalizeOpenApiOperationParameters(parameters: OpenApiParameter[]): FlowSupportedConnectorOperationParameter[] {
+function normalizeOpenApiOperationParameters(
+  parameters: OpenApiParameter[],
+  bucketMode: FlowConnectorOperationOpenApiSource['bucketMode'] = 'native'
+): FlowSupportedConnectorOperationParameter[] {
   const collected: FlowSupportedConnectorOperationParameter[] = [];
 
   for (const parameter of parameters) {
-    const location = normalizeBucket(parameter.in);
+    const location = normalizeBucket(parameter.in, bucketMode);
 
     if (parameter.in === 'body' && parameter.schema) {
       collected.push(...flattenBodySchema(parameter.schema, '', location, parameter.required ?? false));
@@ -205,7 +211,8 @@ function normalizeOpenApiOperationParameters(parameters: OpenApiParameter[]): Fl
     collected.push({
       name,
       kind: normalizeSchemaKind(parameter.schema, parameter.type, parameter.format),
-      bucket: location === 'parameters' ? undefined : location,
+      ...(location.bucket === 'parameters' ? {} : { bucket: location.bucket }),
+      ...(location.buckets ? { buckets: location.buckets } : {}),
       required: parameter.required ? true : undefined,
     });
   }
@@ -216,7 +223,10 @@ function normalizeOpenApiOperationParameters(parameters: OpenApiParameter[]): Fl
 function flattenBodySchema(
   schema: OpenApiSchema,
   prefix: string,
-  bucket: FlowSupportedConnectorOperationParameterBucket,
+  bucket: {
+    bucket: FlowSupportedConnectorOperationParameterBucket;
+    buckets?: FlowSupportedConnectorOperationParameterBucket[];
+  },
   required: boolean
 ): FlowSupportedConnectorOperationParameter[] {
   const properties = schema.properties ?? {};
@@ -243,7 +253,8 @@ function flattenBodySchema(
     {
       name: prefix,
       kind: normalizeSchemaKind(schema),
-      bucket: bucket === 'parameters' ? undefined : bucket,
+      ...(bucket.bucket === 'parameters' ? {} : { bucket: bucket.bucket }),
+      ...(bucket.buckets ? { buckets: bucket.buckets } : {}),
       required: required ? true : undefined,
     },
   ];
@@ -276,15 +287,32 @@ function normalizeSchemaKind(
   return 'string';
 }
 
-function normalizeBucket(value: string | undefined): FlowSupportedConnectorOperationParameterBucket {
-  switch (value) {
-    case 'query':
-      return 'queries';
-    case 'path':
-      return 'pathParameters';
-    default:
-      return 'parameters';
+function normalizeBucket(
+  value: string | undefined,
+  bucketMode: FlowConnectorOperationOpenApiSource['bucketMode']
+): {
+  bucket: FlowSupportedConnectorOperationParameterBucket;
+  buckets?: FlowSupportedConnectorOperationParameterBucket[];
+} {
+  const normalized =
+    value === 'query' ? 'queries' : value === 'path' ? 'pathParameters' : ('parameters' as FlowSupportedConnectorOperationParameterBucket);
+
+  if (bucketMode === 'flattened') {
+    return {
+      bucket: 'parameters',
+    };
   }
+
+  if (bucketMode === 'native-plus-parameters' && normalized !== 'parameters') {
+    return {
+      bucket: 'parameters',
+      buckets: ['parameters', normalized],
+    };
+  }
+
+  return {
+    bucket: normalized,
+  };
 }
 
 function dedupeAndSortParameters(
