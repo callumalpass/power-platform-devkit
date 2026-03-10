@@ -781,6 +781,49 @@ describe('ALM services', () => {
     expect(httpClient.requests.at(-1)?.method).toBe('PATCH');
     expect(httpClient.requests.at(-1)?.path).toBe('environmentvariablevalues(val-1)');
   });
+
+  it('updates an existing connection reference binding', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              connectionreferenceid: 'ref-1',
+              connectionreferencelogicalname: 'pp_shared',
+              displayname: 'Shared Connector',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_sql',
+              connectionid: 'conn-old',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.setConnectionId('pp_shared', 'conn-next');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      id: 'ref-1',
+      logicalName: 'pp_shared',
+      connectionId: 'conn-next',
+      connected: true,
+    });
+    expect(httpClient.requests.at(-1)?.method).toBe('PATCH');
+    expect(httpClient.requests.at(-1)?.path).toBe('connectionreferences(ref-1)');
+    expect(httpClient.requests.at(-1)?.body).toEqual({
+      connectionid: 'conn-next',
+    });
+  });
 });
 
 describe('normalizeMetadataQueryOptions', () => {

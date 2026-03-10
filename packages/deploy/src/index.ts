@@ -1,7 +1,8 @@
-import { EnvironmentVariableService, resolveDataverseClient } from '@pp/dataverse';
+import { ConnectionReferenceService, EnvironmentVariableService, resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { summarizeResolvedParameter, type ProjectContext, type ResolvedProjectParameter } from '@pp/project';
 import { SolutionService } from '@pp/solution';
+import type { ConnectionReferenceSummary, EnvironmentVariableSummary } from '@pp/dataverse';
 
 export interface DeployInput {
   name: string;
@@ -35,6 +36,10 @@ export interface DataverseEnvvarDeployOperationPlan extends DeployOperationPlanB
   kind: 'dataverse-envvar-set';
 }
 
+export interface DataverseConnectionReferenceDeployOperationPlan extends DeployOperationPlanBase {
+  kind: 'dataverse-connref-set';
+}
+
 export interface DeployInputBindingOperationPlan extends DeployOperationPlanBase {
   kind: 'deploy-input-bind';
 }
@@ -45,6 +50,7 @@ export interface DeploySecretBindingOperationPlan extends DeployOperationPlanBas
 
 export type DeployOperationPlan =
   | DataverseEnvvarDeployOperationPlan
+  | DataverseConnectionReferenceDeployOperationPlan
   | DeployInputBindingOperationPlan
   | DeploySecretBindingOperationPlan;
 
@@ -174,7 +180,7 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
   });
   const operations = collectDeployOperations(project).map(({ plan }) => plan);
   const diagnostics: Diagnostic[] = [];
-  const dataverseOperations = operations.filter(isDataverseEnvvarOperation);
+  const dataverseOperations = operations.filter(isDataverseMutationOperation);
 
   if (dataverseOperations.length > 0 && !project.topology.activeEnvironment) {
     diagnostics.push(
@@ -252,8 +258,8 @@ export async function executeDeploy(
   const checks: DeployPreflightCheck[] = [];
   const applyOperations: DeployOperationResult[] = [];
   const preparedOperations = collectDeployOperations(project);
-  const dataverseOperations = preparedOperations.filter((operation) => isDataverseEnvvarOperation(operation.plan));
-  const adapterBindingOperations = preparedOperations.filter((operation) => !isDataverseEnvvarOperation(operation.plan));
+  const dataverseOperations = preparedOperations.filter((operation) => isDataverseMutationOperation(operation.plan));
+  const adapterBindingOperations = preparedOperations.filter((operation) => !isDataverseMutationOperation(operation.plan));
   const target = planResult.data?.target ?? {
     stage: project.topology.selectedStage,
     environmentAlias: project.topology.activeEnvironment,
@@ -345,9 +351,11 @@ export async function executeDeploy(
   }
 
   const solutionService = new SolutionService(resolution.data.client);
+  const connectionReferences = new ConnectionReferenceService(resolution.data.client);
   const environmentVariables = new EnvironmentVariableService(resolution.data.client);
-  const [analysis, variables] = await Promise.all([
+  const [analysis, references, variables] = await Promise.all([
     solutionService.analyze(target.solutionUniqueName),
+    connectionReferences.list({ solutionUniqueName: target.solutionUniqueName }),
     environmentVariables.list({ solutionUniqueName: target.solutionUniqueName }),
   ]);
 
@@ -373,8 +381,25 @@ export async function executeDeploy(
     });
   }
 
+  if (!references.success) {
+    diagnostics.push(...references.diagnostics);
+    warnings.push(...references.warnings);
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_CONNREF_DISCOVERY_FAILED',
+      message: `Failed to inspect connection references for solution ${target.solutionUniqueName}.`,
+      target: target.solutionUniqueName,
+    });
+  }
+
   const solutionAnalysis = analysis.success ? analysis.data : undefined;
-  const discoveredVariables = variables.success ? variables.data ?? [] : [];
+  const discoveredReferences: ConnectionReferenceSummary[] = references.success ? references.data ?? [] : [];
+  const discoveredVariables: EnvironmentVariableSummary[] = variables.success ? variables.data ?? [] : [];
+  const referenceByLogicalName = new Map(
+    discoveredReferences
+      .filter((reference) => reference.logicalName)
+      .map((reference) => [reference.logicalName!.toLowerCase(), reference] as const)
+  );
   const variableBySchema = new Map(
     discoveredVariables
       .filter((variable) => variable.schemaName)
@@ -418,13 +443,50 @@ export async function executeDeploy(
   }
 
   for (const operation of dataverseOperations) {
-    const variable = variableBySchema.get(operation.plan.target.toLowerCase());
+    const nextValue = stringifyDeployValue(operation.value);
 
-    if (!variable) {
+    if (isDataverseEnvvarOperation(operation.plan)) {
+      const variable = variableBySchema.get(operation.plan.target.toLowerCase());
+
+      if (!variable) {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_MISSING',
+          message: `Environment variable ${operation.plan.target} was not found in solution ${target.solutionUniqueName}.`,
+          target: operation.plan.target,
+          details: {
+            parameter: operation.plan.parameter,
+          },
+        });
+        applyOperations.push({
+          ...operation.plan,
+          status: 'skipped',
+          targetExists: false,
+          nextValue,
+          message: 'Target environment variable is missing.',
+        });
+        continue;
+      }
+
+      applyOperations.push({
+        ...operation.plan,
+        status: 'planned',
+        targetExists: true,
+        currentValue: variable.effectiveValue,
+        nextValue,
+        changed: variable.effectiveValue !== nextValue,
+        message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
+      });
+      continue;
+    }
+
+    const reference = referenceByLogicalName.get(operation.plan.target.toLowerCase());
+
+    if (!reference) {
       checks.push({
         status: 'fail',
-        code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_MISSING',
-        message: `Environment variable ${operation.plan.target} was not found in solution ${target.solutionUniqueName}.`,
+        code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_MISSING',
+        message: `Connection reference ${operation.plan.target} was not found in solution ${target.solutionUniqueName}.`,
         target: operation.plan.target,
         details: {
           parameter: operation.plan.parameter,
@@ -434,19 +496,19 @@ export async function executeDeploy(
         ...operation.plan,
         status: 'skipped',
         targetExists: false,
-        nextValue: stringifyDeployValue(operation.value),
-        message: 'Target environment variable is missing.',
+        nextValue,
+        message: 'Target connection reference is missing.',
       });
       continue;
     }
 
     applyOperations.push({
       ...operation.plan,
-      status: mode === 'apply' ? 'planned' : 'planned',
+      status: 'planned',
       targetExists: true,
-      currentValue: variable.effectiveValue,
-      nextValue: stringifyDeployValue(operation.value),
-      changed: variable.effectiveValue !== stringifyDeployValue(operation.value),
+      currentValue: reference.connectionId,
+      nextValue,
+      changed: reference.connectionId !== nextValue,
       message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
     });
   }
@@ -479,7 +541,36 @@ export async function executeDeploy(
       continue;
     }
 
-    const result = await environmentVariables.setValue(operation.plan.target, stringifyDeployValue(operation.value), {
+    const nextValue = stringifyDeployValue(operation.value);
+
+    if (isDataverseEnvvarOperation(operation.plan)) {
+      const result = await environmentVariables.setValue(operation.plan.target, nextValue, {
+        solutionUniqueName: target.solutionUniqueName,
+      });
+
+      if (!result.success || !result.data) {
+        diagnostics.push(...result.diagnostics);
+        warnings.push(...result.warnings);
+        applyOperations[index] = {
+          ...existingOperation,
+          status: 'failed',
+          message: `Failed to update ${operation.plan.target}.`,
+        };
+        continue;
+      }
+
+      applyOperations[index] = {
+        ...existingOperation,
+        status: 'applied',
+        currentValue: existingOperation.currentValue,
+        nextValue: result.data.effectiveValue,
+        changed: true,
+        message: `Updated ${operation.plan.target}.`,
+      };
+      continue;
+    }
+
+    const result = await connectionReferences.setConnectionId(operation.plan.target, nextValue, {
       solutionUniqueName: target.solutionUniqueName,
     });
 
@@ -498,7 +589,7 @@ export async function executeDeploy(
       ...existingOperation,
       status: 'applied',
       currentValue: existingOperation.currentValue,
-      nextValue: result.data.effectiveValue,
+      nextValue: result.data.connectionId,
       changed: true,
       message: `Updated ${operation.plan.target}.`,
     };
@@ -551,6 +642,15 @@ function createDeployOperationPlan(
         target,
         valuePreview,
       };
+    case 'dataverse-connref':
+      return {
+        kind: 'dataverse-connref-set',
+        parameter: parameter.name,
+        source: parameter.source,
+        sensitive: parameter.sensitive,
+        target,
+        valuePreview,
+      };
     case 'deploy-input':
       return {
         kind: 'deploy-input-bind',
@@ -588,6 +688,16 @@ function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCh
           status: 'fail',
           code: 'DEPLOY_PREFLIGHT_ENVVAR_SOURCE_MISSING',
           message: `Deploy parameter ${parameter.name} is unresolved but maps to Dataverse environment variable ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+          },
+        });
+      } else if (mapping.kind === 'dataverse-connref') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_CONNREF_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to Dataverse connection reference ${mapping.target}.`,
           target: mapping.target,
           details: {
             parameter: parameter.name,
@@ -710,6 +820,18 @@ function summarizeApplyOperations(operations: DeployOperationResult[]): DeployAp
 
 function isDataverseEnvvarOperation(operation: DeployOperationPlan): operation is DataverseEnvvarDeployOperationPlan {
   return operation.kind === 'dataverse-envvar-set';
+}
+
+function isDataverseConnectionReferenceOperation(
+  operation: DeployOperationPlan
+): operation is DataverseConnectionReferenceDeployOperationPlan {
+  return operation.kind === 'dataverse-connref-set';
+}
+
+function isDataverseMutationOperation(
+  operation: DeployOperationPlan
+): operation is DataverseEnvvarDeployOperationPlan | DataverseConnectionReferenceDeployOperationPlan {
+  return isDataverseEnvvarOperation(operation) || isDataverseConnectionReferenceOperation(operation);
 }
 
 function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean): DeployConfirmation {

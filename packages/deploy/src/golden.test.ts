@@ -408,4 +408,107 @@ describe('deploy fixture-backed goldens', () => {
       message: 'pp_TenantDomain is already up to date.',
     });
   });
+
+  it('applies dataverse connection reference mappings through the shared deploy path', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const discovery = await discoverProject(fixtureRoot, {
+      environment: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+        PP_SQL_ENDPOINT: 'sql.contoso.example',
+        PP_SQL_CONNECTION_ID: 'conn-target-sql',
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    discovery.data!.parameters.sqlConnection = {
+      name: 'sqlConnection',
+      type: 'string',
+      source: 'environment',
+      value: 'conn-target-sql',
+      definition: {
+        type: 'string',
+        fromEnv: 'PP_SQL_CONNECTION_ID',
+        required: true,
+        mapsTo: [
+          {
+            kind: 'dataverse-connref',
+            target: 'pp_shared_sql',
+          },
+        ],
+      },
+      sensitive: false,
+      hasValue: true,
+      reference: undefined,
+      resolvedBy: undefined,
+    };
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [],
+        dependencies: [],
+        connectionreferences: [
+          {
+            connectionreferenceid: 'connref-1',
+            connectionreferencelogicalname: 'pp_shared_sql',
+            displayname: 'Shared SQL',
+            connectorid: '/providers/Microsoft.PowerApps/apis/shared_sql',
+            connectionid: 'conn-old-sql',
+            _solutionid_value: 'solution-prod-1',
+            statecode: 0,
+          },
+        ],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const updateSpy = vi.spyOn(client, 'update');
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.apply.summary.applied).toBe(2);
+    expect(updateSpy).toHaveBeenCalledTimes(2);
+    expect(result.data?.plan.operations.map((operation) => operation.kind)).toContain('dataverse-connref-set');
+    expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-connref-set')).toMatchObject({
+      status: 'applied',
+      currentValue: 'conn-old-sql',
+      nextValue: 'conn-target-sql',
+      changed: true,
+    });
+  });
 });

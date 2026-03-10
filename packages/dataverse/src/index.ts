@@ -1121,6 +1121,61 @@ export class ConnectionReferenceService {
       }
     );
   }
+
+  async setConnectionId(
+    identifier: string,
+    connectionId: string,
+    options: { solutionUniqueName?: string } = {}
+  ): Promise<OperationResult<ConnectionReferenceSummary>> {
+    const reference = await this.inspect(identifier, options);
+
+    if (!reference.success) {
+      return reference as unknown as OperationResult<ConnectionReferenceSummary>;
+    }
+
+    if (!reference.data) {
+      return fail(
+        [
+          ...reference.diagnostics,
+          createDiagnostic('error', 'DATAVERSE_CONNREF_NOT_FOUND', `Connection reference ${identifier} was not found.`, {
+            source: '@pp/dataverse',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: reference.warnings,
+        }
+      );
+    }
+
+    const update = await this.dataverseClient.update(
+      'connectionreferences',
+      reference.data.id,
+      {
+        connectionid: connectionId,
+      },
+      {
+        returnRepresentation: true,
+      }
+    );
+
+    if (!update.success) {
+      return update as unknown as OperationResult<ConnectionReferenceSummary>;
+    }
+
+    return ok(
+      {
+        ...reference.data,
+        connectionId,
+        connected: true,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(reference.diagnostics, update.diagnostics),
+        warnings: mergeDiagnosticLists(reference.warnings, update.warnings),
+      }
+    );
+  }
 }
 
 export class EnvironmentVariableService {

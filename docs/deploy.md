@@ -13,6 +13,8 @@ The shared deploy contract currently recognizes project parameters mapped with:
 mapsTo:
   - kind: dataverse-envvar
     target: pp_TenantDomain
+  - kind: dataverse-connref
+    target: pp_shared_sql
   - kind: deploy-secret
     target: api-token
   - kind: deploy-input
@@ -24,9 +26,9 @@ During `deploy apply`, `pp`:
 1. resolves the active project stage, environment alias, and solution
 2. resolves the Dataverse client for the active environment alias
 3. analyzes the target solution for preflight facts
-4. inspects environment variables in that solution
+4. inspects environment variables and connection references in that solution
 5. resolves adapter-facing input and secret bindings into the shared operation result
-6. updates matching environment variable values for supported Dataverse mappings when the target differs, otherwise records a no-op skip
+6. updates matching environment variable values and connection reference bindings for supported Dataverse mappings when the target differs, otherwise records a no-op skip
 
 ## Local usage
 
@@ -170,8 +172,8 @@ steps:
 
 ## Current limits
 
-- `dataverse-envvar` is still the only mapping kind that mutates a remote target today.
+- `dataverse-envvar` and `dataverse-connref` are the supported Dataverse mutation kinds today.
 - `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
 - Mapped parameters without a resolved value now fail deploy preflight explicitly.
-- Missing target environment variables fail preflight.
+- Missing target environment variables or connection references fail preflight.
 - Connection reference and missing-environment-variable findings from solution analysis are surfaced as warnings in preflight.
