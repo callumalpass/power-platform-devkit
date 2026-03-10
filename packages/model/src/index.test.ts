@@ -59,6 +59,7 @@ function createStubClient(): DataverseClient {
             }
           );
         case 'appmodulecomponents':
+        case 'appmodules(app-1)/appmodule_appmodulecomponent':
           return ok(
             [
               {

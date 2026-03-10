@@ -2579,12 +2579,6 @@ describe('normalizeMetadataQueryOptions', () => {
               objectid: 'form-1',
               _appmoduleidunique_value: 'app-1',
             },
-            {
-              appmodulecomponentid: 'amc-3',
-              componenttype: 26,
-              objectid: 'view-1',
-              _appmoduleidunique_value: 'app-2',
-            },
           ],
         },
       }),
@@ -2675,6 +2669,52 @@ describe('normalizeMetadataQueryOptions', () => {
       id: 'sitemap-1',
       name: 'Sales Hub sitemap',
     });
+  });
+
+  it('queries model-driven app components through the app navigation path', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              appmodulecomponentid: 'amc-1',
+              componenttype: 1,
+              objectid: 'entity-1',
+            },
+            {
+              appmodulecomponentid: 'amc-2',
+              componenttype: 60,
+              objectid: 'form-1',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ModelDrivenAppService(client);
+
+    const result = await service.components('app-1');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      {
+        id: 'amc-1',
+        componentType: 1,
+        objectId: 'entity-1',
+        appId: 'app-1',
+      },
+      {
+        id: 'amc-2',
+        componentType: 60,
+        objectId: 'form-1',
+        appId: 'app-1',
+      },
+    ]);
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'appmodules(app-1)/appmodule_appmodulecomponent?%24select=appmodulecomponentid%2Ccomponenttype%2Cobjectid',
+    ]);
   });
 
   it('rejects unsupported metadata count requests', () => {

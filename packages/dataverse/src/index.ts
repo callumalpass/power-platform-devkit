@@ -2681,22 +2681,19 @@ export class ModelDrivenAppService {
 
   async components(appId: string): Promise<OperationResult<ModelDrivenAppComponentSummary[]>> {
     const components = await this.dataverseClient.queryAll<ModelDrivenAppComponentRecord>({
-      table: 'appmodulecomponents',
-      select: ['appmodulecomponentid', 'componenttype', 'objectid', 'appmoduleidunique', '_appmoduleidunique_value'],
+      table: `appmodules(${appId})/appmodule_appmodulecomponent`,
+      select: [...baseModelDrivenAppComponentSelect],
     });
 
     if (!components.success) {
       return components as unknown as OperationResult<ModelDrivenAppComponentSummary[]>;
     }
 
-    return ok(
-      (components.data ?? []).filter((component) => matchesModelDrivenAppComponent(component, appId)).map(normalizeModelDrivenAppComponent),
-      {
-        supportTier: 'preview',
-        diagnostics: components.diagnostics,
-        warnings: components.warnings,
-      }
-    );
+    return ok((components.data ?? []).map((component) => normalizeModelDrivenAppComponent(component, appId)), {
+      supportTier: 'preview',
+      diagnostics: components.diagnostics,
+      warnings: components.warnings,
+    });
   }
 
   async forms(): Promise<OperationResult<ModelDrivenAppFormSummary[]>> {
@@ -3647,6 +3644,7 @@ const baseConnectionReferenceSelect = [
 ] as const;
 
 const optionalConnectionReferenceSelect = ['customconnectorid'] as const;
+const baseModelDrivenAppComponentSelect = ['appmodulecomponentid', 'componenttype', 'objectid'] as const;
 
 async function queryConnectionReferenceRecords(
   dataverseClient: DataverseClient
@@ -3694,12 +3692,16 @@ async function queryConnectionReferenceRecords(
 }
 
 function findUnsupportedConnectionReferenceColumns(diagnostics: Diagnostic[]): string[] {
+  return findUnsupportedColumns(diagnostics, optionalConnectionReferenceSelect);
+}
+
+function findUnsupportedColumns(diagnostics: Diagnostic[], columns: readonly string[]): string[] {
   const unsupported = new Set<string>();
 
   for (const diagnostic of diagnostics) {
     const message = `${diagnostic.message} ${diagnostic.detail ?? ''}`;
 
-    for (const column of optionalConnectionReferenceSelect) {
+    for (const column of columns) {
       if (message.includes(`'${column}'`)) {
         unsupported.add(column);
       }
@@ -3836,12 +3838,12 @@ function normalizeModelDrivenApp(record: ModelDrivenAppRecord): ModelDrivenAppSu
   };
 }
 
-function normalizeModelDrivenAppComponent(record: ModelDrivenAppComponentRecord): ModelDrivenAppComponentSummary {
+function normalizeModelDrivenAppComponent(record: ModelDrivenAppComponentRecord, appId?: string): ModelDrivenAppComponentSummary {
   return {
     id: record.appmodulecomponentid,
     componentType: record.componenttype,
     objectId: record.objectid,
-    appId: record._appmoduleidunique_value ?? record.appmoduleidunique,
+    appId: appId ?? record._appmoduleidunique_value ?? record.appmoduleidunique,
   };
 }
 
@@ -3950,10 +3952,6 @@ function isAfterRelativeTime(value: string | undefined, relative: string): boole
   const offset = unit === 'h' ? amount * 60 * 60 * 1000 : amount * 24 * 60 * 60 * 1000;
 
   return date.valueOf() >= now - offset;
-}
-
-function matchesModelDrivenAppComponent(component: ModelDrivenAppComponentRecord, appId: string): boolean {
-  return normalizeMetadataId(component._appmoduleidunique_value ?? component.appmoduleidunique) === normalizeMetadataId(appId);
 }
 
 function normalizeMetadataId(value: string | undefined): string {
