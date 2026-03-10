@@ -55,6 +55,11 @@ export interface PublicClientLoginOptions {
   preferredFlow?: PublicClientFlow;
 }
 
+interface InteractiveAuthLaunchContext {
+  cachedAccountUsername?: string;
+  silentFailure?: unknown;
+}
+
 export class StaticTokenProvider implements TokenProvider {
   constructor(private readonly token: string) {}
 
@@ -521,11 +526,15 @@ async function acquirePublicClientToken(
 
   await restoreTokenCache(app, cachePath);
   const scopes = resolveScopes(profile, resource);
+  let interactiveLaunchContext: InteractiveAuthLaunchContext | undefined;
 
   if (!loginOptions.forcePrompt) {
     const account = await resolveCachedAccount(app, profile);
 
     if (account) {
+      interactiveLaunchContext = {
+        cachedAccountUsername: account.username,
+      };
       try {
         const silent = await app.acquireTokenSilent({
           account,
@@ -540,10 +549,16 @@ async function acquirePublicClientToken(
           };
         }
       } catch (error) {
+        interactiveLaunchContext = {
+          cachedAccountUsername: account.username,
+          silentFailure: error,
+        };
         process.stderr.write(
           `Silent authentication failed for profile ${profile.name}: ${formatAuthError(error)}. Falling back to interactive authentication.\n`
         );
       }
+    } else {
+      interactiveLaunchContext = {};
     }
   }
 
@@ -564,7 +579,7 @@ async function acquirePublicClientToken(
       : undefined;
 
   try {
-    return await acquireTokenInteractively(app, profile, scopes, cachePath, browserProfile, options);
+    return await acquireTokenInteractively(app, profile, scopes, cachePath, browserProfile, options, interactiveLaunchContext);
   } catch (error) {
     if (profile.type === 'user' && profile.fallbackToDeviceCode === false) {
       throw error;
@@ -583,13 +598,10 @@ async function acquireTokenInteractively(
   scopes: string[],
   cachePath: string,
   browserProfile: BrowserProfile | undefined,
-  options: ConfigStoreOptions
+  options: ConfigStoreOptions,
+  launchContext: InteractiveAuthLaunchContext | undefined
 ): Promise<{ accessToken: string; profile: UserAuthProfile }> {
-  process.stderr.write(
-    browserProfile
-      ? `Opening browser for authentication with browser profile ${browserProfile.name}...\n`
-      : 'Opening browser for authentication...\n'
-  );
+  process.stderr.write(buildInteractiveAuthLaunchMessage(profile, browserProfile, launchContext));
 
   const result = await app.acquireTokenInteractive({
     scopes,
@@ -607,6 +619,41 @@ async function acquireTokenInteractively(
     accessToken,
     profile: updateProfileAccount(profile, result.account),
   };
+}
+
+function buildInteractiveAuthLaunchMessage(
+  profile: UserAuthProfile,
+  browserProfile: BrowserProfile | undefined,
+  launchContext: InteractiveAuthLaunchContext | undefined
+): string {
+  const lines = [
+    browserProfile
+      ? `Opening browser for authentication with browser profile ${browserProfile.name} for auth profile ${profile.name}.`
+      : `Opening browser for authentication for auth profile ${profile.name}.`,
+  ];
+
+  if (launchContext?.silentFailure) {
+    lines.push(
+      `Cached account ${launchContext.cachedAccountUsername ?? profile.accountUsername ?? profile.loginHint ?? profile.name} could not be refreshed silently: ${formatAuthError(launchContext.silentFailure)}.`
+    );
+  } else if (launchContext && launchContext.cachedAccountUsername) {
+    lines.push(`Cached account ${launchContext.cachedAccountUsername} requires an interactive sign-in step.`);
+  } else if (launchContext) {
+    lines.push('No cached account was available for silent token refresh. This usually means the browser session needs sign-in or consent.');
+  }
+
+  if (browserProfile?.lastBootstrappedAt) {
+    lines.push(
+      `Browser profile ${browserProfile.name} was last bootstrapped at ${browserProfile.lastBootstrappedAt}${browserProfile.lastBootstrapUrl ? ` for ${browserProfile.lastBootstrapUrl}` : ''}.`
+    );
+  } else if (browserProfile) {
+    lines.push(
+      `Browser profile ${browserProfile.name} has no recorded bootstrap yet. If this stalls, complete an initial sign-in or consent flow in that profile first.`
+    );
+  }
+
+  lines.push('If no browser window appears, the browser handoff likely failed.');
+  return `${lines.join('\n')}\n`;
 }
 
 async function acquireTokenByDeviceCode(

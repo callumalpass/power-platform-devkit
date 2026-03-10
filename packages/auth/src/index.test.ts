@@ -218,6 +218,72 @@ describe('AuthService', () => {
       expect(stderrSpy).toHaveBeenCalledWith(
         expect.stringContaining('Silent authentication failed for profile user-profile: refresh token expired errorCode=invalid_grant. Falling back to interactive authentication.\n')
       );
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Cached account user@example.com could not be refreshed silently: refresh token expired errorCode=invalid_grant.')
+      );
+    } finally {
+      if (originalWaylandDisplay === undefined) {
+        delete process.env.WAYLAND_DISPLAY;
+      } else {
+        process.env.WAYLAND_DISPLAY = originalWaylandDisplay;
+      }
+    }
+  });
+
+  it('prints interactive auth diagnostics when no cached account or browser bootstrap exists', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
+    const auth = new AuthService({ configDir });
+    const originalWaylandDisplay = process.env.WAYLAND_DISPLAY;
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    process.env.WAYLAND_DISPLAY = 'wayland-0';
+
+    await auth.saveBrowserProfile({
+      name: 'tenant-a',
+      kind: 'edge',
+    });
+
+    const tokenCache = {
+      deserialize: vi.fn(),
+      serialize: vi.fn(() => '{}'),
+      getAllAccounts: vi.fn(async () => []),
+    };
+
+    vi.spyOn(PublicClientApplication.prototype, 'getTokenCache').mockReturnValue(tokenCache as never);
+    vi.spyOn(PublicClientApplication.prototype, 'acquireTokenInteractive').mockResolvedValue({
+      accessToken: 'token-value',
+      account: {
+        homeAccountId: 'home-account',
+        localAccountId: 'local-account',
+        username: 'user@example.com',
+        tenantId: 'tenant-id',
+        environment: 'login.microsoftonline.com',
+      },
+    } as never);
+
+    try {
+      const result = await auth.loginProfile(
+        {
+          name: 'user-profile',
+          type: 'user',
+          loginHint: 'user@example.com',
+          browserProfile: 'tenant-a',
+        },
+        'https://example.crm.dynamics.com'
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data?.token).toBe('token-value');
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Opening browser for authentication with browser profile tenant-a for auth profile user-profile.')
+      );
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No cached account was available for silent token refresh. This usually means the browser session needs sign-in or consent.')
+      );
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Browser profile tenant-a has no recorded bootstrap yet. If this stalls, complete an initial sign-in or consent flow in that profile first.')
+      );
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('If no browser window appears, the browser handoff likely failed.'));
     } finally {
       if (originalWaylandDisplay === undefined) {
         delete process.env.WAYLAND_DISPLAY;
