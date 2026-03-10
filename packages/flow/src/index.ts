@@ -163,6 +163,7 @@ export interface FlowGraphReport {
 }
 
 export interface FlowPatchDocument {
+  actions?: Record<string, string>;
   connectionReferences?: Record<string, string>;
   environmentVariables?: Record<string, string>;
   parameters?: Record<string, FlowJsonValue>;
@@ -1331,6 +1332,12 @@ export async function patchFlowArtifact(
     return artifact as unknown as OperationResult<FlowPatchResult>;
   }
 
+  const actionRenameValidation = validateFlowActionRenamePatch(artifact.data, patch.actions ?? {});
+
+  if (actionRenameValidation) {
+    return fail(actionRenameValidation);
+  }
+
   const cloned = cloneJsonValue(artifact.data) as FlowArtifact;
   const appliedOperations: string[] = [];
 
@@ -1358,6 +1365,15 @@ export async function patchFlowArtifact(
   for (const [pathExpression, value] of Object.entries(patch.values ?? {})) {
     setFlowPathValue(cloned.definition, parseFlowPath(pathExpression), normalizeFlowJsonValue(value));
     appliedOperations.push(`value:${pathExpression}`);
+  }
+
+  for (const [from, to] of Object.entries(patch.actions ?? {})) {
+    if (from === to) {
+      continue;
+    }
+
+    renameAction(cloned, from, to);
+    appliedOperations.push(`action:${from}->${to}`);
   }
 
   const destination = resolveFlowOutputPath(outPath ?? path);
@@ -2058,7 +2074,7 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
                   }))
                   .find((entry) => entry.fields.length > 0)
               : undefined;
-          const parameterBucket = valueEntry?.bucket ?? prefixedFieldEntry?.bucket ?? supportedBuckets[0];
+          const parameterBucket = valueEntry?.bucket ?? prefixedFieldEntry?.bucket ?? supportedBuckets[0] ?? 'parameters';
           const parameterPath = describeConnectorParameterPath(node.path, parameterBucket, parameter.name);
 
           if (!valueEntry && !prefixedFieldEntry) {
@@ -3253,6 +3269,96 @@ function renameConnectionReference(artifact: FlowArtifact, from: string, to: str
   }
 }
 
+function validateFlowActionRenamePatch(
+  artifact: FlowArtifact,
+  renames: Record<string, string>
+): Diagnostic | undefined {
+  const entries = Object.entries(renames);
+
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const actionNames = new Set(
+    buildFlowIntermediateRepresentation(artifact).nodes.filter((node) => node.kind !== 'trigger').map((node) => node.name)
+  );
+  const sources = new Set(entries.map(([from]) => from));
+  const seenTargets = new Map<string, string>();
+
+  for (const [from, rawTo] of entries) {
+    const to = rawTo.trim();
+
+    if (!from || !to) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ACTION_RENAME_INVALID',
+        'Flow action rename patches require non-empty source and target action names.',
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    if (!actionNames.has(from)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ACTION_SOURCE_MISSING',
+        `Flow patch cannot rename missing action ${from}.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    if (from === to) {
+      continue;
+    }
+
+    if (sources.has(to)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ACTION_RENAME_CHAIN_UNSUPPORTED',
+        `Flow patch action rename ${from} -> ${to} is unsupported because ${to} is also a rename source.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    const existingSource = seenTargets.get(to);
+
+    if (existingSource && existingSource !== from) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ACTION_TARGET_CONFLICT',
+        `Flow patch action rename target ${to} is requested by multiple source actions.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    seenTargets.set(to, from);
+
+    if (actionNames.has(to)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ACTION_TARGET_EXISTS',
+        `Flow patch cannot rename action ${from} to ${to} because ${to} already exists.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+  }
+
+  return undefined;
+}
+
+function renameAction(artifact: FlowArtifact, from: string, to: string): void {
+  artifact.definition = renameActionValue(artifact.definition, from, to) as FlowArtifact['definition'];
+}
+
 function renameEnvironmentVariable(artifact: FlowArtifact, from: string, to: string): void {
   artifact.metadata.environmentVariables = Array.from(
     new Set(artifact.metadata.environmentVariables.map((name) => (name === from ? to : name)))
@@ -3299,6 +3405,74 @@ function renameEnvironmentVariableValue(value: FlowJsonValue, from: string, to: 
   }
 
   return value;
+}
+
+function renameActionValue(value: FlowJsonValue, from: string, to: string): FlowJsonValue {
+  if (typeof value === 'string') {
+    return renameActionReferencesInString(value, from, to);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => renameActionValue(item, from, to));
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => {
+        if (key === 'actions') {
+          return [key, renameActionMap(asRecord(nested), from, to)];
+        }
+
+        if (key === 'runAfter') {
+          return [key, renameRunAfterMap(asRecord(nested), from, to)];
+        }
+
+        return [key, renameActionValue(nested as FlowJsonValue, from, to)];
+      })
+    ) as FlowJsonValue;
+  }
+
+  return value;
+}
+
+function renameActionMap(
+  record: Record<string, unknown> | undefined,
+  from: string,
+  to: string
+): Record<string, FlowJsonValue> | undefined {
+  if (!record) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    Object.entries(record).map(([key, nested]) => [key === from ? to : key, renameActionValue(nested as FlowJsonValue, from, to)])
+  ) as Record<string, FlowJsonValue>;
+}
+
+function renameRunAfterMap(
+  record: Record<string, unknown> | undefined,
+  from: string,
+  to: string
+): Record<string, FlowJsonValue> | undefined {
+  if (!record) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    Object.entries(record).map(([key, nested]) => [key === from ? to : key, normalizeFlowJsonValue(nested)])
+  ) as Record<string, FlowJsonValue>;
+}
+
+function renameActionReferencesInString(value: string, from: string, to: string): string {
+  const escapedFrom = escapeRegExp(from);
+  return value.replace(
+    new RegExp(`\\b(actions|body|outputs)\\(\\s*(['"])${escapedFrom}\\2\\s*\\)`, 'g'),
+    (_match, fnName: string, quote: string) => `${fnName}(${quote}${to}${quote})`
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function setFlowPathValue(root: Record<string, FlowJsonValue>, path: string[], value: FlowJsonValue): void {

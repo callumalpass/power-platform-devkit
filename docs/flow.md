@@ -173,6 +173,7 @@ inspection report with:
 
 The first bounded patch document supports:
 
+- `actions`
 - `connectionReferences`
 - `parameters`
 - `expressions`
@@ -182,6 +183,9 @@ Example:
 
 ```json
 {
+  "actions": {
+    "SendMail": "ComposeMail"
+  },
   "connectionReferences": {
     "shared_office365": "shared_exchangeonline"
   },
@@ -198,8 +202,17 @@ Example:
 ```
 
 The patcher is deliberately narrow. It updates known connection-reference and
-parameter locations plus explicit dotted paths inside the real definition
-payload without inventing a separate DSL.
+parameter locations, supports bounded action-identifier rewrites, and applies
+explicit dotted paths inside the real definition payload without inventing a
+separate DSL.
+
+Current action rename support is intentionally bounded:
+
+- renames action keys inside supported `actions` containers
+- rewrites supported `runAfter` targets and supported
+  `actions('...')` / `body('...')` / `outputs('...')` references
+- rejects rename chains or target-name collisions instead of guessing through
+  ambiguous rewrites
 
 ## Validation boundary
 

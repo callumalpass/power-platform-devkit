@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -2278,6 +2278,9 @@ describe('FlowService', () => {
     const patched = await patchFlowArtifact(
       artifactPath,
       {
+        actions: {
+          SendMail: 'ComposeMail',
+        },
         connectionReferences: {
           shared_office365: 'shared_exchangeonline',
         },
@@ -2305,6 +2308,7 @@ describe('FlowService', () => {
       'parameter:ApiBaseUrl',
       'expression:actions.SendMail.inputs.subject',
       'value:actions.SendMail.inputs.priority',
+      'action:SendMail->ComposeMail',
     ]);
 
     const document = JSON.parse(await readFile(join(dir, 'patched', 'flow.json'), 'utf8')) as {
@@ -2322,18 +2326,7 @@ describe('FlowService', () => {
             defaultValue: string;
           };
         };
-        actions: {
-          SendMail: {
-            inputs: {
-              body: string;
-              subject: string;
-              priority: string;
-              metadata: {
-                keepMe: boolean;
-              };
-            };
-          };
-        };
+        actions: Record<string, any>;
       };
       unknown: {
         sourceVersion: string;
@@ -2350,10 +2343,170 @@ describe('FlowService', () => {
     );
     expect(document.definition.parameters['$connections'].value.shared_office365).toBeUndefined();
     expect(document.definition.parameters.ApiBaseUrl.defaultValue).toBe('https://next.example.test');
-    expect(document.definition.actions.SendMail.inputs.body).toBe("@{environmentVariables('pp_RuntimeUrl')}");
-    expect(document.definition.actions.SendMail.inputs.subject).toBe("@{parameters('ApiBaseUrl')}");
-    expect(document.definition.actions.SendMail.inputs.priority).toBe('High');
-    expect(document.definition.actions.SendMail.inputs.metadata.keepMe).toBe(true);
+    expect(document.definition.actions.ComposeMail.inputs.body).toBe("@{environmentVariables('pp_RuntimeUrl')}");
+    expect(document.definition.actions.ComposeMail.inputs.subject).toBe("@{parameters('ApiBaseUrl')}");
+    expect(document.definition.actions.ComposeMail.inputs.priority).toBe('High');
+    expect(document.definition.actions.ComposeMail.inputs.metadata.keepMe).toBe(true);
+    expect(document.definition.actions.SendMail).toBeUndefined();
     expect(document.unknown.sourceVersion).toBe('v1');
+  });
+
+  it('renames flow actions safely across action keys, runAfter targets, and supported references', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Patch Action Rename',
+            displayName: 'Patch Action Rename',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            triggers: {
+              Manual: {
+                type: 'Request',
+                kind: 'Button',
+              },
+            },
+            actions: {
+              ComposeSource: {
+                type: 'Compose',
+                inputs: {
+                  message: 'hello',
+                },
+              },
+              ScopeA: {
+                type: 'Scope',
+                actions: {
+                  NestedConsumer: {
+                    type: 'Compose',
+                    runAfter: {
+                      ComposeSource: ['Succeeded'],
+                    },
+                    inputs: {
+                      bodyRef: "@{body('ComposeSource')}",
+                      outputsRef: "@{outputs('ComposeSource')}",
+                    },
+                  },
+                },
+              },
+              FinalConsumer: {
+                type: 'Compose',
+                runAfter: {
+                  ComposeSource: ['Succeeded'],
+                },
+                inputs: {
+                  actionRef: "@{actions('ComposeSource')}",
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const patched = await patchFlowArtifact(
+      artifactPath,
+      {
+        values: {
+          'actions.ComposeSource.inputs.priority': 'High',
+        },
+        actions: {
+          ComposeSource: 'ComposeDraft',
+        },
+      },
+      join(dir, 'patched')
+    );
+
+    expect(patched.success).toBe(true);
+    expect(patched.data?.appliedOperations).toEqual([
+      'value:actions.ComposeSource.inputs.priority',
+      'action:ComposeSource->ComposeDraft',
+    ]);
+
+    const document = JSON.parse(await readFile(join(dir, 'patched', 'flow.json'), 'utf8')) as {
+      definition: {
+        actions: Record<string, any>;
+      };
+    };
+
+    expect(document.definition.actions.ComposeSource).toBeUndefined();
+    expect(document.definition.actions.ComposeDraft.inputs).toMatchObject({
+      message: 'hello',
+      priority: 'High',
+    });
+    expect(document.definition.actions.FinalConsumer.runAfter).toEqual({
+      ComposeDraft: ['Succeeded'],
+    });
+    expect(document.definition.actions.FinalConsumer.inputs.actionRef).toBe("@{actions('ComposeDraft')}");
+    expect(document.definition.actions.ScopeA.actions.NestedConsumer.runAfter).toEqual({
+      ComposeDraft: ['Succeeded'],
+    });
+    expect(document.definition.actions.ScopeA.actions.NestedConsumer.inputs.bodyRef).toBe("@{body('ComposeDraft')}");
+    expect(document.definition.actions.ScopeA.actions.NestedConsumer.inputs.outputsRef).toBe("@{outputs('ComposeDraft')}");
+  });
+
+  it('fails action rename patches that target an existing action name', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Patch Action Rename Conflict',
+            displayName: 'Patch Action Rename Conflict',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            actions: {
+              ComposeSource: {
+                type: 'Compose',
+                inputs: {
+                  message: 'hello',
+                },
+              },
+              ComposeTarget: {
+                type: 'Compose',
+                inputs: {
+                  message: 'world',
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const patched = await patchFlowArtifact(artifactPath, {
+      actions: {
+        ComposeSource: 'ComposeTarget',
+      },
+    });
+
+    expect(patched.success).toBe(false);
+    expect(patched.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'FLOW_PATCH_ACTION_TARGET_EXISTS',
+      }),
+    ]);
   });
 });
