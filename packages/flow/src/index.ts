@@ -2420,6 +2420,24 @@ export async function patchFlowArtifact(
     return fail(actionRenameValidation);
   }
 
+  const connectionReferenceRenameValidation = validateFlowConnectionReferenceRenamePatch(
+    artifact.data,
+    patch.connectionReferences ?? {}
+  );
+
+  if (connectionReferenceRenameValidation) {
+    return fail(connectionReferenceRenameValidation);
+  }
+
+  const environmentVariableRenameValidation = validateFlowEnvironmentVariableRenamePatch(
+    artifact.data,
+    patch.environmentVariables ?? {}
+  );
+
+  if (environmentVariableRenameValidation) {
+    return fail(environmentVariableRenameValidation);
+  }
+
   const variableRenameValidation = validateFlowVariableRenamePatch(artifact.data, patch.variables ?? {});
 
   if (variableRenameValidation) {
@@ -5088,7 +5106,13 @@ function scanFlowStrings(value: unknown, pattern: RegExp, register: (match: stri
 
 function renameConnectionReference(artifact: FlowArtifact, from: string, to: string): void {
   artifact.metadata.connectionReferences = artifact.metadata.connectionReferences.map((reference) =>
-    reference.name === from ? { ...reference, name: to, connectionReferenceLogicalName: to } : reference
+    reference.name === from || reference.connectionReferenceLogicalName === from
+      ? {
+          ...reference,
+          ...(reference.name === from ? { name: to } : {}),
+          ...(reference.connectionReferenceLogicalName === from ? { connectionReferenceLogicalName: to } : {}),
+        }
+      : reference
   );
 
   const parameters = asRecord(artifact.definition.parameters);
@@ -5100,6 +5124,8 @@ function renameConnectionReference(artifact: FlowArtifact, from: string, to: str
     delete connectionValues[from];
     connectionValues[to] = renameConnectionReferenceValue(value as FlowJsonValue, from, to);
   }
+
+  artifact.definition = renameConnectionReferenceValue(artifact.definition, from, to) as FlowArtifact['definition'];
 }
 
 function validateFlowActionRenamePatch(
@@ -5178,6 +5204,179 @@ function validateFlowActionRenamePatch(
         'error',
         'FLOW_PATCH_ACTION_TARGET_EXISTS',
         `Flow patch cannot rename action ${from} to ${to} because ${to} already exists.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+  }
+
+  return undefined;
+}
+
+function validateFlowConnectionReferenceRenamePatch(
+  artifact: FlowArtifact,
+  renames: Record<string, string>
+): Diagnostic | undefined {
+  const entries = Object.entries(renames);
+
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const connectionReferences = new Set([
+    ...artifact.metadata.connectionReferences.flatMap((reference) =>
+      [reference.name, reference.connectionReferenceLogicalName].filter((value): value is string => Boolean(value))
+    ),
+    ...Array.from(collectDefinitionConnectionReferences(artifact.definition).keys()),
+  ]);
+  const sources = new Set(entries.map(([from]) => from));
+  const seenTargets = new Map<string, string>();
+
+  for (const [from, rawTo] of entries) {
+    const to = rawTo.trim();
+
+    if (!from || !to) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_CONNECTION_REFERENCE_RENAME_INVALID',
+        'Flow connection-reference rename patches require non-empty source and target names.',
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    if (!connectionReferences.has(from)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_CONNECTION_REFERENCE_SOURCE_MISSING',
+        `Flow patch cannot rename missing connection reference ${from}.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    if (from === to) {
+      continue;
+    }
+
+    if (sources.has(to)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_CONNECTION_REFERENCE_RENAME_CHAIN_UNSUPPORTED',
+        `Flow patch connection-reference rename ${from} -> ${to} is unsupported because ${to} is also a rename source.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    const existingSource = seenTargets.get(to);
+
+    if (existingSource && existingSource !== from) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_CONNECTION_REFERENCE_TARGET_CONFLICT',
+        `Flow patch connection-reference rename target ${to} is requested by multiple source references.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    seenTargets.set(to, from);
+
+    if (connectionReferences.has(to)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_CONNECTION_REFERENCE_TARGET_EXISTS',
+        `Flow patch cannot rename connection reference ${from} to ${to} because ${to} already exists.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+  }
+
+  return undefined;
+}
+
+function validateFlowEnvironmentVariableRenamePatch(
+  artifact: FlowArtifact,
+  renames: Record<string, string>
+): Diagnostic | undefined {
+  const entries = Object.entries(renames);
+
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const environmentVariables = new Set(artifact.metadata.environmentVariables);
+  const sources = new Set(entries.map(([from]) => from));
+  const seenTargets = new Map<string, string>();
+
+  for (const [from, rawTo] of entries) {
+    const to = rawTo.trim();
+
+    if (!from || !to) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ENVIRONMENT_VARIABLE_RENAME_INVALID',
+        'Flow environment-variable rename patches require non-empty source and target names.',
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    if (!environmentVariables.has(from)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ENVIRONMENT_VARIABLE_SOURCE_MISSING',
+        `Flow patch cannot rename missing environment variable ${from}.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    if (from === to) {
+      continue;
+    }
+
+    if (sources.has(to)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ENVIRONMENT_VARIABLE_RENAME_CHAIN_UNSUPPORTED',
+        `Flow patch environment-variable rename ${from} -> ${to} is unsupported because ${to} is also a rename source.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    const existingSource = seenTargets.get(to);
+
+    if (existingSource && existingSource !== from) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ENVIRONMENT_VARIABLE_TARGET_CONFLICT',
+        `Flow patch environment-variable rename target ${to} is requested by multiple source variables.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    seenTargets.set(to, from);
+
+    if (environmentVariables.has(to)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_ENVIRONMENT_VARIABLE_TARGET_EXISTS',
+        `Flow patch cannot rename environment variable ${from} to ${to} because ${to} already exists.`,
         {
           source: '@pp/flow',
         }
@@ -5290,6 +5489,13 @@ function renameEnvironmentVariable(artifact: FlowArtifact, from: string, to: str
 }
 
 function renameConnectionReferenceValue(value: FlowJsonValue, from: string, to: string): FlowJsonValue {
+  if (typeof value === 'string') {
+    return value.replace(
+      new RegExp(`\\bparameters\\(\\s*(['"])\\$connections\\1\\s*\\)\\s*\\[\\s*(['"])${escapeRegExp(from)}\\2\\s*\\]`, 'g'),
+      (_match, quote: string, keyQuote: string) => `parameters(${quote}$connections${quote})[${keyQuote}${to}${keyQuote}]`
+    );
+  }
+
   if (Array.isArray(value)) {
     return value.map((item) => renameConnectionReferenceValue(item, from, to));
   }
@@ -5314,7 +5520,10 @@ function renameConnectionReferenceValue(value: FlowJsonValue, from: string, to: 
 
 function renameEnvironmentVariableValue(value: FlowJsonValue, from: string, to: string): FlowJsonValue {
   if (typeof value === 'string') {
-    return value.replaceAll(`environmentVariables('${from}')`, `environmentVariables('${to}')`);
+    return value.replace(
+      new RegExp(`\\benvironmentVariables\\(\\s*(['"])${escapeRegExp(from)}\\1\\s*\\)`, 'g'),
+      (_match, quote: string) => `environmentVariables(${quote}${to}${quote})`
+    );
   }
 
   if (Array.isArray(value)) {

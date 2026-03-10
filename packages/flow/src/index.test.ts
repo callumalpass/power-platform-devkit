@@ -4081,11 +4081,19 @@ describe('FlowService', () => {
             },
             actions: {
               SendMail: {
+                type: 'OpenApiConnection',
                 inputs: {
                   subject: 'Initial',
                   body: "@{environmentVariables('pp_ApiUrl')}",
+                  connectionId: "@parameters('$connections')[\"shared_office365\"]['connectionId']",
+                  metadataEnv: '@{environmentVariables("pp_ApiUrl")}',
                   metadata: {
                     keepMe: true,
+                  },
+                  host: {
+                    connection: {
+                      name: "@parameters('$connections')['shared_office365']['connectionId']",
+                    },
                   },
                 },
               },
@@ -4170,6 +4178,13 @@ describe('FlowService', () => {
     expect(document.definition.parameters['$connections'].value.shared_office365).toBeUndefined();
     expect(document.definition.parameters.ApiBaseUrl.defaultValue).toBe('https://next.example.test');
     expect(document.definition.actions.ComposeMail.inputs.body).toBe("@{environmentVariables('pp_RuntimeUrl')}");
+    expect(document.definition.actions.ComposeMail.inputs.metadataEnv).toBe('@{environmentVariables("pp_RuntimeUrl")}');
+    expect(document.definition.actions.ComposeMail.inputs.connectionId).toBe(
+      "@parameters('$connections')[\"shared_exchangeonline\"]['connectionId']"
+    );
+    expect(document.definition.actions.ComposeMail.inputs.host.connection.name).toBe(
+      "@parameters('$connections')['shared_exchangeonline']['connectionId']"
+    );
     expect(document.definition.actions.ComposeMail.inputs.subject).toBe("@{parameters('ApiBaseUrl')}");
     expect(document.definition.actions.ComposeMail.inputs.priority).toBe('High');
     expect(document.definition.actions.ComposeMail.inputs.metadata.keepMe).toBe(true);
@@ -4480,6 +4495,122 @@ describe('FlowService', () => {
     expect(patched.diagnostics).toEqual([
       expect.objectContaining({
         code: 'FLOW_PATCH_VARIABLE_TARGET_EXISTS',
+      }),
+    ]);
+  });
+
+  it('fails connection-reference rename patches that target an existing connection reference', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Patch Connection Reference Rename Conflict',
+            displayName: 'Patch Connection Reference Rename Conflict',
+            connectionReferences: [
+              {
+                name: 'shared_office365',
+                connectionReferenceLogicalName: 'shared_office365',
+              },
+              {
+                name: 'shared_sharepointonline',
+                connectionReferenceLogicalName: 'shared_sharepointonline',
+              },
+            ],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            parameters: {
+              '$connections': {
+                value: {
+                  shared_office365: {
+                    connectionReferenceLogicalName: 'shared_office365',
+                  },
+                  shared_sharepointonline: {
+                    connectionReferenceLogicalName: 'shared_sharepointonline',
+                  },
+                },
+              },
+            },
+            actions: {},
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const patched = await patchFlowArtifact(artifactPath, {
+      connectionReferences: {
+        shared_office365: 'shared_sharepointonline',
+      },
+    });
+
+    expect(patched.success).toBe(false);
+    expect(patched.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'FLOW_PATCH_CONNECTION_REFERENCE_TARGET_EXISTS',
+      }),
+    ]);
+  });
+
+  it('fails environment-variable rename patches that target an existing environment variable', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Patch Environment Variable Rename Conflict',
+            displayName: 'Patch Environment Variable Rename Conflict',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: ['pp_ApiUrl', 'pp_RuntimeUrl'],
+          },
+          definition: {
+            actions: {
+              ComposeEnv: {
+                type: 'Compose',
+                inputs: {
+                  value: "@{environmentVariables('pp_ApiUrl')}",
+                },
+              },
+              ComposeExistingEnv: {
+                type: 'Compose',
+                inputs: {
+                  value: "@{environmentVariables('pp_RuntimeUrl')}",
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const patched = await patchFlowArtifact(artifactPath, {
+      environmentVariables: {
+        pp_ApiUrl: 'pp_RuntimeUrl',
+      },
+    });
+
+    expect(patched.success).toBe(false);
+    expect(patched.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'FLOW_PATCH_ENVIRONMENT_VARIABLE_TARGET_EXISTS',
       }),
     ]);
   });

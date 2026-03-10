@@ -369,6 +369,18 @@ Current variable rename support is intentionally bounded:
 - rejects rename chains or target-name collisions instead of guessing through
   ambiguous variable merges
 
+Current connection-reference and environment-variable rename support is
+intentionally bounded:
+
+- renames declared `metadata.connectionReferences[*]` entries plus the
+  canonical `definition.parameters.$connections.value.<name>` keys
+- rewrites supported `parameters('$connections')['...']` references, including
+  canonical connector host connection-name expressions
+- rewrites supported `environmentVariables('...')` references with either
+  single-quoted or double-quoted names
+- rejects missing rename sources, rename chains, or target-name collisions
+  instead of silently leaving stale references behind
+
 ## Validation boundary
 
 Current validation checks:
