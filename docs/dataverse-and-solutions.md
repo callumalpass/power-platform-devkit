@@ -163,6 +163,7 @@ as:
 Inspect effective values and set current values through bounded commands:
 
 ```bash
+pp envvar create pp_ApiUrl --env dev --solution Core --display-name "API URL"
 pp envvar list --env dev
 pp envvar inspect pp_ApiUrl --env dev
 pp envvar set pp_ApiUrl --env dev --value https://next.example.test
@@ -175,6 +176,11 @@ The inspect and list outputs include:
 - current value, if present
 - effective value
 - value record id when a current value exists
+
+`envvar create` seeds an environment variable definition through the typed CLI
+surface and can add it directly into a solution by passing `--solution`, which
+avoids dropping to raw `pp dv request` for the common "create definition, then
+set value" workflow.
 
 ## `dv metadata`
 

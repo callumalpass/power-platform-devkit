@@ -52,6 +52,7 @@ export interface DataverseRequestOptions
   ifMatch?: string;
   ifNoneMatch?: string;
   includeAnnotations?: string[];
+  solutionUniqueName?: string;
 }
 
 export interface DataverseWriteOptions extends EntityReadOptions {
@@ -59,6 +60,7 @@ export interface DataverseWriteOptions extends EntityReadOptions {
   ifNoneMatch?: string;
   returnRepresentation?: boolean;
   prefer?: string[];
+  solutionUniqueName?: string;
 }
 
 export interface MetadataQueryOptions extends ODataQueryOptions {
@@ -269,6 +271,15 @@ export interface EnvironmentVariableSummary {
   secretStore?: number;
   solutionId?: string;
   hasCurrentValue: boolean;
+}
+
+export interface EnvironmentVariableCreateOptions {
+  displayName?: string;
+  defaultValue?: string;
+  type?: string | number;
+  valueSchema?: string;
+  secretStore?: number;
+  solutionUniqueName?: string;
 }
 
 interface SolutionComponentMembershipRecord {
@@ -1002,6 +1013,7 @@ export class DataverseClient {
       ifNoneMatch: options.ifNoneMatch,
       prefer: mergePrefer(options.prefer, returnRepresentation ? ['return=representation'] : undefined),
       includeAnnotations: options.includeAnnotations,
+      solutionUniqueName: options.solutionUniqueName,
     });
 
     if (!response.success) {
@@ -1185,6 +1197,64 @@ export class ConnectionReferenceService {
 
 export class EnvironmentVariableService {
   constructor(private readonly dataverseClient: DataverseClient) {}
+
+  async createDefinition(schemaName: string, options: EnvironmentVariableCreateOptions = {}): Promise<OperationResult<EnvironmentVariableSummary>> {
+    const typeCode = normalizeEnvironmentVariableType(options.type);
+
+    if (typeCode === undefined) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'DATAVERSE_ENVVAR_TYPE_INVALID',
+          `Environment variable type ${String(options.type)} is not supported. Use string, number, boolean, json, data-source, or secret.`,
+          {
+            source: '@pp/dataverse',
+          }
+        )
+      );
+    }
+
+    const createResult = await this.dataverseClient.create<EnvironmentVariableDefinitionRecord, EnvironmentVariableDefinitionRecord>(
+      'environmentvariabledefinitions',
+      {
+        schemaname: schemaName,
+        displayname: options.displayName ?? schemaName,
+        type: typeCode,
+        ...(options.defaultValue !== undefined ? { defaultvalue: options.defaultValue } : {}),
+        ...(options.valueSchema !== undefined ? { valueschema: options.valueSchema } : {}),
+        ...(options.secretStore !== undefined ? { secretstore: options.secretStore } : {}),
+      },
+      {
+        returnRepresentation: true,
+        solutionUniqueName: options.solutionUniqueName,
+      }
+    );
+
+    if (!createResult.success) {
+      return createResult as unknown as OperationResult<EnvironmentVariableSummary>;
+    }
+
+    const created = createResult.data?.entity;
+
+    return ok(
+      normalizeEnvironmentVariable(
+        {
+          environmentvariabledefinitionid: created?.environmentvariabledefinitionid ?? createResult.data?.entityId ?? '',
+          schemaname: created?.schemaname ?? schemaName,
+          displayname: created?.displayname ?? options.displayName ?? schemaName,
+          defaultvalue: created?.defaultvalue ?? options.defaultValue,
+          type: created?.type ?? String(typeCode),
+          valueschema: created?.valueschema ?? options.valueSchema,
+          secretstore: created?.secretstore ?? options.secretStore,
+        }
+      ),
+      {
+        supportTier: 'preview',
+        diagnostics: createResult.diagnostics,
+        warnings: createResult.warnings,
+      }
+    );
+  }
 
   async list(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<EnvironmentVariableSummary[]>> {
     const [definitions, values, solutionId] = await Promise.all([
@@ -1665,6 +1735,50 @@ function normalizeEnvironmentVariable(
   };
 }
 
+function normalizeEnvironmentVariableType(type: string | number | undefined): number | undefined {
+  if (type === undefined) {
+    return 100000000;
+  }
+
+  if (typeof type === 'number' && Number.isInteger(type)) {
+    return type;
+  }
+
+  const normalized = String(type)
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
+
+  switch (normalized) {
+    case '100000000':
+    case 'string':
+    case 'text':
+      return 100000000;
+    case '100000001':
+    case 'number':
+    case 'decimal':
+      return 100000001;
+    case '100000002':
+    case 'boolean':
+    case 'bool':
+    case 'two-options':
+    case 'yes-no':
+      return 100000002;
+    case '100000003':
+    case 'json':
+      return 100000003;
+    case '100000004':
+    case 'data-source':
+    case 'datasource':
+      return 100000004;
+    case '100000005':
+    case 'secret':
+      return 100000005;
+    default:
+      return undefined;
+  }
+}
+
 function matchesConnectionReference(reference: ConnectionReferenceSummary, identifier: string): boolean {
   const normalized = identifier.toLowerCase();
   return (
@@ -1744,6 +1858,12 @@ function buildDataverseHeaders(options: DataverseRequestOptions): Record<string,
 
   if (options.ifNoneMatch) {
     headers['if-none-match'] = options.ifNoneMatch;
+  }
+
+  const solutionUniqueName = (options as DataverseWriteOptions).solutionUniqueName;
+
+  if (solutionUniqueName) {
+    headers['MSCRM.SolutionUniqueName'] = solutionUniqueName;
   }
 
   return headers;

@@ -518,6 +518,45 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('creates an environment variable definition through the first-class CLI surface', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        queryAll: {
+          environmentvariabledefinitions: [],
+          environmentvariablevalues: [],
+        },
+      }),
+    });
+
+    const result = await runCli(
+      [
+        'envvar',
+        'create',
+        'pp_ApiUrl',
+        '--env',
+        'fixture',
+        '--solution',
+        'Core',
+        '--display-name',
+        'API URL',
+        '--default-value',
+        'https://default.example.test',
+        '--format',
+        'json',
+      ]
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schemaName: 'pp_ApiUrl',
+      displayName: 'API URL',
+      defaultValue: 'https://default.example.test',
+      effectiveValue: 'https://default.example.test',
+      hasCurrentValue: false,
+    });
+  });
+
   it('covers real CLI protocol outputs for representative success paths', async () => {
     const solutionFixture = (await readJsonFile(
       resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')

@@ -159,6 +159,35 @@ describe('DataverseClient', () => {
     expect(httpClient.requests[0]?.headers?.prefer).toContain('return=representation');
   });
 
+  it('adds solution headers to solution-scoped row writes', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 201,
+        headers: {
+          location: 'https://example.crm.dynamics.com/api/data/v9.2/environmentvariabledefinitions(def-1)',
+        },
+        data: {
+          environmentvariabledefinitionid: 'def-1',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.create(
+      'environmentvariabledefinitions',
+      {
+        schemaname: 'pp_ApiUrl',
+      },
+      {
+        returnRepresentation: true,
+        solutionUniqueName: 'Core',
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(httpClient.requests[0]?.headers?.['MSCRM.SolutionUniqueName']).toBe('Core');
+  });
+
   it('applies metadata top client-side without sending $top to Dataverse', async () => {
     const httpClient = new FakeHttpClient([
       ok({
@@ -819,6 +848,45 @@ describe('ALM services', () => {
     });
     expect(httpClient.requests.at(-1)?.method).toBe('PATCH');
     expect(httpClient.requests.at(-1)?.path).toBe('environmentvariablevalues(val-1)');
+  });
+
+  it('creates an environment variable definition within a solution', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 201,
+        headers: {
+          location: 'https://example.crm.dynamics.com/api/data/v9.2/environmentvariabledefinitions(def-1)',
+        },
+        data: {
+          environmentvariabledefinitionid: 'def-1',
+          schemaname: 'pp_ApiUrl',
+          displayname: 'API URL',
+          defaultvalue: 'https://default.example.test',
+          type: '100000000',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.createDefinition('pp_ApiUrl', {
+      displayName: 'API URL',
+      defaultValue: 'https://default.example.test',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      definitionId: 'def-1',
+      schemaName: 'pp_ApiUrl',
+      displayName: 'API URL',
+      defaultValue: 'https://default.example.test',
+      effectiveValue: 'https://default.example.test',
+      hasCurrentValue: false,
+    });
+    expect(httpClient.requests[0]?.method).toBe('POST');
+    expect(httpClient.requests[0]?.path).toBe('environmentvariabledefinitions');
+    expect(httpClient.requests[0]?.headers?.['MSCRM.SolutionUniqueName']).toBe('Core');
   });
 
   it('filters environment variables by solution components when definition rows omit solution lookup columns', async () => {

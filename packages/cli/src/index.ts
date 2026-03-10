@@ -291,6 +291,8 @@ async function runConnectionReference(command: string | undefined, args: string[
 
 async function runEnvironmentVariable(command: string | undefined, args: string[]): Promise<number> {
   switch (command) {
+    case 'create':
+      return runEnvironmentVariableCreate(args);
     case 'list':
       return runEnvironmentVariableList(args);
     case 'inspect':
@@ -2340,6 +2342,70 @@ async function runEnvironmentVariableList(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runEnvironmentVariableCreate(args: string[]): Promise<number> {
+  const schemaName = positionalArgs(args)[0];
+
+  if (!schemaName) {
+    return printFailure(
+      argumentFailure(
+        'ENVVAR_SCHEMA_REQUIRED',
+        'Usage: envvar create <schemaName> --env <alias> [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new EnvironmentVariableService(resolution.data.client);
+  const displayName = readFlag(args, '--display-name');
+  const defaultValue = readFlag(args, '--default-value');
+  const type = readFlag(args, '--type');
+  const valueSchema = readFlag(args, '--value-schema');
+  const secretStore = parseEnvironmentVariableSecretStore(readFlag(args, '--secret-store'));
+
+  if (!secretStore.success) {
+    return printFailure(secretStore.result);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'envvar.create',
+    { schemaName, solution: readFlag(args, '--solution') },
+    {
+      displayName: displayName ?? schemaName,
+      ...(defaultValue !== undefined ? { defaultValue } : {}),
+      ...(type !== undefined ? { type } : {}),
+      ...(valueSchema !== undefined ? { valueSchema } : {}),
+      ...(secretStore.value !== undefined ? { secretStore: secretStore.value } : {}),
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await service.createDefinition(schemaName, {
+    displayName,
+    defaultValue,
+    type,
+    valueSchema,
+    secretStore: secretStore.value,
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runEnvironmentVariableInspect(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
@@ -2368,6 +2434,43 @@ async function runEnvironmentVariableInspect(args: string[]): Promise<number> {
 
   printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
+}
+
+function parseEnvironmentVariableSecretStore(
+  value: string | undefined
+): { success: true; value: number | undefined } | { success: false; result: OperationResult<never> } {
+  if (value === undefined) {
+    return {
+      success: true,
+      value: undefined,
+    };
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[\s_]+/g, '-');
+
+  switch (normalized) {
+    case 'dataverse':
+    case '0':
+      return { success: true, value: 0 };
+    case 'azure-key-vault':
+    case 'key-vault':
+    case '1':
+      return { success: true, value: 1 };
+    default:
+      return {
+        success: false,
+        result: fail(
+          createDiagnostic(
+            'error',
+            'ENVVAR_SECRET_STORE_INVALID',
+            `Unsupported secret store ${value}. Use dataverse or azure-key-vault.`,
+            {
+              source: '@pp/cli',
+            }
+          )
+        ),
+      };
+  }
 }
 
 async function runEnvironmentVariableSet(args: string[]): Promise<number> {
@@ -3709,6 +3812,7 @@ function printHelp(): void {
       '  connref list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  connref inspect <logicalName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  connref validate --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar create <schemaName> --env ALIAS [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar inspect <schemaName|displayName|id> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar set <schemaName|displayName|id> --env ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
