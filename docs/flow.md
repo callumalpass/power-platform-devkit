@@ -53,15 +53,17 @@ Current behavior:
 - `flow runs` returns recent run summaries with status, duration, retries, and
   error fields
 - `flow errors` groups failed runs by `errorCode`, `errorMessage`, or a
-  connection-reference heuristic
+  connection-reference heuristic and now includes latest-seen timing plus
+  aggregate duration/retry metadata per cluster
 - `flow connrefs` combines runtime failures with connection-reference and
   environment-variable health, and now attaches source-node locations when the
   remote flow's `clientdata` still contains a supported definition payload
 - `flow doctor` produces a compact pre-triaged report with recent failures,
   grouped errors, invalid connection references, missing environment variables,
-  synthesized findings, and a first runtime-to-source correlation slice that
-  maps supported connection-reference or environment-variable evidence back to
-  normalized action/trigger nodes
+  synthesized findings, runtime status/duration/retry summaries, daily trend
+  buckets, and a first runtime-to-source correlation slice that maps supported
+  connection-reference or environment-variable evidence back to normalized
+  action/trigger nodes
 
 Known limits in this slice:
 

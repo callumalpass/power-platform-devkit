@@ -1,18 +1,26 @@
 [
   {
+    "averageDurationMs": 75000,
     "count": 1,
     "group": "shared_office365 connection is missing consent",
     "latestRunId": "run-3",
+    "latestStartTime": "2026-03-09T11:30:00.000Z",
     "latestStatus": "Failed",
+    "maxRetryCount": 0,
     "sampleErrorCode": "ConnectorAuthFailed",
-    "sampleErrorMessage": "shared_office365 connection is missing consent"
+    "sampleErrorMessage": "shared_office365 connection is missing consent",
+    "totalRetries": 0
   },
   {
+    "averageDurationMs": 120000,
     "count": 1,
     "group": "shared_office365 connection is not authorized",
     "latestRunId": "run-1",
+    "latestStartTime": "2026-03-09T09:00:00.000Z",
     "latestStatus": "Failed",
+    "maxRetryCount": 1,
     "sampleErrorCode": "ConnectorAuthFailed",
-    "sampleErrorMessage": "shared_office365 connection is not authorized"
+    "sampleErrorMessage": "shared_office365 connection is not authorized",
+    "totalRetries": 1
   }
 ]

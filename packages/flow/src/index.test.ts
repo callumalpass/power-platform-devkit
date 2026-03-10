@@ -953,6 +953,8 @@ describe('FlowService', () => {
     expect(errors.data?.[0]).toMatchObject({
       group: 'shared_office365',
       count: 1,
+      totalRetries: 1,
+      maxRetryCount: 1,
     });
 
     expect(connrefs.success).toBe(true);
@@ -971,8 +973,27 @@ describe('FlowService', () => {
       total: 2,
       failed: 1,
     });
+    expect(doctor.data?.runtimeSummary).toMatchObject({
+      statusCounts: [
+        { status: 'Failed', count: 1 },
+        { status: 'Succeeded', count: 1 },
+      ],
+      durationMs: {
+        min: 60000,
+        max: 120000,
+        average: 90000,
+        p50: 60000,
+        p95: 120000,
+      },
+      retry: {
+        retriedRuns: 1,
+        totalRetries: 1,
+        maxRetryCount: 1,
+      },
+    });
     expect(doctor.data?.invalidConnectionReferences).toHaveLength(0);
     expect(doctor.data?.missingEnvironmentVariables).toHaveLength(1);
+    expect(doctor.data?.findings).toContain('1 of 2 recent runs failed (50.0%).');
     expect(doctor.data?.findings).toContain('Environment variable pp_ApiUrl does not have an effective value.');
   });
 

@@ -301,8 +301,12 @@ export interface FlowErrorGroup {
   count: number;
   latestRunId?: string;
   latestStatus?: string;
+  latestStartTime?: string;
   sampleErrorCode?: string;
   sampleErrorMessage?: string;
+  averageDurationMs?: number;
+  totalRetries: number;
+  maxRetryCount: number;
 }
 
 export interface FlowConnectionHealthReport {
@@ -328,6 +332,42 @@ export interface FlowConnectionHealthReport {
   }>;
 }
 
+export interface FlowRuntimeStatusCount {
+  status: string;
+  count: number;
+}
+
+export interface FlowRuntimeDurationStats {
+  min?: number;
+  max?: number;
+  average?: number;
+  p50?: number;
+  p95?: number;
+}
+
+export interface FlowRuntimeRetryStats {
+  retriedRuns: number;
+  totalRetries: number;
+  maxRetryCount: number;
+}
+
+export interface FlowRuntimeDailyTrend {
+  date: string;
+  total: number;
+  failed: number;
+  succeeded: number;
+  other: number;
+  averageDurationMs?: number;
+  totalRetries: number;
+}
+
+export interface FlowRuntimeAnalyticsSummary {
+  statusCounts: FlowRuntimeStatusCount[];
+  durationMs: FlowRuntimeDurationStats;
+  retry: FlowRuntimeRetryStats;
+  dailyTrends: FlowRuntimeDailyTrend[];
+}
+
 export interface FlowDoctorReport {
   flow?: FlowInspectResult;
   recentRuns: {
@@ -335,6 +375,7 @@ export interface FlowDoctorReport {
     failed: number;
     latestFailure?: FlowRunSummary;
   };
+  runtimeSummary: FlowRuntimeAnalyticsSummary;
   errorGroups: FlowErrorGroup[];
   invalidConnectionReferences: ConnectionReferenceValidationResult[];
   missingEnvironmentVariables: EnvironmentVariableSummary[];
@@ -626,7 +667,12 @@ export class FlowService {
     }
 
     const groupBy = options.groupBy ?? 'errorCode';
-    const groups = new Map<string, FlowErrorGroup>();
+    const groups = new Map<
+      string,
+      FlowErrorGroup & {
+        durationValues: number[];
+      }
+    >();
 
     for (const run of runs.data ?? []) {
       const group = resolveFlowErrorGroup(run, flow.data, groupBy);
@@ -634,6 +680,19 @@ export class FlowService {
 
       if (existing) {
         existing.count += 1;
+        existing.totalRetries += run.retryCount ?? 0;
+        existing.maxRetryCount = Math.max(existing.maxRetryCount, run.retryCount ?? 0);
+        if (isDefinedNumber(run.durationMs)) {
+          existing.durationValues.push(run.durationMs);
+        }
+
+        if ((run.startTime ?? '') > (existing.latestStartTime ?? '')) {
+          existing.latestRunId = run.id;
+          existing.latestStatus = run.status;
+          existing.latestStartTime = run.startTime;
+          existing.sampleErrorCode = run.errorCode;
+          existing.sampleErrorMessage = run.errorMessage;
+        }
         continue;
       }
 
@@ -642,16 +701,29 @@ export class FlowService {
         count: 1,
         latestRunId: run.id,
         latestStatus: run.status,
+        latestStartTime: run.startTime,
         sampleErrorCode: run.errorCode,
         sampleErrorMessage: run.errorMessage,
+        averageDurationMs: run.durationMs,
+        totalRetries: run.retryCount ?? 0,
+        maxRetryCount: run.retryCount ?? 0,
+        durationValues: isDefinedNumber(run.durationMs) ? [run.durationMs] : [],
       });
     }
 
-    return ok(Array.from(groups.values()).sort((left, right) => right.count - left.count || left.group.localeCompare(right.group)), {
-      supportTier: 'experimental',
-      diagnostics: runs.diagnostics,
-      warnings: runs.warnings,
-    });
+    return ok(
+      Array.from(groups.values())
+        .map(({ durationValues, ...group }) => ({
+          ...group,
+          averageDurationMs: averageIntegers(durationValues),
+        }))
+        .sort((left, right) => right.count - left.count || left.group.localeCompare(right.group)),
+      {
+        supportTier: 'experimental',
+        diagnostics: runs.diagnostics,
+        warnings: runs.warnings,
+      }
+    );
   }
 
   async connrefs(
@@ -812,6 +884,7 @@ export class FlowService {
     }
 
     const failedRuns = (runs.data ?? []).filter((run) => normalizeStatus(run.status) === 'failed');
+    const runtimeSummary = summarizeFlowRuns(runs.data ?? []);
     const invalidConnectionReferences = (references.data ?? []).filter((reference) =>
       flow.data?.connectionReferences.some(
         (flowReference) =>
@@ -825,7 +898,20 @@ export class FlowService {
     const sourceCorrelation = flow.data ? buildFlowSourceCorrelationModel(flow.data) : undefined;
     const correlatedErrorGroups =
       flow.data && sourceCorrelation ? correlateFlowErrorGroups(errors.data ?? [], flow.data, sourceCorrelation) : [];
+    const failureRate =
+      runtimeSummary.statusCounts.reduce((total, entry) => total + entry.count, 0) > 0
+        ? `${((failedRuns.length / Math.max(runs.data?.length ?? 0, 1)) * 100).toFixed(1)}%`
+        : undefined;
     const findings = [
+      ...(failureRate
+        ? [`${failedRuns.length} of ${runs.data?.length ?? 0} recent runs failed (${failureRate}).`]
+        : []),
+      ...(runtimeSummary.retry.totalRetries > 0
+        ? [`Recent runs retried ${runtimeSummary.retry.totalRetries} time(s); max retry count was ${runtimeSummary.retry.maxRetryCount}.`]
+        : []),
+      ...(runtimeSummary.durationMs.p95 !== undefined
+        ? [`Recent run duration p95 is ${runtimeSummary.durationMs.p95} ms.`]
+        : []),
       ...invalidConnectionReferences.map(
         (reference) => `Connection reference ${reference.reference.logicalName ?? reference.reference.id} is invalid for this flow.`
       ),
@@ -847,6 +933,7 @@ export class FlowService {
           failed: failedRuns.length,
           latestFailure: failedRuns[0],
         },
+        runtimeSummary,
         errorGroups: errors.data ?? [],
         invalidConnectionReferences,
         missingEnvironmentVariables,
@@ -1254,6 +1341,117 @@ function normalizeStatus(value: string | undefined): string {
 
 function compareRunsDescending(left: FlowRunSummary, right: FlowRunSummary): number {
   return (right.startTime ?? '').localeCompare(left.startTime ?? '');
+}
+
+function summarizeFlowRuns(runs: FlowRunSummary[]): FlowRuntimeAnalyticsSummary {
+  const statusCounts = new Map<string, number>();
+  const durations = runs.map((run) => run.durationMs).filter(isDefinedNumber).sort((left, right) => left - right);
+  const retryCounts = runs.map((run) => run.retryCount ?? 0);
+  const dailyTrends = new Map<
+    string,
+    {
+      total: number;
+      failed: number;
+      succeeded: number;
+      other: number;
+      durations: number[];
+      totalRetries: number;
+    }
+  >();
+
+  for (const run of runs) {
+    const status = normalizeRuntimeStatusLabel(run.status);
+    statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1);
+
+    const date = run.startTime?.slice(0, 10);
+
+    if (date) {
+      const entry = dailyTrends.get(date) ?? {
+        total: 0,
+        failed: 0,
+        succeeded: 0,
+        other: 0,
+        durations: [],
+        totalRetries: 0,
+      };
+      entry.total += 1;
+      entry.totalRetries += run.retryCount ?? 0;
+
+      if (normalizeStatus(run.status) === 'failed') {
+        entry.failed += 1;
+      } else if (normalizeStatus(run.status) === 'succeeded') {
+        entry.succeeded += 1;
+      } else {
+        entry.other += 1;
+      }
+
+      if (isDefinedNumber(run.durationMs)) {
+        entry.durations.push(run.durationMs);
+      }
+
+      dailyTrends.set(date, entry);
+    }
+  }
+
+  return {
+    statusCounts: Array.from(statusCounts.entries())
+      .map(([status, count]) => ({ status, count }))
+      .sort((left, right) => right.count - left.count || left.status.localeCompare(right.status)),
+    durationMs: {
+      min: durations[0],
+      max: durations[durations.length - 1],
+      average: averageIntegers(durations),
+      p50: percentile(durations, 0.5),
+      p95: percentile(durations, 0.95),
+    },
+    retry: {
+      retriedRuns: retryCounts.filter((count) => count > 0).length,
+      totalRetries: retryCounts.reduce((total, count) => total + count, 0),
+      maxRetryCount: retryCounts.length > 0 ? Math.max(...retryCounts) : 0,
+    },
+    dailyTrends: Array.from(dailyTrends.entries())
+      .map(([date, entry]) => ({
+        date,
+        total: entry.total,
+        failed: entry.failed,
+        succeeded: entry.succeeded,
+        other: entry.other,
+        averageDurationMs: averageIntegers(entry.durations),
+        totalRetries: entry.totalRetries,
+      }))
+      .sort((left, right) => right.date.localeCompare(left.date)),
+  };
+}
+
+function normalizeRuntimeStatusLabel(value: string | undefined): string {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return 'Unknown';
+  }
+
+  return trimmed;
+}
+
+function percentile(values: number[], quantile: number): number | undefined {
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  const index = Math.min(values.length - 1, Math.max(0, Math.ceil(values.length * quantile) - 1));
+  return values[index];
+}
+
+function averageIntegers(values: number[]): number | undefined {
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+}
+
+function isDefinedNumber(value: number | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 function isAfterRelativeTime(value: string | undefined, relative: string): boolean {
