@@ -1490,9 +1490,105 @@ describe('FlowService', () => {
 
     expect(packed.success).toBe(true);
     expect(packedDocument).toMatchObject({
+      category: 5,
       properties: {
+        category: 5,
         statecode: 2,
         statuscode: 3,
+      },
+    });
+  });
+
+  it('normalizes the supported cloud-flow category during repack and remote update when category is omitted locally', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+    const packedPath = join(dir, 'repacked.json');
+    const updates: Array<{ table: string; id: string; entity: Record<string, unknown> }> = [];
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-category-1',
+                name: 'Cloud Category Flow',
+                uniquename: 'crd_CloudCategoryFlow',
+                category: 5,
+                clientdata: JSON.stringify({
+                  definition: {
+                    actions: {},
+                  },
+                }),
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+      update: async (table: string, id: string, entity: Record<string, unknown>) => {
+        updates.push({ table, id, entity });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Cloud Category Flow',
+            displayName: 'Cloud Category Flow',
+            uniqueName: 'crd_CloudCategoryFlow',
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [],
+          },
+          definition: {
+            actions: {},
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const packed = await packFlowArtifact(artifactPath, packedPath);
+    const deploy = await new FlowService(client).deployArtifact(artifactPath);
+    const packedDocument = JSON.parse(await readFile(packedPath, 'utf8')) as Record<string, unknown>;
+
+    expect(packed.success).toBe(true);
+    expect(packedDocument).toMatchObject({
+      category: 5,
+      properties: {
+        category: 5,
+      },
+    });
+
+    expect(deploy.success).toBe(true);
+    expect(deploy.data).toMatchObject({
+      operation: 'updated',
+      updatedFields: ['clientdata', 'name', 'category'],
+    });
+    expect(updates[0]).toMatchObject({
+      entity: {
+        category: 5,
       },
     });
   });
@@ -1535,6 +1631,48 @@ describe('FlowService', () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: 'FLOW_WORKFLOW_STATE_UNSUPPORTED',
+        }),
+      ])
+    );
+  });
+
+  it('fails local validation for unsupported workflow categories', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Unsupported Category Flow',
+            displayName: 'Unsupported Category Flow',
+            uniqueName: 'crd_UnsupportedCategoryFlow',
+            category: 2,
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [],
+          },
+          definition: {
+            actions: {},
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'FLOW_WORKFLOW_CATEGORY_UNSUPPORTED',
         }),
       ])
     );

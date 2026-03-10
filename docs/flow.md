@@ -170,6 +170,10 @@ of that lifecycle: the current bounded surface accepts Draft `(0,1)`,
 Activated `(1,2)`, and Suspended `(2,3)` pairs, infers the missing side when
 only one of those codes is supplied locally, and fails invalid combinations
 before repack or remote mutation.
+The same bounded lifecycle also enforces the supported cloud-flow category
+contract: when `category` is declared locally it must remain `5`, and when it
+is omitted the repack and direct deploy surfaces normalize it back to category
+`5` instead of leaving the cloud-flow shell ambiguous.
 When `--create-if-missing` is supplied, the same command can also provision a
 bounded missing cloud-flow shell using the artifact `metadata.uniqueName`,
 bounded workflow metadata, and the normalized `clientdata` definition.
@@ -224,6 +228,8 @@ The current pack/deploy boundary is:
   combinations, and repack/deploy/create normalize supported one-sided values
   onto the canonical Draft `(0,1)`, Activated `(1,2)`, or Suspended `(2,3)`
   pair before writing a raw export or Dataverse payload
+- local validation also fails unsupported workflow `category` values; the
+  current direct lifecycle only supports Dataverse cloud flows (`category: 5`)
 - remote deploy currently updates only a bounded workflow shell (`name`,
   `description`, `category`, `type`, `mode`, `ondemand`, `primaryentity`,
   `statecode`, `statuscode`) plus the normalized `clientdata` definition and
