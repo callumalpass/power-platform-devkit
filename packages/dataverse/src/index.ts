@@ -77,6 +77,8 @@ export interface NormalizedMetadataQuery {
   warnings: Diagnostic[];
 }
 
+type MetadataRecordPredicate<T> = (record: T) => boolean;
+
 export interface DataverseResolution {
   environment: EnvironmentAlias;
   authProfile: AuthProfile;
@@ -1003,6 +1005,12 @@ export class DataverseClient {
       : await this.metadataQuery<T>(normalized.data.path, options.maxPageSize, options.includeAnnotations);
 
     if (!query.success) {
+      const fallback = await this.retryMetadataQueryWithClientSideFilter<T>(basePath, options, normalized.data, query);
+
+      if (fallback) {
+        return fallback;
+      }
+
       return {
         ...query,
         warnings: [...normalized.data.warnings, ...query.warnings],
@@ -1015,6 +1023,56 @@ export class DataverseClient {
       supportTier: 'preview',
       diagnostics: query.diagnostics,
       warnings: [...normalized.data.warnings, ...query.warnings],
+    });
+  }
+
+  private async retryMetadataQueryWithClientSideFilter<T>(
+    basePath: string,
+    options: MetadataQueryOptions,
+    normalized: NormalizedMetadataQuery,
+    failedQuery: OperationResult<T[]>
+  ): Promise<OperationResult<T[]> | undefined> {
+    if (!options.filter || !shouldRetryMetadataFilterClientSide(failedQuery)) {
+      return undefined;
+    }
+
+    const predicate = buildMetadataClientFilter<T>(options.filter);
+
+    if (!predicate) {
+      return undefined;
+    }
+
+    const fallbackPath = buildODataPath(basePath, {
+      select: options.select,
+      expand: options.expand,
+    });
+
+    const fallback = await this.metadataQueryAll<T>(fallbackPath, options.maxPageSize, options.includeAnnotations);
+
+    if (!fallback.success) {
+      return {
+        ...fallback,
+        warnings: [...normalized.warnings, ...fallback.warnings],
+      } as OperationResult<T[]>;
+    }
+
+    const filtered = (fallback.data ?? []).filter(predicate);
+    const records = normalized.top !== undefined ? filtered.slice(0, normalized.top) : filtered;
+    const warning = createDiagnostic(
+      'warning',
+      'DATAVERSE_METADATA_FILTER_CLIENT_SIDE',
+      'Dataverse rejected the metadata filter, so pp retried without $filter and applied the filter client-side.',
+      {
+        source: '@pp/dataverse',
+        detail: options.filter,
+        hint: 'This fallback currently supports common string and comparison predicates such as startswith(LogicalName,\'pp_\').',
+      }
+    );
+
+    return ok(records, {
+      supportTier: 'preview',
+      diagnostics: fallback.diagnostics,
+      warnings: [...normalized.warnings, warning, ...fallback.warnings],
     });
   }
 
@@ -1785,6 +1843,311 @@ export function normalizeMetadataQueryOptions(basePath: string, options: Metadat
       warnings,
     }
   );
+}
+
+function shouldRetryMetadataFilterClientSide<T>(result: OperationResult<T[]>): boolean {
+  return result.diagnostics.some(
+    (diagnostic) => diagnostic.code === 'HTTP_REQUEST_FAILED' && /\breturned 501\b/.test(diagnostic.message)
+  );
+}
+
+function buildMetadataClientFilter<T>(filter: string): MetadataRecordPredicate<T> | undefined {
+  const expression = parseMetadataFilterExpression(filter);
+
+  if (!expression) {
+    return undefined;
+  }
+
+  return (record: T) => evaluateMetadataFilterExpression(expression, record as Record<string, unknown>);
+}
+
+type MetadataFilterExpression =
+  | { kind: 'and' | 'or'; terms: MetadataFilterExpression[] }
+  | { kind: 'not'; term: MetadataFilterExpression }
+  | { kind: 'function'; name: 'startswith' | 'endswith' | 'contains'; field: string; value: string }
+  | { kind: 'comparison'; field: string; operator: 'eq' | 'ne' | 'gt' | 'ge' | 'lt' | 'le'; value: string | number | boolean | null };
+
+function parseMetadataFilterExpression(input: string): MetadataFilterExpression | undefined {
+  const expression = trimOuterParentheses(input.trim());
+
+  if (!expression) {
+    return undefined;
+  }
+
+  const orTerms = splitTopLevel(expression, 'or');
+  if (orTerms.length > 1) {
+    return mapCompoundExpression('or', orTerms);
+  }
+
+  const andTerms = splitTopLevel(expression, 'and');
+  if (andTerms.length > 1) {
+    return mapCompoundExpression('and', andTerms);
+  }
+
+  if (/^not\s+/i.test(expression)) {
+    const term = parseMetadataFilterExpression(expression.replace(/^not\s+/i, ''));
+    return term ? { kind: 'not', term } : undefined;
+  }
+
+  const functionMatch = expression.match(
+    /^(startswith|endswith|contains)\s*\(\s*([A-Za-z0-9_./]+)\s*,\s*(.+)\s*\)$/i
+  );
+  if (functionMatch) {
+    const value = parseMetadataFilterLiteral(functionMatch[3] ?? '');
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    return {
+      kind: 'function',
+      name: (functionMatch[1] ?? '').toLowerCase() as 'startswith' | 'endswith' | 'contains',
+      field: functionMatch[2] ?? '',
+      value,
+    };
+  }
+
+  const comparisonMatch = expression.match(/^([A-Za-z0-9_./]+)\s+(eq|ne|gt|ge|lt|le)\s+(.+)$/i);
+  if (comparisonMatch) {
+    const value = parseMetadataFilterLiteral(comparisonMatch[3] ?? '');
+    if (value === undefined) {
+      return undefined;
+    }
+
+    return {
+      kind: 'comparison',
+      field: comparisonMatch[1] ?? '',
+      operator: (comparisonMatch[2] ?? '').toLowerCase() as 'eq' | 'ne' | 'gt' | 'ge' | 'lt' | 'le',
+      value,
+    };
+  }
+
+  return undefined;
+}
+
+function mapCompoundExpression(kind: 'and' | 'or', terms: string[]): MetadataFilterExpression | undefined {
+  const parsedTerms = terms.map((term) => parseMetadataFilterExpression(term)).filter((term): term is MetadataFilterExpression => Boolean(term));
+
+  return parsedTerms.length === terms.length ? { kind, terms: parsedTerms } : undefined;
+}
+
+function splitTopLevel(input: string, operator: 'and' | 'or'): string[] {
+  const terms: string[] = [];
+  let depth = 0;
+  let inString = false;
+  let start = 0;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+
+    if (char === "'") {
+      if (inString && input[index + 1] === "'") {
+        index += 1;
+        continue;
+      }
+
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === '(') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === ')') {
+      depth -= 1;
+      continue;
+    }
+
+    if (depth === 0 && isWordBoundary(input, index - 1) && input.slice(index, index + operator.length).toLowerCase() === operator) {
+      const nextIndex = index + operator.length;
+      if (isWordBoundary(input, nextIndex)) {
+        terms.push(input.slice(start, index).trim());
+        start = nextIndex;
+        index = nextIndex - 1;
+      }
+    }
+  }
+
+  const tail = input.slice(start).trim();
+  return tail ? [...terms, tail] : terms;
+}
+
+function isWordBoundary(input: string, index: number): boolean {
+  if (index < 0 || index >= input.length) {
+    return true;
+  }
+
+  return /\s|\(|\)/.test(input[index] ?? '');
+}
+
+function trimOuterParentheses(input: string): string {
+  let trimmed = input.trim();
+
+  while (trimmed.startsWith('(') && trimmed.endsWith(')')) {
+    let depth = 0;
+    let closesAtEnd = true;
+    let inString = false;
+
+    for (let index = 0; index < trimmed.length; index += 1) {
+      const char = trimmed[index];
+
+      if (char === "'") {
+        if (inString && trimmed[index + 1] === "'") {
+          index += 1;
+          continue;
+        }
+
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) {
+        continue;
+      }
+
+      if (char === '(') {
+        depth += 1;
+      } else if (char === ')') {
+        depth -= 1;
+
+        if (depth === 0 && index < trimmed.length - 1) {
+          closesAtEnd = false;
+          break;
+        }
+      }
+    }
+
+    if (!closesAtEnd || depth !== 0) {
+      break;
+    }
+
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
+}
+
+function parseMetadataFilterLiteral(input: string): string | number | boolean | null | undefined {
+  const value = input.trim();
+
+  if (/^null$/i.test(value)) {
+    return null;
+  }
+
+  if (/^true$/i.test(value)) {
+    return true;
+  }
+
+  if (/^false$/i.test(value)) {
+    return false;
+  }
+
+  if (/^-?\d+(\.\d+)?$/.test(value)) {
+    return Number(value);
+  }
+
+  if (value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replace(/''/g, "'");
+  }
+
+  return undefined;
+}
+
+function evaluateMetadataFilterExpression(expression: MetadataFilterExpression, record: Record<string, unknown>): boolean {
+  switch (expression.kind) {
+    case 'and':
+      return expression.terms.every((term) => evaluateMetadataFilterExpression(term, record));
+    case 'or':
+      return expression.terms.some((term) => evaluateMetadataFilterExpression(term, record));
+    case 'not':
+      return !evaluateMetadataFilterExpression(expression.term, record);
+    case 'function': {
+      const fieldValue = readMetadataFilterField(record, expression.field);
+
+      if (typeof fieldValue !== 'string') {
+        return false;
+      }
+
+      if (expression.name === 'startswith') {
+        return fieldValue.startsWith(expression.value);
+      }
+
+      if (expression.name === 'endswith') {
+        return fieldValue.endsWith(expression.value);
+      }
+
+      return fieldValue.includes(expression.value);
+    }
+    case 'comparison': {
+      const fieldValue = readMetadataFilterField(record, expression.field);
+      return compareMetadataFilterValues(fieldValue, expression.operator, expression.value);
+    }
+  }
+}
+
+function readMetadataFilterField(record: Record<string, unknown>, field: string): unknown {
+  if (field in record) {
+    return record[field];
+  }
+
+  const lowerField = field.toLowerCase();
+  const matchedKey = Object.keys(record).find((key) => key.toLowerCase() === lowerField);
+  return matchedKey ? record[matchedKey] : undefined;
+}
+
+function compareMetadataFilterValues(
+  left: unknown,
+  operator: 'eq' | 'ne' | 'gt' | 'ge' | 'lt' | 'le',
+  right: string | number | boolean | null
+): boolean {
+  const normalizedLeft = left ?? null;
+
+  if (operator === 'eq') {
+    return normalizedLeft === right;
+  }
+
+  if (operator === 'ne') {
+    return normalizedLeft !== right;
+  }
+
+  if (typeof normalizedLeft === 'number' && typeof right === 'number') {
+    if (operator === 'gt') {
+      return normalizedLeft > right;
+    }
+
+    if (operator === 'ge') {
+      return normalizedLeft >= right;
+    }
+
+    if (operator === 'lt') {
+      return normalizedLeft < right;
+    }
+
+    return normalizedLeft <= right;
+  }
+
+  if (typeof normalizedLeft === 'string' && typeof right === 'string') {
+    if (operator === 'gt') {
+      return normalizedLeft > right;
+    }
+
+    if (operator === 'ge') {
+      return normalizedLeft >= right;
+    }
+
+    if (operator === 'lt') {
+      return normalizedLeft < right;
+    }
+
+    return normalizedLeft <= right;
+  }
+
+  return false;
 }
 
 function normalizeConnectionReference(record: ConnectionReferenceRecord, inferredSolutionId?: string): ConnectionReferenceSummary {

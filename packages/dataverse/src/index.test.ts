@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { saveAuthProfile, saveEnvironmentAlias } from '@pp/config';
-import { ok, type OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, ok, fail, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http';
 import {
   ConnectionReferenceService,
@@ -250,6 +250,62 @@ describe('DataverseClient', () => {
     expect(result.data).toEqual([{ LogicalName: 'name' }]);
     expect(httpClient.requests[0]?.path).toBe("EntityDefinitions(LogicalName='account')/Attributes?%24select=LogicalName");
     expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_METADATA_TOP_CLIENT_SIDE');
+  });
+
+  it('retries metadata list filters client-side when Dataverse rejects the server filter', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic(
+          'error',
+          'HTTP_REQUEST_FAILED',
+          "GET EntityDefinitions?%24select=LogicalName&%24filter=startswith%28LogicalName%2C%27pp_%27%29 returned 501",
+          {
+            source: '@pp/http',
+          }
+        )
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ LogicalName: 'account' }, { LogicalName: 'pp_project' }, { LogicalName: 'pp_task' }],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.listTables({
+      select: ['LogicalName'],
+      filter: "startswith(LogicalName,'pp_')",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([{ LogicalName: 'pp_project' }, { LogicalName: 'pp_task' }]);
+    expect(httpClient.requests).toHaveLength(2);
+    expect(httpClient.requests[0]?.path).toBe(
+      "EntityDefinitions?%24select=LogicalName&%24filter=startswith%28LogicalName%2C%27pp_%27%29"
+    );
+    expect(httpClient.requests[1]?.path).toBe('EntityDefinitions?%24select=LogicalName');
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_METADATA_FILTER_CLIENT_SIDE');
+  });
+
+  it('does not hide metadata filter failures that are not the Dataverse 501 limitation', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'GET EntityDefinitions returned 400', {
+          source: '@pp/http',
+        })
+      ),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.listTables({
+      filter: "startswith(LogicalName,'pp_')",
+    });
+
+    expect(result.success).toBe(false);
+    expect(httpClient.requests).toHaveLength(1);
+    expect(result.diagnostics[0]?.message).toContain('returned 400');
   });
 
   it('gets a specific column from table metadata', async () => {
