@@ -652,6 +652,10 @@ async function runSolution(command: string | undefined, args: string[]): Promise
       }
       return runSolutionList(args);
     case 'inspect':
+      if (args.includes('--help') || args.includes('help')) {
+        printSolutionInspectHelp();
+        return 0;
+      }
       return runSolutionInspect(args);
     case 'components':
       if (args.includes('--help') || args.includes('help')) {
@@ -660,6 +664,10 @@ async function runSolution(command: string | undefined, args: string[]): Promise
       }
       return runSolutionComponents(args);
     case 'dependencies':
+      if (args.includes('--help') || args.includes('help')) {
+        printSolutionDependenciesHelp();
+        return 0;
+      }
       return runSolutionDependencies(args);
     case 'analyze':
       return runSolutionAnalyze(args);
@@ -9634,6 +9642,46 @@ function printSolutionComponentsHelp(): void {
       'Examples:',
       '  pp solution components Core --environment dev',
       '  pp solution components Core --environment dev --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printSolutionInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution inspect <uniqueName> --environment ALIAS [options]',
+      '',
+      'Behavior:',
+      '  - Inspects one solution in the target environment.',
+      '  - Returns one structured record with the solution id, unique name, friendly name, version, publisher metadata, and managed state when available.',
+      '  - `--help` only prints this text and never validates the solution name or environment flags.',
+      '',
+      'Examples:',
+      '  pp solution inspect Core --environment dev',
+      '  pp solution inspect Core --environment dev --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printSolutionDependenciesHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution dependencies <uniqueName> --environment ALIAS [options]',
+      '',
+      'Behavior:',
+      '  - Lists solution dependency rows for one solution in the target environment.',
+      '  - Returns stable structured rows that identify the required and dependent components when Dataverse exposes them.',
+      '  - `--help` only prints this text and never validates the solution name or environment flags.',
+      '',
+      'Examples:',
+      '  pp solution dependencies Core --environment dev',
+      '  pp solution dependencies Core --environment dev --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

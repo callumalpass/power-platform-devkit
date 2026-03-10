@@ -6541,7 +6541,9 @@ describe('cli fixture-backed workflows', () => {
     const whoAmIHelp = await runCli(['dv', 'whoami', '--help']);
     const solutionHelp = await runCli(['solution', '--help']);
     const solutionListHelp = await runCli(['solution', 'list', '--help']);
+    const solutionInspectHelp = await runCli(['solution', 'inspect', '--help']);
     const solutionComponentsHelp = await runCli(['solution', 'components', '--help']);
+    const solutionDependenciesHelp = await runCli(['solution', 'dependencies', '--help']);
     const rootHelp = await runCli(['--help']);
     const envvarHelp = await runCli(['envvar', '--help']);
     const envvarInspectHelp = await runCli(['envvar', 'inspect', '--help']);
@@ -6580,6 +6582,13 @@ describe('cli fixture-backed workflows', () => {
     expect(solutionListHelp.stdout).toContain('--unique-name NAME');
     expect(solutionListHelp.stdout).not.toContain('DV_ENV_REQUIRED');
 
+    expect(solutionInspectHelp.code).toBe(0);
+    expect(solutionInspectHelp.stderr).toBe('');
+    expect(solutionInspectHelp.stdout).toContain('Usage: solution inspect <uniqueName> --environment ALIAS [options]');
+    expect(solutionInspectHelp.stdout).toContain('pp solution inspect Core --environment dev --format json');
+    expect(solutionInspectHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
+    expect(solutionInspectHelp.stdout).not.toContain('SOLUTION_UNIQUE_NAME_REQUIRED');
+
     expect(solutionComponentsHelp.code).toBe(0);
     expect(solutionComponentsHelp.stderr).toBe('');
     expect(solutionComponentsHelp.stdout).toContain(
@@ -6588,6 +6597,15 @@ describe('cli fixture-backed workflows', () => {
     expect(solutionComponentsHelp.stdout).toContain('pp solution components Core --environment dev --format json');
     expect(solutionComponentsHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
     expect(solutionComponentsHelp.stdout).not.toContain('SOLUTION_UNIQUE_NAME_REQUIRED');
+
+    expect(solutionDependenciesHelp.code).toBe(0);
+    expect(solutionDependenciesHelp.stderr).toBe('');
+    expect(solutionDependenciesHelp.stdout).toContain(
+      'Usage: solution dependencies <uniqueName> --environment ALIAS [options]'
+    );
+    expect(solutionDependenciesHelp.stdout).toContain('pp solution dependencies Core --environment dev --format json');
+    expect(solutionDependenciesHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
+    expect(solutionDependenciesHelp.stdout).not.toContain('SOLUTION_UNIQUE_NAME_REQUIRED');
 
     expect(rootHelp.code).toBe(0);
     expect(rootHelp.stderr).toBe('');
