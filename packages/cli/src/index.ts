@@ -4681,7 +4681,7 @@ async function runFlowPromote(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'FLOW_PROMOTE_ARGS_REQUIRED',
-        'Usage: flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing]'
+        'Usage: flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--solution-package] [--managed-solution-package]'
       )
     );
   }
@@ -4710,6 +4710,8 @@ async function runFlowPromote(args: string[]): Promise<number> {
       targetSolution: readFlag(args, '--target-solution'),
       target: readFlag(args, '--target') ?? 'source artifact metadata',
       createIfMissing: hasFlag(args, '--create-if-missing'),
+      solutionPackage: hasFlag(args, '--solution-package'),
+      solutionPackageManaged: hasFlag(args, '--managed-solution-package'),
     }
   );
 
@@ -4722,6 +4724,8 @@ async function runFlowPromote(args: string[]): Promise<number> {
     targetSolutionUniqueName: readFlag(args, '--target-solution'),
     target: readFlag(args, '--target'),
     createIfMissing: hasFlag(args, '--create-if-missing'),
+    solutionPackage: hasFlag(args, '--solution-package'),
+    solutionPackageManaged: hasFlag(args, '--managed-solution-package'),
     targetDataverseClient: targetResolution.data.client,
   });
 
@@ -6341,7 +6345,7 @@ function printHelp(): void {
       '  flow list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--solution-package] [--managed-solution-package] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow pack <path> --out FILE.json [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',

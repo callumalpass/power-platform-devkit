@@ -1,5 +1,6 @@
-import { mkdir, stat } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
+import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
 import {
   ConnectionReferenceService,
@@ -303,10 +304,12 @@ export interface FlowPromoteOptions {
   targetSolutionUniqueName?: string;
   target?: string;
   createIfMissing?: boolean;
+  solutionPackage?: boolean;
+  solutionPackageManaged?: boolean;
   targetDataverseClient?: DataverseClient;
 }
 
-export interface FlowPromoteResult {
+export interface FlowArtifactPromoteResult {
   identifier: string;
   source: {
     id: string;
@@ -324,10 +327,34 @@ export interface FlowPromoteResult {
   };
   summary: FlowArtifactSummary;
   validation: {
-    valid: boolean;
+    valid: true;
+    warningCount: number;
+  };
+  promotionMode: 'artifact';
+}
+
+export interface FlowSolutionPackagePromoteResult {
+  identifier: string;
+  source: {
+    id: string;
+    name?: string;
+    uniqueName?: string;
+    solutionUniqueName?: string;
+  };
+  operation: 'imported-solution';
+  promotionMode: 'solution-package';
+  targetSolutionUniqueName: string;
+  solutionPackage: {
+    packageType: 'managed' | 'unmanaged';
+  };
+  summary: FlowArtifactSummary;
+  validation: {
+    valid: true;
     warningCount: number;
   };
 }
+
+export type FlowPromoteResult = FlowArtifactPromoteResult | FlowSolutionPackagePromoteResult;
 
 export interface FlowPatchResult {
   path: string;
@@ -1302,6 +1329,10 @@ export async function promoteRemoteFlowArtifact(
     );
   }
 
+  if (options.solutionPackage) {
+    return promoteRemoteFlowArtifactAsSolutionPackage(identifier, sourceFlow.data, artifact.data, validation, options);
+  }
+
   const deployed = await deployLoadedFlowArtifact(sourcePath, artifact.data, validation, {
     dataverseClient: options.targetDataverseClient,
     solutionUniqueName: options.targetSolutionUniqueName,
@@ -1329,6 +1360,7 @@ export async function promoteRemoteFlowArtifact(
       target: deployed.data.target,
       summary: deployed.data.summary,
       validation: deployed.data.validation,
+      promotionMode: 'artifact',
     },
     {
       supportTier: 'preview',
@@ -1346,6 +1378,179 @@ export async function promoteRemoteFlowArtifact(
       ],
     }
   );
+}
+
+async function promoteRemoteFlowArtifactAsSolutionPackage(
+  identifier: string,
+  sourceFlow: FlowInspectResult,
+  artifact: FlowArtifact,
+  validation: OperationResult<FlowValidationReport>,
+  options: FlowPromoteOptions & {
+    sourceDataverseClient?: DataverseClient;
+  }
+): Promise<OperationResult<FlowPromoteResult>> {
+  if (!options.sourceDataverseClient || !options.targetDataverseClient || !validation.data) {
+    return fail(
+      createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse clients are required for solution-package flow promotion.', {
+        source: '@pp/flow',
+      })
+    );
+  }
+
+  if (!options.sourceSolutionUniqueName) {
+    return fail(
+      [
+        ...validation.diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_PROMOTE_PACKAGE_SOURCE_SOLUTION_REQUIRED',
+          'Solution-package flow promotion requires --source-solution so the containing solution can be exported.',
+          {
+            source: '@pp/flow',
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: validation.warnings,
+      }
+    );
+  }
+
+  if (options.target) {
+    return fail(
+      [
+        ...validation.diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_PROMOTE_PACKAGE_TARGET_UNSUPPORTED',
+          'Solution-package flow promotion imports the selected solution as-is and does not support --target.',
+          {
+            source: '@pp/flow',
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: validation.warnings,
+      }
+    );
+  }
+
+  if (options.createIfMissing) {
+    return fail(
+      [
+        ...validation.diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_PROMOTE_PACKAGE_CREATE_UNSUPPORTED',
+          'Solution-package flow promotion imports the selected solution as-is and does not support --create-if-missing.',
+          {
+            source: '@pp/flow',
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: validation.warnings,
+      }
+    );
+  }
+
+  if (
+    options.targetSolutionUniqueName &&
+    options.targetSolutionUniqueName.trim().toLowerCase() !== options.sourceSolutionUniqueName.trim().toLowerCase()
+  ) {
+    return fail(
+      [
+        ...validation.diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_PROMOTE_PACKAGE_TARGET_SOLUTION_RENAME_UNSUPPORTED',
+          `Solution-package flow promotion cannot rename solution ${options.sourceSolutionUniqueName} to ${options.targetSolutionUniqueName}; import preserves the packaged solution unique name.`,
+          {
+            source: '@pp/flow',
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: validation.warnings,
+      }
+    );
+  }
+
+  const packageType = options.solutionPackageManaged ? 'managed' : 'unmanaged';
+  const tempRoot = await mkdtemp(join(tmpdir(), 'pp-flow-promote-solution-'));
+
+  try {
+    const sourceSolutionService = new SolutionService(options.sourceDataverseClient);
+    const targetSolutionService = new SolutionService(options.targetDataverseClient);
+    const packagePath = join(tempRoot, `${options.sourceSolutionUniqueName}_${packageType}.zip`);
+    const exportResult = await sourceSolutionService.exportSolution(options.sourceSolutionUniqueName, {
+      managed: options.solutionPackageManaged,
+      outPath: packagePath,
+    });
+
+    if (!exportResult.success || !exportResult.data) {
+      return fail([...validation.diagnostics, ...exportResult.diagnostics], {
+        supportTier: 'preview',
+        warnings: [...validation.warnings, ...exportResult.warnings],
+        provenance: exportResult.provenance,
+      });
+    }
+
+    const importResult = await targetSolutionService.importSolution(exportResult.data.artifact.path);
+
+    if (!importResult.success || !importResult.data) {
+      return fail([...validation.diagnostics, ...exportResult.diagnostics, ...importResult.diagnostics], {
+        supportTier: 'preview',
+        warnings: [...validation.warnings, ...exportResult.warnings, ...importResult.warnings],
+        provenance: [
+          ...(exportResult.provenance ?? []),
+          ...(importResult.provenance ?? []),
+        ],
+      });
+    }
+
+    return ok(
+      {
+        identifier,
+        source: {
+          id: sourceFlow.id,
+          name: sourceFlow.name,
+          uniqueName: sourceFlow.uniqueName,
+          solutionUniqueName: options.sourceSolutionUniqueName,
+        },
+        operation: 'imported-solution',
+        promotionMode: 'solution-package',
+        targetSolutionUniqueName: options.sourceSolutionUniqueName,
+        solutionPackage: {
+          packageType,
+        },
+        summary: buildFlowArtifactSummary(artifact.metadata.sourcePath ?? `dataverse://workflows/${sourceFlow.id}`, artifact),
+        validation: {
+          valid: true,
+          warningCount: validation.warnings.length,
+        },
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: [...validation.diagnostics, ...exportResult.diagnostics, ...importResult.diagnostics],
+        warnings: [...validation.warnings, ...exportResult.warnings, ...importResult.warnings],
+        knownLimitations: [
+          'Solution-package flow promotion imports the whole selected solution that contains the flow, not just the selected workflow row.',
+          'Solution-package flow promotion preserves the packaged solution unique name and does not support --target or --create-if-missing.',
+        ],
+        provenance: [
+          ...(exportResult.provenance ?? []),
+          ...(importResult.provenance ?? []),
+        ],
+      }
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 }
 
 export async function normalizeFlowArtifact(path: string, outPath?: string): Promise<OperationResult<FlowUnpackResult>> {
@@ -1991,7 +2196,7 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
       category: flow.category,
       statecode: flow.stateCode,
       statuscode: flow.statusCode,
-      clientdata: stableStringify(cloneJsonValue(flow.clientData)),
+      ...(flow.clientData ? { clientdata: stableStringify(cloneJsonValue(flow.clientData)) } : {}),
       properties: {
         definition: cloneJsonValue(definition),
         ...(flow.name ? { name: flow.name, displayName: flow.name } : {}),

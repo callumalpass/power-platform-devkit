@@ -3159,6 +3159,129 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('promotes a flow through a packaged solution via the CLI entrypoint', async () => {
+    const sourceRequests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+    const targetRequests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+    const sourceClient = {
+      query: async <T>(options: { table: string }) =>
+        ok(
+          options.table === 'solutions'
+            ? ([{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0' }] as T[])
+            : ([] as T[]),
+          { supportTier: 'preview' }
+        ),
+      queryAll: async <T>(options: { table: string }) =>
+        ok(
+          options.table === 'workflows'
+            ? ([
+                {
+                  workflowid: 'flow-1',
+                  name: 'Invoice Sync',
+                  uniquename: 'crd_InvoiceSync',
+                  category: 5,
+                  statecode: 1,
+                  statuscode: 2,
+                  clientdata: JSON.stringify({
+                    definition: {
+                      actions: {
+                        SendMail: {
+                          type: 'Compose',
+                        },
+                      },
+                    },
+                  }),
+                },
+              ] as T[])
+            : options.table === 'solutioncomponents'
+              ? ([
+                  {
+                    solutioncomponentid: 'comp-1',
+                    objectid: 'flow-1',
+                    componenttype: 29,
+                  },
+                ] as T[])
+              : ([] as T[]),
+          { supportTier: 'preview' }
+        ),
+      requestJson: async <T>(options: { path: string; body?: Record<string, unknown> }) => {
+        sourceRequests.push({ path: options.path, body: options.body });
+        return ok(
+          {
+            ExportSolutionFile: Buffer.from('cli-solution-package').toString('base64'),
+          } as T,
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+    const targetClient = {
+      request: async (options: { path: string; body?: Record<string, unknown> }) => {
+        targetRequests.push({ path: options.path, body: options.body });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            data: undefined,
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: { client: sourceClient },
+      target: { client: targetClient },
+    });
+
+    const promote = await runCli([
+      'flow',
+      'promote',
+      'Invoice Sync',
+      '--source-environment',
+      'source',
+      '--source-solution',
+      'Core',
+      '--target-environment',
+      'target',
+      '--solution-package',
+      '--managed-solution-package',
+      '--format',
+      'json',
+    ]);
+
+    expect(promote.code).toBe(0);
+    expect(promote.stderr).toBe('');
+    expect(JSON.parse(promote.stdout)).toMatchObject({
+      identifier: 'Invoice Sync',
+      operation: 'imported-solution',
+      promotionMode: 'solution-package',
+      targetSolutionUniqueName: 'Core',
+      solutionPackage: {
+        packageType: 'managed',
+      },
+      validation: {
+        valid: true,
+      },
+    });
+    expect(sourceRequests).toEqual([
+      {
+        path: 'ExportSolution',
+        body: {
+          SolutionName: 'Core',
+          Managed: true,
+        },
+      },
+    ]);
+    expect(targetRequests).toHaveLength(1);
+    expect(targetRequests[0]?.path).toBe('ImportSolution');
+    expect(targetRequests[0]?.body).toMatchObject({
+      PublishWorkflows: true,
+      OverwriteUnmanagedCustomizations: false,
+      HoldingSolution: false,
+      SkipProductUpdateDependencies: false,
+      CustomizationFile: Buffer.from('cli-solution-package').toString('base64'),
+    });
+  });
+
   it('deploys a validated flow artifact through the CLI entrypoint', async () => {
     const client = createFixtureDataverseClient({
       query: {

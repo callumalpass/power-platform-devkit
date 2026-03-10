@@ -22,6 +22,7 @@ pp flow inspect "Invoice Sync" --env dev
 pp flow inspect crd_InvoiceSync --env dev --solution Core
 pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote
 pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --target-solution Core
+pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --solution-package --managed-solution-package
 ```
 
 Current remote inspection returns:
@@ -162,6 +163,14 @@ builds directly on the same contract: it exports a supported remote source flow
 into the canonical artifact model in memory, runs the shared local validator,
 then deploys that normalized definition into the target environment with the
 same `--target` and `--create-if-missing` behavior as local artifact deploy.
+When `--solution-package` is supplied, `pp flow promote` can also take a
+solution-scoped route for the selected flow: it verifies that the flow exists
+inside `--source-solution`, runs the same bounded local validator against the
+normalized source artifact, exports the whole containing solution through the
+shared solution service, and imports that package into the target environment.
+`--managed-solution-package` switches that package export from unmanaged to
+managed. This route is intentionally whole-solution and does not support
+`--target` or `--create-if-missing`.
 
 The current pack/deploy boundary is:
 
@@ -182,6 +191,10 @@ The current pack/deploy boundary is:
 - remote promotion currently transfers that same bounded workflow shell plus
   the normalized definition; it does not package or migrate broader workflow
   metadata/state beyond that surface
+- `pp flow promote --solution-package` imports the whole selected solution that
+  contains the flow, preserves the packaged solution unique name, requires
+  `--source-solution`, and does not support `--target` or
+  `--create-if-missing`
 - create-if-missing currently requires artifact `metadata.uniqueName`, creates
   only a bounded workflow shell (`category`, `name`, `uniquename`,
   `statecode`/`statuscode` when present, plus normalized `clientdata`), and

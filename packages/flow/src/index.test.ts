@@ -538,6 +538,148 @@ describe('FlowService', () => {
     expect(String(updates[0]?.entity.clientdata)).toContain('"definition"');
   });
 
+  it('promotes a flow through a solution package when requested', async () => {
+    const sourceRequests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+    const targetRequests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+    const sourceClient = {
+      ...createStubDataverseClient(),
+      query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'solutions') {
+          return ok(
+            [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'Core',
+                friendlyname: 'Core',
+                version: '1.0.0.0',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok([] as T[], {
+          supportTier: 'preview',
+        });
+      },
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Invoice Sync',
+                uniquename: 'crd_InvoiceSync',
+                category: 5,
+                statecode: 1,
+                statuscode: 2,
+                clientdata: JSON.stringify({
+                  definition: {
+                    actions: {
+                      SendMail: {
+                        type: 'Compose',
+                      },
+                    },
+                  },
+                }),
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'flow-1',
+                componenttype: 29,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok([] as T[], {
+          supportTier: 'preview',
+        });
+      },
+      requestJson: async <T>(options: { path: string; body?: Record<string, unknown> }): Promise<OperationResult<T>> => {
+        sourceRequests.push({ path: options.path, body: options.body });
+        return ok(
+          {
+            ExportSolutionFile: Buffer.from('solution-package').toString('base64'),
+          } as T,
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+    const targetClient = {
+      ...createStubDataverseClient(),
+      request: async (options: { path: string; body?: Record<string, unknown> }) => {
+        targetRequests.push({ path: options.path, body: options.body });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            data: undefined,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(sourceClient).promoteArtifact('Invoice Sync', {
+      sourceSolutionUniqueName: 'Core',
+      solutionPackage: true,
+      solutionPackageManaged: true,
+      targetDataverseClient: targetClient,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      identifier: 'Invoice Sync',
+      operation: 'imported-solution',
+      promotionMode: 'solution-package',
+      targetSolutionUniqueName: 'Core',
+      solutionPackage: {
+        packageType: 'managed',
+      },
+      validation: {
+        valid: true,
+      },
+    });
+    expect(sourceRequests).toEqual([
+      {
+        path: 'ExportSolution',
+        body: {
+          SolutionName: 'Core',
+          Managed: true,
+        },
+      },
+    ]);
+    expect(targetRequests).toHaveLength(1);
+    expect(targetRequests[0]?.path).toBe('ImportSolution');
+    expect(targetRequests[0]?.body).toMatchObject({
+      PublishWorkflows: true,
+      OverwriteUnmanagedCustomizations: false,
+      HoldingSolution: false,
+      SkipProductUpdateDependencies: false,
+      CustomizationFile: Buffer.from('solution-package').toString('base64'),
+    });
+  });
+
   it('blocks remote deploy when local flow validation fails', async () => {
     let updated = false;
     const client = {
