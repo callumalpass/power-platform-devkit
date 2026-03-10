@@ -368,6 +368,32 @@ describe('SolutionService', () => {
     });
   });
 
+  it('fails components when the target solution does not exist', async () => {
+    const service = new SolutionService({
+      query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
+        ok((options.table === 'solutions' ? [] : []) as T[], {
+          supportTier: 'preview',
+        }),
+      queryAll: async <T>(): Promise<OperationResult<T[]>> =>
+        ok([] as T[], {
+          supportTier: 'preview',
+        }),
+    } as unknown as DataverseClient);
+
+    const components = await service.components('MissingSolution');
+
+    expect(components.success).toBe(false);
+    expect(components.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_NOT_FOUND',
+          message: 'Solution MissingSolution was not found.',
+          source: '@pp/solution',
+        }),
+      ])
+    );
+  });
+
   it('analyzes missing config and dependency blockers', async () => {
     const service = new SolutionService(
       createStubClient({

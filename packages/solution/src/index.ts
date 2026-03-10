@@ -520,11 +520,18 @@ export class SolutionService {
     }
 
     if (!solution.data) {
-      return ok([], {
-        supportTier: 'preview',
-        diagnostics: solution.diagnostics,
-        warnings: solution.warnings,
-      });
+      return fail(
+        [
+          ...solution.diagnostics,
+          createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`, {
+            source: '@pp/solution',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: solution.warnings,
+        }
+      );
     }
 
     const components = await this.dataverseClient.queryAll<SolutionComponentRecord>({

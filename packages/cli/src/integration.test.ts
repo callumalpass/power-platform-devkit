@@ -3288,6 +3288,31 @@ describe('cli fixture-backed workflows', () => {
     expect(components.stderr).toContain('ERROR CLI_OUTPUT_FORMAT_INVALID: Unsupported --format.');
   });
 
+  it('fails solution components for a missing solution instead of returning an empty list', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [],
+        },
+      }),
+    });
+
+    const components = await runCli(['solution', 'components', 'MissingSolution', '--env', 'fixture', '--format', 'json']);
+
+    expect(components.code).toBe(1);
+    expect(components.stdout).toBe('');
+    expect(JSON.parse(components.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'SOLUTION_NOT_FOUND',
+          message: 'Solution MissingSolution was not found.',
+          source: '@pp/solution',
+        },
+      ],
+    });
+  });
+
   it('accepts --environment as an alias for --env on dv whoami', async () => {
     const client = {
       whoAmI: async () => ({
