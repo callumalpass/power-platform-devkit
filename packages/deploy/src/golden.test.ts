@@ -377,6 +377,156 @@ describe('deploy fixture-backed goldens', () => {
     ]);
   });
 
+  it('plans and applies flow artifact connection reference mappings through shared deploy orchestration', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-connref-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await cp(resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow', 'flow.json'), join(root, 'flows', 'invoice', 'flow.json'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  mailConnectionReference:',
+        '    type: string',
+        '    value: shared_exchangeonline',
+        '    mapsTo:',
+        '      - kind: flow-connref',
+        '        path: flows/invoice/flow.json',
+        '        target: shared_office365',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const plan = buildDeployPlan(discovery.data!);
+    expect(plan.success).toBe(true);
+    expect(plan.data?.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-connref-set',
+        parameter: 'mailConnectionReference',
+        target: 'shared_office365',
+        path: join(root, 'flows', 'invoice', 'flow.json'),
+        valuePreview: 'shared_exchangeonline',
+      })
+    );
+
+    const preview = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(preview.success).toBe(true);
+    expect(preview.data?.preflight.ok).toBe(true);
+    expect(preview.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-connref-set',
+        parameter: 'mailConnectionReference',
+        target: 'shared_office365',
+        currentValue: 'shared_office365',
+        nextValue: 'shared_exchangeonline',
+        status: 'planned',
+        changed: true,
+      })
+    );
+
+    const apply = await executeDeploy(discovery.data!, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(apply.success).toBe(true);
+    expect(apply.data?.preflight.ok).toBe(true);
+    expect(apply.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'flow-connref-set',
+        parameter: 'mailConnectionReference',
+        status: 'applied',
+        changed: true,
+      })
+    );
+
+    const updatedArtifact = JSON.parse(await readFile(join(root, 'flows', 'invoice', 'flow.json'), 'utf8')) as {
+      metadata: { connectionReferences: Array<{ name: string; connectionReferenceLogicalName?: string }> };
+    };
+    expect(updatedArtifact.metadata.connectionReferences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'shared_exchangeonline',
+          connectionReferenceLogicalName: 'shared_exchangeonline',
+        }),
+      ])
+    );
+  });
+
+  it('fails preflight when multiple parameters map to the same flow artifact connection reference target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-deploy-flow-connref-conflict-'));
+    await mkdir(join(root, 'flows', 'invoice'), { recursive: true });
+    await cp(resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow', 'flow.json'), join(root, 'flows', 'invoice', 'flow.json'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  mailConnectionReference:',
+        '    type: string',
+        '    value: shared_exchangeonline',
+        '    mapsTo:',
+        '      - kind: flow-connref',
+        '        path: flows/invoice/flow.json',
+        '        target: shared_office365',
+        '  mailConnectionReferenceFallback:',
+        '    type: string',
+        '    value: shared_outlook',
+        '    mapsTo:',
+        '      - kind: flow-connref',
+        '        path: flows/invoice/flow.json',
+        '        target: shared_office365',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_FLOW_CONNREF_TARGET_CONFLICT',
+        target: 'shared_office365',
+      })
+    );
+    expect(result.data?.apply.operations).toEqual([
+      expect.objectContaining({
+        kind: 'flow-connref-set',
+        parameter: 'mailConnectionReference',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
+      expect.objectContaining({
+        kind: 'flow-connref-set',
+        parameter: 'mailConnectionReferenceFallback',
+        status: 'skipped',
+        message: 'Blocked by conflicting deploy target mappings.',
+      }),
+    ]);
+  });
+
   it('executes a saved deploy plan directly without rediscovering the source project', async () => {
     const savedPlan: DeployPlan = {
       projectRoot: '/tmp/detached-plan',

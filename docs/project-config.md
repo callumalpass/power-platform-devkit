@@ -8,6 +8,32 @@
 
 If no config file is found, the project commands still run, but they fall back to defaults and emit a warning.
 
+## Init and doctor
+
+`pp` now exposes a lightweight local-project-management wedge:
+
+```bash
+pp project init
+pp project doctor
+```
+
+`project init` intentionally stays small:
+
+- writes a minimal `pp.config.yaml`
+- creates `apps/`, `flows/`, `solutions/`, and `docs/` if they do not exist
+- seeds one default stage, one solution alias, and one primary Dataverse provider binding
+
+It does not try to create remote environments, auth profiles, solutions, or
+provider-specific artifacts.
+
+`project doctor` is the validation companion. It reports:
+
+- whether a `pp.config.*` file is present
+- whether configured or default asset paths exist
+- whether provider bindings and topology are defined
+- whether required parameters remain unresolved
+- existing project-discovery diagnostics in a more explicit local-layout check list
+
 ## Shape
 
 Current supported fields:
@@ -47,6 +73,23 @@ parameters:
     type: string
     secretRef: pipeline:app_token
     required: true
+    mapsTo:
+      - kind: deploy-secret
+        target: api-token
+  sqlEndpoint:
+    type: string
+    fromEnv: PP_SQL_ENDPOINT
+    required: true
+    mapsTo:
+      - kind: deploy-input
+        target: sql-endpoint
+  mailConnectionReference:
+    type: string
+    value: shared_exchangeonline
+    mapsTo:
+      - kind: flow-connref
+        path: flows/invoice-sync/flow.json
+        target: shared_office365
   useManagedIdentity:
     type: boolean
     value: false
@@ -177,6 +220,29 @@ providerBindings:
 ```
 
 ## Project commands
+
+### Init
+
+```bash
+pp project init
+pp project init /path/to/repo --name demo --env dev --solution Core --stage prod --plan --format json
+```
+
+Use `--plan` or `--dry-run` when you want the scaffold plan without writing
+files. Use `--force` to replace an existing `pp.config.*` file.
+
+### Doctor
+
+```bash
+pp project doctor
+pp project doctor /path/to/repo --stage prod --format json
+```
+
+Returns a repo-local layout report with:
+
+- summary flags for config, assets, topology, provider bindings, registries, and required inputs
+- a per-check assessment list (`pass`, `warn`, `fail`, `info`)
+- the resolved asset inventory used by `pp`
 
 ## Template registries
 
