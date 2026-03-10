@@ -60,6 +60,7 @@ Apply from a previously saved deploy plan:
 ```bash
 pp deploy plan --project . --format json > ./dist/deploy-plan.json
 pp deploy apply --project . --plan ./dist/deploy-plan.json --yes --format json
+pp deploy apply --plan ./dist/deploy-plan.json --yes --format json
 ```
 
 Live apply is guarded. Without `--yes`, `mode: apply` returns a machine-readable
@@ -68,6 +69,12 @@ When `--plan <file>` is used, `pp` still rediscovers the current project and
 runs the shared orchestration path, but it adds a preflight gate that fails if
 the saved plan no longer matches the current resolved target, bindings, or
 operations.
+When `--plan <file>` is used without `--project`, `pp` now executes directly
+from the saved plan artifact instead of rediscovering the source project.
+Detached saved-plan execution can only run operations whose saved `valuePreview`
+still contains the executable value. Sensitive operations remain redacted in the
+saved plan and fail preflight with a machine-readable error until the project is
+rediscovered.
 
 The output includes:
 
@@ -194,4 +201,6 @@ steps:
 - Missing target environment variables still fail preflight for `dataverse-envvar`, while `dataverse-envvar-create` records a machine-readable creation check and creates the definition during live apply.
 - Missing target connection references fail preflight.
 - Duplicate target mappings within the same deploy family fail preflight explicitly.
+- Detached saved-plan execution is limited by redaction: operations whose saved
+  plan value is missing or redacted fail preflight instead of guessing.
 - Connection reference and missing-environment-variable findings from solution analysis are surfaced as warnings in preflight.

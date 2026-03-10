@@ -51,7 +51,7 @@ import {
   type AttributeMetadataView,
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
-import { buildDeployPlan, executeDeploy, type DeployPlan } from '@pp/deploy';
+import { buildDeployPlan, executeDeploy, executeDeployPlan, type DeployPlan } from '@pp/deploy';
 import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { ModelService } from '@pp/model';
@@ -554,7 +554,8 @@ async function runDeployPlan(args: string[]): Promise<number> {
 }
 
 async function runDeployApply(args: string[]): Promise<number> {
-  const projectPath = readFlag(args, '--project') ?? process.cwd();
+  const explicitProjectPath = readFlag(args, '--project');
+  const projectPath = explicitProjectPath ?? process.cwd();
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -572,6 +573,21 @@ async function runDeployApply(args: string[]): Promise<number> {
 
   if (!expectedPlan.success) {
     return printFailure(expectedPlan);
+  }
+
+  if (expectedPlan.data && !explicitProjectPath) {
+    const result = await executeDeployPlan(expectedPlan.data, {
+      mode: mutation.data.mode,
+      confirmed: mutation.data.yes,
+    });
+
+    if (!result.data) {
+      return printFailure(result);
+    }
+
+    printByFormat(result.data, format);
+    printResultDiagnostics(result, format);
+    return result.data.preflight.ok && result.data.apply.summary.failed === 0 ? 0 : 1;
   }
 
   const project = await discoverProject(projectPath, discoveryOptions.data);
@@ -3845,7 +3861,7 @@ function printHelp(): void {
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  deploy plan [--project path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  deploy apply [--project path] [--stage STAGE] [--param NAME=VALUE] [--dry-run|--plan] [--yes] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  deploy apply [--project path] [--stage STAGE] [--param NAME=VALUE] [--dry-run|--plan|--plan FILE] [--yes] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

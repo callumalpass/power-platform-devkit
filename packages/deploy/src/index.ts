@@ -165,6 +165,14 @@ export interface ResolvedDeployBindings {
   secrets: ResolvedDeployBindingEntry[];
 }
 
+interface PreparedDeployOperation {
+  plan: DeployOperationPlan;
+  value?: string | number | boolean;
+  executable: boolean;
+  blockedCode?: 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_MISSING' | 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_REDACTED';
+  blockedMessage?: string;
+}
+
 export interface DeployExecutionResult {
   mode: DeployExecutionMode;
   target: DeployTarget;
@@ -293,12 +301,7 @@ export async function executeDeploy(
   const confirmation = resolveDeployConfirmation(mode, options.confirmed === true);
   const diagnostics = [...planResult.diagnostics];
   const warnings = [...planResult.warnings];
-  const checks: DeployPreflightCheck[] = [];
-  const applyOperations: DeployOperationResult[] = [];
-  const preparedOperations = collectDeployOperations(project);
-  const conflicts = analyzeDeployTargetConflicts(preparedOperations.map((operation) => operation.plan));
-  const dataverseOperations = preparedOperations.filter((operation) => isDataverseMutationOperation(operation.plan));
-  const adapterBindingOperations = preparedOperations.filter((operation) => !isDataverseMutationOperation(operation.plan));
+  const checks: DeployPreflightCheck[] = [...collectMissingMappingChecks(project)];
   const target = planResult.data?.target ?? {
     stage: project.topology.selectedStage,
     environmentAlias: project.topology.activeEnvironment,
@@ -306,8 +309,70 @@ export async function executeDeploy(
     solutionUniqueName: project.topology.activeSolution?.uniqueName,
   };
 
-  checks.push(...collectMissingMappingChecks(project));
   checks.push(...collectExpectedPlanChecks(options.expectedPlan, planResult.data));
+  return executePreparedDeploy({
+    mode,
+    plan: planResult.data,
+    bindings: bindingSummary,
+    confirmation,
+    target,
+    checks,
+    preparedOperations: prepareProjectDeployOperations(project),
+    diagnostics,
+    warnings,
+    startedAt,
+  });
+}
+
+export async function executeDeployPlan(
+  plan: DeployPlan,
+  options: {
+    mode?: DeployExecutionMode;
+    confirmed?: boolean;
+  } = {}
+): Promise<OperationResult<DeployExecutionResult>> {
+  const startedAt = Date.now();
+  const mode = options.mode ?? 'apply';
+  const confirmation = resolveDeployConfirmation(mode, options.confirmed === true);
+  const checks: DeployPreflightCheck[] = [
+    ...collectSavedPlanMissingChecks(plan),
+    ...collectSavedPlanValueChecks(plan),
+  ];
+
+  return executePreparedDeploy({
+    mode,
+    plan,
+    bindings: plan.bindings,
+    confirmation,
+    target: plan.target,
+    checks,
+    preparedOperations: prepareSavedPlanOperations(plan),
+    diagnostics: [],
+    warnings: [],
+    startedAt,
+  });
+}
+
+async function executePreparedDeploy(context: {
+  mode: DeployExecutionMode;
+  plan: DeployPlan | undefined;
+  bindings: DeployBindingSummary;
+  confirmation: DeployConfirmation;
+  target: DeployTarget;
+  checks: DeployPreflightCheck[];
+  preparedOperations: PreparedDeployOperation[];
+  diagnostics: Diagnostic[];
+  warnings: Diagnostic[];
+  startedAt: number;
+}): Promise<OperationResult<DeployExecutionResult>> {
+  const { mode, plan, bindings, confirmation, target, preparedOperations, diagnostics, warnings, startedAt } = context;
+  const checks = [...context.checks];
+  const applyOperations: DeployOperationResult[] = [];
+  const conflicts = analyzeDeployTargetConflicts(preparedOperations.map((operation) => operation.plan));
+  const dataverseOperations = preparedOperations.filter((operation) => isDataverseMutationOperation(operation.plan));
+  const adapterBindingOperations = preparedOperations.filter((operation) => !isDataverseMutationOperation(operation.plan));
+  const runnableDataverseOperations: PreparedDeployOperation[] = [];
+
   checks.push(
     ...conflicts.map((conflict) => ({
       status: 'fail' as const,
@@ -329,6 +394,16 @@ export async function executeDeploy(
       continue;
     }
 
+    if (!operation.executable) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        changed: false,
+        message: operation.blockedMessage ?? 'Saved deploy plan does not include an executable value for this binding.',
+      });
+      continue;
+    }
+
     applyOperations.push({
       ...operation.plan,
       status: 'resolved',
@@ -340,7 +415,33 @@ export async function executeDeploy(
     });
   }
 
-  if (dataverseOperations.length > 0 && !target.environmentAlias) {
+  for (const operation of dataverseOperations) {
+    if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: operation.value === undefined ? undefined : stringifyDeployValue(operation.value),
+        changed: false,
+        message: 'Blocked by conflicting deploy target mappings.',
+      });
+      continue;
+    }
+
+    if (!operation.executable) {
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        nextValue: operation.value === undefined ? undefined : stringifyDeployValue(operation.value),
+        changed: false,
+        message: operation.blockedMessage ?? 'Saved deploy plan does not include an executable value for this operation.',
+      });
+      continue;
+    }
+
+    runnableDataverseOperations.push(operation);
+  }
+
+  if (runnableDataverseOperations.length > 0 && !target.environmentAlias) {
     checks.push({
       status: 'fail',
       code: 'DEPLOY_PREFLIGHT_ENVIRONMENT_MISSING',
@@ -348,7 +449,7 @@ export async function executeDeploy(
     });
   }
 
-  if (dataverseOperations.length > 0 && !target.solutionUniqueName) {
+  if (runnableDataverseOperations.length > 0 && !target.solutionUniqueName) {
     checks.push({
       status: 'fail',
       code: 'DEPLOY_PREFLIGHT_SOLUTION_MISSING',
@@ -375,38 +476,8 @@ export async function executeDeploy(
     });
   }
 
-  if (dataverseOperations.length === 0) {
-    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
-      supportTier: 'preview',
-      diagnostics,
-      warnings,
-    });
-  }
-
-  if (conflicts.length > 0) {
-    for (const operation of dataverseOperations) {
-      if (!conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
-        continue;
-      }
-
-      applyOperations.push({
-        ...operation.plan,
-        status: 'skipped',
-        nextValue: stringifyDeployValue(operation.value),
-        changed: false,
-        message: 'Blocked by conflicting deploy target mappings.',
-      });
-    }
-
-    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
-      supportTier: 'preview',
-      diagnostics,
-      warnings,
-    });
-  }
-
-  if (!target.environmentAlias || !target.solutionUniqueName || !planResult.data) {
-    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
+  if (runnableDataverseOperations.length === 0 || !target.environmentAlias || !target.solutionUniqueName || !plan) {
+    return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
@@ -424,7 +495,7 @@ export async function executeDeploy(
       message: `Could not resolve Dataverse environment alias ${target.environmentAlias}.`,
       target: target.environmentAlias,
     });
-    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
+    return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
@@ -523,19 +594,8 @@ export async function executeDeploy(
     }
   }
 
-  for (const operation of dataverseOperations) {
-    const nextValue = stringifyDeployValue(operation.value);
-
-    if (conflicts.some((conflict) => matchesDeployConflict(operation.plan, conflict))) {
-      applyOperations.push({
-        ...operation.plan,
-        status: 'skipped',
-        nextValue,
-        changed: false,
-        message: 'Blocked by conflicting deploy target mappings.',
-      });
-      continue;
-    }
+  for (const operation of runnableDataverseOperations) {
+    const nextValue = stringifyDeployValue(operation.value!);
 
     if (isDataverseEnvvarOperation(operation.plan) || isDataverseEnvvarUpsertOperation(operation.plan)) {
       const variable = variableBySchema.get(operation.plan.target.toLowerCase());
@@ -629,14 +689,14 @@ export async function executeDeploy(
   const preflightOk = checks.every((check) => check.status !== 'fail');
 
   if (!preflightOk || mode !== 'apply') {
-    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
+    return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
     });
   }
 
-  for (const operation of dataverseOperations) {
+  for (const operation of runnableDataverseOperations) {
     const index = applyOperations.findIndex((entry) => entry.parameter === operation.plan.parameter && entry.target === operation.plan.target);
 
     if (index === -1) {
@@ -658,12 +718,12 @@ export async function executeDeploy(
       continue;
     }
 
-    const nextValue = stringifyDeployValue(operation.value);
+    const nextValue = stringifyDeployValue(operation.value!);
 
     if (isDataverseEnvvarOperation(operation.plan) || isDataverseEnvvarUpsertOperation(operation.plan)) {
       if (existingOperation.targetExists === false && isDataverseEnvvarUpsertOperation(operation.plan)) {
         const createResult = await environmentVariables.createDefinition(operation.plan.target, {
-          type: inferEnvironmentVariableType(operation.value),
+          type: inferEnvironmentVariableType(operation.value!),
           solutionUniqueName: target.solutionUniqueName,
         });
 
@@ -739,7 +799,7 @@ export async function executeDeploy(
     };
   }
 
-  return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
+  return ok(finalizeDeployExecution(mode, target, plan, bindings, confirmation, checks, applyOperations, startedAt), {
     supportTier: 'preview',
     diagnostics,
     warnings,
@@ -767,6 +827,41 @@ function collectDeployOperations(project: ProjectContext): Array<{ plan: DeployO
   }
 
   return operations;
+}
+
+function prepareProjectDeployOperations(project: ProjectContext): PreparedDeployOperation[] {
+  return collectDeployOperations(project).map((operation) => ({
+    ...operation,
+    executable: true,
+  }));
+}
+
+function prepareSavedPlanOperations(plan: DeployPlan): PreparedDeployOperation[] {
+  return plan.operations.map((operation) => {
+    if (operation.valuePreview === undefined) {
+      return {
+        plan: operation,
+        executable: false,
+        blockedCode: 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_MISSING',
+        blockedMessage: `Saved deploy plan does not include a resolved value for ${operation.target}.`,
+      };
+    }
+
+    if (isDeployValueRedacted(operation.valuePreview)) {
+      return {
+        plan: operation,
+        executable: false,
+        blockedCode: 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_REDACTED',
+        blockedMessage: `Saved deploy plan redacted the resolved value for ${operation.target}; rediscover the project to execute it.`,
+      };
+    }
+
+    return {
+      plan: operation,
+      value: operation.valuePreview,
+      executable: true,
+    };
+  });
 }
 
 function createDeployOperationPlan(
@@ -922,6 +1017,87 @@ function collectExpectedPlanChecks(expectedPlan: DeployPlan | undefined, actualP
   ];
 }
 
+function collectSavedPlanMissingChecks(plan: DeployPlan): DeployPreflightCheck[] {
+  const checks: DeployPreflightCheck[] = [];
+
+  for (const input of plan.inputs) {
+    if (input.hasValue) {
+      continue;
+    }
+
+    for (const mapping of input.mappings) {
+      if (mapping.kind === 'dataverse-envvar') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_ENVVAR_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to Dataverse environment variable ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
+      } else if (mapping.kind === 'dataverse-envvar-create') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_ENVVAR_CREATE_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to Dataverse environment variable create target ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
+      } else if (mapping.kind === 'dataverse-connref') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_CONNREF_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to Dataverse connection reference ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
+      } else if (mapping.kind === 'deploy-input') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_INPUT_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to deploy input ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
+      } else if (mapping.kind === 'deploy-secret') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_SECRET_SOURCE_MISSING',
+          message: `Saved deploy plan input ${input.name} is unresolved but maps to deploy secret ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: input.name,
+          },
+        });
+      }
+    }
+  }
+
+  return checks;
+}
+
+function collectSavedPlanValueChecks(plan: DeployPlan): DeployPreflightCheck[] {
+  return prepareSavedPlanOperations(plan)
+    .filter((operation) => !operation.executable && operation.blockedCode && operation.blockedMessage)
+    .map((operation) => ({
+      status: 'fail' as const,
+      code: operation.blockedCode!,
+      message: operation.blockedMessage!,
+      target: operation.plan.target,
+      details: {
+        parameter: operation.plan.parameter,
+        operationKind: operation.plan.kind,
+      },
+    }));
+}
+
 function finalizeDeployExecution(
   mode: DeployExecutionMode,
   target: DeployTarget,
@@ -1048,6 +1224,10 @@ function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean
 
 function stringifyDeployValue(value: string | number | boolean): string {
   return typeof value === 'string' ? value : String(value);
+}
+
+function isDeployValueRedacted(value: string | number | boolean): value is string {
+  return typeof value === 'string' && value === '<redacted>';
 }
 
 function inferEnvironmentVariableType(value: string | number | boolean): 'string' | 'number' | 'boolean' {

@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { buildDeployPlan, executeDeploy, resolveDeployBindings } from './index';
+import { buildDeployPlan, executeDeploy, executeDeployPlan, resolveDeployBindings, type DeployPlan } from './index';
 import { discoverProject } from '@pp/project';
 import { createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
 import { expectGoldenJson, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
@@ -228,6 +228,189 @@ describe('deploy fixture-backed goldens', () => {
         details: {
           mismatchedSections: ['operations'],
         },
+      })
+    );
+  });
+
+  it('executes a saved deploy plan directly without rediscovering the source project', async () => {
+    const savedPlan: DeployPlan = {
+      projectRoot: '/tmp/detached-plan',
+      generatedAt: '2026-03-10T00:00:00.000Z',
+      executionStages: ['resolve', 'preflight', 'plan', 'apply', 'report'],
+      supportedAdapters: ['github-actions', 'azure-devops', 'power-platform-pipelines'],
+      target: {
+        stage: 'prod',
+        environmentAlias: 'prod',
+        solutionUniqueName: 'CoreManaged',
+      },
+      inputs: [
+        {
+          name: 'tenantDomain',
+          value: 'contoso.example',
+          source: 'value',
+          hasValue: true,
+          sensitive: false,
+          mappings: [
+            {
+              kind: 'dataverse-envvar',
+              target: 'pp_TenantDomain',
+            },
+          ],
+        },
+      ],
+      providerBindings: [],
+      topology: [],
+      templateRegistries: [],
+      build: {},
+      assets: [],
+      bindings: {
+        inputs: [],
+        secrets: [],
+      },
+      operations: [
+        {
+          kind: 'dataverse-envvar-set',
+          parameter: 'tenantDomain',
+          source: 'value',
+          sensitive: false,
+          target: 'pp_TenantDomain',
+          valuePreview: 'contoso.example',
+        },
+      ],
+    };
+
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'solution-prod-1',
+            uniquename: 'CoreManaged',
+            friendlyname: 'Core Managed',
+            version: '1.0.0.0',
+          },
+        ],
+      },
+      queryAll: {
+        solutioncomponents: [{ objectid: 'envvar-def-1' }],
+        dependencies: [],
+        connectionreferences: [],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'envvar-def-1',
+            schemaname: 'pp_TenantDomain',
+            displayname: 'Tenant Domain',
+            defaultvalue: '',
+            type: 'string',
+            _solutionid_value: 'solution-prod-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'envvar-value-1',
+            value: 'old.example',
+            _environmentvariabledefinitionid_value: 'envvar-def-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({ prod: client });
+    const updateSpy = vi.spyOn(client, 'update');
+
+    const result = await executeDeployPlan(savedPlan, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.apply.summary.applied).toBe(1);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(result.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'dataverse-envvar-set',
+        status: 'applied',
+        currentValue: 'old.example',
+        nextValue: 'contoso.example',
+      })
+    );
+  });
+
+  it('blocks detached saved-plan execution when only redacted values are available', async () => {
+    const savedPlan: DeployPlan = {
+      projectRoot: '/tmp/detached-plan',
+      generatedAt: '2026-03-10T00:00:00.000Z',
+      executionStages: ['resolve', 'preflight', 'plan', 'apply', 'report'],
+      supportedAdapters: ['github-actions', 'azure-devops', 'power-platform-pipelines'],
+      target: {
+        stage: 'prod',
+      },
+      inputs: [
+        {
+          name: 'apiToken',
+          source: 'secret',
+          hasValue: true,
+          sensitive: true,
+          reference: 'app_token',
+          mappings: [
+            {
+              kind: 'deploy-secret',
+              target: 'api-token',
+            },
+          ],
+        },
+      ],
+      providerBindings: [],
+      topology: [],
+      templateRegistries: [],
+      build: {},
+      assets: [],
+      bindings: {
+        inputs: [],
+        secrets: [
+          {
+            kind: 'deploy-secret',
+            parameter: 'apiToken',
+            source: 'secret',
+            sensitive: true,
+            target: 'api-token',
+            status: 'resolved',
+            reference: 'app_token',
+            valuePreview: '<redacted>',
+          },
+        ],
+      },
+      operations: [
+        {
+          kind: 'deploy-secret-bind',
+          parameter: 'apiToken',
+          source: 'secret',
+          sensitive: true,
+          target: 'api-token',
+          valuePreview: '<redacted>',
+        },
+      ],
+    };
+
+    const result = await executeDeployPlan(savedPlan, {
+      mode: 'apply',
+      confirmed: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_PLAN_OPERATION_VALUE_REDACTED',
+        target: 'api-token',
+      })
+    );
+    expect(result.data?.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'deploy-secret-bind',
+        status: 'skipped',
+        message: 'Saved deploy plan redacted the resolved value for api-token; rediscover the project to execute it.',
       })
     );
   });
