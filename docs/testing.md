@@ -3,7 +3,7 @@
 `pp` currently uses three practical test lanes:
 
 - `pnpm test`: the normal fast suite for package tests, including fixture-backed CLI integration tests
-- `pnpm exec vitest run packages/project/src/golden.test.ts packages/deploy/src/golden.test.ts packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/solution/src/golden.test.ts packages/cli/src/integration.test.ts packages/cli/src/contract.test.ts`: the focused fixture/golden lane for project discovery, deploy planning, canvas, flow, analysis, solution analysis/compare, representative CLI workflows, and the shipped CLI contract surface
+- `pnpm exec vitest run packages/project/src/golden.test.ts packages/deploy/src/golden.test.ts packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/solution/src/golden.test.ts packages/model/src/golden.test.ts packages/cli/src/integration.test.ts packages/cli/src/contract.test.ts`: the focused fixture/golden lane for project discovery, deploy planning, canvas, flow, analysis, solution/model inspection, representative CLI workflows, and the shipped CLI contract surface
 - `pnpm smoke:live`: the gated live smoke lane that builds the workspace and runs the read-only external-environment checks
 
 The repository now wires that split into GitHub Actions:
@@ -34,19 +34,20 @@ The committed fixtures currently cover:
 - flow remote list, inspect, runtime runs, grouped error, connection-health, and doctor outputs from committed Dataverse-like fixtures
 - project analysis context and markdown reporting
 - solution list, inspect, components, dependencies, analysis, and source-vs-target comparison outputs from committed Dataverse-like fixtures
+- model-driven app list, inspect, sitemap, forms, views, and dependency outputs from committed Dataverse-like fixtures
 - CLI contract rendering for structured outputs, machine-friendly failures, warning streams, and dry-run/plan mutation previews
-- CLI workflows that drive those same local fixture paths end to end, including dry-run and plan previews for supported canvas and flow mutation commands
+- CLI workflows that drive those same local fixture paths end to end, including dry-run and plan previews for supported canvas and flow mutation commands plus model inspection workflows
 
 Run the focused lane:
 
 ```bash
-pnpm exec vitest run packages/project/src/golden.test.ts packages/deploy/src/golden.test.ts packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/solution/src/golden.test.ts packages/cli/src/integration.test.ts packages/cli/src/contract.test.ts
+pnpm exec vitest run packages/project/src/golden.test.ts packages/deploy/src/golden.test.ts packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/solution/src/golden.test.ts packages/model/src/golden.test.ts packages/cli/src/integration.test.ts packages/cli/src/contract.test.ts
 ```
 
 Refresh committed goldens deterministically:
 
 ```bash
-PP_UPDATE_GOLDENS=1 pnpm exec vitest run packages/project/src/golden.test.ts packages/deploy/src/golden.test.ts packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/solution/src/golden.test.ts packages/cli/src/integration.test.ts packages/cli/src/contract.test.ts
+PP_UPDATE_GOLDENS=1 pnpm exec vitest run packages/project/src/golden.test.ts packages/deploy/src/golden.test.ts packages/canvas/src/golden.test.ts packages/flow/src/golden.test.ts packages/analysis/src/golden.test.ts packages/solution/src/golden.test.ts packages/model/src/golden.test.ts packages/cli/src/integration.test.ts packages/cli/src/contract.test.ts
 ```
 
 The fixture outputs live under `fixtures/canvas/golden/`, `fixtures/flow/golden/`, `fixtures/analysis/golden/`, `fixtures/solution/golden/`, and `fixtures/cli/golden/`. Refreshes should come from commands, not hand-edited snapshots.

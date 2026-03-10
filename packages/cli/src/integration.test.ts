@@ -657,4 +657,49 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(components.stdout), 'fixtures/solution/golden/components-report.json');
     await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/solution/golden/dependencies-report.json');
   });
+
+  it('covers model-driven app inspection workflows through the CLI entrypoint', async () => {
+    const fixture = (await readJsonFile(resolveRepoPath('fixtures', 'model', 'runtime', 'sales-hub.json'))) as DataverseFixture;
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(fixture),
+    });
+
+    const list = await runCli(['model', 'list', '--env', 'source', '--solution', 'Core', '--format', 'json']);
+    const inspect = await runCli(['model', 'inspect', 'Sales Hub', '--env', 'source', '--solution', 'Core', '--format', 'json']);
+    const sitemap = await runCli(['model', 'sitemap', 'Sales Hub', '--env', 'source', '--solution', 'Core', '--format', 'json']);
+    const forms = await runCli(['model', 'forms', 'Sales Hub', '--env', 'source', '--solution', 'Core', '--format', 'json']);
+    const views = await runCli(['model', 'views', 'Sales Hub', '--env', 'source', '--solution', 'Core', '--format', 'json']);
+    const dependencies = await runCli([
+      'model',
+      'dependencies',
+      'Sales Hub',
+      '--env',
+      'source',
+      '--solution',
+      'Core',
+      '--format',
+      'json',
+    ]);
+
+    expect(list.code).toBe(0);
+    expect(list.stderr).toBe('');
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(sitemap.code).toBe(0);
+    expect(sitemap.stderr).toBe('');
+    expect(forms.code).toBe(0);
+    expect(forms.stderr).toBe('');
+    expect(views.code).toBe(0);
+    expect(views.stderr).toBe('');
+    expect(dependencies.code).toBe(0);
+    expect(dependencies.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/model/golden/list-report.json');
+    await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/model/golden/inspect-report.json');
+    await expectGoldenJson(JSON.parse(sitemap.stdout), 'fixtures/model/golden/sitemap-report.json');
+    await expectGoldenJson(JSON.parse(forms.stdout), 'fixtures/model/golden/forms-report.json');
+    await expectGoldenJson(JSON.parse(views.stdout), 'fixtures/model/golden/views-report.json');
+    await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/model/golden/dependencies-report.json');
+  });
 });

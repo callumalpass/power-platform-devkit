@@ -1,4 +1,4 @@
-import type { DataverseClient } from '@pp/dataverse';
+import type { DataverseClient, EntityDefinition } from '@pp/dataverse';
 import * as dataverseModule from '@pp/dataverse';
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
 import { vi } from 'vitest';
@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 export interface DataverseFixture {
   query?: Record<string, unknown[]>;
   queryAll?: Record<string, unknown[]>;
+  listTables?: EntityDefinition[];
 }
 
 export function createFixtureDataverseClient(fixture: DataverseFixture): DataverseClient {
@@ -16,6 +17,10 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
       }),
     queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
       ok(((fixture.queryAll?.[options.table] ?? []) as T[]), {
+        supportTier: 'preview',
+      }),
+    listTables: async (): Promise<OperationResult<EntityDefinition[]>> =>
+      ok(fixture.listTables ?? [], {
         supportTier: 'preview',
       }),
   } as unknown as DataverseClient;
