@@ -1022,6 +1022,63 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('reuses the environment default solution in placeholder canvas mutation guidance', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+              defaultSolution: 'HarnessSolution',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const create = await runCli(['canvas', 'create', '--env', 'fixture', '--name', 'Harness Canvas', '--config-dir', configDir, '--format', 'json']);
+    const importResult = await runCli([
+      'canvas',
+      'import',
+      './dist/Harness App.msapp',
+      '--env',
+      'fixture',
+      '--config-dir',
+      configDir,
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(1);
+    expect(JSON.parse(create.stderr)).toMatchObject({
+      success: false,
+      suggestedNextActions: expect.arrayContaining([
+        'Using default solution HarnessSolution from environment alias fixture, keep the Maker step and verification scoped to that solution.',
+        'After saving in Maker, run `pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
+        'After the Maker step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.',
+        'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the app was added to the solution.',
+      ]),
+    });
+
+    expect(importResult.code).toBe(1);
+    expect(JSON.parse(importResult.stderr)).toMatchObject({
+      success: false,
+      suggestedNextActions: expect.arrayContaining([
+        'Using default solution HarnessSolution from environment alias fixture, keep the Maker step and verification scoped to that solution.',
+        'After the import step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the app is visible in Dataverse.',
+        'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the imported app was added to the solution.',
+      ]),
+    });
+  });
+
   it('covers canvas inspect, validate, build, and diff through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const baseAppPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'base-app');

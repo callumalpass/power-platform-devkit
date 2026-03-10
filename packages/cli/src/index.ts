@@ -343,11 +343,14 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
   }
 }
 
-function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): number {
+async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number> {
   const envAlias = readFlag(args, '--env');
-  const solutionUniqueName = readFlag(args, '--solution');
+  const explicitSolutionUniqueName = readFlag(args, '--solution');
   const displayName = command === 'create' ? readFlag(args, '--name') : undefined;
   const importPath = command === 'import' ? positionalArgs(args)[0] : undefined;
+  const defaultSolutionUniqueName =
+    !explicitSolutionUniqueName && envAlias ? await readEnvironmentDefaultSolution(envAlias, readConfigOptions(args)) : undefined;
+  const solutionUniqueName = explicitSolutionUniqueName ?? defaultSolutionUniqueName;
 
   return printFailure(
     fail(
@@ -370,6 +373,7 @@ function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: 
           solutionUniqueName,
           displayName,
           importPath,
+          derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
         }),
         knownLimitations: [
           'Remote canvas coverage in pp is currently read-only.',
@@ -387,6 +391,7 @@ function buildCanvasRemoteMutationSuggestions(
     solutionUniqueName?: string;
     displayName?: string;
     importPath?: string;
+    derivedSolutionFromEnvironmentAlias?: string;
   }
 ): string[] {
   const envAlias = context.envAlias ? formatCliArg(context.envAlias) : '<alias>';
@@ -396,9 +401,16 @@ function buildCanvasRemoteMutationSuggestions(
   const solutionComponentsCommand = context.solutionUniqueName
     ? `pp solution components ${formatCliArg(context.solutionUniqueName)}${envSuffix} --format json`
     : undefined;
+  const resolvedSolutionSuggestion = context.derivedSolutionFromEnvironmentAlias && context.solutionUniqueName
+    ? `Using default solution ${formatCliArg(context.solutionUniqueName)} from environment alias ${envAlias}, keep the Maker step and verification scoped to that solution.`
+    : undefined;
 
   if (command === 'create') {
     const suggestions = ['Use Maker blank-app creation for now when you need a new remote canvas app.'];
+
+    if (resolvedSolutionSuggestion) {
+      suggestions.push(resolvedSolutionSuggestion);
+    }
 
     if (context.displayName) {
       suggestions.push(
@@ -423,6 +435,10 @@ function buildCanvasRemoteMutationSuggestions(
     suggestions.push('Use Maker or solution tooling for the remote import step until `pp canvas import` exists.');
   }
 
+  if (resolvedSolutionSuggestion) {
+    suggestions.push(resolvedSolutionSuggestion);
+  }
+
   suggestions.push(`After the import step, run \`${listCommand}\` to confirm the app is visible in Dataverse.`);
 
   if (solutionComponentsCommand) {
@@ -431,6 +447,16 @@ function buildCanvasRemoteMutationSuggestions(
 
   suggestions.push('Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.');
   return suggestions;
+}
+
+async function readEnvironmentDefaultSolution(alias: string, configOptions: ConfigStoreOptions): Promise<string | undefined> {
+  const environment = await getEnvironmentAlias(alias, configOptions);
+
+  if (!environment.success) {
+    return undefined;
+  }
+
+  return environment.data?.defaultSolution;
 }
 
 function formatCliArg(value: string): string {
