@@ -356,9 +356,11 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
   const configOptions = readConfigOptions(args);
   const explicitSolutionUniqueName = readFlag(args, '--solution');
   const explicitMakerEnvironmentId = readFlag(args, '--maker-env-id');
-  const displayName = command === 'create' ? readFlag(args, '--name') : undefined;
+  const explicitDisplayName = readFlag(args, '--name');
+  const displayName = command === 'create' ? explicitDisplayName : undefined;
   const importPath = command === 'import' ? positionalArgs(args)[0] : undefined;
-  const inferredImportDisplayName = command === 'import' && importPath ? inferCanvasImportDisplayName(importPath) : undefined;
+  const inferredImportDisplayName =
+    command === 'import' && importPath && !explicitDisplayName ? inferCanvasImportDisplayName(importPath) : undefined;
   const defaultSolutionUniqueName =
     !explicitSolutionUniqueName && envAlias ? await readEnvironmentDefaultSolution(envAlias, configOptions) : undefined;
   const solutionUniqueName = explicitSolutionUniqueName ?? defaultSolutionUniqueName;
@@ -442,7 +444,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           envAlias,
           solutionUniqueName,
           solutionId: resolvedSolutionId,
-          displayName: displayName ?? inferredImportDisplayName,
+          displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
           importPath,
           makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
           derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
@@ -4183,7 +4185,7 @@ function printHelp(): void {
       '  envvar set <schemaName|displayName|id> --env ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas list --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas create --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
-      '  canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [preview: returns not-implemented diagnostics]',
+      '  canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
       '  canvas validate <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas lint <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas inspect <path|displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -4320,12 +4322,13 @@ function printCanvasListHelp(): void {
 function printCanvasImportHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [options]',
+      'Usage: canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
       '',
       'Status:',
       '  Preview placeholder. Remote canvas import is not implemented yet.',
       '',
       'Options:',
+      '  --name DISPLAY_NAME        Expected remote display name for post-import verification guidance',
       '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
       '',
       'What works today:',

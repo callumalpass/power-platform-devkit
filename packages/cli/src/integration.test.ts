@@ -303,7 +303,7 @@ describe('cli fixture-backed workflows', () => {
     expect(code).toBe(0);
     expect(stderr.join('')).toBe('');
     expect(stdout.join('')).toContain('canvas create --env ALIAS');
-    expect(stdout.join('')).toContain('canvas import <file.msapp> --env ALIAS');
+    expect(stdout.join('')).toContain('canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME]');
     expect(stdout.join('')).toContain('[preview: returns not-implemented diagnostics]');
   });
 
@@ -345,8 +345,9 @@ describe('cli fixture-backed workflows', () => {
 
     expect(importHelp.code).toBe(0);
     expect(importHelp.stderr).toBe('');
-    expect(importHelp.stdout).toContain('Usage: canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [options]');
+    expect(importHelp.stdout).toContain('Usage: canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
     expect(importHelp.stdout).toContain('Preview placeholder. Remote canvas import is not implemented yet.');
+    expect(importHelp.stdout).toContain('--name DISPLAY_NAME');
     expect(importHelp.stdout).toContain('--maker-env-id ID');
     expect(importHelp.stdout).toContain('Use Maker or solution tooling for the remote import step until `pp canvas import` exists.');
   });
@@ -1058,6 +1059,57 @@ describe('cli fixture-backed workflows', () => {
         'After the import step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the app is visible in Dataverse.',
         'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the imported app was added to the solution.',
         'Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
+      ]),
+    });
+  });
+
+  it('lets placeholder canvas import guidance override the inferred display name', async () => {
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {
+          makerEnvironmentId: 'env-123',
+        },
+      },
+    });
+
+    const importResult = await runCli([
+      'canvas',
+      'import',
+      './dist/Harness App.msapp',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Imported Harness Canvas',
+      '--format',
+      'json',
+    ]);
+
+    expect(importResult.code).toBe(1);
+    expect(JSON.parse(importResult.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'CANVAS_REMOTE_IMPORT_NOT_IMPLEMENTED',
+          message: 'Remote canvas import is not implemented yet.',
+          source: '@pp/cli',
+        },
+      ],
+      suggestedNextActions: expect.arrayContaining([
+        'After the import step, run `pp canvas inspect "Imported Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
       ]),
     });
   });
