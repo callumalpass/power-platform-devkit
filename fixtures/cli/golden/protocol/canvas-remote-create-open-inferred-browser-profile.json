@@ -53,6 +53,7 @@
     }
   ],
   "suggestedNextActions": [
+    "Use `pp canvas create --environment fixture --solution HarnessSolution --name \"Harness Canvas\" --delegate --browser-profile maker-from-auth` to let pp drive the Maker blank-app flow and wait for the created app id.",
     "Use Maker blank-app creation for now when you need a new remote canvas app.",
     "Open https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1 to start the solution-scoped blank canvas app flow in Maker.",
     "After saving in Maker, run `pp canvas inspect \"Harness Canvas\" --environment fixture --solution HarnessSolution` to confirm the remote app id.",

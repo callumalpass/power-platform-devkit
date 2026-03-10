@@ -10,10 +10,13 @@ import { renderMarkdownReport, generateContextPack } from '@pp/analysis';
 import {
   AuthService,
   DEFAULT_BROWSER_BOOTSTRAP_URL,
+  createTokenProvider,
+  resolveBrowserProfileDirectory,
   summarizeBrowserProfile,
   summarizeProfile,
   type AuthProfile,
   type BrowserProfile,
+  type UserAuthProfile,
 } from '@pp/auth';
 import { CanvasService, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
 import {
@@ -53,9 +56,11 @@ import {
 import { buildDeployPlan, executeDeploy, executeDeployPlan, type DeployPlan } from '@pp/deploy';
 import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
+import { HttpClient } from '@pp/http';
 import { ModelService } from '@pp/model';
 import { discoverProject, doctorProject, initProject, planProjectInit, summarizeProject, summarizeResolvedParameter } from '@pp/project';
 import { SolutionService, type SolutionAnalysis, type SolutionPackageType } from '@pp/solution';
+import { runDelegatedCanvasCreate } from './canvas-create-delegate';
 import YAML from 'yaml';
 
 type OutputFormat = CliOutputFormat;
@@ -90,6 +95,7 @@ const ATTRIBUTE_COMMON_SELECT_FIELDS = [
   'IsValidForAdvancedFind',
   'IsSecured',
 ] as const;
+const POWER_PLATFORM_ENVIRONMENTS_API_VERSION = '2020-10-01';
 
 export async function main(argv: string[]): Promise<number> {
   const [group, command, ...rest] = argv;
@@ -463,6 +469,13 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
   const explicitDisplayName = readFlag(args, '--name');
   const explicitBrowserProfileName = readFlag(args, '--browser-profile');
   const openMakerHandoff = hasFlag(args, '--open');
+  const delegateCanvasCreate = hasFlag(args, '--delegate');
+  const delegatedArtifactsDir = readFlag(args, '--artifacts-dir');
+  const delegatedTimeoutMs = readNumberFlag(args, '--timeout-ms');
+  const delegatedPollTimeoutMs = readNumberFlag(args, '--poll-timeout-ms');
+  const delegatedSettleMs = readNumberFlag(args, '--settle-ms');
+  const delegatedSlowMoMs = readNumberFlag(args, '--slow-mo-ms');
+  const delegatedDebug = hasFlag(args, '--debug');
   const displayName = command === 'create' ? explicitDisplayName : undefined;
   const importPath = command === 'import' ? positionalArgs(args)[0] : undefined;
   const inferredImportDisplayName =
@@ -485,6 +498,10 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     );
   }
 
+  if (command !== 'create' && delegateCanvasCreate) {
+    return printFailure(argumentFailure('CANVAS_IMPORT_DELEGATE_UNSUPPORTED', '--delegate is currently only supported for canvas create.'));
+  }
+
   const mutation = readMutationFlags(args);
 
   if (!mutation.success || !mutation.data) {
@@ -496,6 +513,13 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
   if (!resolution.success || !resolution.data) {
     return printFailure(resolution);
   }
+
+  const resolvedMakerEnvironmentId = await resolveCanvasMakerEnvironmentId(
+    explicitMakerEnvironmentId,
+    resolution.data.environment,
+    resolution.data.authProfile,
+    configOptions
+  );
 
   let resolvedSolutionId: string | undefined;
 
@@ -522,7 +546,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
                 source: '@pp/cli',
                 hint:
                   command === 'create'
-                    ? 'Use pp canvas list/inspect for remote discovery today, or finish blank-app creation in Maker until a first-class pp canvas create command exists.'
+                    ? 'Use --delegate --browser-profile NAME to drive the Maker blank-app flow inside pp, or finish blank-app creation in Maker until a first-class remote pp canvas create command exists.'
                     : 'Build or obtain an .msapp outside the remote workflow today, then use Maker or solution tooling until a first-class pp canvas import command exists.',
               }
             ),
@@ -531,7 +555,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
             ...buildCanvasRemoteMutationResultMetadata({
               envAlias,
               solutionUniqueName,
-              makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+              makerEnvironmentId: resolvedMakerEnvironmentId,
               suggestedNextActions: missingSolutionSuggestedNextActions,
               knownLimitations,
             }),
@@ -549,8 +573,9 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     solutionId: resolvedSolutionId,
     displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
     importPath,
-    makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+    makerEnvironmentId: resolvedMakerEnvironmentId,
     derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
+    browserProfileName: explicitBrowserProfileName ?? resolveBrowserProfileNameFromAuthProfile(resolution.data.authProfile),
   });
   const fallbackDetails = buildCanvasRemoteMutationFallbackDetails(command, {
     envAlias,
@@ -558,13 +583,13 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     solutionId: resolvedSolutionId,
     displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
     importPath,
-    makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+    makerEnvironmentId: resolvedMakerEnvironmentId,
     derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
   });
   const resultMetadata = buildCanvasRemoteMutationResultMetadata({
     envAlias,
     solutionUniqueName,
-    makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+    makerEnvironmentId: resolvedMakerEnvironmentId,
     suggestedNextActions,
     knownLimitations,
   });
@@ -578,18 +603,183 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           envAlias,
           solutionUniqueName,
           solutionId: resolvedSolutionId,
-          makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+          makerEnvironmentId: resolvedMakerEnvironmentId,
           supported: false,
         },
         {
           displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
           importPath,
+          delegated: delegateCanvasCreate
+            ? {
+                requested: true,
+                artifactsDir:
+                  delegatedArtifactsDir ??
+                  (displayName
+                    ? resolvePath('.tmp', 'canvas-create', slugifyCanvasDelegatedArtifacts(displayName))
+                    : undefined),
+              }
+            : undefined,
           fallback: fallbackDetails,
           suggestedNextActions,
           knownLimitations,
         },
         resultMetadata
       ),
+      outputFormat(args, 'json')
+    );
+    return 0;
+  }
+
+  if (delegateCanvasCreate) {
+    if (!solutionUniqueName || !resolvedSolutionId) {
+      return printFailure(
+        argumentFailure('CANVAS_CREATE_DELEGATE_SOLUTION_REQUIRED', '--delegate currently requires --solution UNIQUE_NAME (or an environment defaultSolution).')
+      );
+    }
+
+    if (!displayName) {
+      return printFailure(argumentFailure('CANVAS_CREATE_NAME_REQUIRED', '--name DISPLAY_NAME is required with --delegate.'));
+    }
+
+    const browserProfileName =
+      explicitBrowserProfileName ?? resolveBrowserProfileNameFromAuthProfile(resolution.data.authProfile);
+
+    if (!browserProfileName) {
+      return printFailure(
+        argumentFailure(
+          'AUTH_BROWSER_PROFILE_NAME_REQUIRED',
+          'Use --browser-profile NAME with --delegate, or configure browserProfile on the environment auth profile, so pp can drive the Maker handoff in a persisted browser profile.'
+        )
+      );
+    }
+
+    if (!fallbackDetails.handoff.recommendedUrl || !resolvedMakerEnvironmentId) {
+      return printFailure(
+        fail(
+          createDiagnostic(
+            'error',
+            'CANVAS_MAKER_HANDOFF_URL_UNAVAILABLE',
+            'A Maker handoff URL is not available for delegated canvas create yet.',
+            {
+              source: '@pp/cli',
+              hint:
+                'Provide --maker-env-id or configure makerEnvironmentId on the environment alias so pp can build the exact solution-scoped Maker blank-app URL.',
+            }
+          ),
+          {
+            details: fallbackDetails,
+            ...resultMetadata,
+          }
+        )
+      );
+    }
+
+    if (
+      [delegatedTimeoutMs, delegatedPollTimeoutMs, delegatedSettleMs, delegatedSlowMoMs].some(
+        (value) => value !== undefined && !Number.isFinite(value)
+      )
+    ) {
+      return printFailure(
+        argumentFailure(
+          'CANVAS_CREATE_DELEGATE_NUMBER_REQUIRED',
+          '--timeout-ms, --poll-timeout-ms, --settle-ms, and --slow-mo-ms must be numeric when provided.'
+        )
+      );
+    }
+
+    const auth = new AuthService(configOptions);
+    const browserProfile = await auth.getBrowserProfile(browserProfileName);
+
+    if (!browserProfile.success || !browserProfile.data) {
+      return printFailure(browserProfile);
+    }
+
+    const browserProfileDir = resolveBrowserProfileDirectory(browserProfile.data, configOptions);
+    const delegated = await runDelegatedCanvasCreate({
+      envAlias,
+      solutionUniqueName,
+      solutionId: resolvedSolutionId,
+      appName: displayName,
+      browserProfileName,
+      browserProfile: browserProfile.data,
+      browserProfileDir,
+      client: resolution.data.client,
+      targetUrl: fallbackDetails.handoff.recommendedUrl,
+      makerEnvironmentId: resolvedMakerEnvironmentId,
+      outDir: delegatedArtifactsDir ?? resolvePath('.tmp', 'canvas-create', slugifyCanvasDelegatedArtifacts(displayName)),
+      headless: !delegatedDebug,
+      slowMoMs: delegatedSlowMoMs ?? 0,
+      timeoutMs: delegatedTimeoutMs ?? 180_000,
+      pollTimeoutMs: delegatedPollTimeoutMs ?? 180_000,
+      settleMs: delegatedSettleMs ?? 12_000,
+    });
+
+    if (!delegated.success || !delegated.data) {
+      return printFailure({
+        ...delegated,
+        details: {
+          handoff: fallbackDetails,
+          automation: delegated.details ?? delegated.data,
+        },
+        suggestedNextActions: [
+          ...(delegated.suggestedNextActions ?? []),
+          `Inspect ${formatCliArg(
+            ((delegated.details as { artifacts?: { sessionPath?: string } } | undefined)?.artifacts?.sessionPath ?? '<session-path>')
+          )} and the paired screenshot before retrying.`,
+          'Retry with `--debug` to keep the delegated browser session visible if Studio readiness is timing-sensitive.',
+          ...suggestedNextActions,
+        ],
+        knownLimitations: [
+          'Remote canvas creation still depends on delegated Maker browser automation.',
+          'Studio readiness and publish timing can still vary by tenant and browser session.',
+        ],
+        provenance: [
+          ...(resultMetadata.provenance ?? []),
+          {
+            kind: 'inferred',
+            source: '@pp/cli delegated Maker browser automation',
+            detail: `pp attempted the solution-scoped blank-app flow through persisted browser profile ${browserProfileName}.`,
+          },
+        ],
+      });
+    }
+
+    printByFormat(
+      {
+        action: 'canvas.create.remote.delegated',
+        delegated: true,
+        input: {
+          displayName,
+        },
+        target: {
+          envAlias,
+          solutionUniqueName,
+          solutionId: resolvedSolutionId,
+          makerEnvironmentId: resolvedMakerEnvironmentId,
+          supported: false,
+        },
+        handoff: fallbackDetails,
+        automation: delegated.data,
+        createdApp: delegated.data.createdApp,
+        supportTier: 'preview',
+        suggestedNextActions: [
+          `Run \`${fallbackDetails.verification.inspectCommand}\` to confirm the delegated flow returned the same remote app id through pp.`,
+          `Run \`${fallbackDetails.verification.listCommand}\` to confirm the new app remains visible in Dataverse.`,
+          `Run \`${fallbackDetails.verification.solutionComponentsCommand}\` to confirm the app remains attached to the solution.`,
+        ].filter((value): value is string => Boolean(value)),
+        knownLimitations: [
+          'Remote canvas creation still depends on delegated Maker browser automation.',
+          'Studio readiness and publish timing can still vary by tenant and browser session.',
+        ],
+        provenance: [
+          ...(resultMetadata.provenance ?? []),
+          {
+            kind: 'inferred',
+            source: '@pp/cli delegated Maker browser automation',
+            detail: `pp drove the solution-scoped blank-app flow through persisted browser profile ${browserProfileName} and waited for the Dataverse canvas app row.`,
+          },
+        ],
+      },
       outputFormat(args, 'json')
     );
     return 0;
@@ -646,7 +836,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           envAlias,
           solutionUniqueName,
           solutionId: resolvedSolutionId,
-          makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+          makerEnvironmentId: resolvedMakerEnvironmentId,
           supported: false,
         },
         input: {
@@ -672,7 +862,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           source: '@pp/cli',
           hint:
             command === 'create'
-              ? 'Use pp canvas list/inspect for remote discovery today, or finish blank-app creation in Maker until a first-class pp canvas create command exists.'
+              ? 'Use --delegate --browser-profile NAME to drive the Maker blank-app flow inside pp, or finish blank-app creation in Maker until a first-class remote pp canvas create command exists.'
               : 'Build or obtain an .msapp outside the remote workflow today, then use Maker or solution tooling until a first-class pp canvas import command exists.',
         }
       ),
@@ -682,6 +872,87 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
       }
     )
   );
+}
+
+async function resolveCanvasMakerEnvironmentId(
+  explicitMakerEnvironmentId: string | undefined,
+  environment: EnvironmentAlias,
+  authProfile: AuthProfile,
+  configOptions: ConfigStoreOptions
+): Promise<string | undefined> {
+  if (explicitMakerEnvironmentId) {
+    return explicitMakerEnvironmentId;
+  }
+
+  if (environment.makerEnvironmentId) {
+    return environment.makerEnvironmentId;
+  }
+
+  const discovered = await discoverMakerEnvironmentIdForEnvironment(environment, authProfile, configOptions);
+  return discovered.success ? discovered.data : undefined;
+}
+
+async function discoverMakerEnvironmentIdForEnvironment(
+  environment: EnvironmentAlias,
+  authProfile: AuthProfile,
+  configOptions: ConfigStoreOptions
+): Promise<OperationResult<string | undefined>> {
+  const tokenProvider = createTokenProvider(authProfile, configOptions);
+
+  if (!tokenProvider.success || !tokenProvider.data) {
+    return tokenProvider as unknown as OperationResult<string | undefined>;
+  }
+
+  const response = await new HttpClient({
+    baseUrl: 'https://api.bap.microsoft.com/',
+    tokenProvider: tokenProvider.data,
+  }).requestJson<PowerPlatformEnvironmentListResponse>({
+    path: '/providers/Microsoft.BusinessAppPlatform/environments',
+    query: {
+      'api-version': POWER_PLATFORM_ENVIRONMENTS_API_VERSION,
+    },
+  });
+
+  if (!response.success) {
+    return response as unknown as OperationResult<string | undefined>;
+  }
+
+  const environmentUrl = normalizeEnvironmentUrl(environment.url);
+  const match = (response.data?.value ?? []).find((candidate) => {
+    const instanceApiUrl = normalizeEnvironmentUrl(candidate.properties?.linkedEnvironmentMetadata?.instanceApiUrl);
+    const instanceUrl = normalizeEnvironmentUrl(candidate.properties?.linkedEnvironmentMetadata?.instanceUrl);
+    return instanceApiUrl === environmentUrl || instanceUrl === environmentUrl;
+  });
+
+  return ok(match?.name, {
+    supportTier: 'preview',
+  });
+}
+
+function normalizeEnvironmentUrl(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return new URL(value).origin.toLowerCase();
+  } catch {
+    return value.replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+interface PowerPlatformEnvironmentListResponse {
+  value?: PowerPlatformEnvironmentRecord[];
+}
+
+interface PowerPlatformEnvironmentRecord {
+  name?: string;
+  properties?: {
+    linkedEnvironmentMetadata?: {
+      instanceApiUrl?: string;
+      instanceUrl?: string;
+    };
+  };
 }
 
 function buildCanvasRemoteMutationResultMetadata(context: {
@@ -727,11 +998,13 @@ function buildCanvasRemoteMutationSuggestions(
     importPath?: string;
     makerEnvironmentId?: string;
     derivedSolutionFromEnvironmentAlias?: string;
+    browserProfileName?: string;
   }
 ): string[] {
   const envAlias = context.envAlias ? formatCliArg(context.envAlias) : '<alias>';
   const solutionSuffix = context.solutionUniqueName ? ` --solution ${formatCliArg(context.solutionUniqueName)}` : '';
   const envSuffix = ` --environment ${envAlias}`;
+  const browserProfile = context.browserProfileName ? formatCliArg(context.browserProfileName) : '<browser-profile>';
   const listCommand = `pp canvas list${envSuffix}${solutionSuffix}`;
   const solutionComponentsCommand = context.solutionUniqueName
     ? `pp solution components ${formatCliArg(context.solutionUniqueName)}${envSuffix} --format json`
@@ -743,6 +1016,12 @@ function buildCanvasRemoteMutationSuggestions(
 
   if (command === 'create') {
     const suggestions = ['Use Maker blank-app creation for now when you need a new remote canvas app.'];
+
+    if (context.displayName) {
+      suggestions.unshift(
+        `Use \`pp canvas create${envSuffix}${solutionSuffix} --name ${formatCliArg(context.displayName)} --delegate --browser-profile ${browserProfile}\` to let pp drive the Maker blank-app flow and wait for the created app id.`
+      );
+    }
 
     if (resolvedSolutionSuggestion) {
       suggestions.push(resolvedSolutionSuggestion);
@@ -4644,6 +4923,14 @@ function readNumberFlag(args: string[], name: string): number | undefined {
   return value ? Number(value) : undefined;
 }
 
+function slugifyCanvasDelegatedArtifacts(value: string): string {
+  return basename(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
 function readValueFlag(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
 
@@ -5213,7 +5500,7 @@ function printHelp(): void {
       '  envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
+      '  canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [--delegate] [preview handoff or delegated Maker automation]',
       '  canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
       '  canvas validate <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas lint <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -5266,7 +5553,7 @@ function printCanvasHelp(): void {
       'Remote canvas commands:',
       '  list                         list remote canvas apps through Dataverse',
       '  inspect <displayName|name|id> inspect a remote canvas app when used with --environment',
-      '  create                       reserved for future remote blank-app creation; currently returns diagnostics',
+      '  create                       preview handoff today; `--delegate` can drive the Maker blank-app flow through a browser profile',
       '  import <file.msapp>          reserved for future remote import; currently returns diagnostics',
       '',
       'Local canvas commands:',
@@ -5287,7 +5574,8 @@ function printCanvasHelp(): void {
       '',
       'Notes:',
       '  - Remote canvas coverage today is read-only: list and inspect.',
-      '  - Remote create/import commands are not implemented yet.',
+      '  - Remote create/import still use preview flows rather than first-class server-side APIs.',
+      '  - `canvas create --delegate` can drive the Maker blank-app flow and wait for the created app id through Dataverse.',
       '  - Attempted remote create/import calls return machine-readable diagnostics with next steps.',
       '  - Use --environment to switch canvas inspect from local-path mode to remote lookup mode.',
       '',
@@ -5437,26 +5725,35 @@ function printCanvasCreateHelp(): void {
       'Usage: canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
       '',
       'Status:',
-      '  Preview placeholder. Remote blank-app creation is not implemented yet.',
+      '  Preview handoff by default. `--delegate` can drive the Maker blank-app flow through a persisted browser profile.',
       '',
       'Options:',
       '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
+      '  --delegate                 Drive the solution-scoped Maker blank-app flow and wait for the created app id',
       '  --open                     Launch the resolved Maker handoff URL instead of only printing it',
       '  --browser-profile NAME     Optional override for the browser profile used with --open',
+      '  --artifacts-dir DIR        Persist delegated screenshots/session metadata under DIR',
+      '  --timeout-ms N             Delegated Studio readiness timeout in milliseconds',
+      '  --poll-timeout-ms N        Delegated Dataverse polling timeout in milliseconds',
+      '  --settle-ms N              Delegated post-save and post-publish settle delay in milliseconds',
+      '  --slow-mo-ms N             Delegated browser slow motion delay in milliseconds',
+      '  --debug                    Keep the delegated browser visible instead of running headless',
       '',
       'What works today:',
       '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps.',
       '  - Use `pp canvas inspect <displayName|name|id> --environment <alias> --solution <solution>` to inspect a specific remote app.',
+      '  - Use `--delegate --browser-profile <name> --solution <solution> --name <display-name>` to let pp drive the Maker blank-app flow and return the created app id when Studio save/publish succeeds.',
       '  - Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.',
       '  - Use `--open --browser-profile <name>` to override that browser profile for a one-off handoff.',
       '',
       'Next steps for new apps today:',
-      '  - Finish blank-app creation in Maker when you need a new remote canvas app.',
+      '  - Prefer `--delegate` when you want pp to wait for the created app id through Dataverse.',
+      '  - Finish blank-app creation in Maker when you need a new remote canvas app but do not want delegated browser automation.',
       '  - Use `pp canvas build <path> --out <file.msapp>` if you are packaging a local canvas source tree.',
       '',
       'Known limitations:',
-      '  - Remote canvas coverage in pp is currently read-only.',
-      '  - pp does not yet return a remote canvas app id for create/import workflows.',
+      '  - Delegated create still depends on Maker browser automation rather than a first-class remote API.',
+      '  - Studio readiness and publish timing can still vary by tenant and browser session.',
       '',
       'Preview options:',
       '  --dry-run                     Resolve env/solution context and print a structured no-op preview',

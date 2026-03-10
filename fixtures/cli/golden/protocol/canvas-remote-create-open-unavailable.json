@@ -38,6 +38,7 @@
   ],
   "success": false,
   "suggestedNextActions": [
+    "Use `pp canvas create --environment fixture --solution HarnessSolution --name \"Harness Canvas\" --delegate --browser-profile maker-fixture` to let pp drive the Maker blank-app flow and wait for the created app id.",
     "Use Maker blank-app creation for now when you need a new remote canvas app.",
     "After saving in Maker, run `pp canvas inspect \"Harness Canvas\" --environment fixture --solution HarnessSolution` to confirm the remote app id.",
     "After the Maker step, run `pp canvas list --environment fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.",

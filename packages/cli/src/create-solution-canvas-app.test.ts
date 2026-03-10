@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBlankAppUrl, buildSolutionAppsUrl, isBlankAppTargetUrl, resolveInitialTargetUrl } from '../../../scripts/create-solution-canvas-app';
+import { buildBlankAppUrl, buildSolutionAppsUrl, isBlankAppTargetUrl, resolveInitialTargetUrl } from './canvas-create-delegate';
 
 describe('create-solution-canvas-app URL routing', () => {
   it('prefers the solution-scoped blank-app deep link when Maker metadata is available', () => {

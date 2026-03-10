@@ -19,7 +19,7 @@
   "diagnostics": [
     {
       "code": "CANVAS_REMOTE_CREATE_NOT_IMPLEMENTED",
-      "hint": "Use pp canvas list/inspect for remote discovery today, or finish blank-app creation in Maker until a first-class pp canvas create command exists.",
+      "hint": "Use --delegate --browser-profile NAME to drive the Maker blank-app flow inside pp, or finish blank-app creation in Maker until a first-class remote pp canvas create command exists.",
       "level": "error",
       "message": "Remote canvas create is not implemented yet.",
       "source": "@pp/cli"
@@ -43,6 +43,7 @@
   ],
   "success": false,
   "suggestedNextActions": [
+    "Use `pp canvas create --environment fixture --solution HarnessSolution --name \"Harness Canvas\" --delegate --browser-profile maker-from-auth` to let pp drive the Maker blank-app flow and wait for the created app id.",
     "Use Maker blank-app creation for now when you need a new remote canvas app.",
     "Open https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1 to start the solution-scoped blank canvas app flow in Maker.",
     "After saving in Maker, run `pp canvas inspect \"Harness Canvas\" --environment fixture --solution HarnessSolution` to confirm the remote app id.",

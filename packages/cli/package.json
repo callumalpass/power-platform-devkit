@@ -35,6 +35,7 @@
     "@pp/model": "workspace:*",
     "@pp/project": "workspace:*",
     "@pp/solution": "workspace:*",
+    "playwright-core": "^1.52.0",
     "yaml": "^2.7.1"
   }
 }

@@ -233,11 +233,16 @@ Useful flags:
 Remote mutation placeholders:
 
 - `pp canvas create --env <alias> [--solution UNIQUE_NAME] [--name DISPLAY_NAME]`
-  currently returns a stable machine-readable diagnostic instead of performing
-  blank-app creation
+  still returns a stable machine-readable diagnostic by default instead of
+  performing server-side blank-app creation
 - `pp canvas import <file.msapp> --env <alias> [--solution UNIQUE_NAME] [--name DISPLAY_NAME]`
   currently returns a stable machine-readable diagnostic instead of importing a
   remote app
+- `pp canvas create --env <alias> --solution UNIQUE_NAME --name DISPLAY_NAME --delegate --browser-profile NAME`
+  can now drive the solution-scoped Maker blank-app flow through a persisted
+  browser profile, save/publish in Studio, wait for the Dataverse `canvasapps`
+  row, and return the created app id plus screenshot/session artifacts when it
+  succeeds
 - adding `--dry-run` or `--plan` to either placeholder resolves the target
   environment and solution, then returns a structured no-op preview with the
   Maker handoff URLs, verification commands, and known limitations instead of a
@@ -256,9 +261,17 @@ Remote mutation placeholders:
 - both placeholders also accept `--maker-env-id ID` when you want exact Maker
   deep links for a one-off run without persisting that metadata on the
   environment alias first
+- when the environment alias does not already store `makerEnvironmentId`, the
+  placeholder create/import flow also tries to discover it live from the Power
+  Platform environments API so exact Maker handoff URLs still work without a
+  manual override
 - both placeholders also accept `--open --browser-profile NAME` for apply mode,
   which launches the resolved Maker handoff URL directly into a persisted
   browser profile instead of only printing fallback instructions
+- delegated create also accepts `--artifacts-dir DIR`, `--timeout-ms N`,
+  `--poll-timeout-ms N`, `--settle-ms N`, `--slow-mo-ms N`, and `--debug` so
+  harnesses can preserve browser evidence and tune Studio timing without
+  leaving `pp`
 - both placeholder commands resolve the target environment first, validate the
   requested solution when one is provided or inherited from `defaultSolution`,
   and then return suggested next actions for Maker fallback plus `pp canvas
@@ -325,6 +338,8 @@ the registry marks as supported.
 Remote canvas operations are also intentionally limited today:
 
 - remote `list` and `inspect` are implemented
-- remote `create` and `import` are discoverable preview placeholders only
-- the CLI does not yet perform remote blank-app creation/import or return the
-  resulting remote app id
+- remote `create` defaults to a discoverable preview handoff and optional
+  delegated Maker browser automation
+- remote `import` is still a discoverable preview placeholder only
+- the CLI still does not perform first-class server-side remote blank-app
+  creation/import; delegated create depends on Maker browser automation

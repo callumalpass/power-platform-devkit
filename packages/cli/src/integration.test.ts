@@ -9,6 +9,7 @@ import type { DataverseClient } from '@pp/dataverse';
 import { ok } from '@pp/diagnostics';
 import { type DataverseFixture, createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
 import { expectGoldenJson, expectGoldenText, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
+import * as canvasCreateDelegate from './canvas-create-delegate';
 import { main } from './index';
 
 const tempDirs: string[] = [];
@@ -391,7 +392,8 @@ describe('cli fixture-backed workflows', () => {
     expect(stderr.join('')).toBe('');
     expect(stdout.join('')).toContain('Usage: canvas <command> [options]');
     expect(stdout.join('')).toContain('pp canvas list --environment dev --solution Core');
-    expect(stdout.join('')).toContain('Remote create/import commands are not implemented yet.');
+    expect(stdout.join('')).toContain('Remote create/import still use preview flows rather than first-class server-side APIs.');
+    expect(stdout.join('')).toContain('`canvas create --delegate` can drive the Maker blank-app flow and wait for the created app id through Dataverse.');
     expect(stdout.join('')).toContain('Attempted remote create/import calls return machine-readable diagnostics with next steps.');
   });
 
@@ -402,16 +404,23 @@ describe('cli fixture-backed workflows', () => {
     expect(createHelp.code).toBe(0);
     expect(createHelp.stderr).toBe('');
     expect(createHelp.stdout).toContain('Usage: canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
-    expect(createHelp.stdout).toContain('Preview placeholder. Remote blank-app creation is not implemented yet.');
+    expect(createHelp.stdout).toContain('Preview handoff by default. `--delegate` can drive the Maker blank-app flow through a persisted browser profile.');
     expect(createHelp.stdout).toContain('--maker-env-id ID');
+    expect(createHelp.stdout).toContain('--delegate');
     expect(createHelp.stdout).toContain('--open');
     expect(createHelp.stdout).toContain('--browser-profile NAME');
+    expect(createHelp.stdout).toContain('--artifacts-dir DIR');
+    expect(createHelp.stdout).toContain('--timeout-ms N');
+    expect(createHelp.stdout).toContain('--poll-timeout-ms N');
+    expect(createHelp.stdout).toContain('--settle-ms N');
+    expect(createHelp.stdout).toContain('--slow-mo-ms N');
+    expect(createHelp.stdout).toContain('--debug');
     expect(createHelp.stdout).toContain('--dry-run');
     expect(createHelp.stdout).toContain('--plan');
-    expect(createHelp.stdout).toContain('Finish blank-app creation in Maker when you need a new remote canvas app.');
     expect(createHelp.stdout).toContain(
-      'Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.'
+      'Use `--delegate --browser-profile <name> --solution <solution> --name <display-name>` to let pp drive the Maker blank-app flow and return the created app id when Studio save/publish succeeds.'
     );
+    expect(createHelp.stdout).toContain('Prefer `--delegate` when you want pp to wait for the created app id through Dataverse.');
 
     expect(importHelp.code).toBe(0);
     expect(importHelp.stderr).toBe('');
@@ -1479,6 +1488,112 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('discovers the maker environment id for placeholder canvas handoffs when the alias does not store it', async () => {
+    const launchBrowserProfile = vi.spyOn(AuthService.prototype, 'launchBrowserProfile').mockResolvedValue({
+      success: true,
+      diagnostics: [],
+      warnings: [],
+      supportTier: 'preview',
+      data: {
+        profile: {
+          name: 'maker-fixture',
+          kind: 'edge',
+        },
+        url: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+        command: 'fake-browser',
+        args: ['--user-data-dir=/tmp/maker-fixture', 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1'],
+        profileDir: '/tmp/maker-fixture',
+      },
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          value: [
+            {
+              name: 'env-123',
+              properties: {
+                linkedEnvironmentMetadata: {
+                  instanceApiUrl: 'https://fixture.crm.dynamics.com',
+                },
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }
+      )
+    );
+
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {
+          url: 'https://fixture.crm.dynamics.com',
+        },
+        authProfile: {
+          name: 'fixture-static',
+          type: 'static-token',
+          token: 'bap-token',
+        },
+      },
+    });
+
+    const create = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--open',
+      '--browser-profile',
+      'maker-fixture',
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(0);
+    expect(create.stderr).toBe('');
+    expect(JSON.parse(create.stdout)).toMatchObject({
+      target: {
+        envAlias: 'fixture',
+        makerEnvironmentId: 'env-123',
+        solutionId: 'solution-1',
+        solutionUniqueName: 'HarnessSolution',
+      },
+      handoff: {
+        handoff: {
+          recommendedUrl:
+            'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+        },
+      },
+    });
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+      'https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/environments?api-version=2020-10-01'
+    );
+    expect(launchBrowserProfile).toHaveBeenCalledWith(
+      'maker-fixture',
+      'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1'
+    );
+  });
+
   it('lets placeholder canvas mutation guidance override the alias maker environment id per command', async () => {
     const configDir = await createTempDir();
     mockDataverseResolution({
@@ -1728,6 +1843,181 @@ describe('cli fixture-backed workflows', () => {
       'maker-fixture',
       'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1'
     );
+  });
+
+  it('can delegate canvas create through Maker automation and return the created app id', async () => {
+    const artifactsDir = await createTempDir();
+    vi.spyOn(AuthService.prototype, 'getBrowserProfile').mockResolvedValue(
+      ok({
+        name: 'maker-fixture',
+        kind: 'edge',
+      })
+    );
+    vi.spyOn(canvasCreateDelegate, 'runDelegatedCanvasCreate').mockResolvedValue(
+      ok({
+        appName: 'Harness Canvas',
+        envAlias: 'fixture',
+        solutionUniqueName: 'HarnessSolution',
+        targetUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+        browserProfile: 'maker-fixture',
+        baselineMatches: [],
+        pageUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=edit&id=app-1',
+        title: 'Power Apps Studio',
+        frames: [{ name: 'EmbeddedStudio', url: 'https://make.powerapps.com/studio' }],
+        createdApp: {
+          id: 'app-1',
+          name: 'pp_harnesscanvas',
+          displayName: 'Harness Canvas',
+          appVersion: '1.0.0.0',
+          solutionUniqueNames: ['HarnessSolution'],
+          openUri: 'https://make.powerapps.com/play/app-1',
+          tags: ['Canvas'],
+          inSolution: true,
+        },
+        screenshotPath: join(artifactsDir, 'harness-canvas.png'),
+        sessionPath: join(artifactsDir, 'harness-canvas.session.json'),
+      })
+    );
+
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {
+          makerEnvironmentId: 'env-123',
+        },
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+          defaultResource: 'https://fixture.crm.dynamics.com',
+          browserProfile: 'maker-fixture',
+        },
+      },
+    });
+
+    const create = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--delegate',
+      '--artifacts-dir',
+      artifactsDir,
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(0);
+    expect(create.stderr).toBe('');
+    expect(normalizeCliSnapshot(JSON.parse(create.stdout), artifactsDir)).toEqual({
+      action: 'canvas.create.remote.delegated',
+      delegated: true,
+      input: {
+        displayName: 'Harness Canvas',
+      },
+      target: {
+        envAlias: 'fixture',
+        solutionUniqueName: 'HarnessSolution',
+        solutionId: 'solution-1',
+        makerEnvironmentId: 'env-123',
+        supported: false,
+      },
+      handoff: {
+        handoff: {
+          displayName: 'Harness Canvas',
+          kind: 'maker-blank-app',
+          makerUrls: {
+            blankAppUrl:
+              'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+            solutionAppsUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
+            solutionsUrl: 'https://make.powerapps.com/environments/env-123/solutions',
+          },
+          recommendedUrl:
+            'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+        },
+        verification: {
+          inspectCommand: 'pp canvas inspect "Harness Canvas" --environment fixture --solution HarnessSolution',
+          listCommand: 'pp canvas list --environment fixture --solution HarnessSolution',
+          solutionComponentsCommand: 'pp solution components HarnessSolution --environment fixture --format json',
+        },
+      },
+      automation: {
+        appName: 'Harness Canvas',
+        envAlias: 'fixture',
+        solutionUniqueName: 'HarnessSolution',
+        targetUrl:
+          'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+        browserProfile: 'maker-fixture',
+        baselineMatches: [],
+        pageUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=edit&id=app-1',
+        title: 'Power Apps Studio',
+        frames: [{ name: 'EmbeddedStudio', url: 'https://make.powerapps.com/studio' }],
+        createdApp: {
+          id: 'app-1',
+          name: 'pp_harnesscanvas',
+          displayName: 'Harness Canvas',
+          appVersion: '1.0.0.0',
+          solutionUniqueNames: ['HarnessSolution'],
+          openUri: 'https://make.powerapps.com/play/app-1',
+          tags: ['Canvas'],
+          inSolution: true,
+        },
+        screenshotPath: '<TMP_DIR>/harness-canvas.png',
+        sessionPath: '<TMP_DIR>/harness-canvas.session.json',
+      },
+      createdApp: {
+        id: 'app-1',
+        name: 'pp_harnesscanvas',
+        displayName: 'Harness Canvas',
+        appVersion: '1.0.0.0',
+        solutionUniqueNames: ['HarnessSolution'],
+        openUri: 'https://make.powerapps.com/play/app-1',
+        tags: ['Canvas'],
+        inSolution: true,
+      },
+      supportTier: 'preview',
+      suggestedNextActions: [
+        'Run `pp canvas inspect "Harness Canvas" --environment fixture --solution HarnessSolution` to confirm the delegated flow returned the same remote app id through pp.',
+        'Run `pp canvas list --environment fixture --solution HarnessSolution` to confirm the new app remains visible in Dataverse.',
+        'Run `pp solution components HarnessSolution --environment fixture --format json` to confirm the app remains attached to the solution.',
+      ],
+      knownLimitations: [
+        'Remote canvas creation still depends on delegated Maker browser automation.',
+        'Studio readiness and publish timing can still vary by tenant and browser session.',
+      ],
+      provenance: [
+        {
+          detail: 'Environment alias fixture was resolved through configured Dataverse metadata and solution HarnessSolution.',
+          kind: 'official-api',
+          source: '@pp/cli canvas remote mutation resolution',
+        },
+        {
+          detail: 'Maker handoff URLs and verification commands were synthesized from the resolved environment (env-123) and command inputs.',
+          kind: 'inferred',
+          source: '@pp/cli canvas Maker fallback guidance',
+        },
+        {
+          detail:
+            'pp drove the solution-scoped blank-app flow through persisted browser profile maker-fixture and waited for the Dataverse canvas app row.',
+          kind: 'inferred',
+          source: '@pp/cli delegated Maker browser automation',
+        },
+      ],
+    });
   });
 
   it('reuses the environment auth profile browser profile when opening a Maker handoff', async () => {
