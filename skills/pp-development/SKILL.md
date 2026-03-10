@@ -29,7 +29,7 @@ Operate with one consistent model:
 When dropped into an unfamiliar repo:
 
 1. Confirm how to invoke `pp` in this workspace. Prefer `pp ...` if installed,
-   otherwise use `pnpm --filter @pp/cli dev -- ...` or
+   otherwise use `pnpm pp -- ...` from the repo root or
    `node packages/cli/dist/index.js ...`.
 2. Inspect the local project before doing repo archaeology:
    - `pp project doctor`
