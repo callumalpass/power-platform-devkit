@@ -329,6 +329,9 @@ Example:
   "actions": {
     "SendMail": "ComposeMail"
   },
+  "variables": {
+    "counter": "runCount"
+  },
   "connectionReferences": {
     "shared_office365": "shared_exchangeonline"
   },
@@ -345,9 +348,9 @@ Example:
 ```
 
 The patcher is deliberately narrow. It updates known connection-reference and
-parameter locations, supports bounded action-identifier rewrites, and applies
-explicit dotted paths inside the real definition payload without inventing a
-separate DSL.
+parameter locations, supports bounded action-identifier and variable-name
+rewrites, and applies explicit dotted paths inside the real definition payload
+without inventing a separate DSL.
 
 Current action rename support is intentionally bounded:
 
@@ -356,6 +359,15 @@ Current action rename support is intentionally bounded:
   `actions('...')` / `body('...')` / `outputs('...')` references
 - rejects rename chains or target-name collisions instead of guessing through
   ambiguous rewrites
+
+Current variable rename support is intentionally bounded:
+
+- renames supported `InitializeVariable.inputs.variables[*].name` declarations
+- rewrites supported variable-write action targets such as `SetVariable`,
+  `IncrementVariable`, `DecrementVariable`, and append-variable actions
+- rewrites supported `variables('...')` references
+- rejects rename chains or target-name collisions instead of guessing through
+  ambiguous variable merges
 
 ## Validation boundary
 

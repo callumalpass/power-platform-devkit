@@ -4282,6 +4282,95 @@ describe('FlowService', () => {
     expect(document.definition.actions.ScopeA.actions.NestedConsumer.inputs.outputsRef).toBe("@{outputs('ComposeDraft')}");
   });
 
+  it('renames flow variables safely across initialize/write actions and supported references', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Patch Variable Rename',
+            displayName: 'Patch Variable Rename',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            triggers: {
+              Manual: {
+                type: 'Request',
+                kind: 'Button',
+              },
+            },
+            actions: {
+              InitializeCounter: {
+                type: 'InitializeVariable',
+                inputs: {
+                  variables: [
+                    {
+                      name: 'counter',
+                      type: 'integer',
+                      value: 0,
+                    },
+                  ],
+                },
+              },
+              IncrementCounter: {
+                type: 'IncrementVariable',
+                runAfter: {
+                  InitializeCounter: ['Succeeded'],
+                },
+                inputs: {
+                  name: 'counter',
+                  value: 1,
+                },
+              },
+              ComposeCounter: {
+                type: 'Compose',
+                runAfter: {
+                  IncrementCounter: ['Succeeded'],
+                },
+                inputs: {
+                  value: "@{variables('counter')}",
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const patched = await patchFlowArtifact(
+      artifactPath,
+      {
+        variables: {
+          counter: 'runCount',
+        },
+      },
+      join(dir, 'patched')
+    );
+
+    expect(patched.success).toBe(true);
+    expect(patched.data?.appliedOperations).toEqual(['variable:counter->runCount']);
+
+    const document = JSON.parse(await readFile(join(dir, 'patched', 'flow.json'), 'utf8')) as {
+      definition: {
+        actions: Record<string, any>;
+      };
+    };
+
+    expect(document.definition.actions.InitializeCounter.inputs.variables[0]?.name).toBe('runCount');
+    expect(document.definition.actions.IncrementCounter.inputs.name).toBe('runCount');
+    expect(document.definition.actions.ComposeCounter.inputs.value).toBe("@{variables('runCount')}");
+  });
+
   it('fails action rename patches that target an existing action name', async () => {
     const dir = await createTempDir();
     const artifactPath = join(dir, 'artifact');
@@ -4332,6 +4421,65 @@ describe('FlowService', () => {
     expect(patched.diagnostics).toEqual([
       expect.objectContaining({
         code: 'FLOW_PATCH_ACTION_TARGET_EXISTS',
+      }),
+    ]);
+  });
+
+  it('fails variable rename patches that target an existing variable name', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Patch Variable Rename Conflict',
+            displayName: 'Patch Variable Rename Conflict',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            actions: {
+              InitializeCounter: {
+                type: 'InitializeVariable',
+                inputs: {
+                  variables: [
+                    {
+                      name: 'counter',
+                      type: 'integer',
+                      value: 0,
+                    },
+                    {
+                      name: 'existingCounter',
+                      type: 'integer',
+                      value: 1,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const patched = await patchFlowArtifact(artifactPath, {
+      variables: {
+        counter: 'existingCounter',
+      },
+    });
+
+    expect(patched.success).toBe(false);
+    expect(patched.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'FLOW_PATCH_VARIABLE_TARGET_EXISTS',
       }),
     ]);
   });

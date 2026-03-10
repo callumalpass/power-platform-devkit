@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -102,5 +102,97 @@ describe('flow patch cli coverage', () => {
       target: "@{environmentVariables('pp_ApiUrl')}",
       priority: 'High',
     });
+  });
+
+  it('supports bounded variable renames through flow patch', async () => {
+    const tempDir = await createTempDir();
+    const flowPath = join(tempDir, 'flow');
+    const patchedPath = join(tempDir, 'patched');
+    const patchPath = join(tempDir, 'rename-variable.patch.json');
+
+    await mkdir(flowPath, { recursive: true });
+    await writeFile(
+      join(flowPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'CLI Variable Rename',
+            displayName: 'CLI Variable Rename',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            actions: {
+              InitializeCounter: {
+                type: 'InitializeVariable',
+                inputs: {
+                  variables: [
+                    {
+                      name: 'counter',
+                      type: 'integer',
+                      value: 0,
+                    },
+                  ],
+                },
+              },
+              SetCounter: {
+                type: 'SetVariable',
+                inputs: {
+                  name: 'counter',
+                  value: 2,
+                },
+              },
+              ComposeCounter: {
+                type: 'Compose',
+                inputs: {
+                  value: "@{variables('counter')}",
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await writeFile(
+      patchPath,
+      JSON.stringify(
+        {
+          variables: {
+            counter: 'runCount',
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const flowPatch = await runCli(['flow', 'patch', flowPath, '--file', patchPath, '--out', patchedPath, '--format', 'json']);
+
+    expect(flowPatch.code).toBe(0);
+    expect(flowPatch.stderr).toBe('');
+
+    const patchResult = JSON.parse(flowPatch.stdout) as {
+      appliedOperations: string[];
+      changed: boolean;
+    };
+    expect(patchResult.changed).toBe(true);
+    expect(patchResult.appliedOperations).toEqual(['variable:counter->runCount']);
+
+    const patchedDocument = JSON.parse(await readFile(join(patchedPath, 'flow.json'), 'utf8')) as {
+      definition: {
+        actions: Record<string, any>;
+      };
+    };
+
+    expect(patchedDocument.definition.actions.InitializeCounter.inputs.variables[0]?.name).toBe('runCount');
+    expect(patchedDocument.definition.actions.SetCounter.inputs.name).toBe('runCount');
+    expect(patchedDocument.definition.actions.ComposeCounter.inputs.value).toBe("@{variables('runCount')}");
   });
 });

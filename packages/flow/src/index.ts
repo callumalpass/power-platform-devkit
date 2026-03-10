@@ -184,6 +184,7 @@ export interface FlowGraphReport {
 
 export interface FlowPatchDocument {
   actions?: Record<string, string>;
+  variables?: Record<string, string>;
   connectionReferences?: Record<string, string>;
   environmentVariables?: Record<string, string>;
   parameters?: Record<string, FlowJsonValue>;
@@ -2419,6 +2420,12 @@ export async function patchFlowArtifact(
     return fail(actionRenameValidation);
   }
 
+  const variableRenameValidation = validateFlowVariableRenamePatch(artifact.data, patch.variables ?? {});
+
+  if (variableRenameValidation) {
+    return fail(variableRenameValidation);
+  }
+
   const cloned = cloneJsonValue(artifact.data) as FlowArtifact;
   const appliedOperations: string[] = [];
 
@@ -2430,6 +2437,15 @@ export async function patchFlowArtifact(
   for (const [from, to] of Object.entries(patch.environmentVariables ?? {})) {
     renameEnvironmentVariable(cloned, from, to);
     appliedOperations.push(`environmentVariable:${from}->${to}`);
+  }
+
+  for (const [from, to] of Object.entries(patch.variables ?? {})) {
+    if (from === to) {
+      continue;
+    }
+
+    renameVariable(cloned, from, to);
+    appliedOperations.push(`variable:${from}->${to}`);
   }
 
   for (const [name, value] of Object.entries(patch.parameters ?? {})) {
@@ -5172,8 +5188,98 @@ function validateFlowActionRenamePatch(
   return undefined;
 }
 
+function validateFlowVariableRenamePatch(
+  artifact: FlowArtifact,
+  renames: Record<string, string>
+): Diagnostic | undefined {
+  const entries = Object.entries(renames);
+
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const variableNames = new Set(
+    buildFlowIntermediateRepresentation(artifact).nodes.flatMap((node) => node.variableUsage.initializes)
+  );
+  const sources = new Set(entries.map(([from]) => from));
+  const seenTargets = new Map<string, string>();
+
+  for (const [from, rawTo] of entries) {
+    const to = rawTo.trim();
+
+    if (!from || !to) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_VARIABLE_RENAME_INVALID',
+        'Flow variable rename patches require non-empty source and target variable names.',
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    if (!variableNames.has(from)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_VARIABLE_SOURCE_MISSING',
+        `Flow patch cannot rename missing variable ${from}.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    if (from === to) {
+      continue;
+    }
+
+    if (sources.has(to)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_VARIABLE_RENAME_CHAIN_UNSUPPORTED',
+        `Flow patch variable rename ${from} -> ${to} is unsupported because ${to} is also a rename source.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    const existingSource = seenTargets.get(to);
+
+    if (existingSource && existingSource !== from) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_VARIABLE_TARGET_CONFLICT',
+        `Flow patch variable rename target ${to} is requested by multiple source variables.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+
+    seenTargets.set(to, from);
+
+    if (variableNames.has(to)) {
+      return createDiagnostic(
+        'error',
+        'FLOW_PATCH_VARIABLE_TARGET_EXISTS',
+        `Flow patch cannot rename variable ${from} to ${to} because ${to} already exists.`,
+        {
+          source: '@pp/flow',
+        }
+      );
+    }
+  }
+
+  return undefined;
+}
+
 function renameAction(artifact: FlowArtifact, from: string, to: string): void {
   artifact.definition = renameActionValue(artifact.definition, from, to) as FlowArtifact['definition'];
+}
+
+function renameVariable(artifact: FlowArtifact, from: string, to: string): void {
+  artifact.definition = renameVariableValue(artifact.definition, from, to) as FlowArtifact['definition'];
 }
 
 function renameEnvironmentVariable(artifact: FlowArtifact, from: string, to: string): void {
@@ -5218,6 +5324,32 @@ function renameEnvironmentVariableValue(value: FlowJsonValue, from: string, to: 
   if (typeof value === 'object' && value !== null) {
     return Object.fromEntries(
       Object.entries(value).map(([key, nested]) => [key, renameEnvironmentVariableValue(nested as FlowJsonValue, from, to)])
+    ) as FlowJsonValue;
+  }
+
+  return value;
+}
+
+function renameVariableValue(value: FlowJsonValue, from: string, to: string): FlowJsonValue {
+  if (typeof value === 'string') {
+    return value.replace(new RegExp(`\\bvariables\\(\\s*(['"])${escapeRegExp(from)}\\1\\s*\\)`, 'g'), (_match, quote: string) =>
+      `variables(${quote}${to}${quote})`
+    );
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => renameVariableValue(item, from, to));
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => {
+        if (key === 'name' && nested === from) {
+          return [key, to];
+        }
+
+        return [key, renameVariableValue(nested as FlowJsonValue, from, to)];
+      })
     ) as FlowJsonValue;
   }
 
