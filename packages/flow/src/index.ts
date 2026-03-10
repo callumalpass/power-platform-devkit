@@ -10,6 +10,11 @@ import {
 } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { SolutionService } from '@pp/solution';
+import {
+  normalizeConnectorApiId,
+  resolveFlowSupportedConnectorOperation,
+  type FlowSupportedConnectorOperationParameter,
+} from './connector-operation-registry';
 
 export type FlowJsonValue = null | boolean | number | string | FlowJsonValue[] | { [key: string]: FlowJsonValue };
 
@@ -382,21 +387,6 @@ interface FlowConnectorActionContract {
   connectionReferenceSupported: boolean;
 }
 
-interface FlowSupportedConnectorOperationParameter {
-  name: string;
-  kind: 'string' | 'integer' | 'boolean' | 'record' | 'binary';
-  bucket?: 'parameters' | 'queries' | 'pathParameters';
-  buckets?: Array<'parameters' | 'queries' | 'pathParameters'>;
-  required?: boolean;
-  allowPrefixedFields?: boolean;
-}
-
-interface FlowSupportedConnectorOperation {
-  apiId: string;
-  operationId: string;
-  parameters: FlowSupportedConnectorOperationParameter[];
-}
-
 export interface FlowDynamicContentReference {
   kind: 'parameter' | 'environmentVariable' | 'action' | 'variable' | 'connectionReference';
   name: string;
@@ -424,283 +414,6 @@ const NOISY_FLOW_KEYS = new Set([
   'creator',
   'owners',
 ]);
-
-const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
-    operationId: 'SendEmailV2',
-    parameters: [
-      { name: 'emailMessage/To', kind: 'string', required: true },
-      { name: 'emailMessage/Subject', kind: 'string', required: true },
-      { name: 'emailMessage/Body', kind: 'string', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'CreateItem',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'table', kind: 'string', required: true },
-      { name: 'item/Title', kind: 'string', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetItem',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'table', kind: 'string', required: true },
-      { name: 'id', kind: 'integer', required: true },
-      { name: 'view', kind: 'string' },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetItems',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'table', kind: 'string', required: true },
-      { name: '$filter', kind: 'string' },
-      { name: '$orderby', kind: 'string' },
-      { name: '$top', kind: 'integer' },
-      { name: 'view', kind: 'string' },
-      { name: 'folderPath', kind: 'string' },
-      { name: 'includeNestedItems', kind: 'boolean' },
-      { name: 'limitColumnsByView', kind: 'boolean' },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'PatchItem',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'table', kind: 'string', required: true },
-      { name: 'id', kind: 'integer', required: true },
-      { name: 'item', kind: 'record', required: true, allowPrefixedFields: true },
-      { name: 'view', kind: 'string' },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'DeleteItem',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'table', kind: 'string', required: true },
-      { name: 'id', kind: 'integer', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'CreateNewFolder',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'table', kind: 'string', required: true },
-      { name: 'path', kind: 'string', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'CreateFile',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'folderPath', kind: 'string', required: true },
-      { name: 'name', kind: 'string', required: true },
-      { name: 'body', kind: 'binary', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetFileContent',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'id', kind: 'string', required: true },
-      { name: 'inferContentType', kind: 'boolean' },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetFileMetadata',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'id', kind: 'string', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetFileMetadataByPath',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'path', kind: 'string', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetFileItem',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'table', kind: 'string', required: true },
-      { name: 'id', kind: 'integer', required: true },
-      { name: 'view', kind: 'string' },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetFileItems',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'table', kind: 'string', required: true },
-      { name: '$filter', kind: 'string' },
-      { name: '$orderby', kind: 'string' },
-      { name: '$top', kind: 'integer' },
-      { name: 'folderPath', kind: 'string' },
-      { name: 'view', kind: 'string' },
-      { name: 'viewScopeOption', kind: 'string' },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetFileContentByPath',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'path', kind: 'string', required: true },
-      { name: 'inferContentType', kind: 'boolean' },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'UpdateFile',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'id', kind: 'string', required: true },
-      { name: 'body', kind: 'binary', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'DeleteFile',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'id', kind: 'string', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'CopyFileAsync',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'sourceFileId', kind: 'string', required: true },
-      { name: 'destinationDataset', kind: 'string', required: true },
-      { name: 'destinationFolderPath', kind: 'string', required: true },
-      { name: 'nameConflictBehavior', kind: 'integer', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'MoveFileAsync',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'sourceFileId', kind: 'string', required: true },
-      { name: 'destinationDataset', kind: 'string', required: true },
-      { name: 'destinationFolderPath', kind: 'string', required: true },
-      { name: 'nameConflictBehavior', kind: 'integer', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'CopyFolderAsync',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'sourceFolderId', kind: 'string', required: true },
-      { name: 'destinationDataset', kind: 'string', required: true },
-      { name: 'destinationFolderPath', kind: 'string', required: true },
-      { name: 'nameConflictBehavior', kind: 'integer', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'MoveFolderAsync',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'sourceFolderId', kind: 'string', required: true },
-      { name: 'destinationDataset', kind: 'string', required: true },
-      { name: 'destinationFolderPath', kind: 'string', required: true },
-      { name: 'nameConflictBehavior', kind: 'integer', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetFolderMetadata',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'id', kind: 'string', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-    operationId: 'GetFolderMetadataByPath',
-    parameters: [
-      { name: 'dataset', kind: 'string', required: true },
-      { name: 'path', kind: 'string', required: true },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
-    operationId: 'ListRecords',
-    parameters: [
-      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
-      { name: '$select', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: '$filter', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: '$orderby', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: '$expand', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: 'fetchXml', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: '$top', kind: 'integer', buckets: ['parameters', 'queries'] },
-      { name: '$skiptoken', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: 'partitionId', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: 'returntotalrecordcount', kind: 'boolean', buckets: ['parameters', 'queries'] },
-      { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
-    operationId: 'GetItem',
-    parameters: [
-      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
-      { name: 'recordId', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
-      { name: '$select', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: '$expand', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: 'partitionId', kind: 'string', buckets: ['parameters', 'queries'] },
-      { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
-    operationId: 'CreateRecord',
-    parameters: [
-      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
-      { name: 'item', kind: 'record', required: true, allowPrefixedFields: true },
-      { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
-    operationId: 'UpdateOnlyRecord',
-    parameters: [
-      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
-      { name: 'recordId', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
-      { name: 'item', kind: 'record', required: true, allowPrefixedFields: true },
-      { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
-    ],
-  },
-  {
-    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
-    operationId: 'DeleteRecord',
-    parameters: [
-      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
-      { name: 'recordId', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
-      { name: 'partitionId', kind: 'string', buckets: ['parameters', 'queries'] },
-    ],
-  },
-];
 
 export class FlowService {
   constructor(private readonly dataverseClient?: DataverseClient) {}
@@ -2847,30 +2560,13 @@ function extractConnectionReferenceName(value: string | undefined): string | und
   return match?.[1];
 }
 
-function normalizeConnectorApiId(value: string | undefined): string | undefined {
-  const normalized = value?.trim().toLowerCase();
-  return normalized ? normalized : undefined;
-}
-
-function normalizeConnectorOperationId(value: string | undefined): string | undefined {
-  const normalized = value?.trim().toLowerCase();
-  return normalized ? normalized : undefined;
-}
-
 function resolveSupportedConnectorOperation(
   connectorContract: FlowConnectorActionContract,
   connectionReference: FlowDefinitionConnectionReference | FlowConnectionReference | undefined
-): FlowSupportedConnectorOperation | undefined {
-  const apiId = normalizeConnectorApiId(connectorContract.apiId ?? connectionReference?.apiId);
-  const operationId = normalizeConnectorOperationId(connectorContract.operationId);
-
-  if (!apiId || !operationId) {
-    return undefined;
-  }
-
-  return FLOW_SUPPORTED_CONNECTOR_OPERATIONS.find(
-    (operation) =>
-      normalizeConnectorApiId(operation.apiId) === apiId && normalizeConnectorOperationId(operation.operationId) === operationId
+) {
+  return resolveFlowSupportedConnectorOperation(
+    connectorContract.apiId ?? connectionReference?.apiId,
+    connectorContract.operationId
   );
 }
 

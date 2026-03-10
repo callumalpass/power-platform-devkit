@@ -16,6 +16,7 @@
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm,cjs --clean",
     "clean": "rm -rf dist",
+    "generate:connector-registry": "tsx scripts/generate-connector-operation-registry.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

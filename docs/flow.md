@@ -235,10 +235,44 @@ Current validation checks:
 - supported connector-operation contracts now validate bounded required-field
   and typed optional-field shapes across supported input buckets, currently
   covering:
+  - the supported contract inventory is now loaded through a generated local
+    registry module sourced from
+    `packages/flow/connector-operation-registry.source.json` via
+    `pnpm --filter @pp/flow generate:connector-registry`, so connector support
+    no longer expands inside a single inline constant in
+    `packages/flow/src/index.ts`
   - `shared_office365` `SendEmailV2` with required
     `inputs.parameters.emailMessage/To`,
     `inputs.parameters.emailMessage/Subject`, and
     `inputs.parameters.emailMessage/Body`
+  - `shared_office365` `GetEmailV2` with required
+    `inputs.parameters.messageId`, plus bounded optional
+    `inputs.parameters.mailboxAddress`,
+    `inputs.parameters.includeAttachments`,
+    `inputs.parameters.internetMessageId`,
+    `inputs.parameters.extractSensitivityLabel`, and
+    `inputs.parameters.fetchSensitivityLabelMetadata`
+  - `shared_office365` `DeleteEmail_V2` with required
+    `inputs.parameters.messageId`, plus optional
+    `inputs.parameters.mailboxAddress`
+  - `shared_office365` `MoveV2` with required
+    `inputs.parameters.messageId` and `inputs.parameters.folderPath`, plus
+    optional `inputs.parameters.mailboxAddress`
+  - `shared_office365` `MarkAsRead_V3` with required
+    `inputs.parameters.messageId` and `inputs.parameters.isRead`, plus
+    optional `inputs.parameters.mailboxAddress`
+  - `shared_office365` `V4CalendarPostItem` with required
+    `inputs.parameters.table`, `inputs.parameters.subject`,
+    `inputs.parameters.start`, `inputs.parameters.end`, and
+    `inputs.parameters.timeZone`, plus optional
+    `inputs.parameters.requiredAttendees` and
+    `inputs.parameters.optionalAttendees`
+  - `shared_office365` `V4CalendarPatchItem` with required
+    `inputs.parameters.table`, `inputs.parameters.id`,
+    `inputs.parameters.subject`, `inputs.parameters.start`,
+    `inputs.parameters.end`, and `inputs.parameters.timeZone`, plus optional
+    `inputs.parameters.requiredAttendees` and
+    `inputs.parameters.optionalAttendees`
   - `shared_sharepointonline` `CreateItem` with required
     `inputs.parameters.dataset`, `inputs.parameters.table`, and
     `inputs.parameters.item/Title`

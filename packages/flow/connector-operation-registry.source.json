@@ -1,0 +1,343 @@
+{
+  "operations": [
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "operationId": "SendEmailV2",
+      "parameters": [
+        { "name": "emailMessage/To", "kind": "string", "required": true },
+        { "name": "emailMessage/Subject", "kind": "string", "required": true },
+        { "name": "emailMessage/Body", "kind": "string", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "operationId": "GetEmailV2",
+      "parameters": [
+        { "name": "messageId", "kind": "string", "required": true },
+        { "name": "mailboxAddress", "kind": "string" },
+        { "name": "includeAttachments", "kind": "boolean" },
+        { "name": "internetMessageId", "kind": "string" },
+        { "name": "extractSensitivityLabel", "kind": "boolean" },
+        { "name": "fetchSensitivityLabelMetadata", "kind": "boolean" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "operationId": "DeleteEmail_V2",
+      "parameters": [
+        { "name": "messageId", "kind": "string", "required": true },
+        { "name": "mailboxAddress", "kind": "string" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "operationId": "MoveV2",
+      "parameters": [
+        { "name": "messageId", "kind": "string", "required": true },
+        { "name": "folderPath", "kind": "string", "required": true },
+        { "name": "mailboxAddress", "kind": "string" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "operationId": "MarkAsRead_V3",
+      "parameters": [
+        { "name": "messageId", "kind": "string", "required": true },
+        { "name": "mailboxAddress", "kind": "string" },
+        { "name": "isRead", "kind": "boolean", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "operationId": "V4CalendarPostItem",
+      "parameters": [
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "subject", "kind": "string", "required": true },
+        { "name": "start", "kind": "string", "required": true },
+        { "name": "end", "kind": "string", "required": true },
+        { "name": "timeZone", "kind": "string", "required": true },
+        { "name": "requiredAttendees", "kind": "string" },
+        { "name": "optionalAttendees", "kind": "string" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "operationId": "V4CalendarPatchItem",
+      "parameters": [
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "id", "kind": "string", "required": true },
+        { "name": "subject", "kind": "string", "required": true },
+        { "name": "start", "kind": "string", "required": true },
+        { "name": "end", "kind": "string", "required": true },
+        { "name": "timeZone", "kind": "string", "required": true },
+        { "name": "requiredAttendees", "kind": "string" },
+        { "name": "optionalAttendees", "kind": "string" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "CreateItem",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "item/Title", "kind": "string", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetItem",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "id", "kind": "integer", "required": true },
+        { "name": "view", "kind": "string" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetItems",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "$filter", "kind": "string" },
+        { "name": "$orderby", "kind": "string" },
+        { "name": "$top", "kind": "integer" },
+        { "name": "view", "kind": "string" },
+        { "name": "folderPath", "kind": "string" },
+        { "name": "includeNestedItems", "kind": "boolean" },
+        { "name": "limitColumnsByView", "kind": "boolean" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "PatchItem",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "id", "kind": "integer", "required": true },
+        { "name": "item", "kind": "record", "required": true, "allowPrefixedFields": true },
+        { "name": "view", "kind": "string" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "DeleteItem",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "id", "kind": "integer", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "CreateNewFolder",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "path", "kind": "string", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "CreateFile",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "folderPath", "kind": "string", "required": true },
+        { "name": "name", "kind": "string", "required": true },
+        { "name": "body", "kind": "binary", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetFileContent",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "id", "kind": "string", "required": true },
+        { "name": "inferContentType", "kind": "boolean" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetFileMetadata",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "id", "kind": "string", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetFileMetadataByPath",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "path", "kind": "string", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetFileItem",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "id", "kind": "integer", "required": true },
+        { "name": "view", "kind": "string" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetFileItems",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "table", "kind": "string", "required": true },
+        { "name": "$filter", "kind": "string" },
+        { "name": "$orderby", "kind": "string" },
+        { "name": "$top", "kind": "integer" },
+        { "name": "folderPath", "kind": "string" },
+        { "name": "view", "kind": "string" },
+        { "name": "viewScopeOption", "kind": "string" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetFileContentByPath",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "path", "kind": "string", "required": true },
+        { "name": "inferContentType", "kind": "boolean" }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "UpdateFile",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "id", "kind": "string", "required": true },
+        { "name": "body", "kind": "binary", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "DeleteFile",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "id", "kind": "string", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "CopyFileAsync",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "sourceFileId", "kind": "string", "required": true },
+        { "name": "destinationDataset", "kind": "string", "required": true },
+        { "name": "destinationFolderPath", "kind": "string", "required": true },
+        { "name": "nameConflictBehavior", "kind": "integer", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "MoveFileAsync",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "sourceFileId", "kind": "string", "required": true },
+        { "name": "destinationDataset", "kind": "string", "required": true },
+        { "name": "destinationFolderPath", "kind": "string", "required": true },
+        { "name": "nameConflictBehavior", "kind": "integer", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "CopyFolderAsync",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "sourceFolderId", "kind": "string", "required": true },
+        { "name": "destinationDataset", "kind": "string", "required": true },
+        { "name": "destinationFolderPath", "kind": "string", "required": true },
+        { "name": "nameConflictBehavior", "kind": "integer", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "MoveFolderAsync",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "sourceFolderId", "kind": "string", "required": true },
+        { "name": "destinationDataset", "kind": "string", "required": true },
+        { "name": "destinationFolderPath", "kind": "string", "required": true },
+        { "name": "nameConflictBehavior", "kind": "integer", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetFolderMetadata",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "id", "kind": "string", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "operationId": "GetFolderMetadataByPath",
+      "parameters": [
+        { "name": "dataset", "kind": "string", "required": true },
+        { "name": "path", "kind": "string", "required": true }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+      "operationId": "ListRecords",
+      "parameters": [
+        { "name": "entityName", "kind": "string", "buckets": ["parameters", "pathParameters"], "required": true },
+        { "name": "$select", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "$filter", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "$orderby", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "$expand", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "fetchXml", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "$top", "kind": "integer", "buckets": ["parameters", "queries"] },
+        { "name": "$skiptoken", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "partitionId", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "returntotalrecordcount", "kind": "boolean", "buckets": ["parameters", "queries"] },
+        { "name": "x-ms-odata-metadata-full", "kind": "boolean", "buckets": ["parameters", "queries"] }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+      "operationId": "GetItem",
+      "parameters": [
+        { "name": "entityName", "kind": "string", "buckets": ["parameters", "pathParameters"], "required": true },
+        { "name": "recordId", "kind": "string", "buckets": ["parameters", "pathParameters"], "required": true },
+        { "name": "$select", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "$expand", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "partitionId", "kind": "string", "buckets": ["parameters", "queries"] },
+        { "name": "x-ms-odata-metadata-full", "kind": "boolean", "buckets": ["parameters", "queries"] }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+      "operationId": "CreateRecord",
+      "parameters": [
+        { "name": "entityName", "kind": "string", "buckets": ["parameters", "pathParameters"], "required": true },
+        { "name": "item", "kind": "record", "required": true, "allowPrefixedFields": true },
+        { "name": "x-ms-odata-metadata-full", "kind": "boolean", "buckets": ["parameters", "queries"] }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+      "operationId": "UpdateOnlyRecord",
+      "parameters": [
+        { "name": "entityName", "kind": "string", "buckets": ["parameters", "pathParameters"], "required": true },
+        { "name": "recordId", "kind": "string", "buckets": ["parameters", "pathParameters"], "required": true },
+        { "name": "item", "kind": "record", "required": true, "allowPrefixedFields": true },
+        { "name": "x-ms-odata-metadata-full", "kind": "boolean", "buckets": ["parameters", "queries"] }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+      "operationId": "DeleteRecord",
+      "parameters": [
+        { "name": "entityName", "kind": "string", "buckets": ["parameters", "pathParameters"], "required": true },
+        { "name": "recordId", "kind": "string", "buckets": ["parameters", "pathParameters"], "required": true },
+        { "name": "partitionId", "kind": "string", "buckets": ["parameters", "queries"] }
+      ]
+    }
+  ]
+}
