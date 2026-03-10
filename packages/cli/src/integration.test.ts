@@ -6540,6 +6540,7 @@ describe('cli fixture-backed workflows', () => {
     const whoAmIHelp = await runCli(['dv', 'whoami', '--help']);
     const solutionHelp = await runCli(['solution', '--help']);
     const solutionListHelp = await runCli(['solution', 'list', '--help']);
+    const solutionComponentsHelp = await runCli(['solution', 'components', '--help']);
     const rootHelp = await runCli(['--help']);
     const envvarHelp = await runCli(['envvar', '--help']);
     const envvarInspectHelp = await runCli(['envvar', 'inspect', '--help']);
@@ -6577,6 +6578,15 @@ describe('cli fixture-backed workflows', () => {
     expect(solutionListHelp.stdout).toContain('--prefix PREFIX');
     expect(solutionListHelp.stdout).toContain('--unique-name NAME');
     expect(solutionListHelp.stdout).not.toContain('DV_ENV_REQUIRED');
+
+    expect(solutionComponentsHelp.code).toBe(0);
+    expect(solutionComponentsHelp.stderr).toBe('');
+    expect(solutionComponentsHelp.stdout).toContain(
+      'Usage: solution components <uniqueName> --environment ALIAS [options]'
+    );
+    expect(solutionComponentsHelp.stdout).toContain('pp solution components Core --environment dev --format json');
+    expect(solutionComponentsHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
+    expect(solutionComponentsHelp.stdout).not.toContain('SOLUTION_UNIQUE_NAME_REQUIRED');
 
     expect(rootHelp.code).toBe(0);
     expect(rootHelp.stderr).toBe('');

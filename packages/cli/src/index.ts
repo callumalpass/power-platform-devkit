@@ -654,6 +654,10 @@ async function runSolution(command: string | undefined, args: string[]): Promise
     case 'inspect':
       return runSolutionInspect(args);
     case 'components':
+      if (args.includes('--help') || args.includes('help')) {
+        printSolutionComponentsHelp();
+        return 0;
+      }
       return runSolutionComponents(args);
     case 'dependencies':
       return runSolutionDependencies(args);
@@ -9604,6 +9608,26 @@ function printSolutionListHelp(): void {
       'Options:',
       '  --prefix PREFIX            Match solution unique names or friendly names starting with PREFIX',
       '  --unique-name NAME        Match one exact solution unique name',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printSolutionComponentsHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution components <uniqueName> --environment ALIAS [options]',
+      '',
+      'Behavior:',
+      '  - Lists the components currently attached to one solution in the target environment.',
+      '  - Returns stable structured rows including the component type, display name, object id, and solution metadata when available.',
+      '  - `--help` only prints this text and never validates the solution name or environment flags.',
+      '',
+      'Examples:',
+      '  pp solution components Core --environment dev',
+      '  pp solution components Core --environment dev --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
