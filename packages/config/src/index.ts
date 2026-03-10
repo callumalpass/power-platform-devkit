@@ -1,6 +1,6 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { createDiagnostic, fail, ok, withWarning, type OperationResult } from '@pp/diagnostics';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
@@ -212,6 +212,18 @@ export interface ConfigStoreOptions {
 
 export const PROJECT_CONFIG_FILENAMES = ['pp.config.json', 'pp.config.yaml', 'pp.config.yml'];
 export const GLOBAL_CONFIG_FILENAMES = ['config.json', 'config.yaml', 'config.yml'];
+const PROJECT_CONFIG_DISCOVERY_MAX_DEPTH = 4;
+const PROJECT_CONFIG_DISCOVERY_MAX_RESULTS = 5;
+const PROJECT_CONFIG_DISCOVERY_IGNORED_DIRS = new Set([
+  '.git',
+  '.hg',
+  '.svn',
+  '.ops',
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+]);
 
 export function getGlobalConfigDir(options: ConfigStoreOptions = {}): string {
   return resolve(options.configDir ?? join(homedir(), '.config', 'pp'));
@@ -259,13 +271,29 @@ export async function loadProjectConfig(startDir = process.cwd()): Promise<Opera
   const path = await findNearestProjectConfig(startDir);
 
   if (!path) {
+    const resolvedStartDir = resolve(startDir);
+    const descendantCandidates = await findDescendantProjectConfigs(resolvedStartDir);
+    const nearestCandidate = descendantCandidates[0];
+    const candidateList = descendantCandidates.map((candidate) => relativePathFrom(resolvedStartDir, candidate));
+
     return withWarning(
       ok<LocatedConfig<ProjectConfig> | undefined>(undefined, {
         supportTier: 'preview',
+        suggestedNextActions: buildProjectConfigSuggestions(candidateList),
       }),
-      createDiagnostic('warning', 'PROJECT_CONFIG_NOT_FOUND', 'No project config file was found. Using defaults.', {
-        source: '@pp/config',
-      })
+      createDiagnostic(
+        'warning',
+        'PROJECT_CONFIG_NOT_FOUND',
+        `No project config file was found at or above ${resolvedStartDir}. Using defaults.`,
+        {
+          source: '@pp/config',
+          path: nearestCandidate,
+          hint: nearestCandidate
+            ? `Found descendant project config at ${relativePathFrom(resolvedStartDir, nearestCandidate)}. Re-run with that path or --project ${relativePathFrom(resolvedStartDir, dirname(nearestCandidate))}.`
+            : 'Run `pp project init` here to scaffold a project, or re-run `pp project inspect` with an explicit project path.',
+          detail: candidateList.length > 0 ? `Descendant project configs: ${candidateList.join(', ')}` : undefined,
+        }
+      )
     );
   }
 
@@ -718,4 +746,67 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function findDescendantProjectConfigs(startDir: string): Promise<string[]> {
+  const results: string[] = [];
+  await collectDescendantProjectConfigs(resolve(startDir), 0, results);
+  return results.sort((left, right) => left.localeCompare(right));
+}
+
+async function collectDescendantProjectConfigs(currentDir: string, depth: number, results: string[]): Promise<void> {
+  if (depth > PROJECT_CONFIG_DISCOVERY_MAX_DEPTH || results.length >= PROJECT_CONFIG_DISCOVERY_MAX_RESULTS) {
+    return;
+  }
+
+  for (const filename of PROJECT_CONFIG_FILENAMES) {
+    const candidate = join(currentDir, filename);
+    if (await exists(candidate)) {
+      results.push(candidate);
+      return;
+    }
+  }
+
+  if (depth === PROJECT_CONFIG_DISCOVERY_MAX_DEPTH) {
+    return;
+  }
+
+  let entries: Awaited<ReturnType<typeof readdir>>;
+
+  try {
+    entries = await readdir(currentDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    if (PROJECT_CONFIG_DISCOVERY_IGNORED_DIRS.has(entry.name)) {
+      continue;
+    }
+
+    await collectDescendantProjectConfigs(join(currentDir, entry.name), depth + 1, results);
+
+    if (results.length >= PROJECT_CONFIG_DISCOVERY_MAX_RESULTS) {
+      return;
+    }
+  }
+}
+
+function buildProjectConfigSuggestions(candidatePaths: string[]): string[] {
+  if (candidatePaths.length === 0) {
+    return [
+      'Run `pp project init` in this directory to scaffold a minimal config.',
+      'Re-run `pp project inspect` with an explicit project path when the config lives elsewhere.',
+    ];
+  }
+
+  return candidatePaths.map((candidatePath) => `Inspect descendant project config at ${candidatePath}.`);
+}
+
+function relativePathFrom(fromDir: string, targetPath: string): string {
+  return targetPath.startsWith(fromDir) ? relative(fromDir, targetPath) || '.' : targetPath;
 }
