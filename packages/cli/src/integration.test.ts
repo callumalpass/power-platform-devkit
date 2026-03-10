@@ -2924,6 +2924,69 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('resolves relative config-dir from INIT_CWD when running from the package directory', async () => {
+    const workspaceRoot = await createTempDir();
+    const configDir = join(workspaceRoot, '.tmp', 'pp-config');
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://fixture.crm.dynamics.com',
+              loginHint: 'fixture.user@example.com',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const originalCwd = process.cwd();
+    process.chdir(resolveRepoPath('packages/cli'));
+
+    try {
+      const inspect = await runCli(['auth', 'profile', 'inspect', '--env', 'fixture', '--config-dir', './.tmp/pp-config', '--format', 'json'], {
+        env: {
+          INIT_CWD: workspaceRoot,
+        },
+      });
+
+      expect(inspect.code).toBe(0);
+      expect(inspect.stderr).toBe('');
+      expect(JSON.parse(inspect.stdout)).toEqual({
+        name: 'fixture-user',
+        type: 'user',
+        tenantId: 'common',
+        clientId: '51f81489-12ee-4a9e-aaae-a2591f45987d',
+        tokenCacheKey: 'fixture-user',
+        defaultResource: 'https://fixture.crm.dynamics.com',
+        loginHint: 'fixture.user@example.com',
+        accountUsername: undefined,
+        homeAccountId: undefined,
+        localAccountId: undefined,
+        browserProfile: undefined,
+        prompt: 'select_account',
+        fallbackToDeviceCode: true,
+        resolvedFromEnvironment: 'fixture',
+      });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   it('fails auth profile inspect when --env points at a missing alias', async () => {
     const configDir = await createTempDir();
     await mkdir(configDir, { recursive: true });

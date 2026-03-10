@@ -2,7 +2,7 @@
 
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { basename, extname, resolve as resolvePath } from 'node:path';
+import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -4406,7 +4406,15 @@ function resolveProcessOutputFormat(): OutputFormat {
 
 function readConfigOptions(args: string[]): ConfigStoreOptions {
   const configDir = readFlag(args, '--config-dir');
-  return configDir ? { configDir } : {};
+  return configDir ? { configDir: resolveCliConfigDir(configDir) } : {};
+}
+
+function resolveCliConfigDir(configDir: string): string {
+  if (isAbsolute(configDir)) {
+    return configDir;
+  }
+
+  return resolvePath(process.env.INIT_CWD ?? process.cwd(), configDir);
 }
 
 function readProjectDiscoveryOptions(args: string[]): OperationResult<{ stage?: string; parameterOverrides?: Record<string, string> }> {
