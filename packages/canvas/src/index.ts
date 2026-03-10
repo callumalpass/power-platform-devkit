@@ -6,6 +6,7 @@ import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type Operatio
 import { SolutionService } from '@pp/solution';
 import { buildCanvasMsappFromUnpackedSource } from './msapp-build';
 import { type CanvasDataSourceSummary, loadCanvasPaYamlSource, resolveCanvasPaYamlRoot } from './pa-yaml';
+import { parsePowerFxExpression } from './power-fx';
 import { buildCanvasSemanticModel, collectCanvasFormulaChecks } from './semantic-model';
 import { buildCanvasTemplateSurface } from './template-surface';
 
@@ -1738,67 +1739,9 @@ function validatePowerFxSyntax(expression: string): boolean {
     return true;
   }
 
-  const source = trimmed.slice(1);
-  const stack: string[] = [];
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-
-  for (let index = 0; index < source.length; index += 1) {
-    const char = source[index];
-    const next = source[index + 1];
-
-    if (inDoubleQuote) {
-      if (char === '"' && next === '"') {
-        index += 1;
-        continue;
-      }
-
-      if (char === '"') {
-        inDoubleQuote = false;
-      }
-
-      continue;
-    }
-
-    if (inSingleQuote) {
-      if (char === '\'' && next === '\'') {
-        index += 1;
-        continue;
-      }
-
-      if (char === '\'') {
-        inSingleQuote = false;
-      }
-
-      continue;
-    }
-
-    if (char === '"') {
-      inDoubleQuote = true;
-      continue;
-    }
-
-    if (char === '\'') {
-      inSingleQuote = true;
-      continue;
-    }
-
-    if (char === '(' || char === '[' || char === '{') {
-      stack.push(char);
-      continue;
-    }
-
-    if (char === ')' || char === ']' || char === '}') {
-      const expected = char === ')' ? '(' : char === ']' ? '[' : '{';
-      const actual = stack.pop();
-
-      if (actual !== expected) {
-        return false;
-      }
-    }
-  }
-
-  return !inSingleQuote && !inDoubleQuote && stack.length === 0;
+  return parsePowerFxExpression(trimmed.slice(1), {
+    allowsSideEffects: trimmed.includes(';'),
+  }).valid;
 }
 
 function collectUnresolvedTemplateIssues(

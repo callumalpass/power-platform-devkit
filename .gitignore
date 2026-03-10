@@ -6,3 +6,5 @@ coverage
 .ops/.mdbase/
 .ops/harness/runs/
 .ops/harness/runner/
+packages/canvas/powerfx-bridge/bin/
+packages/canvas/powerfx-bridge/obj/

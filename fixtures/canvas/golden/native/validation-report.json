@@ -46,7 +46,7 @@
     "name": "native-app",
     "root": "<REPO_ROOT>/fixtures/canvas/apps/native-app",
     "screenCount": 1,
-    "sourceHash": "e68fd90e74d89bf4f61f38dc6b005440e862d39e6af90d50916b5c7b2027600f",
+    "sourceHash": "fd4a2cc7852b2440505a92f84481df872624092cddb747ae5b283dc7ca5571be",
     "version": "1.0.0"
   },
   "templateRequirements": {

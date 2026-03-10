@@ -3,7 +3,7 @@
     {
       "code": "CANVAS_FORMULA_PROPERTY_INVALID",
       "level": "error",
-      "message": "Formula property OnSelectFormula on Home/Layout/BrokenButton must be a string in the supported canvas slice.",
+      "message": "Formula property OnSelectFormula on Home/Layout/BrokenButton is not supported by the current Power Fx semantic slice.",
       "source": "@pp/canvas"
     },
     {

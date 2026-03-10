@@ -304,7 +304,7 @@ describe('canvas pa.yaml source support', () => {
     );
   });
 
-  it('fails explicitly on unsupported Power Fx semantics', async () => {
+  it('parses behavior formulas with chained Power Fx expressions', async () => {
     const dir = await createTempDir();
     const appRoot = await writeUnpackedCanvasFixture(dir, {
       screenYaml: [
@@ -325,12 +325,21 @@ describe('canvas pa.yaml source support', () => {
 
     expect(semantic.formulas[0]).toMatchObject({
       property: 'OnSelect',
-      valid: false,
+      valid: true,
+      ast: {
+        kind: 'ChainExpression',
+      },
     });
-    expect(semantic.formulas[0]?.unsupportedReason).toMatch(/Unsupported Power Fx character|Unexpected token/);
+    expect(semantic.formulas[0]?.bindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'function', name: 'Set', resolved: true }),
+        expect.objectContaining({ kind: 'function', name: 'Notify', resolved: true }),
+        expect.objectContaining({ kind: 'variable', name: 'varX', resolved: true }),
+      ])
+    );
   });
 
-  it('emits source-aware lint diagnostics for metadata-backed and unsupported formula regions', async () => {
+  it('emits source-aware lint diagnostics for metadata-backed formula regions', async () => {
     const dir = await createTempDir();
     const appRoot = await writeUnpackedCanvasFixture(dir, {
       screenYaml: [
@@ -363,7 +372,6 @@ describe('canvas pa.yaml source support', () => {
     expect(lint.data?.valid).toBe(false);
     const metadataDiagnostic = lint.data?.diagnostics.find((diagnostic) => diagnostic.code === 'CANVAS_METADATA_REFERENCE_UNRESOLVED');
     const propertyDiagnostic = lint.data?.diagnostics.find((diagnostic) => diagnostic.code === 'CANVAS_CONTROL_PROPERTY_INVALID');
-    const unsupportedDiagnostic = lint.data?.diagnostics.find((diagnostic) => diagnostic.code === 'CANVAS_POWERFX_UNSUPPORTED');
 
     expect(metadataDiagnostic).toMatchObject({
       path: 'Src/Screen1.pa.yaml:7:19',
@@ -378,10 +386,7 @@ describe('canvas pa.yaml source support', () => {
     expect(propertyDiagnostic).toMatchObject({
       path: 'Src/Screen1.pa.yaml:9:27',
     });
-    expect(unsupportedDiagnostic).toMatchObject({
-      path: 'Src/Screen1.pa.yaml:14:23',
-      unsupported: true,
-    });
+    expect(lint.data?.diagnostics.some((diagnostic) => diagnostic.code === 'CANVAS_POWERFX_UNSUPPORTED')).toBe(false);
   });
 
   it('builds a native msapp archive from unpacked pa.yaml sources', async () => {
