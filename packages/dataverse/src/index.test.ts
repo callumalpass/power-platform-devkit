@@ -764,6 +764,9 @@ describe('ALM services', () => {
       effectiveValue: 'https://current.example.test',
       hasCurrentValue: true,
     });
+    expect(httpClient.requests[0]?.path).toBe(
+      'environmentvariabledefinitions?%24select=environmentvariabledefinitionid%2Cschemaname%2Cdisplayname%2Cdefaultvalue%2Ctype%2Cvalueschema%2Csecretstore'
+    );
   });
 
   it('updates an existing environment variable value', async () => {
@@ -814,6 +817,162 @@ describe('ALM services', () => {
       valueId: 'val-1',
       hasCurrentValue: true,
     });
+    expect(httpClient.requests.at(-1)?.method).toBe('PATCH');
+    expect(httpClient.requests.at(-1)?.path).toBe('environmentvariablevalues(val-1)');
+  });
+
+  it('filters environment variables by solution components when definition rows omit solution lookup columns', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariabledefinitionid: 'def-1',
+              schemaname: 'pp_ApiUrl',
+              displayname: 'API URL',
+              defaultvalue: 'https://default.example.test',
+              type: 'String',
+            },
+            {
+              environmentvariabledefinitionid: 'def-2',
+              schemaname: 'pp_Mode',
+              displayname: 'Mode',
+              defaultvalue: 'Default',
+              type: 'String',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariablevalueid: 'val-1',
+              value: 'https://current.example.test',
+              _environmentvariabledefinitionid_value: 'def-1',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              objectid: 'def-1',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.list({ solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toHaveLength(1);
+    expect(result.data?.[0]).toMatchObject({
+      definitionId: 'def-1',
+      schemaName: 'pp_ApiUrl',
+      currentValue: 'https://current.example.test',
+    });
+    expect(httpClient.requests[3]?.path).toBe(
+      'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+380'
+    );
+  });
+
+  it('updates an existing environment variable value within a solution without querying _solutionid_value on definitions', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariabledefinitionid: 'def-1',
+              schemaname: 'pp_ApiUrl',
+              displayname: 'API URL',
+              defaultvalue: 'https://default.example.test',
+              type: 'String',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariablevalueid: 'val-1',
+              value: 'https://current.example.test',
+              _environmentvariabledefinitionid_value: 'def-1',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              objectid: 'def-1',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.setValue('pp_ApiUrl', 'https://next.example.test', { solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      definitionId: 'def-1',
+      currentValue: 'https://next.example.test',
+      valueId: 'val-1',
+      hasCurrentValue: true,
+    });
+    expect(httpClient.requests[0]?.path).toBe(
+      'environmentvariabledefinitions?%24select=environmentvariabledefinitionid%2Cschemaname%2Cdisplayname%2Cdefaultvalue%2Ctype%2Cvalueschema%2Csecretstore'
+    );
     expect(httpClient.requests.at(-1)?.method).toBe('PATCH');
     expect(httpClient.requests.at(-1)?.path).toBe('environmentvariablevalues(val-1)');
   });

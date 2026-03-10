@@ -271,6 +271,10 @@ export interface EnvironmentVariableSummary {
   hasCurrentValue: boolean;
 }
 
+interface SolutionComponentMembershipRecord {
+  objectid?: string;
+}
+
 export class DataverseClient {
   private readonly httpClient: HttpClient;
 
@@ -1186,16 +1190,7 @@ export class EnvironmentVariableService {
     const [definitions, values, solutionId] = await Promise.all([
       this.dataverseClient.queryAll<EnvironmentVariableDefinitionRecord>({
         table: 'environmentvariabledefinitions',
-        select: [
-          'environmentvariabledefinitionid',
-          'schemaname',
-          'displayname',
-          'defaultvalue',
-          'type',
-          'valueschema',
-          'secretstore',
-          '_solutionid_value',
-        ],
+        select: ['environmentvariabledefinitionid', 'schemaname', 'displayname', 'defaultvalue', 'type', 'valueschema', 'secretstore'],
       }),
       this.dataverseClient.queryAll<EnvironmentVariableValueRecord>({
         table: 'environmentvariablevalues',
@@ -1216,6 +1211,14 @@ export class EnvironmentVariableService {
       return solutionId as unknown as OperationResult<EnvironmentVariableSummary[]>;
     }
 
+    const solutionMembers = solutionId.data
+      ? await listSolutionComponentObjectIds(this.dataverseClient, solutionId.data, 380)
+      : ok<Set<string> | undefined>(undefined, { supportTier: 'preview' });
+
+    if (!solutionMembers.success) {
+      return solutionMembers as unknown as OperationResult<EnvironmentVariableSummary[]>;
+    }
+
     const valueMap = new Map<string, EnvironmentVariableValueRecord>();
 
     for (const value of values.data ?? []) {
@@ -1226,12 +1229,12 @@ export class EnvironmentVariableService {
 
     return ok(
       (definitions.data ?? [])
-        .filter((definition) => !solutionId.data || definition._solutionid_value === solutionId.data)
+        .filter((definition) => !solutionMembers.data || solutionMembers.data.has(definition.environmentvariabledefinitionid))
         .map((definition) => normalizeEnvironmentVariable(definition, valueMap.get(definition.environmentvariabledefinitionid))),
       {
         supportTier: 'preview',
-        diagnostics: mergeDiagnosticLists(definitions.diagnostics, values.diagnostics, solutionId.diagnostics),
-        warnings: mergeDiagnosticLists(definitions.warnings, values.warnings, solutionId.warnings),
+        diagnostics: mergeDiagnosticLists(definitions.diagnostics, values.diagnostics, solutionId.diagnostics, solutionMembers.diagnostics),
+        warnings: mergeDiagnosticLists(definitions.warnings, values.warnings, solutionId.warnings, solutionMembers.warnings),
       }
     );
   }
@@ -1696,6 +1699,28 @@ async function resolveSolutionId(client: DataverseClient, uniqueName: string): P
     supportTier: 'preview',
     diagnostics: solutions.diagnostics,
     warnings: solutions.warnings,
+  });
+}
+
+async function listSolutionComponentObjectIds(
+  client: DataverseClient,
+  solutionId: string,
+  componentType: number
+): Promise<OperationResult<Set<string>>> {
+  const records = await client.queryAll<SolutionComponentMembershipRecord>({
+    table: 'solutioncomponents',
+    select: ['objectid'],
+    filter: `_solutionid_value eq ${solutionId} and componenttype eq ${componentType}`,
+  });
+
+  if (!records.success) {
+    return records as unknown as OperationResult<Set<string>>;
+  }
+
+  return ok(new Set((records.data ?? []).map((record) => record.objectid).filter((value): value is string => Boolean(value))), {
+    supportTier: 'preview',
+    diagnostics: records.diagnostics,
+    warnings: records.warnings,
   });
 }
 
