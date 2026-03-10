@@ -291,6 +291,8 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
       return runEnvironmentAdd(configOptions, args);
     case 'inspect':
       return runEnvironmentInspect(configOptions, args);
+    case 'resolve-maker-id':
+      return runEnvironmentResolveMakerId(configOptions, args);
     case 'cleanup-plan':
       return runEnvironmentCleanupPlan(configOptions, args);
     case 'remove':
@@ -2201,6 +2203,120 @@ async function runEnvironmentInspect(configOptions: ConfigStoreOptions, args: st
   }
 
   printByFormat(environment.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runEnvironmentResolveMakerId(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
+  const alias = positionalArgs(args)[0];
+
+  if (!alias) {
+    return printFailure(
+      argumentFailure('ENV_ALIAS_REQUIRED', 'Usage: env resolve-maker-id <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]')
+    );
+  }
+
+  const environment = await getEnvironmentAlias(alias, configOptions);
+
+  if (!environment.success) {
+    return printFailure(environment);
+  }
+
+  if (!environment.data) {
+    return printFailure(fail(createDiagnostic('error', 'ENV_NOT_FOUND', `Environment alias ${alias} was not found.`)));
+  }
+
+  const auth = new AuthService(configOptions);
+  const profile = await auth.getProfile(environment.data.authProfile);
+
+  if (!profile.success) {
+    return printFailure(profile);
+  }
+
+  if (!profile.data) {
+    return printFailure(
+      fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${environment.data.authProfile} was not found.`))
+    );
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'env.resolve-maker-id',
+    { alias },
+    {
+      url: environment.data.url,
+      authProfile: environment.data.authProfile,
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  if (environment.data.makerEnvironmentId) {
+    printByFormat(
+      {
+        environment: environment.data,
+        resolution: {
+          source: 'configured',
+          persisted: false,
+          api: 'power-platform-environments',
+        },
+      },
+      outputFormat(args, 'json')
+    );
+    return 0;
+  }
+
+  const discovered = await discoverMakerEnvironmentIdForEnvironment(environment.data, profile.data, configOptions);
+
+  if (!discovered.success) {
+    return printFailure(discovered);
+  }
+
+  if (!discovered.data) {
+    return printFailure(
+      fail(
+        createDiagnostic(
+          'error',
+          'ENV_MAKER_ID_NOT_FOUND',
+          `Could not discover makerEnvironmentId for environment alias ${alias}.`,
+          {
+            source: '@pp/cli',
+            hint:
+              'Confirm the alias URL matches the target Dataverse environment and that the bound auth profile can read the Power Platform environments API, or rerun `pp env add` with --maker-env-id.',
+          }
+        ),
+        {
+          supportTier: 'preview',
+        }
+      )
+    );
+  }
+
+  const saved = await saveEnvironmentAlias(
+    {
+      ...environment.data,
+      makerEnvironmentId: discovered.data,
+    },
+    configOptions
+  );
+
+  if (!saved.success || !saved.data) {
+    return printFailure(saved);
+  }
+
+  printByFormat(
+    {
+      environment: saved.data,
+      resolution: {
+        source: 'discovered',
+        persisted: true,
+        api: 'power-platform-environments',
+      },
+    },
+    outputFormat(args, 'json')
+  );
   return 0;
 }
 
@@ -5503,6 +5619,7 @@ function printHelp(): void {
       '  env list [--config-dir path]',
       '  env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]',
       '  env inspect <alias> [--config-dir path]',
+      '  env resolve-maker-id <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  env remove <alias> [--config-dir path]',
       '',

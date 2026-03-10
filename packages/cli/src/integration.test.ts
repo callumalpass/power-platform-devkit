@@ -3586,6 +3586,134 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('returns an already configured maker environment id without rediscovery', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://fixture.crm.dynamics.com',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+              makerEnvironmentId: 'env-123',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const resolve = await runCli(['env', 'resolve-maker-id', 'fixture', '--config-dir', configDir, '--format', 'json']);
+
+    expect(resolve.code).toBe(0);
+    expect(resolve.stderr).toBe('');
+    expect(JSON.parse(resolve.stdout)).toEqual({
+      environment: {
+        alias: 'fixture',
+        url: 'https://fixture.crm.dynamics.com',
+        authProfile: 'fixture-user',
+        makerEnvironmentId: 'env-123',
+      },
+      resolution: {
+        source: 'configured',
+        persisted: false,
+        api: 'power-platform-environments',
+      },
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('discovers and persists a missing maker environment id onto the alias', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-static': {
+              name: 'fixture-static',
+              type: 'static-token',
+              token: 'bap-token',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-static',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          value: [
+            {
+              name: 'env-123',
+              properties: {
+                linkedEnvironmentMetadata: {
+                  instanceApiUrl: 'https://fixture.crm.dynamics.com',
+                },
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }
+      )
+    );
+
+    const resolve = await runCli(['env', 'resolve-maker-id', 'fixture', '--config-dir', configDir, '--format', 'json']);
+
+    expect(resolve.code).toBe(0);
+    expect(resolve.stderr).toBe('');
+    expect(JSON.parse(resolve.stdout)).toEqual({
+      environment: {
+        alias: 'fixture',
+        url: 'https://fixture.crm.dynamics.com',
+        authProfile: 'fixture-static',
+        makerEnvironmentId: 'env-123',
+      },
+      resolution: {
+        source: 'discovered',
+        persisted: true,
+        api: 'power-platform-environments',
+      },
+    });
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+      'https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/environments?api-version=2020-10-01'
+    );
+
+    const savedConfig = JSON.parse(await readFile(join(configDir, 'config.json'), 'utf8')) as {
+      environments: Record<string, { makerEnvironmentId?: string }>;
+    };
+    expect(savedConfig.environments.fixture?.makerEnvironmentId).toBe('env-123');
+  });
+
   it('builds an environment cleanup plan for a run-scoped prefix', async () => {
     mockDataverseResolution({
       fixture: createFixtureDataverseClient({
@@ -3645,6 +3773,14 @@ describe('cli fixture-backed workflows', () => {
     expect(help.code).toBe(0);
     expect(help.stderr).toBe('');
     expect(help.stdout).toContain('env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]');
+  });
+
+  it('prints help for env resolve-maker-id', async () => {
+    const help = await runCli(['env', 'resolve-maker-id', '--help']);
+
+    expect(help.code).toBe(0);
+    expect(help.stderr).toBe('');
+    expect(help.stdout).toContain('env resolve-maker-id <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]');
   });
 
   it('prints help for auth profile inspect --help without running validation', async () => {

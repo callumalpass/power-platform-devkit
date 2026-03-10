@@ -81,6 +81,7 @@ Typical auth setup:
 ```bash
 pp auth login --name test-user --resource https://<env>.crm.dynamics.com --browser-profile test-canvas-harvest
 pp env add --name test --url https://<env>.crm.dynamics.com --profile test-user
+pp env resolve-maker-id test
 ```
 
 If browser-backed login does not land in an already signed-in Studio session,

@@ -216,9 +216,16 @@ Inspect and remove aliases:
 
 ```bash
 pp env inspect dev
+pp env resolve-maker-id dev
 pp env list
 pp env remove dev
 ```
+
+`pp env resolve-maker-id <alias>` uses the alias's bound auth profile to query
+the Power Platform environments API, persists the discovered
+`makerEnvironmentId` back onto that alias, and returns the updated alias
+record. Use this when a harness or Maker handoff needs exact `make.powerapps`
+deep links but the alias was originally registered without `--maker-env-id`.
 
 ## Typical flows
 

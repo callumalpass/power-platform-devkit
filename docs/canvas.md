@@ -266,6 +266,9 @@ Remote mutation placeholders:
   Platform environments API so exact Maker handoff URLs still work without a
   manual override, and real create/import runs cache that discovered id onto
   the alias for later handoffs
+- if you want to pre-seed that metadata before a canvas workflow, run
+  `pp env resolve-maker-id <alias>` once so later `canvas create` and Maker
+  handoffs do not need to rediscover it during the step itself
 - both placeholders also accept `--open --browser-profile NAME` for apply mode,
   which launches the resolved Maker handoff URL directly into a persisted
   browser profile instead of only printing fallback instructions
