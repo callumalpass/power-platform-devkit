@@ -68,6 +68,7 @@ export interface FlowArtifact {
     environmentVariables: string[];
   };
   definition: Record<string, FlowJsonValue>;
+  clientData?: Record<string, FlowJsonValue>;
   unknown?: Record<string, FlowJsonValue>;
 }
 
@@ -2650,6 +2651,7 @@ function normalizeFlowArtifactDocument(value: unknown, sourcePath: string): Oper
 function normalizeCanonicalFlowArtifact(record: Record<string, unknown>, sourcePath: string): OperationResult<FlowArtifact> {
   const metadata = asRecord(record.metadata);
   const definition = asRecord(record.definition);
+  const clientData = asRecord(record.clientData);
 
   if (!metadata || !definition) {
     return fail(
@@ -2681,6 +2683,7 @@ function normalizeCanonicalFlowArtifact(record: Record<string, unknown>, sourceP
         environmentVariables,
       },
       definition: stripNoisyFlowValue(normalizeFlowJsonRecord(definition)) as Record<string, FlowJsonValue>,
+      clientData: clientData ? normalizeFlowClientDataRecord(clientData) : undefined,
       unknown: asRecord(record.unknown)
         ? (stripNoisyFlowValue(normalizeFlowJsonRecord(record.unknown as Record<string, unknown>)) as Record<string, FlowJsonValue>)
         : undefined,
@@ -2694,6 +2697,8 @@ function normalizeCanonicalFlowArtifact(record: Record<string, unknown>, sourceP
 function normalizeRawFlowArtifact(record: Record<string, unknown>, sourcePath: string): OperationResult<FlowArtifact> {
   const properties = asRecord(record.properties) ?? {};
   const definition = asRecord(properties.definition) ?? asRecord(record.definition) ?? {};
+  const rawClientData = readString(record.clientdata) ?? readString(properties.clientdata);
+  const parsedClientData = parseFlowClientData(rawClientData);
   const parsed = parseFlowClientDataFromValue({
     ...record,
     ...properties,
@@ -2728,6 +2733,7 @@ function normalizeRawFlowArtifact(record: Record<string, unknown>, sourcePath: s
         environmentVariables: parsed.environmentVariables,
       },
       definition: stripNoisyFlowValue(normalizeFlowJsonRecord(definition)) as Record<string, FlowJsonValue>,
+      clientData: parsedClientData.clientData ? extractFlowClientDataExtras(parsedClientData.clientData) : undefined,
       unknown: Object.keys(unknown).length > 0 ? (stripNoisyFlowValue(unknown) as Record<string, FlowJsonValue>) : undefined,
     },
     {
@@ -2781,6 +2787,7 @@ function resolveFlowCreateTargetMismatch(artifact: FlowArtifact, explicitTarget:
 
 function buildFlowDeployClientData(artifact: FlowArtifact): string {
   return stableStringify({
+    ...(artifact.clientData ? cloneJsonValue(artifact.clientData) : {}),
     definition: cloneJsonValue(artifact.definition),
   });
 }
@@ -2813,6 +2820,11 @@ function buildFlowDeployUpdateEntity(artifact: FlowArtifact): Record<string, unk
 function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, FlowJsonValue> {
   const record: Record<string, FlowJsonValue> = {
     ...(artifact.unknown ? cloneJsonValue(artifact.unknown) : {}),
+    ...(artifact.clientData || Object.keys(artifact.definition).length > 0
+      ? {
+          clientdata: buildFlowDeployClientData(artifact),
+        }
+      : {}),
     properties: {
       definition: cloneJsonValue(artifact.definition),
       ...(artifact.metadata.displayName ? { displayName: artifact.metadata.displayName } : {}),
@@ -2829,6 +2841,20 @@ function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, Fl
   }
 
   return record;
+}
+
+function normalizeFlowClientDataRecord(record: Record<string, unknown>): Record<string, FlowJsonValue> {
+  return stripNoisyFlowValue(normalizeFlowJsonRecord(record)) as Record<string, FlowJsonValue>;
+}
+
+function extractFlowClientDataExtras(clientData: Record<string, FlowJsonValue>): Record<string, FlowJsonValue> | undefined {
+  const extras = Object.fromEntries(Object.entries(clientData).filter(([key]) => key !== 'definition'));
+
+  if (Object.keys(extras).length === 0) {
+    return undefined;
+  }
+
+  return normalizeFlowClientDataRecord(extras);
 }
 
 function parseFlowClientData(clientdata: string | undefined): {

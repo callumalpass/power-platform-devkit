@@ -163,6 +163,10 @@ builds directly on the same contract: it exports a supported remote source flow
 into the canonical artifact model in memory, runs the shared local validator,
 then deploys that normalized definition into the target environment with the
 same `--target` and `--create-if-missing` behavior as local artifact deploy.
+The canonical artifact now also preserves bounded non-definition
+`workflows.clientdata` sibling fields, so remote export, local artifact edits,
+repack, deploy, create-if-missing, and artifact-mode promotion no longer drop
+that supported `clientdata` context by default.
 When `--solution` on deploy or `--target-solution` on artifact-mode promotion is
 supplied, the direct flow lifecycle now also runs remote target-environment
 checks over the projected post-patch connection references and environment
@@ -185,21 +189,24 @@ solution-import controls as `pp solution import`:
 The current pack/deploy boundary is:
 
 - remote export currently requires `workflows.clientdata.definition` to remain
-  available and JSON-shaped, and it writes a canonical local
-  `pp.flow.artifact` instead of preserving every opaque remote `clientdata`
-  field
+  available and JSON-shaped, and it preserves bounded non-definition sibling
+  fields from `workflows.clientdata` in the canonical local artifact instead
+  of flattening them away
 - writes a raw `properties.definition` payload plus supported metadata fields
   such as `displayName`, `name`, `uniquename`, `category`, `statecode`, and
   `statuscode`
+- repack also restores that bounded preserved `clientdata` context alongside
+  `properties.definition` so local export/edit/repack flows can round-trip the
+  supported remote payload shape
 - preserves top-level unknown fields captured during normalization
 - intentionally does not reintroduce stripped noisy timestamps such as
   `createdTime` or `lastModifiedTime`
 - remote deploy currently updates only a bounded workflow shell (`name`,
   `category`, `statecode`, `statuscode`) plus the normalized `clientdata`
-  definition after the shared local validator passes, and when a destination
-  solution scope is supplied it also checks that projected connection
-  references and environment variables exist there before mutation, unless
-  `--create-if-missing` is used
+  definition and any preserved bounded `clientdata` siblings after the shared
+  local validator passes, and when a destination solution scope is supplied it
+  also checks that projected connection references and environment variables
+  exist there before mutation, unless `--create-if-missing` is used
 - remote promotion currently transfers that same bounded workflow shell plus
   the normalized definition, including the same solution-scoped target checks
   for artifact-mode promotion; it does not package or migrate broader workflow

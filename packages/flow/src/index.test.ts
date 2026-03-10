@@ -61,6 +61,8 @@ function createStubDataverseClient(): DataverseClient {
                 statecode: 1,
                 statuscode: 2,
                 clientdata: JSON.stringify({
+                  connectionKeySavedTimeKey: '2026-03-10T00:00:00.000Z',
+                  workflowEntityId: 'flow-1',
                   definition: {
                     parameters: {
                       '$connections': {
@@ -249,6 +251,9 @@ describe('FlowService', () => {
     expect(exported).toMatchObject({
       schemaVersion: 1,
       kind: 'pp.flow.artifact',
+      clientData: {
+        workflowEntityId: 'flow-1',
+      },
       metadata: {
         id: 'flow-1',
         name: 'Invoice Sync',
@@ -373,7 +378,15 @@ describe('FlowService', () => {
         statuscode: 2,
       },
     });
-    expect(updates[0]?.entity.clientdata).toContain('"definition"');
+    expect(JSON.parse(String(updates[0]?.entity.clientdata))).toMatchObject({
+      definition: {
+        actions: {
+          ComposePayload: {
+            type: 'Compose',
+          },
+        },
+      },
+    });
   });
 
   it('creates a bounded remote workflow when the target is missing and create-if-missing is enabled', async () => {
@@ -466,7 +479,15 @@ describe('FlowService', () => {
       statecode: 1,
       statuscode: 2,
     });
-    expect(String(creates[0]?.entity.clientdata)).toContain('"definition"');
+    expect(JSON.parse(String(creates[0]?.entity.clientdata))).toMatchObject({
+      definition: {
+        actions: {
+          ComposePayload: {
+            type: 'Compose',
+          },
+        },
+      },
+    });
   });
 
   it('promotes a remote flow from one environment into another through the shared artifact lifecycle', async () => {
@@ -1013,6 +1034,34 @@ describe('FlowService', () => {
           extraTopLevel: {
             preserve: true,
           },
+          clientdata: JSON.stringify({
+            workflowEntityId: 'flow-pack-1',
+            connectionKeySavedTimeKey: '2026-03-10T00:00:00.000Z',
+            definition: {
+              parameters: {
+                '$connections': {
+                  value: {
+                    shared_office365: {
+                      connectionReferenceLogicalName: 'shared_office365',
+                      connectionId: '/connections/office365',
+                      apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    },
+                  },
+                },
+                ApiBaseUrl: {
+                  defaultValue: 'https://example.test',
+                },
+              },
+              actions: {
+                SendMail: {
+                  type: 'Compose',
+                  inputs: {
+                    body: "@{environmentVariables('pp_ApiUrl')}",
+                  },
+                },
+              },
+            },
+          }),
           properties: {
             displayName: 'Invoice Flow',
             name: 'Invoice Flow',
@@ -1075,6 +1124,34 @@ describe('FlowService', () => {
         uniquename: 'crd_InvoiceFlow',
         statecode: 1,
         statuscode: 2,
+      },
+    });
+    expect(JSON.parse(String(packedDocument.clientdata))).toMatchObject({
+      workflowEntityId: 'flow-pack-1',
+      connectionKeySavedTimeKey: '2026-03-10T00:00:00.000Z',
+      definition: {
+        parameters: {
+          '$connections': {
+            value: {
+              shared_office365: {
+                connectionReferenceLogicalName: 'shared_office365',
+                connectionId: '/connections/office365',
+                apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+              },
+            },
+          },
+          ApiBaseUrl: {
+            defaultValue: 'https://example.test',
+          },
+        },
+        actions: {
+          SendMail: {
+            type: 'Compose',
+            inputs: {
+              body: "@{environmentVariables('pp_ApiUrl')}",
+            },
+          },
+        },
       },
     });
     expect((packedDocument.properties as { definition: Record<string, unknown> }).definition.lastModifiedTime).toBeUndefined();
