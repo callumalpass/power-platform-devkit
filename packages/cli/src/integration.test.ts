@@ -529,6 +529,50 @@ describe('cli fixture-backed workflows', () => {
     expect(deployApply.stderr).toBe('');
   });
 
+  it('covers confirmed live flow artifact deploy apply through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    await mkdir(join(tempDir, 'flows', 'invoice'), { recursive: true });
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  apiBaseUrl:',
+        '    type: string',
+        '    value: https://contoso.example',
+        '    mapsTo:',
+        '      - kind: flow-parameter',
+        '        path: flows/invoice/flow.json',
+        '        target: ApiBaseUrl',
+      ].join('\n'),
+      'utf8'
+    );
+    await writeFile(
+      join(tempDir, 'flows', 'invoice', 'flow.json'),
+      await readFile(resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow', 'flow.json'), 'utf8'),
+      'utf8'
+    );
+
+    const deployApply = await runCli(['deploy', 'apply', '--project', tempDir, '--yes', '--format', 'json']);
+
+    expect(deployApply.code).toBe(0);
+    expect(deployApply.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(deployApply.stdout), 'fixtures/cli/golden/protocol/deploy-apply-flow-live.json', {
+      normalize: (value) => normalizeCliAnalysisSnapshot(normalizeCliSnapshot(value, tempDir)),
+    });
+
+    const updatedArtifact = JSON.parse(await readFile(join(tempDir, 'flows', 'invoice', 'flow.json'), 'utf8')) as {
+      metadata: { parameters: Record<string, unknown> };
+      definition: { parameters: Record<string, { defaultValue?: unknown }> };
+    };
+    expect(updatedArtifact.metadata.parameters.ApiBaseUrl).toBe('https://contoso.example');
+    expect(updatedArtifact.definition.parameters.ApiBaseUrl?.defaultValue).toBe('https://contoso.example');
+  });
+
   it('covers confirmed live deploy apply from a saved deploy plan file', async () => {
     const tempDir = await createTempDir();
     const planPath = join(tempDir, 'deploy-plan.json');

@@ -1,0 +1,137 @@
+{
+  "apply": {
+    "operations": [
+      {
+        "changed": true,
+        "currentValue": "https://example.test",
+        "kind": "flow-parameter-set",
+        "message": "Updated flow parameter ApiBaseUrl.",
+        "nextValue": "https://contoso.example",
+        "parameter": "apiBaseUrl",
+        "path": "<TMP_DIR>/flows/invoice/flow.json",
+        "sensitive": false,
+        "source": "value",
+        "status": "applied",
+        "target": "ApiBaseUrl",
+        "targetExists": true,
+        "valuePreview": "https://contoso.example"
+      }
+    ],
+    "summary": {
+      "applied": 1,
+      "attempted": 1,
+      "changed": 1,
+      "created": 0,
+      "failed": 0,
+      "resolved": 0,
+      "skipped": 0
+    }
+  },
+  "bindings": {
+    "inputs": [],
+    "secrets": []
+  },
+  "confirmation": {
+    "confirmed": true,
+    "required": true,
+    "status": "confirmed"
+  },
+  "mode": "apply",
+  "plan": {
+    "assets": [
+      {
+        "exists": false,
+        "kind": "missing",
+        "name": "apps",
+        "path": "<TMP_DIR>/apps"
+      },
+      {
+        "exists": true,
+        "kind": "directory",
+        "name": "flows",
+        "path": "<TMP_DIR>/flows"
+      },
+      {
+        "exists": false,
+        "kind": "missing",
+        "name": "solutions",
+        "path": "<TMP_DIR>/solutions"
+      },
+      {
+        "exists": false,
+        "kind": "missing",
+        "name": "docs",
+        "path": "<TMP_DIR>/docs"
+      }
+    ],
+    "bindings": {
+      "inputs": [],
+      "secrets": []
+    },
+    "build": {},
+    "executionStages": [
+      "resolve",
+      "preflight",
+      "plan",
+      "apply",
+      "report"
+    ],
+    "generatedAt": "<GENERATED_AT>",
+    "inputs": [
+      {
+        "hasValue": true,
+        "mappings": [
+          {
+            "kind": "flow-parameter",
+            "path": "flows/invoice/flow.json",
+            "target": "ApiBaseUrl"
+          }
+        ],
+        "name": "apiBaseUrl",
+        "sensitive": false,
+        "source": "value",
+        "value": "https://contoso.example"
+      }
+    ],
+    "operations": [
+      {
+        "kind": "flow-parameter-set",
+        "parameter": "apiBaseUrl",
+        "path": "<TMP_DIR>/flows/invoice/flow.json",
+        "sensitive": false,
+        "source": "value",
+        "target": "ApiBaseUrl",
+        "valuePreview": "https://contoso.example"
+      }
+    ],
+    "projectRoot": "<TMP_DIR>",
+    "providerBindings": [],
+    "selectedStage": "dev",
+    "supportedAdapters": [
+      "github-actions",
+      "azure-devops",
+      "power-platform-pipelines"
+    ],
+    "target": {
+      "stage": "dev"
+    },
+    "templateRegistries": [],
+    "topology": [
+      {
+        "name": "dev"
+      }
+    ]
+  },
+  "preflight": {
+    "checks": [],
+    "ok": true
+  },
+  "report": {
+    "durationMs": 0,
+    "finishedAt": "<GENERATED_AT>",
+    "startedAt": "<GENERATED_AT>"
+  },
+  "target": {
+    "stage": "dev"
+  }
+}
