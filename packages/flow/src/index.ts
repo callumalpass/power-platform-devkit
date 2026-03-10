@@ -41,6 +41,8 @@ export interface FlowWorkflowShellMetadata {
   primaryEntity?: string;
 }
 
+export type FlowWorkflowStateLabel = 'draft' | 'activated' | 'suspended';
+
 export interface FlowSummary {
   id: string;
   name?: string;
@@ -278,6 +280,11 @@ const FLOW_WORKFLOW_STATE_DEFAULT_STATUS = new Map<number, number>([
   [1, 2],
   [2, 3],
 ]);
+const FLOW_WORKFLOW_STATE_LABEL_STATE = new Map<FlowWorkflowStateLabel, number>([
+  ['draft', 0],
+  ['activated', 1],
+  ['suspended', 2],
+]);
 const SUPPORTED_FLOW_WORKFLOW_CATEGORY = 5;
 const SUPPORTED_FLOW_WORKFLOW_TYPE = 1;
 const SUPPORTED_FLOW_WORKFLOW_MODE = 0;
@@ -296,6 +303,8 @@ export interface FlowExportResult {
     name?: string;
     uniqueName?: string;
     workflowMetadata?: FlowWorkflowShellMetadata;
+    stateCode?: number;
+    statusCode?: number;
     solutionUniqueName?: string;
   };
   summary: FlowArtifactSummary;
@@ -305,6 +314,7 @@ export interface FlowDeployOptions {
   target?: string;
   solutionUniqueName?: string;
   createIfMissing?: boolean;
+  workflowState?: FlowWorkflowStateLabel;
 }
 
 export interface FlowDeployResult {
@@ -316,6 +326,8 @@ export interface FlowDeployResult {
     name?: string;
     uniqueName?: string;
     workflowMetadata?: FlowWorkflowShellMetadata;
+    stateCode?: number;
+    statusCode?: number;
     solutionUniqueName?: string;
   };
   updatedFields: string[];
@@ -331,6 +343,7 @@ export interface FlowPromoteOptions {
   targetSolutionUniqueName?: string;
   target?: string;
   createIfMissing?: boolean;
+  workflowState?: FlowWorkflowStateLabel;
   solutionPackage?: boolean;
   solutionPackageManaged?: boolean;
   publishWorkflows?: boolean;
@@ -348,6 +361,8 @@ export interface FlowArtifactPromoteResult {
     name?: string;
     uniqueName?: string;
     workflowMetadata?: FlowWorkflowShellMetadata;
+    stateCode?: number;
+    statusCode?: number;
     solutionUniqueName?: string;
   };
   targetIdentifier: string;
@@ -357,6 +372,8 @@ export interface FlowArtifactPromoteResult {
     name?: string;
     uniqueName?: string;
     workflowMetadata?: FlowWorkflowShellMetadata;
+    stateCode?: number;
+    statusCode?: number;
     solutionUniqueName?: string;
   };
   summary: FlowArtifactSummary;
@@ -1231,9 +1248,13 @@ export async function deployFlowArtifact(
     return artifact as unknown as OperationResult<FlowDeployResult>;
   }
 
-  const validation = await validateFlowArtifact(path);
+  const deployArtifact = applyFlowWorkflowStateOverride(artifact.data, options.workflowState);
+  const validation = validateLoadedFlowArtifact(path, deployArtifact, {
+    diagnostics: artifact.diagnostics,
+    warnings: artifact.warnings,
+  });
 
-  if (!validation.success || !validation.data) {
+  if (!validation.data) {
     return validation as unknown as OperationResult<FlowDeployResult>;
   }
 
@@ -1259,11 +1280,12 @@ export async function deployFlowArtifact(
     );
   }
 
-  return deployLoadedFlowArtifact(path, artifact.data, validation, {
+  return deployLoadedFlowArtifact(path, deployArtifact, validation, {
     dataverseClient: options.dataverseClient,
     solutionUniqueName: options.solutionUniqueName,
     target: options.target,
     createIfMissing: options.createIfMissing,
+    workflowState: options.workflowState,
     diagnostics: artifact.diagnostics,
     warnings: artifact.warnings,
   });
@@ -1327,6 +1349,26 @@ export async function promoteRemoteFlowArtifact(
     );
   }
 
+  if (options.solutionPackage && options.workflowState) {
+    return fail(
+      [
+        ...sourceFlow.diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_PROMOTE_PACKAGE_WORKFLOW_STATE_UNSUPPORTED',
+          'Solution-package flow promotion imports the packaged workflow state as-is and does not support --workflow-state.',
+          {
+            source: '@pp/flow',
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: sourceFlow.warnings,
+      }
+    );
+  }
+
   const artifact = buildFlowArtifactFromRemoteFlow(sourceFlow.data);
 
   if (!artifact.success || !artifact.data) {
@@ -1337,7 +1379,8 @@ export async function promoteRemoteFlowArtifact(
   }
 
   const sourcePath = artifact.data.metadata.sourcePath ?? `dataverse://workflows/${sourceFlow.data.id}`;
-  const validation = validateLoadedFlowArtifact(sourcePath, artifact.data, {
+  const promotedArtifact = applyFlowWorkflowStateOverride(artifact.data, options.workflowState);
+  const validation = validateLoadedFlowArtifact(sourcePath, promotedArtifact, {
     diagnostics: [...sourceFlow.diagnostics, ...artifact.diagnostics],
     warnings: [...sourceFlow.warnings, ...artifact.warnings],
   });
@@ -1363,14 +1406,15 @@ export async function promoteRemoteFlowArtifact(
   }
 
   if (options.solutionPackage) {
-    return promoteRemoteFlowArtifactAsSolutionPackage(identifier, sourceFlow.data, artifact.data, validation, options);
+    return promoteRemoteFlowArtifactAsSolutionPackage(identifier, sourceFlow.data, promotedArtifact, validation, options);
   }
 
-  const deployed = await deployLoadedFlowArtifact(sourcePath, artifact.data, validation, {
+  const deployed = await deployLoadedFlowArtifact(sourcePath, promotedArtifact, validation, {
     dataverseClient: options.targetDataverseClient,
     solutionUniqueName: options.targetSolutionUniqueName,
     target: options.target,
     createIfMissing: options.createIfMissing,
+    workflowState: options.workflowState,
     diagnostics: [...sourceFlow.diagnostics, ...artifact.diagnostics],
     warnings: [...sourceFlow.warnings, ...artifact.warnings],
   });
@@ -1387,6 +1431,8 @@ export async function promoteRemoteFlowArtifact(
         name: sourceFlow.data.name,
         uniqueName: sourceFlow.data.uniqueName,
         workflowMetadata: sourceFlow.data.workflowMetadata,
+        stateCode: sourceFlow.data.stateCode,
+        statusCode: sourceFlow.data.statusCode,
         solutionUniqueName: options.sourceSolutionUniqueName,
       },
       targetIdentifier: deployed.data.targetIdentifier,
@@ -1562,6 +1608,8 @@ async function promoteRemoteFlowArtifactAsSolutionPackage(
           name: sourceFlow.name,
           uniqueName: sourceFlow.uniqueName,
           workflowMetadata: sourceFlow.workflowMetadata,
+          stateCode: sourceFlow.stateCode,
+          statusCode: sourceFlow.statusCode,
           solutionUniqueName: options.sourceSolutionUniqueName,
         },
         operation: 'imported-solution',
@@ -1707,6 +1755,8 @@ export async function exportRemoteFlowArtifact(
         name: flow.data.name,
         uniqueName: flow.data.uniqueName,
         workflowMetadata: flow.data.workflowMetadata,
+        stateCode: flow.data.stateCode,
+        statusCode: flow.data.statusCode,
         solutionUniqueName: options.solutionUniqueName,
       },
       summary: buildFlowArtifactSummary(destination, artifact.data),
@@ -1734,6 +1784,7 @@ async function deployLoadedFlowArtifact(
     solutionUniqueName?: string;
     target?: string;
     createIfMissing?: boolean;
+    workflowState?: FlowWorkflowStateLabel;
     diagnostics?: Diagnostic[];
     warnings?: Diagnostic[];
   }
@@ -1922,6 +1973,10 @@ async function deployLoadedFlowArtifact(
                 onDemand: create.data?.entity?.ondemand,
                 primaryEntity: create.data?.entity?.primaryentity,
               }) ?? resolveSupportedFlowWorkflowShellMetadata(artifact.metadata.workflowMetadata).workflowMetadata,
+            ...resolveFlowResultWorkflowState(
+              readNumber(create.data?.entity?.statecode) ?? artifact.metadata.stateCode,
+              readNumber(create.data?.entity?.statuscode) ?? artifact.metadata.statusCode
+            ),
             solutionUniqueName: options.solutionUniqueName,
           },
           updatedFields: Object.keys(createEntity),
@@ -2002,6 +2057,7 @@ async function deployLoadedFlowArtifact(
         workflowMetadata: resolveSupportedFlowWorkflowShellMetadata(
           artifact.metadata.workflowMetadata ?? remoteFlow.data.workflowMetadata
         ).workflowMetadata,
+        ...resolveFlowResultWorkflowState(artifact.metadata.stateCode ?? remoteFlow.data.stateCode, artifact.metadata.statusCode ?? remoteFlow.data.statusCode),
         solutionUniqueName: options.solutionUniqueName,
       },
       updatedFields: Object.keys(updateEntity),
@@ -3006,6 +3062,27 @@ function resolveSupportedFlowWorkflowShellMetadata(workflowMetadata: FlowWorkflo
   };
 }
 
+function applyFlowWorkflowStateOverride(artifact: FlowArtifact, workflowState: FlowWorkflowStateLabel | undefined): FlowArtifact {
+  if (!workflowState) {
+    return artifact;
+  }
+
+  const stateCode = FLOW_WORKFLOW_STATE_LABEL_STATE.get(workflowState);
+
+  if (stateCode === undefined) {
+    return artifact;
+  }
+
+  return {
+    ...artifact,
+    metadata: {
+      ...artifact.metadata,
+      stateCode,
+      statusCode: FLOW_WORKFLOW_STATE_DEFAULT_STATUS.get(stateCode),
+    },
+  };
+}
+
 function resolveSupportedFlowWorkflowState(
   stateCode: number | undefined,
   statusCode: number | undefined
@@ -3064,6 +3141,21 @@ function resolveSupportedFlowWorkflowState(
     valid: true,
     stateCode: statusCode !== undefined ? FLOW_WORKFLOW_STATUS_STATE.get(statusCode) : undefined,
     statusCode,
+  };
+}
+
+function resolveFlowResultWorkflowState(
+  stateCode: number | undefined,
+  statusCode: number | undefined
+): {
+  stateCode?: number;
+  statusCode?: number;
+} {
+  const workflowState = resolveSupportedFlowWorkflowState(stateCode, statusCode);
+
+  return {
+    ...(workflowState.stateCode !== undefined ? { stateCode: workflowState.stateCode } : {}),
+    ...(workflowState.statusCode !== undefined ? { statusCode: workflowState.statusCode } : {}),
   };
 }
 

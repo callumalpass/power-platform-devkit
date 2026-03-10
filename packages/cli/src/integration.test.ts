@@ -4107,8 +4107,8 @@ describe('cli fixture-backed workflows', () => {
 
   it('rejects solution-package import override flags on artifact-mode flow promote', async () => {
     mockDataverseResolution({
-      source: { client: createFixtureDataverseClient() },
-      target: { client: createFixtureDataverseClient() },
+      source: { client: createFixtureDataverseClient({}) },
+      target: { client: createFixtureDataverseClient({}) },
     });
 
     const promote = await runCli([
@@ -4326,6 +4326,60 @@ describe('cli fixture-backed workflows', () => {
     expect(String(workflows.data?.[0]?.clientdata)).toContain('"definition"');
   });
 
+  it('overrides the workflow state during flow deploy through the CLI entrypoint', async () => {
+    const client = createFixtureDataverseClient({
+      queryAll: {
+        workflows: [
+          {
+            workflowid: 'flow-state-cli-1',
+            name: 'Invoice Flow',
+            uniquename: 'crd_InvoiceFlow',
+            category: 5,
+            statecode: 1,
+            statuscode: 2,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({
+      fixture: client,
+    });
+
+    const deploy = await runCli([
+      'flow',
+      'deploy',
+      resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json'),
+      '--env',
+      'fixture',
+      '--workflow-state',
+      'suspended',
+      '--format',
+      'json',
+    ]);
+
+    expect(deploy.code).toBe(0);
+    expect(deploy.stderr).toBe('');
+    expect(JSON.parse(deploy.stdout)).toMatchObject({
+      operation: 'updated',
+      target: {
+        id: 'flow-state-cli-1',
+        uniqueName: 'crd_InvoiceFlow',
+        stateCode: 2,
+        statusCode: 3,
+      },
+    });
+
+    const workflows = await client.queryAll<Record<string, unknown>>({
+      table: 'workflows',
+    });
+    expect(workflows.success).toBe(true);
+    expect(workflows.data?.[0]).toMatchObject({
+      statecode: 2,
+      statuscode: 3,
+    });
+  });
+
   it('promotes a remote flow between environments through the CLI entrypoint', async () => {
     const sourceClient = createFixtureDataverseClient({
       query: {
@@ -4489,6 +4543,74 @@ describe('cli fixture-backed workflows', () => {
     });
     expect(workflows.success).toBe(true);
     expect(String(workflows.data?.[0]?.clientdata)).toContain('"definition"');
+  });
+
+  it('rejects workflow-state overrides on solution-package flow promote through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'sol-1',
+                uniquename: 'Core',
+              },
+            ],
+          },
+          queryAll: {
+            workflows: [
+              {
+                workflowid: 'flow-1',
+                name: 'Invoice Sync',
+                uniquename: 'crd_InvoiceSync',
+                category: 5,
+                statecode: 1,
+                statuscode: 2,
+                clientdata: JSON.stringify({
+                  definition: {
+                    actions: {},
+                  },
+                }),
+              },
+            ],
+            solutioncomponents: [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'flow-1',
+                componenttype: 29,
+              },
+            ],
+          },
+        }),
+      },
+      target: { client: createFixtureDataverseClient({}) },
+    });
+
+    const promote = await runCli([
+      'flow',
+      'promote',
+      'Invoice Sync',
+      '--source-environment',
+      'source',
+      '--source-solution',
+      'Core',
+      '--target-environment',
+      'target',
+      '--solution-package',
+      '--workflow-state',
+      'activated',
+      '--format',
+      'json',
+    ]);
+
+    expect(promote.code).toBe(1);
+    expect(JSON.parse(promote.stderr)).toMatchObject({
+      diagnostics: [
+        expect.objectContaining({
+          code: 'FLOW_PROMOTE_PACKAGE_WORKFLOW_STATE_UNSUPPORTED',
+        }),
+      ],
+    });
   });
 
   it('covers invalid flow validation diagnostics through the CLI entrypoint', async () => {

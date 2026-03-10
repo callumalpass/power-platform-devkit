@@ -74,7 +74,7 @@ import {
   type ReleaseManifest,
 } from '@pp/deploy';
 import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } from '@pp/diagnostics';
-import { FlowService, type FlowPatchDocument } from '@pp/flow';
+import { FlowService, type FlowPatchDocument, type FlowWorkflowStateLabel } from '@pp/flow';
 import { HttpClient } from '@pp/http';
 import { ModelService, type ModelArtifactMutationKind } from '@pp/model';
 import { PowerBiClient } from '@pp/powerbi';
@@ -5956,7 +5956,7 @@ async function runFlowPromote(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'FLOW_PROMOTE_ARGS_REQUIRED',
-        'Usage: flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--solution-package] [--managed-solution-package] [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID]'
+        'Usage: flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [--solution-package] [--managed-solution-package] [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID]'
       )
     );
   }
@@ -5973,6 +5973,12 @@ async function runFlowPromote(args: string[]): Promise<number> {
     return printFailure(targetResolution);
   }
 
+  const workflowState = readFlowWorkflowStateFlag(args);
+
+  if (!workflowState.success) {
+    return printFailure(workflowState);
+  }
+
   const preview = maybeHandleMutationPreview(
     args,
     'json',
@@ -5985,6 +5991,7 @@ async function runFlowPromote(args: string[]): Promise<number> {
       targetSolution: readFlag(args, '--target-solution'),
       target: readFlag(args, '--target') ?? 'source artifact metadata',
       createIfMissing: hasFlag(args, '--create-if-missing'),
+      workflowState: workflowState.data ?? 'source artifact metadata',
       solutionPackage: hasFlag(args, '--solution-package'),
       solutionPackageManaged: hasFlag(args, '--managed-solution-package'),
       publishWorkflows: !hasFlag(args, '--no-publish-workflows'),
@@ -6004,6 +6011,7 @@ async function runFlowPromote(args: string[]): Promise<number> {
     targetSolutionUniqueName: readFlag(args, '--target-solution'),
     target: readFlag(args, '--target'),
     createIfMissing: hasFlag(args, '--create-if-missing'),
+    workflowState: workflowState.data,
     solutionPackage: hasFlag(args, '--solution-package'),
     solutionPackageManaged: hasFlag(args, '--managed-solution-package'),
     publishWorkflows: hasFlag(args, '--no-publish-workflows') ? false : undefined,
@@ -6054,7 +6062,7 @@ async function runFlowDeploy(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'FLOW_DEPLOY_ARGS_REQUIRED',
-        'Usage: flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing]'
+        'Usage: flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended]'
       )
     );
   }
@@ -6063,6 +6071,12 @@ async function runFlowDeploy(args: string[]): Promise<number> {
 
   if (!resolution.success || !resolution.data) {
     return printFailure(resolution);
+  }
+
+  const workflowState = readFlowWorkflowStateFlag(args);
+
+  if (!workflowState.success) {
+    return printFailure(workflowState);
   }
 
   const preview = maybeHandleMutationPreview(
@@ -6075,6 +6089,7 @@ async function runFlowDeploy(args: string[]): Promise<number> {
       solution: readFlag(args, '--solution'),
       target: readFlag(args, '--target') ?? 'artifact metadata',
       createIfMissing: hasFlag(args, '--create-if-missing'),
+      workflowState: workflowState.data ?? 'artifact metadata',
     }
   );
 
@@ -6086,6 +6101,7 @@ async function runFlowDeploy(args: string[]): Promise<number> {
     solutionUniqueName: readFlag(args, '--solution'),
     target: readFlag(args, '--target'),
     createIfMissing: hasFlag(args, '--create-if-missing'),
+    workflowState: workflowState.data,
   });
 
   if (!result.success || !result.data) {
@@ -8599,6 +8615,24 @@ function readSolutionPackageTypeFlag(args: string[]): OperationResult<SolutionPa
   return argumentFailure('SOLUTION_PACKAGE_TYPE_INVALID', 'Use --package-type managed, unmanaged, or both.');
 }
 
+function readFlowWorkflowStateFlag(args: string[]): OperationResult<FlowWorkflowStateLabel | undefined> {
+  const value = readFlag(args, '--workflow-state');
+
+  if (!value) {
+    return ok(undefined, {
+      supportTier: 'preview',
+    });
+  }
+
+  if (value === 'draft' || value === 'activated' || value === 'suspended') {
+    return ok(value, {
+      supportTier: 'preview',
+    });
+  }
+
+  return argumentFailure('FLOW_WORKFLOW_STATE_INVALID', 'Use --workflow-state draft, activated, or suspended.');
+}
+
 function readSolutionCompareInput(args: string[], side: 'source' | 'target'): OperationResult<SolutionCompareInput> {
   const options = [
     {
@@ -8829,10 +8863,10 @@ function printHelp(): void {
       '  flow list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--solution-package] [--managed-solution-package] [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [--solution-package] [--managed-solution-package] [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow pack <path> --out FILE.json [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow normalize <path> [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow validate <path> [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow graph <path> [--format table|json|yaml|ndjson|markdown|raw]',

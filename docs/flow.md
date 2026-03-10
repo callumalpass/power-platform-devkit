@@ -136,8 +136,8 @@ pp flow graph ./flows/invoice
 pp flow patch ./flows/invoice --file ./patches/invoice.dev.json --out ./flows/invoice-dev
 pp flow pack ./flows/invoice-dev --out ./dist/invoice-flow.raw.json
 pp flow deploy ./flows/invoice-dev --env dev --solution Core
-pp flow deploy ./flows/invoice-dev --env dev --solution Core --create-if-missing
-pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --target-solution Core --create-if-missing
+pp flow deploy ./flows/invoice-dev --env dev --solution Core --create-if-missing --workflow-state activated
+pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --target-solution Core --create-if-missing --workflow-state draft
 ```
 
 ## Normalization behavior
@@ -170,6 +170,11 @@ of that lifecycle: the current bounded surface accepts Draft `(0,1)`,
 Activated `(1,2)`, and Suspended `(2,3)` pairs, infers the missing side when
 only one of those codes is supplied locally, and fails invalid combinations
 before repack or remote mutation.
+Direct remote lifecycle commands can now also override that bounded state at
+mutation time with `--workflow-state draft|activated|suspended` on
+`pp flow deploy` and artifact-mode `pp flow promote`, which lets engineers
+promote or deploy the same validated artifact into a target environment with a
+different supported activation state without editing the local artifact JSON.
 The same bounded lifecycle also enforces the supported cloud-flow category
 contract: when `category` is declared locally it must remain `5`, and when it
 is omitted the repack and direct deploy surfaces normalize it back to category
@@ -245,11 +250,14 @@ The current pack/deploy boundary is:
   any preserved bounded `clientdata` siblings after the shared local validator
   passes, and when a destination solution scope is supplied it also checks that
   projected connection references and environment variables exist there before
-  mutation, unless `--create-if-missing` is used
+  mutation, unless `--create-if-missing` is used; `--workflow-state` can
+  override the bounded state/status pair for that mutation without changing the
+  local artifact
 - remote promotion currently transfers that same bounded workflow shell plus
   the normalized definition, including the same solution-scoped target checks
-  for artifact-mode promotion; it does not package or migrate broader workflow
-  metadata/state beyond that surface
+  for artifact-mode promotion; artifact-mode promotion also accepts the same
+  `--workflow-state` override, while solution-package promotion intentionally
+  does not because it imports the packaged workflow state as-is
 - `pp flow promote --solution-package` imports the whole selected solution that
   contains the flow, preserves the packaged solution unique name, requires
   `--source-solution`, does not support `--target` or `--create-if-missing`,

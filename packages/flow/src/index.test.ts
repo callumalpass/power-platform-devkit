@@ -771,6 +771,102 @@ describe('FlowService', () => {
     });
   });
 
+  it('overrides the workflow state during deploy without editing the local artifact metadata', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+    const updates: Array<{ table: string; id: string; entity: Record<string, unknown> }> = [];
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-state-override-1',
+                name: 'State Override Flow',
+                uniquename: 'crd_StateOverrideFlow',
+                category: 5,
+                statecode: 0,
+                statuscode: 1,
+                clientdata: JSON.stringify({
+                  definition: {
+                    actions: {},
+                  },
+                }),
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+      update: async (table: string, id: string, entity: Record<string, unknown>) => {
+        updates.push({ table, id, entity });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'State Override Flow',
+            displayName: 'State Override Flow',
+            uniqueName: 'crd_StateOverrideFlow',
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [],
+          },
+          definition: {
+            actions: {},
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const result = await new FlowService(client).deployArtifact(artifactPath, {
+      workflowState: 'suspended',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      operation: 'updated',
+      target: {
+        id: 'flow-state-override-1',
+        uniqueName: 'crd_StateOverrideFlow',
+        stateCode: 2,
+        statusCode: 3,
+      },
+    });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      table: 'workflows',
+      id: 'flow-state-override-1',
+      entity: {
+        statecode: 2,
+        statuscode: 3,
+      },
+    });
+  });
+
   it('promotes a remote flow from one environment into another through the shared artifact lifecycle', async () => {
     const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
     const sourceClient = createStubDataverseClient();
@@ -875,6 +971,77 @@ describe('FlowService', () => {
       },
     });
     expect(String(updates[0]?.entity.clientdata)).toContain('"definition"');
+  });
+
+  it('overrides the workflow state during artifact-mode promotion', async () => {
+    const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
+    const sourceClient = createStubDataverseClient();
+    const baseTargetClient = createStubDataverseClient();
+    const targetClient = {
+      ...baseTargetClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'target-flow-state-1',
+                name: 'Invoice Sync',
+                uniquename: 'crd_InvoiceSync',
+                category: 5,
+                statecode: 1,
+                statuscode: 2,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseTargetClient.queryAll(options);
+      },
+      update: async (table: string, id: string, entity: Record<string, unknown>, options?: { solutionUniqueName?: string }) => {
+        updates.push({ table, id, entity, solutionUniqueName: options?.solutionUniqueName });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(sourceClient).promoteArtifact('Invoice Sync', {
+      workflowState: 'draft',
+      targetDataverseClient: targetClient,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      promotionMode: 'artifact',
+      source: {
+        stateCode: 1,
+        statusCode: 2,
+      },
+      target: {
+        id: 'target-flow-state-1',
+        uniqueName: 'crd_InvoiceSync',
+        stateCode: 0,
+        statusCode: 1,
+      },
+    });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      table: 'workflows',
+      id: 'target-flow-state-1',
+      entity: {
+        statecode: 0,
+        statuscode: 1,
+      },
+    });
   });
 
   it('blocks direct flow deploy when projected target solution bindings are missing', async () => {
@@ -1206,6 +1373,18 @@ describe('FlowService', () => {
 
     expect(result.success).toBe(false);
     expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('FLOW_PROMOTE_PACKAGE_IMPORT_OPTIONS_UNSUPPORTED');
+  });
+
+  it('rejects workflow-state overrides on solution-package promotion', async () => {
+    const result = await new FlowService(createStubDataverseClient()).promoteArtifact('Invoice Sync', {
+      sourceSolutionUniqueName: 'Core',
+      solutionPackage: true,
+      workflowState: 'activated',
+      targetDataverseClient: createStubDataverseClient(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('FLOW_PROMOTE_PACKAGE_WORKFLOW_STATE_UNSUPPORTED');
   });
 
   it('blocks remote deploy when local flow validation fails', async () => {
