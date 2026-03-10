@@ -345,12 +345,68 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
 
 async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number> {
   const envAlias = readFlag(args, '--env');
+  const configOptions = readConfigOptions(args);
   const explicitSolutionUniqueName = readFlag(args, '--solution');
   const displayName = command === 'create' ? readFlag(args, '--name') : undefined;
   const importPath = command === 'import' ? positionalArgs(args)[0] : undefined;
   const defaultSolutionUniqueName =
-    !explicitSolutionUniqueName && envAlias ? await readEnvironmentDefaultSolution(envAlias, readConfigOptions(args)) : undefined;
+    !explicitSolutionUniqueName && envAlias ? await readEnvironmentDefaultSolution(envAlias, configOptions) : undefined;
   const solutionUniqueName = explicitSolutionUniqueName ?? defaultSolutionUniqueName;
+  const knownLimitations = [
+    'Remote canvas coverage in pp is currently read-only.',
+    'pp does not yet return a remote canvas app id for create/import workflows.',
+  ];
+
+  if (!envAlias) {
+    return printFailure(argumentFailure('DV_ENV_REQUIRED', '--env is required.'));
+  }
+
+  if (command === 'import' && !importPath) {
+    return printFailure(argumentFailure('CANVAS_IMPORT_PATH_REQUIRED', 'Usage: canvas import <file.msapp> --env <alias> [--solution UNIQUE_NAME]'));
+  }
+
+  const resolution = await resolveDataverseClient(envAlias, configOptions);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  if (solutionUniqueName) {
+    const solution = await new SolutionService(resolution.data.client).inspect(solutionUniqueName);
+
+    if (!solution.success) {
+      return printFailure(solution);
+    }
+
+    if (!solution.data) {
+      return printFailure(
+        fail(
+          [
+            createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${solutionUniqueName} was not found.`, {
+              source: '@pp/cli',
+            }),
+            createDiagnostic(
+              'error',
+              command === 'create' ? 'CANVAS_REMOTE_CREATE_NOT_IMPLEMENTED' : 'CANVAS_REMOTE_IMPORT_NOT_IMPLEMENTED',
+              `Remote canvas ${command} is not implemented yet.`,
+              {
+                source: '@pp/cli',
+                hint:
+                  command === 'create'
+                    ? 'Use pp canvas list/inspect for remote discovery today, or finish blank-app creation in Maker until a first-class pp canvas create command exists.'
+                    : 'Build or obtain an .msapp outside the remote workflow today, then use Maker or solution tooling until a first-class pp canvas import command exists.',
+              }
+            ),
+          ],
+          {
+            supportTier: 'preview',
+            suggestedNextActions: buildCanvasMissingSolutionSuggestions(envAlias, explicitSolutionUniqueName ?? solutionUniqueName),
+            knownLimitations,
+          }
+        )
+      );
+    }
+  }
 
   return printFailure(
     fail(
@@ -375,10 +431,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           importPath,
           derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
         }),
-        knownLimitations: [
-          'Remote canvas coverage in pp is currently read-only.',
-          'pp does not yet return a remote canvas app id for create/import workflows.',
-        ],
+        knownLimitations,
       }
     )
   );
@@ -447,6 +500,17 @@ function buildCanvasRemoteMutationSuggestions(
 
   suggestions.push('Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.');
   return suggestions;
+}
+
+function buildCanvasMissingSolutionSuggestions(envAlias: string, solutionUniqueName: string): string[] {
+  const formattedEnvAlias = formatCliArg(envAlias);
+  const formattedSolutionUniqueName = formatCliArg(solutionUniqueName);
+
+  return [
+    `Run \`pp solution list --env ${formattedEnvAlias}\` to discover the available solution unique names in this environment.`,
+    `Retry with a valid \`--solution\` value, or configure ${formattedEnvAlias} with \`defaultSolution\` if this workflow should stay solution-scoped by default.`,
+    `Once you have the right solution, use \`pp solution inspect ${formattedSolutionUniqueName} --env ${formattedEnvAlias}\` to confirm it resolves before retrying the canvas workflow.`,
+  ];
 }
 
 async function readEnvironmentDefaultSolution(alias: string, configOptions: ConfigStoreOptions): Promise<string | undefined> {

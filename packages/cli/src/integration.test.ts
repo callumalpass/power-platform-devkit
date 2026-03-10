@@ -958,6 +958,21 @@ describe('cli fixture-backed workflows', () => {
   });
 
   it('returns explicit diagnostics for unsupported remote canvas mutations', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-1',
+              uniquename: 'HarnessSolution',
+              friendlyname: 'Harness Solution',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+      }),
+    });
+
     const create = await runCli([
       'canvas',
       'create',
@@ -1022,8 +1037,85 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('requires remote targeting inputs for placeholder canvas mutations', async () => {
+    const missingEnv = await runCli(['canvas', 'create', '--format', 'json']);
+    const missingImportPath = await runCli(['canvas', 'import', '--env', 'fixture', '--format', 'json']);
+
+    expect(missingEnv.code).toBe(1);
+    expect(JSON.parse(missingEnv.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'DV_ENV_REQUIRED',
+          message: '--env is required.',
+        },
+      ],
+    });
+
+    expect(missingImportPath.code).toBe(1);
+    expect(JSON.parse(missingImportPath.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'CANVAS_IMPORT_PATH_REQUIRED',
+          message: 'Usage: canvas import <file.msapp> --env <alias> [--solution UNIQUE_NAME]',
+        },
+      ],
+    });
+  });
+
+  it('returns solution-aware diagnostics when placeholder canvas mutations target a missing solution', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [],
+        },
+      }),
+    });
+
+    const create = await runCli(['canvas', 'create', '--env', 'fixture', '--solution', 'MissingSolution', '--format', 'json']);
+
+    expect(create.code).toBe(1);
+    expect(JSON.parse(create.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'SOLUTION_NOT_FOUND',
+          message: 'Solution MissingSolution was not found.',
+          source: '@pp/cli',
+        },
+        {
+          code: 'CANVAS_REMOTE_CREATE_NOT_IMPLEMENTED',
+          message: 'Remote canvas create is not implemented yet.',
+          source: '@pp/cli',
+        },
+      ],
+      suggestedNextActions: [
+        'Run `pp solution list --env fixture` to discover the available solution unique names in this environment.',
+        'Retry with a valid `--solution` value, or configure fixture with `defaultSolution` if this workflow should stay solution-scoped by default.',
+        'Once you have the right solution, use `pp solution inspect MissingSolution --env fixture` to confirm it resolves before retrying the canvas workflow.',
+      ],
+      knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
+    });
+  });
+
   it('reuses the environment default solution in placeholder canvas mutation guidance', async () => {
     const configDir = await createTempDir();
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-1',
+              uniquename: 'HarnessSolution',
+              friendlyname: 'Harness Solution',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+      }),
+    });
+
     await mkdir(configDir, { recursive: true });
     await writeFile(
       join(configDir, 'config.json'),
