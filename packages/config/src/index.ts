@@ -831,10 +831,46 @@ function buildProjectConfigSuggestions(candidatePaths: string[]): string[] {
   return candidatePaths.map((candidatePath) => `Inspect descendant project config at ${candidatePath}.`);
 }
 
+function buildCanonicalAnchorReason(
+  startDir: string,
+  configPath: string,
+  config: ProjectConfig
+): string {
+  const configRoot = dirname(configPath);
+  const projectRoot = relativePathFrom(startDir, configRoot) || '.';
+  const assetKeys = Object.keys(config.assets ?? {}).sort();
+  const stageNames = Object.keys(config.topology?.stages ?? {}).sort();
+  const providerBindingNames = Object.keys(config.providerBindings ?? {}).sort();
+  const docsPaths = (config.docs?.paths ?? []).map((entry) => relative(configRoot, join(configRoot, entry)) || '.').sort();
+  const reasons = [
+    `Treat ${projectRoot} as the canonical local project for this invocation because it is the only descendant pp project under the inspected path.`,
+    'It defines its own config',
+  ];
+
+  if (assetKeys.length > 0) {
+    reasons.push(`${assetKeys.length} asset path(s)`);
+  }
+
+  if (stageNames.length > 0) {
+    reasons.push(`${stageNames.length} stage(s)`);
+  }
+
+  if (providerBindingNames.length > 0) {
+    reasons.push(`${providerBindingNames.length} provider binding(s)`);
+  }
+
+  if (docsPaths.length > 0) {
+    reasons.push(`${docsPaths.length} docs path(s)`);
+  }
+
+  return `${reasons[0]} ${reasons.slice(1).join(', ')}.`;
+}
+
 function buildAutoSelectedProjectDetail(startDir: string, configPath: string, config: ProjectConfig): string {
   const configRoot = dirname(configPath);
   const segments = [
     `No project config was found at or above ${startDir}, so the only descendant project was used as the local anchor.`,
+    buildCanonicalAnchorReason(startDir, configPath, config),
     `Config: ${relativePathFrom(startDir, configPath)}.`,
   ];
 

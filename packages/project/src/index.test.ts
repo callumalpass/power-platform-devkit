@@ -239,6 +239,8 @@ describe('discoverProject', () => {
       descendantProjectRoots: [],
       autoSelectedProjectRoot: 'fixtures/analysis/project',
       autoSelectedReason: 'only-descendant-project',
+      canonicalAnchorReason:
+        'Treat fixtures/analysis/project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path. It defines its own config, 1 stage(s).',
       anchorEvidence: {
         configPath: 'fixtures/analysis/project/pp.config.yaml',
         assetKeys: [],
@@ -254,7 +256,7 @@ describe('discoverProject', () => {
     expect(doctor.data?.discovery?.autoSelectedProjectRoot).toBe('fixtures/analysis/project');
     expect(doctor.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')).toBe(true);
     expect(doctor.data?.checks.find((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')?.detail).toContain(
-      'Only descendant project under the inspected path.'
+      'Treat fixtures/analysis/project as the canonical local project for this invocation'
     );
   });
 

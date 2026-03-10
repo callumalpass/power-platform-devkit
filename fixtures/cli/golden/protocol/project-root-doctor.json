@@ -34,7 +34,7 @@
     },
     {
       "code": "PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT",
-      "detail": "Only descendant project under the inspected path. Config: fixtures/analysis/project/pp.config.yaml. Assets: apps, docs, flows, solutionBundle. Stages: dev, prod. Provider bindings: financeSharePoint, primaryDataverse. Docs: docs.",
+      "detail": "Treat fixtures/analysis/project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path. It defines its own config, 4 asset path(s), 2 stage(s), 2 provider binding(s), 1 docs path(s). Config: fixtures/analysis/project/pp.config.yaml. Assets: apps, docs, flows, solutionBundle. Stages: dev, prod. Provider bindings: financeSharePoint, primaryDataverse. Docs: docs.",
       "hint": "Re-run with fixtures/analysis/project when you want to make that local project path explicit.",
       "message": "Auto-selected descendant pp project root at fixtures/analysis/project.",
       "path": "<REPO_ROOT>/fixtures/analysis/project",
@@ -136,6 +136,7 @@
     },
     "autoSelectedProjectRoot": "fixtures/analysis/project",
     "autoSelectedReason": "only-descendant-project",
+    "canonicalAnchorReason": "Treat fixtures/analysis/project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path. It defines its own config, 4 asset path(s), 2 stage(s), 2 provider binding(s), 1 docs path(s).",
     "configFound": true,
     "descendantProjectConfigs": [],
     "descendantProjectRoots": [],

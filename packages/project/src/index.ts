@@ -94,6 +94,7 @@ export interface ProjectDiscoveryDetails {
   nearestProjectRoot?: string;
   autoSelectedProjectRoot?: string;
   autoSelectedReason?: 'only-descendant-project';
+  canonicalAnchorReason?: string;
   anchorEvidence?: {
     configPath?: string;
     assetKeys: string[];
@@ -888,6 +889,12 @@ async function summarizeProjectDiscovery(
       descendantProjectRoots: [],
       autoSelectedProjectRoot: isDescendantRoot ? relativeRoot : undefined,
       autoSelectedReason: isDescendantRoot ? 'only-descendant-project' : undefined,
+      canonicalAnchorReason: isDescendantRoot
+        ? buildCanonicalAnchorReason(
+            relativeRoot,
+            buildProjectAnchorEvidence(inspectedPath, configRoot, configPath, config)
+          )
+        : undefined,
       anchorEvidence: buildProjectAnchorEvidence(inspectedPath, configRoot, configPath, config),
     };
   }
@@ -921,13 +928,41 @@ function buildProjectAnchorEvidence(
   };
 }
 
+function buildCanonicalAnchorReason(
+  projectRoot: string,
+  anchorEvidence: NonNullable<ProjectDiscoveryDetails['anchorEvidence']>
+): string {
+  const reasons = [
+    `Treat ${projectRoot} as the canonical local project for this invocation because it is the only descendant pp project under the inspected path.`,
+    `It defines its own config`,
+  ];
+
+  if (anchorEvidence.assetKeys.length > 0) {
+    reasons.push(`${anchorEvidence.assetKeys.length} asset path(s)`);
+  }
+
+  if (anchorEvidence.stageNames.length > 0) {
+    reasons.push(`${anchorEvidence.stageNames.length} stage(s)`);
+  }
+
+  if (anchorEvidence.providerBindingNames.length > 0) {
+    reasons.push(`${anchorEvidence.providerBindingNames.length} provider binding(s)`);
+  }
+
+  if (anchorEvidence.docsPaths.length > 0) {
+    reasons.push(`${anchorEvidence.docsPaths.length} docs path(s)`);
+  }
+
+  return `${reasons[0]} ${reasons.slice(1).join(', ')}.`;
+}
+
 function describeProjectAnchorEvidence(discovery: ProjectDiscoveryDetails): string | undefined {
   if (!discovery.autoSelectedProjectRoot || !discovery.anchorEvidence) {
     return undefined;
   }
 
   const { anchorEvidence } = discovery;
-  const segments = ['Only descendant project under the inspected path.'];
+  const segments = [discovery.canonicalAnchorReason ?? 'Only descendant project under the inspected path.'];
 
   if (anchorEvidence.configPath) {
     segments.push(`Config: ${anchorEvidence.configPath}.`);

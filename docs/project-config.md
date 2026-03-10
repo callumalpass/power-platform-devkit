@@ -293,8 +293,9 @@ and treats that project as the canonical local anchor. If there are multiple
 descendant projects, it keeps the default-layout fallback and reports the
 candidates in diagnostics. The JSON payload includes a `discovery` object when
 `pp` had to infer or auto-select the local project root, including the
-auto-selection reason plus anchor evidence such as the selected config path,
-asset keys, stage names, provider bindings, and docs paths.
+auto-selection reason, a `canonicalAnchorReason` summary, plus anchor evidence
+such as the selected config path, asset keys, stage names, provider bindings,
+and docs paths.
 
 ### Analysis report
 
