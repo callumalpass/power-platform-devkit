@@ -48,6 +48,9 @@ Current behavior:
   preview payload
 - `--yes` is accepted consistently so later guarded workflows can use the same
   shape without another CLI break
+- `deploy apply` also accepts `--plan <file>` as a saved-plan execution
+  checkpoint; that path still uses live apply mode and fails preflight if the
+  current project no longer matches the saved plan
 
 Today this contract is wired through:
 

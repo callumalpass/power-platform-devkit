@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { ConnectionReferenceService, EnvironmentVariableService, resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { summarizeResolvedParameter, type ProjectContext, type ResolvedProjectParameter } from '@pp/project';
@@ -177,6 +178,24 @@ export interface DeployExecutionResult {
   };
 }
 
+interface ComparableDeployPlan {
+  executionStages: DeployExecutionStage[];
+  supportedAdapters: string[];
+  defaultEnvironment?: string;
+  defaultSolution?: string;
+  selectedStage?: string;
+  activeEnvironment?: string;
+  activeSolution?: string;
+  target: DeployTarget;
+  inputs: DeployInput[];
+  providerBindings: string[];
+  topology: DeployPlan['topology'];
+  templateRegistries: string[];
+  build: Record<string, unknown>;
+  bindings: DeployBindingSummary;
+  operations: DeployOperationPlan[];
+}
+
 export function buildDeployPlan(project: ProjectContext): OperationResult<DeployPlan> {
   const bindings = summarizeResolvedDeployBindings(resolveDeployBindings(project));
   const inputs = Object.values(project.parameters).map((parameter) => {
@@ -258,6 +277,7 @@ export async function executeDeploy(
   options: {
     mode?: DeployExecutionMode;
     confirmed?: boolean;
+    expectedPlan?: DeployPlan;
   } = {}
 ): Promise<OperationResult<DeployExecutionResult>> {
   const startedAt = Date.now();
@@ -282,6 +302,7 @@ export async function executeDeploy(
   };
 
   checks.push(...collectMissingMappingChecks(project));
+  checks.push(...collectExpectedPlanChecks(options.expectedPlan, planResult.data));
   checks.push(
     ...conflicts.map((conflict) => ({
       status: 'fail' as const,
@@ -796,6 +817,35 @@ function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCh
   return checks;
 }
 
+function collectExpectedPlanChecks(expectedPlan: DeployPlan | undefined, actualPlan: DeployPlan | undefined): DeployPreflightCheck[] {
+  if (!expectedPlan || !actualPlan) {
+    return [];
+  }
+
+  const mismatchedSections = diffComparableDeployPlans(expectedPlan, actualPlan);
+
+  if (mismatchedSections.length === 0) {
+    return [
+      {
+        status: 'pass',
+        code: 'DEPLOY_PREFLIGHT_PLAN_MATCH',
+        message: 'Saved deploy plan matches the current project resolution.',
+      },
+    ];
+  }
+
+  return [
+    {
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_PLAN_MISMATCH',
+      message: 'Saved deploy plan no longer matches the current project resolution.',
+      details: {
+        mismatchedSections,
+      },
+    },
+  ];
+}
+
 function finalizeDeployExecution(
   mode: DeployExecutionMode,
   target: DeployTarget,
@@ -918,6 +968,56 @@ function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean
 
 function stringifyDeployValue(value: string | number | boolean): string {
   return typeof value === 'string' ? value : String(value);
+}
+
+function diffComparableDeployPlans(expectedPlan: DeployPlan, actualPlan: DeployPlan): string[] {
+  const expectedComparable = toComparableDeployPlan(expectedPlan);
+  const actualComparable = toComparableDeployPlan(actualPlan);
+  const mismatchedSections: string[] = [];
+
+  for (const section of Object.keys(expectedComparable) as Array<keyof ComparableDeployPlan>) {
+    if (!isDeepStrictEqual(expectedComparable[section], actualComparable[section])) {
+      mismatchedSections.push(section);
+    }
+  }
+
+  return mismatchedSections;
+}
+
+function toComparableDeployPlan(plan: DeployPlan): ComparableDeployPlan {
+  return stripUndefinedDeep({
+    executionStages: plan.executionStages,
+    supportedAdapters: plan.supportedAdapters,
+    defaultEnvironment: plan.defaultEnvironment,
+    defaultSolution: plan.defaultSolution,
+    selectedStage: plan.selectedStage,
+    activeEnvironment: plan.activeEnvironment,
+    activeSolution: plan.activeSolution,
+    target: plan.target,
+    inputs: plan.inputs,
+    providerBindings: plan.providerBindings,
+    topology: plan.topology,
+    templateRegistries: plan.templateRegistries,
+    build: plan.build,
+    bindings: plan.bindings,
+    operations: plan.operations,
+  }) as ComparableDeployPlan;
+}
+
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripUndefinedDeep(entry)) as T;
+  }
+
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, stripUndefinedDeep(entry)])
+  ) as T;
 }
 
 export function resolveDeployBindings(project: ProjectContext): ResolvedDeployBindings {

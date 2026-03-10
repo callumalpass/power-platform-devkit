@@ -52,8 +52,19 @@ Apply the supported operations:
 pp deploy apply --project . --yes --format json
 ```
 
+Apply from a previously saved deploy plan:
+
+```bash
+pp deploy plan --project . --format json > ./dist/deploy-plan.json
+pp deploy apply --project . --plan ./dist/deploy-plan.json --yes --format json
+```
+
 Live apply is guarded. Without `--yes`, `mode: apply` returns a machine-readable
 preflight failure instead of mutating the target environment.
+When `--plan <file>` is used, `pp` still rediscovers the current project and
+runs the shared orchestration path, but it adds a preflight gate that fails if
+the saved plan no longer matches the current resolved target, bindings, or
+operations.
 
 The output includes:
 

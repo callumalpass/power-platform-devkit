@@ -51,7 +51,7 @@ import {
   type AttributeMetadataView,
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
-import { buildDeployPlan, executeDeploy } from '@pp/deploy';
+import { buildDeployPlan, executeDeploy, type DeployPlan } from '@pp/deploy';
 import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { ModelService } from '@pp/model';
@@ -560,10 +560,16 @@ async function runDeployApply(args: string[]): Promise<number> {
     return printFailure(discoveryOptions);
   }
 
-  const mutation = readMutationFlags(args);
+  const mutation = readDeployApplyFlags(args);
 
   if (!mutation.success || !mutation.data) {
     return printFailure(mutation);
+  }
+
+  const expectedPlan = mutation.data.planPath ? await loadDeployPlanFile(mutation.data.planPath) : ok<DeployPlan | undefined>(undefined, { supportTier: 'preview' });
+
+  if (!expectedPlan.success) {
+    return printFailure(expectedPlan);
   }
 
   const project = await discoverProject(projectPath, discoveryOptions.data);
@@ -575,6 +581,7 @@ async function runDeployApply(args: string[]): Promise<number> {
   const result = await executeDeploy(project.data, {
     mode: mutation.data.mode,
     confirmed: mutation.data.yes,
+    expectedPlan: expectedPlan.data,
   });
 
   if (!result.data) {
@@ -3246,6 +3253,32 @@ function readParameterOverrides(args: string[]): OperationResult<Record<string, 
   });
 }
 
+function readDeployApplyFlags(
+  args: string[]
+): OperationResult<{ mode: 'apply' | 'dry-run' | 'plan'; dryRun: boolean; plan: boolean; yes: boolean; planPath?: string }> {
+  const dryRun = args.includes('--dry-run');
+  const planPath = readValueFlag(args, '--plan');
+  const plan = args.includes('--plan') && !planPath;
+  const yes = args.includes('--yes');
+
+  if (dryRun && (plan || planPath)) {
+    return argumentFailure('CLI_MUTATION_MODE_CONFLICT', 'Use either --dry-run, --plan, or --plan <file>, not multiple preview/apply modes.');
+  }
+
+  return ok(
+    {
+      mode: plan ? 'plan' : dryRun ? 'dry-run' : 'apply',
+      dryRun,
+      plan,
+      yes,
+      planPath,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
 function readListFlag(args: string[], name: string): string[] | undefined {
   const value = readFlag(args, name);
   return value ? value.split(',').map((item) => item.trim()).filter(Boolean) : undefined;
@@ -3254,6 +3287,74 @@ function readListFlag(args: string[], name: string): string[] | undefined {
 function readNumberFlag(args: string[], name: string): number | undefined {
   const value = readFlag(args, name);
   return value ? Number(value) : undefined;
+}
+
+function readValueFlag(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+
+  if (index === -1) {
+    return undefined;
+  }
+
+  const value = args[index + 1];
+
+  if (!value || value.startsWith('-')) {
+    return undefined;
+  }
+
+  return value;
+}
+
+async function loadDeployPlanFile(path: string): Promise<OperationResult<DeployPlan>> {
+  let raw: string;
+
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'DEPLOY_PLAN_FILE_READ_FAILED', `Could not read deploy plan file ${path}.`, {
+        source: '@pp/cli',
+        path,
+        hint: error instanceof Error ? error.message : undefined,
+      })
+    );
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'DEPLOY_PLAN_FILE_INVALID_JSON', `Deploy plan file ${path} is not valid JSON.`, {
+        source: '@pp/cli',
+        path,
+        hint: error instanceof Error ? error.message : undefined,
+      })
+    );
+  }
+
+  if (!isDeployPlanShape(parsed)) {
+    return fail(
+      createDiagnostic('error', 'DEPLOY_PLAN_FILE_INVALID', `Deploy plan file ${path} does not match the expected deploy plan shape.`, {
+        source: '@pp/cli',
+        path,
+      })
+    );
+  }
+
+  return ok(parsed, {
+    supportTier: 'preview',
+  });
+}
+
+function isDeployPlanShape(value: unknown): value is DeployPlan {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<DeployPlan>;
+  return typeof candidate.generatedAt === 'string' && typeof candidate.projectRoot === 'string' && Array.isArray(candidate.operations);
 }
 
 function readMetadataCreateOptions(

@@ -431,6 +431,64 @@ describe('cli fixture-backed workflows', () => {
     expect(deployApply.stderr).toBe('');
   });
 
+  it('covers confirmed live deploy apply from a saved deploy plan file', async () => {
+    const tempDir = await createTempDir();
+    const planPath = join(tempDir, 'deploy-plan.json');
+    const env = {
+      PP_SQL_ENDPOINT: 'sql.contoso.example',
+    };
+
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  stage: prod',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        'parameters:',
+        '  sqlEndpoint:',
+        '    type: string',
+        '    fromEnv: PP_SQL_ENDPOINT',
+        '    required: true',
+        '    mapsTo:',
+        '      - kind: deploy-input',
+        '        target: sql-endpoint',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const deployPlan = await runCli(['deploy', 'plan', '--project', tempDir, '--format', 'json'], {
+      env,
+    });
+    await writeFile(planPath, deployPlan.stdout, 'utf8');
+
+    const deployApply = await runCli(['deploy', 'apply', '--project', tempDir, '--plan', planPath, '--yes', '--format', 'json'], {
+      env,
+    });
+
+    expect(deployPlan.code).toBe(0);
+    expect(deployApply.code).toBe(0);
+    expect(deployApply.stderr).toBe('');
+
+    const result = normalizeCliAnalysisSnapshot(JSON.parse(deployApply.stdout)) as Record<string, any>;
+    expect(result.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_PLAN_MATCH',
+        status: 'pass',
+      })
+    );
+    expect(result.apply.operations).toContainEqual(
+      expect.objectContaining({
+        kind: 'deploy-input-bind',
+        status: 'resolved',
+        target: 'sql-endpoint',
+      })
+    );
+  });
+
   it('covers project init and doctor through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
 

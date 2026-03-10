@@ -194,6 +194,44 @@ describe('deploy fixture-backed goldens', () => {
     ]);
   });
 
+  it('fails preflight when a saved deploy plan no longer matches current project resolution', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const discovery = await discoverProject(fixtureRoot, {
+      environment: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+        PP_SQL_ENDPOINT: 'sql.contoso.example',
+      },
+    });
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const expectedPlan = buildDeployPlan(discovery.data!).data!;
+    const mismatchedPlan = {
+      ...expectedPlan,
+      operations: expectedPlan.operations.map((operation) =>
+        operation.kind === 'dataverse-envvar-set' ? { ...operation, target: 'pp_UnexpectedTarget' } : operation
+      ),
+    };
+
+    const result = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+      expectedPlan: mismatchedPlan,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.preflight.ok).toBe(false);
+    expect(result.data?.preflight.checks).toContainEqual(
+      expect.objectContaining({
+        code: 'DEPLOY_PREFLIGHT_PLAN_MISMATCH',
+        details: {
+          mismatchedSections: ['operations'],
+        },
+      })
+    );
+  });
+
   it('executes the supported deploy slice as a machine-readable dry run', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const discovery = await discoverProject(fixtureRoot, {
