@@ -54,7 +54,28 @@
     }
   ],
   "discovery": {
+    "anchorEvidence": {
+      "assetKeys": [
+        "apps",
+        "docs",
+        "flows",
+        "solutionBundle"
+      ],
+      "configPath": "fixtures/analysis/project/pp.config.yaml",
+      "docsPaths": [
+        "docs"
+      ],
+      "providerBindingNames": [
+        "financeSharePoint",
+        "primaryDataverse"
+      ],
+      "stageNames": [
+        "dev",
+        "prod"
+      ]
+    },
     "autoSelectedProjectRoot": "fixtures/analysis/project",
+    "autoSelectedReason": "only-descendant-project",
     "configFound": true,
     "descendantProjectConfigs": [],
     "descendantProjectRoots": [],
@@ -221,7 +242,7 @@
   "warnings": [
     {
       "code": "PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED",
-      "detail": "No project config was found at or above <REPO_ROOT>, so the only descendant project was used as the local anchor.",
+      "detail": "No project config was found at or above <REPO_ROOT>, so the only descendant project was used as the local anchor. Config: fixtures/analysis/project/pp.config.yaml. Assets: apps, docs, flows, solutionBundle. Stages: dev, prod. Provider bindings: financeSharePoint, primaryDataverse. Docs: docs.",
       "hint": "Use fixtures/analysis/project when you want to scope commands to that local project explicitly.",
       "level": "warning",
       "message": "Auto-selected descendant project config fixtures/analysis/project/pp.config.yaml.",

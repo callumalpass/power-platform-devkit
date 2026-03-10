@@ -34,6 +34,7 @@
     },
     {
       "code": "PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT",
+      "detail": "Only descendant project under the inspected path. Config: fixtures/analysis/project/pp.config.yaml. Assets: apps, docs, flows, solutionBundle. Stages: dev, prod. Provider bindings: financeSharePoint, primaryDataverse. Docs: docs.",
       "hint": "Re-run with fixtures/analysis/project when you want to make that local project path explicit.",
       "message": "Auto-selected descendant pp project root at fixtures/analysis/project.",
       "path": "<REPO_ROOT>/fixtures/analysis/project",
@@ -113,7 +114,28 @@
   ],
   "configPath": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
   "discovery": {
+    "anchorEvidence": {
+      "assetKeys": [
+        "apps",
+        "docs",
+        "flows",
+        "solutionBundle"
+      ],
+      "configPath": "fixtures/analysis/project/pp.config.yaml",
+      "docsPaths": [
+        "docs"
+      ],
+      "providerBindingNames": [
+        "financeSharePoint",
+        "primaryDataverse"
+      ],
+      "stageNames": [
+        "dev",
+        "prod"
+      ]
+    },
     "autoSelectedProjectRoot": "fixtures/analysis/project",
+    "autoSelectedReason": "only-descendant-project",
     "configFound": true,
     "descendantProjectConfigs": [],
     "descendantProjectRoots": [],

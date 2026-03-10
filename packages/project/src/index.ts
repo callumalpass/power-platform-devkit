@@ -93,6 +93,14 @@ export interface ProjectDiscoveryDetails {
   descendantProjectRoots: string[];
   nearestProjectRoot?: string;
   autoSelectedProjectRoot?: string;
+  autoSelectedReason?: 'only-descendant-project';
+  anchorEvidence?: {
+    configPath?: string;
+    assetKeys: string[];
+    stageNames: string[];
+    providerBindingNames: string[];
+    docsPaths: string[];
+  };
 }
 
 export interface ProjectContext {
@@ -169,6 +177,7 @@ export interface ProjectDoctorCheck {
   message: string;
   path?: string;
   hint?: string;
+  detail?: string;
 }
 
 export interface ProjectDoctorSummary {
@@ -380,6 +389,7 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
         message: `Auto-selected descendant pp project root at ${project.discovery.autoSelectedProjectRoot}.`,
         path: join(resolvedRoot, project.discovery.autoSelectedProjectRoot),
         hint: `Re-run with ${project.discovery.autoSelectedProjectRoot} when you want to make that local project path explicit.`,
+        detail: describeProjectAnchorEvidence(project.discovery),
       });
     }
   } else {
@@ -546,7 +556,7 @@ export async function discoverProject(
   const root = configPath ? dirname(configPath) : resolvedStartDir;
   const config = configResult.data?.config ?? {};
   const environment = options.environment ?? process.env;
-  const discovery = await summarizeProjectDiscovery(resolvedStartDir, root, configPath);
+  const discovery = await summarizeProjectDiscovery(resolvedStartDir, root, configPath, config);
   const topologyResolution = resolveProjectTopology(config, options.stage);
   const mergedDefinitions = applyParameterOverrides(
     config.parameters ?? {},
@@ -861,7 +871,8 @@ function warnIfSolutionEnvironmentMissing(solution: ResolvedSolutionTarget, diag
 async function summarizeProjectDiscovery(
   inspectedPath: string,
   resolvedRoot: string,
-  configPath?: string
+  configPath: string | undefined,
+  config: ProjectConfig
 ): Promise<ProjectDiscoveryDetails> {
   if (configPath) {
     const configRoot = dirname(configPath);
@@ -876,6 +887,8 @@ async function summarizeProjectDiscovery(
       descendantProjectConfigs: [],
       descendantProjectRoots: [],
       autoSelectedProjectRoot: isDescendantRoot ? relativeRoot : undefined,
+      autoSelectedReason: isDescendantRoot ? 'only-descendant-project' : undefined,
+      anchorEvidence: buildProjectAnchorEvidence(inspectedPath, configRoot, configPath, config),
     };
   }
 
@@ -891,6 +904,52 @@ async function summarizeProjectDiscovery(
     descendantProjectRoots,
     nearestProjectRoot: descendantProjectRoots[0],
   };
+}
+
+function buildProjectAnchorEvidence(
+  inspectedPath: string,
+  configRoot: string,
+  configPath: string,
+  config: ProjectConfig
+): NonNullable<ProjectDiscoveryDetails['anchorEvidence']> {
+  return {
+    configPath: relative(inspectedPath, configPath) || '.',
+    assetKeys: Object.keys(config.assets ?? {}).sort(),
+    stageNames: Object.keys(config.topology?.stages ?? {}).sort(),
+    providerBindingNames: Object.keys(config.providerBindings ?? {}).sort(),
+    docsPaths: (config.docs?.paths ?? []).map((entry) => relative(configRoot, join(configRoot, entry)) || '.').sort(),
+  };
+}
+
+function describeProjectAnchorEvidence(discovery: ProjectDiscoveryDetails): string | undefined {
+  if (!discovery.autoSelectedProjectRoot || !discovery.anchorEvidence) {
+    return undefined;
+  }
+
+  const { anchorEvidence } = discovery;
+  const segments = ['Only descendant project under the inspected path.'];
+
+  if (anchorEvidence.configPath) {
+    segments.push(`Config: ${anchorEvidence.configPath}.`);
+  }
+
+  if (anchorEvidence.assetKeys.length > 0) {
+    segments.push(`Assets: ${anchorEvidence.assetKeys.join(', ')}.`);
+  }
+
+  if (anchorEvidence.stageNames.length > 0) {
+    segments.push(`Stages: ${anchorEvidence.stageNames.join(', ')}.`);
+  }
+
+  if (anchorEvidence.providerBindingNames.length > 0) {
+    segments.push(`Provider bindings: ${anchorEvidence.providerBindingNames.join(', ')}.`);
+  }
+
+  if (anchorEvidence.docsPaths.length > 0) {
+    segments.push(`Docs: ${anchorEvidence.docsPaths.join(', ')}.`);
+  }
+
+  return segments.join(' ');
 }
 
 function applyParameterOverrides(

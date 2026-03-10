@@ -238,6 +238,14 @@ describe('discoverProject', () => {
       descendantProjectConfigs: [],
       descendantProjectRoots: [],
       autoSelectedProjectRoot: 'fixtures/analysis/project',
+      autoSelectedReason: 'only-descendant-project',
+      anchorEvidence: {
+        configPath: 'fixtures/analysis/project/pp.config.yaml',
+        assetKeys: [],
+        stageNames: ['prod'],
+        providerBindingNames: [],
+        docsPaths: [],
+      },
     });
     expect(discovery.data?.root).toBe(fixtureProjectRoot);
     expect(discovery.data?.configPath).toBe(join(fixtureProjectRoot, 'pp.config.yaml'));
@@ -245,6 +253,9 @@ describe('discoverProject', () => {
     expect(doctor.success).toBe(true);
     expect(doctor.data?.discovery?.autoSelectedProjectRoot).toBe('fixtures/analysis/project');
     expect(doctor.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')).toBe(true);
+    expect(doctor.data?.checks.find((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')?.detail).toContain(
+      'Only descendant project under the inspected path.'
+    );
   });
 
   it('flags source-first projects that keep generated bundles inside solutions', async () => {

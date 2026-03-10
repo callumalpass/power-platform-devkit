@@ -37,7 +37,7 @@ describe('loadProjectConfig', () => {
         expect.objectContaining({
           code: 'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED',
           hint: expect.stringContaining('fixtures/analysis/project'),
-          detail: expect.stringContaining('only descendant project'),
+          detail: expect.stringMatching(/only descendant project[\s\S]*Stages: prod\./),
           path: join(fixtureProjectRoot, 'pp.config.yaml'),
         }),
       ])
