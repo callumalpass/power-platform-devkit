@@ -283,6 +283,30 @@ async function runCli(
 }
 
 describe('cli fixture-backed workflows', () => {
+  it('prints canvas-specific help with remote workflow guidance', async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stdout.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stdout.write);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderr.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stderr.write);
+
+    const code = await main(['canvas', '--help']);
+
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+
+    expect(code).toBe(0);
+    expect(stderr.join('')).toBe('');
+    expect(stdout.join('')).toContain('Usage: canvas <command> [options]');
+    expect(stdout.join('')).toContain('pp canvas list --env dev --solution Core');
+    expect(stdout.join('')).toContain('Remote create/import commands are not implemented yet.');
+  });
+
   it('renders analysis report and context outputs from the fixture project', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const env = {

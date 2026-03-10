@@ -306,6 +306,11 @@ async function runEnvironmentVariable(command: string | undefined, args: string[
 }
 
 async function runCanvas(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printCanvasHelp();
+    return 0;
+  }
+
   switch (command) {
     case 'list':
       return runCanvasList(args);
@@ -3920,6 +3925,42 @@ function printHelp(): void {
       '  --dry-run  render a mutation preview without side effects',
       '  --plan     render a mutation plan without side effects',
       '  --yes      record non-interactive confirmation for guarded workflows',
+    ].join('\n') + '\n'
+  );
+}
+
+function printCanvasHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: canvas <command> [options]',
+      '',
+      'Remote canvas commands:',
+      '  list                         list remote canvas apps through Dataverse',
+      '  inspect <displayName|name|id> inspect a remote canvas app when used with --env',
+      '',
+      'Local canvas commands:',
+      '  validate <path>              validate a local canvas source tree',
+      '  lint <path>                  alias for validate',
+      '  inspect <path>               inspect a local canvas source tree',
+      '  build <path>                 package a local canvas source tree into an .msapp',
+      '  diff <leftPath> <rightPath>  diff two local canvas source trees',
+      '',
+      'Template registry commands:',
+      '  templates import <sourcePath> import harvested or official template metadata',
+      '',
+      'Examples:',
+      '  pp canvas list --env dev --solution Core',
+      '  pp canvas inspect "Harness Canvas" --env dev --solution Core',
+      '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
+      '  pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp',
+      '',
+      'Notes:',
+      '  - Remote canvas coverage today is read-only: list and inspect.',
+      '  - Remote create/import commands are not implemented yet.',
+      '  - Use --env to switch canvas inspect from local-path mode to remote lookup mode.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
     ].join('\n') + '\n'
   );
 }
