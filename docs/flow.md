@@ -243,11 +243,16 @@ Current validation checks:
   and typed optional-field shapes across supported input buckets, currently
   covering:
   - the supported contract inventory is now loaded through a generated local
-    registry module sourced from
+    registry module built from checked-in connector-definition snapshots listed
+    in `packages/flow/connector-operation-openapi.source.json`, then merged
+    with a thin local overlay in
     `packages/flow/connector-operation-registry.source.json` via
-    `pnpm --filter @pp/flow generate:connector-registry`, so connector support
-    no longer expands inside a single inline constant in
-    `packages/flow/src/index.ts`
+    `pnpm --filter @pp/flow generate:connector-registry`
+  - the first bounded OpenAPI-ingested slice currently covers selected
+    `shared_office365`, `shared_sharepointonline`, and
+    `shared_commondataserviceforapps` operations while the overlay preserves
+    Power Automate-specific bucket and shape quirks plus the wider supported
+    inventory
   - `shared_office365` `SendEmailV2` with required
     `inputs.parameters.emailMessage/To`,
     `inputs.parameters.emailMessage/Subject`, and

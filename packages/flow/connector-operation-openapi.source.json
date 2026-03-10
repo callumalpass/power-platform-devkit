@@ -1,0 +1,27 @@
+{
+  "sources": [
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+      "sourcePath": "connector-openapi/office365.swagger.json",
+      "includeOperations": [
+        "DeleteEmail_V2",
+        "GetEmailV2",
+        "MarkAsRead_V3",
+        "MoveV2",
+        "SendEmailV2",
+        "V4CalendarPatchItem",
+        "V4CalendarPostItem"
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+      "sourcePath": "connector-openapi/sharepoint.swagger.json",
+      "includeOperations": ["GetFileContent", "GetFileContentByPath", "GetFileItems", "GetItem", "GetItems"]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+      "sourcePath": "connector-openapi/dataverse.swagger.json",
+      "includeOperations": ["DeleteRecord", "GetItem", "ListRecords"]
+    }
+  ]
+}

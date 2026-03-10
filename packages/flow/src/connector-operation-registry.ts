@@ -21,6 +21,9 @@ export interface FlowSupportedConnectorOperation {
 export interface FlowConnectorOperationRegistryDocument {
   generatedAt: string;
   sourcePath: string;
+  sourcePaths?: string[];
+  derivedOperationCount?: number;
+  overlayOperationCount?: number;
   operations: FlowSupportedConnectorOperation[];
 }
 
@@ -48,11 +51,14 @@ export function listFlowSupportedConnectorOperations(): FlowSupportedConnectorOp
 
 export function getFlowConnectorOperationRegistryMetadata(): Pick<
   FlowConnectorOperationRegistryDocument,
-  'generatedAt' | 'sourcePath'
+  'generatedAt' | 'sourcePath' | 'sourcePaths' | 'derivedOperationCount' | 'overlayOperationCount'
 > {
   return {
     generatedAt: FLOW_CONNECTOR_OPERATION_REGISTRY.generatedAt,
     sourcePath: FLOW_CONNECTOR_OPERATION_REGISTRY.sourcePath,
+    sourcePaths: FLOW_CONNECTOR_OPERATION_REGISTRY.sourcePaths,
+    derivedOperationCount: FLOW_CONNECTOR_OPERATION_REGISTRY.derivedOperationCount,
+    overlayOperationCount: FLOW_CONNECTOR_OPERATION_REGISTRY.overlayOperationCount,
   };
 }
 
