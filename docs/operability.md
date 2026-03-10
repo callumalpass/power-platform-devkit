@@ -29,9 +29,14 @@ and maturity, pair this guide with [architecture.md](architecture.md) and
 For development, the quickest direct entrypoints are:
 
 ```bash
-pnpm --filter @pp/cli dev -- project inspect
+pnpm pp -- project inspect
 node packages/cli/dist/index.cjs project inspect
 ```
+
+Prefer `pnpm pp -- ...` at the repo root for source-backed workflows. The
+wrapper preserves the original invocation directory for local project discovery,
+so `project inspect` and `project doctor` do not silently re-root to
+`packages/cli`.
 
 ## Command discovery
 

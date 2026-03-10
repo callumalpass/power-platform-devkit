@@ -45,7 +45,7 @@ Start with the path that matches your role:
 - Dataverse and solution workflows: [docs/dataverse-and-solutions.md](docs/dataverse-and-solutions.md)
 - canvas workflows: [docs/canvas.md](docs/canvas.md)
 - flow workflows: [docs/flow.md](docs/flow.md)
-- model-driven inspection: [docs/model.md](docs/model.md)
+- model-driven inspection and bounded create/attach authoring: [docs/model.md](docs/model.md)
 - auth and environment setup: [docs/auth-and-environments.md](docs/auth-and-environments.md)
 - deploy planning and apply: [docs/deploy.md](docs/deploy.md)
 - support tiers and product boundaries: [docs/supported-surfaces.md](docs/supported-surfaces.md)
@@ -73,7 +73,7 @@ There are three practical ways to run commands:
 1. From source during development:
 
 ```bash
-pnpm --filter @pp/cli dev -- project inspect
+pnpm pp -- project inspect
 ```
 
 2. From the built workspace:
@@ -90,7 +90,7 @@ pp project inspect
 ```
 
 The examples below use `pp` for brevity. When working directly from the repo,
-replace `pp` with either `pnpm --filter @pp/cli dev --` or
+replace `pp` with either `pnpm pp --` or
 `node packages/cli/dist/index.js`.
 
 For packaging and operator workflows:

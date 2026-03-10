@@ -8,6 +8,7 @@
     "build": "pnpm -r --if-present build",
     "clean": "pnpm -r --if-present clean",
     "dev:cli": "pnpm --filter @pp/cli dev",
+    "pp": "node scripts/run-pp-dev.mjs",
     "pack:cli": "pnpm --filter @pp/cli build && pnpm --dir packages/cli pack",
     "fetch:canvas-catalog": "tsx scripts/fetch-canvas-control-catalog.ts",
     "harvest:canvas": "tsx scripts/canvas-harvest.ts",

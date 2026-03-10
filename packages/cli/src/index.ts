@@ -1713,7 +1713,7 @@ async function runModel(command: string | undefined, args: string[]): Promise<nu
 }
 
 async function runProjectInspect(args: string[]): Promise<number> {
-  const path = positionalArgs(args)[0] ?? process.cwd();
+  const path = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -1761,7 +1761,7 @@ async function runProjectInspect(args: string[]): Promise<number> {
 }
 
 async function runProjectInit(args: string[]): Promise<number> {
-  const root = positionalArgs(args)[0] ?? process.cwd();
+  const root = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
   const format = outputFormat(args, 'json');
   const options = {
     name: readFlag(args, '--name'),
@@ -1804,7 +1804,7 @@ async function runProjectInit(args: string[]): Promise<number> {
 }
 
 async function runProjectDoctor(args: string[]): Promise<number> {
-  const root = positionalArgs(args)[0] ?? process.cwd();
+  const root = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -1828,7 +1828,7 @@ async function runProjectDoctor(args: string[]): Promise<number> {
 }
 
 async function runProjectFeedback(args: string[]): Promise<number> {
-  const root = positionalArgs(args)[0] ?? process.cwd();
+  const root = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -1854,7 +1854,7 @@ async function runProjectFeedback(args: string[]): Promise<number> {
 }
 
 async function runAnalysisReport(args: string[]): Promise<number> {
-  const path = positionalArgs(args)[0] ?? process.cwd();
+  const path = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
   const format = outputFormat(args, 'markdown');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -1892,7 +1892,7 @@ async function runAnalysisContext(args: string[]): Promise<number> {
     return 0;
   }
 
-  const projectPath = readFlag(args, '--project') ?? process.cwd();
+  const projectPath = readFlag(args, '--project') ?? resolveDefaultInvocationPath();
   const asset = readFlag(args, '--asset');
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
@@ -1998,7 +1998,7 @@ async function runAnalysisPortfolioView(args: string[], view: 'drift' | 'usage' 
 }
 
 async function runDeployPlan(args: string[]): Promise<number> {
-  const projectPath = readFlag(args, '--project') ?? process.cwd();
+  const projectPath = readFlag(args, '--project') ?? resolveDefaultInvocationPath();
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -2073,7 +2073,7 @@ async function discoverAnalysisPortfolioProjects(
 
 async function runDeployApply(args: string[]): Promise<number> {
   const explicitProjectPath = readFlag(args, '--project');
-  const projectPath = explicitProjectPath ?? process.cwd();
+  const projectPath = explicitProjectPath ?? resolveDefaultInvocationPath();
   const format = outputFormat(args, 'json');
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
@@ -7466,7 +7466,7 @@ async function resolveProviderBindingContext(args: string[]): Promise<OperationR
     return discoveryOptions as unknown as OperationResult<ProviderBindingResolverContext>;
   }
 
-  const projectPath = readFlag(args, '--project') ?? process.cwd();
+  const projectPath = readFlag(args, '--project') ?? resolveDefaultInvocationPath();
   const projectResult = await discoverProject(projectPath, discoveryOptions.data);
 
   if (!projectResult.success || !projectResult.data) {
@@ -7987,7 +7987,11 @@ function resolveCliConfigDir(configDir: string): string {
     return configDir;
   }
 
-  return resolvePath(process.env.INIT_CWD ?? process.cwd(), configDir);
+  return resolvePath(resolveDefaultInvocationPath(), configDir);
+}
+
+function resolveDefaultInvocationPath(): string {
+  return process.env.INIT_CWD ?? process.cwd();
 }
 
 function readProjectDiscoveryOptions(args: string[]): OperationResult<{ stage?: string; parameterOverrides?: Record<string, string> }> {
@@ -8049,7 +8053,7 @@ function readRepeatedFlags(args: string[], name: string): string[] {
 
 function readAnalysisPortfolioProjectPaths(args: string[]): string[] {
   const configured = [...readRepeatedFlags(args, '--project'), ...positionalArgs(args)];
-  return configured.length > 0 ? configured : [process.cwd()];
+  return configured.length > 0 ? configured : [resolveDefaultInvocationPath()];
 }
 
 function flagAliases(name: string): string[] {

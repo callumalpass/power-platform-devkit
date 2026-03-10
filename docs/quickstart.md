@@ -13,7 +13,7 @@ pnpm test
 For local development, run commands through the CLI package:
 
 ```bash
-pnpm --filter @pp/cli dev -- project doctor
+pnpm pp -- project doctor
 ```
 
 Once built, you can also call the CLI directly:
@@ -30,6 +30,10 @@ pp diagnostics doctor
 ```
 
 The examples below use `pp` for brevity.
+
+When you run from source, prefer `pnpm pp -- ...` from the repo root. It keeps
+project discovery anchored to the directory you invoked from instead of the
+`packages/cli` workspace.
 
 If you are new to the repo, read [architecture.md](architecture.md) after this
 quickstart and [supported-surfaces.md](supported-surfaces.md) before adopting a

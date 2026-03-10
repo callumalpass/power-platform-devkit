@@ -5886,6 +5886,56 @@ describe('cli fixture-backed workflows', () => {
     }
   });
 
+  it('defaults project discovery to INIT_CWD when running from the package directory', async () => {
+    const originalCwd = process.cwd();
+    process.chdir(resolveRepoPath('packages/cli'));
+
+    try {
+      const inspect = await runCli(['project', 'inspect', '--format', 'json'], {
+        env: {
+          INIT_CWD: repoRoot,
+        },
+      });
+      const doctor = await runCli(['project', 'doctor', '--format', 'json'], {
+        env: {
+          INIT_CWD: repoRoot,
+        },
+      });
+
+      expect(inspect.code).toBe(0);
+      expect(doctor.code).toBe(0);
+      expect(inspect.stderr).toBe('');
+      expect(JSON.parse(doctor.stderr)).toMatchObject({
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            code: 'PROJECT_PARAMETER_MISSING',
+          }),
+        ]),
+      });
+      expect(JSON.parse(inspect.stdout)).toMatchObject({
+        summary: {
+          root: resolveRepoPath('fixtures', 'analysis', 'project'),
+        },
+        discovery: {
+          inspectedPath: repoRoot,
+          resolvedRoot: resolveRepoPath('fixtures', 'analysis', 'project'),
+          autoSelectedProjectRoot: 'fixtures/analysis/project',
+        },
+      });
+      expect(JSON.parse(doctor.stdout)).toMatchObject({
+        inspectedPath: repoRoot,
+        canonicalProjectRoot: resolveRepoPath('fixtures', 'analysis', 'project'),
+        discovery: {
+          inspectedPath: repoRoot,
+          resolvedRoot: resolveRepoPath('fixtures', 'analysis', 'project'),
+          autoSelectedProjectRoot: 'fixtures/analysis/project',
+        },
+      });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   it('flags when an environment-targeted auth profile points at a different default resource', async () => {
     const configDir = await createTempDir();
     await mkdir(configDir, { recursive: true });
