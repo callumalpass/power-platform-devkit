@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "kind": "pp.flow.artifact",
+  "metadata": {
+    "name": "Semantic Diagnostic Flow",
+    "connectionReferences": [],
+    "parameters": {
+      "ApiBaseUrl": "https://example.test"
+    },
+    "environmentVariables": []
+  },
+  "definition": {
+    "triggers": {
+      "Manual": {
+        "type": "Request",
+        "runtimeConfiguration": {
+          "concurrency": {
+            "runs": 4
+          }
+        }
+      }
+    },
+    "actions": {
+      "InitCounter": {
+        "type": "InitializeVariable",
+        "inputs": {
+          "variables": [
+            {
+              "name": "Counter",
+              "type": "integer",
+              "value": 0
+            }
+          ]
+        }
+      },
+      "ComposeBadParam": {
+        "type": "Compose",
+        "runAfter": {
+          "MissingStep": [
+            "Succeeded"
+          ]
+        },
+        "inputs": "@{parameters('MissingParam')}"
+      },
+      "ComposeBadAction": {
+        "type": "Compose",
+        "inputs": "@{body('MissingAction')}"
+      },
+      "ComposeBadVariable": {
+        "type": "Compose",
+        "inputs": "@{variables('MissingVariable')}"
+      },
+      "RetryHot": {
+        "type": "Compose",
+        "runtimeConfiguration": {
+          "retryPolicy": {
+            "count": 12
+          }
+        },
+        "inputs": "@{environmentVariables('pp_ApiUrl')}"
+      },
+      "ScopeA": {
+        "type": "Scope",
+        "actions": {
+          "SetCounter": {
+            "type": "SetVariable",
+            "inputs": {
+              "name": "Counter",
+              "value": "@{variables('Counter')}"
+            }
+          }
+        }
+      }
+    }
+  }
+}

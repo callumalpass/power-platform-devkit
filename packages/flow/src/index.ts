@@ -83,13 +83,28 @@ export interface FlowValidationReport {
   connectionReferences: FlowConnectionReference[];
   parameters: string[];
   environmentVariables: string[];
+  semanticSummary: FlowSemanticSummary;
 }
 
 export interface FlowPatchDocument {
   connectionReferences?: Record<string, string>;
+  environmentVariables?: Record<string, string>;
   parameters?: Record<string, FlowJsonValue>;
   expressions?: Record<string, string>;
   values?: Record<string, FlowJsonValue>;
+}
+
+export interface FlowSemanticSummary {
+  triggerCount: number;
+  actionCount: number;
+  scopeCount: number;
+  initializedVariables: string[];
+  referenceCounts: {
+    parameters: number;
+    environmentVariables: number;
+    actions: number;
+    variables: number;
+  };
 }
 
 export interface FlowUnpackResult {
@@ -168,6 +183,25 @@ export interface FlowDoctorReport {
   invalidConnectionReferences: ConnectionReferenceValidationResult[];
   missingEnvironmentVariables: EnvironmentVariableSummary[];
   findings: string[];
+}
+
+interface FlowNodeSummary {
+  name: string;
+  kind: 'trigger' | 'action';
+  type?: string;
+  path: string;
+  runAfter: string[];
+}
+
+interface FlowSemanticAnalysis {
+  summary: FlowSemanticSummary;
+  diagnostics: Diagnostic[];
+  warnings: Diagnostic[];
+}
+
+interface FlowStringLocation {
+  value: string;
+  path: string;
 }
 
 const NOISY_FLOW_KEYS = new Set([
@@ -667,6 +701,7 @@ export async function validateFlowArtifact(path: string): Promise<OperationResul
   }
 
   const diagnostics: Diagnostic[] = [];
+  const warnings: Diagnostic[] = [];
   const seenConnrefs = new Set<string>();
 
   if (!artifact.data.metadata.name && !artifact.data.metadata.displayName) {
@@ -684,6 +719,10 @@ export async function validateFlowArtifact(path: string): Promise<OperationResul
       })
     );
   }
+
+  const semantic = analyzeFlowSemantics(artifact.data, path);
+  diagnostics.push(...semantic.diagnostics);
+  warnings.push(...semantic.warnings);
 
   for (const reference of artifact.data.metadata.connectionReferences) {
     if (!reference.name) {
@@ -714,11 +753,12 @@ export async function validateFlowArtifact(path: string): Promise<OperationResul
       connectionReferences: artifact.data.metadata.connectionReferences,
       parameters: Object.keys(artifact.data.metadata.parameters).sort(),
       environmentVariables: artifact.data.metadata.environmentVariables,
+      semanticSummary: semantic.summary,
     },
     {
       supportTier: 'preview',
       diagnostics,
-      warnings: artifact.warnings,
+      warnings: [...artifact.warnings, ...warnings],
     }
   );
 }
@@ -740,6 +780,11 @@ export async function patchFlowArtifact(
   for (const [from, to] of Object.entries(patch.connectionReferences ?? {})) {
     renameConnectionReference(cloned, from, to);
     appliedOperations.push(`connectionReference:${from}->${to}`);
+  }
+
+  for (const [from, to] of Object.entries(patch.environmentVariables ?? {})) {
+    renameEnvironmentVariable(cloned, from, to);
+    appliedOperations.push(`environmentVariable:${from}->${to}`);
   }
 
   for (const [name, value] of Object.entries(patch.parameters ?? {})) {
@@ -1125,6 +1170,157 @@ function normalizeConnectionReferences(value: unknown): FlowConnectionReference[
   return normalized.sort((left, right) => left.name.localeCompare(right.name));
 }
 
+function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowSemanticAnalysis {
+  const diagnostics: Diagnostic[] = [];
+  const warnings: Diagnostic[] = [];
+  const definition = asRecord(artifact.definition) ?? {};
+  const triggerNodes = collectFlowNodes(asRecord(definition.triggers), 'trigger', 'triggers');
+  const actionNodes = collectFlowNodes(asRecord(definition.actions), 'action', 'actions');
+  const allNodes = new Map<string, FlowNodeSummary>([...triggerNodes, ...actionNodes]);
+  const parameterNames = new Set(Object.keys(normalizeFlowParameters(asRecord(definition.parameters) ?? artifact.metadata.parameters)));
+  const variableNames = collectInitializedVariables(artifact.definition, allNodes);
+  const references = collectExpressionReferences(artifact.definition);
+  let scopeCount = 0;
+
+  for (const node of allNodes.values()) {
+    if (isFlowScopeType(node.type)) {
+      scopeCount += 1;
+    }
+
+    for (const dependency of node.runAfter) {
+      if (!allNodes.has(dependency)) {
+        diagnostics.push(
+          createDiagnostic(
+            'error',
+            'FLOW_RUN_AFTER_TARGET_MISSING',
+            `Flow node ${node.name} depends on missing runAfter target ${dependency}.`,
+            {
+              source: '@pp/flow',
+              path: `${node.path}.runAfter.${dependency}`,
+            }
+          )
+        );
+      }
+    }
+  }
+
+  for (const reference of references) {
+    switch (reference.kind) {
+      case 'parameter':
+        if (!parameterNames.has(reference.name)) {
+          diagnostics.push(
+            createDiagnostic(
+              'error',
+              'FLOW_PARAMETER_REFERENCE_UNRESOLVED',
+              `Flow expression references missing parameter ${reference.name}.`,
+              {
+                source: '@pp/flow',
+                path: reference.path,
+              }
+            )
+          );
+        }
+        break;
+      case 'action':
+        if (!actionNodes.has(reference.name)) {
+          diagnostics.push(
+            createDiagnostic(
+              'error',
+              'FLOW_ACTION_REFERENCE_UNRESOLVED',
+              `Flow expression references missing action ${reference.name}.`,
+              {
+                source: '@pp/flow',
+                path: reference.path,
+              }
+            )
+          );
+        }
+        break;
+      case 'variable':
+        if (!variableNames.has(reference.name)) {
+          diagnostics.push(
+            createDiagnostic(
+              'error',
+              'FLOW_VARIABLE_REFERENCE_UNRESOLVED',
+              `Flow expression references missing variable ${reference.name}.`,
+              {
+                source: '@pp/flow',
+                path: reference.path,
+              }
+            )
+          );
+        }
+        break;
+      case 'environmentVariable':
+      default:
+        break;
+    }
+  }
+
+  for (const [name, node] of allNodes) {
+    const nested = readNodeAtPath(artifact.definition, parseFlowPath(node.path));
+    const nodeRecord = asRecord(nested);
+    const retryPolicy = asRecord(asRecord(nodeRecord?.runtimeConfiguration)?.retryPolicy);
+    const concurrency = asRecord(asRecord(nodeRecord?.runtimeConfiguration)?.concurrency);
+    const concurrencyRuns = readNumber(concurrency?.runs);
+    const retryCount = readNumber(retryPolicy?.count);
+
+    if (concurrencyRuns !== undefined && concurrencyRuns > 1) {
+      warnings.push(
+        createDiagnostic(
+          'warning',
+          node.kind === 'trigger' ? 'FLOW_TRIGGER_CONCURRENCY_ENABLED' : 'FLOW_ACTION_CONCURRENCY_ENABLED',
+          `Flow ${node.kind} ${name} enables concurrency with ${concurrencyRuns} parallel runs.`,
+          {
+            source: '@pp/flow',
+            path: `${node.path}.runtimeConfiguration.concurrency.runs`,
+          }
+        )
+      );
+    }
+
+    if (retryCount !== undefined && retryCount < 0) {
+      diagnostics.push(
+        createDiagnostic('error', 'FLOW_RETRY_POLICY_INVALID', `Flow node ${name} has a negative retry count ${retryCount}.`, {
+          source: '@pp/flow',
+          path: `${node.path}.runtimeConfiguration.retryPolicy.count`,
+        })
+      );
+    }
+
+    if (retryCount !== undefined && retryCount > 10) {
+      warnings.push(
+        createDiagnostic(
+          'warning',
+          'FLOW_RETRY_POLICY_HIGH',
+          `Flow node ${name} configures retry count ${retryCount}, which may mask persistent failures.`,
+          {
+            source: '@pp/flow',
+            path: `${node.path}.runtimeConfiguration.retryPolicy.count`,
+          }
+        )
+      );
+    }
+  }
+
+  return {
+    summary: {
+      triggerCount: triggerNodes.size,
+      actionCount: actionNodes.size,
+      scopeCount,
+      initializedVariables: Array.from(variableNames).sort(),
+      referenceCounts: {
+        parameters: references.filter((reference) => reference.kind === 'parameter').length,
+        environmentVariables: references.filter((reference) => reference.kind === 'environmentVariable').length,
+        actions: references.filter((reference) => reference.kind === 'action').length,
+        variables: references.filter((reference) => reference.kind === 'variable').length,
+      },
+    },
+    diagnostics: diagnostics.sort(compareDiagnostics),
+    warnings: warnings.sort(compareDiagnostics),
+  };
+}
+
 function normalizeFlowParameters(value: unknown): Record<string, FlowJsonValue> {
   const record = asRecord(value);
 
@@ -1159,6 +1355,147 @@ function collectEnvironmentVariablesFromValue(value: unknown): string[] {
   const variables = new Set<string>();
   scanFlowStrings(value, /environmentVariables\('([^']+)'\)/g, (match) => variables.add(match));
   return Array.from(variables).sort();
+}
+
+function collectFlowNodes(
+  value: Record<string, unknown> | undefined,
+  kind: FlowNodeSummary['kind'],
+  pathPrefix: string,
+  target = new Map<string, FlowNodeSummary>()
+): Map<string, FlowNodeSummary> {
+  for (const [name, nested] of Object.entries(value ?? {})) {
+    const record = asRecord(nested);
+
+    if (!record) {
+      continue;
+    }
+
+    target.set(name, {
+      name,
+      kind,
+      type: readString(record.type),
+      path: `${pathPrefix}.${name}`,
+      runAfter: Object.keys(asRecord(record.runAfter) ?? {}).sort(),
+    });
+
+    collectFlowNodes(asRecord(record.actions), 'action', `${pathPrefix}.${name}.actions`, target);
+
+    const elseRecord = asRecord(record.else);
+    collectFlowNodes(asRecord(elseRecord?.actions), 'action', `${pathPrefix}.${name}.else.actions`, target);
+
+    const cases = asRecord(record.cases);
+    for (const [caseName, caseValue] of Object.entries(cases ?? {})) {
+      collectFlowNodes(asRecord(asRecord(caseValue)?.actions), 'action', `${pathPrefix}.${name}.cases.${caseName}.actions`, target);
+    }
+
+    const defaultRecord = asRecord(record.default);
+    collectFlowNodes(asRecord(defaultRecord?.actions), 'action', `${pathPrefix}.${name}.default.actions`, target);
+  }
+
+  return target;
+}
+
+function collectInitializedVariables(root: Record<string, FlowJsonValue>, nodes: Map<string, FlowNodeSummary>): Set<string> {
+  const variables = new Set<string>();
+
+  for (const node of nodes.values()) {
+    if (node.type !== 'InitializeVariable') {
+      continue;
+    }
+
+    const nodeValue = readNodeAtPath(root, parseFlowPath(node.path));
+    for (const candidate of readInitializeVariableNames(nodeValue)) {
+      variables.add(candidate);
+    }
+  }
+
+  return variables;
+}
+
+function readInitializeVariableNames(value: unknown): string[] {
+  const record = asRecord(value);
+  const inputs = asRecord(record?.inputs);
+  const variables = Array.isArray(inputs?.variables) ? inputs?.variables : [];
+  const names: string[] = [];
+
+  for (const item of variables) {
+    const name = readString(asRecord(item)?.name);
+    if (name) {
+      names.push(name);
+    }
+  }
+
+  return names;
+}
+
+function collectExpressionReferences(value: unknown): Array<{ kind: 'parameter' | 'environmentVariable' | 'action' | 'variable'; name: string; path: string }> {
+  const references: Array<{ kind: 'parameter' | 'environmentVariable' | 'action' | 'variable'; name: string; path: string }> = [];
+
+  for (const location of collectFlowStrings(value)) {
+    for (const match of location.value.matchAll(/(parameters|environmentVariables|variables|actions|body|outputs)\('([^']+)'\)/g)) {
+      const rawKind = match[1];
+      const name = match[2];
+
+      if (!rawKind || !name) {
+        continue;
+      }
+
+      references.push({
+        kind:
+          rawKind === 'parameters'
+            ? 'parameter'
+            : rawKind === 'environmentVariables'
+              ? 'environmentVariable'
+              : rawKind === 'variables'
+                ? 'variable'
+                : 'action',
+        name,
+        path: location.path,
+      });
+    }
+  }
+
+  return references;
+}
+
+function collectFlowStrings(value: unknown, path = 'definition'): FlowStringLocation[] {
+  if (typeof value === 'string') {
+    return [{ value, path }];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => collectFlowStrings(item, `${path}.${index}`));
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    return Object.entries(value as Record<string, unknown>).flatMap(([key, nested]) => collectFlowStrings(nested, `${path}.${key}`));
+  }
+
+  return [];
+}
+
+function readNodeAtPath(root: Record<string, FlowJsonValue>, path: string[]): unknown {
+  let current: unknown = root;
+
+  for (const segment of path) {
+    if (Array.isArray(current)) {
+      const index = Number(segment);
+      current = Number.isInteger(index) ? current[index] : undefined;
+      continue;
+    }
+
+    current = asRecord(current)?.[segment];
+  }
+
+  return current;
+}
+
+function isFlowScopeType(type: string | undefined): boolean {
+  return ['If', 'Scope', 'Switch', 'Foreach', 'Until'].includes(type ?? '');
+}
+
+function compareDiagnostics(left: Diagnostic, right: Diagnostic): number {
+  return (left.path ?? '').localeCompare(right.path ?? '') || left.code.localeCompare(right.code) || left.message.localeCompare(right.message);
 }
 
 function scanFlowStrings(value: unknown, pattern: RegExp, register: (match: string) => void): void {
@@ -1203,6 +1540,13 @@ function renameConnectionReference(artifact: FlowArtifact, from: string, to: str
   }
 }
 
+function renameEnvironmentVariable(artifact: FlowArtifact, from: string, to: string): void {
+  artifact.metadata.environmentVariables = Array.from(
+    new Set(artifact.metadata.environmentVariables.map((name) => (name === from ? to : name)))
+  ).sort((left, right) => left.localeCompare(right));
+  artifact.definition = renameEnvironmentVariableValue(artifact.definition, from, to) as FlowArtifact['definition'];
+}
+
 function renameConnectionReferenceValue(value: FlowJsonValue, from: string, to: string): FlowJsonValue {
   if (Array.isArray(value)) {
     return value.map((item) => renameConnectionReferenceValue(item, from, to));
@@ -1221,6 +1565,24 @@ function renameConnectionReferenceValue(value: FlowJsonValue, from: string, to: 
         return [key, renameConnectionReferenceValue(nested, from, to)];
       })
     );
+  }
+
+  return value;
+}
+
+function renameEnvironmentVariableValue(value: FlowJsonValue, from: string, to: string): FlowJsonValue {
+  if (typeof value === 'string') {
+    return value.replaceAll(`environmentVariables('${from}')`, `environmentVariables('${to}')`);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => renameEnvironmentVariableValue(item, from, to));
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, renameEnvironmentVariableValue(nested as FlowJsonValue, from, to)])
+    ) as FlowJsonValue;
   }
 
   return value;

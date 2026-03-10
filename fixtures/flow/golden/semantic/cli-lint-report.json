@@ -1,0 +1,26 @@
+{
+  "connectionReferences": [],
+  "environmentVariables": [
+    "pp_ApiUrl"
+  ],
+  "name": "Semantic Diagnostic Flow",
+  "parameters": [
+    "ApiBaseUrl"
+  ],
+  "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
+  "semanticSummary": {
+    "actionCount": 7,
+    "initializedVariables": [
+      "Counter"
+    ],
+    "referenceCounts": {
+      "actions": 1,
+      "environmentVariables": 1,
+      "parameters": 1,
+      "variables": 2
+    },
+    "scopeCount": 1,
+    "triggerCount": 1
+  },
+  "valid": false
+}

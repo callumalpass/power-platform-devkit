@@ -212,4 +212,16 @@ describe('flow fixture-backed goldens', () => {
       normalize: (value) => normalizeFlowSnapshot(value),
     });
   });
+
+  it('captures semantic flow validation diagnostics from committed fixtures', async () => {
+    const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'semantic-diagnostic-flow');
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+
+    await expectGoldenJson(snapshotFlowResult(validation), 'fixtures/flow/golden/semantic/lint-report.json', {
+      normalize: (value) => normalizeFlowSnapshot(value),
+    });
+  });
 });

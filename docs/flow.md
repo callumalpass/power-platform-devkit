@@ -160,6 +160,17 @@ Current validation checks:
 - artifact has a name/display name
 - definition payload exists
 - connection reference names are present and non-duplicated
+- supported expression references resolve for:
+  - `parameters('...')`
+  - `variables('...')`
+  - `actions('...')`, `body('...')`, and `outputs('...')`
+- `runAfter` dependencies point at known trigger or action nodes
+- reliability warnings surface for enabled trigger/action concurrency and high
+  retry counts
+
+Validation now also returns a `semanticSummary` with trigger/action/scope
+counts, initialized variable names, and supported reference counts so fixture
+and CLI outputs can correlate diagnostics back to the normalized source model.
 
 This is the artifact-first foundation for the runtime diagnostics and doctor
 work that follows.

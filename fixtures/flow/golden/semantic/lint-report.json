@@ -1,0 +1,76 @@
+{
+  "data": {
+    "connectionReferences": [],
+    "environmentVariables": [
+      "pp_ApiUrl"
+    ],
+    "name": "Semantic Diagnostic Flow",
+    "parameters": [
+      "ApiBaseUrl"
+    ],
+    "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
+    "semanticSummary": {
+      "actionCount": 7,
+      "initializedVariables": [
+        "Counter"
+      ],
+      "referenceCounts": {
+        "actions": 1,
+        "environmentVariables": 1,
+        "parameters": 1,
+        "variables": 2
+      },
+      "scopeCount": 1,
+      "triggerCount": 1
+    },
+    "valid": false
+  },
+  "diagnostics": [
+    {
+      "code": "FLOW_RUN_AFTER_TARGET_MISSING",
+      "level": "error",
+      "message": "Flow node ComposeBadParam depends on missing runAfter target MissingStep.",
+      "path": "actions.ComposeBadParam.runAfter.MissingStep",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_ACTION_REFERENCE_UNRESOLVED",
+      "level": "error",
+      "message": "Flow expression references missing action MissingAction.",
+      "path": "definition.actions.ComposeBadAction.inputs",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_PARAMETER_REFERENCE_UNRESOLVED",
+      "level": "error",
+      "message": "Flow expression references missing parameter MissingParam.",
+      "path": "definition.actions.ComposeBadParam.inputs",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_VARIABLE_REFERENCE_UNRESOLVED",
+      "level": "error",
+      "message": "Flow expression references missing variable MissingVariable.",
+      "path": "definition.actions.ComposeBadVariable.inputs",
+      "source": "@pp/flow"
+    }
+  ],
+  "success": true,
+  "supportTier": "preview",
+  "warnings": [
+    {
+      "code": "FLOW_RETRY_POLICY_HIGH",
+      "level": "warning",
+      "message": "Flow node RetryHot configures retry count 12, which may mask persistent failures.",
+      "path": "actions.RetryHot.runtimeConfiguration.retryPolicy.count",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_TRIGGER_CONCURRENCY_ENABLED",
+      "level": "warning",
+      "message": "Flow trigger Manual enables concurrency with 4 parallel runs.",
+      "path": "triggers.Manual.runtimeConfiguration.concurrency.runs",
+      "source": "@pp/flow"
+    }
+  ]
+}

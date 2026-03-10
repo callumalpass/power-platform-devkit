@@ -2472,6 +2472,18 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/flow-validation-diagnostics.json');
   });
 
+  it('covers semantic flow validation diagnostics through the CLI entrypoint', async () => {
+    const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'semantic-diagnostic-flow');
+    const validate = await runCli(['flow', 'validate', artifactPath, '--format', 'json']);
+
+    expect(validate.code).toBe(1);
+
+    await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/flow/golden/semantic/cli-lint-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value),
+    });
+    await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/flow-semantic-validation-diagnostics.json');
+  });
+
   it('covers remote flow runtime diagnostics through the CLI entrypoint', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));

@@ -18,5 +18,17 @@
     "ApiBaseUrl"
   ],
   "path": "<REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow",
+  "semanticSummary": {
+    "actionCount": 0,
+    "initializedVariables": [],
+    "referenceCounts": {
+      "actions": 0,
+      "environmentVariables": 0,
+      "parameters": 0,
+      "variables": 0
+    },
+    "scopeCount": 0,
+    "triggerCount": 0
+  },
   "valid": false
 }

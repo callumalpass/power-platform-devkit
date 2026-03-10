@@ -102,6 +102,11 @@ function createStubDataverseClient(): DataverseClient {
                 objectid: 'flow-1',
                 componenttype: 29,
               },
+              {
+                solutioncomponentid: 'comp-2',
+                objectid: 'env-1',
+                componenttype: 380,
+              },
             ] as T[],
             {
               supportTier: 'preview',
@@ -251,6 +256,17 @@ describe('FlowService', () => {
     expect(validation.success).toBe(true);
     expect(validation.data?.valid).toBe(true);
     expect(validation.data?.environmentVariables).toEqual(['pp_ApiUrl']);
+    expect(validation.data?.semanticSummary).toMatchObject({
+      actionCount: 1,
+      triggerCount: 0,
+      scopeCount: 0,
+      referenceCounts: {
+        parameters: 0,
+        environmentVariables: 1,
+        actions: 0,
+        variables: 0,
+      },
+    });
 
     const normalized = JSON.parse(await readFile(join(dir, 'artifacts', 'flow.json'), 'utf8')) as {
       definition: Record<string, unknown>;
@@ -317,6 +333,121 @@ describe('FlowService', () => {
     expect(doctor.data?.findings).toContain('Connection reference shared_office365 is invalid for this flow.');
   });
 
+  it('validates supported semantic references and reliability settings locally', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Semantic Diagnostic Flow',
+            connectionReferences: [],
+            parameters: {
+              ApiBaseUrl: 'https://example.test',
+            },
+            environmentVariables: [],
+          },
+          definition: {
+            triggers: {
+              Manual: {
+                type: 'Request',
+                runtimeConfiguration: {
+                  concurrency: {
+                    runs: 4,
+                  },
+                },
+              },
+            },
+            actions: {
+              InitCounter: {
+                type: 'InitializeVariable',
+                inputs: {
+                  variables: [
+                    {
+                      name: 'Counter',
+                      type: 'integer',
+                      value: 0,
+                    },
+                  ],
+                },
+              },
+              ComposeBadParam: {
+                type: 'Compose',
+                runAfter: {
+                  MissingStep: ['Succeeded'],
+                },
+                inputs: "@{parameters('MissingParam')}",
+              },
+              ComposeBadAction: {
+                type: 'Compose',
+                inputs: "@{body('MissingAction')}",
+              },
+              ComposeBadVariable: {
+                type: 'Compose',
+                inputs: "@{variables('MissingVariable')}",
+              },
+              RetryHot: {
+                type: 'Compose',
+                runtimeConfiguration: {
+                  retryPolicy: {
+                    count: 12,
+                  },
+                },
+                inputs: "@{environmentVariables('pp_ApiUrl')}",
+              },
+              ScopeA: {
+                type: 'Scope',
+                actions: {
+                  SetCounter: {
+                    type: 'SetVariable',
+                    inputs: {
+                      name: 'Counter',
+                      value: "@{variables('Counter')}",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.data?.semanticSummary).toEqual({
+      triggerCount: 1,
+      actionCount: 7,
+      scopeCount: 1,
+      initializedVariables: ['Counter'],
+      referenceCounts: {
+        parameters: 1,
+        environmentVariables: 1,
+        actions: 1,
+        variables: 2,
+      },
+    });
+    expect(validation.diagnostics.map((item) => item.code)).toEqual([
+      'FLOW_RUN_AFTER_TARGET_MISSING',
+      'FLOW_ACTION_REFERENCE_UNRESOLVED',
+      'FLOW_PARAMETER_REFERENCE_UNRESOLVED',
+      'FLOW_VARIABLE_REFERENCE_UNRESOLVED',
+    ]);
+    expect(validation.warnings.map((item) => item.code)).toEqual([
+      'FLOW_RETRY_POLICY_HIGH',
+      'FLOW_TRIGGER_CONCURRENCY_ENABLED',
+    ]);
+  });
+
   it('applies bounded patches without dropping unknown fields', async () => {
     const dir = await createTempDir();
     const artifactPath = join(dir, 'flow.json');
@@ -338,7 +469,7 @@ describe('FlowService', () => {
             parameters: {
               ApiBaseUrl: 'https://example.test',
             },
-            environmentVariables: [],
+            environmentVariables: ['pp_ApiUrl'],
           },
           definition: {
             parameters: {
@@ -357,6 +488,7 @@ describe('FlowService', () => {
               SendMail: {
                 inputs: {
                   subject: 'Initial',
+                  body: "@{environmentVariables('pp_ApiUrl')}",
                   metadata: {
                     keepMe: true,
                   },
@@ -380,6 +512,9 @@ describe('FlowService', () => {
         connectionReferences: {
           shared_office365: 'shared_exchangeonline',
         },
+        environmentVariables: {
+          pp_ApiUrl: 'pp_RuntimeUrl',
+        },
         parameters: {
           ApiBaseUrl: 'https://next.example.test',
         },
@@ -397,6 +532,7 @@ describe('FlowService', () => {
     expect(patched.data?.changed).toBe(true);
     expect(patched.data?.appliedOperations).toEqual([
       'connectionReference:shared_office365->shared_exchangeonline',
+      'environmentVariable:pp_ApiUrl->pp_RuntimeUrl',
       'parameter:ApiBaseUrl',
       'expression:actions.SendMail.inputs.subject',
       'value:actions.SendMail.inputs.priority',
@@ -405,6 +541,7 @@ describe('FlowService', () => {
     const document = JSON.parse(await readFile(join(dir, 'patched', 'flow.json'), 'utf8')) as {
       metadata: {
         connectionReferences: Array<{ name: string; connectionReferenceLogicalName?: string }>;
+        environmentVariables: string[];
         parameters: Record<string, string>;
       };
       definition: {
@@ -419,6 +556,7 @@ describe('FlowService', () => {
         actions: {
           SendMail: {
             inputs: {
+              body: string;
               subject: string;
               priority: string;
               metadata: {
@@ -435,6 +573,7 @@ describe('FlowService', () => {
 
     expect(document.metadata.connectionReferences[0]?.name).toBe('shared_exchangeonline');
     expect(document.metadata.connectionReferences[0]?.connectionReferenceLogicalName).toBe('shared_exchangeonline');
+    expect(document.metadata.environmentVariables).toEqual(['pp_RuntimeUrl']);
     expect(document.metadata.parameters.ApiBaseUrl).toBe('https://next.example.test');
     expect(document.definition.parameters['$connections'].value.shared_exchangeonline).toBeDefined();
     expect(document.definition.parameters['$connections'].value.shared_exchangeonline?.connectionReferenceLogicalName).toBe(
@@ -442,6 +581,7 @@ describe('FlowService', () => {
     );
     expect(document.definition.parameters['$connections'].value.shared_office365).toBeUndefined();
     expect(document.definition.parameters.ApiBaseUrl.defaultValue).toBe('https://next.example.test');
+    expect(document.definition.actions.SendMail.inputs.body).toBe("@{environmentVariables('pp_RuntimeUrl')}");
     expect(document.definition.actions.SendMail.inputs.subject).toBe("@{parameters('ApiBaseUrl')}");
     expect(document.definition.actions.SendMail.inputs.priority).toBe('High');
     expect(document.definition.actions.SendMail.inputs.metadata.keepMe).toBe(true);
