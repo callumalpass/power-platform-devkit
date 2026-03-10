@@ -1,252 +1,40 @@
 {
   "entries": [
     {
-      "catalogName": "Container",
+      "catalogName": "Screen",
       "draft": {
-        "constructor": "GroupContainer",
-        "matchType": "constructor",
+        "matchType": "templateName",
         "propertyKeys": [
-          "DisplayMode",
-          "Height",
-          "Visible",
-          "Width"
+          "ImagePosition"
         ],
         "suggestedInsertQueries": [
-          "Container"
+          "Screen"
         ],
-        "templateName": "groupContainer",
-        "templateVersion": "1.5.0"
+        "templateName": "screen",
+        "templateVersion": "1.0"
       },
       "family": "classic"
-    },
-    {
-      "catalogName": "Grid container",
-      "draft": {
-        "constructor": "GroupContainer",
-        "matchType": "constructor",
-        "propertyKeys": [
-          "DisplayMode",
-          "Height",
-          "Visible",
-          "Width"
-        ],
-        "suggestedInsertQueries": [
-          "Grid container"
-        ],
-        "templateName": "groupContainer",
-        "templateVersion": "1.5.0"
-      },
-      "family": "classic"
-    },
-    {
-      "catalogName": "Horizontal container",
-      "draft": {
-        "constructor": "GroupContainer",
-        "matchType": "constructor",
-        "propertyKeys": [
-          "DisplayMode",
-          "Height",
-          "Visible",
-          "Width"
-        ],
-        "suggestedInsertQueries": [
-          "Horizontal container"
-        ],
-        "templateName": "groupContainer",
-        "templateVersion": "1.5.0"
-      },
-      "family": "classic"
-    },
-    {
-      "catalogName": "Vertical container",
-      "draft": {
-        "constructor": "GroupContainer",
-        "matchType": "constructor",
-        "propertyKeys": [
-          "DisplayMode",
-          "Height",
-          "Visible",
-          "Width"
-        ],
-        "suggestedInsertQueries": [
-          "Vertical container"
-        ],
-        "templateName": "groupContainer",
-        "templateVersion": "1.5.0"
-      },
-      "family": "classic"
-    },
-    {
-      "catalogName": "Date picker",
-      "draft": {
-        "constructor": "ModernDatePicker",
-        "latestInsertObservation": {
-          "attemptedQueries": [
-            "Date picker"
-          ],
-          "chosenCandidate": {
-            "category": "Input",
-            "iconName": "#fluent-datepicker",
-            "title": "Date picker"
-          },
-          "generatedAt": "2026-03-09T14:29:09.702Z",
-          "outcome": "inserted",
-          "strategy": "insert-pane-search"
-        },
-        "matchType": "constructor",
-        "propertyKeys": [
-          "DisplayMode",
-          "Height",
-          "Width"
-        ],
-        "suggestedInsertQueries": [
-          "Date picker"
-        ],
-        "templateName": "modernDatePicker",
-        "templateVersion": "1.0.0"
-      },
-      "family": "modern"
-    },
-    {
-      "catalogName": "Radio group",
-      "draft": {
-        "constructor": "ModernRadio",
-        "latestInsertObservation": {
-          "attemptedQueries": [
-            "Radio group",
-            "Radio"
-          ],
-          "chosenCandidate": {
-            "category": "Input",
-            "iconName": "#fluent-radiogroup",
-            "title": "Radio"
-          },
-          "generatedAt": "2026-03-09T14:29:09.702Z",
-          "outcome": "inserted",
-          "strategy": "insert-pane-search"
-        },
-        "matchType": "constructor",
-        "propertyKeys": [
-          "DisplayMode",
-          "Height",
-          "Width"
-        ],
-        "suggestedInsertQueries": [
-          "Radio group",
-          "Radio"
-        ],
-        "templateName": "modernRadio",
-        "templateVersion": "1.0.0"
-      },
-      "family": "modern"
-    },
-    {
-      "catalogName": "Tabs or tab list",
-      "draft": {
-        "constructor": "ModernTabList",
-        "latestInsertObservation": {
-          "attemptedQueries": [
-            "Tabs or tab list",
-            "Tab list"
-          ],
-          "chosenCandidate": {
-            "category": "Input",
-            "iconName": "#fluent-tablist",
-            "title": "Tab list"
-          },
-          "generatedAt": "2026-03-09T14:29:09.702Z",
-          "outcome": "inserted",
-          "strategy": "insert-pane-search"
-        },
-        "matchType": "constructor",
-        "propertyKeys": [
-          "Align",
-          "DisplayMode",
-          "Height",
-          "Width"
-        ],
-        "suggestedInsertQueries": [
-          "Tabs or tab list",
-          "Tab list",
-          "Tabs"
-        ],
-        "templateName": "modernTabList",
-        "templateVersion": "1.0.0"
-      },
-      "family": "modern"
-    },
-    {
-      "catalogName": "Text input",
-      "draft": {
-        "constructor": "ModernText",
-        "matchType": "constructor",
-        "propertyKeys": [
-          "Align",
-          "AutoHeight",
-          "DisplayMode",
-          "Height",
-          "Text",
-          "VerticalAlign",
-          "Visible",
-          "Width",
-          "Wrap"
-        ],
-        "suggestedInsertQueries": [
-          "Text input"
-        ],
-        "templateName": "modernText",
-        "templateVersion": "1.0.0"
-      },
-      "family": "modern"
     }
   ],
-  "generatedAt": "2026-03-09T17:38:35.798Z",
+  "generatedAt": "2026-03-10T01:18:52.351Z",
   "paths": {
     "drafts": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-drafts.json"
   },
   "schemaVersion": 1,
   "selection": {
-    "firstSelectedControl": "Classic/Container",
-    "lastSelectedControl": "Modern/Text input",
-    "matchingDrafts": 10,
+    "firstSelectedControl": "Classic/Screen",
+    "lastSelectedControl": "Classic/Screen",
+    "matchingDrafts": 1,
     "mode": "explicit",
     "requestedPromotions": [
       {
-        "catalogName": "Container",
+        "catalogName": "Screen",
         "family": "classic"
-      },
-      {
-        "catalogName": "Grid container",
-        "family": "classic"
-      },
-      {
-        "catalogName": "Horizontal container",
-        "family": "classic"
-      },
-      {
-        "catalogName": "Vertical container",
-        "family": "classic"
-      },
-      {
-        "catalogName": "Date picker",
-        "family": "modern"
-      },
-      {
-        "catalogName": "Radio group",
-        "family": "modern"
-      },
-      {
-        "catalogName": "Tabs or tab list",
-        "family": "modern"
-      },
-      {
-        "catalogName": "Text input",
-        "family": "modern"
       }
     ],
-    "selectedDrafts": 8,
-    "skippedDrafts": 2,
+    "selectedDrafts": 1,
+    "skippedDrafts": 0,
     "startIndex": 0
   },
-  "sourceDraftGeneratedAt": "2026-03-09T17:38:14.569Z"
+  "sourceDraftGeneratedAt": "2026-03-10T01:16:30.939Z"
 }

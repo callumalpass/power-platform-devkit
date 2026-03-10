@@ -1,474 +1,43 @@
 {
   "counts": {
-    "draftControls": 10,
-    "skippedControls": 60
+    "draftControls": 1,
+    "skippedControls": 69
   },
   "drafts": [
     {
-      "catalogName": "Container",
-      "constructor": "GroupContainer",
+      "catalogName": "Screen",
       "family": "classic",
       "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
-        "Suggested Insert-pane queries: Container.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Draft scaffold generated from fixture plan 2026-03-10T01:15:29.502Z.",
+        "Registry suggestion selected: function Object() { [native code] } -> screen@1.0 (templateName match).",
+        "Suggested Insert-pane queries: Screen.",
+        "Scaffold properties derived from harvested runtime metadata: ImagePosition.",
         "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
       ],
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
-        "Suggested Insert-pane queries: Container.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
+        "Draft scaffold generated from fixture plan 2026-03-10T01:15:29.502Z.",
+        "Registry suggestion selected: function Object() { [native code] } -> screen@1.0 (templateName match).",
+        "Suggested Insert-pane queries: Screen.",
+        "Scaffold properties derived from harvested runtime metadata: ImagePosition.",
         "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
       ],
       "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=320",
-        "Visible": "=true",
-        "Width": "=600"
+        "ImagePosition": "=ImagePosition.Fit"
       },
       "scaffoldProperties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=320",
-        "Visible": "=true",
-        "Width": "=600"
+        "ImagePosition": "=ImagePosition.Fit"
       },
       "suggestedInsertQueries": [
-        "Container"
+        "Screen"
       ],
       "suggestion": {
-        "constructor": "GroupContainer",
-        "matchType": "constructor",
-        "templateName": "groupContainer",
-        "templateVersion": "1.5.0"
-      }
-    },
-    {
-      "catalogName": "Gallery",
-      "constructor": "Gallery",
-      "family": "classic",
-      "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: Gallery -> gallery@2.15.0 (constructor match).",
-        "Suggested Insert-pane queries: Gallery, Vertical gallery.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: Gallery -> gallery@2.15.0 (constructor match).",
-        "Suggested Insert-pane queries: Gallery, Vertical gallery.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=575",
-        "Width": "=640"
-      },
-      "scaffoldProperties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=575",
-        "Width": "=640"
-      },
-      "suggestedInsertQueries": [
-        "Gallery",
-        "Vertical gallery"
-      ],
-      "suggestion": {
-        "constructor": "Gallery",
-        "matchType": "constructor",
-        "templateName": "gallery",
-        "templateVersion": "2.15.0"
-      }
-    },
-    {
-      "catalogName": "Grid container",
-      "constructor": "GroupContainer",
-      "family": "classic",
-      "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
-        "Suggested Insert-pane queries: Grid container.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
-        "Suggested Insert-pane queries: Grid container.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=320",
-        "Visible": "=true",
-        "Width": "=600"
-      },
-      "scaffoldProperties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=320",
-        "Visible": "=true",
-        "Width": "=600"
-      },
-      "suggestedInsertQueries": [
-        "Grid container"
-      ],
-      "suggestion": {
-        "constructor": "GroupContainer",
-        "matchType": "constructor",
-        "templateName": "groupContainer",
-        "templateVersion": "1.5.0"
-      }
-    },
-    {
-      "catalogName": "Horizontal container",
-      "constructor": "GroupContainer",
-      "family": "classic",
-      "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
-        "Suggested Insert-pane queries: Horizontal container.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
-        "Suggested Insert-pane queries: Horizontal container.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=320",
-        "Visible": "=true",
-        "Width": "=600"
-      },
-      "scaffoldProperties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=320",
-        "Visible": "=true",
-        "Width": "=600"
-      },
-      "suggestedInsertQueries": [
-        "Horizontal container"
-      ],
-      "suggestion": {
-        "constructor": "GroupContainer",
-        "matchType": "constructor",
-        "templateName": "groupContainer",
-        "templateVersion": "1.5.0"
-      }
-    },
-    {
-      "catalogName": "Shape",
-      "constructor": "Rectangle",
-      "family": "classic",
-      "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).",
-        "Suggested Insert-pane queries: Shape, Rectangle.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Skipped non-portable runtime sample formulas while scaffolding properties: Visible (=ThisItem.IsSelected).",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: Rectangle -> rectangle@2.3.0 (constructor match).",
-        "Suggested Insert-pane queries: Shape, Rectangle.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Skipped non-portable runtime sample formulas while scaffolding properties: Visible (=ThisItem.IsSelected).",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=8",
-        "Width": "=4"
-      },
-      "scaffoldProperties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=8",
-        "Width": "=4"
-      },
-      "skippedPropertyScaffolds": [
-        {
-          "propertyName": "Visible",
-          "reason": "non-portable-formula",
-          "script": "=ThisItem.IsSelected"
-        }
-      ],
-      "suggestedInsertQueries": [
-        "Shape",
-        "Rectangle"
-      ],
-      "suggestion": {
-        "constructor": "Rectangle",
-        "matchType": "constructor",
-        "templateName": "rectangle",
-        "templateVersion": "2.3.0"
-      }
-    },
-    {
-      "catalogName": "Vertical container",
-      "constructor": "GroupContainer",
-      "family": "classic",
-      "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
-        "Suggested Insert-pane queries: Vertical container.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: GroupContainer -> groupContainer@1.5.0 (constructor match).",
-        "Suggested Insert-pane queries: Vertical container.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Visible.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=320",
-        "Visible": "=true",
-        "Width": "=600"
-      },
-      "scaffoldProperties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=320",
-        "Visible": "=true",
-        "Width": "=600"
-      },
-      "suggestedInsertQueries": [
-        "Vertical container"
-      ],
-      "suggestion": {
-        "constructor": "GroupContainer",
-        "matchType": "constructor",
-        "templateName": "groupContainer",
-        "templateVersion": "1.5.0"
-      }
-    },
-    {
-      "catalogName": "Date picker",
-      "constructor": "ModernDatePicker",
-      "family": "modern",
-      "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: ModernDatePicker -> modernDatePicker@1.0.0 (constructor match).",
-        "Suggested Insert-pane queries: Date picker.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Input) using insert-pane-search. Queries: Date picker."
-      ],
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Date picker"
-        ],
-        "chosenCandidate": {
-          "category": "Input",
-          "iconName": "#fluent-datepicker",
-          "title": "Date picker"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: ModernDatePicker -> modernDatePicker@1.0.0 (constructor match).",
-        "Suggested Insert-pane queries: Date picker.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Input) using insert-pane-search. Queries: Date picker."
-      ],
-      "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=32",
-        "Width": "=320"
-      },
-      "scaffoldProperties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=32",
-        "Width": "=320"
-      },
-      "suggestedInsertQueries": [
-        "Date picker"
-      ],
-      "suggestion": {
-        "constructor": "ModernDatePicker",
-        "matchType": "constructor",
-        "templateName": "modernDatePicker",
-        "templateVersion": "1.0.0"
-      }
-    },
-    {
-      "catalogName": "Radio group",
-      "constructor": "ModernRadio",
-      "family": "modern",
-      "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: ModernRadio -> modernRadio@1.0.0 (constructor match).",
-        "Suggested Insert-pane queries: Radio group, Radio.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Radio (Input) using insert-pane-search. Queries: Radio group, Radio."
-      ],
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Radio group",
-          "Radio"
-        ],
-        "chosenCandidate": {
-          "category": "Input",
-          "iconName": "#fluent-radiogroup",
-          "title": "Radio"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: ModernRadio -> modernRadio@1.0.0 (constructor match).",
-        "Suggested Insert-pane queries: Radio group, Radio.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Radio (Input) using insert-pane-search. Queries: Radio group, Radio."
-      ],
-      "properties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=100",
-        "Width": "=320"
-      },
-      "scaffoldProperties": {
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=100",
-        "Width": "=320"
-      },
-      "suggestedInsertQueries": [
-        "Radio group",
-        "Radio"
-      ],
-      "suggestion": {
-        "constructor": "ModernRadio",
-        "matchType": "constructor",
-        "templateName": "modernRadio",
-        "templateVersion": "1.0.0"
-      }
-    },
-    {
-      "catalogName": "Tabs or tab list",
-      "constructor": "ModernTabList",
-      "family": "modern",
-      "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: ModernTabList -> modernTabList@1.0.0 (constructor match).",
-        "Suggested Insert-pane queries: Tabs or tab list, Tab list, Tabs.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Align.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Tab list (Input) using insert-pane-search. Queries: Tabs or tab list, Tab list."
-      ],
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Tabs or tab list",
-          "Tab list"
-        ],
-        "chosenCandidate": {
-          "category": "Input",
-          "iconName": "#fluent-tablist",
-          "title": "Tab list"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: ModernTabList -> modernTabList@1.0.0 (constructor match).",
-        "Suggested Insert-pane queries: Tabs or tab list, Tab list, Tabs.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, DisplayMode, Align.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Tab list (Input) using insert-pane-search. Queries: Tabs or tab list, Tab list."
-      ],
-      "properties": {
-        "Align": "=Align.Left",
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=60",
-        "Width": "=300"
-      },
-      "scaffoldProperties": {
-        "Align": "=Align.Left",
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=60",
-        "Width": "=300"
-      },
-      "suggestedInsertQueries": [
-        "Tabs or tab list",
-        "Tab list",
-        "Tabs"
-      ],
-      "suggestion": {
-        "constructor": "ModernTabList",
-        "matchType": "constructor",
-        "templateName": "modernTabList",
-        "templateVersion": "1.0.0"
-      }
-    },
-    {
-      "catalogName": "Text input",
-      "constructor": "ModernText",
-      "family": "modern",
-      "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: ModernText -> modernText@1.0.0 (constructor match).",
-        "Suggested Insert-pane queries: Text input.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, Text, AutoHeight, Wrap, DisplayMode, Align, VerticalAlign, Visible.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-09T16:04:13.450Z.",
-        "Registry suggestion selected: ModernText -> modernText@1.0.0 (constructor match).",
-        "Suggested Insert-pane queries: Text input.",
-        "Scaffold properties derived from harvested runtime metadata: Height, Width, Text, AutoHeight, Wrap, DisplayMode, Align, VerticalAlign, Visible.",
-        "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
-      ],
-      "properties": {
-        "Align": "=Align.Left",
-        "AutoHeight": "=false",
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=137",
-        "Text": "=\"Text\"",
-        "VerticalAlign": "=VerticalAlign.Middle",
-        "Visible": "=true",
-        "Width": "=150",
-        "Wrap": "=true"
-      },
-      "scaffoldProperties": {
-        "Align": "=Align.Left",
-        "AutoHeight": "=false",
-        "DisplayMode": "=DisplayMode.Edit",
-        "Height": "=137",
-        "Text": "=\"Text\"",
-        "VerticalAlign": "=VerticalAlign.Middle",
-        "Visible": "=true",
-        "Width": "=150",
-        "Wrap": "=true"
-      },
-      "suggestedInsertQueries": [
-        "Text input"
-      ],
-      "suggestion": {
-        "constructor": "ModernText",
-        "matchType": "constructor",
-        "templateName": "modernText",
-        "templateVersion": "1.0.0"
+        "matchType": "templateName",
+        "templateName": "screen",
+        "templateVersion": "1.0"
       }
     }
   ],
-  "generatedAt": "2026-03-09T17:58:01.851Z",
+  "generatedAt": "2026-03-10T01:16:30.939Z",
   "schemaVersion": 1,
   "skipped": [
     {
@@ -528,7 +97,15 @@
     {
       "catalogName": "Barcode scanner",
       "family": "classic",
-      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "prototypeSuggestions": [
+        {
+          "constructor": "BarcodeScanner",
+          "matchType": "constructor",
+          "templateName": "barcodeScanner",
+          "templateVersion": "2.5.0"
+        }
+      ],
+      "reason": "A pinned fixture prototype already exists for this control.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
         "Barcode scanner"
@@ -589,6 +166,15 @@
       ]
     },
     {
+      "catalogName": "Container",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Container"
+      ]
+    },
+    {
       "catalogName": "Data table",
       "family": "classic",
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
@@ -640,6 +226,42 @@
       "status": "prototype-missing",
       "suggestedInsertQueries": [
         "Export"
+      ]
+    },
+    {
+      "catalogName": "Gallery",
+      "family": "classic",
+      "prototypeSuggestions": [
+        {
+          "constructor": "Gallery",
+          "matchType": "constructor",
+          "templateName": "gallery",
+          "templateVersion": "2.15.0"
+        }
+      ],
+      "reason": "A pinned fixture prototype already exists for this control.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Gallery",
+        "Vertical gallery"
+      ]
+    },
+    {
+      "catalogName": "Grid container",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Grid container"
+      ]
+    },
+    {
+      "catalogName": "Horizontal container",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Horizontal container"
       ]
     },
     {
@@ -769,12 +391,21 @@
       ]
     },
     {
-      "catalogName": "Screen",
+      "catalogName": "Shape",
       "family": "classic",
-      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "prototypeSuggestions": [
+        {
+          "constructor": "Rectangle",
+          "matchType": "constructor",
+          "templateName": "rectangle",
+          "templateVersion": "2.3.0"
+        }
+      ],
+      "reason": "A pinned fixture prototype already exists for this control.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
-        "Screen"
+        "Shape",
+        "Rectangle"
       ]
     },
     {
@@ -824,6 +455,15 @@
       ]
     },
     {
+      "catalogName": "Vertical container",
+      "family": "classic",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Vertical container"
+      ]
+    },
+    {
       "catalogName": "Video",
       "family": "classic",
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
@@ -853,7 +493,15 @@
     {
       "catalogName": "Web barcode scanner",
       "family": "classic",
-      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "prototypeSuggestions": [
+        {
+          "constructor": "BarcodeScanner",
+          "matchType": "constructor",
+          "templateName": "barcodeScanner",
+          "templateVersion": "2.5.0"
+        }
+      ],
+      "reason": "A pinned fixture prototype already exists for this control.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
         "Web barcode scanner",
@@ -881,19 +529,6 @@
     {
       "catalogName": "Button",
       "family": "modern",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Button"
-        ],
-        "chosenCandidate": {
-          "category": "Input",
-          "iconName": "#fluent-button",
-          "title": "Button"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
@@ -934,6 +569,15 @@
       "status": "prototype-missing",
       "suggestedInsertQueries": [
         "Copilot answer"
+      ]
+    },
+    {
+      "catalogName": "Date picker",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Date picker"
       ]
     },
     {
@@ -982,6 +626,16 @@
       ]
     },
     {
+      "catalogName": "Radio group",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Radio group",
+        "Radio"
+      ]
+    },
+    {
       "catalogName": "Slider",
       "family": "modern",
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
@@ -1018,6 +672,34 @@
       ]
     },
     {
+      "catalogName": "Tabs or tab list",
+      "family": "modern",
+      "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Tabs or tab list",
+        "Tab list",
+        "Tabs"
+      ]
+    },
+    {
+      "catalogName": "Text input",
+      "family": "modern",
+      "prototypeSuggestions": [
+        {
+          "constructor": "ModernText",
+          "matchType": "constructor",
+          "templateName": "modernText",
+          "templateVersion": "1.0.0"
+        }
+      ],
+      "reason": "A pinned fixture prototype already exists for this control.",
+      "status": "prototype-missing",
+      "suggestedInsertQueries": [
+        "Text input"
+      ]
+    },
+    {
       "catalogName": "Toggle",
       "family": "modern",
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
@@ -1027,6 +709,6 @@
       ]
     }
   ],
-  "sourcePlanGeneratedAt": "2026-03-09T16:04:13.450Z",
-  "sourcePrototypeGeneratedAt": "2026-03-09T16:03:57.912Z"
+  "sourcePlanGeneratedAt": "2026-03-10T01:15:29.502Z",
+  "sourcePrototypeGeneratedAt": "2026-03-10T01:16:30.939Z"
 }

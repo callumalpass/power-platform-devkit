@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-03-09T16:03:57.912Z",
+  "generatedAt": "2026-03-10T01:16:30.939Z",
   "prototypes": [
     {
       "catalogName": "Icon",
@@ -153,6 +153,108 @@
         "DisplayMode": "=DisplayMode.Edit",
         "Height": "=32",
         "Width": "=32"
+      }
+    },
+    {
+      "catalogName": "Barcode scanner",
+      "constructor": "BarcodeScanner",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:23.463Z",
+        "status": "pending"
+      },
+      "notes": [
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor BarcodeScanner resolves to barcodeScanner@2.5.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=40",
+        "Width": "=160"
+      }
+    },
+    {
+      "catalogName": "Gallery",
+      "constructor": "Gallery",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:23.463Z",
+        "status": "pending"
+      },
+      "notes": [
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor Gallery resolves to gallery@2.15.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=575",
+        "Width": "=640"
+      }
+    },
+    {
+      "catalogName": "Shape",
+      "constructor": "Rectangle",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:23.463Z",
+        "status": "pending"
+      },
+      "notes": [
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor Rectangle resolves to rectangle@2.3.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=8",
+        "Width": "=4"
+      }
+    },
+    {
+      "catalogName": "Web barcode scanner",
+      "constructor": "BarcodeScanner",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:23.463Z",
+        "status": "pending"
+      },
+      "notes": [
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor BarcodeScanner resolves to barcodeScanner@2.5.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "properties": {
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=40",
+        "Width": "=160"
+      }
+    },
+    {
+      "catalogName": "Text input",
+      "constructor": "ModernText",
+      "family": "modern",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:30.939Z",
+        "status": "pending"
+      },
+      "notes": [
+        "Promoted from generated draft artifact 2026-03-10T01:16:23.463Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor ModernText resolves to modernText@1.0.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: Align, AutoHeight, DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "properties": {
+        "Align": "=Align.Left",
+        "AutoHeight": "=false",
+        "DisplayMode": "=DisplayMode.Edit",
+        "Height": "=137",
+        "Width": "=150"
       }
     }
   ],

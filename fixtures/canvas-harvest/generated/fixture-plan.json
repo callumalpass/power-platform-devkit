@@ -4,7 +4,7 @@
     "modern": 23,
     "total": 77
   },
-  "catalogGeneratedAt": "2026-03-09T14:24:24.270Z",
+  "catalogGeneratedAt": "2026-03-10T00:06:33.477Z",
   "controls": [
     {
       "catalogName": "3D object",
@@ -98,15 +98,22 @@
       "description": "Scans barcodes, QR codes, and data-matrix codes on an Android or iOS device. Replaced by the [barcode reader](controls/control-barcodereader.md).",
       "docPath": "controls/control-new-barcode-scanner.md",
       "family": "classic",
+      "fixtureConstructor": "BarcodeScanner",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-new-barcode-scanner.md",
       "notes": [
-        "Catalog status: retired."
+        "Catalog status: retired.",
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor BarcodeScanner resolves to barcodeScanner@2.5.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
       ],
-      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
-      "status": "prototype-missing",
+      "reason": "Fixture prototype BarcodeScanner resolves to barcodeScanner@2.5.0.",
+      "status": "resolved",
       "suggestedInsertQueries": [
         "Barcode scanner"
-      ]
+      ],
+      "templateName": "barcodeScanner",
+      "templateVersion": "2.5.0"
     },
     {
       "catalogName": "Button",
@@ -115,35 +122,19 @@
       "docPath": "controls/control-button.md",
       "family": "classic",
       "fixtureConstructor": "Classic/Button",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Button"
-        ],
-        "chosenCandidate": {
-          "category": "Classic",
-          "iconName": "#icon-button",
-          "title": "Button"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-button.md",
       "notes": [
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Button (Classic) using insert-pane-search. Queries: Button.",
         "Promoted from generated draft artifact 2026-03-09T13:23:07.191Z (fixture plan 2026-03-09T12:21:27.948Z).",
         "Constructor Classic/Button resolves to button@2.2.0 in the pinned harvested registry.",
         "Properties started from harvested runtime metadata: Align, DisplayMode, Height, Text, VerticalAlign, Width.",
         "Live paste validation inside HarvestFixtureContainer is still pending.",
         "Manual review completed on 2026-03-10; live paste validation still pending."
       ],
-      "reason": "Fixture prototype Classic/Button resolves to button@2.2.0.",
-      "status": "resolved",
+      "reason": "Fixture prototype Classic/Button exists, but the pinned harvested registry does not expose a matching constructor alias yet.",
+      "status": "registry-missing",
       "suggestedInsertQueries": [
         "Button"
-      ],
-      "templateName": "button",
-      "templateVersion": "2.2.0"
+      ]
     },
     {
       "catalogName": "Camera",
@@ -239,16 +230,7 @@
       "family": "classic",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-container.md",
       "notes": [
-        "Catalog status: experimental.",
-        "Pinned registry suggests future fixture prototypes: GroupContainer -> groupContainer@1.5.0."
-      ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "GroupContainer",
-          "matchType": "constructor",
-          "templateName": "groupContainer",
-          "templateVersion": "1.5.0"
-        }
+        "Catalog status: experimental."
       ],
       "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
       "status": "prototype-missing",
@@ -281,35 +263,19 @@
       "docPath": "controls/control-date-picker.md",
       "family": "classic",
       "fixtureConstructor": "Classic/DatePicker",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Date picker"
-        ],
-        "chosenCandidate": {
-          "category": "Classic",
-          "iconName": "#icon-datepicker",
-          "title": "Date picker"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-date-picker.md",
       "notes": [
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Classic) using insert-pane-search. Queries: Date picker.",
         "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
         "Constructor Classic/DatePicker resolves to datepicker@2.6.0 in the pinned harvested registry.",
         "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
         "Live paste validation inside HarvestFixtureContainer is still pending.",
         "Manual review completed on 2026-03-10; insert-pane search succeeded in the modern-reset subset run and live paste validation is still pending."
       ],
-      "reason": "Fixture prototype Classic/DatePicker resolves to datepicker@2.6.0.",
-      "status": "resolved",
+      "reason": "Fixture prototype Classic/DatePicker exists, but the pinned harvested registry does not expose a matching constructor alias yet.",
+      "status": "registry-missing",
       "suggestedInsertQueries": [
         "Date picker"
-      ],
-      "templateName": "datepicker",
-      "templateVersion": "2.6.0"
+      ]
     },
     {
       "catalogName": "Display and Edit form",
@@ -387,24 +353,22 @@
       "description": "Show a list of records that can contain multiple types of data.",
       "docPath": "controls/control-gallery.md",
       "family": "classic",
+      "fixtureConstructor": "Gallery",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-gallery.md",
       "notes": [
-        "Pinned registry suggests future fixture prototypes: Gallery -> gallery@2.15.0."
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor Gallery resolves to gallery@2.15.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
       ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "Gallery",
-          "matchType": "constructor",
-          "templateName": "gallery",
-          "templateVersion": "2.15.0"
-        }
-      ],
-      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
-      "status": "prototype-missing",
+      "reason": "Fixture prototype Gallery resolves to gallery@2.15.0.",
+      "status": "resolved",
       "suggestedInsertQueries": [
         "Gallery",
         "Vertical gallery"
-      ]
+      ],
+      "templateName": "gallery",
+      "templateVersion": "2.15.0"
     },
     {
       "catalogName": "Grid container",
@@ -416,16 +380,7 @@
       "family": "classic",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-grid-container.md",
       "notes": [
-        "Catalog status: prview.",
-        "Pinned registry suggests future fixture prototypes: GroupContainer -> groupContainer@1.5.0."
-      ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "GroupContainer",
-          "matchType": "constructor",
-          "templateName": "groupContainer",
-          "templateVersion": "1.5.0"
-        }
+        "Catalog status: prview."
       ],
       "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
       "status": "prototype-missing",
@@ -440,17 +395,7 @@
       "docPath": "controls/control-horizontal-container.md",
       "family": "classic",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-horizontal-container.md",
-      "notes": [
-        "Pinned registry suggests future fixture prototypes: GroupContainer -> groupContainer@1.5.0."
-      ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "GroupContainer",
-          "matchType": "constructor",
-          "templateName": "groupContainer",
-          "templateVersion": "1.5.0"
-        }
-      ],
+      "notes": [],
       "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
@@ -530,22 +475,8 @@
       "docPath": "controls/control-text-box.md",
       "family": "classic",
       "fixtureConstructor": "Label",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Label"
-        ],
-        "chosenCandidate": {
-          "category": "Classic",
-          "iconName": "#icon-label",
-          "title": "Text label"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-text-box.md",
       "notes": [
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Text label (Classic) using insert-pane-search. Queries: Label.",
         "Constructor alias harvested from the TEST export; live paste validation inside HarvestFixtureContainer is still pending."
       ],
       "reason": "Fixture prototype Label resolves to label@2.5.1.",
@@ -736,7 +667,16 @@
       "docPath": "controls/control-screen.md",
       "family": "classic",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-screen.md",
-      "notes": [],
+      "notes": [
+        "Pinned registry suggests future fixture prototypes: screen@1.0."
+      ],
+      "prototypeSuggestions": [
+        {
+          "matchType": "templateName",
+          "templateName": "screen",
+          "templateVersion": "1.0"
+        }
+      ],
       "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
@@ -749,24 +689,22 @@
       "description": "Display arrows and geometric shapes, such as rectangles.",
       "docPath": "controls/control-shapes-icons.md",
       "family": "classic",
+      "fixtureConstructor": "Rectangle",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-shapes-icons.md",
       "notes": [
-        "Pinned registry suggests future fixture prototypes: Rectangle -> rectangle@2.3.0."
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor Rectangle resolves to rectangle@2.3.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
       ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "Rectangle",
-          "matchType": "constructor",
-          "templateName": "rectangle",
-          "templateVersion": "2.3.0"
-        }
-      ],
-      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
-      "status": "prototype-missing",
+      "reason": "Fixture prototype Rectangle resolves to rectangle@2.3.0.",
+      "status": "resolved",
       "suggestedInsertQueries": [
         "Shape",
         "Rectangle"
-      ]
+      ],
+      "templateName": "rectangle",
+      "templateVersion": "2.3.0"
     },
     {
       "catalogName": "Slider",
@@ -846,17 +784,7 @@
       "docPath": "controls/control-vertical-container.md",
       "family": "classic",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-vertical-container.md",
-      "notes": [
-        "Pinned registry suggests future fixture prototypes: GroupContainer -> groupContainer@1.5.0."
-      ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "GroupContainer",
-          "matchType": "constructor",
-          "templateName": "groupContainer",
-          "templateVersion": "1.5.0"
-        }
-      ],
+      "notes": [],
       "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
@@ -913,16 +841,23 @@
       "description": "The legacy barcode scanner, which is obsolete but might be useful for scanning codes in a web browser.",
       "docPath": "controls/control-barcodescanner.md",
       "family": "classic",
+      "fixtureConstructor": "BarcodeScanner",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/control-barcodescanner.md",
       "notes": [
-        "Catalog status: experimental."
+        "Catalog status: experimental.",
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor BarcodeScanner resolves to barcodeScanner@2.5.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
       ],
-      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
-      "status": "prototype-missing",
+      "reason": "Fixture prototype BarcodeScanner resolves to barcodeScanner@2.5.0.",
+      "status": "resolved",
       "suggestedInsertQueries": [
         "Web barcode scanner",
         "Barcode reader"
-      ]
+      ],
+      "templateName": "barcodeScanner",
+      "templateVersion": "2.5.0"
     },
     {
       "catalogName": "Avatar",
@@ -958,23 +893,8 @@
       "description": "Interact with the app by clicking or tapping.",
       "docPath": "modern-control-button.md",
       "family": "modern",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Button"
-        ],
-        "chosenCandidate": {
-          "category": "Input",
-          "iconName": "#fluent-button",
-          "title": "Button"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-button.md",
-      "notes": [
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Button (Input) using insert-pane-search. Queries: Button."
-      ],
+      "notes": [],
       "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
@@ -1051,32 +971,8 @@
       "description": "A control that the user can select to specify a date.",
       "docPath": "modern-controls-date-picker.md",
       "family": "modern",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Date picker"
-        ],
-        "chosenCandidate": {
-          "category": "Input",
-          "iconName": "#fluent-datepicker",
-          "title": "Date picker"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-controls-date-picker.md",
-      "notes": [
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Input) using insert-pane-search. Queries: Date picker.",
-        "Pinned registry suggests future fixture prototypes: ModernDatePicker -> modernDatePicker@1.0.0."
-      ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "ModernDatePicker",
-          "matchType": "constructor",
-          "templateName": "modernDatePicker",
-          "templateVersion": "1.0.0"
-        }
-      ],
+      "notes": [],
       "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
@@ -1122,37 +1018,20 @@
       "docPath": "modern-control-info-button.md",
       "family": "modern",
       "fixtureConstructor": "ModernInformationButton",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Info button",
-          "Information button"
-        ],
-        "chosenCandidate": {
-          "category": "Display",
-          "iconName": "#fluent-infobutton",
-          "title": "Information button"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-info-button.md",
       "notes": [
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Information button (Display) using insert-pane-search. Queries: Info button, Information button.",
         "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
         "Constructor ModernInformationButton resolves to modernInformationButton@1.0.0 in the pinned harvested registry.",
         "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
         "Live paste validation inside HarvestFixtureContainer is still pending.",
         "Manual review completed on 2026-03-10; insert-pane search succeeded in the modern-reset subset run and live paste validation is still pending."
       ],
-      "reason": "Fixture prototype ModernInformationButton resolves to modernInformationButton@1.0.0.",
-      "status": "resolved",
+      "reason": "Fixture prototype ModernInformationButton exists, but the pinned harvested registry does not expose a matching constructor alias yet.",
+      "status": "registry-missing",
       "suggestedInsertQueries": [
         "Info button",
         "Information button"
-      ],
-      "templateName": "modernInformationButton",
-      "templateVersion": "1.0.0"
+      ]
     },
     {
       "catalogName": "Link",
@@ -1202,33 +1081,8 @@
       "description": "An input control that shows multiple options, of which users can select only one at a time.",
       "docPath": "modern-controls-radio-group.md",
       "family": "modern",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Radio group",
-          "Radio"
-        ],
-        "chosenCandidate": {
-          "category": "Input",
-          "iconName": "#fluent-radiogroup",
-          "title": "Radio"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-controls-radio-group.md",
-      "notes": [
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Radio (Input) using insert-pane-search. Queries: Radio group, Radio.",
-        "Pinned registry suggests future fixture prototypes: ModernRadio -> modernRadio@1.0.0."
-      ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "ModernRadio",
-          "matchType": "constructor",
-          "templateName": "modernRadio",
-          "templateVersion": "1.0.0"
-        }
-      ],
+      "notes": [],
       "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
@@ -1306,33 +1160,8 @@
       "description": "Select a tab to move screens or take action on app.",
       "docPath": "modern-control-tabs-or-tabs-list.md",
       "family": "modern",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Tabs or tab list",
-          "Tab list"
-        ],
-        "chosenCandidate": {
-          "category": "Input",
-          "iconName": "#fluent-tablist",
-          "title": "Tab list"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-tabs-or-tabs-list.md",
-      "notes": [
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Tab list (Input) using insert-pane-search. Queries: Tabs or tab list, Tab list.",
-        "Pinned registry suggests future fixture prototypes: ModernTabList -> modernTabList@1.0.0."
-      ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "ModernTabList",
-          "matchType": "constructor",
-          "templateName": "modernTabList",
-          "templateVersion": "1.0.0"
-        }
-      ],
+      "notes": [],
       "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
       "status": "prototype-missing",
       "suggestedInsertQueries": [
@@ -1366,23 +1195,21 @@
       "description": "A box in which the user can type text, numbers, and other data.",
       "docPath": "modern-control-text-input.md",
       "family": "modern",
+      "fixtureConstructor": "ModernText",
       "learnUrl": "https://learn.microsoft.com/en-us/power-apps/maker/canvas-apps/controls/modern-controls/modern-control-text-input.md",
       "notes": [
-        "Pinned registry suggests future fixture prototypes: ModernText -> modernText@1.0.0."
+        "Promoted from generated draft artifact 2026-03-10T01:16:23.463Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor ModernText resolves to modernText@1.0.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: Align, AutoHeight, DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
       ],
-      "prototypeSuggestions": [
-        {
-          "constructor": "ModernText",
-          "matchType": "constructor",
-          "templateName": "modernText",
-          "templateVersion": "1.0.0"
-        }
-      ],
-      "reason": "No paste-ready fixture prototype is pinned for this catalog control yet.",
-      "status": "prototype-missing",
+      "reason": "Fixture prototype ModernText resolves to modernText@1.0.0.",
+      "status": "resolved",
       "suggestedInsertQueries": [
         "Text input"
-      ]
+      ],
+      "templateName": "modernText",
+      "templateVersion": "1.0.0"
     },
     {
       "catalogName": "Toggle",
@@ -1401,44 +1228,14 @@
   ],
   "counts": {
     "catalogControls": 77,
-    "prototypeMissingControls": 70,
-    "registryMissingControls": 0,
-    "resolvedControls": 7
+    "prototypeMissingControls": 65,
+    "registryMissingControls": 3,
+    "resolvedControls": 9
   },
-  "generatedAt": "2026-03-09T16:04:13.450Z",
-  "insertReportSummary": {
-    "alignment": "partial",
-    "catalog": {
-      "counts": {
-        "classic": 3,
-        "modern": 5,
-        "total": 8
-      },
-      "generatedAt": "2026-03-09T11:47:50.759Z",
-      "path": "/tmp/canvas-control-catalog-subset.json"
-    },
-    "entryCount": 8,
-    "generatedAt": "2026-03-09T14:29:09.702Z",
-    "matchedControlCount": 8,
-    "notes": [
-      "Insert report catalog snapshot 2026-03-09T11:47:50.759Z differs from current catalog snapshot 2026-03-09T14:24:24.270Z.",
-      "Insert report was captured from /tmp/canvas-control-catalog-subset.json while this plan used /home/calluma/projects/pp/registries/canvas-control-catalog.json.",
-      "69 current catalog controls have no insert observation in this report."
-    ],
-    "path": "/tmp/pp-canvas-subset-run-modern-reset/canvas-control-insert-report.json",
-    "totals": {
-      "attempted": 8,
-      "covered": 0,
-      "failed": 0,
-      "inserted": 8,
-      "notFound": 0
-    },
-    "unmatchedCatalogControlCount": 69,
-    "unmatchedReportEntryCount": 0
-  },
-  "prototypeCount": 7,
-  "prototypeGeneratedAt": "2026-03-09T16:03:57.912Z",
-  "registryGeneratedAt": "2026-03-09T14:29:42.064Z",
-  "registryTemplateCount": 13,
+  "generatedAt": "2026-03-10T01:16:40.451Z",
+  "prototypeCount": 12,
+  "prototypeGeneratedAt": "2026-03-10T01:16:30.939Z",
+  "registryGeneratedAt": "2026-03-10T00:48:54.575Z",
+  "registryTemplateCount": 10,
   "schemaVersion": 1
 }
