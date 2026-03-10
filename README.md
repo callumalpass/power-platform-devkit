@@ -50,6 +50,7 @@ Start with the path that matches your role:
 - deploy planning and apply: [docs/deploy.md](docs/deploy.md)
 - support tiers and product boundaries: [docs/supported-surfaces.md](docs/supported-surfaces.md)
 - package and architecture layout: [docs/architecture.md](docs/architecture.md)
+- agent skill packaging: [docs/skills.md](docs/skills.md)
 - full documentation index: [docs/README.md](docs/README.md)
 
 ## Workspace layout

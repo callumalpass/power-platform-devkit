@@ -11,6 +11,7 @@ Start here:
 - [Auth and environments](auth-and-environments.md): auth profile types, browser login, device code, and environment aliases
 - [Command contract](command-contract.md): shared output formats, mutation flags, and project-scoped CLI overrides
 - [Safety and provenance](safety-and-provenance.md): result metadata expectations, mutation safety rules, and `.ops` task-path conventions
+- [Skills](skills.md): portable agent-skill packaging and the canonical `pp-development` skill layout
 - [Project config](project-config.md): `pp.config.*` structure, parameter resolution, and local analysis commands
 - [Extensions](extensions.md): extension contract, registry policy, compatibility rules, and contribution surfaces
 - [Deploy](deploy.md): deploy plan/apply orchestration, supported mappings, and adapter behavior
