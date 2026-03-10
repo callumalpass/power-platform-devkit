@@ -1,21 +1,21 @@
 {
   "counts": {
     "draftControls": 1,
-    "skippedControls": 69
+    "skippedControls": 64
   },
   "drafts": [
     {
       "catalogName": "Screen",
       "family": "classic",
       "generatedNotes": [
-        "Draft scaffold generated from fixture plan 2026-03-10T01:15:29.502Z.",
+        "Draft scaffold generated from fixture plan 2026-03-10T01:22:35.587Z.",
         "Registry suggestion selected: function Object() { [native code] } -> screen@1.0 (templateName match).",
         "Suggested Insert-pane queries: Screen.",
         "Scaffold properties derived from harvested runtime metadata: ImagePosition.",
         "Review properties and live-validate this draft before copying it into fixtures/canvas-harvest/prototypes.json."
       ],
       "notes": [
-        "Draft scaffold generated from fixture plan 2026-03-10T01:15:29.502Z.",
+        "Draft scaffold generated from fixture plan 2026-03-10T01:22:35.587Z.",
         "Registry suggestion selected: function Object() { [native code] } -> screen@1.0 (templateName match).",
         "Suggested Insert-pane queries: Screen.",
         "Scaffold properties derived from harvested runtime metadata: ImagePosition.",
@@ -37,7 +37,7 @@
       }
     }
   ],
-  "generatedAt": "2026-03-10T01:16:30.939Z",
+  "generatedAt": "2026-03-10T01:28:03.966Z",
   "schemaVersion": 1,
   "skipped": [
     {
@@ -92,23 +92,6 @@
       "status": "prototype-missing",
       "suggestedInsertQueries": [
         "Barcode reader"
-      ]
-    },
-    {
-      "catalogName": "Barcode scanner",
-      "family": "classic",
-      "prototypeSuggestions": [
-        {
-          "constructor": "BarcodeScanner",
-          "matchType": "constructor",
-          "templateName": "barcodeScanner",
-          "templateVersion": "2.5.0"
-        }
-      ],
-      "reason": "A pinned fixture prototype already exists for this control.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Barcode scanner"
       ]
     },
     {
@@ -226,24 +209,6 @@
       "status": "prototype-missing",
       "suggestedInsertQueries": [
         "Export"
-      ]
-    },
-    {
-      "catalogName": "Gallery",
-      "family": "classic",
-      "prototypeSuggestions": [
-        {
-          "constructor": "Gallery",
-          "matchType": "constructor",
-          "templateName": "gallery",
-          "templateVersion": "2.15.0"
-        }
-      ],
-      "reason": "A pinned fixture prototype already exists for this control.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Gallery",
-        "Vertical gallery"
       ]
     },
     {
@@ -391,24 +356,6 @@
       ]
     },
     {
-      "catalogName": "Shape",
-      "family": "classic",
-      "prototypeSuggestions": [
-        {
-          "constructor": "Rectangle",
-          "matchType": "constructor",
-          "templateName": "rectangle",
-          "templateVersion": "2.3.0"
-        }
-      ],
-      "reason": "A pinned fixture prototype already exists for this control.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Shape",
-        "Rectangle"
-      ]
-    },
-    {
       "catalogName": "Slider",
       "family": "classic",
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
@@ -488,24 +435,6 @@
       "status": "prototype-missing",
       "suggestedInsertQueries": [
         "View shape in MR"
-      ]
-    },
-    {
-      "catalogName": "Web barcode scanner",
-      "family": "classic",
-      "prototypeSuggestions": [
-        {
-          "constructor": "BarcodeScanner",
-          "matchType": "constructor",
-          "templateName": "barcodeScanner",
-          "templateVersion": "2.5.0"
-        }
-      ],
-      "reason": "A pinned fixture prototype already exists for this control.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Web barcode scanner",
-        "Barcode reader"
       ]
     },
     {
@@ -683,23 +612,6 @@
       ]
     },
     {
-      "catalogName": "Text input",
-      "family": "modern",
-      "prototypeSuggestions": [
-        {
-          "constructor": "ModernText",
-          "matchType": "constructor",
-          "templateName": "modernText",
-          "templateVersion": "1.0.0"
-        }
-      ],
-      "reason": "A pinned fixture prototype already exists for this control.",
-      "status": "prototype-missing",
-      "suggestedInsertQueries": [
-        "Text input"
-      ]
-    },
-    {
       "catalogName": "Toggle",
       "family": "modern",
       "reason": "The pinned harvested registry does not expose a constructor-backed prototype suggestion for this control yet.",
@@ -709,6 +621,6 @@
       ]
     }
   ],
-  "sourcePlanGeneratedAt": "2026-03-10T01:15:29.502Z",
+  "sourcePlanGeneratedAt": "2026-03-10T01:22:35.587Z",
   "sourcePrototypeGeneratedAt": "2026-03-10T01:16:30.939Z"
 }

@@ -261,6 +261,18 @@ export interface FlowPackResult {
   summary: FlowArtifactSummary;
 }
 
+export interface FlowExportResult {
+  identifier: string;
+  outPath: string;
+  source: {
+    id: string;
+    name?: string;
+    uniqueName?: string;
+    solutionUniqueName?: string;
+  };
+  summary: FlowArtifactSummary;
+}
+
 export interface FlowDeployOptions {
   target?: string;
   solutionUniqueName?: string;
@@ -1030,6 +1042,17 @@ export class FlowService {
     return packFlowArtifact(path, outPath);
   }
 
+  async exportArtifact(
+    identifier: string,
+    outPath: string,
+    options: { solutionUniqueName?: string } = {}
+  ): Promise<OperationResult<FlowExportResult>> {
+    return exportRemoteFlowArtifact(identifier, outPath, {
+      ...options,
+      dataverseClient: this.dataverseClient,
+    });
+  }
+
   async deployArtifact(path: string, options: FlowDeployOptions = {}): Promise<OperationResult<FlowDeployResult>> {
     return deployFlowArtifact(path, {
       ...options,
@@ -1467,6 +1490,84 @@ export async function packFlowArtifact(path: string, outPath: string): Promise<O
   );
 }
 
+export async function exportRemoteFlowArtifact(
+  identifier: string,
+  outPath: string,
+  options: {
+    solutionUniqueName?: string;
+    dataverseClient?: DataverseClient;
+  } = {}
+): Promise<OperationResult<FlowExportResult>> {
+  if (!options.dataverseClient) {
+    return fail(
+      createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote flow export.', {
+        source: '@pp/flow',
+      })
+    );
+  }
+
+  const flow = await new FlowService(options.dataverseClient).inspect(identifier, {
+    solutionUniqueName: options.solutionUniqueName,
+  });
+
+  if (!flow.success) {
+    return flow as unknown as OperationResult<FlowExportResult>;
+  }
+
+  if (!flow.data) {
+    return fail(
+      [
+        ...flow.diagnostics,
+        createDiagnostic('error', 'FLOW_NOT_FOUND', `Flow ${identifier} was not found.`, {
+          source: '@pp/flow',
+        }),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: flow.warnings,
+      }
+    );
+  }
+
+  const artifact = buildFlowArtifactFromRemoteFlow(flow.data);
+
+  if (!artifact.success || !artifact.data) {
+    return fail(artifact.diagnostics, {
+      supportTier: 'preview',
+      warnings: artifact.warnings,
+    });
+  }
+
+  const destination = resolveFlowOutputPath(outPath);
+  await mkdir(dirname(destination), { recursive: true });
+  await writeJsonFile(destination, artifact.data as unknown as Parameters<typeof writeJsonFile>[1]);
+
+  return ok(
+    {
+      identifier,
+      outPath: destination,
+      source: {
+        id: flow.data.id,
+        name: flow.data.name,
+        uniqueName: flow.data.uniqueName,
+        solutionUniqueName: options.solutionUniqueName,
+      },
+      summary: buildFlowArtifactSummary(destination, artifact.data),
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: flow.diagnostics,
+      warnings: [...flow.warnings, ...artifact.warnings],
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse workflows GET',
+        },
+      ],
+    }
+  );
+}
+
 export async function validateFlowArtifact(path: string): Promise<OperationResult<FlowValidationReport>> {
   const artifact = await loadFlowArtifact(path);
 
@@ -1658,6 +1759,43 @@ function normalizeRemoteFlow(record: FlowRecord): FlowInspectResult {
     environmentVariables: parsed.environmentVariables,
     clientData: parsed.clientData,
   };
+}
+
+function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResult<FlowArtifact> {
+  const definition = asRecord(flow.clientData?.definition);
+
+  if (!definition) {
+    return fail(
+      createDiagnostic(
+        'error',
+        'FLOW_EXPORT_DEFINITION_UNAVAILABLE',
+        `Flow ${flow.uniqueName ?? flow.name ?? flow.id} does not expose a supported definition payload in workflows.clientdata.`,
+        {
+          source: '@pp/flow',
+          hint: 'Remote export currently requires workflows.clientdata.definition to be present and JSON-shaped.',
+        }
+      )
+    );
+  }
+
+  return normalizeFlowArtifactDocument(
+    {
+      id: flow.id,
+      name: flow.name,
+      uniquename: flow.uniqueName,
+      statecode: flow.stateCode,
+      statuscode: flow.statusCode,
+      clientdata: stableStringify(cloneJsonValue(flow.clientData)),
+      properties: {
+        definition: cloneJsonValue(definition),
+        ...(flow.name ? { name: flow.name, displayName: flow.name } : {}),
+        ...(flow.uniqueName ? { uniquename: flow.uniqueName } : {}),
+        ...(flow.stateCode !== undefined ? { statecode: flow.stateCode } : {}),
+        ...(flow.statusCode !== undefined ? { statuscode: flow.statusCode } : {}),
+      },
+    },
+    `dataverse://workflows/${flow.id}`
+  );
 }
 
 function normalizeFlowRun(record: FlowRunRecord): FlowRunSummary {

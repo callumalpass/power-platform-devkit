@@ -2674,7 +2674,7 @@ describe('canvas harvest fixture planning', () => {
           sourcePlanGeneratedAt: '2026-03-10T00:29:00.000Z',
           counts: {
             draftControls: 1,
-            skippedControls: 1,
+            skippedControls: 0,
           },
           drafts: [
             expect.objectContaining({
@@ -2689,16 +2689,53 @@ describe('canvas harvest fixture planning', () => {
               notes: expect.arrayContaining(['Manual review note for the container draft.']),
             }),
           ],
-          skipped: [
-            expect.objectContaining({
-              family: 'classic',
-              catalogName: 'Button',
-              reason: 'A pinned fixture prototype already exists for this control.',
-            }),
-          ],
+          skipped: [],
         }),
       })
     );
+  });
+
+  it('omits already pinned controls from draft output even when the caller passes a stale prototype-missing plan', () => {
+    const stalePlan = {
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:32:00.000Z',
+      controls: [
+        {
+          family: 'classic',
+          catalogName: 'Label',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+        {
+          family: 'classic',
+          catalogName: 'Button',
+          status: 'prototype-missing',
+          reason: 'No paste-ready fixture prototype is pinned for this catalog control yet.',
+          notes: [],
+        },
+      ],
+    } as unknown as Parameters<typeof buildCanvasHarvestFixturePrototypeDraftDocument>[0]['plan'];
+
+    const drafts = buildCanvasHarvestFixturePrototypeDraftDocument({
+      plan: stalePlan,
+      registry,
+      prototypes,
+      generatedAt: '2026-03-10T00:33:00.000Z',
+    });
+
+    expect(drafts.counts).toEqual({
+      draftControls: 1,
+      skippedControls: 0,
+    });
+    expect(drafts.drafts).toEqual([
+      expect.objectContaining({
+        family: 'classic',
+        catalogName: 'Button',
+        constructor: 'Classic/Button',
+      }),
+    ]);
+    expect(drafts.skipped).toEqual([]);
   });
 
   it('records structured live validation metadata for an existing pinned prototype', () => {

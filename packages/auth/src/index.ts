@@ -501,7 +501,7 @@ function resolveScopes(profile: AuthProfile, resource: string): string[] {
     return profile.scopes;
   }
 
-  const effectiveResource = profile.defaultResource ?? resource;
+  const effectiveResource = resource || profile.defaultResource;
 
   if (!effectiveResource) {
     throw new Error(`Profile ${profile.name} does not define scopes or a default resource`);

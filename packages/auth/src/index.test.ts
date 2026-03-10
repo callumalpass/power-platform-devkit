@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PublicClientApplication } from '@azure/msal-node';
+import { ConfidentialClientApplication, PublicClientApplication } from '@azure/msal-node';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AuthService,
@@ -34,6 +34,35 @@ describe('AuthService', () => {
 
     expect(token.success).toBe(true);
     expect(token.data?.token).toBe('token-value');
+  });
+
+  it('prefers an explicit resource over the stored default resource when acquiring tokens', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
+    const auth = new AuthService({ configDir });
+    const credentialSpy = vi.spyOn(ConfidentialClientApplication.prototype, 'acquireTokenByClientCredential').mockResolvedValue({
+      accessToken: 'token-value',
+    } as never);
+
+    process.env.PP_TEST_CLIENT_SECRET = 'secret-value';
+
+    await auth.saveProfile({
+      name: 'client-profile',
+      type: 'client-secret',
+      tenantId: 'tenant-id',
+      clientId: 'client-id',
+      clientSecretEnv: 'PP_TEST_CLIENT_SECRET',
+      defaultResource: 'https://example.crm.dynamics.com',
+    });
+
+    const token = await auth.getAccessToken('client-profile', 'https://api.bap.microsoft.com/');
+
+    expect(token.success).toBe(true);
+    expect(token.data?.token).toBe('token-value');
+    expect(credentialSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopes: ['https://api.bap.microsoft.com/.default'],
+      })
+    );
   });
 
   it('summarizes user profiles with effective defaults', () => {

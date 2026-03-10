@@ -20,6 +20,7 @@ Inspect a remote flow by name, id, or unique name:
 ```bash
 pp flow inspect "Invoice Sync" --env dev
 pp flow inspect crd_InvoiceSync --env dev --solution Core
+pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote
 ```
 
 Current remote inspection returns:
@@ -114,6 +115,7 @@ The normalizer accepts either:
 
 ```bash
 pp flow unpack ./exports/invoice-flow.json --out ./flows/invoice
+pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote
 pp flow inspect ./flows/invoice
 pp flow normalize ./flows/invoice
 pp flow validate ./flows/invoice
@@ -134,20 +136,29 @@ The current normalizer:
 - preserves unknown fields in `definition` and top-level `unknown`
 - applies stable JSON ordering through the shared artifact helpers
 
-`pp flow pack <path> --out <file.json>` now repacks a canonical
-`pp.flow.artifact` back into a raw export-shaped JSON payload so a local flow
-can move through unpack, patch, validate, and repack without hand-editing the
-Maker export shape. `pp flow deploy <path> --environment ALIAS` now carries
-that lifecycle one step further for an already-existing target cloud flow by
-validating the local artifact, resolving a remote workflow by `--target` or the
-artifact metadata (`uniqueName`, then `name`, then `displayName`, then `id`),
-and PATCHing the normalized definition back into Dataverse `workflows.clientdata`.
+`pp flow export <name|id|uniqueName> --environment ALIAS --out PATH` now pulls a
+remote cloud flow back into the canonical `pp.flow.artifact` shape when the
+remote `workflows.clientdata` still exposes a supported definition payload, so a
+source environment can feed the same local normalize/validate/patch/graph path
+as exported JSON artifacts. `pp flow pack <path> --out <file.json>` repacks a
+canonical `pp.flow.artifact` back into a raw export-shaped JSON payload so a
+local flow can move through unpack, patch, validate, and repack without
+hand-editing the Maker export shape. `pp flow deploy <path> --environment ALIAS`
+now carries that lifecycle one step further for an already-existing target cloud
+flow by validating the local artifact, resolving a remote workflow by `--target`
+or the artifact metadata (`uniqueName`, then `name`, then `displayName`, then
+`id`), and PATCHing the normalized definition back into Dataverse
+`workflows.clientdata`.
 When `--create-if-missing` is supplied, the same command can also provision a
 bounded missing cloud-flow shell using the artifact `metadata.uniqueName`,
 minimal workflow metadata, and the normalized `clientdata` definition.
 
 The current pack/deploy boundary is:
 
+- remote export currently requires `workflows.clientdata.definition` to remain
+  available and JSON-shaped, and it writes a canonical local
+  `pp.flow.artifact` instead of preserving every opaque remote `clientdata`
+  field
 - writes a raw `properties.definition` payload plus supported metadata fields
   such as `displayName`, `name`, `uniquename`, `statecode`, and `statuscode`
 - preserves top-level unknown fields captured during normalization

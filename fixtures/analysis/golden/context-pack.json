@@ -54,6 +54,30 @@
         "path": "<REPO_ROOT>/fixtures/analysis/project/docs"
       }
     ],
+    "bindings": {
+      "inputs": [
+        {
+          "kind": "deploy-input",
+          "parameter": "sqlEndpoint",
+          "sensitive": false,
+          "source": "missing",
+          "status": "missing",
+          "target": "sql-endpoint"
+        }
+      ],
+      "secrets": [
+        {
+          "kind": "deploy-secret",
+          "parameter": "apiToken",
+          "reference": "app_token",
+          "sensitive": true,
+          "source": "secret",
+          "status": "resolved",
+          "target": "api-token",
+          "valuePreview": "<redacted>"
+        }
+      ]
+    },
     "build": {
       "canvas": {
         "mode": "seeded"
@@ -128,12 +152,23 @@
     ],
     "operations": [
       {
+        "environmentAlias": "prod",
         "kind": "dataverse-envvar-set",
         "parameter": "tenantDomain",
         "sensitive": false,
+        "solutionAlias": "core",
+        "solutionUniqueName": "CoreManaged",
         "source": "environment",
         "target": "pp_TenantDomain",
         "valuePreview": "contoso.example"
+      },
+      {
+        "kind": "deploy-secret-bind",
+        "parameter": "apiToken",
+        "sensitive": true,
+        "source": "secret",
+        "target": "api-token",
+        "valuePreview": "<redacted>"
       }
     ],
     "projectRoot": "<REPO_ROOT>/fixtures/analysis/project",

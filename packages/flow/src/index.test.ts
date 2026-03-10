@@ -219,6 +219,63 @@ describe('FlowService', () => {
     });
   });
 
+  it('exports a remote flow into a canonical local artifact', async () => {
+    const tempDir = await createTempDir();
+    const outPath = join(tempDir, 'remote-flow');
+    const service = new FlowService(createStubDataverseClient());
+
+    const result = await service.exportArtifact('Invoice Sync', outPath, {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      identifier: 'Invoice Sync',
+      outPath: join(outPath, 'flow.json'),
+      source: {
+        id: 'flow-1',
+        name: 'Invoice Sync',
+        uniqueName: 'crd_InvoiceSync',
+        solutionUniqueName: 'Core',
+      },
+      summary: {
+        path: join(outPath, 'flow.json'),
+        normalized: true,
+        name: 'Invoice Sync',
+      },
+    });
+
+    const exported = JSON.parse(await readFile(join(outPath, 'flow.json'), 'utf8')) as Record<string, unknown>;
+    expect(exported).toMatchObject({
+      schemaVersion: 1,
+      kind: 'pp.flow.artifact',
+      metadata: {
+        id: 'flow-1',
+        name: 'Invoice Sync',
+        displayName: 'Invoice Sync',
+        uniqueName: 'crd_InvoiceSync',
+        sourcePath: 'dataverse://workflows/flow-1',
+        connectionReferences: [
+          {
+            name: 'shared_office365',
+            connectionReferenceLogicalName: 'shared_office365',
+            connectionId: '/connections/office365',
+          },
+        ],
+      },
+    });
+    expect(exported.definition).toMatchObject({
+      actions: {
+        SendMail: {
+          inputs: {
+            subject: "@{parameters('ApiBaseUrl')}",
+            body: "@{environmentVariables('pp_ApiUrl')}",
+          },
+        },
+      },
+    });
+  });
+
   it('deploys a validated local flow artifact into an existing remote workflow', async () => {
     const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
     const client = {

@@ -983,6 +983,10 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
     }
 
     const key = makeCatalogKey(control.family, control.catalogName);
+    if (existingPrototypeKeys.has(key)) {
+      continue;
+    }
+
     const controlLookup = {
       family: control.family,
       name: control.catalogName,
@@ -992,23 +996,6 @@ export function buildCanvasHarvestFixturePrototypeDraftDocument(
       control.prototypeSuggestions && control.prototypeSuggestions.length > 0
         ? control.prototypeSuggestions
         : buildPrototypeSuggestions(options.registry, controlLookup);
-
-    if (existingPrototypeKeys.has(key)) {
-      skipped.push({
-        family: control.family,
-        catalogName: control.catalogName,
-        status: control.status,
-        reason: 'A pinned fixture prototype already exists for this control.',
-        suggestedInsertQueries,
-        ...(prototypeSuggestions.length > 0 ? { prototypeSuggestions } : {}),
-        ...(control.latestInsertObservation
-          ? {
-              latestInsertObservation: control.latestInsertObservation,
-            }
-          : {}),
-      });
-      continue;
-    }
 
     const selectedSuggestion = prototypeSuggestions.find((suggestion) => suggestion.constructor);
     if (!selectedSuggestion?.constructor) {

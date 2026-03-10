@@ -1311,6 +1311,8 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
       return runFlowList(args);
     case 'inspect':
       return runFlowInspect(args);
+    case 'export':
+      return runFlowExport(args);
     case 'unpack':
       return runFlowUnpack(args);
     case 'pack':
@@ -4589,6 +4591,51 @@ async function runFlowUnpack(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runFlowExport(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+  const outPath = readFlag(args, '--out');
+
+  if (!identifier || !outPath) {
+    return printFailure(
+      argumentFailure('FLOW_EXPORT_ARGS_REQUIRED', 'Usage: flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME]')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'flow.export',
+    {
+      identifier,
+      environment: resolution.data.environment.alias,
+      solution: readFlag(args, '--solution'),
+      outPath,
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new FlowService(resolution.data.client).exportArtifact(identifier, outPath, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runFlowPack(args: string[]): Promise<number> {
   const inputPath = positionalArgs(args)[0];
   const outPath = readFlag(args, '--out');
@@ -6195,6 +6242,7 @@ function printHelp(): void {
       '  canvas templates import <sourcePath> [--out FILE] [--kind official-api|official-artifact|harvested|inferred] [--source LABEL] [--acquired-at ISO] [--source-artifact PATH] [--source-app-id ID] [--platform-version VERSION] [--app-version VERSION] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow pack <path> --out FILE.json [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',

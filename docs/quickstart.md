@@ -13,13 +13,13 @@ pnpm test
 For local development, run commands through the CLI package:
 
 ```bash
-pnpm --filter @pp/cli dev -- project inspect
+pnpm --filter @pp/cli dev -- project doctor
 ```
 
 Once built, you can also call the CLI directly:
 
 ```bash
-node packages/cli/dist/index.js project inspect
+node packages/cli/dist/index.js project doctor
 ```
 
 The examples below use `pp` for brevity.
@@ -86,7 +86,17 @@ pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-nam
 
 ## 6. Add a project config
 
-Create `pp.config.yaml`:
+Fastest path:
+
+```bash
+pp project init --name demo --env dev --solution Core
+pp project doctor
+```
+
+That creates a minimal `pp.config.yaml` plus the default local folders:
+`apps/`, `flows/`, `solutions/`, and `docs/`.
+
+If you want to start by hand, create `pp.config.yaml`:
 
 ```yaml
 name: demo
@@ -114,6 +124,7 @@ parameters:
 Then inspect the local repo context:
 
 ```bash
+pp project doctor
 pp project inspect
 pp analysis report
 pp analysis context --format json

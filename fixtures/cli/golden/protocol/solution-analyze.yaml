@@ -38,27 +38,7 @@ dependencies:
     missingRequiredComponent: false
 missingDependencies:
   - *a1
-invalidConnectionReferences:
-  - reference:
-      id: connref-source-broken
-      logicalName: pp_shared_sharepoint
-      displayName: SharePoint
-      solutionId: sol-source
-      stateCode: 0
-      connected: false
-    valid: false
-    diagnostics:
-      - level: error
-        code: DATAVERSE_CONNREF_CONNECTOR_MISSING
-        message: Connection reference SharePoint does not declare a connector id.
-        source: "@pp/dataverse"
-      - level: warning
-        code: DATAVERSE_CONNREF_CONNECTION_MISSING
-        message: Connection reference SharePoint has no active connection binding.
-        source: "@pp/dataverse"
-    suggestedNextActions:
-      - Recreate or repair the connection reference so it binds to a connector.
-      - Bind the connection reference to an active connection before deployment.
+invalidConnectionReferences: []
 missingEnvironmentVariables: []
 origin:
   kind: environment

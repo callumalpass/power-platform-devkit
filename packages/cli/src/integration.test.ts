@@ -2971,16 +2971,88 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(registryValidate.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
   });
 
-  it('covers flow unpack, pack, validate, patch, and normalize through the CLI entrypoint', async () => {
+  it('covers flow export, unpack, pack, validate, patch, and normalize through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');
     const patchPath = resolveRepoPath('fixtures', 'flow', 'patches', 'invoice-flow.patch.json');
+    const exportedPath = join(tempDir, 'exported');
     const unpackedPath = join(tempDir, 'unpacked');
     const packedPath = join(tempDir, 'repacked.json');
     const patchedPath = join(tempDir, 'patched');
     const normalizedPath = join(tempDir, 'normalized');
+    const exportClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+          },
+        ],
+      },
+      queryAll: {
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Invoice Sync',
+            uniquename: 'crd_InvoiceSync',
+            category: 5,
+            statecode: 1,
+            statuscode: 2,
+            clientdata: JSON.stringify({
+              definition: {
+                parameters: {
+                  '$connections': {
+                    value: {
+                      shared_office365: {
+                        connectionId: '/connections/office365',
+                        connectionReferenceLogicalName: 'shared_office365',
+                      },
+                    },
+                  },
+                  ApiBaseUrl: {
+                    defaultValue: 'https://example.test',
+                  },
+                },
+                actions: {
+                  SendMail: {
+                    inputs: {
+                      subject: "@{parameters('ApiBaseUrl')}",
+                      body: "@{environmentVariables('pp_ApiUrl')}",
+                    },
+                  },
+                },
+              },
+            }),
+          },
+        ],
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'comp-1',
+            objectid: 'flow-1',
+            componenttype: 29,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({
+      fixture: exportClient,
+    });
 
     const inspect = await runCli(['flow', 'inspect', rawPath, '--format', 'json']);
+    const exportResult = await runCli([
+      'flow',
+      'export',
+      'Invoice Sync',
+      '--env',
+      'fixture',
+      '--solution',
+      'Core',
+      '--out',
+      exportedPath,
+      '--format',
+      'json',
+    ]);
     const unpack = await runCli(['flow', 'unpack', rawPath, '--out', unpackedPath, '--format', 'json']);
     const pack = await runCli(['flow', 'pack', unpackedPath, '--out', packedPath, '--format', 'json']);
     const validate = await runCli(['flow', 'validate', unpackedPath, '--format', 'json']);
@@ -2996,6 +3068,8 @@ describe('cli fixture-backed workflows', () => {
 
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
+    expect(exportResult.code).toBe(0);
+    expect(exportResult.stderr).toBe('');
     expect(unpack.code).toBe(0);
     expect(unpack.stderr).toBe('');
     expect(pack.code).toBe(0);
@@ -3011,6 +3085,24 @@ describe('cli fixture-backed workflows', () => {
 
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/flow/golden/inspect-summary.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    expect(JSON.parse(exportResult.stdout)).toMatchObject({
+      identifier: 'Invoice Sync',
+      outPath: join(exportedPath, 'flow.json'),
+      source: {
+        id: 'flow-1',
+        uniqueName: 'crd_InvoiceSync',
+        solutionUniqueName: 'Core',
+      },
+    });
+    expect(await readJsonFile(join(exportedPath, 'flow.json'))).toMatchObject({
+      schemaVersion: 1,
+      kind: 'pp.flow.artifact',
+      metadata: {
+        id: 'flow-1',
+        uniqueName: 'crd_InvoiceSync',
+        sourcePath: 'dataverse://workflows/flow-1',
+      },
     });
     await expectGoldenJson(JSON.parse(unpack.stdout), 'fixtures/flow/golden/unpack-result.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),

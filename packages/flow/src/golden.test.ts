@@ -244,6 +244,18 @@ describe('flow fixture-backed goldens', () => {
     });
   });
 
+  it('captures Office 365 connector validation diagnostics from committed fixtures', async () => {
+    const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'office365-semantic-diagnostic-flow');
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+
+    await expectGoldenJson(snapshotFlowResult(validation), 'fixtures/flow/golden/semantic/office365-validation-report.json', {
+      normalize: (value) => normalizeFlowSnapshot(value),
+    });
+  });
+
   it('captures parsed flow intermediate representations as stable goldens', async () => {
     const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'semantic-diagnostic-flow');
     const parsed = await parseFlowIntermediateRepresentation(artifactPath);

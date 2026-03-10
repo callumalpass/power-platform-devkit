@@ -1,14 +1,6 @@
 {
   "diagnostics": [
     {
-      "code": "CANVAS_POWERFX_UNSUPPORTED",
-      "detail": "Formula property OnSelect belongs to Screen1/Button2.",
-      "level": "error",
-      "message": "Formula OnSelect on Screen1/Button2 is outside the supported Power Fx semantic slice: Unsupported Power Fx character ;.",
-      "path": "Src/Screen1.pa.yaml:14:23",
-      "source": "@pp/canvas"
-    },
-    {
       "code": "CANVAS_METADATA_REFERENCE_UNRESOLVED",
       "detail": "Unresolved metadata-backed binding Contacts.MissingField.",
       "level": "error",

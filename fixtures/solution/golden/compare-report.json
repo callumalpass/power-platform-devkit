@@ -33,37 +33,7 @@
       "target": []
     },
     "invalidConnectionReferences": {
-      "source": [
-        {
-          "diagnostics": [
-            {
-              "code": "DATAVERSE_CONNREF_CONNECTOR_MISSING",
-              "level": "error",
-              "message": "Connection reference SharePoint does not declare a connector id.",
-              "source": "@pp/dataverse"
-            },
-            {
-              "code": "DATAVERSE_CONNREF_CONNECTION_MISSING",
-              "level": "warning",
-              "message": "Connection reference SharePoint has no active connection binding.",
-              "source": "@pp/dataverse"
-            }
-          ],
-          "reference": {
-            "connected": false,
-            "displayName": "SharePoint",
-            "id": "connref-source-broken",
-            "logicalName": "pp_shared_sharepoint",
-            "solutionId": "sol-source",
-            "stateCode": 0
-          },
-          "suggestedNextActions": [
-            "Recreate or repair the connection reference so it binds to a connector.",
-            "Bind the connection reference to an active connection before deployment."
-          ],
-          "valid": false
-        }
-      ],
+      "source": [],
       "target": []
     }
   },
@@ -129,37 +99,7 @@
         "requiredComponentTypeLabel": "site-map"
       }
     ],
-    "invalidConnectionReferences": [
-      {
-        "diagnostics": [
-          {
-            "code": "DATAVERSE_CONNREF_CONNECTOR_MISSING",
-            "level": "error",
-            "message": "Connection reference SharePoint does not declare a connector id.",
-            "source": "@pp/dataverse"
-          },
-          {
-            "code": "DATAVERSE_CONNREF_CONNECTION_MISSING",
-            "level": "warning",
-            "message": "Connection reference SharePoint has no active connection binding.",
-            "source": "@pp/dataverse"
-          }
-        ],
-        "reference": {
-          "connected": false,
-          "displayName": "SharePoint",
-          "id": "connref-source-broken",
-          "logicalName": "pp_shared_sharepoint",
-          "solutionId": "sol-source",
-          "stateCode": 0
-        },
-        "suggestedNextActions": [
-          "Recreate or repair the connection reference so it binds to a connector.",
-          "Bind the connection reference to an active connection before deployment."
-        ],
-        "valid": false
-      }
-    ],
+    "invalidConnectionReferences": [],
     "missingDependencies": [
       {
         "dependencyType": 2,

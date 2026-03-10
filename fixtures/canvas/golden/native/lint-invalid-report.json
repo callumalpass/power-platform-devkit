@@ -62,50 +62,6 @@
   ],
   "diagnostics": [
     {
-      "category": "formula",
-      "code": "CANVAS_POWERFX_UNSUPPORTED",
-      "controlPath": "Screen1/Button2",
-      "location": {
-        "end": {
-          "column": 52,
-          "line": 14,
-          "offset": 438
-        },
-        "file": "Src/Screen1.pa.yaml",
-        "start": {
-          "column": 23,
-          "line": 14,
-          "offset": 409
-        }
-      },
-      "message": "Formula OnSelect on Screen1/Button2 is outside the supported Power Fx semantic slice: Unsupported Power Fx character ;.",
-      "path": "Src/Screen1.pa.yaml:14:23",
-      "property": "OnSelect",
-      "related": [
-        {
-          "kind": "control",
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 14,
-              "offset": 438
-            },
-            "file": "Src/Screen1.pa.yaml",
-            "start": {
-              "column": 23,
-              "line": 14,
-              "offset": 409
-            }
-          },
-          "message": "Formula property OnSelect belongs to Screen1/Button2.",
-          "path": "Screen1/Button2"
-        }
-      ],
-      "severity": "error",
-      "source": "@pp/canvas",
-      "unsupported": true
-    },
-    {
       "category": "metadata",
       "code": "CANVAS_METADATA_REFERENCE_UNRESOLVED",
       "controlPath": "Screen1/Button1",
@@ -247,7 +203,7 @@
     "version": "1.0.0"
   },
   "summary": {
-    "errorCount": 4,
+    "errorCount": 3,
     "infoCount": 0,
     "warningCount": 0
   },
