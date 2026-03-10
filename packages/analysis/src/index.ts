@@ -6,6 +6,16 @@ import { summarizeProject, summarizeResolvedParameter, type ProjectContext, type
 export interface AnalysisContextPack {
   generatedAt: string;
   project: ProjectSummary;
+  discovery: {
+    inspectedPath: string;
+    resolvedProjectRoot: string;
+    configPath?: string;
+    autoSelectedProjectRoot?: string;
+    autoSelectedReason?: string;
+    canonicalAnchorReason?: string;
+    descendantProjectRoots: string[];
+    descendantProjectConfigs: string[];
+  };
   providerBindings: Record<string, string>;
   topology: {
     defaultStage?: string;
@@ -189,6 +199,16 @@ export function generateContextPack(project: ProjectContext, focusAsset?: string
     {
       generatedAt: new Date().toISOString(),
       project: summarizeProject(project),
+      discovery: {
+        inspectedPath: project.discovery.inspectedPath,
+        resolvedProjectRoot: project.root,
+        configPath: project.configPath,
+        autoSelectedProjectRoot: project.discovery.autoSelectedProjectRoot,
+        autoSelectedReason: project.discovery.autoSelectedReason,
+        canonicalAnchorReason: project.discovery.canonicalAnchorReason,
+        descendantProjectRoots: project.discovery.descendantProjectRoots,
+        descendantProjectConfigs: project.discovery.descendantProjectConfigs,
+      },
       providerBindings: Object.fromEntries(
         Object.entries(project.providerBindings).map(([name, binding]) => [name, `${binding.kind}:${binding.target}`])
       ),

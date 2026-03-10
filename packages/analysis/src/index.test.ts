@@ -1,8 +1,78 @@
 import { describe, expect, it } from 'vitest';
-import { generatePortfolioReport, renderMarkdownPortfolioReport, renderMarkdownReport } from './index';
+import { generateContextPack, generatePortfolioReport, renderMarkdownPortfolioReport, renderMarkdownReport } from './index';
 import type { ProjectContext } from '@pp/project';
 
 describe('renderMarkdownReport', () => {
+  it('includes discovery context in the analysis pack for repo-root auto-selection', () => {
+    const project: ProjectContext = {
+      root: '/tmp/demo/project',
+      configPath: '/tmp/demo/project/pp.config.yaml',
+      discovery: {
+        inspectedPath: '/tmp/demo',
+        resolvedRoot: '/tmp/demo/project',
+        configFound: true,
+        usedDefaultLayout: false,
+        descendantProjectConfigs: [],
+        descendantProjectRoots: [],
+        autoSelectedProjectRoot: 'project',
+        autoSelectedReason: 'only-descendant-project',
+        canonicalAnchorReason: 'Treat project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path.',
+      },
+      config: {
+        defaults: {
+          environment: 'dev',
+          solution: 'core',
+        },
+      },
+      providerBindings: {},
+      parameters: {},
+      assets: [],
+      topology: {
+        defaultStage: 'dev',
+        selectedStage: 'dev',
+        activeEnvironment: 'dev',
+        activeSolution: {
+          alias: 'core',
+          environment: 'dev',
+          uniqueName: 'core',
+          source: 'default',
+        },
+        stages: {
+          dev: {
+            name: 'dev',
+            environment: 'dev',
+            defaultSolution: {
+              alias: 'core',
+              environment: 'dev',
+              uniqueName: 'core',
+              source: 'default',
+            },
+            solutions: {},
+            parameterOverrides: [],
+          },
+        },
+      },
+      templateRegistries: [],
+      build: {},
+      diagnostics: [],
+    };
+
+    const context = generateContextPack(project);
+
+    expect(context.success).toBe(true);
+    expect(context.data?.discovery).toEqual({
+      inspectedPath: '/tmp/demo',
+      resolvedProjectRoot: '/tmp/demo/project',
+      configPath: '/tmp/demo/project/pp.config.yaml',
+      autoSelectedProjectRoot: 'project',
+      autoSelectedReason: 'only-descendant-project',
+      canonicalAnchorReason:
+        'Treat project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path.',
+      descendantProjectRoots: [],
+      descendantProjectConfigs: [],
+    });
+  });
+
   it('renders a stable project report', () => {
     const project: ProjectContext = {
       root: '/tmp/demo',

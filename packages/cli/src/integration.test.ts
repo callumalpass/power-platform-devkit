@@ -851,6 +851,15 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(context.stdout), 'fixtures/analysis/golden/context-pack.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
     });
+    expect(JSON.parse(context.stdout)).toMatchObject({
+      discovery: {
+        inspectedPath: fixtureRoot,
+        resolvedProjectRoot: fixtureRoot,
+        configPath: resolveRepoPath('fixtures', 'analysis', 'project', 'pp.config.yaml'),
+        descendantProjectRoots: [],
+        descendantProjectConfigs: [],
+      },
+    });
     await expectGoldenJson(JSON.parse(deployPlan.stdout), 'fixtures/analysis/golden/deploy-plan.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
     });
@@ -1531,9 +1540,11 @@ describe('cli fixture-backed workflows', () => {
   it('auto-selects the descendant project root in project inspect and doctor JSON at repo root', async () => {
     const inspect = await runCli(['project', 'inspect', repoRoot, '--format', 'json']);
     const doctor = await runCli(['project', 'doctor', repoRoot, '--format', 'json']);
+    const context = await runCli(['analysis', 'context', '--project', repoRoot, '--format', 'json']);
 
     expect(inspect.code).toBe(0);
     expect(doctor.code).toBe(0);
+    expect(context.code).toBe(0);
     expect(inspect.stderr).toBe('');
 
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/project-root-inspect.json', {
@@ -1541,6 +1552,25 @@ describe('cli fixture-backed workflows', () => {
     });
     await expectGoldenJson(JSON.parse(doctor.stdout), 'fixtures/cli/golden/protocol/project-root-doctor.json', {
       normalize: (value) => normalizeCliSnapshot(value),
+    });
+    expect(JSON.parse(context.stderr)).toMatchObject({
+      warnings: [
+        {
+          code: 'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED',
+        },
+      ],
+    });
+    expect(JSON.parse(context.stdout)).toMatchObject({
+      discovery: {
+        inspectedPath: repoRoot,
+        resolvedProjectRoot: resolveRepoPath('fixtures', 'analysis', 'project'),
+        configPath: resolveRepoPath('fixtures', 'analysis', 'project', 'pp.config.yaml'),
+        autoSelectedProjectRoot: 'fixtures/analysis/project',
+        autoSelectedReason: 'only-descendant-project',
+      },
+      project: {
+        root: resolveRepoPath('fixtures', 'analysis', 'project'),
+      },
     });
   });
 
@@ -6394,6 +6424,16 @@ describe('cli fixture-backed workflows', () => {
       'auth profile inspect --environment ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
     );
     expect(inspect.stdout).not.toContain('AUTH_PROFILE_NAME_REQUIRED');
+  });
+
+  it('prints help for analysis context --help without executing the command', async () => {
+    const help = await runCli(['analysis', 'context', '--help']);
+
+    expect(help.code).toBe(0);
+    expect(help.stderr).toBe('');
+    expect(help.stdout).toContain('Usage: analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [options]');
+    expect(help.stdout).toContain('Reports the inspected path, resolved project root, and any descendant auto-selection directly in the structured output.');
+    expect(help.stdout).not.toContain('"project"');
   });
 
   it('prints group and subcommand help for remote discovery commands with the shared output contract', async () => {

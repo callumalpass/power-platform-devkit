@@ -1852,6 +1852,11 @@ async function runAnalysisReport(args: string[]): Promise<number> {
 }
 
 async function runAnalysisContext(args: string[]): Promise<number> {
+  if (args.includes('--help') || args.includes('help')) {
+    printAnalysisContextHelp();
+    return 0;
+  }
+
   const projectPath = readFlag(args, '--project') ?? process.cwd();
   const asset = readFlag(args, '--asset');
   const format = outputFormat(args, 'json');
@@ -9818,6 +9823,25 @@ function printProjectInspectHelp(): void {
       '  - Reads project context without mutating the filesystem.',
       '  - Auto-selects the lone descendant `pp.config.*` under the inspected path and reports discovery details when the current path is not itself a pp project.',
       '  - Pair with `pp project doctor` for layout validation and `pp project init` to scaffold a canonical `apps/`, `flows/`, `solutions/`, and `docs/` workspace.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAnalysisContextHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [options]',
+      '',
+      'Status:',
+      '  Captures analysis-ready project context for agent and automation workflows.',
+      '',
+      'Behavior:',
+      '  - Resolves the local project model and emits discovery, topology, provider binding, parameter, asset, and deploy-plan context in one payload.',
+      '  - Reports the inspected path, resolved project root, and any descendant auto-selection directly in the structured output.',
+      '  - Reads project context without mutating the filesystem.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

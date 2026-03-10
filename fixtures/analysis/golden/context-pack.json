@@ -204,6 +204,13 @@
       }
     ]
   },
+  "discovery": {
+    "configPath": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
+    "descendantProjectConfigs": [],
+    "descendantProjectRoots": [],
+    "inspectedPath": "<REPO_ROOT>/fixtures/analysis/project",
+    "resolvedProjectRoot": "<REPO_ROOT>/fixtures/analysis/project"
+  },
   "focusAsset": "apps",
   "generatedAt": "<GENERATED_AT>",
   "parameters": [
