@@ -26,6 +26,10 @@ The current implementation lives in:
 - `scripts/canvas-studio-apply.ts`
 - `packages/canvas/src/harvest.ts`
 
+The dedicated TEST fixture app/solution contract is pinned in:
+
+- `fixtures/canvas-harvest/fixture-solution.json`
+
 ## How it works
 
 The harvester is split into two deliberate phases.
@@ -97,9 +101,9 @@ pnpm harvest:canvas \
 
 Default behavior:
 
-- target environment alias: `test`
-- target solution unique name: `TEST`
-- target app display name: `TEST`
+- target environment alias: `test` from `fixtures/canvas-harvest/fixture-solution.json`
+- target solution unique name: `TEST` from `fixtures/canvas-harvest/fixture-solution.json`
+- target app display name: `TEST` from `fixtures/canvas-harvest/fixture-solution.json`
 - output root: a new temp directory such as `/tmp/pp-canvas-harvest-<timestamp>`
 - pinned registry output: `registries/canvas-controls.json`
 - pinned docs-backed catalog output: `registries/canvas-control-catalog.json`
@@ -109,6 +113,7 @@ Important flags:
 - `--env <alias>`: Dataverse environment alias
 - `--solution <name>`: solution unique name to export
 - `--display-name <name>`: canvas app display name selector
+- `--fixture-manifest <path>`: override the pinned TEST fixture manifest that seeds default environment, solution, app, screen-dir, and output paths
 - `--app-id <guid>` or `--app-name <logical-name>`: stricter app selection
 - `--screen-dir <dir>`: directory containing `.pa.yaml` snippet files for UI seeding
 - `--skip-ui`: export and analyze only; no Studio edits
@@ -159,6 +164,23 @@ Resume a bounded loop with:
 ```bash
 pnpm harvest:canvas --all-controls --catalog-loop --catalog-resume-loop /tmp/<run>/canvas-harvest-loop.json
 ```
+
+## Dedicated TEST fixture contract
+
+The repo now keeps the dedicated TEST harvest target in
+`fixtures/canvas-harvest/fixture-solution.json` instead of relying on repeated
+hard-coded `TEST` defaults.
+
+That manifest currently defines:
+
+- the expected TEST environment alias, solution unique name, and app display name
+- the persisted Studio browser profile name used for maker automation
+- the default generated snippet directory for fixture seeding
+- the pinned registry and docs-catalog output targets
+
+Keep that file aligned when the dedicated TEST app/solution changes. The reset
+baseline zip remains environment-local and should still be passed explicitly
+with `--reset-solution-zip`.
 
 ## Outputs
 

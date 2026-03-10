@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -17,6 +18,7 @@ import { type EnvironmentAlias } from '../packages/config/src/index';
 import { resolveDataverseClient, type DataverseClient } from '../packages/dataverse/src/index';
 
 interface CliOptions {
+  fixtureManifestPath?: string;
   envAlias: string;
   envAliasExplicit: boolean;
   solutionUniqueName: string;
@@ -60,6 +62,25 @@ interface CliOptions {
   includeRetired: boolean;
   fixtureContainerName: string;
 }
+
+interface CanvasHarvestFixtureManifest {
+  schemaVersion: 1;
+  name?: string;
+  environmentAlias?: string;
+  solutionUniqueName?: string;
+  appDisplayName?: string;
+  browserProfileName?: string;
+  fixtureContainerName?: string;
+  defaultScreenDir?: string;
+  defaultScreenFiles?: string[];
+  prototypeValidationScreenDir?: string;
+  prototypeValidationScreenFiles?: string[];
+  registryOut?: string;
+  catalogOut?: string;
+  notes?: string[];
+}
+
+const DEFAULT_FIXTURE_MANIFEST_PATH = resolve(process.cwd(), 'fixtures', 'canvas-harvest', 'fixture-solution.json');
 
 interface CanvasAppRecord {
   canvasappid?: string;
@@ -1768,6 +1789,7 @@ export function parseArgs(argv: string[]): CliOptions {
     return values;
   };
   const has = (name: string): boolean => argv.includes(name);
+  const fixtureManifest = resolveFixtureManifest(argv);
   const interactive = !has('--non-interactive') && Boolean(process.stdin.isTTY);
   const envAliasExplicit = has('--env');
   const solutionUniqueNameExplicit = has('--solution');
@@ -1818,20 +1840,27 @@ export function parseArgs(argv: string[]): CliOptions {
   }
 
   return {
-    envAlias: read('--env') ?? 'test',
+    fixtureManifestPath: fixtureManifest.path,
+    envAlias: read('--env') ?? fixtureManifest.document?.environmentAlias ?? 'test',
     envAliasExplicit,
-    solutionUniqueName: read('--solution') ?? 'TEST',
+    solutionUniqueName: read('--solution') ?? fixtureManifest.document?.solutionUniqueName ?? 'TEST',
     solutionUniqueNameExplicit,
     appId: read('--app-id'),
     appName: read('--app-name'),
-    appDisplayName: read('--display-name') ?? (read('--app-id') || read('--app-name') ? undefined : 'TEST'),
+    appDisplayName:
+      read('--display-name') ??
+      (read('--app-id') || read('--app-name') ? undefined : fixtureManifest.document?.appDisplayName ?? 'TEST'),
     studioUrl: read('--studio-url'),
-    screenDir: read('--screen-dir'),
+    screenDir: read('--screen-dir') ?? fixtureManifest.document?.defaultScreenDir,
     outDir: read('--out-dir') ?? join(tmpdir(), `pp-canvas-harvest-${Date.now()}`),
     outDirExplicit,
-    registryOut: read('--registry-out') ?? join(process.cwd(), 'registries', 'canvas-controls.json'),
+    registryOut:
+      read('--registry-out') ??
+      resolve(process.cwd(), fixtureManifest.document?.registryOut ?? join('registries', 'canvas-controls.json')),
     registryOutExplicit,
-    catalogOut: read('--catalog-out') ?? join(process.cwd(), 'registries', 'canvas-control-catalog.json'),
+    catalogOut:
+      read('--catalog-out') ??
+      resolve(process.cwd(), fixtureManifest.document?.catalogOut ?? join('registries', 'canvas-control-catalog.json')),
     configDir: read('--config-dir'),
     catalogJson: read('--catalog-json'),
     catalogJsonExplicit,
@@ -1843,7 +1872,7 @@ export function parseArgs(argv: string[]): CliOptions {
     catalogLoop,
     catalogMaxChunks,
     resetSolutionZip: read('--reset-solution-zip'),
-    browserProfileName: read('--browser-profile'),
+    browserProfileName: read('--browser-profile') ?? fixtureManifest.document?.browserProfileName,
     browserKind: normalizeBrowserKind(read('--browser-kind')),
     browserCommand: read('--browser-command'),
     browserArgs: readMany('--browser-arg'),
@@ -1859,7 +1888,30 @@ export function parseArgs(argv: string[]): CliOptions {
     timeoutMs: normalizeNumber(read('--timeout-ms'), 120000),
     allControls,
     includeRetired: has('--include-retired'),
-    fixtureContainerName: read('--fixture-container-name') ?? 'HarvestFixtureContainer',
+    fixtureContainerName: read('--fixture-container-name') ?? fixtureManifest.document?.fixtureContainerName ?? 'HarvestFixtureContainer',
+  };
+}
+
+function resolveFixtureManifest(argv: string[]): { path?: string; document?: CanvasHarvestFixtureManifest } {
+  const read = (name: string): string | undefined => {
+    const index = argv.indexOf(name);
+    return index >= 0 ? argv[index + 1] : undefined;
+  };
+
+  const explicitPath = read('--fixture-manifest');
+  const path = explicitPath ? resolve(explicitPath) : DEFAULT_FIXTURE_MANIFEST_PATH;
+
+  if (!existsSync(path)) {
+    if (explicitPath) {
+      throw new Error(`Fixture manifest not found: ${path}`);
+    }
+
+    return {};
+  }
+
+  return {
+    path,
+    document: JSON.parse(readFileSync(path, 'utf8')) as CanvasHarvestFixtureManifest,
   };
 }
 

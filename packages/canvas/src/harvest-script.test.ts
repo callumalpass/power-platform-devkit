@@ -87,6 +87,32 @@ async function createLoopManifestFixture(): Promise<{
   };
 }
 
+async function createFixtureManifestFixture(): Promise<string> {
+  const rootDir = await mkdtemp(join(tmpdir(), 'pp-canvas-harvest-fixture-manifest-test-'));
+  tempRoots.push(rootDir);
+  const manifestPath = join(rootDir, 'fixture-solution.json');
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        environmentAlias: 'fixture-env',
+        solutionUniqueName: 'FIXTURE',
+        appDisplayName: 'Fixture App',
+        browserProfileName: 'fixture-browser',
+        fixtureContainerName: 'FixtureContainer',
+        defaultScreenDir: 'fixtures/canvas-harvest/generated',
+        registryOut: 'registries/fixture-canvas-controls.json',
+        catalogOut: 'registries/fixture-canvas-control-catalog.json',
+      },
+      null,
+      2
+    )}\n`,
+    'utf8'
+  );
+  return manifestPath;
+}
+
 describe('canvas harvest loop resume', () => {
   it('requires --catalog-loop when resuming from an existing loop manifest', () => {
     expect(() => parseArgs(['--all-controls', '--catalog-resume-loop', '/tmp/canvas-harvest-loop.json'])).toThrowError(
@@ -137,5 +163,63 @@ describe('canvas harvest loop resume', () => {
     ]);
 
     await expect(resolveHarvestLoopRunState(options)).rejects.toThrowError('--out-dir');
+  });
+});
+
+describe('canvas harvest fixture manifest defaults', () => {
+  it('uses manifest defaults when explicit flags are omitted', async () => {
+    const manifestPath = await createFixtureManifestFixture();
+
+    const options = parseArgs(['--fixture-manifest', manifestPath]);
+
+    expect(options.fixtureManifestPath).toBe(manifestPath);
+    expect(options.envAlias).toBe('fixture-env');
+    expect(options.solutionUniqueName).toBe('FIXTURE');
+    expect(options.appDisplayName).toBe('Fixture App');
+    expect(options.browserProfileName).toBe('fixture-browser');
+    expect(options.fixtureContainerName).toBe('FixtureContainer');
+    expect(options.screenDir).toBe('fixtures/canvas-harvest/generated');
+    expect(options.registryOut).toBe(resolve(process.cwd(), 'registries/fixture-canvas-controls.json'));
+    expect(options.catalogOut).toBe(resolve(process.cwd(), 'registries/fixture-canvas-control-catalog.json'));
+  });
+
+  it('lets explicit flags override manifest defaults', async () => {
+    const manifestPath = await createFixtureManifestFixture();
+
+    const options = parseArgs([
+      '--fixture-manifest',
+      manifestPath,
+      '--env',
+      'override-env',
+      '--solution',
+      'OVERRIDE',
+      '--display-name',
+      'Override App',
+      '--browser-profile',
+      'override-browser',
+      '--fixture-container-name',
+      'OverrideContainer',
+      '--screen-dir',
+      'tmp/override-screen-dir',
+      '--registry-out',
+      'tmp/override-registry.json',
+      '--catalog-out',
+      'tmp/override-catalog.json',
+    ]);
+
+    expect(options.envAlias).toBe('override-env');
+    expect(options.solutionUniqueName).toBe('OVERRIDE');
+    expect(options.appDisplayName).toBe('Override App');
+    expect(options.browserProfileName).toBe('override-browser');
+    expect(options.fixtureContainerName).toBe('OverrideContainer');
+    expect(options.screenDir).toBe('tmp/override-screen-dir');
+    expect(options.registryOut).toBe('tmp/override-registry.json');
+    expect(options.catalogOut).toBe('tmp/override-catalog.json');
+  });
+
+  it('fails fast when an explicit fixture manifest path does not exist', () => {
+    expect(() => parseArgs(['--fixture-manifest', '/tmp/missing-fixture-manifest.json'])).toThrowError(
+      'Fixture manifest not found'
+    );
   });
 });
