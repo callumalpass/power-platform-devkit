@@ -21,6 +21,7 @@ Inspect a remote flow by name, id, or unique name:
 pp flow inspect "Invoice Sync" --env dev
 pp flow inspect crd_InvoiceSync --env dev --solution Core
 pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote
+pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --target-solution Core
 ```
 
 Current remote inspection returns:
@@ -33,8 +34,9 @@ Current remote inspection returns:
 - environment-variable references detected from expressions
 
 The current remote slice intentionally targets Dataverse `workflows` plus
-solution-component filtering plus a bounded existing-flow deploy path. It does
-not yet claim a full create/import/promotion surface.
+solution-component filtering, bounded export/deploy/create flows, and a bounded
+remote-to-remote promotion path. It does not yet claim a full
+solution-packaged import/export surface.
 
 ## Runtime commands
 
@@ -124,6 +126,7 @@ pp flow patch ./flows/invoice --file ./patches/invoice.dev.json --out ./flows/in
 pp flow pack ./flows/invoice-dev --out ./dist/invoice-flow.raw.json
 pp flow deploy ./flows/invoice-dev --env dev --solution Core
 pp flow deploy ./flows/invoice-dev --env dev --solution Core --create-if-missing
+pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --target-solution Core --create-if-missing
 ```
 
 ## Normalization behavior
@@ -152,6 +155,11 @@ or the artifact metadata (`uniqueName`, then `name`, then `displayName`, then
 When `--create-if-missing` is supplied, the same command can also provision a
 bounded missing cloud-flow shell using the artifact `metadata.uniqueName`,
 minimal workflow metadata, and the normalized `clientdata` definition.
+`pp flow promote <name|id|uniqueName> --source-environment SRC --target-environment DST`
+builds directly on the same contract: it exports a supported remote source flow
+into the canonical artifact model in memory, runs the shared local validator,
+then deploys that normalized definition into the target environment with the
+same `--target` and `--create-if-missing` behavior as local artifact deploy.
 
 The current pack/deploy boundary is:
 
@@ -167,6 +175,9 @@ The current pack/deploy boundary is:
 - remote deploy currently updates only an existing workflow record and only
   writes the normalized `clientdata` definition after the shared local
   validator passes, unless `--create-if-missing` is used
+- remote promotion currently transfers only the normalized definition and the
+  same bounded create-if-missing workflow shell; it does not package or migrate
+  broader workflow metadata/state beyond that surface
 - create-if-missing currently requires artifact `metadata.uniqueName`, creates
   only a bounded workflow shell (`category`, `name`, `uniquename`,
   `statecode`/`statuscode` when present, plus normalized `clientdata`), and

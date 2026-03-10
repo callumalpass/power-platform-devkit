@@ -3259,6 +3259,137 @@ describe('cli fixture-backed workflows', () => {
     expect(String(workflows.data?.[0]?.clientdata)).toContain('"definition"');
   });
 
+  it('promotes a remote flow between environments through the CLI entrypoint', async () => {
+    const sourceClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'sol-source',
+            uniquename: 'CoreSource',
+          },
+        ],
+      },
+      queryAll: {
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Invoice Sync',
+            uniquename: 'crd_InvoiceSync',
+            category: 5,
+            statecode: 1,
+            statuscode: 2,
+            clientdata: JSON.stringify({
+              definition: {
+                parameters: {
+                  '$connections': {
+                    value: {
+                      shared_office365: {
+                        connectionId: '/connections/office365',
+                        connectionReferenceLogicalName: 'shared_office365',
+                      },
+                    },
+                  },
+                  ApiBaseUrl: {
+                    defaultValue: 'https://example.test',
+                  },
+                },
+                actions: {
+                  SendMail: {
+                    inputs: {
+                      subject: "@{parameters('ApiBaseUrl')}",
+                      body: "@{environmentVariables('pp_ApiUrl')}",
+                    },
+                  },
+                },
+              },
+            }),
+          },
+        ],
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'comp-source-1',
+            objectid: 'flow-1',
+            componenttype: 29,
+          },
+        ],
+      },
+    });
+    const targetClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'sol-target',
+            uniquename: 'CoreTarget',
+          },
+        ],
+      },
+      queryAll: {
+        workflows: [
+          {
+            workflowid: 'target-flow-1',
+            name: 'Invoice Sync',
+            uniquename: 'crd_InvoiceSync',
+            category: 5,
+            statecode: 1,
+            statuscode: 2,
+          },
+        ],
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'comp-target-1',
+            objectid: 'target-flow-1',
+            componenttype: 29,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({
+      source: sourceClient,
+      target: targetClient,
+    });
+
+    const promote = await runCli([
+      'flow',
+      'promote',
+      'Invoice Sync',
+      '--source-environment',
+      'source',
+      '--source-solution',
+      'CoreSource',
+      '--target-environment',
+      'target',
+      '--target-solution',
+      'CoreTarget',
+      '--format',
+      'json',
+    ]);
+
+    expect(promote.code).toBe(0);
+    expect(promote.stderr).toBe('');
+    expect(JSON.parse(promote.stdout)).toMatchObject({
+      identifier: 'Invoice Sync',
+      source: {
+        id: 'flow-1',
+        uniqueName: 'crd_InvoiceSync',
+        solutionUniqueName: 'CoreSource',
+      },
+      targetIdentifier: 'crd_InvoiceSync',
+      operation: 'updated',
+      target: {
+        id: 'target-flow-1',
+        uniqueName: 'crd_InvoiceSync',
+        solutionUniqueName: 'CoreTarget',
+      },
+    });
+
+    const workflows = await targetClient.queryAll<Record<string, unknown>>({
+      table: 'workflows',
+    });
+    expect(workflows.success).toBe(true);
+    expect(String(workflows.data?.[0]?.clientdata)).toContain('"definition"');
+  });
+
   it('covers invalid flow validation diagnostics through the CLI entrypoint', async () => {
     const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'diagnostic-flow');
     const validate = await runCli(['flow', 'validate', artifactPath, '--format', 'json']);

@@ -434,6 +434,97 @@ describe('FlowService', () => {
     expect(String(creates[0]?.entity.clientdata)).toContain('"definition"');
   });
 
+  it('promotes a remote flow from one environment into another through the shared artifact lifecycle', async () => {
+    const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
+    const sourceClient = createStubDataverseClient();
+    const targetClient = {
+      ...createStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'target-flow-1',
+                name: 'Invoice Sync',
+                uniquename: 'crd_InvoiceSync',
+                category: 5,
+                statecode: 1,
+                statuscode: 2,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'target-flow-1',
+                componenttype: 29,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok([] as T[], {
+          supportTier: 'preview',
+        });
+      },
+      update: async (table: string, id: string, entity: Record<string, unknown>, options?: { solutionUniqueName?: string }) => {
+        updates.push({ table, id, entity, solutionUniqueName: options?.solutionUniqueName });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(sourceClient).promoteArtifact('Invoice Sync', {
+      sourceSolutionUniqueName: 'Core',
+      targetSolutionUniqueName: 'CoreTarget',
+      targetDataverseClient: targetClient,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      identifier: 'Invoice Sync',
+      source: {
+        id: 'flow-1',
+        uniqueName: 'crd_InvoiceSync',
+        solutionUniqueName: 'Core',
+      },
+      targetIdentifier: 'crd_InvoiceSync',
+      operation: 'updated',
+      target: {
+        id: 'target-flow-1',
+        uniqueName: 'crd_InvoiceSync',
+        solutionUniqueName: 'CoreTarget',
+      },
+      validation: {
+        valid: true,
+      },
+    });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      table: 'workflows',
+      id: 'target-flow-1',
+      solutionUniqueName: 'CoreTarget',
+    });
+    expect(String(updates[0]?.entity.clientdata)).toContain('"definition"');
+  });
+
   it('blocks remote deploy when local flow validation fails', async () => {
     let updated = false;
     const client = {

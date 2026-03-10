@@ -297,6 +297,37 @@ export interface FlowDeployResult {
   };
 }
 
+export interface FlowPromoteOptions {
+  sourceSolutionUniqueName?: string;
+  targetSolutionUniqueName?: string;
+  target?: string;
+  createIfMissing?: boolean;
+  targetDataverseClient?: DataverseClient;
+}
+
+export interface FlowPromoteResult {
+  identifier: string;
+  source: {
+    id: string;
+    name?: string;
+    uniqueName?: string;
+    solutionUniqueName?: string;
+  };
+  targetIdentifier: string;
+  operation: 'updated' | 'created';
+  target: {
+    id: string;
+    name?: string;
+    uniqueName?: string;
+    solutionUniqueName?: string;
+  };
+  summary: FlowArtifactSummary;
+  validation: {
+    valid: boolean;
+    warningCount: number;
+  };
+}
+
 export interface FlowPatchResult {
   path: string;
   outPath: string;
@@ -1060,6 +1091,13 @@ export class FlowService {
     });
   }
 
+  async promoteArtifact(identifier: string, options: FlowPromoteOptions = {}): Promise<OperationResult<FlowPromoteResult>> {
+    return promoteRemoteFlowArtifact(identifier, {
+      ...options,
+      sourceDataverseClient: this.dataverseClient,
+    });
+  }
+
   async normalize(path: string, outPath?: string): Promise<OperationResult<FlowUnpackResult>> {
     return normalizeFlowArtifact(path, outPath);
   }
@@ -1173,267 +1211,136 @@ export async function deployFlowArtifact(
     );
   }
 
-  const targetIdentifier = resolveFlowDeployTargetIdentifier(artifact.data, options.target);
-  const createIdentifier = resolveFlowCreateIdentifier(artifact.data);
+  return deployLoadedFlowArtifact(path, artifact.data, validation, {
+    dataverseClient: options.dataverseClient,
+    solutionUniqueName: options.solutionUniqueName,
+    target: options.target,
+    createIfMissing: options.createIfMissing,
+    diagnostics: artifact.diagnostics,
+    warnings: artifact.warnings,
+  });
+}
 
-  if (!targetIdentifier) {
+export async function promoteRemoteFlowArtifact(
+  identifier: string,
+  options: FlowPromoteOptions & {
+    sourceDataverseClient?: DataverseClient;
+  } = {}
+): Promise<OperationResult<FlowPromoteResult>> {
+  if (!options.sourceDataverseClient) {
     return fail(
-      [
-        ...artifact.diagnostics,
-        ...validation.diagnostics,
-        createDiagnostic(
-          'error',
-          'FLOW_DEPLOY_TARGET_REQUIRED',
-          `Flow artifact ${path} does not declare a targetable id, name, or unique name; pass --target to deploy it.`,
-          {
-            source: '@pp/flow',
-            path,
-          }
-        ),
-      ],
-      {
-        supportTier: 'preview',
-        warnings: [...artifact.warnings, ...validation.warnings],
-      }
+      createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote flow promotion source inspection.', {
+        source: '@pp/flow',
+      })
     );
   }
 
-  if (options.createIfMissing) {
-    const targetMismatch = resolveFlowCreateTargetMismatch(artifact.data, options.target);
-
-    if (targetMismatch) {
-      return fail(
-        [
-          ...artifact.diagnostics,
-          ...validation.diagnostics,
-          createDiagnostic(
-            'error',
-            'FLOW_DEPLOY_CREATE_TARGET_MISMATCH',
-            `Flow artifact ${path} cannot create a missing target for ${options.target} because the artifact metadata does not match that identifier.`,
-            {
-              source: '@pp/flow',
-              path,
-            }
-          ),
-        ],
-        {
-          supportTier: 'preview',
-          warnings: [...artifact.warnings, ...validation.warnings],
-        }
-      );
-    }
-
-    if (!createIdentifier) {
-      return fail(
-        [
-          ...artifact.diagnostics,
-          ...validation.diagnostics,
-          createDiagnostic(
-            'error',
-            'FLOW_DEPLOY_CREATE_UNIQUE_NAME_REQUIRED',
-            `Flow artifact ${path} must declare metadata.uniqueName before create-if-missing can provision a remote flow.`,
-            {
-              source: '@pp/flow',
-              path,
-            }
-          ),
-        ],
-        {
-          supportTier: 'preview',
-          warnings: [...artifact.warnings, ...validation.warnings],
-        }
-      );
-    }
+  if (!options.targetDataverseClient) {
+    return fail(
+      createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote flow promotion target deploy.', {
+        source: '@pp/flow',
+      })
+    );
   }
 
-  const flowService = new FlowService(options.dataverseClient);
-  const remoteFlow = await flowService.inspect(targetIdentifier, {
-    solutionUniqueName: options.solutionUniqueName,
+  const sourceFlow = await new FlowService(options.sourceDataverseClient).inspect(identifier, {
+    solutionUniqueName: options.sourceSolutionUniqueName,
   });
 
-  if (!remoteFlow.success) {
-    return remoteFlow as unknown as OperationResult<FlowDeployResult>;
+  if (!sourceFlow.success) {
+    return sourceFlow as unknown as OperationResult<FlowPromoteResult>;
   }
 
-  if (!remoteFlow.data) {
-    if (options.createIfMissing && createIdentifier) {
-      const globalFlow = await flowService.inspect(createIdentifier);
-
-      if (!globalFlow.success) {
-        return globalFlow as unknown as OperationResult<FlowDeployResult>;
-      }
-
-      if (globalFlow.data) {
-        return fail(
-          [
-            ...artifact.diagnostics,
-            ...validation.diagnostics,
-            ...remoteFlow.diagnostics,
-            ...globalFlow.diagnostics,
-            createDiagnostic(
-              'error',
-              'FLOW_DEPLOY_TARGET_EXISTS_OUTSIDE_SOLUTION',
-              `Flow ${createIdentifier} already exists in the target environment but was not resolved inside solution ${options.solutionUniqueName ?? '(none)'}.`,
-              {
-                source: '@pp/flow',
-                path,
-              }
-            ),
-          ],
-          {
-            supportTier: 'preview',
-            warnings: [...artifact.warnings, ...validation.warnings, ...remoteFlow.warnings, ...globalFlow.warnings],
-          }
-        );
-      }
-
-      const create = await options.dataverseClient.create<Record<string, unknown>, FlowRecord>(
-        'workflows',
-        buildFlowDeployCreateEntity(artifact.data),
-        options.solutionUniqueName
-          ? {
-              returnRepresentation: true,
-              solutionUniqueName: options.solutionUniqueName,
-            }
-          : {
-              returnRepresentation: true,
-            }
-      );
-
-      if (!create.success) {
-        return fail([...artifact.diagnostics, ...validation.diagnostics, ...remoteFlow.diagnostics, ...globalFlow.diagnostics, ...create.diagnostics], {
-          supportTier: 'preview',
-          warnings: [...artifact.warnings, ...validation.warnings, ...remoteFlow.warnings, ...globalFlow.warnings, ...create.warnings],
-          provenance: [
-            {
-              kind: 'official-api',
-              source: 'Dataverse workflows POST',
-            },
-          ],
-        });
-      }
-
-      const created = normalizeRemoteFlow({
-        workflowid: create.data?.entity?.workflowid ?? create.data?.entityId ?? '',
-        name: create.data?.entity?.name ?? artifact.data.metadata.displayName ?? artifact.data.metadata.name ?? createIdentifier,
-        uniquename: create.data?.entity?.uniquename ?? createIdentifier,
-        category: create.data?.entity?.category ?? 5,
-        statecode: create.data?.entity?.statecode ?? artifact.data.metadata.stateCode,
-        statuscode: create.data?.entity?.statuscode ?? artifact.data.metadata.statusCode,
-        clientdata: create.data?.entity?.clientdata ?? buildFlowDeployClientData(artifact.data),
-      });
-
-      return ok(
-        {
-          path,
-          targetIdentifier: createIdentifier,
-          operation: 'created',
-          target: {
-            id: created.id,
-            name: created.name,
-            uniqueName: created.uniqueName,
-            solutionUniqueName: options.solutionUniqueName,
-          },
-          updatedFields: Object.keys(buildFlowDeployCreateEntity(artifact.data)),
-          summary: buildFlowArtifactSummary(path, artifact.data),
-          validation: {
-            valid: true,
-            warningCount: validation.warnings.length,
-          },
-        },
-        {
-          supportTier: 'preview',
-          diagnostics: [...artifact.diagnostics, ...validation.diagnostics, ...remoteFlow.diagnostics, ...globalFlow.diagnostics, ...create.diagnostics],
-          warnings: [...artifact.warnings, ...validation.warnings, ...remoteFlow.warnings, ...globalFlow.warnings, ...create.warnings],
-          knownLimitations: [
-            'Create-if-missing provisions only a bounded workflow shell with normalized clientdata and minimal workflow metadata.',
-            'Flow creation does not yet cover broader workflow metadata/state transitions or solution-packaged import/export workflows.',
-          ],
-          provenance: [
-            {
-              kind: 'official-api',
-              source: 'Dataverse workflows POST',
-            },
-          ],
-        }
-      );
-    }
-
+  if (!sourceFlow.data) {
     return fail(
       [
-        ...artifact.diagnostics,
-        ...validation.diagnostics,
-        ...remoteFlow.diagnostics,
-        createDiagnostic('error', 'FLOW_DEPLOY_TARGET_NOT_FOUND', `Flow ${targetIdentifier} was not found in the target environment.`, {
+        ...sourceFlow.diagnostics,
+        createDiagnostic('error', 'FLOW_PROMOTE_SOURCE_NOT_FOUND', `Source flow ${identifier} was not found.`, {
           source: '@pp/flow',
-          path,
         }),
       ],
       {
         supportTier: 'preview',
-        warnings: [...artifact.warnings, ...validation.warnings, ...remoteFlow.warnings],
+        warnings: sourceFlow.warnings,
       }
     );
   }
 
-  const update = await options.dataverseClient.update(
-    'workflows',
-    remoteFlow.data.id,
-    {
-      clientdata: stableStringify({
-        definition: cloneJsonValue(artifact.data.definition),
-      }),
-    },
-    options.solutionUniqueName
-      ? {
-          solutionUniqueName: options.solutionUniqueName,
-        }
-      : {}
-  );
+  const artifact = buildFlowArtifactFromRemoteFlow(sourceFlow.data);
 
-  if (!update.success) {
-    return fail([...artifact.diagnostics, ...validation.diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics], {
+  if (!artifact.success || !artifact.data) {
+    return fail([...sourceFlow.diagnostics, ...artifact.diagnostics], {
       supportTier: 'preview',
-      warnings: [...artifact.warnings, ...validation.warnings, ...remoteFlow.warnings, ...update.warnings],
-      provenance: [
-        {
-          kind: 'official-api',
-          source: 'Dataverse workflows PATCH',
-        },
-      ],
+      warnings: [...sourceFlow.warnings, ...artifact.warnings],
     });
+  }
+
+  const sourcePath = artifact.data.metadata.sourcePath ?? `dataverse://workflows/${sourceFlow.data.id}`;
+  const validation = validateLoadedFlowArtifact(sourcePath, artifact.data, {
+    diagnostics: [...sourceFlow.diagnostics, ...artifact.diagnostics],
+    warnings: [...sourceFlow.warnings, ...artifact.warnings],
+  });
+
+  if (!validation.success || !validation.data) {
+    return validation as unknown as OperationResult<FlowPromoteResult>;
+  }
+
+  if (!validation.data.valid) {
+    return fail(
+      [
+        ...validation.diagnostics,
+        createDiagnostic('error', 'FLOW_PROMOTE_VALIDATION_FAILED', `Source flow ${identifier} failed local validation and was not promoted.`, {
+          source: '@pp/flow',
+          path: sourcePath,
+        }),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: validation.warnings,
+      }
+    );
+  }
+
+  const deployed = await deployLoadedFlowArtifact(sourcePath, artifact.data, validation, {
+    dataverseClient: options.targetDataverseClient,
+    solutionUniqueName: options.targetSolutionUniqueName,
+    target: options.target,
+    createIfMissing: options.createIfMissing,
+    diagnostics: [...sourceFlow.diagnostics, ...artifact.diagnostics],
+    warnings: [...sourceFlow.warnings, ...artifact.warnings],
+  });
+
+  if (!deployed.success || !deployed.data) {
+    return deployed as unknown as OperationResult<FlowPromoteResult>;
   }
 
   return ok(
     {
-      path,
-      targetIdentifier,
-      operation: 'updated',
-      target: {
-        id: remoteFlow.data.id,
-        name: remoteFlow.data.name,
-        uniqueName: remoteFlow.data.uniqueName,
-        solutionUniqueName: options.solutionUniqueName,
+      identifier,
+      source: {
+        id: sourceFlow.data.id,
+        name: sourceFlow.data.name,
+        uniqueName: sourceFlow.data.uniqueName,
+        solutionUniqueName: options.sourceSolutionUniqueName,
       },
-      updatedFields: ['clientdata'],
-      summary: buildFlowArtifactSummary(path, artifact.data),
-      validation: {
-        valid: true,
-        warningCount: validation.warnings.length,
-      },
+      targetIdentifier: deployed.data.targetIdentifier,
+      operation: deployed.data.operation,
+      target: deployed.data.target,
+      summary: deployed.data.summary,
+      validation: deployed.data.validation,
     },
     {
       supportTier: 'preview',
-      diagnostics: [...artifact.diagnostics, ...validation.diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics],
-      warnings: [...artifact.warnings, ...validation.warnings, ...remoteFlow.warnings, ...update.warnings],
+      diagnostics: deployed.diagnostics,
+      warnings: deployed.warnings,
       knownLimitations: [
-        'Remote flow deploy currently updates only an existing workflow record and only writes the normalized clientdata definition.',
-        'Flow creation, solution import/export packaging, and broader workflow metadata/state transitions still require later lifecycle work.',
+        ...(deployed.knownLimitations ?? []),
+        'Remote flow promotion currently transfers only the normalized clientdata definition plus the bounded create-if-missing workflow shell.',
       ],
       provenance: [
         {
           kind: 'official-api',
-          source: 'Dataverse workflows PATCH',
+          source: 'Dataverse workflows GET/PATCH/POST',
         },
       ],
     }
@@ -1568,6 +1475,292 @@ export async function exportRemoteFlowArtifact(
   );
 }
 
+async function deployLoadedFlowArtifact(
+  path: string,
+  artifact: FlowArtifact,
+  validation: OperationResult<FlowValidationReport>,
+  options: {
+    dataverseClient?: DataverseClient;
+    solutionUniqueName?: string;
+    target?: string;
+    createIfMissing?: boolean;
+    diagnostics?: Diagnostic[];
+    warnings?: Diagnostic[];
+  }
+): Promise<OperationResult<FlowDeployResult>> {
+  if (!options.dataverseClient || !validation.data) {
+    return fail(
+      createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote flow deploy.', {
+        source: '@pp/flow',
+      })
+    );
+  }
+
+  const diagnostics = [...(options.diagnostics ?? []), ...validation.diagnostics];
+  const warnings = [...(options.warnings ?? []), ...validation.warnings];
+  const targetIdentifier = resolveFlowDeployTargetIdentifier(artifact, options.target);
+  const createIdentifier = resolveFlowCreateIdentifier(artifact);
+
+  if (!targetIdentifier) {
+    return fail(
+      [
+        ...diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_DEPLOY_TARGET_REQUIRED',
+          `Flow artifact ${path} does not declare a targetable id, name, or unique name; pass --target to deploy it.`,
+          {
+            source: '@pp/flow',
+            path,
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings,
+      }
+    );
+  }
+
+  if (options.createIfMissing) {
+    const targetMismatch = resolveFlowCreateTargetMismatch(artifact, options.target);
+
+    if (targetMismatch) {
+      return fail(
+        [
+          ...diagnostics,
+          createDiagnostic(
+            'error',
+            'FLOW_DEPLOY_CREATE_TARGET_MISMATCH',
+            `Flow artifact ${path} cannot create a missing target for ${options.target} because the artifact metadata does not match that identifier.`,
+            {
+              source: '@pp/flow',
+              path,
+            }
+          ),
+        ],
+        {
+          supportTier: 'preview',
+          warnings,
+        }
+      );
+    }
+
+    if (!createIdentifier) {
+      return fail(
+        [
+          ...diagnostics,
+          createDiagnostic(
+            'error',
+            'FLOW_DEPLOY_CREATE_UNIQUE_NAME_REQUIRED',
+            `Flow artifact ${path} must declare metadata.uniqueName before create-if-missing can provision a remote flow.`,
+            {
+              source: '@pp/flow',
+              path,
+            }
+          ),
+        ],
+        {
+          supportTier: 'preview',
+          warnings,
+        }
+      );
+    }
+  }
+
+  const flowService = new FlowService(options.dataverseClient);
+  const remoteFlow = await flowService.inspect(targetIdentifier, {
+    solutionUniqueName: options.solutionUniqueName,
+  });
+
+  if (!remoteFlow.success) {
+    return remoteFlow as unknown as OperationResult<FlowDeployResult>;
+  }
+
+  if (!remoteFlow.data) {
+    if (options.createIfMissing && createIdentifier) {
+      const globalFlow = await flowService.inspect(createIdentifier);
+
+      if (!globalFlow.success) {
+        return globalFlow as unknown as OperationResult<FlowDeployResult>;
+      }
+
+      if (globalFlow.data) {
+        return fail(
+          [
+            ...diagnostics,
+            ...remoteFlow.diagnostics,
+            ...globalFlow.diagnostics,
+            createDiagnostic(
+              'error',
+              'FLOW_DEPLOY_TARGET_EXISTS_OUTSIDE_SOLUTION',
+              `Flow ${createIdentifier} already exists in the target environment but was not resolved inside solution ${options.solutionUniqueName ?? '(none)'}.`,
+              {
+                source: '@pp/flow',
+                path,
+              }
+            ),
+          ],
+          {
+            supportTier: 'preview',
+            warnings: [...warnings, ...remoteFlow.warnings, ...globalFlow.warnings],
+          }
+        );
+      }
+
+      const createEntity = buildFlowDeployCreateEntity(artifact);
+      const create = await options.dataverseClient.create<Record<string, unknown>, FlowRecord>(
+        'workflows',
+        createEntity,
+        options.solutionUniqueName
+          ? {
+              returnRepresentation: true,
+              solutionUniqueName: options.solutionUniqueName,
+            }
+          : {
+              returnRepresentation: true,
+            }
+      );
+
+      if (!create.success) {
+        return fail([...diagnostics, ...remoteFlow.diagnostics, ...globalFlow.diagnostics, ...create.diagnostics], {
+          supportTier: 'preview',
+          warnings: [...warnings, ...remoteFlow.warnings, ...globalFlow.warnings, ...create.warnings],
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse workflows POST',
+            },
+          ],
+        });
+      }
+
+      const created = normalizeRemoteFlow({
+        workflowid: create.data?.entity?.workflowid ?? create.data?.entityId ?? '',
+        name: create.data?.entity?.name ?? artifact.metadata.displayName ?? artifact.metadata.name ?? createIdentifier,
+        uniquename: create.data?.entity?.uniquename ?? createIdentifier,
+        category: create.data?.entity?.category ?? 5,
+        statecode: create.data?.entity?.statecode ?? artifact.metadata.stateCode,
+        statuscode: create.data?.entity?.statuscode ?? artifact.metadata.statusCode,
+        clientdata: create.data?.entity?.clientdata ?? buildFlowDeployClientData(artifact),
+      });
+
+      return ok(
+        {
+          path,
+          targetIdentifier: createIdentifier,
+          operation: 'created',
+          target: {
+            id: created.id,
+            name: created.name,
+            uniqueName: created.uniqueName,
+            solutionUniqueName: options.solutionUniqueName,
+          },
+          updatedFields: Object.keys(createEntity),
+          summary: buildFlowArtifactSummary(path, artifact),
+          validation: {
+            valid: true,
+            warningCount: validation.warnings.length,
+          },
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: [...diagnostics, ...remoteFlow.diagnostics, ...globalFlow.diagnostics, ...create.diagnostics],
+          warnings: [...warnings, ...remoteFlow.warnings, ...globalFlow.warnings, ...create.warnings],
+          knownLimitations: [
+            'Create-if-missing provisions only a bounded workflow shell with normalized clientdata and minimal workflow metadata.',
+            'Flow creation does not yet cover broader workflow metadata/state transitions or solution-packaged import/export workflows.',
+          ],
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse workflows POST',
+            },
+          ],
+        }
+      );
+    }
+
+    return fail(
+      [
+        ...diagnostics,
+        ...remoteFlow.diagnostics,
+        createDiagnostic('error', 'FLOW_DEPLOY_TARGET_NOT_FOUND', `Flow ${targetIdentifier} was not found in the target environment.`, {
+          source: '@pp/flow',
+          path,
+        }),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: [...warnings, ...remoteFlow.warnings],
+      }
+    );
+  }
+
+  const update = await options.dataverseClient.update(
+    'workflows',
+    remoteFlow.data.id,
+    {
+      clientdata: stableStringify({
+        definition: cloneJsonValue(artifact.definition),
+      }),
+    },
+    options.solutionUniqueName
+      ? {
+          solutionUniqueName: options.solutionUniqueName,
+        }
+      : {}
+  );
+
+  if (!update.success) {
+    return fail([...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics], {
+      supportTier: 'preview',
+      warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse workflows PATCH',
+        },
+      ],
+    });
+  }
+
+  return ok(
+    {
+      path,
+      targetIdentifier,
+      operation: 'updated',
+      target: {
+        id: remoteFlow.data.id,
+        name: remoteFlow.data.name,
+        uniqueName: remoteFlow.data.uniqueName,
+        solutionUniqueName: options.solutionUniqueName,
+      },
+      updatedFields: ['clientdata'],
+      summary: buildFlowArtifactSummary(path, artifact),
+      validation: {
+        valid: true,
+        warningCount: validation.warnings.length,
+      },
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: [...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics],
+      warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
+      knownLimitations: [
+        'Remote flow deploy currently updates only an existing workflow record and only writes the normalized clientdata definition.',
+        'Flow creation, solution import/export packaging, and broader workflow metadata/state transitions still require later lifecycle work.',
+      ],
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse workflows PATCH',
+        },
+      ],
+    }
+  );
+}
+
 export async function validateFlowArtifact(path: string): Promise<OperationResult<FlowValidationReport>> {
   const artifact = await loadFlowArtifact(path);
 
@@ -1575,11 +1768,25 @@ export async function validateFlowArtifact(path: string): Promise<OperationResul
     return artifact as unknown as OperationResult<FlowValidationReport>;
   }
 
-  const diagnostics: Diagnostic[] = [];
-  const warnings: Diagnostic[] = [];
+  return validateLoadedFlowArtifact(path, artifact.data, {
+    diagnostics: artifact.diagnostics,
+    warnings: artifact.warnings,
+  });
+}
+
+function validateLoadedFlowArtifact(
+  path: string,
+  artifact: FlowArtifact,
+  base: {
+    diagnostics?: Diagnostic[];
+    warnings?: Diagnostic[];
+  } = {}
+): OperationResult<FlowValidationReport> {
+  const diagnostics = [...(base.diagnostics ?? [])];
+  const warnings = [...(base.warnings ?? [])];
   const seenConnrefs = new Set<string>();
 
-  if (!artifact.data.metadata.name && !artifact.data.metadata.displayName) {
+  if (!artifact.metadata.name && !artifact.metadata.displayName) {
     diagnostics.push(
       createDiagnostic('error', 'FLOW_ARTIFACT_NAME_MISSING', `Flow artifact ${path} does not define a name or displayName.`, {
         source: '@pp/flow',
@@ -1587,7 +1794,7 @@ export async function validateFlowArtifact(path: string): Promise<OperationResul
     );
   }
 
-  if (Object.keys(artifact.data.definition).length === 0) {
+  if (Object.keys(artifact.definition).length === 0) {
     diagnostics.push(
       createDiagnostic('error', 'FLOW_DEFINITION_MISSING', `Flow artifact ${path} does not include a definition payload.`, {
         source: '@pp/flow',
@@ -1595,11 +1802,11 @@ export async function validateFlowArtifact(path: string): Promise<OperationResul
     );
   }
 
-  const semantic = analyzeFlowSemantics(artifact.data, path);
+  const semantic = analyzeFlowSemantics(artifact, path);
   diagnostics.push(...semantic.diagnostics);
   warnings.push(...semantic.warnings);
 
-  for (const reference of artifact.data.metadata.connectionReferences) {
+  for (const reference of artifact.metadata.connectionReferences) {
     if (!reference.name) {
       diagnostics.push(
         createDiagnostic('error', 'FLOW_CONNREF_NAME_MISSING', `Flow artifact ${path} contains a connection reference with no name.`, {
@@ -1624,17 +1831,17 @@ export async function validateFlowArtifact(path: string): Promise<OperationResul
     {
       valid: diagnostics.length === 0,
       path,
-      name: artifact.data.metadata.displayName ?? artifact.data.metadata.name,
-      connectionReferences: artifact.data.metadata.connectionReferences,
-      parameters: Object.keys(artifact.data.metadata.parameters).sort(),
-      environmentVariables: artifact.data.metadata.environmentVariables,
+      name: artifact.metadata.displayName ?? artifact.metadata.name,
+      connectionReferences: artifact.metadata.connectionReferences,
+      parameters: Object.keys(artifact.metadata.parameters).sort(),
+      environmentVariables: artifact.metadata.environmentVariables,
       intermediateRepresentation: semantic.intermediateRepresentation,
       semanticSummary: semantic.summary,
     },
     {
       supportTier: 'preview',
       diagnostics,
-      warnings: [...artifact.warnings, ...warnings],
+      warnings,
     }
   );
 }

@@ -1313,6 +1313,8 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
       return runFlowInspect(args);
     case 'export':
       return runFlowExport(args);
+    case 'promote':
+      return runFlowPromote(args);
     case 'unpack':
       return runFlowUnpack(args);
     case 'pack':
@@ -4636,6 +4638,66 @@ async function runFlowExport(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runFlowPromote(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure(
+        'FLOW_PROMOTE_ARGS_REQUIRED',
+        'Usage: flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing]'
+      )
+    );
+  }
+
+  const sourceResolution = await resolveDataverseClientByFlag(args, '--source-environment');
+
+  if (!sourceResolution.success || !sourceResolution.data) {
+    return printFailure(sourceResolution);
+  }
+
+  const targetResolution = await resolveDataverseClientByFlag(args, '--target-environment');
+
+  if (!targetResolution.success || !targetResolution.data) {
+    return printFailure(targetResolution);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'flow.promote',
+    {
+      identifier,
+      sourceEnvironment: sourceResolution.data.environment.alias,
+      sourceSolution: readFlag(args, '--source-solution'),
+      targetEnvironment: targetResolution.data.environment.alias,
+      targetSolution: readFlag(args, '--target-solution'),
+      target: readFlag(args, '--target') ?? 'source artifact metadata',
+      createIfMissing: hasFlag(args, '--create-if-missing'),
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new FlowService(sourceResolution.data.client).promoteArtifact(identifier, {
+    sourceSolutionUniqueName: readFlag(args, '--source-solution'),
+    targetSolutionUniqueName: readFlag(args, '--target-solution'),
+    target: readFlag(args, '--target'),
+    createIfMissing: hasFlag(args, '--create-if-missing'),
+    targetDataverseClient: targetResolution.data.client,
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runFlowPack(args: string[]): Promise<number> {
   const inputPath = positionalArgs(args)[0];
   const outPath = readFlag(args, '--out');
@@ -6243,6 +6305,7 @@ function printHelp(): void {
       '  flow list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow pack <path> --out FILE.json [--format table|json|yaml|ndjson|markdown|raw]',
       '  flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
