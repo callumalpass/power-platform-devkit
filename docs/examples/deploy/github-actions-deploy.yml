@@ -1,0 +1,51 @@
+name: Deploy with pp
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Project stage to resolve
+        required: true
+        default: prod
+      mode:
+        description: dry-run, plan, or apply
+        required: true
+        default: dry-run
+      confirm:
+        description: Required for mode=apply
+        required: false
+        default: "false"
+      parameter_overrides:
+        description: JSON object of deploy parameter overrides
+        required: false
+        default: "{}"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run shared deploy orchestration
+        env:
+          INPUT_PROJECT_PATH: ${{ github.workspace }}
+          INPUT_STAGE: ${{ inputs.stage }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          INPUT_PARAMETER_OVERRIDES: ${{ inputs.parameter_overrides }}
+          PP_TENANT_DOMAIN: ${{ secrets.PP_TENANT_DOMAIN }}
+        run: node ./scripts/run-github-deploy.mjs

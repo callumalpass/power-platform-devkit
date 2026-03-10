@@ -72,6 +72,14 @@ The repo now includes turnkey Node entrypoints for those wrappers:
 
 These scripts invoke the built adapter entrypoints and, if needed, bootstrap a workspace build before retrying. They emit a machine-readable JSON `OperationResult` and exit with status `1` when adapter option resolution, project discovery, or deploy execution fails.
 
+Concrete packaging examples live under `docs/examples/deploy/`:
+
+- `github-actions-deploy.yml`
+- `azure-devops-deploy.yml`
+- `power-platform-pipelines-deploy.yml`
+
+Each example installs the workspace, runs the thin wrapper script for that host, and passes only the small adapter contract through environment variables.
+
 The adapter entrypoints now resolve a small pipeline-friendly contract before calling shared deploy services:
 
 - `projectPath`
