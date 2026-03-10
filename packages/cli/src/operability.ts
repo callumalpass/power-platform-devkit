@@ -12,7 +12,7 @@ export const CLI_VERSION = packageJson.version;
 
 export const COMMAND_TREE = {
   auth: ['profile', 'browser-profile', 'login', 'token'],
-  env: ['list', 'add', 'inspect', 'resolve-maker-id', 'cleanup-plan', 'cleanup', 'remove'],
+  env: ['list', 'add', 'inspect', 'resolve-maker-id', 'cleanup-plan', 'reset', 'cleanup', 'remove'],
   dv: ['whoami', 'request', 'action', 'function', 'batch', 'rows', 'query', 'get', 'create', 'update', 'delete', 'metadata'],
   solution: ['create', 'delete', 'set-metadata', 'list', 'inspect', 'components', 'compare'],
   connref: ['list', 'inspect', 'validate'],

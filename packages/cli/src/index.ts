@@ -553,6 +553,12 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
         return 0;
       }
       return runEnvironmentCleanupPlan(configOptions, args);
+    case 'reset':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentResetHelp();
+        return 0;
+      }
+      return runEnvironmentReset(configOptions, args);
     case 'cleanup':
       if (args.includes('--help') || args.includes('help')) {
         printEnvironmentCleanupHelp();
@@ -2920,6 +2926,27 @@ async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args
 }
 
 async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
+  return runEnvironmentCleanupLike(configOptions, args, {
+    actionName: 'env.cleanup',
+    suggestedPlanCommand: 'pp env cleanup',
+  });
+}
+
+async function runEnvironmentReset(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
+  return runEnvironmentCleanupLike(configOptions, args, {
+    actionName: 'env.reset',
+    suggestedPlanCommand: 'pp env reset',
+  });
+}
+
+async function runEnvironmentCleanupLike(
+  configOptions: ConfigStoreOptions,
+  args: string[],
+  behavior: {
+    actionName: 'env.cleanup' | 'env.reset';
+    suggestedPlanCommand: 'pp env cleanup' | 'pp env reset';
+  }
+): Promise<number> {
   const alias = positionalArgs(args)[0];
   const prefix = readFlag(args, '--prefix');
 
@@ -2940,7 +2967,7 @@ async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: st
   const preview = maybeHandleMutationPreview(
     args,
     'json',
-    'env.cleanup',
+    behavior.actionName,
     {
       environment: plan.data.environment,
       prefix,
@@ -3003,7 +3030,7 @@ async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: st
         supportTier: 'preview',
         suggestedNextActions: [
           'Inspect the failing solution diagnostics to see whether dependencies or managed-state restrictions blocked deletion.',
-          `Re-run \`pp env cleanup-plan ${alias} --prefix ${prefix}\` to confirm which disposable assets remain.`,
+          `Re-run \`pp env cleanup-plan ${alias} --prefix ${prefix}\` to confirm which disposable assets remain after \`${behavior.suggestedPlanCommand} ${alias} --prefix ${prefix}\`.`,
         ],
       })
     );
@@ -9140,6 +9167,7 @@ function printEnvironmentHelp(): void {
       '  inspect <alias>              inspect one saved alias',
       '  resolve-maker-id <alias>     discover and persist the Maker environment id for an alias',
       '  cleanup-plan <alias>         list disposable solutions matching a run prefix before bootstrap reset',
+      '  reset <alias>                delete disposable solutions matching a run prefix for bootstrap reset',
       '  cleanup <alias>              delete disposable solutions matching a run prefix',
       '  remove <alias>               remove one saved alias from local config',
       '',
@@ -9147,6 +9175,7 @@ function printEnvironmentHelp(): void {
       '  pp env list',
       '  pp env inspect dev',
       '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json',
+      '  pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json',
       '  pp env cleanup test --prefix ppHarness20260310T013401820Z --dry-run --format json',
       '',
       'Common output options:',
@@ -9163,13 +9192,34 @@ function printEnvironmentCleanupPlanHelp(): void {
       'Behavior:',
       '  - Lists remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
       '  - Intended for harness bootstrap or disposable-environment reset flows where stale disposable harness assets should be removed before reuse.',
-      '  - Returns candidate solutions together with next-step guidance for `pp env cleanup`.',
-      '  - Follow with `pp env cleanup <alias> --prefix PREFIX [--dry-run|--plan]` when you are ready to delete the matches.',
-      '  - Related command: env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  - Returns candidate solutions together with next-step guidance for `pp env reset`.',
+      '  - Follow with `pp env reset <alias> --prefix PREFIX [--dry-run|--plan]` when you are ready to delete the matches.',
+      '  - Related commands: env reset <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw], env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       'Examples:',
       '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z',
       '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentResetHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env reset <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Deletes remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
+      '  - Intended as the first-class bootstrap reset command for clearing stale disposable harness assets before environment reuse.',
+      '  - Use `--dry-run` or `--plan` first to preview the matching solutions without mutating the environment.',
+      '  - Equivalent remote deletion behavior to `pp env cleanup`, but named for bootstrap/reset workflows.',
+      '',
+      'Examples:',
+      '  pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json',
+      '  pp env reset test --prefix ppHarness20260310T013401820Z --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

@@ -231,9 +231,10 @@ deep links but the alias was originally registered without `--maker-env-id`.
 
 For disposable bootstrap flows, `pp env cleanup-plan <alias> --prefix <runPrefix>`
 lists solutions whose unique name or friendly name starts with that prefix.
-`pp env cleanup <alias> --prefix <runPrefix>` then deletes those matches through
+`pp env reset <alias> --prefix <runPrefix>` then deletes those matches through
 the typed `pp` solution path, with `--dry-run` or `--plan` available when you
-want a non-mutating preview first.
+want a non-mutating preview first. `pp env cleanup` remains available as the
+lower-level equivalent deletion verb.
 
 ## Typical flows
 

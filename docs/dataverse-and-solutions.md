@@ -310,13 +310,13 @@ inside `pp`:
 
 ```bash
 pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json
-pp env cleanup test --prefix ppHarness20260310T013401820Z --dry-run --format json
-pp env cleanup test --prefix ppHarness20260310T013401820Z --format json
+pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json
+pp env reset test --prefix ppHarness20260310T013401820Z --format json
 ```
 
 `cleanup-plan` enumerates solutions whose unique name or friendly name starts
-with the given prefix, and `cleanup` deletes those matches. This is the
-intended prefix-based reset workflow for disposable harness assets; use
+with the given prefix, and `reset` deletes those matches. This is the intended
+prefix-based reset workflow for disposable harness assets; use
 `--dry-run` or `--plan` before mutating a shared environment.
 
 List, inspect, and validate connection references as first-class ALM objects:

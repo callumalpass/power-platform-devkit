@@ -5768,7 +5768,7 @@ describe('cli fixture-backed workflows', () => {
       ],
       suggestedNextActions: [
         'Review the matching solutions before deleting anything remotely.',
-        'Run `pp env cleanup fixture --prefix ppHarness20260310T073008100Z` to delete the listed disposable solutions through pp.',
+        'Run `pp env reset fixture --prefix ppHarness20260310T073008100Z` to delete the listed disposable solutions through pp.',
         'Re-run `pp env cleanup-plan fixture --prefix ppHarness20260310T073008100Z` to confirm the environment is clean before bootstrap.',
       ],
       knownLimitations: [],
@@ -5781,8 +5781,19 @@ describe('cli fixture-backed workflows', () => {
     expect(help.code).toBe(0);
     expect(help.stderr).toBe('');
     expect(help.stdout).toContain('env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]');
+    expect(help.stdout).toContain('env reset <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]');
     expect(help.stdout).toContain('env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]');
     expect(help.stdout).toContain('stale disposable harness assets');
+  });
+
+  it('prints help for env reset', async () => {
+    const help = await runCli(['env', 'reset', '--help']);
+
+    expect(help.code).toBe(0);
+    expect(help.stderr).toBe('');
+    expect(help.stdout).toContain('Usage: env reset <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]');
+    expect(help.stdout).toContain('first-class bootstrap reset command');
+    expect(help.stdout).toContain('Equivalent remote deletion behavior to `pp env cleanup`');
   });
 
   it('prints help for env cleanup', async () => {
@@ -5801,6 +5812,7 @@ describe('cli fixture-backed workflows', () => {
     expect(help.stderr).toBe('');
     expect(help.stdout).toContain('Usage: env <command> [options]');
     expect(help.stdout).toContain('cleanup-plan <alias>');
+    expect(help.stdout).toContain('reset <alias>');
     expect(help.stdout).toContain('cleanup <alias>');
     expect(help.stdout).toContain('pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json');
   });
@@ -5853,6 +5865,54 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('deletes matching disposable solutions through env reset', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'ppHarness20260310T073008100ZShell',
+              friendlyname: 'ppHarness20260310T073008100Z Shell',
+              version: '1.0.0.0',
+            },
+            {
+              solutionid: 'sol-2',
+              uniquename: 'SharedCore',
+              friendlyname: 'Shared Core',
+              version: '5.0.0.0',
+            },
+          ],
+        },
+      }),
+    });
+
+    const reset = await runCli(['env', 'reset', 'fixture', '--prefix', 'ppHarness20260310T073008100Z', '--format', 'json']);
+    const remaining = await runCli(['env', 'cleanup-plan', 'fixture', '--prefix', 'ppHarness20260310T073008100Z', '--format', 'json']);
+
+    expect(reset.code).toBe(0);
+    expect(reset.stderr).toBe('');
+    expect(JSON.parse(reset.stdout)).toMatchObject({
+      prefix: 'ppHarness20260310T073008100Z',
+      candidateCount: 1,
+      deletedCount: 1,
+      failedCount: 0,
+      deleted: [
+        {
+          removed: true,
+          solution: {
+            solutionid: 'sol-1',
+            uniquename: 'ppHarness20260310T073008100ZShell',
+          },
+        },
+      ],
+    });
+    expect(JSON.parse(remaining.stdout)).toMatchObject({
+      candidateCount: 0,
+      cleanupCandidates: [],
+    });
+  });
+
   it('renders an env cleanup dry-run preview without mutating remote state', async () => {
     mockDataverseResolution({
       fixture: createFixtureDataverseClient({
@@ -5876,6 +5936,50 @@ describe('cli fixture-backed workflows', () => {
     expect(preview.stderr).toBe('');
     expect(JSON.parse(preview.stdout)).toMatchObject({
       action: 'env.cleanup',
+      mode: 'dry-run',
+      confirmed: false,
+      willMutate: false,
+      target: {
+        prefix: 'ppHarness20260310T073008100Z',
+        candidateCount: 1,
+      },
+      input: {
+        cleanupCandidates: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'ppHarness20260310T073008100ZShell',
+          },
+        ],
+      },
+    });
+    expect(JSON.parse(remaining.stdout)).toMatchObject({
+      candidateCount: 1,
+    });
+  });
+
+  it('renders an env reset dry-run preview without mutating remote state', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'ppHarness20260310T073008100ZShell',
+              friendlyname: 'ppHarness20260310T073008100Z Shell',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+      }),
+    });
+
+    const preview = await runCli(['env', 'reset', 'fixture', '--prefix', 'ppHarness20260310T073008100Z', '--dry-run', '--format', 'json']);
+    const remaining = await runCli(['env', 'cleanup-plan', 'fixture', '--prefix', 'ppHarness20260310T073008100Z', '--format', 'json']);
+
+    expect(preview.code).toBe(0);
+    expect(preview.stderr).toBe('');
+    expect(JSON.parse(preview.stdout)).toMatchObject({
+      action: 'env.reset',
       mode: 'dry-run',
       confirmed: false,
       willMutate: false,
