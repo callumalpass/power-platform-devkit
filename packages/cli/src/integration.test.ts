@@ -2932,6 +2932,67 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('builds an environment cleanup plan for a run-scoped prefix', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'ppHarness20260310T073008100ZShell',
+              friendlyname: 'ppHarness20260310T073008100Z Shell',
+              version: '1.0.0.0',
+            },
+            {
+              solutionid: 'sol-2',
+              uniquename: 'ppHarness20260309T215614036ZShell',
+              friendlyname: 'ppHarness20260309T215614036Z Shell',
+              version: '1.0.0.0',
+            },
+            {
+              solutionid: 'sol-3',
+              uniquename: 'SharedCore',
+              friendlyname: 'Shared Core',
+              version: '5.0.0.0',
+            },
+          ],
+        },
+      }),
+    });
+
+    const plan = await runCli(['env', 'cleanup-plan', 'fixture', '--prefix', 'ppHarness20260310T073008100Z', '--format', 'json']);
+
+    expect(plan.code).toBe(0);
+    expect(plan.stderr).toBe('');
+    expect(JSON.parse(plan.stdout)).toMatchObject({
+      environment: {
+        alias: 'fixture',
+        url: 'https://fixture.example.crm.dynamics.com',
+        authProfile: 'fixture-profile',
+      },
+      prefix: 'ppHarness20260310T073008100Z',
+      remoteResetSupported: false,
+      candidateCount: 1,
+      cleanupCandidates: [
+        {
+          solutionid: 'sol-1',
+          uniquename: 'ppHarness20260310T073008100ZShell',
+        },
+      ],
+      knownLimitations: [
+        'pp can discover cleanup candidates for an environment alias, but it does not yet expose a first-class remote reset or solution deletion command.',
+      ],
+    });
+  });
+
+  it('prints help for env cleanup-plan', async () => {
+    const help = await runCli(['env', 'cleanup-plan', '--help']);
+
+    expect(help.code).toBe(0);
+    expect(help.stderr).toBe('');
+    expect(help.stdout).toContain('env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]');
+  });
+
   it('prints help for auth profile inspect --help without running validation', async () => {
     const inspect = await runCli(['auth', 'profile', 'inspect', '--help']);
 

@@ -274,6 +274,11 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
 async function runEnvironment(command: string | undefined, args: string[]): Promise<number> {
   const configOptions = readConfigOptions(args);
 
+  if (!command || command === 'help' || command === '--help' || args.includes('--help') || args.includes('help')) {
+    printHelp();
+    return 0;
+  }
+
   switch (command) {
     case 'list':
       return runEnvironmentList(configOptions, args);
@@ -281,6 +286,8 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
       return runEnvironmentAdd(configOptions, args);
     case 'inspect':
       return runEnvironmentInspect(configOptions, args);
+    case 'cleanup-plan':
+      return runEnvironmentCleanupPlan(configOptions, args);
     case 'remove':
       return runEnvironmentRemove(configOptions, args);
     default:
@@ -1873,6 +1880,74 @@ async function runEnvironmentRemove(configOptions: ConfigStoreOptions, args: str
   }
 
   printByFormat({ removed: removed.data ?? false, alias }, 'json');
+  return 0;
+}
+
+async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
+  const alias = positionalArgs(args)[0];
+  const prefix = readFlag(args, '--prefix');
+
+  if (!alias) {
+    return printFailure(argumentFailure('ENV_ALIAS_REQUIRED', 'Environment alias is required.'));
+  }
+
+  if (!prefix) {
+    return printFailure(argumentFailure('ENV_CLEANUP_PREFIX_REQUIRED', '--prefix is required.'));
+  }
+
+  const resolution = await resolveDataverseClient(alias, configOptions);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const solutions = await new SolutionService(resolution.data.client).list();
+
+  if (!solutions.success) {
+    return printFailure(solutions);
+  }
+
+  const normalizedPrefix = prefix.toLowerCase();
+  const cleanupCandidates = (solutions.data ?? []).filter((solution) => {
+    const uniqueName = solution.uniquename?.toLowerCase() ?? '';
+    const friendlyName = solution.friendlyname?.toLowerCase() ?? '';
+    return uniqueName.startsWith(normalizedPrefix) || friendlyName.startsWith(normalizedPrefix);
+  });
+
+  printByFormat(
+    {
+      environment: {
+        alias: resolution.data.environment.alias,
+        url: resolution.data.environment.url,
+        authProfile: resolution.data.authProfile.name,
+        defaultSolution: resolution.data.environment.defaultSolution,
+        makerEnvironmentId: resolution.data.environment.makerEnvironmentId,
+      },
+      prefix,
+      matchStrategy: {
+        kind: 'case-insensitive-prefix',
+        fields: ['uniquename', 'friendlyname'],
+      },
+      remoteResetSupported: false,
+      cleanupCandidates,
+      candidateCount: cleanupCandidates.length,
+      suggestedNextActions:
+        cleanupCandidates.length > 0
+          ? [
+              'Review the matching solutions before deleting anything remotely.',
+              'Delete the listed solutions with an external tool or maker workflow because pp does not yet expose remote solution deletion.',
+              'Re-run `pp env cleanup-plan <alias> --prefix <prefix>` to confirm the environment is clean before bootstrap.',
+            ]
+          : [
+              'No matching solutions were found for this prefix.',
+              'Proceed with bootstrap using the same prefix or generate a new run-scoped prefix if you still want quarantine semantics.',
+            ],
+      knownLimitations: [
+        'pp can discover cleanup candidates for an environment alias, but it does not yet expose a first-class remote reset or solution deletion command.',
+      ],
+    },
+    outputFormat(args, 'json')
+  );
   return 0;
 }
 
@@ -4978,6 +5053,7 @@ function printHelp(): void {
       '  env list [--config-dir path]',
       '  env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]',
       '  env inspect <alias> [--config-dir path]',
+      '  env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  env remove <alias> [--config-dir path]',
       '',
       '  dv whoami --env ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
