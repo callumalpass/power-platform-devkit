@@ -349,6 +349,23 @@ describe('cli fixture-backed workflows', () => {
     expect(importHelp.stdout).toContain('Use Maker or solution tooling for the remote import step until `pp canvas import` exists.');
   });
 
+  it('prints stable help for remote canvas discovery commands', async () => {
+    const listHelp = await runCli(['canvas', 'list', '--help']);
+    const inspectHelp = await runCli(['canvas', 'inspect', '--help']);
+
+    expect(listHelp.code).toBe(0);
+    expect(listHelp.stderr).toBe('');
+    expect(listHelp.stdout).toContain('Usage: canvas list --env ALIAS [--solution UNIQUE_NAME] [options]');
+    expect(listHelp.stdout).toContain('Lists remote canvas apps through Dataverse.');
+    expect(listHelp.stdout).toContain('pp canvas list --env dev --solution Core');
+
+    expect(inspectHelp.code).toBe(0);
+    expect(inspectHelp.stderr).toBe('');
+    expect(inspectHelp.stdout).toContain('Usage: canvas inspect <path|displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [options]');
+    expect(inspectHelp.stdout).toContain('With `--env`, inspects a remote canvas app by display name, logical name, or id.');
+    expect(inspectHelp.stdout).toContain('pp canvas inspect "Harness Canvas" --env dev --solution Core');
+  });
+
   it('renders analysis report and context outputs from the fixture project', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const env = {

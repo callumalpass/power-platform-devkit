@@ -203,6 +203,8 @@ Current validation rules across both source kinds:
 ```bash
 pp canvas list --env dev --solution Core
 pp canvas inspect "My Canvas App" --env dev --solution Core
+pp canvas list --help
+pp canvas inspect --help
 pp canvas create --help
 pp canvas import --help
 pp canvas validate ./apps/MyCanvas --project .
@@ -217,6 +219,8 @@ Useful flags:
 
 - `--env` and optional `--solution` for remote `canvas list` and remote
   `canvas inspect`
+- `canvas list --help` and `canvas inspect --help` for stable remote/local
+  command-contract discovery without triggering validation failures
 - `--project` to resolve `templateRegistries` from `pp.config.*`
 - repeated `--registry FILE` to override project registries
 - `--mode strict|seeded|registry`

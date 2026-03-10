@@ -325,6 +325,10 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
       }
       return runCanvasUnsupportedRemoteMutation('import', args);
     case 'list':
+      if (args.includes('--help') || args.includes('help')) {
+        printCanvasListHelp();
+        return 0;
+      }
       return runCanvasList(args);
     case 'templates':
       return runCanvasTemplates(args);
@@ -332,6 +336,10 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
     case 'validate':
       return runCanvasValidate(args);
     case 'inspect':
+      if (args.includes('--help') || args.includes('help')) {
+        printCanvasInspectHelp();
+        return 0;
+      }
       return runCanvasInspect(args);
     case 'build':
       return runCanvasBuild(args);
@@ -4193,6 +4201,29 @@ function printCanvasCreateHelp(): void {
   );
 }
 
+function printCanvasListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: canvas list --env ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Status:',
+      '  Lists remote canvas apps through Dataverse.',
+      '',
+      'Behavior:',
+      '  - Requires `--env` to resolve the target environment alias.',
+      '  - When `--solution` is provided, filters the result to canvas apps that are solution components.',
+      '  - Returns remote app ids and any Maker open URIs currently available from Dataverse.',
+      '',
+      'Examples:',
+      '  pp canvas list --env dev',
+      '  pp canvas list --env dev --solution Core',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
 function printCanvasImportHelp(): void {
   process.stdout.write(
     [
@@ -4211,6 +4242,32 @@ function printCanvasImportHelp(): void {
       'Known limitations:',
       '  - Remote canvas coverage in pp is currently read-only.',
       '  - pp does not yet return a remote canvas app id for create/import workflows.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printCanvasInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: canvas inspect <path|displayName|name|id> [--env ALIAS] [--solution UNIQUE_NAME] [options]',
+      '',
+      'Modes:',
+      '  - Without `--env`, inspects a local canvas source tree.',
+      '  - With `--env`, inspects a remote canvas app by display name, logical name, or id.',
+      '',
+      'Remote behavior:',
+      '  - Requires the positional identifier plus `--env`.',
+      '  - Accepts optional `--solution` to scope remote lookup to a solution.',
+      '',
+      'Local behavior:',
+      '  - Accepts a local canvas path plus `--project`, repeated `--registry`, `--cache-dir`, and `--mode` options.',
+      '',
+      'Examples:',
+      '  pp canvas inspect "Harness Canvas" --env dev --solution Core',
+      '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
