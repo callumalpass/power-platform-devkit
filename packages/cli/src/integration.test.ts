@@ -7,6 +7,8 @@ import { readJsonFile } from '@pp/artifacts';
 import { AuthService } from '@pp/auth';
 import type { DataverseClient } from '@pp/dataverse';
 import { ok } from '@pp/diagnostics';
+import { PowerBiClient } from '@pp/powerbi';
+import { SharePointClient } from '@pp/sharepoint';
 import { type DataverseFixture, createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
 import { expectGoldenJson, expectGoldenText, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
 import * as canvasCreateDelegate from './canvas-create-delegate';
@@ -1077,6 +1079,171 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(doctor.stdout), 'fixtures/cli/golden/protocol/project-root-doctor.json', {
       normalize: (value) => normalizeCliSnapshot(value),
     });
+  });
+
+  it('resolves SharePoint provider bindings through the CLI', async () => {
+    const tempDir = await createTempDir();
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      [
+        'providerBindings:',
+        '  financeSite:',
+        '    kind: sharepoint-site',
+        '    target: https://example.sharepoint.com/sites/finance',
+        '    metadata:',
+        '      authProfile: graph-user',
+        '  financeBudget:',
+        '    kind: sharepoint-file',
+        '    target: /Shared Documents/Budget.xlsx',
+        '    metadata:',
+        '      site: financeSite',
+        '      drive: Documents',
+      ].join('\n'),
+      'utf8'
+    );
+
+    vi.spyOn(AuthService.prototype, 'getProfile').mockResolvedValue(
+      ok(
+        {
+          name: 'graph-user',
+          type: 'static-token',
+          token: 'token',
+        },
+        { supportTier: 'preview' }
+      )
+    );
+    vi.spyOn(SharePointClient.prototype, 'inspectDriveItem').mockResolvedValue(
+      ok(
+        {
+          id: 'item-1',
+          name: 'Budget.xlsx',
+          driveId: 'drive-1',
+        },
+        { supportTier: 'preview' }
+      )
+    );
+
+    const result = await runCli(['sharepoint', 'file', 'inspect', 'financeBudget', '--project', tempDir, '--format', 'json']);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({
+      target: {
+        kind: 'sharepoint-file',
+        bindingName: 'financeBudget',
+        authProfile: 'graph-user',
+        metadata: {
+          site: 'financeSite',
+          drive: 'Documents',
+        },
+        site: {
+          bindingName: 'financeSite',
+          value: 'https://example.sharepoint.com/sites/finance',
+          source: 'binding',
+          referenceType: 'url',
+        },
+        drive: {
+          value: 'Documents',
+          source: 'binding',
+          referenceType: 'name',
+        },
+        file: {
+          bindingName: 'financeBudget',
+          value: '/Shared Documents/Budget.xlsx',
+          source: 'binding',
+          referenceType: 'path',
+        },
+      },
+      file: {
+        id: 'item-1',
+        name: 'Budget.xlsx',
+        driveId: 'drive-1',
+      },
+    });
+    expect(SharePointClient.prototype.inspectDriveItem).toHaveBeenCalledWith(
+      'https://example.sharepoint.com/sites/finance',
+      '/Shared Documents/Budget.xlsx',
+      {
+        drive: 'Documents',
+      }
+    );
+  });
+
+  it('resolves Power BI provider bindings through the CLI', async () => {
+    const tempDir = await createTempDir();
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      [
+        'providerBindings:',
+        '  financeWorkspace:',
+        '    kind: powerbi-workspace',
+        '    target: Finance',
+        '    metadata:',
+        '      authProfile: powerbi-user',
+        '  financeDataset:',
+        '    kind: powerbi-dataset',
+        '    target: Budget Model',
+        '    metadata:',
+        '      workspace: financeWorkspace',
+      ].join('\n'),
+      'utf8'
+    );
+
+    vi.spyOn(AuthService.prototype, 'getProfile').mockResolvedValue(
+      ok(
+        {
+          name: 'powerbi-user',
+          type: 'static-token',
+          token: 'token',
+        },
+        { supportTier: 'preview' }
+      )
+    );
+    vi.spyOn(PowerBiClient.prototype, 'inspectDataset').mockResolvedValue(
+      ok(
+        {
+          id: 'dataset-1',
+          name: 'Budget Model',
+          workspaceId: 'workspace-1',
+          datasources: [],
+        },
+        { supportTier: 'preview' }
+      ) as never
+    );
+
+    const result = await runCli(['powerbi', 'dataset', 'inspect', 'financeDataset', '--project', tempDir, '--format', 'json']);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({
+      target: {
+        kind: 'powerbi-dataset',
+        bindingName: 'financeDataset',
+        authProfile: 'powerbi-user',
+        metadata: {
+          workspace: 'financeWorkspace',
+        },
+        workspace: {
+          bindingName: 'financeWorkspace',
+          value: 'Finance',
+          source: 'binding',
+          referenceType: 'name',
+        },
+        dataset: {
+          bindingName: 'financeDataset',
+          value: 'Budget Model',
+          source: 'binding',
+          referenceType: 'name',
+        },
+      },
+      dataset: {
+        id: 'dataset-1',
+        name: 'Budget Model',
+        workspaceId: 'workspace-1',
+        datasources: [],
+      },
+    });
+    expect(PowerBiClient.prototype.inspectDataset).toHaveBeenCalledWith('Finance', 'Budget Model');
   });
 
   it('creates an environment variable definition through the first-class CLI surface', async () => {

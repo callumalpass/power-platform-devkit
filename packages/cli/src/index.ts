@@ -61,17 +61,24 @@ import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } fro
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { HttpClient } from '@pp/http';
 import { ModelService } from '@pp/model';
+import { PowerBiClient } from '@pp/powerbi';
 import {
   discoverProject,
   doctorProject,
   feedbackProject,
   initProject,
   planProjectInit,
+  resolvePowerBiTarget,
+  resolveSharePointTarget,
   summarizeProject,
   summarizeResolvedParameter,
   type ProjectInitPlan,
   type ProjectInitResult,
+  type ProviderBindingResolverContext,
+  type ResolvedPowerBiTarget,
+  type ResolvedSharePointTarget,
 } from '@pp/project';
+import { SharePointClient } from '@pp/sharepoint';
 import { SolutionService, type SolutionAnalysis, type SolutionPackageType } from '@pp/solution';
 import { runDelegatedCanvasCreate } from './canvas-create-delegate';
 import YAML from 'yaml';
@@ -165,6 +172,14 @@ export async function main(argv: string[]): Promise<number> {
     return runProject(command, rest);
   }
 
+  if (group === 'sharepoint') {
+    return runSharePoint(command, rest);
+  }
+
+  if (group === 'powerbi') {
+    return runPowerBi(command, rest);
+  }
+
   switch (`${group} ${command ?? ''}`.trim()) {
     case 'analysis report':
       return runAnalysisReport(rest);
@@ -221,6 +236,60 @@ async function runProject(command: string | undefined, args: string[]): Promise<
       return runProjectInspect(args);
     default:
       printHelp();
+      return 1;
+  }
+}
+
+async function runSharePoint(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printSharePointHelp();
+    return 0;
+  }
+
+  const [action, ...rest] = args;
+
+  if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
+    printSharePointHelp();
+    return 0;
+  }
+
+  switch (`${command} ${action}`) {
+    case 'site inspect':
+      return runSharePointSiteInspect(rest);
+    case 'list inspect':
+      return runSharePointListInspect(rest);
+    case 'file inspect':
+      return runSharePointFileInspect(rest);
+    case 'permissions inspect':
+      return runSharePointPermissionsInspect(rest);
+    default:
+      printSharePointHelp();
+      return 1;
+  }
+}
+
+async function runPowerBi(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printPowerBiHelp();
+    return 0;
+  }
+
+  const [action, ...rest] = args;
+
+  if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
+    printPowerBiHelp();
+    return 0;
+  }
+
+  switch (`${command} ${action}`) {
+    case 'workspace inspect':
+      return runPowerBiWorkspaceInspect(rest);
+    case 'dataset inspect':
+      return runPowerBiDatasetInspect(rest);
+    case 'report inspect':
+      return runPowerBiReportInspect(rest);
+    default:
+      printPowerBiHelp();
       return 1;
   }
 }
@@ -1446,7 +1515,7 @@ async function runProjectInit(args: string[]): Promise<number> {
     if (isMachineReadableOutputFormat(format)) {
       printByFormat(payload, format);
     } else {
-      process.stdout.write(renderProjectInitOutput(plan, format, mutation.data.mode));
+      process.stdout.write(renderProjectInitOutput(plan, format as Extract<OutputFormat, 'table' | 'markdown' | 'raw'>, mutation.data.mode));
     }
     return 0;
   }
@@ -1460,7 +1529,7 @@ async function runProjectInit(args: string[]): Promise<number> {
   if (isMachineReadableOutputFormat(format)) {
     printByFormat(result.data, format);
   } else {
-    process.stdout.write(renderProjectInitOutput(result.data, format));
+    process.stdout.write(renderProjectInitOutput(result.data, format as Extract<OutputFormat, 'table' | 'markdown' | 'raw'>));
   }
   printResultDiagnostics(result, format);
   return 0;
@@ -5339,6 +5408,472 @@ function readProjectCanvasBuildMode(build: Record<string, unknown>): string | un
     : undefined;
 }
 
+async function runSharePointSiteInspect(args: string[]): Promise<number> {
+  const reference = positionalArgs(args)[0];
+
+  if (!reference) {
+    return printFailure(argumentFailure('SHAREPOINT_SITE_REQUIRED', 'Usage: sharepoint site inspect <site|binding> [--project path] [--profile name]'));
+  }
+
+  const targetResult = await resolveSharePointTargetForCli(reference, args, {
+    expectedKind: 'sharepoint-site',
+  });
+
+  if (!targetResult.success || !targetResult.data) {
+    return printFailure(targetResult);
+  }
+
+  const clientResult = await createSharePointClientForCli(targetResult.data, args);
+
+  if (!clientResult.success || !clientResult.data) {
+    return printFailure(clientResult);
+  }
+
+  const result = await clientResult.data.inspectSite(targetResult.data.site.value);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(
+    {
+      target: targetResult.data,
+      site: result.data,
+    },
+    outputFormat(args, 'json')
+  );
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSharePointListInspect(args: string[]): Promise<number> {
+  const reference = positionalArgs(args)[0];
+
+  if (!reference) {
+    return printFailure(
+      argumentFailure('SHAREPOINT_LIST_REQUIRED', 'Usage: sharepoint list inspect <list|binding> --site <site|binding> [--project path] [--profile name]')
+    );
+  }
+
+  const targetResult = await resolveSharePointTargetForCli(reference, args, {
+    expectedKind: 'sharepoint-list',
+    site: readFlag(args, '--site'),
+  });
+
+  if (!targetResult.success || !targetResult.data) {
+    return printFailure(targetResult);
+  }
+
+  const clientResult = await createSharePointClientForCli(targetResult.data, args);
+
+  if (!clientResult.success || !clientResult.data) {
+    return printFailure(clientResult);
+  }
+
+  const result = await clientResult.data.inspectList(targetResult.data.site.value, targetResult.data.list?.value ?? reference);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(
+    {
+      target: targetResult.data,
+      list: result.data,
+    },
+    outputFormat(args, 'json')
+  );
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSharePointFileInspect(args: string[]): Promise<number> {
+  const reference = positionalArgs(args)[0];
+
+  if (!reference) {
+    return printFailure(
+      argumentFailure(
+        'SHAREPOINT_FILE_REQUIRED',
+        'Usage: sharepoint file inspect <file|binding> --site <site|binding> [--drive name] [--project path] [--profile name]'
+      )
+    );
+  }
+
+  const targetResult = await resolveSharePointTargetForCli(reference, args, {
+    expectedKind: 'sharepoint-file',
+    site: readFlag(args, '--site'),
+    drive: readFlag(args, '--drive'),
+  });
+
+  if (!targetResult.success || !targetResult.data) {
+    return printFailure(targetResult);
+  }
+
+  const clientResult = await createSharePointClientForCli(targetResult.data, args);
+
+  if (!clientResult.success || !clientResult.data) {
+    return printFailure(clientResult);
+  }
+
+  const result = await clientResult.data.inspectDriveItem(targetResult.data.site.value, targetResult.data.file?.value ?? reference, {
+    drive: targetResult.data.drive?.value,
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(
+    {
+      target: targetResult.data,
+      file: result.data,
+    },
+    outputFormat(args, 'json')
+  );
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSharePointPermissionsInspect(args: string[]): Promise<number> {
+  const siteReference = readFlag(args, '--site');
+
+  if (!siteReference) {
+    return printFailure(
+      argumentFailure(
+        'SHAREPOINT_SITE_REQUIRED',
+        'Usage: sharepoint permissions inspect --site <site|binding> [--list name|binding] [--file path|binding] [--drive name]'
+      )
+    );
+  }
+
+  const listReference = readFlag(args, '--list');
+  const fileReference = readFlag(args, '--file');
+  const driveReference = readFlag(args, '--drive');
+  const resolutionKind = fileReference ? 'sharepoint-file' : listReference ? 'sharepoint-list' : 'sharepoint-site';
+
+  const targetResult =
+    resolutionKind === 'sharepoint-file'
+      ? await resolveSharePointTargetForCli(fileReference as string, args, {
+          expectedKind: 'sharepoint-file',
+          site: siteReference,
+          drive: driveReference,
+        })
+      : resolutionKind === 'sharepoint-list'
+        ? await resolveSharePointTargetForCli(listReference as string, args, {
+            expectedKind: 'sharepoint-list',
+            site: siteReference,
+          })
+        : await resolveSharePointTargetForCli(siteReference, args, {
+            expectedKind: 'sharepoint-site',
+          });
+
+  if (!targetResult.success || !targetResult.data) {
+    return printFailure(targetResult);
+  }
+
+  const clientResult = await createSharePointClientForCli(targetResult.data, args);
+
+  if (!clientResult.success || !clientResult.data) {
+    return printFailure(clientResult);
+  }
+
+  const result = await clientResult.data.inspectPermissions(targetResult.data.site.value, {
+    list: targetResult.data.list?.value,
+    drive: targetResult.data.drive?.value,
+    item: targetResult.data.file?.value,
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(
+    {
+      target: targetResult.data,
+      permissions: result.data,
+    },
+    outputFormat(args, 'json')
+  );
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runPowerBiWorkspaceInspect(args: string[]): Promise<number> {
+  const reference = positionalArgs(args)[0];
+
+  if (!reference) {
+    return printFailure(
+      argumentFailure('POWERBI_WORKSPACE_REQUIRED', 'Usage: powerbi workspace inspect <workspace|binding> [--project path] [--profile name]')
+    );
+  }
+
+  const targetResult = await resolvePowerBiTargetForCli(reference, args, {
+    expectedKind: 'powerbi-workspace',
+  });
+
+  if (!targetResult.success || !targetResult.data) {
+    return printFailure(targetResult);
+  }
+
+  const clientResult = await createPowerBiClientForCli(targetResult.data, args);
+
+  if (!clientResult.success || !clientResult.data) {
+    return printFailure(clientResult);
+  }
+
+  const result = await clientResult.data.inspectWorkspace(targetResult.data.workspace.value);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(
+    {
+      target: targetResult.data,
+      workspace: result.data,
+    },
+    outputFormat(args, 'json')
+  );
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runPowerBiDatasetInspect(args: string[]): Promise<number> {
+  const reference = positionalArgs(args)[0];
+
+  if (!reference) {
+    return printFailure(
+      argumentFailure(
+        'POWERBI_DATASET_REQUIRED',
+        'Usage: powerbi dataset inspect <dataset|binding> --workspace <workspace|binding> [--project path] [--profile name]'
+      )
+    );
+  }
+
+  const targetResult = await resolvePowerBiTargetForCli(reference, args, {
+    expectedKind: 'powerbi-dataset',
+    workspace: readFlag(args, '--workspace'),
+  });
+
+  if (!targetResult.success || !targetResult.data) {
+    return printFailure(targetResult);
+  }
+
+  const clientResult = await createPowerBiClientForCli(targetResult.data, args);
+
+  if (!clientResult.success || !clientResult.data) {
+    return printFailure(clientResult);
+  }
+
+  const result = await clientResult.data.inspectDataset(targetResult.data.workspace.value, targetResult.data.dataset?.value ?? reference);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(
+    {
+      target: targetResult.data,
+      dataset: result.data,
+    },
+    outputFormat(args, 'json')
+  );
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runPowerBiReportInspect(args: string[]): Promise<number> {
+  const reference = positionalArgs(args)[0];
+
+  if (!reference) {
+    return printFailure(
+      argumentFailure(
+        'POWERBI_REPORT_REQUIRED',
+        'Usage: powerbi report inspect <report|binding> --workspace <workspace|binding> [--project path] [--profile name]'
+      )
+    );
+  }
+
+  const targetResult = await resolvePowerBiTargetForCli(reference, args, {
+    expectedKind: 'powerbi-report',
+    workspace: readFlag(args, '--workspace'),
+  });
+
+  if (!targetResult.success || !targetResult.data) {
+    return printFailure(targetResult);
+  }
+
+  const clientResult = await createPowerBiClientForCli(targetResult.data, args);
+
+  if (!clientResult.success || !clientResult.data) {
+    return printFailure(clientResult);
+  }
+
+  const result = await clientResult.data.inspectReport(targetResult.data.workspace.value, targetResult.data.report?.value ?? reference);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(
+    {
+      target: targetResult.data,
+      report: result.data,
+    },
+    outputFormat(args, 'json')
+  );
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function resolveSharePointTargetForCli(
+  reference: string,
+  args: string[],
+  options: {
+    expectedKind: 'sharepoint-site' | 'sharepoint-list' | 'sharepoint-file';
+    site?: string;
+    drive?: string;
+  }
+): Promise<OperationResult<ResolvedSharePointTarget>> {
+  const projectContext = await resolveProviderBindingContext(args);
+
+  if (!projectContext.success || !projectContext.data) {
+    return projectContext as unknown as OperationResult<ResolvedSharePointTarget>;
+  }
+
+  return resolveSharePointTarget(projectContext.data, reference, options);
+}
+
+async function resolvePowerBiTargetForCli(
+  reference: string,
+  args: string[],
+  options: {
+    expectedKind: 'powerbi-workspace' | 'powerbi-dataset' | 'powerbi-report';
+    workspace?: string;
+  }
+): Promise<OperationResult<ResolvedPowerBiTarget>> {
+  const projectContext = await resolveProviderBindingContext(args);
+
+  if (!projectContext.success || !projectContext.data) {
+    return projectContext as unknown as OperationResult<ResolvedPowerBiTarget>;
+  }
+
+  return resolvePowerBiTarget(projectContext.data, reference, options);
+}
+
+async function resolveProviderBindingContext(args: string[]): Promise<OperationResult<ProviderBindingResolverContext>> {
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return discoveryOptions as unknown as OperationResult<ProviderBindingResolverContext>;
+  }
+
+  const projectPath = readFlag(args, '--project') ?? process.cwd();
+  const projectResult = await discoverProject(projectPath, discoveryOptions.data);
+
+  if (!projectResult.success || !projectResult.data) {
+    return projectResult as unknown as OperationResult<ProviderBindingResolverContext>;
+  }
+
+  return ok(
+    {
+      providerBindings: projectResult.data.providerBindings,
+    },
+    {
+      supportTier: projectResult.supportTier,
+      diagnostics: projectResult.diagnostics,
+      warnings: projectResult.warnings,
+    }
+  );
+}
+
+async function createSharePointClientForCli(
+  target: ResolvedSharePointTarget,
+  args: string[]
+): Promise<OperationResult<SharePointClient>> {
+  const authProfileName = readFlag(args, '--profile') ?? target.authProfile;
+
+  if (!authProfileName) {
+    return argumentFailure(
+      'AUTH_PROFILE_REQUIRED',
+      'SharePoint inspection requires an auth profile. Provide `--profile NAME` or set `metadata.authProfile` on the provider binding.'
+    );
+  }
+
+  const httpClientResult = await createAuthenticatedHttpClientForCli('https://graph.microsoft.com', authProfileName, args);
+
+  if (!httpClientResult.success || !httpClientResult.data) {
+    return httpClientResult as unknown as OperationResult<SharePointClient>;
+  }
+
+  return ok(new SharePointClient(httpClientResult.data), {
+    supportTier: httpClientResult.supportTier,
+    diagnostics: httpClientResult.diagnostics,
+    warnings: httpClientResult.warnings,
+  });
+}
+
+async function createPowerBiClientForCli(
+  target: ResolvedPowerBiTarget,
+  args: string[]
+): Promise<OperationResult<PowerBiClient>> {
+  const authProfileName = readFlag(args, '--profile') ?? target.authProfile;
+
+  if (!authProfileName) {
+    return argumentFailure(
+      'AUTH_PROFILE_REQUIRED',
+      'Power BI inspection requires an auth profile. Provide `--profile NAME` or set `metadata.authProfile` on the provider binding.'
+    );
+  }
+
+  const httpClientResult = await createAuthenticatedHttpClientForCli('https://api.powerbi.com', authProfileName, args);
+
+  if (!httpClientResult.success || !httpClientResult.data) {
+    return httpClientResult as unknown as OperationResult<PowerBiClient>;
+  }
+
+  return ok(new PowerBiClient(httpClientResult.data), {
+    supportTier: httpClientResult.supportTier,
+    diagnostics: httpClientResult.diagnostics,
+    warnings: httpClientResult.warnings,
+  });
+}
+
+async function createAuthenticatedHttpClientForCli(baseUrl: string, authProfileName: string, args: string[]): Promise<OperationResult<HttpClient>> {
+  const auth = new AuthService(readConfigOptions(args));
+  const profileResult = await auth.getProfile(authProfileName);
+
+  if (!profileResult.success) {
+    return profileResult as unknown as OperationResult<HttpClient>;
+  }
+
+  if (!profileResult.data) {
+    return fail(
+      createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${authProfileName} was not found.`, {
+        source: '@pp/cli',
+      })
+    );
+  }
+
+  const tokenProviderResult = createTokenProvider(profileResult.data, readConfigOptions(args), readPublicClientLoginOptions(args));
+
+  if (!tokenProviderResult.success || !tokenProviderResult.data) {
+    return tokenProviderResult as unknown as OperationResult<HttpClient>;
+  }
+
+  return ok(
+    new HttpClient({
+      baseUrl,
+      tokenProvider: tokenProviderResult.data,
+    }),
+    {
+      supportTier: tokenProviderResult.supportTier,
+      diagnostics: [...profileResult.diagnostics, ...tokenProviderResult.diagnostics],
+      warnings: [...(profileResult.warnings ?? []), ...(tokenProviderResult.warnings ?? [])],
+    }
+  );
+}
+
 function printByFormat(value: unknown, format: OutputFormat): void {
   process.stdout.write(renderOutput(value, format));
 }
@@ -6476,6 +7011,13 @@ function printHelp(): void {
       '  model forms <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model views <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model dependencies <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  sharepoint site inspect <site|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  sharepoint list inspect <list|binding> --site <site|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  sharepoint file inspect <file|binding> --site <site|binding> [--drive name] [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  sharepoint permissions inspect --site <site|binding> [--list name|binding] [--file path|binding] [--drive name] [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  powerbi workspace inspect <workspace|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  powerbi dataset inspect <dataset|binding> --workspace <workspace|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  powerbi report inspect <report|binding> --workspace <workspace|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       '  project init [path] [--name NAME] [--environment ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [--force] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  project doctor [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -6797,6 +7339,60 @@ function printCanvasInspectHelp(): void {
       'Examples:',
       '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printSharePointHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint <command> <action> [options]',
+      '',
+      'Commands:',
+      '  site inspect <site|binding>              inspect a SharePoint site by URL, site id, or project binding',
+      '  list inspect <list|binding> --site ...   inspect a SharePoint list by title, id, or project binding',
+      '  file inspect <file|binding> --site ...   inspect a drive item by path, id, or project binding',
+      '  permissions inspect --site ...           inspect site, list, or drive item permissions',
+      '',
+      'Binding notes:',
+      '  - SharePoint bindings support `sharepoint-site`, `sharepoint-list`, and `sharepoint-file` kinds.',
+      '  - `sharepoint-list` and `sharepoint-file` bindings should declare `metadata.site`; file bindings can also declare `metadata.drive`.',
+      '  - Bindings can declare `metadata.authProfile` so commands do not need `--profile`.',
+      '',
+      'Examples:',
+      '  pp sharepoint site inspect financeSite --project .',
+      '  pp sharepoint list inspect Campaigns --site financeSite --profile graph-user',
+      '  pp sharepoint file inspect financeBudget --project .',
+      '  pp sharepoint permissions inspect --site financeSite --file /Shared Documents/Budget.xlsx --drive Documents --profile graph-user',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printPowerBiHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: powerbi <command> <action> [options]',
+      '',
+      'Commands:',
+      '  workspace inspect <workspace|binding>                    inspect a Power BI workspace by name, id, or project binding',
+      '  dataset inspect <dataset|binding> --workspace ...        inspect a dataset plus datasource and refresh metadata',
+      '  report inspect <report|binding> --workspace ...          inspect a report and its workspace linkage',
+      '',
+      'Binding notes:',
+      '  - Power BI bindings support `powerbi` or `powerbi-workspace`, plus `powerbi-dataset` and `powerbi-report`.',
+      '  - Dataset and report bindings should declare `metadata.workspace` to point at a workspace binding or raw workspace name/id.',
+      '  - Bindings can declare `metadata.authProfile` so commands do not need `--profile`.',
+      '',
+      'Examples:',
+      '  pp powerbi workspace inspect financeWorkspace --project .',
+      '  pp powerbi dataset inspect financeDataset --project .',
+      '  pp powerbi report inspect "Executive Overview" --workspace Finance --profile powerbi-user',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

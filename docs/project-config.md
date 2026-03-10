@@ -228,7 +228,34 @@ providerBindings:
   financePowerBi:
     kind: powerbi
     target: finance-workspace
+  financeReports:
+    kind: powerbi-report
+    target: Executive Overview
+    metadata:
+      workspace: financePowerBi
+      authProfile: powerbi-user
+  financeBudget:
+    kind: sharepoint-file
+    target: /Shared Documents/Budget.xlsx
+    metadata:
+      site: https://example.sharepoint.com/sites/finance
+      drive: Documents
+      authProfile: graph-user
 ```
+
+For provider-aware inspection commands, the adjacent provider domains use
+binding metadata to resolve project-local names into concrete targets:
+
+- `sharepoint-site` binds directly to a site URL or site id
+- `sharepoint-list` binds to a list title or id and should declare `metadata.site`
+- `sharepoint-file` binds to a drive item path or id and should declare
+  `metadata.site`; `metadata.drive` is optional when the default document
+  library is enough
+- `powerbi` and `powerbi-workspace` bind directly to a workspace name or id
+- `powerbi-dataset` and `powerbi-report` bind to dataset/report names or ids
+  and should declare `metadata.workspace`
+- `metadata.authProfile` is optional on SharePoint and Power BI bindings; when
+  present, the CLI uses it as the default auth profile for those targets
 
 ## Project commands
 

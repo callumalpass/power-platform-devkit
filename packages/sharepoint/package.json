@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pp/diagnostics": "workspace:*",
     "@pp/http": "workspace:*"
   }
 }

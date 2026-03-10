@@ -1679,6 +1679,7 @@ function buildProjectContractSummary(
 
 function buildProjectDoctorTopologySummary(contract: ProjectContractSummary): ProjectDoctorTopologySummary {
   const stageMappings = contract.stageMappings.map((stage) => {
+    const stageName = stage.stage ?? '<unset>';
     const solutionMappings =
       stage.solutionMappings.length > 0
         ? stage.solutionMappings.map((solution) =>
@@ -1688,20 +1689,20 @@ function buildProjectDoctorTopologySummary(contract: ProjectContractSummary): Pr
             `${stage.solutionAlias ?? '<unset>'} -> ${stage.environmentAlias ?? '<unset>'} / ${stage.solutionUniqueName ?? '<unset>'}`,
           ];
     const stageFlags = [
-      stage.stage === contract.defaultTarget.stage ? 'default stage' : undefined,
-      stage.stage === contract.activeTarget.stage ? 'selected stage' : undefined,
+      stageName === contract.defaultTarget.stage ? 'default stage' : undefined,
+      stageName === contract.activeTarget.stage ? 'selected stage' : undefined,
     ].filter(Boolean);
 
     return {
-      stage: stage.stage,
-      isDefault: stage.stage === contract.defaultTarget.stage,
-      isSelected: stage.stage === contract.activeTarget.stage,
+      stage: stageName,
+      isDefault: stageName === contract.defaultTarget.stage,
+      isSelected: stageName === contract.activeTarget.stage,
       environmentAlias: stage.environmentAlias,
       solutionAlias: stage.solutionAlias,
       solutionUniqueName: stage.solutionUniqueName,
       solutionMappings,
       parameterOverrides: stage.parameterOverrides,
-      summary: `${stage.stage}${stageFlags.length > 0 ? ` (${stageFlags.join(', ')})` : ''} -> environment ${stage.environmentAlias ?? '<unset>'} -> solution ${stage.solutionAlias ?? '<unset>'} (${stage.solutionUniqueName ?? '<unset>'})`,
+      summary: `${stageName}${stageFlags.length > 0 ? ` (${stageFlags.join(', ')})` : ''} -> environment ${stage.environmentAlias ?? '<unset>'} -> solution ${stage.solutionAlias ?? '<unset>'} (${stage.solutionUniqueName ?? '<unset>'})`,
     } satisfies ProjectDoctorTopologyStageSummary;
   });
 
@@ -1851,3 +1852,5 @@ function coerceValue(rawValue: string, type: ParameterType): PrimitiveValue {
 
   return rawValue;
 }
+
+export * from './provider-targets';
