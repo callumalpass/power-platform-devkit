@@ -473,6 +473,15 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
     ],
   },
   {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'DeleteItem',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'table', kind: 'string', required: true },
+      { name: 'id', kind: 'integer', required: true },
+    ],
+  },
+  {
     apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
     operationId: 'ListRecords',
     parameters: [
@@ -518,6 +527,15 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
       { name: 'recordId', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
       { name: 'item', kind: 'record', required: true, allowPrefixedFields: true },
       { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+    operationId: 'DeleteRecord',
+    parameters: [
+      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+      { name: 'recordId', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+      { name: 'partitionId', kind: 'string', buckets: ['parameters', 'queries'] },
     ],
   },
 ];

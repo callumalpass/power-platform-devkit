@@ -1,10 +1,10 @@
 {
-  "actionCount": 32,
+  "actionCount": 36,
   "artifactName": "Semantic Diagnostic Flow",
   "controlFlowEdgeCount": 0,
-  "dynamicContentReferenceCount": 29,
-  "expressionCount": 29,
-  "nodeCount": 33,
+  "dynamicContentReferenceCount": 33,
+  "expressionCount": 33,
+  "nodeCount": 37,
   "nodes": [
     {
       "branch": "root",
@@ -483,6 +483,96 @@
       "kind": "action",
       "name": "DataverseCreateRowMissingItem",
       "path": "actions.DataverseCreateRowMissingItem",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_commondataserviceforapps",
+            "path": "definition.actions.DataverseDeleteRowBadPartitionShape.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+            "path": "definition.actions.DataverseDeleteRowBadPartitionShape.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_commondataserviceforapps",
+                "path": "definition.actions.DataverseDeleteRowBadPartitionShape.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.DataverseDeleteRowBadPartitionShape",
+      "kind": "action",
+      "name": "DataverseDeleteRowBadPartitionShape",
+      "path": "actions.DataverseDeleteRowBadPartitionShape",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_commondataserviceforapps",
+            "path": "definition.actions.DataverseDeleteRowMissingRecordId.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+            "path": "definition.actions.DataverseDeleteRowMissingRecordId.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_commondataserviceforapps",
+                "path": "definition.actions.DataverseDeleteRowMissingRecordId.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.DataverseDeleteRowMissingRecordId",
+      "kind": "action",
+      "name": "DataverseDeleteRowMissingRecordId",
+      "path": "actions.DataverseDeleteRowMissingRecordId",
       "runAfter": [],
       "type": "OpenApiConnection",
       "variableUsage": {
@@ -1279,6 +1369,96 @@
       "kind": "action",
       "name": "SharePointCreateMissingDataset",
       "path": "actions.SharePointCreateMissingDataset",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointDeleteItemBadIdShape.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointDeleteItemBadIdShape.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointDeleteItemBadIdShape.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointDeleteItemBadIdShape",
+      "kind": "action",
+      "name": "SharePointDeleteItemBadIdShape",
+      "path": "actions.SharePointDeleteItemBadIdShape",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointDeleteItemMissingId.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointDeleteItemMissingId.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointDeleteItemMissingId.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointDeleteItemMissingId",
+      "kind": "action",
+      "name": "SharePointDeleteItemMissingId",
+      "path": "actions.SharePointDeleteItemMissingId",
       "runAfter": [],
       "type": "OpenApiConnection",
       "variableUsage": {

@@ -44,6 +44,20 @@
       "to": "connectionReference:shared_commondataserviceforapps"
     },
     {
+      "from": "action:actions.DataverseDeleteRowBadPartitionShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseDeleteRowBadPartitionShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
+      "from": "action:actions.DataverseDeleteRowMissingRecordId",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseDeleteRowMissingRecordId.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
       "from": "action:actions.DataverseGetRowBadMetadataShape",
       "kind": "connectionReferenceReference",
       "path": "definition.actions.DataverseGetRowBadMetadataShape.inputs.host.connection.name",
@@ -131,6 +145,20 @@
       "from": "action:actions.SharePointCreateMissingDataset",
       "kind": "connectionReferenceReference",
       "path": "definition.actions.SharePointCreateMissingDataset.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
+      "from": "action:actions.SharePointDeleteItemBadIdShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointDeleteItemBadIdShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_sharepointonline"
+    },
+    {
+      "from": "action:actions.SharePointDeleteItemMissingId",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.SharePointDeleteItemMissingId.inputs.host.connection.name",
       "resolved": true,
       "to": "connectionReference:shared_sharepointonline"
     },
@@ -532,6 +560,54 @@
       "kind": "action",
       "name": "DataverseCreateRowMissingItem",
       "path": "actions.DataverseCreateRowMissingItem",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.DataverseDeleteRowBadPartitionShape",
+      "kind": "action",
+      "name": "DataverseDeleteRowBadPartitionShape",
+      "path": "actions.DataverseDeleteRowBadPartitionShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.DataverseDeleteRowMissingRecordId",
+      "kind": "action",
+      "name": "DataverseDeleteRowMissingRecordId",
+      "path": "actions.DataverseDeleteRowMissingRecordId",
       "referenceCounts": {
         "actions": 0,
         "connectionReferences": 1,
@@ -997,6 +1073,54 @@
       "childIds": [],
       "dependentIds": [],
       "dependsOn": [],
+      "id": "action:actions.SharePointDeleteItemBadIdShape",
+      "kind": "action",
+      "name": "SharePointDeleteItemBadIdShape",
+      "path": "actions.SharePointDeleteItemBadIdShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.SharePointDeleteItemMissingId",
+      "kind": "action",
+      "name": "SharePointDeleteItemMissingId",
+      "path": "actions.SharePointDeleteItemMissingId",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
       "id": "action:actions.SharePointGetItemMissingId",
       "kind": "action",
       "name": "SharePointGetItemMissingId",
@@ -1161,10 +1285,10 @@
     ]
   },
   "summary": {
-    "actionCount": 32,
+    "actionCount": 36,
     "edgeCounts": {
       "actionReference": 1,
-      "connectionReferenceReference": 22,
+      "connectionReferenceReference": 26,
       "containment": 1,
       "environmentVariableReference": 1,
       "parameterReference": 2,
@@ -1172,7 +1296,7 @@
       "variableReference": 3,
       "variableWrite": 3
     },
-    "nodeCount": 33,
+    "nodeCount": 37,
     "scopeCount": 1,
     "triggerCount": 1,
     "unresolvedEdgeCount": 6

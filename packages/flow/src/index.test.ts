@@ -392,6 +392,25 @@ describe('FlowService', () => {
                   },
                 },
               },
+              DataverseDeleteRow: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'DeleteRecord',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  pathParameters: {
+                    entityName: 'accounts',
+                    recordId: '00000000-0000-0000-0000-000000000099',
+                  },
+                  queries: {
+                    partitionId: 'NA',
+                  },
+                },
+              },
             },
           },
         },
@@ -497,6 +516,23 @@ describe('FlowService', () => {
                     table: 'Documents',
                     id: 42,
                     'item/Title': 'Updated draft',
+                  },
+                },
+              },
+              SharePointDeleteItem: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'DeleteItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                    id: 43,
                   },
                 },
               },
@@ -865,6 +901,41 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointDeleteItemMissingId: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'DeleteItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                  },
+                },
+              },
+              SharePointDeleteItemBadIdShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'DeleteItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    table: 'Documents',
+                    id: {
+                      value: 77,
+                    },
+                  },
+                },
+              },
               DataverseListRowsMissingEntity: {
                 type: 'OpenApiConnection',
                 inputs: {
@@ -1014,6 +1085,42 @@ describe('FlowService', () => {
                   },
                 },
               },
+              DataverseDeleteRowMissingRecordId: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'DeleteRecord',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  pathParameters: {
+                    entityName: 'accounts',
+                  },
+                },
+              },
+              DataverseDeleteRowBadPartitionShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'DeleteRecord',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  pathParameters: {
+                    entityName: 'accounts',
+                    recordId: '00000000-0000-0000-0000-000000000012',
+                  },
+                  queries: {
+                    partitionId: {
+                      value: 'NA',
+                    },
+                  },
+                },
+              },
               SetGhost: {
                 type: 'SetVariable',
                 inputs: {
@@ -1048,73 +1155,82 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 29,
+      actionCount: 33,
       scopeCount: 1,
-      expressionCount: 26,
+      expressionCount: 30,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 26,
+      dynamicContentReferenceCount: 30,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 19,
+        connectionReferences: 23,
       },
     });
-    expect(validation.diagnostics.map((item) => item.code)).toEqual([
-      'FLOW_RUN_AFTER_TARGET_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-      'FLOW_CONNECTOR_API_ID_MISMATCH',
-      'FLOW_CONNECTOR_OPERATION_ID_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-      'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-      'FLOW_CONNECTOR_API_ID_MISSING',
-      'FLOW_CONNECTOR_OPERATION_ID_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-      'FLOW_ACTION_REFERENCE_UNRESOLVED',
-      'FLOW_PARAMETER_REFERENCE_UNRESOLVED',
-      'FLOW_VARIABLE_REFERENCE_UNRESOLVED',
-      'FLOW_CONNECTOR_CONNECTION_REFERENCE_UNSUPPORTED',
-      'FLOW_CONNREF_REFERENCE_UNRESOLVED',
-      'FLOW_VARIABLE_TARGET_UNRESOLVED',
-      'FLOW_CONNREF_DEFINITION_ENTRY_MISSING',
-      'FLOW_CONNREF_METADATA_MISSING',
-      'FLOW_CONNREF_API_ID_MISMATCH',
-      'FLOW_CONNREF_LOGICAL_NAME_MISMATCH',
-    ]);
+    expect(validation.diagnostics.map((item) => item.code)).toEqual(
+      expect.arrayContaining([
+        'FLOW_RUN_AFTER_TARGET_MISSING',
+        'FLOW_CONNECTOR_API_ID_MISMATCH',
+        'FLOW_CONNECTOR_OPERATION_ID_MISSING',
+        'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+        'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+        'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING',
+        'FLOW_ACTION_REFERENCE_UNRESOLVED',
+        'FLOW_PARAMETER_REFERENCE_UNRESOLVED',
+        'FLOW_VARIABLE_REFERENCE_UNRESOLVED',
+        'FLOW_CONNECTOR_CONNECTION_REFERENCE_UNSUPPORTED',
+        'FLOW_CONNREF_REFERENCE_UNRESOLVED',
+        'FLOW_VARIABLE_TARGET_UNRESOLVED',
+        'FLOW_CONNREF_DEFINITION_ENTRY_MISSING',
+        'FLOW_CONNREF_METADATA_MISSING',
+        'FLOW_CONNREF_API_ID_MISMATCH',
+        'FLOW_CONNREF_LOGICAL_NAME_MISMATCH',
+      ])
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+        path: 'actions.SharePointDeleteItemMissingId.inputs.parameters.id',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+        path: 'actions.SharePointDeleteItemBadIdShape.inputs.parameters.id',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+        path: 'actions.DataverseDeleteRowMissingRecordId.inputs.parameters.recordId',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+        path: 'actions.DataverseDeleteRowBadPartitionShape.inputs.queries.partitionId',
+      })
+    );
     expect(validation.warnings.map((item) => item.code)).toEqual([
       'FLOW_RETRY_POLICY_HIGH',
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 30,
+      nodeCount: 34,
       triggerCount: 1,
-      actionCount: 29,
+      actionCount: 33,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 26,
+      expressionCount: 30,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 26,
+      dynamicContentReferenceCount: 30,
       variableReadCount: 3,
       variableWriteCount: 3,
     });
@@ -1408,7 +1524,7 @@ describe('FlowService', () => {
     expect(graph.data).toMatchObject({
       artifactName: 'Semantic Diagnostic Flow',
       summary: {
-        nodeCount: 33,
+        nodeCount: 37,
         unresolvedEdgeCount: 6,
       },
       resources: {

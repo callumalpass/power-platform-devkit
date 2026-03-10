@@ -231,6 +231,9 @@ Current validation checks:
     `inputs.parameters.item` or one-or-more flattened
     `inputs.parameters.item/<column>` entries, and optional
     `inputs.parameters.view`
+  - `shared_sharepointonline` `DeleteItem` with required
+    `inputs.parameters.dataset`, `inputs.parameters.table`, and
+    `inputs.parameters.id`
   - `shared_commondataserviceforapps` `ListRecords` with required
     `inputs.parameters.entityName` or `inputs.pathParameters.entityName` plus
     typed optional query inputs accepted from either `inputs.parameters` or
@@ -254,6 +257,11 @@ Current validation checks:
     `inputs.pathParameters.entityName` /
     `inputs.pathParameters.recordId` plus the same bounded row-payload support
     as `CreateRecord` and optional `x-ms-odata-metadata-full`
+  - `shared_commondataserviceforapps` `DeleteRecord` with required
+    `inputs.parameters.entityName` / `inputs.parameters.recordId` or
+    `inputs.pathParameters.entityName` /
+    `inputs.pathParameters.recordId`, plus optional `partitionId` accepted
+    from either `inputs.parameters` or `inputs.queries`
   - required string fields must remain string literals or string-valued
     expressions, integer fields must remain integer literals or whole
     expressions, and boolean fields must remain boolean literals or whole

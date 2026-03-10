@@ -59,6 +59,20 @@
     {
       "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
       "level": "error",
+      "message": "Connector action DataverseDeleteRowBadPartitionShape parameter partitionId for DeleteRecord must be a string expression or literal, not object.",
+      "path": "actions.DataverseDeleteRowBadPartitionShape.inputs.queries.partitionId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action DataverseDeleteRowMissingRecordId is missing required parameter recordId for DeleteRecord.",
+      "path": "actions.DataverseDeleteRowMissingRecordId.inputs.parameters.recordId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
       "message": "Connector action DataverseGetRowBadMetadataShape parameter x-ms-odata-metadata-full for GetItem must be a boolean literal or expression, not object.",
       "path": "actions.DataverseGetRowBadMetadataShape.inputs.parameters.x-ms-odata-metadata-full",
       "source": "@pp/flow"
@@ -145,6 +159,20 @@
       "level": "error",
       "message": "Connector action SharePointCreateMissingDataset is missing required parameter dataset for CreateItem.",
       "path": "actions.SharePointCreateMissingDataset.inputs.parameters.dataset",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointDeleteItemBadIdShape parameter id for DeleteItem must be an integer literal or expression, not object.",
+      "path": "actions.SharePointDeleteItemBadIdShape.inputs.parameters.id",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointDeleteItemMissingId is missing required parameter id for DeleteItem.",
+      "path": "actions.SharePointDeleteItemMissingId.inputs.parameters.id",
       "source": "@pp/flow"
     },
     {

@@ -284,6 +284,41 @@
           }
         }
       },
+      "SharePointDeleteItemMissingId": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "DeleteItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "table": "Documents"
+          }
+        }
+      },
+      "SharePointDeleteItemBadIdShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "DeleteItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "table": "Documents",
+            "id": {
+              "value": 77
+            }
+          }
+        }
+      },
       "DataverseListRowsMissingEntity": {
         "type": "OpenApiConnection",
         "inputs": {
@@ -495,6 +530,42 @@
             "item/name": [
               "Contoso"
             ]
+          }
+        }
+      },
+      "DataverseDeleteRowMissingRecordId": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "DeleteRecord",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "pathParameters": {
+            "entityName": "accounts"
+          }
+        }
+      },
+      "DataverseDeleteRowBadPartitionShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "DeleteRecord",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "pathParameters": {
+            "entityName": "accounts",
+            "recordId": "00000000-0000-0000-0000-000000000012"
+          },
+          "queries": {
+            "partitionId": {
+              "value": "NA"
+            }
           }
         }
       },
