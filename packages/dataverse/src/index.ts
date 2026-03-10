@@ -210,6 +210,7 @@ export interface DetailedAttributeDefinition extends NormalizedAttributeDefiniti
 export interface ConnectionReferenceRecord {
   connectionreferenceid: string;
   connectionreferencelogicalname?: string;
+  connectionreferencedisplayname?: string;
   displayname?: string;
   connectorid?: string;
   connectionid?: string;
@@ -1030,7 +1031,7 @@ export class ConnectionReferenceService {
         select: [
           'connectionreferenceid',
           'connectionreferencelogicalname',
-          'displayname',
+          'connectionreferencedisplayname',
           'connectorid',
           'connectionid',
           'customconnectorid',
@@ -1631,7 +1632,7 @@ function normalizeConnectionReference(record: ConnectionReferenceRecord): Connec
   return {
     id: record.connectionreferenceid,
     logicalName: record.connectionreferencelogicalname,
-    displayName: record.displayname,
+    displayName: record.connectionreferencedisplayname ?? record.displayname,
     connectorId: record.connectorid,
     connectionId: record.connectionid,
     customConnectorId: record.customconnectorid,

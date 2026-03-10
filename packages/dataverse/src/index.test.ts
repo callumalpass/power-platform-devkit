@@ -684,6 +684,42 @@ describe('ALM services', () => {
     });
   });
 
+  it('queries connection references with the live display-name column', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              connectionreferenceid: 'ref-1',
+              connectionreferencelogicalname: 'pp_shared',
+              connectionreferencedisplayname: 'Shared Connector',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+              connectionid: 'conn-1',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.list();
+
+    expect(result.success).toBe(true);
+    expect(result.data?.[0]).toMatchObject({
+      id: 'ref-1',
+      logicalName: 'pp_shared',
+      displayName: 'Shared Connector',
+      connected: true,
+    });
+    expect(httpClient.requests.at(-1)?.path).toBe(
+      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Ccustomconnectorid%2C_solutionid_value%2Cstatecode'
+    );
+  });
+
   it('joins environment variable definitions with current values', async () => {
     const httpClient = new FakeHttpClient([
       ok({
