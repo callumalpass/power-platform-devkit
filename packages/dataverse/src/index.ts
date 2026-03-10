@@ -1062,19 +1062,9 @@ export class ConnectionReferenceService {
   constructor(private readonly dataverseClient: DataverseClient) {}
 
   async list(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<ConnectionReferenceSummary[]>> {
+    const recordResult = await queryConnectionReferenceRecords(this.dataverseClient);
     const [records, solutionId] = await Promise.all([
-      this.dataverseClient.queryAll<ConnectionReferenceRecord>({
-        table: 'connectionreferences',
-        select: [
-          'connectionreferenceid',
-          'connectionreferencelogicalname',
-          'connectionreferencedisplayname',
-          'connectorid',
-          'connectionid',
-          'customconnectorid',
-          'statecode',
-        ],
-      }),
+      Promise.resolve(recordResult),
       options.solutionUniqueName ? resolveSolutionId(this.dataverseClient, options.solutionUniqueName) : Promise.resolve(ok(undefined, { supportTier: 'preview' })),
     ]);
 
@@ -1809,6 +1799,78 @@ function normalizeConnectionReference(record: ConnectionReferenceRecord, inferre
     stateCode: record.statecode,
     connected: Boolean(record.connectionid),
   };
+}
+
+const baseConnectionReferenceSelect = [
+  'connectionreferenceid',
+  'connectionreferencelogicalname',
+  'connectionreferencedisplayname',
+  'connectorid',
+  'connectionid',
+  'statecode',
+] as const;
+
+const optionalConnectionReferenceSelect = ['customconnectorid'] as const;
+
+async function queryConnectionReferenceRecords(
+  dataverseClient: DataverseClient
+): Promise<OperationResult<ConnectionReferenceRecord[]>> {
+  const initial = await dataverseClient.queryAll<ConnectionReferenceRecord>({
+    table: 'connectionreferences',
+    select: [...baseConnectionReferenceSelect, ...optionalConnectionReferenceSelect],
+  });
+
+  const unsupportedColumns = findUnsupportedConnectionReferenceColumns(initial.diagnostics);
+  if (initial.success || unsupportedColumns.length === 0) {
+    return initial;
+  }
+
+  const retry = await dataverseClient.queryAll<ConnectionReferenceRecord>({
+    table: 'connectionreferences',
+    select: [...baseConnectionReferenceSelect],
+  });
+
+  if (!retry.success) {
+    return retry;
+  }
+
+  return ok(retry.data ?? [], {
+    supportTier: retry.supportTier,
+    diagnostics: retry.diagnostics,
+    warnings: mergeDiagnosticLists(
+      retry.warnings,
+      [
+        createDiagnostic(
+          'warning',
+          'DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE',
+          `Connection reference query retried without unsupported column${unsupportedColumns.length === 1 ? '' : 's'} ${unsupportedColumns.join(', ')}.`,
+          {
+            source: '@pp/dataverse',
+            detail: initial.diagnostics
+              .map((diagnostic) => diagnostic.detail ?? diagnostic.message)
+              .filter((value) => value && value.length > 0)
+              .join('\n'),
+          }
+        ),
+      ]
+    ),
+  });
+}
+
+function findUnsupportedConnectionReferenceColumns(diagnostics: Diagnostic[]): string[] {
+  const unsupported = new Set<string>();
+
+  for (const diagnostic of diagnostics) {
+    const message = `${diagnostic.message} ${diagnostic.detail ?? ''}`;
+
+    for (const column of optionalConnectionReferenceSelect) {
+      if (message.includes(`'${column}'`)) {
+        unsupported.add(column);
+      }
+    }
+  }
+
+  return Array.from(unsupported);
 }
 
 function normalizeEnvironmentVariable(

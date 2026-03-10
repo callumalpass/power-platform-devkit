@@ -828,8 +828,62 @@ describe('ALM services', () => {
       connected: true,
     });
     expect(httpClient.requests.at(-1)?.path).toBe(
-      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Ccustomconnectorid%2Cstatecode'
+      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode%2Ccustomconnectorid'
     );
+  });
+
+  it('retries connection references without unsupported optional columns', async () => {
+    const httpClient = new FakeHttpClient([
+      {
+        success: false,
+        diagnostics: [
+          {
+            level: 'error',
+            code: 'HTTP_REQUEST_FAILED',
+            message:
+              'GET connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Ccustomconnectorid%2Cstatecode returned 400',
+            detail:
+              '{"error":{"code":"0x80060888","message":"Could not find a property named \'customconnectorid\' on type \'Microsoft.Dynamics.CRM.connectionreference\'."}}',
+            source: '@pp/http',
+          },
+        ],
+        warnings: [],
+        supportTier: 'preview',
+      },
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              connectionreferenceid: 'ref-1',
+              connectionreferencelogicalname: 'pp_shared',
+              connectionreferencedisplayname: 'Shared Connector',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+              connectionid: 'conn-1',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.list();
+
+    expect(result.success).toBe(true);
+    expect(result.data?.[0]).toMatchObject({
+      id: 'ref-1',
+      logicalName: 'pp_shared',
+      customConnectorId: undefined,
+      connected: true,
+    });
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode%2Ccustomconnectorid',
+      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode',
+    ]);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE');
   });
 
   it('filters connection references by solution components when rows omit a solution lookup column', async () => {
