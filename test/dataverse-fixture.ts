@@ -89,6 +89,27 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
         }
       );
     },
+    delete: async (table: string, id: string) => {
+      const deleteFrom = (state: Map<string, unknown[]>) => {
+        const records = (state.get(table) ?? []) as Array<Record<string, unknown>>;
+        const next = records.filter((record) => !Object.values(record).includes(id));
+        state.set(table, next);
+      };
+
+      deleteFrom(queryState);
+      deleteFrom(queryAllState);
+
+      return ok(
+        {
+          status: 204,
+          headers: {},
+          entityId: id,
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    },
   } as unknown as DataverseClient;
 }
 

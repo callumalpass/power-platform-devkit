@@ -54,7 +54,7 @@ import {
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
 import { buildDeployPlan, executeDeploy, executeDeployPlan, type DeployPlan } from '@pp/deploy';
-import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
+import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { HttpClient } from '@pp/http';
 import { ModelService } from '@pp/model';
@@ -295,6 +295,8 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
       return runEnvironmentResolveMakerId(configOptions, args);
     case 'cleanup-plan':
       return runEnvironmentCleanupPlan(configOptions, args);
+    case 'cleanup':
+      return runEnvironmentCleanup(configOptions, args);
     case 'remove':
       return runEnvironmentRemove(configOptions, args);
     default:
@@ -345,6 +347,8 @@ async function runSolution(command: string | undefined, args: string[]): Promise
   switch (command) {
     case 'create':
       return runSolutionCreate(args);
+    case 'delete':
+      return runSolutionDelete(args);
     case 'set-metadata':
       return runSolutionSetMetadata(args);
     case 'list':
@@ -2355,16 +2359,151 @@ async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args
     return printFailure(argumentFailure('ENV_CLEANUP_PREFIX_REQUIRED', '--prefix is required.'));
   }
 
+  const plan = await buildEnvironmentCleanupPlan(configOptions, alias, prefix);
+
+  if (!plan.success || !plan.data) {
+    return printFailure(plan);
+  }
+
+  printByFormat(plan.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
+  const alias = positionalArgs(args)[0];
+  const prefix = readFlag(args, '--prefix');
+
+  if (!alias) {
+    return printFailure(argumentFailure('ENV_ALIAS_REQUIRED', 'Environment alias is required.'));
+  }
+
+  if (!prefix) {
+    return printFailure(argumentFailure('ENV_CLEANUP_PREFIX_REQUIRED', '--prefix is required.'));
+  }
+
+  const plan = await buildEnvironmentCleanupPlan(configOptions, alias, prefix);
+
+  if (!plan.success || !plan.data) {
+    return printFailure(plan);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'env.cleanup',
+    {
+      environment: plan.data.environment,
+      prefix,
+      candidateCount: plan.data.candidateCount,
+    },
+    {
+      cleanupCandidates: plan.data.cleanupCandidates,
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
   const resolution = await resolveDataverseClient(alias, configOptions);
 
   if (!resolution.success || !resolution.data) {
     return printFailure(resolution);
   }
 
+  const service = new SolutionService(resolution.data.client);
+  const deleted: Array<{ removed: boolean; solution: { solutionid: string; uniquename: string; friendlyname?: string; version?: string } }> = [];
+  const failures: Array<{ solution: { solutionid: string; uniquename: string; friendlyname?: string; version?: string }; diagnostics: Diagnostic[] }> = [];
+  const warnings: Diagnostic[] = [];
+
+  for (const candidate of plan.data.cleanupCandidates) {
+    const result = await service.delete(candidate.uniquename);
+
+    warnings.push(...result.warnings);
+
+    if (!result.success || !result.data) {
+      failures.push({
+        solution: candidate,
+        diagnostics: result.diagnostics,
+      });
+      continue;
+    }
+
+    deleted.push(result.data);
+  }
+
+  const summary = {
+    environment: plan.data.environment,
+    prefix,
+    candidateCount: plan.data.candidateCount,
+    deletedCount: deleted.length,
+    failedCount: failures.length,
+    deleted,
+    failures: failures.map((failure) => ({
+      solution: failure.solution,
+      diagnostics: failure.diagnostics,
+    })),
+  };
+
+  if (failures.length > 0) {
+    return printFailure(
+      fail(failures.flatMap((failure) => failure.diagnostics), {
+        details: summary,
+        warnings,
+        supportTier: 'preview',
+        suggestedNextActions: [
+          'Inspect the failing solution diagnostics to see whether dependencies or managed-state restrictions blocked deletion.',
+          `Re-run \`pp env cleanup-plan ${alias} --prefix ${prefix}\` to confirm which disposable assets remain.`,
+        ],
+      })
+    );
+  }
+
+  printWarnings(
+    ok(summary, {
+      supportTier: 'preview',
+      warnings,
+    })
+  );
+  printByFormat(summary, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function buildEnvironmentCleanupPlan(
+  configOptions: ConfigStoreOptions,
+  alias: string,
+  prefix: string
+): Promise<
+  OperationResult<{
+    environment: {
+      alias: string;
+      url: string;
+      authProfile: string;
+      defaultSolution?: string;
+      makerEnvironmentId?: string;
+    };
+    prefix: string;
+    matchStrategy: {
+      kind: string;
+      fields: string[];
+    };
+    remoteResetSupported: boolean;
+    cleanupCandidates: Array<{ solutionid: string; uniquename: string; friendlyname?: string; version?: string }>;
+    candidateCount: number;
+    suggestedNextActions: string[];
+    knownLimitations: string[];
+  }>
+> {
+  const resolution = await resolveDataverseClient(alias, configOptions);
+
+  if (!resolution.success || !resolution.data) {
+    return resolution as OperationResult<never>;
+  }
+
   const solutions = await new SolutionService(resolution.data.client).list();
 
   if (!solutions.success) {
-    return printFailure(solutions);
+    return solutions as OperationResult<never>;
   }
 
   const normalizedPrefix = prefix.toLowerCase();
@@ -2374,7 +2513,7 @@ async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args
     return uniqueName.startsWith(normalizedPrefix) || friendlyName.startsWith(normalizedPrefix);
   });
 
-  printByFormat(
+  return ok(
     {
       environment: {
         alias: resolution.data.environment.alias,
@@ -2388,27 +2527,28 @@ async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args
         kind: 'case-insensitive-prefix',
         fields: ['uniquename', 'friendlyname'],
       },
-      remoteResetSupported: false,
+      remoteResetSupported: true,
       cleanupCandidates,
       candidateCount: cleanupCandidates.length,
       suggestedNextActions:
         cleanupCandidates.length > 0
           ? [
               'Review the matching solutions before deleting anything remotely.',
-              'Delete the listed solutions with an external tool or maker workflow because pp does not yet expose remote solution deletion.',
-              'Re-run `pp env cleanup-plan <alias> --prefix <prefix>` to confirm the environment is clean before bootstrap.',
+              `Run \`pp env cleanup ${alias} --prefix ${prefix}\` to delete the listed disposable solutions through pp.`,
+              `Re-run \`pp env cleanup-plan ${alias} --prefix ${prefix}\` to confirm the environment is clean before bootstrap.`,
             ]
           : [
               'No matching solutions were found for this prefix.',
               'Proceed with bootstrap using the same prefix or generate a new run-scoped prefix if you still want quarantine semantics.',
             ],
-      knownLimitations: [
-        'pp can discover cleanup candidates for an environment alias, but it does not yet expose a first-class remote reset or solution deletion command.',
-      ],
+      knownLimitations: [],
     },
-    outputFormat(args, 'json')
+    {
+      supportTier: 'preview',
+      diagnostics: solutions.diagnostics,
+      warnings: solutions.warnings,
+    }
   );
-  return 0;
 }
 
 async function runDataverseWhoAmI(args: string[]): Promise<number> {
@@ -3386,6 +3526,57 @@ async function runSolutionCreate(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runSolutionDelete(args: string[]): Promise<number> {
+  const uniqueName = positionalArgs(args)[0];
+
+  if (!uniqueName) {
+    return printFailure(argumentFailure('SOLUTION_DELETE_ARGS_REQUIRED', 'Usage: solution delete <uniqueName> --environment <alias>'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const service = new SolutionService(resolution.data.client);
+  const solution = await service.inspect(uniqueName);
+
+  if (!solution.success) {
+    return printFailure(solution);
+  }
+
+  if (!solution.data) {
+    return printFailure(fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`)));
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'solution.delete',
+    {
+      environment: resolution.data.environment.alias,
+      uniqueName,
+      solutionId: solution.data.solutionid,
+    },
+    solution.data
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await service.delete(uniqueName);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printWarnings(result);
   printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
@@ -5621,6 +5812,7 @@ function printHelp(): void {
       '  env inspect <alias> [--config-dir path]',
       '  env resolve-maker-id <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  env remove <alias> [--config-dir path]',
       '',
       '  dv whoami --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -5645,6 +5837,7 @@ function printHelp(): void {
       '  dv metadata create-customer-relationship --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '',
       '  solution create <uniqueName> --environment ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)',
+      '  solution delete <uniqueName> --environment ALIAS [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution set-metadata <uniqueName> --environment ALIAS [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]',
       '  solution list --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution inspect <uniqueName> --environment ALIAS [--config-dir path]',
@@ -5801,6 +5994,7 @@ function printSolutionHelp(): void {
       '',
       'Remote commands:',
       '  create <uniqueName>         create a solution shell in an environment',
+      '  delete <uniqueName>         delete one solution from an environment',
       '  set-metadata <uniqueName>   update solution publisher or version metadata',
       '  list                        list solutions in an environment',
       '  inspect <uniqueName>        inspect one solution',

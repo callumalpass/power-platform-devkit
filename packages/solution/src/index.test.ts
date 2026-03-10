@@ -137,6 +137,31 @@ function createStubClient(data: StubData): DataverseClient {
         }
       );
     },
+    delete: async (table: string, id: string) => {
+      if (table === 'solutions' && data.solution.solutionid === id) {
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            entityId: id,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      }
+
+      return ok(
+        {
+          status: 204,
+          headers: {},
+          entityId: id,
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    },
     requestJson: async <T>(options: { path: string; body?: Record<string, unknown> }): Promise<OperationResult<T>> => {
       data.requestRecorder?.push({
         path: options.path,
@@ -221,6 +246,11 @@ describe('SolutionService', () => {
           },
           {
             solutioncomponentid: 'comp-2',
+            objectid: 'ref-1',
+            componenttype: 371,
+          },
+          {
+            solutioncomponentid: 'comp-3',
             objectid: 'env-1',
             componenttype: 380,
           },
@@ -267,6 +297,11 @@ describe('SolutionService', () => {
           },
           {
             solutioncomponentid: 'comp-2',
+            objectid: 'ref-1',
+            componenttype: 371,
+          },
+          {
+            solutioncomponentid: 'comp-3',
             objectid: 'env-1',
             componenttype: 380,
           },
@@ -426,6 +461,32 @@ describe('SolutionService', () => {
       uniquename: 'HarnessShell',
       friendlyname: 'Harness Shell',
       version: '2026.3.10.34135',
+    });
+  });
+
+  it('deletes a solution through the solutions entity set', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'HarnessShell',
+          friendlyname: 'Harness Shell',
+          version: '1.0.0.0',
+        },
+        components: [],
+        dependencies: [],
+      })
+    );
+
+    const result = await service.delete('HarnessShell');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      removed: true,
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'HarnessShell',
+      },
     });
   });
 

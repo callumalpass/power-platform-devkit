@@ -34,6 +34,11 @@ export interface SolutionSetMetadataOptions {
   publisherUniqueName?: string;
 }
 
+export interface SolutionDeleteResult {
+  removed: boolean;
+  solution: SolutionSummary;
+}
+
 interface PublisherSummary {
   publisherid: string;
   uniquename?: string;
@@ -412,6 +417,47 @@ export class SolutionService {
         supportTier: 'preview',
         diagnostics: mergeDiagnosticLists(solution.diagnostics, update.diagnostics),
         warnings: mergeDiagnosticLists(solution.warnings, update.warnings),
+      }
+    );
+  }
+
+  async delete(uniqueName: string): Promise<OperationResult<SolutionDeleteResult>> {
+    const solution = await this.inspect(uniqueName);
+
+    if (!solution.success) {
+      return solution as unknown as OperationResult<SolutionDeleteResult>;
+    }
+
+    if (!solution.data) {
+      return fail(
+        [
+          ...solution.diagnostics,
+          createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`, {
+            source: '@pp/solution',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: solution.warnings,
+        }
+      );
+    }
+
+    const removed = await this.dataverseClient.delete('solutions', solution.data.solutionid);
+
+    if (!removed.success) {
+      return removed as unknown as OperationResult<SolutionDeleteResult>;
+    }
+
+    return ok(
+      {
+        removed: true,
+        solution: solution.data,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(solution.diagnostics, removed.diagnostics),
+        warnings: mergeDiagnosticLists(solution.warnings, removed.warnings),
       }
     );
   }
