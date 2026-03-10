@@ -25,11 +25,11 @@
     "pp_ApiUrl"
   ],
   "intermediateRepresentation": {
-    "actionCount": 24,
+    "actionCount": 28,
     "controlFlowEdgeCount": 0,
-    "dynamicContentReferenceCount": 21,
-    "expressionCount": 21,
-    "nodeCount": 25,
+    "dynamicContentReferenceCount": 25,
+    "expressionCount": 25,
+    "nodeCount": 29,
     "scopeCount": 1,
     "templateExpressionCount": 2,
     "triggerCount": 1,
@@ -42,16 +42,16 @@
   ],
   "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
   "semanticSummary": {
-    "actionCount": 24,
+    "actionCount": 28,
     "controlFlowEdgeCount": 0,
-    "dynamicContentReferenceCount": 21,
-    "expressionCount": 21,
+    "dynamicContentReferenceCount": 25,
+    "expressionCount": 25,
     "initializedVariables": [
       "Counter"
     ],
     "referenceCounts": {
       "actions": 1,
-      "connectionReferences": 14,
+      "connectionReferences": 18,
       "environmentVariables": 1,
       "parameters": 2,
       "variables": 3

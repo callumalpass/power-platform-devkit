@@ -376,10 +376,11 @@ interface FlowConnectorActionContract {
 
 interface FlowSupportedConnectorOperationParameter {
   name: string;
-  kind: 'string' | 'integer' | 'boolean';
+  kind: 'string' | 'integer' | 'boolean' | 'record';
   bucket?: 'parameters' | 'queries' | 'pathParameters';
   buckets?: Array<'parameters' | 'queries' | 'pathParameters'>;
   required?: boolean;
+  allowPrefixedFields?: boolean;
 }
 
 interface FlowSupportedConnectorOperation {
@@ -461,6 +462,25 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
       { name: '$select', kind: 'string', buckets: ['parameters', 'queries'] },
       { name: '$expand', kind: 'string', buckets: ['parameters', 'queries'] },
       { name: 'partitionId', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+    operationId: 'CreateRecord',
+    parameters: [
+      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+      { name: 'item', kind: 'record', required: true, allowPrefixedFields: true },
+      { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+    operationId: 'UpdateOnlyRecord',
+    parameters: [
+      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+      { name: 'recordId', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+      { name: 'item', kind: 'record', required: true, allowPrefixedFields: true },
       { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
     ],
   },
@@ -1764,9 +1784,19 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
           }));
           const presentBucketRecords = bucketRecords.filter((entry) => entry.record);
           const valueEntry = presentBucketRecords.find((entry) => entry.record?.[parameter.name] !== undefined);
-          const parameterPath = describeConnectorParameterPath(node.path, valueEntry?.bucket ?? supportedBuckets[0], parameter.name);
+          const prefixedFieldEntry =
+            !valueEntry && parameter.allowPrefixedFields
+              ? presentBucketRecords
+                  .map((entry) => ({
+                    bucket: entry.bucket,
+                    fields: findConnectorPrefixedFieldEntries(entry.record, parameter.name),
+                  }))
+                  .find((entry) => entry.fields.length > 0)
+              : undefined;
+          const parameterBucket = valueEntry?.bucket ?? prefixedFieldEntry?.bucket ?? supportedBuckets[0];
+          const parameterPath = describeConnectorParameterPath(node.path, parameterBucket, parameter.name);
 
-          if (!valueEntry) {
+          if (!valueEntry && !prefixedFieldEntry) {
             if (parameter.required && presentBucketRecords.length === 0) {
               const bucketGroupKey = supportedBuckets.join('|');
 
@@ -1807,7 +1837,31 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
             continue;
           }
 
-          const value = valueEntry.record?.[parameter.name];
+          if (prefixedFieldEntry) {
+            for (const field of prefixedFieldEntry.fields) {
+              const fieldIssue = validateConnectorRecordFieldValue(field.value);
+
+              if (!fieldIssue) {
+                continue;
+              }
+
+              diagnostics.push(
+                createDiagnostic(
+                  'error',
+                  'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+                  `Connector action ${name} parameter ${field.name} for ${supportedOperation.operationId} ${fieldIssue}.`,
+                  {
+                    source: '@pp/flow',
+                    path: describeConnectorParameterPath(node.path, prefixedFieldEntry.bucket, field.name),
+                  }
+                )
+              );
+            }
+
+            continue;
+          }
+
+          const value = valueEntry?.record?.[parameter.name];
 
           const parameterIssue = validateConnectorParameterValue(value, parameter.kind);
 
@@ -1826,7 +1880,15 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
             continue;
           }
 
-          if (parameter.required && typeof value === 'string' && !value.trim()) {
+          if (
+            parameter.required &&
+            ((typeof value === 'string' && !value.trim()) ||
+              (parameter.kind === 'record' &&
+                typeof value === 'object' &&
+                value !== null &&
+                !Array.isArray(value) &&
+                Object.keys(value as Record<string, unknown>).length === 0))
+          ) {
             diagnostics.push(
               createDiagnostic(
                 'error',
@@ -2588,6 +2650,26 @@ function validateConnectorParameterValue(
   value: unknown,
   kind: FlowSupportedConnectorOperationParameter['kind']
 ): string | undefined {
+  if (kind === 'record') {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+
+      if (!trimmed) {
+        return undefined;
+      }
+
+      if (extractWholeFlowExpression(trimmed)) {
+        return undefined;
+      }
+    }
+
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      return undefined;
+    }
+
+    return `must be an object payload or object-valued expression, not ${describeFlowJsonShape(value)}`;
+  }
+
   if (kind === 'string') {
     if (typeof value !== 'string') {
       return `must be a string expression or literal, not ${describeFlowJsonShape(value)}`;
@@ -2641,6 +2723,51 @@ function validateConnectorParameterValue(
   }
 
   return `must be a boolean literal or expression, not ${describeFlowJsonShape(value)}`;
+}
+
+function validateConnectorRecordFieldValue(value: unknown): string | undefined {
+  if (value === null) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return undefined;
+    }
+
+    if (extractWholeFlowExpression(trimmed)) {
+      return undefined;
+    }
+
+    return undefined;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return undefined;
+  }
+
+  return `must be a scalar literal or whole expression, not ${describeFlowJsonShape(value)}`;
+}
+
+function findConnectorPrefixedFieldEntries(
+  record: Record<string, unknown> | undefined,
+  prefix: string
+): Array<{ name: string; value: unknown }> {
+  if (!record) {
+    return [];
+  }
+
+  const normalizedPrefix = `${prefix}/`;
+
+  return Object.entries(record)
+    .filter(([name]) => name.startsWith(normalizedPrefix))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, value]) => ({
+      name,
+      value,
+    }));
 }
 
 function getOrCreateVariableGraph(

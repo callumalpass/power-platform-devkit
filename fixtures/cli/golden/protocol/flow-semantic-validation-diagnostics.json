@@ -45,6 +45,20 @@
     {
       "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
       "level": "error",
+      "message": "Connector action DataverseCreateRowBadItemFieldShape parameter item/name for CreateRecord must be a scalar literal or whole expression, not object.",
+      "path": "actions.DataverseCreateRowBadItemFieldShape.inputs.parameters.item/name",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action DataverseCreateRowMissingItem is missing required parameter item for CreateRecord.",
+      "path": "actions.DataverseCreateRowMissingItem.inputs.parameters.item",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
       "message": "Connector action DataverseGetRowBadMetadataShape parameter x-ms-odata-metadata-full for GetItem must be a boolean literal or expression, not object.",
       "path": "actions.DataverseGetRowBadMetadataShape.inputs.parameters.x-ms-odata-metadata-full",
       "source": "@pp/flow"
@@ -89,6 +103,20 @@
       "level": "error",
       "message": "Connector action DataverseListRowsPathQueryBadTopShape parameter $top for ListRecords must be an integer literal or expression, not object.",
       "path": "actions.DataverseListRowsPathQueryBadTopShape.inputs.queries.$top",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action DataverseUpdateRowBadItemFieldShape parameter item/name for UpdateOnlyRecord must be a scalar literal or whole expression, not array.",
+      "path": "actions.DataverseUpdateRowBadItemFieldShape.inputs.parameters.item/name",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action DataverseUpdateRowMissingItem is missing required parameter item for UpdateOnlyRecord.",
+      "path": "actions.DataverseUpdateRowMissingItem.inputs.parameters.item",
       "source": "@pp/flow"
     },
     {

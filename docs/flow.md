@@ -227,10 +227,24 @@ Current validation checks:
     `inputs.pathParameters.recordId` plus typed optional query inputs accepted
     from either `inputs.parameters` or `inputs.queries`, including `$select`,
     `$expand`, `partitionId`, and `x-ms-odata-metadata-full`
+  - `shared_commondataserviceforapps` `CreateRecord` with required
+    `inputs.parameters.entityName` or `inputs.pathParameters.entityName` plus
+    a required row payload expressed either as `inputs.parameters.item` or
+    one-or-more flattened `inputs.parameters.item/<column>` entries, plus
+    optional `x-ms-odata-metadata-full` from either `inputs.parameters` or
+    `inputs.queries`
+  - `shared_commondataserviceforapps` `UpdateOnlyRecord` with required
+    `inputs.parameters.entityName` / `inputs.parameters.recordId` or
+    `inputs.pathParameters.entityName` /
+    `inputs.pathParameters.recordId` plus the same bounded row-payload support
+    as `CreateRecord` and optional `x-ms-odata-metadata-full`
   - required string fields must remain string literals or string-valued
     expressions, integer fields must remain integer literals or whole
     expressions, and boolean fields must remain boolean literals or whole
     expressions instead of arrays or nested objects
+  - bounded Dataverse row payload checks accept object-valued `item` payloads
+    or flattened `item/<column>` scalars / whole expressions, and fail
+    missing row payloads or nested array/object field shapes locally
 - unsupported connector connection-name shapes fail explicitly instead of being
   guessed during contract validation
 - supported workflow-expression parsing covers both whole-expression values

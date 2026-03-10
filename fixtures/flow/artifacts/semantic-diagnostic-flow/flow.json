@@ -359,6 +359,74 @@
           }
         }
       },
+      "DataverseCreateRowMissingItem": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "CreateRecord",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "parameters": {
+            "entityName": "accounts"
+          }
+        }
+      },
+      "DataverseCreateRowBadItemFieldShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "CreateRecord",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "parameters": {
+            "entityName": "accounts",
+            "item/name": {
+              "value": "Contoso"
+            }
+          }
+        }
+      },
+      "DataverseUpdateRowMissingItem": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "UpdateOnlyRecord",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "parameters": {
+            "entityName": "accounts",
+            "recordId": "00000000-0000-0000-0000-000000000010"
+          }
+        }
+      },
+      "DataverseUpdateRowBadItemFieldShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "UpdateOnlyRecord",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "parameters": {
+            "entityName": "accounts",
+            "recordId": "00000000-0000-0000-0000-000000000011",
+            "item/name": [
+              "Contoso"
+            ]
+          }
+        }
+      },
       "SetGhost": {
         "type": "SetVariable",
         "inputs": {

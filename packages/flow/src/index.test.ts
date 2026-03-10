@@ -349,6 +349,49 @@ describe('FlowService', () => {
                   },
                 },
               },
+              DataverseCreateRow: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateRecord',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  pathParameters: {
+                    entityName: 'accounts',
+                  },
+                  parameters: {
+                    'item/name': 'Contoso',
+                    'item/accountnumber': 'A-100',
+                  },
+                },
+              },
+              DataverseUpdateRow: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'UpdateOnlyRecord',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  pathParameters: {
+                    entityName: 'accounts',
+                    recordId: '00000000-0000-0000-0000-000000000001',
+                  },
+                  parameters: {
+                    item: {
+                      name: 'Updated Contoso',
+                    },
+                  },
+                  queries: {
+                    'x-ms-odata-metadata-full': false,
+                  },
+                },
+              },
             },
           },
         },
@@ -726,6 +769,72 @@ describe('FlowService', () => {
                   },
                 },
               },
+              DataverseCreateRowMissingItem: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateRecord',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    entityName: 'accounts',
+                  },
+                },
+              },
+              DataverseCreateRowBadItemFieldShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CreateRecord',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    entityName: 'accounts',
+                    'item/name': {
+                      value: 'Contoso',
+                    },
+                  },
+                },
+              },
+              DataverseUpdateRowMissingItem: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'UpdateOnlyRecord',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    entityName: 'accounts',
+                    recordId: '00000000-0000-0000-0000-000000000010',
+                  },
+                },
+              },
+              DataverseUpdateRowBadItemFieldShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'UpdateOnlyRecord',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    entityName: 'accounts',
+                    recordId: '00000000-0000-0000-0000-000000000011',
+                    'item/name': ['Contoso'],
+                  },
+                },
+              },
               SetGhost: {
                 type: 'SetVariable',
                 inputs: {
@@ -760,23 +869,23 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 21,
+      actionCount: 25,
       scopeCount: 1,
-      expressionCount: 18,
+      expressionCount: 22,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 18,
+      dynamicContentReferenceCount: 22,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 11,
+        connectionReferences: 15,
       },
     });
     expect(validation.diagnostics.map((item) => item.code)).toEqual([
@@ -789,6 +898,10 @@ describe('FlowService', () => {
       'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
       'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
       'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
       'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
       'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
       'FLOW_CONNECTOR_API_ID_MISSING',
@@ -811,14 +924,14 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 22,
+      nodeCount: 26,
       triggerCount: 1,
-      actionCount: 21,
+      actionCount: 25,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 18,
+      expressionCount: 22,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 18,
+      dynamicContentReferenceCount: 22,
       variableReadCount: 3,
       variableWriteCount: 3,
     });
@@ -1112,7 +1225,7 @@ describe('FlowService', () => {
     expect(graph.data).toMatchObject({
       artifactName: 'Semantic Diagnostic Flow',
       summary: {
-        nodeCount: 25,
+        nodeCount: 29,
         unresolvedEdgeCount: 6,
       },
       resources: {
