@@ -1419,7 +1419,7 @@ export class EnvironmentVariableService {
       ? await this.dataverseClient.update('environmentvariablevalues', variable.data.valueId, { value })
       : await this.dataverseClient.create('environmentvariablevalues', {
           value,
-          'environmentvariabledefinitionid@odata.bind': `/environmentvariabledefinitions(${variable.data.definitionId})`,
+          'EnvironmentVariableDefinitionId@odata.bind': `/environmentvariabledefinitions(${variable.data.definitionId})`,
         });
 
     if (!writeResult.success) {

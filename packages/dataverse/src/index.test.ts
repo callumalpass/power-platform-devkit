@@ -1056,6 +1056,57 @@ describe('ALM services', () => {
     expect(httpClient.requests.at(-1)?.path).toBe('environmentvariablevalues(val-1)');
   });
 
+  it('creates a current environment variable value using the Dataverse navigation-property casing', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariabledefinitionid: 'def-1',
+              schemaname: 'pp_ApiUrl',
+              displayname: 'API URL',
+              defaultvalue: 'https://default.example.test',
+              type: 'String',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 201,
+        headers: {
+          location: 'https://example.crm.dynamics.com/api/data/v9.2/environmentvariablevalues(val-2)',
+        },
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.setValue('pp_ApiUrl', 'https://next.example.test');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      definitionId: 'def-1',
+      currentValue: 'https://next.example.test',
+      hasCurrentValue: true,
+    });
+    expect(httpClient.requests.at(-1)?.method).toBe('POST');
+    expect(httpClient.requests.at(-1)?.path).toBe('environmentvariablevalues');
+    expect(httpClient.requests.at(-1)?.body).toEqual({
+      value: 'https://next.example.test',
+      'EnvironmentVariableDefinitionId@odata.bind': '/environmentvariabledefinitions(def-1)',
+    });
+  });
+
   it('creates an environment variable definition within a solution', async () => {
     const httpClient = new FakeHttpClient([
       ok({
