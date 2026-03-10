@@ -1,0 +1,10 @@
+[
+  {
+    "count": 2,
+    "group": "ConnectorAuthFailed",
+    "latestRunId": "run-3",
+    "latestStatus": "Failed",
+    "sampleErrorCode": "ConnectorAuthFailed",
+    "sampleErrorMessage": "shared_office365 connection is missing consent"
+  }
+]

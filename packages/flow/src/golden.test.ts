@@ -163,6 +163,16 @@ describe('flow fixture-backed goldens', () => {
       since: '7d',
       groupBy: 'connectionReference',
     });
+    const errorsByCode = await service.errors('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+      groupBy: 'errorCode',
+    });
+    const errorsByMessage = await service.errors('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+      groupBy: 'errorMessage',
+    });
     const connrefs = await service.connrefs('Invoice Sync', {
       solutionUniqueName: 'Core',
       since: '7d',
@@ -176,6 +186,8 @@ describe('flow fixture-backed goldens', () => {
     expect(inspect.success).toBe(true);
     expect(runs.success).toBe(true);
     expect(errors.success).toBe(true);
+    expect(errorsByCode.success).toBe(true);
+    expect(errorsByMessage.success).toBe(true);
     expect(connrefs.success).toBe(true);
     expect(doctor.success).toBe(true);
 
@@ -183,6 +195,8 @@ describe('flow fixture-backed goldens', () => {
     await expectGoldenJson(inspect.data, 'fixtures/flow/golden/runtime/inspect-report.json');
     await expectGoldenJson(runs.data, 'fixtures/flow/golden/runtime/runs.json');
     await expectGoldenJson(errors.data, 'fixtures/flow/golden/runtime/error-groups.json');
+    await expectGoldenJson(errorsByCode.data, 'fixtures/flow/golden/runtime/error-groups-by-code.json');
+    await expectGoldenJson(errorsByMessage.data, 'fixtures/flow/golden/runtime/error-groups-by-message.json');
     await expectGoldenJson(connrefs.data, 'fixtures/flow/golden/runtime/connection-health.json');
     await expectGoldenJson(doctor.data, 'fixtures/flow/golden/runtime/doctor-report.json');
   });

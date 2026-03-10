@@ -1,0 +1,18 @@
+[
+  {
+    "count": 1,
+    "group": "shared_office365 connection is missing consent",
+    "latestRunId": "run-3",
+    "latestStatus": "Failed",
+    "sampleErrorCode": "ConnectorAuthFailed",
+    "sampleErrorMessage": "shared_office365 connection is missing consent"
+  },
+  {
+    "count": 1,
+    "group": "shared_office365 connection is not authorized",
+    "latestRunId": "run-1",
+    "latestStatus": "Failed",
+    "sampleErrorCode": "ConnectorAuthFailed",
+    "sampleErrorMessage": "shared_office365 connection is not authorized"
+  }
+]

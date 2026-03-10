@@ -11,7 +11,6 @@
   ],
   "findings": [
     "Connection reference shared_office365 is invalid for this flow.",
-    "Environment variable pp_ApiUrl does not have an effective value.",
     "Recent failures are grouping under ConnectorAuthFailed."
   ],
   "flow": {
@@ -85,15 +84,7 @@
       "valid": true
     }
   ],
-  "missingEnvironmentVariables": [
-    {
-      "definitionId": "env-1",
-      "displayName": "API URL",
-      "hasCurrentValue": false,
-      "schemaName": "pp_ApiUrl",
-      "solutionId": "sol-1"
-    }
-  ],
+  "missingEnvironmentVariables": [],
   "recentRuns": {
     "failed": 2,
     "latestFailure": {
