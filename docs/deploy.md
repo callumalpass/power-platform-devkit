@@ -97,6 +97,7 @@ The output includes:
 - `preflight`: machine-readable checks and pass/warn/fail status
 - `apply`: per-operation results and summary counts, including adapter-facing bindings that resolved locally
   and unchanged Dataverse operations that were skipped as already up to date
+  Upsert operations that create a missing Dataverse target now also set `apply.operations[].created: true` and increment `apply.summary.created`.
 - `report`: execution timestamps and duration
 
 ## CI and adapters

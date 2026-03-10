@@ -370,7 +370,7 @@ describe('cli fixture-backed workflows', () => {
           ],
         },
         queryAll: {
-          solutioncomponents: [],
+          solutioncomponents: [{ objectid: 'envvar-def-1' }],
           dependencies: [],
           connectionreferences: [],
           environmentvariabledefinitions: [
@@ -460,7 +460,7 @@ describe('cli fixture-backed workflows', () => {
           ],
         },
         queryAll: {
-          solutioncomponents: [],
+          solutioncomponents: [{ objectid: 'envvar-def-1' }],
           dependencies: [],
           connectionreferences: [],
           environmentvariabledefinitions: [

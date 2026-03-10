@@ -1029,6 +1029,7 @@ describe('deploy fixture-backed goldens', () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.apply.summary.created).toBe(1);
     expect(result.data?.preflight.checks).toContainEqual(
       expect.objectContaining({
         code: 'DEPLOY_PREFLIGHT_CONNREF_TARGET_CREATE',
@@ -1048,6 +1049,7 @@ describe('deploy fixture-backed goldens', () => {
     );
     expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-connref-upsert')).toMatchObject({
       status: 'applied',
+      created: true,
       targetExists: false,
       currentValue: undefined,
       nextValue: 'conn-target-sql',
@@ -1234,6 +1236,7 @@ describe('deploy fixture-backed goldens', () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.preflight.ok).toBe(true);
+    expect(result.data?.apply.summary.created).toBe(1);
     expect(result.data?.preflight.checks).toContainEqual(
       expect.objectContaining({
         code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_CREATE',
@@ -1256,6 +1259,7 @@ describe('deploy fixture-backed goldens', () => {
     );
     expect(result.data?.apply.operations.find((operation) => operation.kind === 'dataverse-envvar-upsert')).toMatchObject({
       status: 'applied',
+      created: true,
       targetExists: false,
       currentValue: undefined,
       nextValue: 'true',

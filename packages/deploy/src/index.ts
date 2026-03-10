@@ -122,12 +122,14 @@ export type DeployOperationResult = DeployOperationPlan & {
   currentValue?: string;
   nextValue?: string;
   changed?: boolean;
+  created?: boolean;
   message?: string;
 };
 
 export interface DeployApplySummary {
   attempted: number;
   applied: number;
+  created: number;
   failed: number;
   skipped: number;
   changed: number;
@@ -891,6 +893,8 @@ async function executePreparedDeploy(context: {
 
       applyOperations[index] = {
         ...existingOperation,
+        created:
+          existingOperation.targetExists === false && isDataverseEnvvarUpsertOperation(operation.plan) ? true : undefined,
         status: 'applied',
         currentValue: existingOperation.currentValue,
         nextValue: result.data.effectiveValue,
@@ -923,6 +927,7 @@ async function executePreparedDeploy(context: {
 
         applyOperations[index] = {
           ...existingOperation,
+          created: true,
           status: 'applied',
           currentValue: existingOperation.currentValue,
           nextValue: createResult.data.connectionId,
@@ -1372,6 +1377,10 @@ function summarizeApplyOperations(operations: DeployOperationResult[]): DeployAp
         summary.changed += 1;
       }
 
+      if (operation.created) {
+        summary.created += 1;
+      }
+
       if (operation.status !== 'planned') {
         summary.attempted += 1;
       } else if (operation.targetExists !== false) {
@@ -1383,6 +1392,7 @@ function summarizeApplyOperations(operations: DeployOperationResult[]): DeployAp
     {
       attempted: 0,
       applied: 0,
+      created: 0,
       failed: 0,
       skipped: 0,
       changed: 0,
