@@ -828,7 +828,76 @@ describe('ALM services', () => {
       connected: true,
     });
     expect(httpClient.requests.at(-1)?.path).toBe(
-      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Ccustomconnectorid%2C_solutionid_value%2Cstatecode'
+      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Ccustomconnectorid%2Cstatecode'
+    );
+  });
+
+  it('filters connection references by solution components when rows omit a solution lookup column', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              connectionreferenceid: 'ref-1',
+              connectionreferencelogicalname: 'pp_shared',
+              connectionreferencedisplayname: 'Shared Connector',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+              connectionid: 'conn-1',
+              statecode: 0,
+            },
+            {
+              connectionreferenceid: 'ref-2',
+              connectionreferencelogicalname: 'pp_other',
+              connectionreferencedisplayname: 'Other Connector',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_office365',
+              connectionid: 'conn-2',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              objectid: 'ref-1',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.list({ solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toHaveLength(1);
+    expect(result.data?.[0]).toMatchObject({
+      id: 'ref-1',
+      logicalName: 'pp_shared',
+      displayName: 'Shared Connector',
+      solutionId: 'sol-1',
+      connected: true,
+    });
+    expect(httpClient.requests[2]?.path).toBe(
+      'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+371'
     );
   });
 

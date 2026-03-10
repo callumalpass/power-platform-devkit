@@ -3277,6 +3277,11 @@ describe('cli fixture-backed workflows', () => {
               statecode: 0,
             },
           ],
+          solutioncomponents: [
+            {
+              objectid: 'connref-1',
+            },
+          ],
         },
       }),
     });

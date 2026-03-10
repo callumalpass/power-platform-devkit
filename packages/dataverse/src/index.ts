@@ -1072,7 +1072,6 @@ export class ConnectionReferenceService {
           'connectorid',
           'connectionid',
           'customconnectorid',
-          '_solutionid_value',
           'statecode',
         ],
       }),
@@ -1087,14 +1086,22 @@ export class ConnectionReferenceService {
       return solutionId as unknown as OperationResult<ConnectionReferenceSummary[]>;
     }
 
+    const solutionMembers = solutionId.data
+      ? await listSolutionComponentObjectIds(this.dataverseClient, solutionId.data, 371)
+      : ok<Set<string> | undefined>(undefined, { supportTier: 'preview' });
+
+    if (!solutionMembers.success) {
+      return solutionMembers as unknown as OperationResult<ConnectionReferenceSummary[]>;
+    }
+
     const summaries = (records.data ?? [])
-      .filter((record) => !solutionId.data || record._solutionid_value === solutionId.data)
-      .map(normalizeConnectionReference);
+      .filter((record) => !solutionMembers.data || solutionMembers.data.has(record.connectionreferenceid))
+      .map((record) => normalizeConnectionReference(record, solutionId.data && solutionMembers.data?.has(record.connectionreferenceid) ? solutionId.data : undefined));
 
     return ok(summaries, {
       supportTier: 'preview',
-      diagnostics: mergeDiagnosticLists(records.diagnostics, solutionId.diagnostics),
-      warnings: mergeDiagnosticLists(records.warnings, solutionId.warnings),
+      diagnostics: mergeDiagnosticLists(records.diagnostics, solutionId.diagnostics, solutionMembers.diagnostics),
+      warnings: mergeDiagnosticLists(records.warnings, solutionId.warnings, solutionMembers.warnings),
     });
   }
 
@@ -1790,7 +1797,7 @@ export function normalizeMetadataQueryOptions(basePath: string, options: Metadat
   );
 }
 
-function normalizeConnectionReference(record: ConnectionReferenceRecord): ConnectionReferenceSummary {
+function normalizeConnectionReference(record: ConnectionReferenceRecord, inferredSolutionId?: string): ConnectionReferenceSummary {
   return {
     id: record.connectionreferenceid,
     logicalName: record.connectionreferencelogicalname,
@@ -1798,7 +1805,7 @@ function normalizeConnectionReference(record: ConnectionReferenceRecord): Connec
     connectorId: record.connectorid,
     connectionId: record.connectionid,
     customConnectorId: record.customconnectorid,
-    solutionId: record._solutionid_value,
+    solutionId: inferredSolutionId ?? record._solutionid_value,
     stateCode: record.statecode,
     connected: Boolean(record.connectionid),
   };
