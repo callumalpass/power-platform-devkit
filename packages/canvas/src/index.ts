@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
-import { type DataverseClient } from '@pp/dataverse';
+import { CanvasAppService, type CanvasAppSummary as DataverseCanvasAppSummary, type DataverseClient } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type OperationResult, type ProvenanceClass } from '@pp/diagnostics';
 import { SolutionService } from '@pp/solution';
 import { buildCanvasMsappFromUnpackedSource } from './msapp-build';
@@ -365,30 +365,9 @@ export interface CanvasDiffResult {
   };
 }
 
-export interface CanvasAppRecord {
-  canvasappid: string;
-  displayname?: string;
-  name?: string;
-  appopenuri?: string;
-  appversion?: string;
-  createdbyclientversion?: string;
-  lastpublishtime?: string;
-  status?: string;
-  tags?: string;
-}
-
-export interface CanvasAppSummary {
-  id: string;
-  displayName?: string;
-  name?: string;
-  openUri?: string;
-  appVersion?: string;
-  createdByClientVersion?: string;
-  lastPublishTime?: string;
-  status?: string;
-  tags: string[];
+export type CanvasAppSummary = DataverseCanvasAppSummary & {
   inSolution?: boolean;
-}
+};
 
 interface CanvasTemplateCandidate {
   template: CanvasTemplateRecord;
@@ -480,20 +459,7 @@ export class CanvasService {
       );
     }
 
-    const records = await this.dataverseClient.queryAll<CanvasAppRecord>({
-      table: 'canvasapps',
-      select: [
-        'canvasappid',
-        'displayname',
-        'name',
-        'appopenuri',
-        'appversion',
-        'createdbyclientversion',
-        'lastpublishtime',
-        'status',
-        'tags',
-      ],
-    });
+    const records = await new CanvasAppService(this.dataverseClient).list();
 
     if (!records.success) {
       return records as unknown as OperationResult<CanvasAppSummary[]>;
@@ -521,8 +487,11 @@ export class CanvasService {
 
     return ok(
       (records.data ?? [])
-        .filter((record) => !allowedIds || allowedIds.has(record.canvasappid))
-        .map((record) => normalizeRemoteCanvasApp(record, allowedIds))
+        .filter((record) => !allowedIds || allowedIds.has(record.id))
+        .map((record) => ({
+          ...record,
+          inSolution: allowedIds ? allowedIds.has(record.id) : undefined,
+        }))
         .sort((left, right) => (left.displayName ?? left.name ?? left.id).localeCompare(right.displayName ?? right.name ?? right.id)),
       {
         supportTier: 'preview',
@@ -2372,32 +2341,6 @@ function compareTemplateCandidates(left: CanvasTemplateCandidate, right: CanvasT
 
 function compareTemplates(left: CanvasTemplateRecord, right: CanvasTemplateRecord): number {
   return left.templateName.localeCompare(right.templateName) || compareTemplateVersions(left.templateVersion, right.templateVersion);
-}
-
-function normalizeRemoteCanvasApp(record: CanvasAppRecord, allowedIds?: Set<string>): CanvasAppSummary {
-  return {
-    id: record.canvasappid,
-    displayName: record.displayname,
-    name: record.name,
-    openUri: record.appopenuri,
-    appVersion: record.appversion,
-    createdByClientVersion: record.createdbyclientversion,
-    lastPublishTime: record.lastpublishtime,
-    status: record.status,
-    tags: splitCanvasTags(record.tags),
-    inSolution: allowedIds ? allowedIds.has(record.canvasappid) : undefined,
-  };
-}
-
-function splitCanvasTags(value: string | undefined): string[] {
-  if (!value) {
-    return [];
-  }
-
-  return value
-    .split(';')
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
 }
 
 function compareTemplateVersions(left: string, right: string): number {

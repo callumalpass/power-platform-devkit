@@ -490,6 +490,101 @@ export interface EnvironmentVariableCreateOptions {
   solutionUniqueName?: string;
 }
 
+export interface CanvasAppRecord {
+  canvasappid: string;
+  displayname?: string;
+  name?: string;
+  appopenuri?: string;
+  appversion?: string;
+  createdbyclientversion?: string;
+  lastpublishtime?: string;
+  status?: string;
+  tags?: string;
+}
+
+export interface CanvasAppSummary {
+  id: string;
+  displayName?: string;
+  name?: string;
+  openUri?: string;
+  appVersion?: string;
+  createdByClientVersion?: string;
+  lastPublishTime?: string;
+  status?: string;
+  tags: string[];
+}
+
+export interface ModelDrivenAppRecord {
+  appmoduleid: string;
+  uniquename?: string;
+  name?: string;
+  appmoduleversion?: string;
+  statecode?: number;
+  publishedon?: string;
+}
+
+export interface ModelDrivenAppSummary {
+  id: string;
+  uniqueName?: string;
+  name?: string;
+  version?: string;
+  stateCode?: number;
+  publishedOn?: string;
+}
+
+export interface ModelDrivenAppComponentRecord {
+  appmodulecomponentid: string;
+  componenttype?: number;
+  objectid?: string;
+  appmoduleidunique?: string;
+  _appmoduleidunique_value?: string;
+}
+
+export interface ModelDrivenAppComponentSummary {
+  id: string;
+  componentType?: number;
+  objectId?: string;
+  appId?: string;
+}
+
+export interface ModelDrivenAppFormRecord {
+  formid: string;
+  name?: string;
+  objecttypecode?: string;
+  type?: number;
+}
+
+export interface ModelDrivenAppFormSummary {
+  id: string;
+  name?: string;
+  table?: string;
+  formType?: number;
+}
+
+export interface ModelDrivenAppViewRecord {
+  savedqueryid: string;
+  name?: string;
+  returnedtypecode?: string;
+  querytype?: number;
+}
+
+export interface ModelDrivenAppViewSummary {
+  id: string;
+  name?: string;
+  table?: string;
+  queryType?: number;
+}
+
+export interface ModelDrivenAppSitemapRecord {
+  sitemapid: string;
+  sitemapname?: string;
+}
+
+export interface ModelDrivenAppSitemapSummary {
+  id: string;
+  name?: string;
+}
+
 interface SolutionComponentMembershipRecord {
   objectid?: string;
 }
@@ -2308,6 +2403,157 @@ export class EnvironmentVariableService {
   }
 }
 
+export class CanvasAppService {
+  constructor(private readonly dataverseClient: DataverseClient) {}
+
+  async list(): Promise<OperationResult<CanvasAppSummary[]>> {
+    const records = await this.dataverseClient.queryAll<CanvasAppRecord>({
+      table: 'canvasapps',
+      select: [
+        'canvasappid',
+        'displayname',
+        'name',
+        'appopenuri',
+        'appversion',
+        'createdbyclientversion',
+        'lastpublishtime',
+        'status',
+        'tags',
+      ],
+    });
+
+    if (!records.success) {
+      return records as unknown as OperationResult<CanvasAppSummary[]>;
+    }
+
+    return ok(sortRecords((records.data ?? []).map(normalizeCanvasApp), (record) => record.displayName ?? record.name ?? record.id), {
+      supportTier: 'preview',
+      diagnostics: records.diagnostics,
+      warnings: records.warnings,
+    });
+  }
+
+  async inspect(identifier: string): Promise<OperationResult<CanvasAppSummary | undefined>> {
+    const apps = await this.list();
+
+    if (!apps.success) {
+      return apps as unknown as OperationResult<CanvasAppSummary | undefined>;
+    }
+
+    return ok((apps.data ?? []).find((app) => matchesCanvasApp(app, identifier)), {
+      supportTier: 'preview',
+      diagnostics: apps.diagnostics,
+      warnings: apps.warnings,
+    });
+  }
+}
+
+export class ModelDrivenAppService {
+  constructor(private readonly dataverseClient: DataverseClient) {}
+
+  async list(): Promise<OperationResult<ModelDrivenAppSummary[]>> {
+    const apps = await this.dataverseClient.queryAll<ModelDrivenAppRecord>({
+      table: 'appmodules',
+      select: ['appmoduleid', 'uniquename', 'name', 'appmoduleversion', 'statecode', 'publishedon'],
+    });
+
+    if (!apps.success) {
+      return apps as unknown as OperationResult<ModelDrivenAppSummary[]>;
+    }
+
+    return ok(sortRecords((apps.data ?? []).map(normalizeModelDrivenApp), (record) => record.name ?? record.uniqueName ?? record.id), {
+      supportTier: 'preview',
+      diagnostics: apps.diagnostics,
+      warnings: apps.warnings,
+    });
+  }
+
+  async inspect(identifier: string): Promise<OperationResult<ModelDrivenAppSummary | undefined>> {
+    const apps = await this.list();
+
+    if (!apps.success) {
+      return apps as unknown as OperationResult<ModelDrivenAppSummary | undefined>;
+    }
+
+    return ok((apps.data ?? []).find((app) => matchesModelDrivenApp(app, identifier)), {
+      supportTier: 'preview',
+      diagnostics: apps.diagnostics,
+      warnings: apps.warnings,
+    });
+  }
+
+  async components(appId: string): Promise<OperationResult<ModelDrivenAppComponentSummary[]>> {
+    const components = await this.dataverseClient.queryAll<ModelDrivenAppComponentRecord>({
+      table: 'appmodulecomponents',
+      select: ['appmodulecomponentid', 'componenttype', 'objectid', 'appmoduleidunique', '_appmoduleidunique_value'],
+    });
+
+    if (!components.success) {
+      return components as unknown as OperationResult<ModelDrivenAppComponentSummary[]>;
+    }
+
+    return ok(
+      (components.data ?? []).filter((component) => matchesModelDrivenAppComponent(component, appId)).map(normalizeModelDrivenAppComponent),
+      {
+        supportTier: 'preview',
+        diagnostics: components.diagnostics,
+        warnings: components.warnings,
+      }
+    );
+  }
+
+  async forms(): Promise<OperationResult<ModelDrivenAppFormSummary[]>> {
+    const forms = await this.dataverseClient.queryAll<ModelDrivenAppFormRecord>({
+      table: 'systemforms',
+      select: ['formid', 'name', 'objecttypecode', 'type'],
+    });
+
+    if (!forms.success) {
+      return forms as unknown as OperationResult<ModelDrivenAppFormSummary[]>;
+    }
+
+    return ok((forms.data ?? []).map(normalizeModelDrivenAppForm), {
+      supportTier: 'preview',
+      diagnostics: forms.diagnostics,
+      warnings: forms.warnings,
+    });
+  }
+
+  async views(): Promise<OperationResult<ModelDrivenAppViewSummary[]>> {
+    const views = await this.dataverseClient.queryAll<ModelDrivenAppViewRecord>({
+      table: 'savedqueries',
+      select: ['savedqueryid', 'name', 'returnedtypecode', 'querytype'],
+    });
+
+    if (!views.success) {
+      return views as unknown as OperationResult<ModelDrivenAppViewSummary[]>;
+    }
+
+    return ok((views.data ?? []).map(normalizeModelDrivenAppView), {
+      supportTier: 'preview',
+      diagnostics: views.diagnostics,
+      warnings: views.warnings,
+    });
+  }
+
+  async sitemaps(): Promise<OperationResult<ModelDrivenAppSitemapSummary[]>> {
+    const sitemaps = await this.dataverseClient.queryAll<ModelDrivenAppSitemapRecord>({
+      table: 'sitemaps',
+      select: ['sitemapid', 'sitemapname'],
+    });
+
+    if (!sitemaps.success) {
+      return sitemaps as unknown as OperationResult<ModelDrivenAppSitemapSummary[]>;
+    }
+
+    return ok((sitemaps.data ?? []).map(normalizeModelDrivenAppSitemap), {
+      supportTier: 'preview',
+      diagnostics: sitemaps.diagnostics,
+      warnings: sitemaps.warnings,
+    });
+  }
+}
+
 export async function resolveDataverseClient(
   environmentAlias: string,
   options: ResolveDataverseClientOptions = {}
@@ -3330,6 +3576,65 @@ function normalizeEnvironmentVariableType(type: string | number | undefined): nu
   }
 }
 
+function normalizeCanvasApp(record: CanvasAppRecord): CanvasAppSummary {
+  return {
+    id: record.canvasappid,
+    displayName: record.displayname,
+    name: record.name,
+    openUri: record.appopenuri,
+    appVersion: record.appversion,
+    createdByClientVersion: record.createdbyclientversion,
+    lastPublishTime: record.lastpublishtime,
+    status: record.status,
+    tags: parseSemicolonList(record.tags),
+  };
+}
+
+function normalizeModelDrivenApp(record: ModelDrivenAppRecord): ModelDrivenAppSummary {
+  return {
+    id: record.appmoduleid,
+    uniqueName: record.uniquename,
+    name: record.name,
+    version: record.appmoduleversion,
+    stateCode: record.statecode,
+    publishedOn: record.publishedon,
+  };
+}
+
+function normalizeModelDrivenAppComponent(record: ModelDrivenAppComponentRecord): ModelDrivenAppComponentSummary {
+  return {
+    id: record.appmodulecomponentid,
+    componentType: record.componenttype,
+    objectId: record.objectid,
+    appId: record._appmoduleidunique_value ?? record.appmoduleidunique,
+  };
+}
+
+function normalizeModelDrivenAppForm(record: ModelDrivenAppFormRecord): ModelDrivenAppFormSummary {
+  return {
+    id: record.formid,
+    name: record.name,
+    table: record.objecttypecode,
+    formType: record.type,
+  };
+}
+
+function normalizeModelDrivenAppView(record: ModelDrivenAppViewRecord): ModelDrivenAppViewSummary {
+  return {
+    id: record.savedqueryid,
+    name: record.name,
+    table: record.returnedtypecode,
+    queryType: record.querytype,
+  };
+}
+
+function normalizeModelDrivenAppSitemap(record: ModelDrivenAppSitemapRecord): ModelDrivenAppSitemapSummary {
+  return {
+    id: record.sitemapid,
+    name: record.sitemapname,
+  };
+}
+
 function matchesConnectionReference(reference: ConnectionReferenceSummary, identifier: string): boolean {
   const normalized = identifier.toLowerCase();
   return (
@@ -3346,6 +3651,31 @@ function matchesEnvironmentVariable(variable: EnvironmentVariableSummary, identi
     variable.schemaName?.toLowerCase() === normalized ||
     variable.displayName?.toLowerCase() === normalized
   );
+}
+
+function matchesCanvasApp(app: CanvasAppSummary, identifier: string): boolean {
+  const normalized = identifier.toLowerCase();
+  return app.id.toLowerCase() === normalized || app.name?.toLowerCase() === normalized || app.displayName?.toLowerCase() === normalized;
+}
+
+function matchesModelDrivenApp(app: ModelDrivenAppSummary, identifier: string): boolean {
+  const normalized = identifier.toLowerCase();
+  return app.id.toLowerCase() === normalized || app.uniqueName?.toLowerCase() === normalized || app.name?.toLowerCase() === normalized;
+}
+
+function matchesModelDrivenAppComponent(component: ModelDrivenAppComponentRecord, appId: string): boolean {
+  return normalizeMetadataId(component._appmoduleidunique_value ?? component.appmoduleidunique) === normalizeMetadataId(appId);
+}
+
+function normalizeMetadataId(value: string | undefined): string {
+  return (value ?? '').toLowerCase();
+}
+
+function parseSemicolonList(value: string | undefined): string[] {
+  return value
+    ?.split(';')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0) ?? [];
 }
 
 async function resolveSolutionId(client: DataverseClient, uniqueName: string): Promise<OperationResult<string | undefined>> {

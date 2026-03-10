@@ -1,51 +1,17 @@
-import { type DataverseClient, type EntityDefinition } from '@pp/dataverse';
+import {
+  ModelDrivenAppService,
+  type DataverseClient,
+  type EntityDefinition,
+  type ModelDrivenAppComponentSummary,
+  type ModelDrivenAppFormSummary,
+  type ModelDrivenAppSitemapSummary,
+  type ModelDrivenAppSummary,
+  type ModelDrivenAppViewSummary,
+} from '@pp/dataverse';
 import { ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { SolutionService } from '@pp/solution';
 
-export interface ModelAppRecord {
-  appmoduleid: string;
-  uniquename?: string;
-  name?: string;
-  appmoduleversion?: string;
-  statecode?: number;
-  publishedon?: string;
-}
-
-export interface ModelAppSummary {
-  id: string;
-  uniqueName?: string;
-  name?: string;
-  version?: string;
-  stateCode?: number;
-  publishedOn?: string;
-}
-
-export interface ModelAppComponentRecord {
-  appmodulecomponentid: string;
-  componenttype?: number;
-  objectid?: string;
-  appmoduleidunique?: string;
-  _appmoduleidunique_value?: string;
-}
-
-export interface ModelFormRecord {
-  formid: string;
-  name?: string;
-  objecttypecode?: string;
-  type?: number;
-}
-
-export interface ModelViewRecord {
-  savedqueryid: string;
-  name?: string;
-  returnedtypecode?: string;
-  querytype?: number;
-}
-
-export interface ModelSitemapRecord {
-  sitemapid: string;
-  sitemapname?: string;
-}
+export type ModelAppSummary = ModelDrivenAppSummary;
 
 export interface ModelTableSummary {
   id?: string;
@@ -54,24 +20,9 @@ export interface ModelTableSummary {
   displayName?: string;
 }
 
-export interface ModelFormSummary {
-  id: string;
-  name?: string;
-  table?: string;
-  formType?: number;
-}
-
-export interface ModelViewSummary {
-  id: string;
-  name?: string;
-  table?: string;
-  queryType?: number;
-}
-
-export interface ModelSitemapSummary {
-  id: string;
-  name?: string;
-}
+export type ModelFormSummary = ModelDrivenAppFormSummary;
+export type ModelViewSummary = ModelDrivenAppViewSummary;
+export type ModelSitemapSummary = ModelDrivenAppSitemapSummary;
 
 export interface ModelDependencySummary {
   componentId: string;
@@ -97,10 +48,8 @@ export class ModelService {
   constructor(private readonly dataverseClient: DataverseClient) {}
 
   async list(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<ModelAppSummary[]>> {
-    const apps = await this.dataverseClient.queryAll<ModelAppRecord>({
-      table: 'appmodules',
-      select: ['appmoduleid', 'uniquename', 'name', 'appmoduleversion', 'statecode', 'publishedon'],
-    });
+    const appService = new ModelDrivenAppService(this.dataverseClient);
+    const apps = await appService.list();
 
     if (!apps.success) {
       return apps as unknown as OperationResult<ModelAppSummary[]>;
@@ -128,8 +77,7 @@ export class ModelService {
 
     return ok(
       (apps.data ?? [])
-        .filter((app) => !allowedIds || allowedIds.has(app.appmoduleid))
-        .map(normalizeModelApp)
+        .filter((app) => !allowedIds || allowedIds.has(app.id))
         .sort((left, right) => (left.name ?? left.uniqueName ?? left.id).localeCompare(right.name ?? right.uniqueName ?? right.id)),
       {
         supportTier: 'preview',
@@ -140,6 +88,7 @@ export class ModelService {
   }
 
   async inspect(identifier: string, options: { solutionUniqueName?: string } = {}): Promise<OperationResult<ModelInspectResult | undefined>> {
+    const appService = new ModelDrivenAppService(this.dataverseClient);
     const apps = await this.list(options);
 
     if (!apps.success) {
@@ -157,22 +106,10 @@ export class ModelService {
     }
 
     const [components, forms, views, sitemaps, tables] = await Promise.all([
-      this.dataverseClient.queryAll<ModelAppComponentRecord>({
-        table: 'appmodulecomponents',
-        select: ['appmodulecomponentid', 'componenttype', 'objectid', 'appmoduleidunique', '_appmoduleidunique_value'],
-      }),
-      this.dataverseClient.queryAll<ModelFormRecord>({
-        table: 'systemforms',
-        select: ['formid', 'name', 'objecttypecode', 'type'],
-      }),
-      this.dataverseClient.queryAll<ModelViewRecord>({
-        table: 'savedqueries',
-        select: ['savedqueryid', 'name', 'returnedtypecode', 'querytype'],
-      }),
-      this.dataverseClient.queryAll<ModelSitemapRecord>({
-        table: 'sitemaps',
-        select: ['sitemapid', 'sitemapname'],
-      }),
+      appService.components(app.id),
+      appService.forms(),
+      appService.views(),
+      appService.sitemaps(),
       this.dataverseClient.listTables({
         select: ['MetadataId', 'LogicalName', 'SchemaName', 'DisplayName'],
         all: true,
@@ -202,10 +139,10 @@ export class ModelService {
     const tableMap = new Map<string, ModelTableSummary>(
       (tables.data ?? []).map((table) => [normalizeMetadataId(typeof table.MetadataId === 'string' ? table.MetadataId : undefined), normalizeTable(table)])
     );
-    const formMap = new Map<string, ModelFormSummary>((forms.data ?? []).map((form) => [normalizeMetadataId(form.formid), normalizeForm(form)]));
-    const viewMap = new Map<string, ModelViewSummary>((views.data ?? []).map((view) => [normalizeMetadataId(view.savedqueryid), normalizeView(view)]));
-    const sitemapMap = new Map<string, ModelSitemapSummary>((sitemaps.data ?? []).map((sitemap) => [normalizeMetadataId(sitemap.sitemapid), normalizeSitemap(sitemap)]));
-    const appComponents = (components.data ?? []).filter((component) => matchesModelComponent(component, app.id));
+    const formMap = new Map<string, ModelFormSummary>((forms.data ?? []).map((form) => [normalizeMetadataId(form.id), form]));
+    const viewMap = new Map<string, ModelViewSummary>((views.data ?? []).map((view) => [normalizeMetadataId(view.id), view]));
+    const sitemapMap = new Map<string, ModelSitemapSummary>((sitemaps.data ?? []).map((sitemap) => [normalizeMetadataId(sitemap.id), sitemap]));
+    const appComponents = components.data ?? [];
     const dependencies = appComponents.map((component) => summarizeDependency(component, {
       tables: tableMap,
       forms: formMap,
@@ -288,21 +225,6 @@ export class ModelService {
   }
 }
 
-function normalizeModelApp(record: ModelAppRecord): ModelAppSummary {
-  return {
-    id: record.appmoduleid,
-    uniqueName: record.uniquename,
-    name: record.name,
-    version: record.appmoduleversion,
-    stateCode: record.statecode,
-    publishedOn: record.publishedon,
-  };
-}
-
-function matchesModelComponent(component: ModelAppComponentRecord, appId: string): boolean {
-  return normalizeMetadataId(component._appmoduleidunique_value ?? component.appmoduleidunique) === normalizeMetadataId(appId);
-}
-
 function normalizeTable(definition: EntityDefinition): ModelTableSummary {
   return {
     id: typeof definition.MetadataId === 'string' ? definition.MetadataId : undefined,
@@ -312,33 +234,8 @@ function normalizeTable(definition: EntityDefinition): ModelTableSummary {
   };
 }
 
-function normalizeForm(record: ModelFormRecord): ModelFormSummary {
-  return {
-    id: record.formid,
-    name: record.name,
-    table: record.objecttypecode,
-    formType: record.type,
-  };
-}
-
-function normalizeView(record: ModelViewRecord): ModelViewSummary {
-  return {
-    id: record.savedqueryid,
-    name: record.name,
-    table: record.returnedtypecode,
-    queryType: record.querytype,
-  };
-}
-
-function normalizeSitemap(record: ModelSitemapRecord): ModelSitemapSummary {
-  return {
-    id: record.sitemapid,
-    name: record.sitemapname,
-  };
-}
-
 function summarizeDependency(
-  component: ModelAppComponentRecord,
+  component: ModelDrivenAppComponentSummary,
   lookups: {
     tables: Map<string, ModelTableSummary>;
     forms: Map<string, ModelFormSummary>;
@@ -346,15 +243,15 @@ function summarizeDependency(
     sitemaps: Map<string, ModelSitemapSummary>;
   }
 ): ModelDependencySummary {
-  const objectId = component.objectid;
+  const objectId = component.objectId;
   const normalizedId = normalizeMetadataId(objectId);
 
-  switch (component.componenttype) {
+  switch (component.componentType) {
     case 1: {
       const table = lookups.tables.get(normalizedId);
       return {
-        componentId: component.appmodulecomponentid,
-        componentType: component.componenttype,
+        componentId: component.id,
+        componentType: component.componentType,
         componentTypeLabel: 'table',
         objectId,
         name: table?.displayName ?? table?.logicalName,
@@ -365,8 +262,8 @@ function summarizeDependency(
     case 26: {
       const view = lookups.views.get(normalizedId);
       return {
-        componentId: component.appmodulecomponentid,
-        componentType: component.componenttype,
+        componentId: component.id,
+        componentType: component.componentType,
         componentTypeLabel: 'view',
         objectId,
         name: view?.name,
@@ -377,8 +274,8 @@ function summarizeDependency(
     case 60: {
       const form = lookups.forms.get(normalizedId);
       return {
-        componentId: component.appmodulecomponentid,
-        componentType: component.componenttype,
+        componentId: component.id,
+        componentType: component.componentType,
         componentTypeLabel: 'form',
         objectId,
         name: form?.name,
@@ -389,8 +286,8 @@ function summarizeDependency(
     case 62: {
       const sitemap = lookups.sitemaps.get(normalizedId);
       return {
-        componentId: component.appmodulecomponentid,
-        componentType: component.componenttype,
+        componentId: component.id,
+        componentType: component.componentType,
         componentTypeLabel: 'sitemap',
         objectId,
         name: sitemap?.name,
@@ -399,9 +296,9 @@ function summarizeDependency(
     }
     default:
       return {
-        componentId: component.appmodulecomponentid,
-        componentType: component.componenttype,
-        componentTypeLabel: describeComponentType(component.componenttype),
+        componentId: component.id,
+        componentType: component.componentType,
+        componentTypeLabel: describeComponentType(component.componentType),
         objectId,
         status: 'missing',
       };

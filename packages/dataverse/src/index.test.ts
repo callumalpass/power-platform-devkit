@@ -6,10 +6,12 @@ import { saveAuthProfile, saveEnvironmentAlias } from '@pp/config';
 import { createDiagnostic, ok, fail, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http';
 import {
+  CanvasAppService,
   ConnectionReferenceService,
   DataverseClient,
   buildDataverseFunctionPath,
   EnvironmentVariableService,
+  ModelDrivenAppService,
   buildMetadataAttributePath,
   buildGlobalOptionSetPath,
   buildRelationshipPath,
@@ -2140,6 +2142,238 @@ describe('ALM services', () => {
 });
 
 describe('normalizeMetadataQueryOptions', () => {
+  it('lists and inspects canvas apps through a typed service', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              canvasappid: 'canvas-2',
+              displayname: 'Other Canvas',
+              name: 'crd_OtherCanvas',
+              tags: 'other',
+            },
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+              appopenuri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
+              appversion: '1.2.3.4',
+              createdbyclientversion: '3.25000.1',
+              lastpublishtime: '2026-03-10T04:50:00.000Z',
+              status: 'Published',
+              tags: 'harness;solution',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              canvasappid: 'canvas-2',
+              displayname: 'Other Canvas',
+              name: 'crd_OtherCanvas',
+              tags: 'other',
+            },
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+              appopenuri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
+              appversion: '1.2.3.4',
+              createdbyclientversion: '3.25000.1',
+              lastpublishtime: '2026-03-10T04:50:00.000Z',
+              status: 'Published',
+              tags: 'harness;solution',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new CanvasAppService(client);
+
+    const listed = await service.list();
+    const inspected = await service.inspect('Harness Canvas');
+
+    expect(listed.success).toBe(true);
+    expect(listed.data?.map((app) => app.id)).toEqual(['canvas-1', 'canvas-2']);
+    expect(listed.data?.[0]).toMatchObject({
+      id: 'canvas-1',
+      displayName: 'Harness Canvas',
+      tags: ['harness', 'solution'],
+    });
+    expect(inspected.success).toBe(true);
+    expect(inspected.data).toMatchObject({
+      id: 'canvas-1',
+      name: 'crd_HarnessCanvas',
+    });
+  });
+
+  it('lists model-driven app assets through typed services', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              appmoduleid: 'app-2',
+              uniquename: 'OpsHub',
+              name: 'Ops Hub',
+            },
+            {
+              appmoduleid: 'app-1',
+              uniquename: 'SalesHub',
+              name: 'Sales Hub',
+              appmoduleversion: '1.0.0.0',
+              statecode: 0,
+              publishedon: '2026-03-10T04:50:00.000Z',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              appmoduleid: 'app-2',
+              uniquename: 'OpsHub',
+              name: 'Ops Hub',
+            },
+            {
+              appmoduleid: 'app-1',
+              uniquename: 'SalesHub',
+              name: 'Sales Hub',
+              appmoduleversion: '1.0.0.0',
+              statecode: 0,
+              publishedon: '2026-03-10T04:50:00.000Z',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              appmodulecomponentid: 'amc-1',
+              componenttype: 1,
+              objectid: 'entity-1',
+              _appmoduleidunique_value: 'app-1',
+            },
+            {
+              appmodulecomponentid: 'amc-2',
+              componenttype: 60,
+              objectid: 'form-1',
+              _appmoduleidunique_value: 'app-1',
+            },
+            {
+              appmodulecomponentid: 'amc-3',
+              componenttype: 26,
+              objectid: 'view-1',
+              _appmoduleidunique_value: 'app-2',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              formid: 'form-1',
+              name: 'Account Main',
+              objecttypecode: 'account',
+              type: 2,
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              savedqueryid: 'view-1',
+              name: 'Active Accounts',
+              returnedtypecode: 'account',
+              querytype: 0,
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              sitemapid: 'sitemap-1',
+              sitemapname: 'Sales Hub sitemap',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ModelDrivenAppService(client);
+
+    const listed = await service.list();
+    const inspected = await service.inspect('SalesHub');
+    const components = await service.components('app-1');
+    const forms = await service.forms();
+    const views = await service.views();
+    const sitemaps = await service.sitemaps();
+
+    expect(listed.success).toBe(true);
+    expect(listed.data?.map((app) => app.id)).toEqual(['app-2', 'app-1']);
+    expect(inspected.success).toBe(true);
+    expect(inspected.data).toMatchObject({
+      id: 'app-1',
+      uniqueName: 'SalesHub',
+    });
+    expect(components.success).toBe(true);
+    expect(components.data).toEqual([
+      {
+        id: 'amc-1',
+        componentType: 1,
+        objectId: 'entity-1',
+        appId: 'app-1',
+      },
+      {
+        id: 'amc-2',
+        componentType: 60,
+        objectId: 'form-1',
+        appId: 'app-1',
+      },
+    ]);
+    expect(forms.data?.[0]).toMatchObject({
+      id: 'form-1',
+      name: 'Account Main',
+      table: 'account',
+    });
+    expect(views.data?.[0]).toMatchObject({
+      id: 'view-1',
+      name: 'Active Accounts',
+      table: 'account',
+    });
+    expect(sitemaps.data?.[0]).toMatchObject({
+      id: 'sitemap-1',
+      name: 'Sales Hub sitemap',
+    });
+  });
+
   it('rejects unsupported metadata count requests', () => {
     const result = normalizeMetadataQueryOptions('EntityDefinitions', {
       count: true,
