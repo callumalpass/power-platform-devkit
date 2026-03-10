@@ -50,6 +50,7 @@ export interface FlowSummary {
   uniqueName?: string;
   category?: number;
   workflowMetadata?: FlowWorkflowShellMetadata;
+  workflowState?: FlowWorkflowStateLabel;
   stateCode?: number;
   statusCode?: number;
   definitionAvailable: boolean;
@@ -303,6 +304,7 @@ export interface FlowExportResult {
     name?: string;
     uniqueName?: string;
     workflowMetadata?: FlowWorkflowShellMetadata;
+    workflowState?: FlowWorkflowStateLabel;
     stateCode?: number;
     statusCode?: number;
     solutionUniqueName?: string;
@@ -326,6 +328,7 @@ export interface FlowDeployResult {
     name?: string;
     uniqueName?: string;
     workflowMetadata?: FlowWorkflowShellMetadata;
+    workflowState?: FlowWorkflowStateLabel;
     stateCode?: number;
     statusCode?: number;
     solutionUniqueName?: string;
@@ -361,6 +364,7 @@ export interface FlowArtifactPromoteResult {
     name?: string;
     uniqueName?: string;
     workflowMetadata?: FlowWorkflowShellMetadata;
+    workflowState?: FlowWorkflowStateLabel;
     stateCode?: number;
     statusCode?: number;
     solutionUniqueName?: string;
@@ -372,6 +376,7 @@ export interface FlowArtifactPromoteResult {
     name?: string;
     uniqueName?: string;
     workflowMetadata?: FlowWorkflowShellMetadata;
+    workflowState?: FlowWorkflowStateLabel;
     stateCode?: number;
     statusCode?: number;
     solutionUniqueName?: string;
@@ -390,6 +395,7 @@ export interface FlowSolutionPackagePromoteResult {
     id: string;
     name?: string;
     uniqueName?: string;
+    workflowState?: FlowWorkflowStateLabel;
     solutionUniqueName?: string;
   };
   operation: 'imported-solution';
@@ -1431,6 +1437,7 @@ export async function promoteRemoteFlowArtifact(
         name: sourceFlow.data.name,
         uniqueName: sourceFlow.data.uniqueName,
         workflowMetadata: sourceFlow.data.workflowMetadata,
+        workflowState: sourceFlow.data.workflowState,
         stateCode: sourceFlow.data.stateCode,
         statusCode: sourceFlow.data.statusCode,
         solutionUniqueName: options.sourceSolutionUniqueName,
@@ -1608,6 +1615,7 @@ async function promoteRemoteFlowArtifactAsSolutionPackage(
           name: sourceFlow.name,
           uniqueName: sourceFlow.uniqueName,
           workflowMetadata: sourceFlow.workflowMetadata,
+          workflowState: sourceFlow.workflowState,
           stateCode: sourceFlow.stateCode,
           statusCode: sourceFlow.statusCode,
           solutionUniqueName: options.sourceSolutionUniqueName,
@@ -1755,6 +1763,7 @@ export async function exportRemoteFlowArtifact(
         name: flow.data.name,
         uniqueName: flow.data.uniqueName,
         workflowMetadata: flow.data.workflowMetadata,
+        workflowState: flow.data.workflowState,
         stateCode: flow.data.stateCode,
         statusCode: flow.data.statusCode,
         solutionUniqueName: options.solutionUniqueName,
@@ -2445,6 +2454,8 @@ export async function patchFlowArtifact(
 }
 
 function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspectResult {
+  const workflowState = resolveFlowWorkflowStateLabel(record.stateCode, record.statusCode);
+
   return {
     id: record.id,
     name: record.name,
@@ -2457,6 +2468,7 @@ function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspe
       onDemand: record.onDemand,
       primaryEntity: record.primaryEntity,
     }),
+    ...(workflowState ? { workflowState } : {}),
     stateCode: record.stateCode,
     statusCode: record.statusCode,
     definitionAvailable: record.definitionAvailable,
@@ -3148,15 +3160,37 @@ function resolveFlowResultWorkflowState(
   stateCode: number | undefined,
   statusCode: number | undefined
 ): {
+  workflowState?: FlowWorkflowStateLabel;
   stateCode?: number;
   statusCode?: number;
 } {
   const workflowState = resolveSupportedFlowWorkflowState(stateCode, statusCode);
+  const workflowStateLabel = resolveFlowWorkflowStateLabel(workflowState.stateCode, workflowState.statusCode);
 
   return {
+    ...(workflowStateLabel ? { workflowState: workflowStateLabel } : {}),
     ...(workflowState.stateCode !== undefined ? { stateCode: workflowState.stateCode } : {}),
     ...(workflowState.statusCode !== undefined ? { statusCode: workflowState.statusCode } : {}),
   };
+}
+
+function resolveFlowWorkflowStateLabel(
+  stateCode: number | undefined,
+  statusCode: number | undefined
+): FlowWorkflowStateLabel | undefined {
+  const normalizedStateCode = resolveSupportedFlowWorkflowState(stateCode, statusCode).stateCode;
+
+  if (normalizedStateCode === undefined) {
+    return undefined;
+  }
+
+  for (const [label, supportedStateCode] of FLOW_WORKFLOW_STATE_LABEL_STATE.entries()) {
+    if (supportedStateCode === normalizedStateCode) {
+      return label;
+    }
+  }
+
+  return undefined;
 }
 
 function normalizeFlowWorkflowShellMetadata(value: {

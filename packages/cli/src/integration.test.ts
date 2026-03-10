@@ -4365,6 +4365,7 @@ describe('cli fixture-backed workflows', () => {
       target: {
         id: 'flow-state-cli-1',
         uniqueName: 'crd_InvoiceFlow',
+        workflowState: 'suspended',
         stateCode: 2,
         statusCode: 3,
       },
@@ -4527,6 +4528,7 @@ describe('cli fixture-backed workflows', () => {
       source: {
         id: 'flow-1',
         uniqueName: 'crd_InvoiceSync',
+        workflowState: 'activated',
         solutionUniqueName: 'CoreSource',
       },
       targetIdentifier: 'crd_InvoiceSync',
@@ -4534,6 +4536,7 @@ describe('cli fixture-backed workflows', () => {
       target: {
         id: 'target-flow-1',
         uniqueName: 'crd_InvoiceSync',
+        workflowState: 'activated',
         solutionUniqueName: 'CoreTarget',
       },
     });

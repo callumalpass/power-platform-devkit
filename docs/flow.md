@@ -30,7 +30,7 @@ Current remote inspection returns:
 - flow id, name, bounded description metadata, and unique name
 - bounded workflow-shell metadata for `type`, `mode`, `ondemand`, and
   `primaryentity` when present
-- state and status codes
+- normalized workflow state labels plus the underlying state and status codes
 - whether client-definition data was present
 - parsed connection reference names
 - parameter references
@@ -175,6 +175,10 @@ mutation time with `--workflow-state draft|activated|suspended` on
 `pp flow deploy` and artifact-mode `pp flow promote`, which lets engineers
 promote or deploy the same validated artifact into a target environment with a
 different supported activation state without editing the local artifact JSON.
+Remote inspection plus export/deploy/promote results now also surface the
+normalized workflow-state label alongside raw `stateCode` / `statusCode`, so
+automation and CLI users do not need to decode the supported Dataverse pairs
+manually.
 The same bounded lifecycle also enforces the supported cloud-flow category
 contract: when `category` is declared locally it must remain `5`, and when it
 is omitted the repack and direct deploy surfaces normalize it back to category

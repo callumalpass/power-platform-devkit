@@ -244,6 +244,7 @@ describe('FlowService', () => {
         id: 'flow-1',
         name: 'Invoice Sync',
         uniqueName: 'crd_InvoiceSync',
+        workflowState: 'activated',
         solutionUniqueName: 'Core',
       },
       summary: {
@@ -852,6 +853,7 @@ describe('FlowService', () => {
       target: {
         id: 'flow-state-override-1',
         uniqueName: 'crd_StateOverrideFlow',
+        workflowState: 'suspended',
         stateCode: 2,
         statusCode: 3,
       },
@@ -945,6 +947,7 @@ describe('FlowService', () => {
       source: {
         id: 'flow-1',
         uniqueName: 'crd_InvoiceSync',
+        workflowState: 'activated',
         solutionUniqueName: 'Core',
       },
       targetIdentifier: 'crd_InvoiceSync',
@@ -1023,12 +1026,14 @@ describe('FlowService', () => {
     expect(result.data).toMatchObject({
       promotionMode: 'artifact',
       source: {
+        workflowState: 'activated',
         stateCode: 1,
         statusCode: 2,
       },
       target: {
         id: 'target-flow-state-1',
         uniqueName: 'crd_InvoiceSync',
+        workflowState: 'draft',
         stateCode: 0,
         statusCode: 1,
       },
