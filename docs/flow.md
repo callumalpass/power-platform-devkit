@@ -163,6 +163,12 @@ builds directly on the same contract: it exports a supported remote source flow
 into the canonical artifact model in memory, runs the shared local validator,
 then deploys that normalized definition into the target environment with the
 same `--target` and `--create-if-missing` behavior as local artifact deploy.
+When `--solution` on deploy or `--target-solution` on artifact-mode promotion is
+supplied, the direct flow lifecycle now also runs remote target-environment
+checks over the projected post-patch connection references and environment
+variables before mutation: missing target solution assets fail fast, while
+unbound connection references or environment variables without an effective
+value surface as warnings in the deploy result.
 When `--solution-package` is supplied, `pp flow promote` can also take a
 solution-scoped route for the selected flow: it verifies that the flow exists
 inside `--source-solution`, runs the same bounded local validator against the
@@ -186,10 +192,13 @@ The current pack/deploy boundary is:
   `createdTime` or `lastModifiedTime`
 - remote deploy currently updates only a bounded workflow shell (`name`,
   `category`, `statecode`, `statuscode`) plus the normalized `clientdata`
-  definition after the shared local validator passes, unless
+  definition after the shared local validator passes, and when a destination
+  solution scope is supplied it also checks that projected connection
+  references and environment variables exist there before mutation, unless
   `--create-if-missing` is used
 - remote promotion currently transfers that same bounded workflow shell plus
-  the normalized definition; it does not package or migrate broader workflow
+  the normalized definition, including the same solution-scoped target checks
+  for artifact-mode promotion; it does not package or migrate broader workflow
   metadata/state beyond that surface
 - `pp flow promote --solution-package` imports the whole selected solution that
   contains the flow, preserves the packaged solution unique name, requires

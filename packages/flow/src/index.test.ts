@@ -279,8 +279,9 @@ describe('FlowService', () => {
 
   it('deploys a validated local flow artifact into an existing remote workflow', async () => {
     const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
+    const baseClient = createStubDataverseClient();
     const client = {
-      ...createStubDataverseClient(),
+      ...baseClient,
       queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
         if (options.table === 'workflows') {
           return ok(
@@ -308,6 +309,16 @@ describe('FlowService', () => {
                 objectid: 'flow-1',
                 componenttype: 29,
               },
+              {
+                solutioncomponentid: 'comp-2',
+                objectid: 'ref-1',
+                componenttype: 371,
+              },
+              {
+                solutioncomponentid: 'comp-3',
+                objectid: 'env-1',
+                componenttype: 380,
+              },
             ] as T[],
             {
               supportTier: 'preview',
@@ -315,9 +326,7 @@ describe('FlowService', () => {
           );
         }
 
-        return ok([] as T[], {
-          supportTier: 'preview',
-        });
+        return baseClient.queryAll(options);
       },
       update: async (table: string, id: string, entity: Record<string, unknown>, options?: { solutionUniqueName?: string }) => {
         updates.push({ table, id, entity, solutionUniqueName: options?.solutionUniqueName });
@@ -369,18 +378,37 @@ describe('FlowService', () => {
 
   it('creates a bounded remote workflow when the target is missing and create-if-missing is enabled', async () => {
     const creates: Array<{ table: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
+    const baseClient = createStubDataverseClient();
     const client = {
-      ...createStubDataverseClient(),
+      ...baseClient,
       queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
-        if (options.table === 'workflows' || options.table === 'solutioncomponents') {
+        if (options.table === 'workflows') {
           return ok([] as T[], {
             supportTier: 'preview',
           });
         }
 
-        return ok([] as T[], {
-          supportTier: 'preview',
-        });
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-2',
+                objectid: 'ref-1',
+                componenttype: 371,
+              },
+              {
+                solutioncomponentid: 'comp-3',
+                objectid: 'env-1',
+                componenttype: 380,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
       },
       create: async (table: string, entity: Record<string, unknown>, options?: { solutionUniqueName?: string }) => {
         creates.push({ table, entity, solutionUniqueName: options?.solutionUniqueName });
@@ -444,8 +472,9 @@ describe('FlowService', () => {
   it('promotes a remote flow from one environment into another through the shared artifact lifecycle', async () => {
     const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
     const sourceClient = createStubDataverseClient();
+    const baseTargetClient = createStubDataverseClient();
     const targetClient = {
-      ...createStubDataverseClient(),
+      ...baseTargetClient,
       queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
         if (options.table === 'workflows') {
           return ok(
@@ -473,6 +502,16 @@ describe('FlowService', () => {
                 objectid: 'target-flow-1',
                 componenttype: 29,
               },
+              {
+                solutioncomponentid: 'comp-2',
+                objectid: 'ref-1',
+                componenttype: 371,
+              },
+              {
+                solutioncomponentid: 'comp-3',
+                objectid: 'env-1',
+                componenttype: 380,
+              },
             ] as T[],
             {
               supportTier: 'preview',
@@ -480,9 +519,7 @@ describe('FlowService', () => {
           );
         }
 
-        return ok([] as T[], {
-          supportTier: 'preview',
-        });
+        return baseTargetClient.queryAll(options);
       },
       update: async (table: string, id: string, entity: Record<string, unknown>, options?: { solutionUniqueName?: string }) => {
         updates.push({ table, id, entity, solutionUniqueName: options?.solutionUniqueName });
@@ -536,6 +573,168 @@ describe('FlowService', () => {
       },
     });
     expect(String(updates[0]?.entity.clientdata)).toContain('"definition"');
+  });
+
+  it('blocks direct flow deploy when projected target solution bindings are missing', async () => {
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Invoice Flow',
+                uniquename: 'crd_InvoiceFlow',
+                category: 5,
+                statecode: 1,
+                statuscode: 2,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'flow-1',
+                componenttype: 29,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(client).deployArtifact('fixtures/flow/raw/invoice-flow.raw.json', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('FLOW_DEPLOY_TARGET_CONNREF_MISSING');
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('FLOW_DEPLOY_TARGET_ENVVAR_MISSING');
+  });
+
+  it('warns but still deploys when projected target solution bindings are present but not ready', async () => {
+    const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Invoice Flow',
+                uniquename: 'crd_InvoiceFlow',
+                category: 5,
+                statecode: 1,
+                statuscode: 2,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'flow-1',
+                componenttype: 29,
+              },
+              {
+                solutioncomponentid: 'comp-2',
+                objectid: 'ref-1',
+                componenttype: 371,
+              },
+              {
+                solutioncomponentid: 'comp-3',
+                objectid: 'env-1',
+                componenttype: 380,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'connectionreferences') {
+          return ok(
+            [
+              {
+                connectionreferenceid: 'ref-1',
+                connectionreferencelogicalname: 'shared_office365',
+                connectorid: '/providers/microsoft.powerapps/apis/shared_office365',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'environmentvariabledefinitions') {
+          return ok(
+            [
+              {
+                environmentvariabledefinitionid: 'env-1',
+                schemaname: 'pp_ApiUrl',
+                _solutionid_value: 'sol-1',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'environmentvariablevalues') {
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+        }
+
+        return baseClient.queryAll(options);
+      },
+      update: async (table: string, id: string, entity: Record<string, unknown>, options?: { solutionUniqueName?: string }) => {
+        updates.push({ table, id, entity, solutionUniqueName: options?.solutionUniqueName });
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(client).deployArtifact('fixtures/flow/raw/invoice-flow.raw.json', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(updates).toHaveLength(1);
+    expect(result.warnings.map((warning) => warning.code)).toContain('FLOW_DEPLOY_TARGET_CONNREF_UNBOUND');
+    expect(result.warnings.map((warning) => warning.code)).toContain('FLOW_DEPLOY_TARGET_ENVVAR_VALUE_MISSING');
   });
 
   it('promotes a flow through a solution package when requested', async () => {

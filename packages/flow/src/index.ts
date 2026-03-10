@@ -1679,8 +1679,8 @@ async function deployLoadedFlowArtifact(
     );
   }
 
-  const diagnostics = [...(options.diagnostics ?? []), ...validation.diagnostics];
-  const warnings = [...(options.warnings ?? []), ...validation.warnings];
+  let diagnostics = [...(options.diagnostics ?? []), ...validation.diagnostics];
+  let warnings = [...(options.warnings ?? []), ...validation.warnings];
   const targetIdentifier = resolveFlowDeployTargetIdentifier(artifact, options.target);
   const createIdentifier = resolveFlowCreateIdentifier(artifact);
 
@@ -1749,6 +1749,27 @@ async function deployLoadedFlowArtifact(
         }
       );
     }
+  }
+
+  const remoteTargetValidation = await validateFlowArtifactRemoteTargets(path, artifact, {
+    dataverseClient: options.dataverseClient,
+    solutionUniqueName: options.solutionUniqueName,
+  });
+
+  diagnostics = [...diagnostics, ...remoteTargetValidation.diagnostics];
+  warnings = [...warnings, ...remoteTargetValidation.warnings];
+
+  if (!remoteTargetValidation.success) {
+    return fail(diagnostics, {
+      supportTier: 'preview',
+      warnings,
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse solutions/connectionreferences/environmentvariabledefinitions GET',
+        },
+      ],
+    });
   }
 
   const flowService = new FlowService(options.dataverseClient);
@@ -1927,6 +1948,172 @@ async function deployLoadedFlowArtifact(
           source: 'Dataverse workflows PATCH',
         },
       ],
+    }
+  );
+}
+
+async function validateFlowArtifactRemoteTargets(
+  path: string,
+  artifact: FlowArtifact,
+  options: {
+    dataverseClient?: DataverseClient;
+    solutionUniqueName?: string;
+  }
+): Promise<OperationResult<{ checked: boolean }>> {
+  if (!options.dataverseClient || !options.solutionUniqueName) {
+    return ok(
+      { checked: false },
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  const solution = await new SolutionService(options.dataverseClient).inspect(options.solutionUniqueName);
+
+  if (!solution.success) {
+    return solution as unknown as OperationResult<{ checked: boolean }>;
+  }
+
+  if (!solution.data) {
+    return fail(
+      [
+        ...solution.diagnostics,
+        createDiagnostic(
+          'error',
+          'FLOW_DEPLOY_TARGET_SOLUTION_NOT_FOUND',
+          `Target solution ${options.solutionUniqueName} was not found for flow artifact ${path}.`,
+          {
+            source: '@pp/flow',
+            path,
+          }
+        ),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: solution.warnings,
+      }
+    );
+  }
+
+  const [references, variables] = await Promise.all([
+    new ConnectionReferenceService(options.dataverseClient).list({
+      solutionUniqueName: options.solutionUniqueName,
+    }),
+    new EnvironmentVariableService(options.dataverseClient).list({
+      solutionUniqueName: options.solutionUniqueName,
+    }),
+  ]);
+
+  if (!references.success) {
+    return fail([...solution.diagnostics, ...references.diagnostics], {
+      supportTier: 'preview',
+      warnings: [...solution.warnings, ...references.warnings],
+    });
+  }
+
+  if (!variables.success) {
+    return fail([...solution.diagnostics, ...variables.diagnostics], {
+      supportTier: 'preview',
+      warnings: [...solution.warnings, ...variables.warnings],
+    });
+  }
+
+  const referenceByLogicalName = new Map(
+    (references.data ?? [])
+      .filter((reference) => reference.logicalName)
+      .map((reference) => [reference.logicalName?.toLowerCase() ?? '', reference])
+  );
+  const variableBySchema = new Map(
+    (variables.data ?? [])
+      .filter((variable) => variable.schemaName)
+      .map((variable) => [variable.schemaName?.toLowerCase() ?? '', variable])
+  );
+  const diagnostics: Diagnostic[] = [...solution.diagnostics, ...references.diagnostics, ...variables.diagnostics];
+  const warnings: Diagnostic[] = [...solution.warnings, ...references.warnings, ...variables.warnings];
+
+  for (const reference of artifact.metadata.connectionReferences) {
+    const projectedLogicalName = reference.connectionReferenceLogicalName ?? reference.name;
+    const discovered = referenceByLogicalName.get(projectedLogicalName.toLowerCase());
+
+    if (!discovered) {
+      diagnostics.push(
+        createDiagnostic(
+          'error',
+          'FLOW_DEPLOY_TARGET_CONNREF_MISSING',
+          `Flow artifact ${path} projects connection reference ${projectedLogicalName} but it was not found in solution ${options.solutionUniqueName}.`,
+          {
+            source: '@pp/flow',
+            path,
+          }
+        )
+      );
+      continue;
+    }
+
+    if (!discovered.connected) {
+      warnings.push(
+        createDiagnostic(
+          'warning',
+          'FLOW_DEPLOY_TARGET_CONNREF_UNBOUND',
+          `Flow artifact ${path} projects connection reference ${projectedLogicalName}, but the target reference is not connected in solution ${options.solutionUniqueName}.`,
+          {
+            source: '@pp/flow',
+            path,
+          }
+        )
+      );
+    }
+  }
+
+  for (const variable of artifact.metadata.environmentVariables) {
+    const discovered = variableBySchema.get(variable.toLowerCase());
+
+    if (!discovered) {
+      diagnostics.push(
+        createDiagnostic(
+          'error',
+          'FLOW_DEPLOY_TARGET_ENVVAR_MISSING',
+          `Flow artifact ${path} projects environment variable ${variable} but it was not found in solution ${options.solutionUniqueName}.`,
+          {
+            source: '@pp/flow',
+            path,
+          }
+        )
+      );
+      continue;
+    }
+
+    if (!discovered.effectiveValue) {
+      warnings.push(
+        createDiagnostic(
+          'warning',
+          'FLOW_DEPLOY_TARGET_ENVVAR_VALUE_MISSING',
+          `Flow artifact ${path} projects environment variable ${variable}, but the target variable does not have an effective value in solution ${options.solutionUniqueName}.`,
+          {
+            source: '@pp/flow',
+            path,
+          }
+        )
+      );
+    }
+  }
+
+  if (diagnostics.some((diagnostic) => diagnostic.code.startsWith('FLOW_DEPLOY_TARGET_'))) {
+    return fail(diagnostics, {
+      supportTier: 'preview',
+      warnings,
+    });
+  }
+
+  return ok(
+    {
+      checked: true,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics,
+      warnings,
     }
   );
 }
