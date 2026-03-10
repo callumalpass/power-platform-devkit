@@ -92,6 +92,7 @@ export interface ProjectDiscoveryDetails {
   descendantProjectConfigs: string[];
   descendantProjectRoots: string[];
   nearestProjectRoot?: string;
+  autoSelectedProjectRoot?: string;
 }
 
 export interface ProjectContext {
@@ -328,6 +329,16 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
       message: `Project config found at ${project.configPath}`,
       path: project.configPath,
     });
+
+    if (project.discovery.autoSelectedProjectRoot) {
+      checks.push({
+        status: 'info',
+        code: 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT',
+        message: `Auto-selected descendant pp project root at ${project.discovery.autoSelectedProjectRoot}.`,
+        path: join(resolvedRoot, project.discovery.autoSelectedProjectRoot),
+        hint: `Re-run with ${project.discovery.autoSelectedProjectRoot} when you want to make that local project path explicit.`,
+      });
+    }
   } else {
     checks.push({
       status: 'warn',
@@ -417,7 +428,10 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
     {
       root: resolvedRoot,
       configPath: project?.configPath,
-      discovery: project?.discovery.usedDefaultLayout ? project.discovery : undefined,
+      discovery:
+        project && (project.discovery.usedDefaultLayout || project.discovery.autoSelectedProjectRoot)
+          ? project.discovery
+          : undefined,
       summary: {
         hasConfig: project?.configPath !== undefined,
         configuredAssetCount: assets.length,
@@ -780,6 +794,10 @@ async function summarizeProjectDiscovery(
   configPath?: string
 ): Promise<ProjectDiscoveryDetails> {
   if (configPath) {
+    const configRoot = dirname(configPath);
+    const relativeRoot = relative(inspectedPath, configRoot) || '.';
+    const isDescendantRoot = relativeRoot !== '.' && !relativeRoot.startsWith('..');
+
     return {
       inspectedPath,
       resolvedRoot,
@@ -787,6 +805,7 @@ async function summarizeProjectDiscovery(
       usedDefaultLayout: false,
       descendantProjectConfigs: [],
       descendantProjectRoots: [],
+      autoSelectedProjectRoot: isDescendantRoot ? relativeRoot : undefined,
     };
   }
 

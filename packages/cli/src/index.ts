@@ -1009,7 +1009,8 @@ async function runProjectInspect(args: string[]): Promise<number> {
 
   const payload = {
     summary: summarizeProject(project.data),
-    discovery: project.data.discovery.usedDefaultLayout ? project.data.discovery : undefined,
+    discovery:
+      project.data.discovery.usedDefaultLayout || project.data.discovery.autoSelectedProjectRoot ? project.data.discovery : undefined,
     topology: project.data.topology,
     providerBindings: project.data.providerBindings,
     parameters: Object.fromEntries(

@@ -277,6 +277,29 @@ export async function loadProjectConfig(startDir = process.cwd()): Promise<Opera
     const nearestCandidate = descendantCandidates[0];
     const candidateList = descendantCandidates.map((candidate) => relativePathFrom(resolvedStartDir, candidate));
 
+    if (descendantCandidates.length === 1 && nearestCandidate) {
+      const loaded = await readLocatedConfig(nearestCandidate, projectConfigSchema, '@pp/config');
+
+      if (!loaded.success) {
+        return loaded;
+      }
+
+      return withWarning(
+        loaded,
+        createDiagnostic(
+          'warning',
+          'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED',
+          `Auto-selected descendant project config ${relativePathFrom(resolvedStartDir, nearestCandidate)}.`,
+          {
+            source: '@pp/config',
+            path: nearestCandidate,
+            hint: `Use ${relativePathFrom(resolvedStartDir, dirname(nearestCandidate))} when you want to scope commands to that local project explicitly.`,
+            detail: `No project config was found at or above ${resolvedStartDir}, so the only descendant project was used as the local anchor.`,
+          }
+        )
+      );
+    }
+
     return withWarning(
       ok<LocatedConfig<ProjectConfig> | undefined>(undefined, {
         supportTier: 'preview',

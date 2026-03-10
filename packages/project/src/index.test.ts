@@ -181,7 +181,7 @@ describe('discoverProject', () => {
     expect(report.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_ASSET_MISSING')).toBe(true);
   });
 
-  it('surfaces descendant project roots when discovery falls back to the inspected path', async () => {
+  it('auto-selects the only descendant project root when discovery starts above it', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pp-project-discovery-'));
     const fixtureProjectRoot = join(root, 'fixtures', 'analysis', 'project');
     await mkdir(fixtureProjectRoot, { recursive: true });
@@ -210,17 +210,19 @@ describe('discoverProject', () => {
     expect(discovery.success).toBe(true);
     expect(discovery.data?.discovery).toEqual({
       inspectedPath: root,
-      resolvedRoot: root,
-      configFound: false,
-      usedDefaultLayout: true,
-      descendantProjectConfigs: ['fixtures/analysis/project/pp.config.yaml'],
-      descendantProjectRoots: ['fixtures/analysis/project'],
-      nearestProjectRoot: 'fixtures/analysis/project',
+      resolvedRoot: fixtureProjectRoot,
+      configFound: true,
+      usedDefaultLayout: false,
+      descendantProjectConfigs: [],
+      descendantProjectRoots: [],
+      autoSelectedProjectRoot: 'fixtures/analysis/project',
     });
+    expect(discovery.data?.root).toBe(fixtureProjectRoot);
+    expect(discovery.data?.configPath).toBe(join(fixtureProjectRoot, 'pp.config.yaml'));
 
     expect(doctor.success).toBe(true);
-    expect(doctor.data?.discovery?.descendantProjectRoots).toEqual(['fixtures/analysis/project']);
-    expect(doctor.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_DESCENDANT_PROJECT_FOUND')).toBe(true);
+    expect(doctor.data?.discovery?.autoSelectedProjectRoot).toBe('fixtures/analysis/project');
+    expect(doctor.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')).toBe(true);
   });
 
 });

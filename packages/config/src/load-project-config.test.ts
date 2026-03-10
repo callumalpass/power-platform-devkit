@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { loadProjectConfig } from './index';
 
 describe('loadProjectConfig', () => {
-  it('surfaces descendant project configs when root discovery falls back to defaults', async () => {
+  it('auto-selects the only descendant project config when root discovery has a single local anchor', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pp-config-descendant-'));
     const fixtureProjectRoot = join(root, 'fixtures', 'analysis', 'project');
     await mkdir(fixtureProjectRoot, { recursive: true });
@@ -31,19 +31,17 @@ describe('loadProjectConfig', () => {
     const result = await loadProjectConfig(root);
 
     expect(result.success).toBe(true);
-    expect(result.data).toBeUndefined();
+    expect(result.data?.path).toBe(join(fixtureProjectRoot, 'pp.config.yaml'));
     expect(result.warnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'PROJECT_CONFIG_NOT_FOUND',
-          hint: expect.stringContaining('fixtures/analysis/project/pp.config.yaml'),
-          detail: expect.stringContaining('fixtures/analysis/project/pp.config.yaml'),
+          code: 'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED',
+          hint: expect.stringContaining('fixtures/analysis/project'),
+          detail: expect.stringContaining('only descendant project'),
           path: join(fixtureProjectRoot, 'pp.config.yaml'),
         }),
       ])
     );
-    expect(result.suggestedNextActions).toEqual(
-      expect.arrayContaining(['Inspect descendant project config at fixtures/analysis/project/pp.config.yaml.'])
-    );
+    expect(result.suggestedNextActions).toBeUndefined();
   });
 });

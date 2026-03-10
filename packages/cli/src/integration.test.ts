@@ -994,7 +994,7 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
-  it('surfaces descendant project roots in project inspect and doctor JSON at repo root', async () => {
+  it('auto-selects the descendant project root in project inspect and doctor JSON at repo root', async () => {
     const inspect = await runCli(['project', 'inspect', repoRoot, '--format', 'json']);
     const doctor = await runCli(['project', 'doctor', repoRoot, '--format', 'json']);
 

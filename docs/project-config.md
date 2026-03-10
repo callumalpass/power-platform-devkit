@@ -284,12 +284,12 @@ Returns:
 - discovered assets
 - template registries, build conventions, and docs metadata
 
-When the current directory is not itself a `pp` project, `project inspect` keeps
-the default-layout fallback but now includes descendant `pp.config.*` candidates
-in its warning output when it finds committed project roots below the inspected
-path. The JSON payload also includes a `discovery` object in that fallback case
-so automation can see the nearest descendant project root without scraping
-stderr.
+When the current directory is not itself a `pp` project, `project inspect`
+auto-selects the lone descendant `pp.config.*` it finds below the inspected path
+and treats that project as the canonical local anchor. If there are multiple
+descendant projects, it keeps the default-layout fallback and reports the
+candidates in diagnostics. The JSON payload includes a `discovery` object when
+`pp` had to infer or auto-select the local project root.
 
 ### Analysis report
 

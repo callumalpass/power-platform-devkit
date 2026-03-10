@@ -1,103 +1,124 @@
 {
   "assets": [
     {
-      "exists": false,
-      "kind": "missing",
+      "exists": true,
+      "kind": "directory",
       "name": "apps",
-      "path": "<REPO_ROOT>/apps"
+      "path": "<REPO_ROOT>/fixtures/analysis/project/apps"
     },
     {
-      "exists": false,
-      "kind": "missing",
+      "exists": true,
+      "kind": "directory",
       "name": "flows",
-      "path": "<REPO_ROOT>/flows"
+      "path": "<REPO_ROOT>/fixtures/analysis/project/flows"
     },
     {
-      "exists": false,
-      "kind": "missing",
-      "name": "solutions",
-      "path": "<REPO_ROOT>/solutions"
+      "exists": true,
+      "kind": "file",
+      "name": "solutionBundle",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/solutions/Core.zip"
     },
     {
       "exists": true,
       "kind": "directory",
       "name": "docs",
-      "path": "<REPO_ROOT>/docs"
+      "path": "<REPO_ROOT>/fixtures/analysis/project/docs"
     }
   ],
   "checks": [
     {
-      "code": "PROJECT_DOCTOR_CONFIG_MISSING",
-      "hint": "Run `pp project init` to scaffold a minimal config, then tune it for your environment aliases, solution names, and parameter sources.",
-      "message": "No `pp.config.*` file was found. `pp` can inspect defaults, but the local project model is only inferred.",
-      "path": "<REPO_ROOT>/pp.config.yaml",
-      "status": "warn"
+      "code": "PROJECT_DOCTOR_CONFIG_PRESENT",
+      "message": "Project config found at <REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
+      "status": "pass"
     },
     {
-      "code": "PROJECT_DOCTOR_DESCENDANT_PROJECT_FOUND",
-      "hint": "Re-run with fixtures/analysis/project or --project fixtures/analysis/project.",
-      "message": "Found descendant pp project root at fixtures/analysis/project.",
+      "code": "PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT",
+      "hint": "Re-run with fixtures/analysis/project when you want to make that local project path explicit.",
+      "message": "Auto-selected descendant pp project root at fixtures/analysis/project.",
       "path": "<REPO_ROOT>/fixtures/analysis/project",
       "status": "info"
     },
     {
-      "code": "PROJECT_DOCTOR_ASSET_MISSING",
-      "hint": "Create apps or update the project assets map if this repo uses a different layout.",
-      "message": "Expected asset path apps is missing for apps",
-      "path": "<REPO_ROOT>/apps",
-      "status": "warn"
-    },
-    {
-      "code": "PROJECT_DOCTOR_ASSET_MISSING",
-      "hint": "Create flows or update the project assets map if this repo uses a different layout.",
-      "message": "Expected asset path flows is missing for flows",
-      "path": "<REPO_ROOT>/flows",
-      "status": "warn"
-    },
-    {
-      "code": "PROJECT_DOCTOR_ASSET_MISSING",
-      "hint": "Create solutions or update the project assets map if this repo uses a different layout.",
-      "message": "Expected asset path solutions is missing for solutions",
-      "path": "<REPO_ROOT>/solutions",
-      "status": "warn"
-    },
-    {
       "code": "PROJECT_DOCTOR_ASSET_PRESENT",
-      "message": "Asset path docs is present for docs",
-      "path": "<REPO_ROOT>/docs",
+      "message": "Asset path fixtures/analysis/project/apps is present for apps",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/apps",
       "status": "pass"
     },
     {
-      "code": "PROJECT_CONFIG_NOT_FOUND",
-      "hint": "Found descendant project config at fixtures/analysis/project/pp.config.yaml. Re-run with that path or --project fixtures/analysis/project.",
-      "message": "No project config file was found at or above <REPO_ROOT>. Using defaults.",
+      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+      "message": "Asset path fixtures/analysis/project/flows is present for flows",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/flows",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+      "message": "Asset path fixtures/analysis/project/solutions/Core.zip is present for solutionBundle",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/solutions/Core.zip",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+      "message": "Asset path fixtures/analysis/project/docs is present for docs",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/docs",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_PROVIDER_BINDINGS_PRESENT",
+      "message": "Project defines 2 provider binding(s).",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_TOPOLOGY_PRESENT",
+      "message": "Project topology defines 2 stage(s).",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_PARAMETER_MISSING",
+      "hint": "Set PP_TENANT_DOMAIN or provide an explicit value in the project config.",
+      "message": "Required project parameter tenantDomain is not resolved",
+      "status": "fail"
+    },
+    {
+      "code": "PROJECT_PARAMETER_SECRET_MISSING",
+      "hint": "Resolve secret ref app_token or provide an explicit value override.",
+      "message": "Required secret-backed project parameter apiToken is not resolved",
+      "status": "fail"
+    },
+    {
+      "code": "PROJECT_PARAMETER_MISSING",
+      "hint": "Set PP_SQL_ENDPOINT or provide an explicit value in the project config.",
+      "message": "Required project parameter sqlEndpoint is not resolved",
+      "status": "fail"
+    },
+    {
+      "code": "PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED",
+      "hint": "Use fixtures/analysis/project when you want to scope commands to that local project explicitly.",
+      "message": "Auto-selected descendant project config fixtures/analysis/project/pp.config.yaml.",
       "path": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
       "status": "warn"
     }
   ],
+  "configPath": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
   "discovery": {
-    "configFound": false,
-    "descendantProjectConfigs": [
-      "fixtures/analysis/project/pp.config.yaml"
-    ],
-    "descendantProjectRoots": [
-      "fixtures/analysis/project"
-    ],
+    "autoSelectedProjectRoot": "fixtures/analysis/project",
+    "configFound": true,
+    "descendantProjectConfigs": [],
+    "descendantProjectRoots": [],
     "inspectedPath": "<REPO_ROOT>",
-    "nearestProjectRoot": "fixtures/analysis/project",
-    "resolvedRoot": "<REPO_ROOT>",
-    "usedDefaultLayout": true
+    "resolvedRoot": "<REPO_ROOT>/fixtures/analysis/project",
+    "usedDefaultLayout": false
   },
   "root": "<REPO_ROOT>",
   "summary": {
     "configuredAssetCount": 4,
-    "existingAssetCount": 1,
-    "hasConfig": false,
-    "hasProviderBindings": false,
-    "hasTemplateRegistries": false,
-    "hasTopology": false,
-    "missingAssetCount": 3,
-    "requiredParameterCount": 0,
-    "unresolvedRequiredParameterCount": 0
+    "existingAssetCount": 4,
+    "hasConfig": true,
+    "hasProviderBindings": true,
+    "hasTemplateRegistries": true,
+    "hasTopology": true,
+    "missingAssetCount": 0,
+    "requiredParameterCount": 3,
+    "unresolvedRequiredParameterCount": 3
   }
 }
