@@ -5,6 +5,7 @@ import {
   createMutationPreview,
   readMutationFlags,
   readOutputFormat,
+  resolveOutputFormat,
   renderFailure,
   renderOutput,
   renderResultDiagnostics,
@@ -14,6 +15,8 @@ import {
 describe('cli contract', () => {
   it('captures fixture-backed structured output rendering', async () => {
     expect(readOutputFormat(['--format', 'yaml'], 'json').data).toBe('yaml');
+    expect(resolveOutputFormat(['--format', 'yaml'], 'json')).toBe('yaml');
+    expect(resolveOutputFormat(['--format', 'csv'], 'json')).toBe('json');
 
     await expectGoldenText(renderOutput([{ name: 'dev' }, { name: 'prod' }], 'ndjson'), 'fixtures/cli/golden/contract/output.ndjson');
     await expectGoldenText(

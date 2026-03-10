@@ -4862,7 +4862,14 @@ describe('cli fixture-backed workflows', () => {
 
     expect(components.code).toBe(1);
     expect(components.stdout).toBe('');
-    expect(components.stderr).toContain('ERROR CLI_OUTPUT_FORMAT_INVALID: Unsupported --format.');
+    expect(JSON.parse(components.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: 'CLI_OUTPUT_FORMAT_INVALID',
+        }),
+      ],
+    });
   });
 
   it('fails solution components for a missing solution instead of returning an empty list', async () => {

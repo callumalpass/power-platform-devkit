@@ -43,6 +43,11 @@ export function readOutputFormat(args: string[], fallback: CliOutputFormat): Ope
   );
 }
 
+export function resolveOutputFormat(args: string[], fallback: CliOutputFormat): CliOutputFormat {
+  const result = readOutputFormat(args, fallback);
+  return result.success && result.data ? result.data : fallback;
+}
+
 export function renderOutput(value: unknown, format: CliOutputFormat): string {
   switch (format) {
     case 'raw':

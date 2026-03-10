@@ -24,6 +24,7 @@ import {
   createMutationPreview,
   readMutationFlags,
   readOutputFormat,
+  resolveOutputFormat,
   renderFailure,
   renderOutput,
   renderResultDiagnostics,
@@ -7397,7 +7398,7 @@ function maybeHandleMutationPreview(
 }
 
 function outputFormat(args: string[], fallback: OutputFormat): OutputFormat {
-  return (readFlag(args, '--format') ?? fallback) as OutputFormat;
+  return resolveOutputFormat(args, fallback);
 }
 
 function readEnvironmentAlias(args: string[]): string | undefined {
