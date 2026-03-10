@@ -313,8 +313,16 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
 
   switch (command) {
     case 'create':
+      if (args.includes('--help') || args.includes('help')) {
+        printCanvasCreateHelp();
+        return 0;
+      }
       return runCanvasUnsupportedRemoteMutation('create');
     case 'import':
+      if (args.includes('--help') || args.includes('help')) {
+        printCanvasImportHelp();
+        return 0;
+      }
       return runCanvasUnsupportedRemoteMutation('import');
     case 'list':
       return runCanvasList(args);
@@ -4001,6 +4009,57 @@ function printCanvasHelp(): void {
       '  - Remote create/import commands are not implemented yet.',
       '  - Attempted remote create/import calls return machine-readable diagnostics with next steps.',
       '  - Use --env to switch canvas inspect from local-path mode to remote lookup mode.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printCanvasCreateHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: canvas create --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
+      '',
+      'Status:',
+      '  Preview placeholder. Remote blank-app creation is not implemented yet.',
+      '',
+      'What works today:',
+      '  - Use `pp canvas list --env <alias> --solution <solution>` to inspect existing remote canvas apps.',
+      '  - Use `pp canvas inspect <displayName|name|id> --env <alias> --solution <solution>` to inspect a specific remote app.',
+      '',
+      'Next steps for new apps today:',
+      '  - Finish blank-app creation in Maker when you need a new remote canvas app.',
+      '  - Use `pp canvas build <path> --out <file.msapp>` if you are packaging a local canvas source tree.',
+      '',
+      'Known limitations:',
+      '  - Remote canvas coverage in pp is currently read-only.',
+      '  - pp does not yet return a remote canvas app id for create/import workflows.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printCanvasImportHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Status:',
+      '  Preview placeholder. Remote canvas import is not implemented yet.',
+      '',
+      'What works today:',
+      '  - Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
+      '  - Use `pp canvas list --env <alias> --solution <solution>` to inspect existing remote canvas apps.',
+      '',
+      'Next steps for remote import today:',
+      '  - Use Maker or solution tooling for the remote import step until `pp canvas import` exists.',
+      '',
+      'Known limitations:',
+      '  - Remote canvas coverage in pp is currently read-only.',
+      '  - pp does not yet return a remote canvas app id for create/import workflows.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

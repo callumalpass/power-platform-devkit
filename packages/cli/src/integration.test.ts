@@ -332,6 +332,23 @@ describe('cli fixture-backed workflows', () => {
     expect(stdout.join('')).toContain('Attempted remote create/import calls return machine-readable diagnostics with next steps.');
   });
 
+  it('prints stable help for placeholder remote canvas mutations', async () => {
+    const createHelp = await runCli(['canvas', 'create', '--help']);
+    const importHelp = await runCli(['canvas', 'import', '--help']);
+
+    expect(createHelp.code).toBe(0);
+    expect(createHelp.stderr).toBe('');
+    expect(createHelp.stdout).toContain('Usage: canvas create --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
+    expect(createHelp.stdout).toContain('Preview placeholder. Remote blank-app creation is not implemented yet.');
+    expect(createHelp.stdout).toContain('Finish blank-app creation in Maker when you need a new remote canvas app.');
+
+    expect(importHelp.code).toBe(0);
+    expect(importHelp.stderr).toBe('');
+    expect(importHelp.stdout).toContain('Usage: canvas import <file.msapp> --env ALIAS [--solution UNIQUE_NAME] [options]');
+    expect(importHelp.stdout).toContain('Preview placeholder. Remote canvas import is not implemented yet.');
+    expect(importHelp.stdout).toContain('Use Maker or solution tooling for the remote import step until `pp canvas import` exists.');
+  });
+
   it('renders analysis report and context outputs from the fixture project', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const env = {
