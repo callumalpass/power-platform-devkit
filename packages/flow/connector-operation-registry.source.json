@@ -153,13 +153,6 @@
     },
     {
       "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
-      "operationId": "ListRecords",
-      "parameters": [
-        { "name": "x-ms-odata-metadata-full", "kind": "boolean", "buckets": ["parameters", "queries"] }
-      ]
-    },
-    {
-      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
       "operationId": "CreateRecord",
       "parameters": [
         { "name": "entityName", "kind": "string", "buckets": ["parameters", "pathParameters"], "required": true },

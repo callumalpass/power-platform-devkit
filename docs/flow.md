@@ -360,6 +360,10 @@ Current validation checks:
     `inputs.parameters`, and `native-plus-parameters` for connectors like the
     current Dataverse slice that accept both compact `inputs.parameters` and
     explicit `inputs.pathParameters` / `inputs.queries`
+  - the same manifest can also append bounded operation-specific parameter
+    augmentations when the checked-in connector snapshot omits a
+    Power-Automate-visible field, and overlay operations now merge at the
+    parameter level instead of replacing the whole derived contract
   - the first bounded OpenAPI-ingested slice currently covers selected
     `shared_office365`, `shared_sharepointonline`, and
     `shared_commondataserviceforapps` operations, and the remaining overlay is

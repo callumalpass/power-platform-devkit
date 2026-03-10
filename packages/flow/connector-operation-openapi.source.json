@@ -24,7 +24,12 @@
       "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
       "sourcePath": "connector-openapi/dataverse.swagger.json",
       "bucketMode": "native-plus-parameters",
-      "includeOperations": ["DeleteRecord", "GetItem", "ListRecords"]
+      "includeOperations": ["DeleteRecord", "GetItem", "ListRecords"],
+      "operationParameterAugmentations": {
+        "ListRecords": [
+          { "name": "x-ms-odata-metadata-full", "kind": "boolean", "buckets": ["parameters", "queries"] }
+        ]
+      }
     }
   ]
 }

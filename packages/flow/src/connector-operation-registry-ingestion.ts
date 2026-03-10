@@ -48,6 +48,7 @@ export interface FlowConnectorOperationOpenApiSource {
   sourcePath: string;
   includeOperations?: string[];
   bucketMode?: 'native' | 'flattened' | 'native-plus-parameters';
+  operationParameterAugmentations?: Record<string, FlowSupportedConnectorOperationParameter[]>;
 }
 
 export interface FlowConnectorOperationOpenApiSourceManifest {
@@ -122,6 +123,7 @@ export function deriveFlowConnectorOperationsFromOpenApiSource(input: {
   document: OpenApiDocument;
   includeOperations?: string[];
   bucketMode?: FlowConnectorOperationOpenApiSource['bucketMode'];
+  operationParameterAugmentations?: FlowConnectorOperationOpenApiSource['operationParameterAugmentations'];
 }): FlowSupportedConnectorOperation[] {
   const includedOperationIds = input.includeOperations ? new Set(input.includeOperations) : undefined;
   const operations: FlowSupportedConnectorOperation[] = [];
@@ -141,7 +143,10 @@ export function deriveFlowConnectorOperationsFromOpenApiSource(input: {
       operations.push({
         apiId: input.apiId,
         operationId: operation.operationId,
-        parameters: normalizeOpenApiOperationParameters(operation.parameters ?? [], input.bucketMode),
+        parameters: dedupeAndSortParameters([
+          ...normalizeOpenApiOperationParameters(operation.parameters ?? [], input.bucketMode),
+          ...(input.operationParameterAugmentations?.[operation.operationId] ?? []),
+        ]),
       });
     }
   }
@@ -160,7 +165,19 @@ export function mergeFlowConnectorOperations(
   }
 
   for (const operation of overlayOperations) {
-    index.set(buildOperationKey(operation), operation);
+    const key = buildOperationKey(operation);
+    const existing = index.get(key);
+
+    if (!existing) {
+      index.set(key, operation);
+      continue;
+    }
+
+    index.set(key, {
+      ...existing,
+      ...operation,
+      parameters: dedupeAndSortParameters([...existing.parameters, ...operation.parameters]),
+    });
   }
 
   return Array.from(index.values()).sort(compareOperations);
@@ -181,6 +198,7 @@ async function collectDerivedOperations(
         document,
         includeOperations: source.includeOperations,
         bucketMode: source.bucketMode,
+        operationParameterAugmentations: source.operationParameterAugmentations,
       })
     );
   }
@@ -332,7 +350,7 @@ function buildOperationKey(operation: FlowSupportedConnectorOperation): string {
 }
 
 function buildParameterKey(parameter: FlowSupportedConnectorOperationParameter): string {
-  return `${parameter.bucket ?? 'parameters'}::${parameter.name}`;
+  return `${describeParameterBuckets(parameter)}::${parameter.name}`;
 }
 
 function compareOperations(left: FlowSupportedConnectorOperation, right: FlowSupportedConnectorOperation): number {
@@ -343,7 +361,13 @@ function compareParameters(
   left: FlowSupportedConnectorOperationParameter,
   right: FlowSupportedConnectorOperationParameter
 ): number {
-  return (
-    (left.bucket ?? 'parameters').localeCompare(right.bucket ?? 'parameters') || left.name.localeCompare(right.name)
-  );
+  return describeParameterBuckets(left).localeCompare(describeParameterBuckets(right)) || left.name.localeCompare(right.name);
+}
+
+function describeParameterBuckets(parameter: FlowSupportedConnectorOperationParameter): string {
+  if (parameter.buckets && parameter.buckets.length > 0) {
+    return [...parameter.buckets].sort().join('|');
+  }
+
+  return parameter.bucket ?? 'parameters';
 }

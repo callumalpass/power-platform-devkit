@@ -5,14 +5,14 @@
 import type { FlowConnectorOperationRegistryDocument } from '../connector-operation-registry';
 
 export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDocument = {
-  "generatedAt": "2026-03-10T17:13:49.708Z",
+  "generatedAt": "2026-03-10T17:26:11.842Z",
   "sourcePath": "packages/flow/connector-operation-openapi.source.json",
   "sourcePaths": [
     "packages/flow/connector-operation-openapi.source.json",
     "packages/flow/connector-operation-registry.source.json"
   ],
   "derivedOperationCount": 15,
-  "overlayOperationCount": 19,
+  "overlayOperationCount": 18,
   "operations": [
     {
       "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
@@ -57,12 +57,36 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           "required": true
         },
         {
+          "name": "recordId",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "pathParameters"
+          ],
+          "required": true
+        },
+        {
           "name": "partitionId",
           "kind": "string",
           "buckets": [
             "parameters",
             "queries"
           ]
+        }
+      ]
+    },
+    {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+      "operationId": "GetItem",
+      "parameters": [
+        {
+          "name": "entityName",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "pathParameters"
+          ],
+          "required": true
         },
         {
           "name": "recordId",
@@ -72,13 +96,7 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
             "pathParameters"
           ],
           "required": true
-        }
-      ]
-    },
-    {
-      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
-      "operationId": "GetItem",
-      "parameters": [
+        },
         {
           "name": "$expand",
           "kind": "string",
@@ -96,30 +114,12 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
           ]
         },
         {
-          "name": "entityName",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "pathParameters"
-          ],
-          "required": true
-        },
-        {
           "name": "partitionId",
           "kind": "string",
           "buckets": [
             "parameters",
             "queries"
           ]
-        },
-        {
-          "name": "recordId",
-          "kind": "string",
-          "buckets": [
-            "parameters",
-            "pathParameters"
-          ],
-          "required": true
         },
         {
           "name": "x-ms-odata-metadata-full",
@@ -135,6 +135,87 @@ export const FLOW_CONNECTOR_OPERATION_REGISTRY: FlowConnectorOperationRegistryDo
       "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
       "operationId": "ListRecords",
       "parameters": [
+        {
+          "name": "entityName",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "pathParameters"
+          ],
+          "required": true
+        },
+        {
+          "name": "$expand",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
+        {
+          "name": "$filter",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
+        {
+          "name": "$orderby",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
+        {
+          "name": "$select",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
+        {
+          "name": "$skiptoken",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
+        {
+          "name": "$top",
+          "kind": "integer",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
+        {
+          "name": "fetchXml",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
+        {
+          "name": "partitionId",
+          "kind": "string",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
+        {
+          "name": "returntotalrecordcount",
+          "kind": "boolean",
+          "buckets": [
+            "parameters",
+            "queries"
+          ]
+        },
         {
           "name": "x-ms-odata-metadata-full",
           "kind": "boolean",

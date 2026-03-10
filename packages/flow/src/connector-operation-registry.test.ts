@@ -4,7 +4,10 @@ import {
   listFlowSupportedConnectorOperations,
   resolveFlowSupportedConnectorOperation,
 } from './connector-operation-registry';
-import { deriveFlowConnectorOperationsFromOpenApiSource } from './connector-operation-registry-ingestion';
+import {
+  deriveFlowConnectorOperationsFromOpenApiSource,
+  mergeFlowConnectorOperations,
+} from './connector-operation-registry-ingestion';
 
 describe('flow connector operation registry', () => {
   it('derives bounded connector contracts from checked-in openapi snapshots', () => {
@@ -135,9 +138,89 @@ describe('flow connector operation registry', () => {
         apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
         operationId: 'GetItem',
         parameters: [
-          { name: '$select', kind: 'string', buckets: ['parameters', 'queries'] },
           { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
           { name: 'recordId', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+          { name: '$select', kind: 'string', buckets: ['parameters', 'queries'] },
+        ],
+      },
+    ]);
+  });
+
+  it('can augment snapshot-derived operations with bounded manifest-only parameters', () => {
+    const operations = deriveFlowConnectorOperationsFromOpenApiSource({
+      apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+      bucketMode: 'native-plus-parameters',
+      operationParameterAugmentations: {
+        ListRecords: [{ name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] }],
+      },
+      document: {
+        swagger: '2.0',
+        paths: {
+          '/tables/{entityName}/rows': {
+            get: {
+              operationId: 'ListRecords',
+              parameters: [
+                {
+                  name: 'entityName',
+                  in: 'path',
+                  required: true,
+                  type: 'string',
+                },
+                {
+                  name: '$top',
+                  in: 'query',
+                  type: 'integer',
+                  format: 'int32',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(operations).toEqual([
+      {
+        apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+        operationId: 'ListRecords',
+        parameters: [
+          { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+          { name: '$top', kind: 'integer', buckets: ['parameters', 'queries'] },
+          { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
+        ],
+      },
+    ]);
+  });
+
+  it('merges overlay parameters onto derived operations instead of replacing them wholesale', () => {
+    const operations = mergeFlowConnectorOperations(
+      [
+        {
+          apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+          operationId: 'ListRecords',
+          parameters: [
+            { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+            { name: '$top', kind: 'integer', buckets: ['parameters', 'queries'] },
+          ],
+        },
+      ],
+      [
+        {
+          apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+          operationId: 'ListRecords',
+          parameters: [{ name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] }],
+        },
+      ]
+    );
+
+    expect(operations).toEqual([
+      {
+        apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+        operationId: 'ListRecords',
+        parameters: [
+          { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+          { name: '$top', kind: 'integer', buckets: ['parameters', 'queries'] },
+          { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
         ],
       },
     ]);
@@ -154,6 +237,21 @@ describe('flow connector operation registry', () => {
       operationId: 'GetItems',
     });
     expect(operation?.parameters.map((parameter) => parameter.name)).toContain('$top');
+  });
+
+  it('keeps derived Dataverse list parameters when a manifest augmentation adds metadata flags', () => {
+    const operation = resolveFlowSupportedConnectorOperation(
+      '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+      'ListRecords'
+    );
+
+    expect(operation).toMatchObject({
+      apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+      operationId: 'ListRecords',
+    });
+    expect(operation?.parameters.map((parameter) => parameter.name)).toEqual(
+      expect.arrayContaining(['entityName', '$top', 'returntotalrecordcount', 'x-ms-odata-metadata-full'])
+    );
   });
 
   it('exposes generated registry metadata and inventory', () => {
