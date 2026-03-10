@@ -1499,7 +1499,7 @@ describe('FlowService', () => {
     });
   });
 
-  it('normalizes the supported cloud-flow category during repack and remote update when category is omitted locally', async () => {
+  it('normalizes the supported cloud-flow shell during repack and remote update when local shell metadata is omitted', async () => {
     const dir = await createTempDir();
     const artifactPath = join(dir, 'flow.json');
     const packedPath = join(dir, 'repacked.json');
@@ -1576,19 +1576,39 @@ describe('FlowService', () => {
     expect(packed.success).toBe(true);
     expect(packedDocument).toMatchObject({
       category: 5,
+      type: 1,
+      mode: 0,
+      ondemand: false,
+      primaryentity: 'none',
       properties: {
         category: 5,
+        type: 1,
+        mode: 0,
+        ondemand: false,
+        primaryentity: 'none',
       },
     });
 
     expect(deploy.success).toBe(true);
     expect(deploy.data).toMatchObject({
       operation: 'updated',
-      updatedFields: ['clientdata', 'name', 'category'],
+      target: {
+        workflowMetadata: {
+          type: 1,
+          mode: 0,
+          onDemand: false,
+          primaryEntity: 'none',
+        },
+      },
+      updatedFields: ['clientdata', 'name', 'category', 'type', 'mode', 'ondemand', 'primaryentity'],
     });
     expect(updates[0]).toMatchObject({
       entity: {
         category: 5,
+        type: 1,
+        mode: 0,
+        ondemand: false,
+        primaryentity: 'none',
       },
     });
   });
@@ -1673,6 +1693,50 @@ describe('FlowService', () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: 'FLOW_WORKFLOW_CATEGORY_UNSUPPORTED',
+        }),
+      ])
+    );
+  });
+
+  it('fails local validation for unsupported workflow shell metadata', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Unsupported Shell Flow',
+            displayName: 'Unsupported Shell Flow',
+            uniqueName: 'crd_UnsupportedShellFlow',
+            workflowMetadata: {
+              type: 2,
+            },
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [],
+          },
+          definition: {
+            actions: {},
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'FLOW_WORKFLOW_METADATA_UNSUPPORTED',
         }),
       ])
     );

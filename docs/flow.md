@@ -174,6 +174,11 @@ The same bounded lifecycle also enforces the supported cloud-flow category
 contract: when `category` is declared locally it must remain `5`, and when it
 is omitted the repack and direct deploy surfaces normalize it back to category
 `5` instead of leaving the cloud-flow shell ambiguous.
+The bounded workflow-shell metadata contract is now explicit too: supported
+cloud flows currently require `type: 1`, `mode: 0`, `ondemand: false`, and
+`primaryentity: "none"`. Local validation fails unsupported values, while
+repack and direct deploy/create normalize omitted shell fields back to those
+cloud-flow defaults.
 When `--create-if-missing` is supplied, the same command can also provision a
 bounded missing cloud-flow shell using the artifact `metadata.uniqueName`,
 bounded workflow metadata, and the normalized `clientdata` definition.
@@ -230,6 +235,10 @@ The current pack/deploy boundary is:
   pair before writing a raw export or Dataverse payload
 - local validation also fails unsupported workflow `category` values; the
   current direct lifecycle only supports Dataverse cloud flows (`category: 5`)
+- local validation also fails unsupported workflow shell metadata values; the
+  current direct lifecycle only supports the canonical cloud-flow shell
+  `type: 1`, `mode: 0`, `ondemand: false`, and `primaryentity: "none"`, and
+  repack/deploy/create normalize omitted shell fields back to those defaults
 - remote deploy currently updates only a bounded workflow shell (`name`,
   `description`, `category`, `type`, `mode`, `ondemand`, `primaryentity`,
   `statecode`, `statuscode`) plus the normalized `clientdata` definition and

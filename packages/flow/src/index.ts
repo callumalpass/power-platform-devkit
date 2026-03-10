@@ -279,6 +279,10 @@ const FLOW_WORKFLOW_STATE_DEFAULT_STATUS = new Map<number, number>([
   [2, 3],
 ]);
 const SUPPORTED_FLOW_WORKFLOW_CATEGORY = 5;
+const SUPPORTED_FLOW_WORKFLOW_TYPE = 1;
+const SUPPORTED_FLOW_WORKFLOW_MODE = 0;
+const SUPPORTED_FLOW_WORKFLOW_ON_DEMAND = false;
+const SUPPORTED_FLOW_WORKFLOW_PRIMARY_ENTITY = 'none';
 
 const FLOW_WORKFLOW_STATUS_STATE = new Map<number, number>(
   Array.from(FLOW_WORKFLOW_STATE_DEFAULT_STATUS.entries()).map(([stateCode, statusCode]) => [statusCode, stateCode] as const)
@@ -1911,12 +1915,13 @@ async function deployLoadedFlowArtifact(
             id: create.data?.entity?.workflowid ?? create.data?.entityId ?? '',
             name: create.data?.entity?.name ?? artifact.metadata.displayName ?? artifact.metadata.name ?? createIdentifier,
             uniqueName: create.data?.entity?.uniquename ?? createIdentifier,
-            workflowMetadata: normalizeFlowWorkflowShellMetadata({
-              type: create.data?.entity?.type,
-              mode: create.data?.entity?.mode,
-              onDemand: create.data?.entity?.ondemand,
-              primaryEntity: create.data?.entity?.primaryentity,
-            }),
+            workflowMetadata:
+              normalizeFlowWorkflowShellMetadata({
+                type: create.data?.entity?.type,
+                mode: create.data?.entity?.mode,
+                onDemand: create.data?.entity?.ondemand,
+                primaryEntity: create.data?.entity?.primaryentity,
+              }) ?? resolveSupportedFlowWorkflowShellMetadata(artifact.metadata.workflowMetadata).workflowMetadata,
             solutionUniqueName: options.solutionUniqueName,
           },
           updatedFields: Object.keys(createEntity),
@@ -1994,7 +1999,9 @@ async function deployLoadedFlowArtifact(
         id: remoteFlow.data.id,
         name: artifact.metadata.displayName ?? artifact.metadata.name ?? remoteFlow.data.name,
         uniqueName: artifact.metadata.uniqueName ?? remoteFlow.data.uniqueName,
-        workflowMetadata: artifact.metadata.workflowMetadata ?? remoteFlow.data.workflowMetadata,
+        workflowMetadata: resolveSupportedFlowWorkflowShellMetadata(
+          artifact.metadata.workflowMetadata ?? remoteFlow.data.workflowMetadata
+        ).workflowMetadata,
         solutionUniqueName: options.solutionUniqueName,
       },
       updatedFields: Object.keys(updateEntity),
@@ -2231,6 +2238,7 @@ function validateLoadedFlowArtifact(
 
   diagnostics.push(...validateFlowWorkflowStateMetadata(artifact, path));
   diagnostics.push(...validateFlowWorkflowCategoryMetadata(artifact, path));
+  diagnostics.push(...validateFlowWorkflowShellMetadata(artifact, path));
 
   const semantic = analyzeFlowSemantics(artifact, path);
   diagnostics.push(...semantic.diagnostics);
@@ -2905,6 +2913,27 @@ function validateFlowWorkflowCategoryMetadata(artifact: FlowArtifact, path: stri
   ];
 }
 
+function validateFlowWorkflowShellMetadata(artifact: FlowArtifact, path: string): Diagnostic[] {
+  const workflowMetadata = resolveSupportedFlowWorkflowShellMetadata(artifact.metadata.workflowMetadata);
+
+  if (workflowMetadata.valid) {
+    return [];
+  }
+
+  return [
+    createDiagnostic(
+      'error',
+      'FLOW_WORKFLOW_METADATA_UNSUPPORTED',
+      `Flow artifact ${path} has unsupported workflow shell metadata.`,
+      {
+        source: '@pp/flow',
+        path,
+        hint: workflowMetadata.reason,
+      }
+    ),
+  ];
+}
+
 function resolveSupportedFlowWorkflowCategory(category: number | undefined): {
   valid: boolean;
   category?: number;
@@ -2927,6 +2956,53 @@ function resolveSupportedFlowWorkflowCategory(category: number | undefined): {
   return {
     valid: true,
     category,
+  };
+}
+
+function resolveSupportedFlowWorkflowShellMetadata(workflowMetadata: FlowWorkflowShellMetadata | undefined): {
+  valid: boolean;
+  workflowMetadata?: FlowWorkflowShellMetadata;
+  reason?: string;
+} {
+  if (workflowMetadata?.type !== undefined && workflowMetadata.type !== SUPPORTED_FLOW_WORKFLOW_TYPE) {
+    return {
+      valid: false,
+      reason: `Supported cloud flows currently require workflow type ${SUPPORTED_FLOW_WORKFLOW_TYPE}.`,
+    };
+  }
+
+  if (workflowMetadata?.mode !== undefined && workflowMetadata.mode !== SUPPORTED_FLOW_WORKFLOW_MODE) {
+    return {
+      valid: false,
+      reason: `Supported cloud flows currently require workflow mode ${SUPPORTED_FLOW_WORKFLOW_MODE}.`,
+    };
+  }
+
+  if (workflowMetadata?.onDemand !== undefined && workflowMetadata.onDemand !== SUPPORTED_FLOW_WORKFLOW_ON_DEMAND) {
+    return {
+      valid: false,
+      reason: `Supported cloud flows currently require ondemand=${String(SUPPORTED_FLOW_WORKFLOW_ON_DEMAND)}.`,
+    };
+  }
+
+  if (
+    workflowMetadata?.primaryEntity !== undefined &&
+    workflowMetadata.primaryEntity !== SUPPORTED_FLOW_WORKFLOW_PRIMARY_ENTITY
+  ) {
+    return {
+      valid: false,
+      reason: `Supported cloud flows currently require primaryentity=${SUPPORTED_FLOW_WORKFLOW_PRIMARY_ENTITY}.`,
+    };
+  }
+
+  return {
+    valid: true,
+    workflowMetadata: {
+      type: workflowMetadata?.type ?? SUPPORTED_FLOW_WORKFLOW_TYPE,
+      mode: workflowMetadata?.mode ?? SUPPORTED_FLOW_WORKFLOW_MODE,
+      onDemand: workflowMetadata?.onDemand ?? SUPPORTED_FLOW_WORKFLOW_ON_DEMAND,
+      primaryEntity: workflowMetadata?.primaryEntity ?? SUPPORTED_FLOW_WORKFLOW_PRIMARY_ENTITY,
+    },
   };
 }
 
@@ -3008,22 +3084,26 @@ function normalizeFlowWorkflowShellMetadata(value: {
 }
 
 function buildRawFlowWorkflowShellFields(workflowMetadata: FlowWorkflowShellMetadata | undefined): Record<string, FlowJsonValue> {
+  const effectiveMetadata = resolveSupportedFlowWorkflowShellMetadata(workflowMetadata).workflowMetadata;
+
   return {
-    ...(workflowMetadata?.type !== undefined ? { type: workflowMetadata.type } : {}),
-    ...(workflowMetadata?.mode !== undefined ? { mode: workflowMetadata.mode } : {}),
-    ...(workflowMetadata?.onDemand !== undefined ? { ondemand: workflowMetadata.onDemand } : {}),
-    ...(workflowMetadata?.primaryEntity ? { primaryentity: workflowMetadata.primaryEntity } : {}),
+    ...(effectiveMetadata?.type !== undefined ? { type: effectiveMetadata.type } : {}),
+    ...(effectiveMetadata?.mode !== undefined ? { mode: effectiveMetadata.mode } : {}),
+    ...(effectiveMetadata?.onDemand !== undefined ? { ondemand: effectiveMetadata.onDemand } : {}),
+    ...(effectiveMetadata?.primaryEntity ? { primaryentity: effectiveMetadata.primaryEntity } : {}),
   };
 }
 
 function buildDataverseFlowWorkflowShellFields(
   workflowMetadata: FlowWorkflowShellMetadata | undefined
 ): Record<string, unknown> {
+  const effectiveMetadata = resolveSupportedFlowWorkflowShellMetadata(workflowMetadata).workflowMetadata;
+
   return {
-    ...(workflowMetadata?.type !== undefined ? { type: workflowMetadata.type } : {}),
-    ...(workflowMetadata?.mode !== undefined ? { mode: workflowMetadata.mode } : {}),
-    ...(workflowMetadata?.onDemand !== undefined ? { ondemand: workflowMetadata.onDemand } : {}),
-    ...(workflowMetadata?.primaryEntity ? { primaryentity: workflowMetadata.primaryEntity } : {}),
+    ...(effectiveMetadata?.type !== undefined ? { type: effectiveMetadata.type } : {}),
+    ...(effectiveMetadata?.mode !== undefined ? { mode: effectiveMetadata.mode } : {}),
+    ...(effectiveMetadata?.onDemand !== undefined ? { ondemand: effectiveMetadata.onDemand } : {}),
+    ...(effectiveMetadata?.primaryEntity ? { primaryentity: effectiveMetadata.primaryEntity } : {}),
   };
 }
 
