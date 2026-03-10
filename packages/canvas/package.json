@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --dts --format esm,cjs --clean",
+    "build": "tsup --config tsup.config.ts",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit"
   },
