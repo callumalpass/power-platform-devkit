@@ -1,5 +1,6 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { chromium, type Frame, type Page } from 'playwright-core';
 import {
   buildCanvasControlCatalogSelectionCheckpoint,
@@ -22,6 +23,9 @@ import {
 interface Options {
   studioUrl: string;
   browserProfileDir: string;
+  browserKind: 'chrome' | 'edge' | 'chromium' | 'custom';
+  browserCommand?: string;
+  browserArgs: string[];
   yamlDir: string;
   timeoutMs: number;
   publish: boolean;
@@ -35,6 +39,7 @@ interface Options {
   catalogLimit?: number;
   settleMs: number;
   debug: boolean;
+  headless: boolean;
   slowMoMs: number;
 }
 
@@ -326,17 +331,7 @@ async function main(): Promise<void> {
     throw new Error(`No .pa.yaml files were found in ${yamlDir}.`);
   }
 
-  const context = await chromium.launchPersistentContext(options.browserProfileDir, {
-    channel: 'chrome',
-    headless: false,
-    slowMo: options.debug ? options.slowMoMs : undefined,
-    viewport: null,
-    args: [
-      '--no-first-run',
-      '--new-window',
-      ...(options.debug ? ['--auto-open-devtools-for-tabs'] : []),
-    ],
-  });
+  const context = await chromium.launchPersistentContext(options.browserProfileDir, buildPersistentContextLaunchOptions(options));
 
   let insertReport: InsertReport | undefined;
 
@@ -803,12 +798,58 @@ function formatPlanQuery(plan: Extract<CanvasStudioInsertPlan, { kind: 'add' }>)
   return `${plan.template}${plan.variant ? `:${plan.variant}` : ''}${plan.composite ? ':composite' : ''}`;
 }
 
-function parseArgs(argv: string[]): Options {
+export function buildPersistentContextLaunchOptions(
+  options: Pick<Options, 'browserKind' | 'browserCommand' | 'browserArgs' | 'debug' | 'headless' | 'slowMoMs'>
+): Parameters<typeof chromium.launchPersistentContext>[1] {
+  const launchOptions: Parameters<typeof chromium.launchPersistentContext>[1] = {
+    headless: !options.debug && options.headless,
+    slowMo: options.debug ? options.slowMoMs : undefined,
+    viewport: null,
+    args: [
+      '--no-first-run',
+      '--new-window',
+      ...(options.debug ? ['--auto-open-devtools-for-tabs'] : []),
+      ...options.browserArgs,
+    ],
+  };
+
+  if (options.browserCommand) {
+    launchOptions.executablePath = options.browserCommand;
+    return launchOptions;
+  }
+
+  switch (options.browserKind) {
+    case 'edge':
+      launchOptions.channel = 'msedge';
+      break;
+    case 'chrome':
+      launchOptions.channel = 'chrome';
+      break;
+    case 'chromium':
+      launchOptions.channel = 'chromium';
+      break;
+    case 'custom':
+      throw new Error('--browser-command is required when --browser-kind custom is selected.');
+  }
+
+  return launchOptions;
+}
+
+export function parseArgs(argv: string[]): Options {
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
     return index >= 0 ? argv[index + 1] : undefined;
   };
   const has = (flag: string): boolean => argv.includes(flag);
+  const readMany = (flag: string): string[] => {
+    const values: string[] = [];
+    for (let index = 0; index < argv.length; index += 1) {
+      if (argv[index] === flag && argv[index + 1]) {
+        values.push(argv[index + 1]!);
+      }
+    }
+    return values;
+  };
   const readPositiveInteger = (flag: string): number | undefined => {
     const value = read(flag);
     if (!value) {
@@ -824,6 +865,8 @@ function parseArgs(argv: string[]): Options {
   };
   const studioUrl = read('--studio-url');
   const browserProfileDir = read('--browser-profile-dir');
+  const browserKind = readBrowserKindArg(read('--browser-kind'));
+  const browserCommand = read('--browser-command');
   const yamlDir = read('--yaml-dir');
   const catalogJson = read('--catalog-json');
   const catalogResumeReport = read('--catalog-resume-report');
@@ -831,8 +874,8 @@ function parseArgs(argv: string[]): Options {
   const catalogStartAt = read('--catalog-start-at');
   const catalogLimit = readPositiveInteger('--catalog-limit');
 
-  if (!studioUrl || !browserProfileDir || !yamlDir) {
-    throw new Error('--studio-url, --browser-profile-dir, and --yaml-dir are required.');
+  if (!studioUrl || !browserProfileDir || !browserKind || !yamlDir) {
+    throw new Error('--studio-url, --browser-profile-dir, --browser-kind, and --yaml-dir are required.');
   }
 
   if (!catalogJson && (catalogResumeReport || catalogFamily || catalogStartAt || catalogLimit)) {
@@ -848,6 +891,9 @@ function parseArgs(argv: string[]): Options {
   return {
     studioUrl,
     browserProfileDir,
+    browserKind,
+    browserCommand,
+    browserArgs: readMany('--browser-arg'),
     yamlDir,
     timeoutMs: Number(read('--timeout-ms') ?? '120000'),
     publish: !has('--skip-publish'),
@@ -861,8 +907,25 @@ function parseArgs(argv: string[]): Options {
     catalogLimit,
     settleMs: Number(read('--settle-ms') ?? '4000'),
     debug: has('--debug'),
+    headless: has('--headless'),
     slowMoMs: Number(read('--slow-mo-ms') ?? '250'),
   };
+}
+
+function readBrowserKindArg(value: string | undefined): Options['browserKind'] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  switch (value) {
+    case 'chrome':
+    case 'edge':
+    case 'chromium':
+    case 'custom':
+      return value;
+    default:
+      throw new Error(`Invalid --browser-kind value: ${value}. Expected chrome, edge, chromium, or custom.`);
+  }
 }
 
 function readCatalogFamilyArg(value: string | undefined): 'classic' | 'modern' | undefined {
@@ -877,7 +940,14 @@ function readCatalogFamilyArg(value: string | undefined): 'classic' | 'modern' |
   throw new Error(`Invalid --catalog-family value: ${value}. Expected classic or modern.`);
 }
 
-void main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  return Boolean(entry) && import.meta.url === pathToFileURL(entry!).href;
+}
+
+if (isMainModule()) {
+  void main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}

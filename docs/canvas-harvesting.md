@@ -56,6 +56,11 @@ The current Studio automation path is runtime-backed. The key calls are:
 - `shell._fileSaveManager.saveAsync(...)`
 - `AppMagic.context.publishAppAsync(false)`
 
+The Studio helper launches Playwright using the resolved browser-profile
+settings instead of assuming a visible Chrome session, so the authenticated
+maker profile's browser kind, explicit command, extra args, and `--headless`
+mode now flow through to fixture preparation.
+
 ## Prerequisites
 
 Install workspace dependencies first:

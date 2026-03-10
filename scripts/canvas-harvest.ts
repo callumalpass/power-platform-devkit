@@ -775,6 +775,9 @@ async function runStudioSession(inputOptions: {
     browserProfileDir,
     studioUrl: inputOptions.studioUrl,
     yamlDir: inputOptions.screenDir,
+    browserKind: ensured.browserProfile.kind,
+    browserCommand: ensured.browserProfile.command,
+    browserArgs: ensured.browserProfile.args ?? [],
     timeoutMs: inputOptions.options.timeoutMs,
     publish: !inputOptions.options.skipPublish,
     catalogPath: inputOptions.catalogPath,
@@ -789,6 +792,7 @@ async function runStudioSession(inputOptions: {
     includeRetired: inputOptions.options.includeRetired,
     settleMs: inputOptions.options.settleMs,
     debug: inputOptions.options.debugBrowser,
+    headless: inputOptions.options.headless,
     slowMoMs: inputOptions.options.slowMoMs,
   });
 
@@ -807,6 +811,9 @@ function runStudioApplyHelper(input: {
   browserProfileDir: string;
   studioUrl: string;
   yamlDir: string;
+  browserKind: BrowserProfile['kind'];
+  browserCommand?: string;
+  browserArgs: string[];
   timeoutMs: number;
   publish: boolean;
   catalogPath?: string;
@@ -819,6 +826,7 @@ function runStudioApplyHelper(input: {
   includeRetired: boolean;
   settleMs: number;
   debug: boolean;
+  headless: boolean;
   slowMoMs: number;
 }): void {
   const pnpmArgs = [
@@ -829,6 +837,8 @@ function runStudioApplyHelper(input: {
     input.studioUrl,
     '--browser-profile-dir',
     input.browserProfileDir,
+    '--browser-kind',
+    input.browserKind,
     '--yaml-dir',
     input.yamlDir,
     '--timeout-ms',
@@ -843,6 +853,14 @@ function runStudioApplyHelper(input: {
 
   if (!input.publish) {
     pnpmArgs.push('--skip-publish');
+  }
+
+  if (input.browserCommand) {
+    pnpmArgs.push('--browser-command', input.browserCommand);
+  }
+
+  for (const browserArg of input.browserArgs) {
+    pnpmArgs.push('--browser-arg', browserArg);
   }
 
   if (input.catalogPath) {
@@ -877,11 +895,16 @@ function runStudioApplyHelper(input: {
     pnpmArgs.push('--debug');
   }
 
+  if (input.headless) {
+    pnpmArgs.push('--headless');
+  }
+
   const requiresVirtualDisplay =
     process.platform === 'linux' &&
     !process.env.DISPLAY &&
     !process.env.WAYLAND_DISPLAY &&
-    !process.env.HEADLESS;
+    !process.env.HEADLESS &&
+    !input.headless;
   const command = requiresVirtualDisplay ? 'xvfb-run' : 'pnpm';
   const args = requiresVirtualDisplay ? ['-a', 'pnpm', ...pnpmArgs] : pnpmArgs;
 
