@@ -1,7 +1,7 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { saveAuthProfile, saveEnvironmentAlias } from '@pp/config';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http';
@@ -102,6 +102,11 @@ describe('buildQueryPath', () => {
 });
 
 describe('DataverseClient', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
   it('follows paging links when querying all records', async () => {
     const httpClient = new FakeHttpClient([
       ok({
@@ -337,6 +342,84 @@ describe('DataverseClient', () => {
     expect(httpClient.requests[2]?.body).toEqual({
       ParameterXml: '<importexportxml><entities><entity>pp_project</entity></entities></importexportxml>',
     });
+  });
+
+  it('retries throttled metadata create-table requests before failing', async () => {
+    vi.useFakeTimers();
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('', {
+          status: 429,
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response('', {
+          status: 429,
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 204,
+          headers: {
+            location: 'https://example.crm.dynamics.com/api/data/v9.2/EntityDefinitions(00000000-0000-0000-0000-000000000010)',
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            LogicalName: 'pp_project',
+            SchemaName: 'pp_Project',
+            MetadataId: '00000000-0000-0000-0000-000000000010',
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 204,
+        })
+      );
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' });
+    const resultPromise = client.createTable(
+      {
+        schemaName: 'pp_Project',
+        displayName: 'Project',
+        pluralDisplayName: 'Projects',
+        primaryName: {
+          schemaName: 'pp_Name',
+          displayName: 'Name',
+          maxLength: 200,
+        },
+        hasActivities: false,
+        hasNotes: true,
+        isActivity: false,
+        ownership: 'userOwned',
+      },
+      {
+        solutionUniqueName: 'Core',
+        publish: true,
+      }
+    );
+
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://example.crm.dynamics.com/api/data/v9.2/EntityDefinitions');
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe('https://example.crm.dynamics.com/api/data/v9.2/EntityDefinitions');
+    expect(String(fetchMock.mock.calls[2]?.[0])).toBe('https://example.crm.dynamics.com/api/data/v9.2/EntityDefinitions');
   });
 
   it('creates a global option set and publishes the option set definition', async () => {
