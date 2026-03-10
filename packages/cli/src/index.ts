@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { renderMarkdownReport, generateContextPack } from '@pp/analysis';
+import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
   AuthService,
   DEFAULT_BROWSER_BOOTSTRAP_URL,
@@ -48,6 +49,7 @@ import {
   parseManyToManyRelationshipCreateSpec,
   parseOneToManyRelationshipCreateSpec,
   parseTableCreateSpec,
+  diffDataverseMetadataSnapshots,
   normalizeAttributeDefinition,
   normalizeAttributeDefinitions,
   normalizeGlobalOptionSetDefinition,
@@ -55,6 +57,7 @@ import {
   resolveDataverseClient,
   type MetadataApplyPlan,
   type AttributeMetadataView,
+  type DataverseMetadataSnapshot,
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
 import { buildDeployPlan, executeDeploy, executeDeployPlan, type DeployPlan } from '@pp/deploy';
@@ -3148,7 +3151,7 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'DV_METADATA_ACTION_REQUIRED',
-        'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata option-set <name>`, `dv metadata relationship <schemaName>`, `dv metadata apply`, `dv metadata create-table`, `dv metadata add-column`, `dv metadata create-option-set`, `dv metadata update-option-set`, `dv metadata create-relationship`, `dv metadata create-many-to-many`, or `dv metadata create-customer-relationship`.'
+        'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata option-set <name>`, `dv metadata relationship <schemaName>`, `dv metadata snapshot ...`, `dv metadata diff`, `dv metadata apply`, `dv metadata create-table`, `dv metadata add-column`, `dv metadata create-option-set`, `dv metadata update-option-set`, `dv metadata create-relationship`, `dv metadata create-many-to-many`, or `dv metadata create-customer-relationship`.'
       )
     );
   }
@@ -3175,6 +3178,14 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
 
   if (action === 'relationship') {
     return runDataverseMetadataRelationship(args);
+  }
+
+  if (action === 'snapshot') {
+    return runDataverseMetadataSnapshot(args);
+  }
+
+  if (action === 'diff') {
+    return runDataverseMetadataDiff(args);
   }
 
   if (action === 'apply') {
@@ -3432,6 +3443,125 @@ async function runDataverseMetadataRelationship(args: string[]): Promise<number>
   const payload = view.data === 'raw' ? result.data : normalizeRelationshipDefinition(result.data);
   printWarnings(result);
   printByFormat(payload, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseMetadataSnapshot(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const domain = positional[1];
+
+  if (!domain) {
+    return printFailure(
+      argumentFailure(
+        'DV_METADATA_SNAPSHOT_DOMAIN_REQUIRED',
+        'Usage: dv metadata snapshot <table|columns|option-set|relationship> ... --environment <alias>'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  let snapshot;
+
+  if (domain === 'table') {
+    const logicalName = positional[2];
+
+    if (!logicalName) {
+      return printFailure(
+        argumentFailure('DV_METADATA_SNAPSHOT_TABLE_REQUIRED', 'Usage: dv metadata snapshot table <logicalName> --environment <alias>')
+      );
+    }
+
+    snapshot = await resolution.data.client.snapshotTableMetadata(logicalName);
+  } else if (domain === 'columns') {
+    const logicalName = positional[2];
+
+    if (!logicalName) {
+      return printFailure(
+        argumentFailure(
+          'DV_METADATA_SNAPSHOT_COLUMNS_REQUIRED',
+          'Usage: dv metadata snapshot columns <tableLogicalName> --environment <alias>'
+        )
+      );
+    }
+
+    snapshot = await resolution.data.client.snapshotColumnsMetadata(logicalName);
+  } else if (domain === 'option-set') {
+    const name = positional[2];
+
+    if (!name) {
+      return printFailure(
+        argumentFailure('DV_METADATA_SNAPSHOT_OPTION_SET_REQUIRED', 'Usage: dv metadata snapshot option-set <name> --environment <alias>')
+      );
+    }
+
+    snapshot = await resolution.data.client.snapshotOptionSetMetadata(name);
+  } else if (domain === 'relationship') {
+    const schemaName = positional[2];
+
+    if (!schemaName) {
+      return printFailure(
+        argumentFailure(
+          'DV_METADATA_SNAPSHOT_RELATIONSHIP_REQUIRED',
+          'Usage: dv metadata snapshot relationship <schemaName> --environment <alias>'
+        )
+      );
+    }
+
+    const kind = readRelationshipKind(args);
+
+    if (!kind.success || !kind.data) {
+      return printFailure(kind);
+    }
+
+    snapshot = await resolution.data.client.snapshotRelationshipMetadata(schemaName, kind.data);
+  } else {
+    return printFailure(
+      argumentFailure(
+        'DV_METADATA_SNAPSHOT_DOMAIN_INVALID',
+        `Unsupported snapshot domain ${domain}. Use table, columns, option-set, or relationship.`
+      )
+    );
+  }
+
+  if (!snapshot.success || !snapshot.data) {
+    return printFailure(snapshot);
+  }
+
+  const outPath = readFlag(args, '--out');
+
+  if (outPath) {
+    await writeJsonFile(outPath, snapshot.data as never);
+  }
+
+  printWarnings(snapshot);
+  printByFormat(snapshot.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseMetadataDiff(args: string[]): Promise<number> {
+  const leftPath = readFlag(args, '--left');
+  const rightPath = readFlag(args, '--right');
+
+  if (!leftPath || !rightPath) {
+    return printFailure(argumentFailure('DV_METADATA_DIFF_ARGS_REQUIRED', 'Usage: dv metadata diff --left FILE --right FILE'));
+  }
+
+  const [leftSnapshot, rightSnapshot] = await Promise.all([
+    readJsonFile<DataverseMetadataSnapshot>(leftPath),
+    readJsonFile<DataverseMetadataSnapshot>(rightPath),
+  ]);
+  const result = diffDataverseMetadataSnapshots(leftSnapshot, rightSnapshot);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -7257,6 +7387,8 @@ function printHelp(): void {
       '  dv metadata column <tableLogicalName> <columnLogicalName> --environment ALIAS [--view common|detailed|raw] [--select a,b] [--expand x,y] [--config-dir path]',
       '  dv metadata option-set <name> --environment ALIAS [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
       '  dv metadata relationship <schemaName> --environment ALIAS [--kind auto|one-to-many|many-to-many] [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
+      '  dv metadata snapshot <table|columns|option-set|relationship> ... --environment ALIAS [--kind auto|one-to-many|many-to-many] [--out FILE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  dv metadata diff --left FILE --right FILE [--format table|json|yaml|ndjson|markdown|raw]',
       '  dv metadata apply --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '  dv metadata create-table --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
       '  dv metadata add-column <tableLogicalName> --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',

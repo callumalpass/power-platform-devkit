@@ -4050,6 +4050,149 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('captures and diffs Dataverse metadata snapshots through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const leftPath = join(tempDir, 'columns-left.json');
+    const rightPath = join(tempDir, 'columns-right.json');
+
+    mockDataverseResolution({
+      fixture: {
+        snapshotColumnsMetadata: async () =>
+          ok(
+            {
+              schemaVersion: 1,
+              generatedAt: '2026-03-10T00:00:00.000Z',
+              environmentUrl: 'https://fixture.example.crm.dynamics.com',
+              kind: 'columns',
+              target: {
+                logicalName: 'pp_project',
+              },
+              value: [
+                {
+                  logicalName: 'pp_code',
+                  schemaName: 'pp_Code',
+                  displayName: 'Code',
+                },
+                {
+                  logicalName: 'pp_name',
+                  schemaName: 'pp_Name',
+                  displayName: 'Name',
+                },
+              ],
+            },
+            {
+              supportTier: 'preview',
+            }
+          ),
+      } as unknown as DataverseClient,
+    });
+
+    const snapshot = await runCli(['dv', 'metadata', 'snapshot', 'columns', 'pp_project', '--env', 'fixture', '--out', leftPath, '--format', 'json']);
+
+    expect(snapshot.code).toBe(0);
+    expect(snapshot.stderr).toBe('');
+    expect(JSON.parse(snapshot.stdout)).toEqual({
+      schemaVersion: 1,
+      generatedAt: '2026-03-10T00:00:00.000Z',
+      environmentUrl: 'https://fixture.example.crm.dynamics.com',
+      kind: 'columns',
+      target: {
+        logicalName: 'pp_project',
+      },
+      value: [
+        {
+          logicalName: 'pp_code',
+          schemaName: 'pp_Code',
+          displayName: 'Code',
+        },
+        {
+          logicalName: 'pp_name',
+          schemaName: 'pp_Name',
+          displayName: 'Name',
+        },
+      ],
+    });
+    expect(await readJsonFile(leftPath)).toEqual(JSON.parse(snapshot.stdout));
+
+    await writeFile(
+      rightPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          generatedAt: '2026-03-10T00:01:00.000Z',
+          environmentUrl: 'https://fixture.example.crm.dynamics.com',
+          kind: 'columns',
+          target: {
+            logicalName: 'pp_project',
+          },
+          value: [
+            {
+              logicalName: 'pp_code',
+              schemaName: 'pp_Code',
+              displayName: 'Project Code',
+            },
+            {
+              logicalName: 'pp_name',
+              schemaName: 'pp_Name',
+              displayName: 'Name',
+            },
+            {
+              logicalName: 'pp_status',
+              schemaName: 'pp_Status',
+              displayName: 'Status',
+            },
+          ],
+        },
+        null,
+        2
+      ) + '\n',
+      'utf8'
+    );
+
+    const diff = await runCli(['dv', 'metadata', 'diff', '--left', leftPath, '--right', rightPath, '--format', 'json']);
+
+    expect(diff.code).toBe(0);
+    expect(diff.stderr).toBe('');
+    expect(JSON.parse(diff.stdout)).toEqual({
+      compatible: true,
+      left: {
+        kind: 'columns',
+        target: {
+          logicalName: 'pp_project',
+        },
+      },
+      right: {
+        kind: 'columns',
+        target: {
+          logicalName: 'pp_project',
+        },
+      },
+      summary: {
+        added: 1,
+        removed: 0,
+        changed: 1,
+        total: 2,
+      },
+      changes: [
+        {
+          kind: 'changed',
+          path: 'value[0].displayName',
+          left: 'Code',
+          right: 'Project Code',
+        },
+        {
+          kind: 'added',
+          path: 'value[2]',
+          right: {
+            logicalName: 'pp_status',
+            schemaName: 'pp_Status',
+            displayName: 'Status',
+          },
+        },
+      ],
+    });
+  });
+
   it('invokes Dataverse actions through the CLI entrypoint', async () => {
     const actionCalls: Array<{ name: string; parameters: Record<string, unknown>; options?: Record<string, unknown> }> = [];
     const client = {

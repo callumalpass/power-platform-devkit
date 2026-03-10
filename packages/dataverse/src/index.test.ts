@@ -14,8 +14,10 @@ import {
   buildGlobalOptionSetPath,
   buildRelationshipPath,
   buildQueryPath,
+  diffDataverseMetadataSnapshots,
   normalizeAttributeDefinition,
   normalizeAttributeDefinitions,
+  normalizeEntityDefinition,
   normalizeGlobalOptionSetDefinition,
   normalizeMetadataQueryOptions,
   normalizeRelationshipDefinition,
@@ -1911,6 +1913,42 @@ describe('normalizeAttributeDefinition', () => {
 });
 
 describe('metadata normalization helpers', () => {
+  it('normalizes entity definitions for snapshots', () => {
+    const normalized = normalizeEntityDefinition({
+      LogicalName: 'pp_project',
+      SchemaName: 'pp_Project',
+      DisplayName: {
+        UserLocalizedLabel: {
+          Label: 'Project',
+        },
+      },
+      DisplayCollectionName: {
+        UserLocalizedLabel: {
+          Label: 'Projects',
+        },
+      },
+      PrimaryIdAttribute: 'pp_projectid',
+      PrimaryNameAttribute: 'pp_name',
+      OwnershipType: 'UserOwned',
+      EntitySetName: 'pp_projects',
+      IsCustomEntity: true,
+      IsManaged: false,
+    });
+
+    expect(normalized).toEqual({
+      logicalName: 'pp_project',
+      schemaName: 'pp_Project',
+      displayName: 'Project',
+      pluralDisplayName: 'Projects',
+      ownershipType: 'UserOwned',
+      entitySetName: 'pp_projects',
+      primaryIdAttribute: 'pp_projectid',
+      primaryNameAttribute: 'pp_name',
+      custom: true,
+      managed: false,
+    });
+  });
+
   it('normalizes global option set definitions', () => {
     const normalized = normalizeGlobalOptionSetDefinition({
       MetadataId: '00000000-0000-0000-0000-000000000020',
@@ -2047,5 +2085,98 @@ describe('metadata normalization helpers', () => {
         delete: 'RemoveLink',
       },
     });
+  });
+
+  it('creates deterministic metadata snapshots for columns', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              LogicalName: 'pp_name',
+              SchemaName: 'pp_Name',
+              DisplayName: { UserLocalizedLabel: { Label: 'Name' } },
+            },
+            {
+              LogicalName: 'pp_code',
+              SchemaName: 'pp_Code',
+              DisplayName: { UserLocalizedLabel: { Label: 'Code' } },
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.snapshotColumnsMetadata('pp_project');
+
+    expect(result.success).toBe(true);
+    expect(result.data?.kind).toBe('columns');
+    expect(result.data?.target).toEqual({ logicalName: 'pp_project' });
+    expect(result.data?.value).toEqual([
+      {
+        logicalName: 'pp_code',
+        schemaName: 'pp_Code',
+        displayName: 'Code',
+      },
+      {
+        logicalName: 'pp_name',
+        schemaName: 'pp_Name',
+        displayName: 'Name',
+      },
+    ]);
+  });
+
+  it('diffs compatible metadata snapshots', () => {
+    const result = diffDataverseMetadataSnapshots(
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-10T00:00:00.000Z',
+        environmentUrl: 'https://left.example.crm.dynamics.com',
+        kind: 'option-set',
+        target: { name: 'pp_status' },
+        value: {
+          name: 'pp_status',
+          options: [{ value: 100000000, label: 'New' }],
+        },
+      },
+      {
+        schemaVersion: 1,
+        generatedAt: '2026-03-10T00:00:01.000Z',
+        environmentUrl: 'https://right.example.crm.dynamics.com',
+        kind: 'option-set',
+        target: { name: 'pp_status' },
+        value: {
+          name: 'pp_status',
+          options: [
+            { value: 100000000, label: 'Draft' },
+            { value: 100000001, label: 'Active' },
+          ],
+        },
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.summary).toEqual({
+      added: 1,
+      removed: 0,
+      changed: 1,
+      total: 2,
+    });
+    expect(result.data?.changes).toEqual([
+      {
+        kind: 'changed',
+        path: 'value.options[0].label',
+        left: 'New',
+        right: 'Draft',
+      },
+      {
+        kind: 'added',
+        path: 'value.options[1]',
+        right: { value: 100000001, label: 'Active' },
+      },
+    ]);
   });
 });

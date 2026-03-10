@@ -340,6 +340,9 @@ Inspect richer metadata definitions:
 pp dv metadata option-set pp_projectstatus --env dev
 pp dv metadata relationship pp_project_account --env dev
 pp dv metadata relationship pp_project_contact --env dev --kind many-to-many
+pp dv metadata snapshot columns pp_project --env dev --out ./artifacts/pp_project.columns.json
+pp dv metadata snapshot relationship pp_project_account --env dev --kind one-to-many --out ./artifacts/pp_project_account.relationship.json
+pp dv metadata diff --left ./artifacts/pp_project.columns.before.json --right ./artifacts/pp_project.columns.after.json
 ```
 
 Normalized inspection defaults:
@@ -349,6 +352,8 @@ Normalized inspection defaults:
 - one-to-many relationship output includes `referencedEntity`, `referencedAttribute`, `referencingEntity`, lookup identity/display labels, and cascade configuration when present
 - many-to-many relationship output includes `entity1LogicalName`, `entity2LogicalName`, `intersectEntityName`, and navigation property names when Dataverse exposes them
 - use `--view raw` on either command when you need the original Dataverse payload
+- `dv metadata snapshot` emits stable JSON artifacts for `table`, `columns`, `option-set`, and `relationship` domains
+- `dv metadata diff` compares two saved snapshot artifacts and reports field-level adds, removes, and changes
 
 Common flags:
 

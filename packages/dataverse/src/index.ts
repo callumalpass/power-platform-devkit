@@ -186,6 +186,66 @@ export interface DataverseMetadataApplyResult {
   optionSetPublishTargets?: string[];
 }
 
+export type DataverseMetadataSnapshotKind = 'table' | 'columns' | 'option-set' | 'relationship';
+
+export interface NormalizedEntityDefinition {
+  logicalName?: string;
+  schemaName?: string;
+  displayName?: string;
+  pluralDisplayName?: string;
+  description?: string;
+  metadataId?: string;
+  ownershipType?: string;
+  entitySetName?: string;
+  primaryIdAttribute?: string;
+  primaryNameAttribute?: string;
+  introducedVersion?: string;
+  custom?: boolean;
+  managed?: boolean;
+  activity?: boolean;
+  activityTypeMask?: number;
+  intersect?: boolean;
+  auditEnabled?: boolean;
+  changeTrackingEnabled?: boolean;
+  connectionsEnabled?: boolean;
+  hasActivities?: boolean;
+  notesEnabled?: boolean;
+}
+
+export interface DataverseMetadataSnapshot<T = unknown> {
+  schemaVersion: 1;
+  generatedAt: string;
+  environmentUrl: string;
+  kind: DataverseMetadataSnapshotKind;
+  target: {
+    logicalName?: string;
+    name?: string;
+    schemaName?: string;
+    relationshipKind?: Exclude<RelationshipMetadataKind, 'auto'>;
+  };
+  value: T;
+}
+
+export interface DataverseMetadataDiffEntry {
+  kind: 'added' | 'removed' | 'changed';
+  path: string;
+  left?: unknown;
+  right?: unknown;
+}
+
+export interface DataverseMetadataDiffResult {
+  compatible: true;
+  left: Pick<DataverseMetadataSnapshot, 'kind' | 'target'>;
+  right: Pick<DataverseMetadataSnapshot, 'kind' | 'target'>;
+  summary: {
+    added: number;
+    removed: number;
+    changed: number;
+    total: number;
+  };
+  changes: DataverseMetadataDiffEntry[];
+}
+
 export type EntityDefinition = Record<string, unknown>;
 export type AttributeDefinition = Record<string, unknown>;
 export type GlobalOptionSetDefinition = Record<string, unknown>;
@@ -759,6 +819,104 @@ export class DataverseClient {
       {
         supportTier: 'preview',
         warnings,
+      }
+    );
+  }
+
+  async snapshotTableMetadata(logicalName: string): Promise<OperationResult<DataverseMetadataSnapshot<NormalizedEntityDefinition>>> {
+    const table = await this.getTable(logicalName);
+
+    if (!table.success || !table.data) {
+      return table as unknown as OperationResult<DataverseMetadataSnapshot<NormalizedEntityDefinition>>;
+    }
+
+    return ok(
+      createMetadataSnapshot(this.environment.url, 'table', { logicalName }, normalizeEntityDefinition(table.data)),
+      {
+        supportTier: 'preview',
+        diagnostics: table.diagnostics,
+        warnings: table.warnings,
+      }
+    );
+  }
+
+  async snapshotColumnsMetadata(
+    logicalName: string
+  ): Promise<OperationResult<DataverseMetadataSnapshot<NormalizedAttributeDefinition[]>>> {
+    const columns = await this.listColumns(logicalName, { all: true });
+
+    if (!columns.success || !columns.data) {
+      return columns as unknown as OperationResult<DataverseMetadataSnapshot<NormalizedAttributeDefinition[]>>;
+    }
+
+    return ok(
+      createMetadataSnapshot(
+        this.environment.url,
+        'columns',
+        { logicalName },
+        sortRecords(
+          normalizeAttributeDefinitions(columns.data, 'common') as NormalizedAttributeDefinition[],
+          (record) => `${record.logicalName ?? ''}:${record.schemaName ?? ''}`
+        )
+      ),
+      {
+        supportTier: 'preview',
+        diagnostics: columns.diagnostics,
+        warnings: columns.warnings,
+      }
+    );
+  }
+
+  async snapshotOptionSetMetadata(
+    name: string
+  ): Promise<OperationResult<DataverseMetadataSnapshot<NormalizedOptionSetDefinition>>> {
+    const optionSet = await this.getGlobalOptionSet(name);
+
+    if (!optionSet.success || !optionSet.data) {
+      return optionSet as unknown as OperationResult<DataverseMetadataSnapshot<NormalizedOptionSetDefinition>>;
+    }
+
+    return ok(
+      createMetadataSnapshot(this.environment.url, 'option-set', { name }, normalizeGlobalOptionSetDefinition(optionSet.data)),
+      {
+        supportTier: 'preview',
+        diagnostics: optionSet.diagnostics,
+        warnings: optionSet.warnings,
+      }
+    );
+  }
+
+  async snapshotRelationshipMetadata(
+    schemaName: string,
+    kind: RelationshipMetadataKind = 'auto'
+  ): Promise<OperationResult<DataverseMetadataSnapshot<NormalizedRelationshipDefinition>>> {
+    const relationship = await this.getRelationship(schemaName, { kind });
+
+    if (!relationship.success || !relationship.data) {
+      return relationship as unknown as OperationResult<DataverseMetadataSnapshot<NormalizedRelationshipDefinition>>;
+    }
+
+    const normalized = normalizeRelationshipDefinition(relationship.data);
+
+    return ok(
+      createMetadataSnapshot(
+        this.environment.url,
+        'relationship',
+        {
+          schemaName,
+          relationshipKind:
+            normalized.relationshipType === 'many-to-many'
+              ? 'many-to-many'
+              : normalized.relationshipType === 'one-to-many'
+                ? 'one-to-many'
+                : undefined,
+        },
+        normalized
+      ),
+      {
+        supportTier: 'preview',
+        diagnostics: relationship.diagnostics,
+        warnings: relationship.warnings,
       }
     );
   }
@@ -2125,6 +2283,32 @@ export function normalizeGlobalOptionSetDefinition(optionSet: GlobalOptionSetDef
   });
 }
 
+export function normalizeEntityDefinition(entity: EntityDefinition): NormalizedEntityDefinition {
+  return compactObject({
+    logicalName: readString(entity.LogicalName),
+    schemaName: readString(entity.SchemaName),
+    displayName: readLocalizedLabel(entity.DisplayName),
+    pluralDisplayName: readLocalizedLabel(entity.DisplayCollectionName),
+    description: readLocalizedLabel(entity.Description),
+    metadataId: readString(entity.MetadataId),
+    ownershipType: readString(entity.OwnershipType),
+    entitySetName: readString(entity.EntitySetName),
+    primaryIdAttribute: readString(entity.PrimaryIdAttribute),
+    primaryNameAttribute: readString(entity.PrimaryNameAttribute),
+    introducedVersion: readString(entity.IntroducedVersion),
+    custom: readBoolean(entity.IsCustomEntity),
+    managed: readBoolean(entity.IsManaged),
+    activity: readBoolean(entity.IsActivity),
+    activityTypeMask: readNumber(entity.ActivityTypeMask),
+    intersect: readBoolean(entity.IsIntersect),
+    auditEnabled: readManagedPrimitive<boolean>(entity.IsAuditEnabled),
+    changeTrackingEnabled: readBoolean(entity.ChangeTrackingEnabled),
+    connectionsEnabled: readManagedPrimitive<boolean>(entity.IsConnectionsEnabled),
+    hasActivities: readBoolean(entity.HasActivities),
+    notesEnabled: readManagedPrimitive<boolean>(entity.IsEnabledForNotes),
+  });
+}
+
 export function normalizeRelationshipDefinition(relationship: RelationshipDefinition): NormalizedRelationshipDefinition {
   const odataType = readString(relationship['@odata.type']);
   const rawRelationshipType = readString(relationship.RelationshipType);
@@ -2221,6 +2405,155 @@ export function normalizeMetadataQueryOptions(basePath: string, options: Metadat
       warnings,
     }
   );
+}
+
+export function diffDataverseMetadataSnapshots(
+  left: DataverseMetadataSnapshot,
+  right: DataverseMetadataSnapshot
+): OperationResult<DataverseMetadataDiffResult> {
+  if (left.schemaVersion !== 1 || right.schemaVersion !== 1) {
+    return fail(
+      createDiagnostic('error', 'DATAVERSE_METADATA_SNAPSHOT_SCHEMA_UNSUPPORTED', 'Metadata snapshot schemaVersion is unsupported.', {
+        source: '@pp/dataverse',
+      })
+    );
+  }
+
+  if (left.kind !== right.kind) {
+    return fail(
+      createDiagnostic('error', 'DATAVERSE_METADATA_SNAPSHOT_KIND_MISMATCH', 'Metadata snapshots must have the same kind to diff.', {
+        source: '@pp/dataverse',
+        detail: `${left.kind} vs ${right.kind}`,
+      })
+    );
+  }
+
+  const changes: DataverseMetadataDiffEntry[] = [];
+  collectMetadataDiffEntries(left.value, right.value, 'value', changes);
+
+  const summary = {
+    added: changes.filter((change) => change.kind === 'added').length,
+    removed: changes.filter((change) => change.kind === 'removed').length,
+    changed: changes.filter((change) => change.kind === 'changed').length,
+    total: changes.length,
+  };
+
+  return ok(
+    {
+      compatible: true,
+      left: {
+        kind: left.kind,
+        target: left.target,
+      },
+      right: {
+        kind: right.kind,
+        target: right.target,
+      },
+      summary,
+      changes,
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
+}
+
+function createMetadataSnapshot<T>(
+  environmentUrl: string,
+  kind: DataverseMetadataSnapshotKind,
+  target: DataverseMetadataSnapshot['target'],
+  value: T
+): DataverseMetadataSnapshot<T> {
+  return {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    environmentUrl,
+    kind,
+    target,
+    value,
+  };
+}
+
+function collectMetadataDiffEntries(left: unknown, right: unknown, basePath: string, changes: DataverseMetadataDiffEntry[]): void {
+  if (deepEqual(left, right)) {
+    return;
+  }
+
+  if (left === undefined) {
+    changes.push({
+      kind: 'added',
+      path: basePath || '$',
+      right,
+    });
+    return;
+  }
+
+  if (right === undefined) {
+    changes.push({
+      kind: 'removed',
+      path: basePath || '$',
+      left,
+    });
+    return;
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    const maxLength = Math.max(left.length, right.length);
+
+    for (let index = 0; index < maxLength; index += 1) {
+      collectMetadataDiffEntries(left[index], right[index], `${basePath}[${index}]`, changes);
+    }
+
+    return;
+  }
+
+  if (isRecord(left) && isRecord(right)) {
+    const keys = uniqueStrings([...Object.keys(left), ...Object.keys(right)]).sort((a, b) => a.localeCompare(b));
+
+    for (const key of keys) {
+      collectMetadataDiffEntries(left[key], right[key], appendMetadataPath(basePath, key), changes);
+    }
+
+    return;
+  }
+
+  changes.push({
+    kind: 'changed',
+    path: basePath || '$',
+    left,
+    right,
+  });
+}
+
+function appendMetadataPath(basePath: string, segment: string): string {
+  return basePath ? `${basePath}.${segment}` : segment;
+}
+
+function sortRecords<T>(values: T[], selector: (value: T) => string): T[] {
+  return [...values].sort((left, right) => selector(left).localeCompare(selector(right)));
+}
+
+function deepEqual(left: unknown, right: unknown): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length && left.every((value, index) => deepEqual(value, right[index]));
+  }
+
+  if (isRecord(left) && isRecord(right)) {
+    const leftKeys = Object.keys(left).sort((a, b) => a.localeCompare(b));
+    const rightKeys = Object.keys(right).sort((a, b) => a.localeCompare(b));
+
+    return deepEqual(leftKeys, rightKeys) && leftKeys.every((key) => deepEqual(left[key], right[key]));
+  }
+
+  return false;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function shouldRetryMetadataFilterClientSide<T>(result: OperationResult<T[]>): boolean {
@@ -2975,7 +3308,7 @@ function normalizeOptionSet(value: unknown): Record<string, unknown> | undefined
 
   const optionSet = value as Record<string, unknown>;
   const options = Array.isArray(optionSet.Options)
-    ? optionSet.Options.flatMap((option) => {
+    ? sortRecords(optionSet.Options.flatMap((option) => {
         if (!option || typeof option !== 'object' || Array.isArray(option)) {
           return [];
         }
@@ -2990,7 +3323,7 @@ function normalizeOptionSet(value: unknown): Record<string, unknown> | undefined
             isManaged: readBoolean(entry.IsManaged),
           }),
         ];
-      })
+      }), (entry) => `${String(entry.value ?? '')}:${String(entry.label ?? '')}`)
     : undefined;
 
   const normalized = compactObject({
