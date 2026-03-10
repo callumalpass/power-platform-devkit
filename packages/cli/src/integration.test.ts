@@ -3063,6 +3063,18 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/flow-semantic-validation-diagnostics.json');
   });
 
+  it('covers Office 365 semantic flow validation diagnostics through the CLI entrypoint', async () => {
+    const artifactPath = resolveRepoPath('fixtures', 'flow', 'artifacts', 'office365-semantic-diagnostic-flow');
+    const validate = await runCli(['flow', 'validate', artifactPath, '--format', 'json']);
+
+    expect(validate.code).toBe(1);
+
+    await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/flow/golden/semantic/office365-cli-lint-report.json', {
+      normalize: (value) => normalizeCliSnapshot(value),
+    });
+    await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/flow-office365-validation-diagnostics.json');
+  });
+
   it('covers remote flow runtime diagnostics through the CLI entrypoint', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
@@ -4237,6 +4249,53 @@ describe('cli fixture-backed workflows', () => {
       uniquename: 'HarnessShell',
       friendlyname: 'Harness Shell',
       version: '2026.3.10.34135',
+    });
+  });
+
+  it('surfaces publisher metadata in solution inspect output through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'HarnessShell',
+              friendlyname: 'Harness Shell',
+              version: '2026.3.10.34135',
+              ismanaged: false,
+              _publisherid_value: 'pub-1',
+            },
+          ],
+          publishers: [
+            {
+              publisherid: 'pub-1',
+              uniquename: 'pp',
+              friendlyname: 'pp',
+              customizationprefix: 'pp',
+              customizationoptionvalueprefix: 12560,
+            },
+          ],
+        },
+      }),
+    });
+
+    const inspect = await runCli(['solution', 'inspect', 'HarnessShell', '--env', 'source', '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      solutionid: 'sol-1',
+      uniquename: 'HarnessShell',
+      friendlyname: 'Harness Shell',
+      version: '2026.3.10.34135',
+      ismanaged: false,
+      publisher: {
+        publisherid: 'pub-1',
+        uniquename: 'pp',
+        friendlyname: 'pp',
+        customizationprefix: 'pp',
+        customizationoptionvalueprefix: 12560,
+      },
     });
   });
 

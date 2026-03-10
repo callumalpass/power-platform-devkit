@@ -18,6 +18,16 @@ export interface SolutionSummary {
   uniquename: string;
   friendlyname?: string;
   version?: string;
+  ismanaged?: boolean;
+  publisher?: SolutionPublisherSummary;
+}
+
+export interface SolutionPublisherSummary {
+  publisherid: string;
+  uniquename?: string;
+  friendlyname?: string;
+  customizationprefix?: string;
+  customizationoptionvalueprefix?: number;
 }
 
 export interface SolutionCreateOptions {
@@ -42,6 +52,16 @@ export interface SolutionDeleteResult {
 interface PublisherSummary {
   publisherid: string;
   uniquename?: string;
+}
+
+interface SolutionInspectRecord {
+  solutionid: string;
+  uniquename: string;
+  friendlyname?: string;
+  version?: string;
+  ismanaged?: boolean;
+  _publisherid_value?: string;
+  publisherid?: SolutionPublisherSummary;
 }
 
 export interface SolutionComponentRecord {
@@ -471,9 +491,10 @@ export class SolutionService {
   }
 
   async inspect(uniqueName: string): Promise<OperationResult<SolutionSummary | undefined>> {
-    const solutions = await this.dataverseClient.query<SolutionSummary>({
+    const solutions = await this.dataverseClient.query<SolutionInspectRecord>({
       table: 'solutions',
-      select: ['solutionid', 'uniquename', 'friendlyname', 'version'],
+      select: ['solutionid', 'uniquename', 'friendlyname', 'version', 'ismanaged', '_publisherid_value'],
+      expand: ['publisherid($select=publisherid,uniquename,friendlyname,customizationprefix,customizationoptionvalueprefix)'],
       filter: `uniquename eq '${escapeODataString(uniqueName)}'`,
       top: 1,
     });
@@ -482,7 +503,9 @@ export class SolutionService {
       return solutions as unknown as OperationResult<SolutionSummary | undefined>;
     }
 
-    return ok(solutions.data?.[0], {
+    const summary = await this.enrichSolutionSummary(solutions.data?.[0]);
+
+    return ok(summary, {
       supportTier: 'preview',
       diagnostics: solutions.diagnostics,
       warnings: solutions.warnings,
@@ -988,6 +1011,53 @@ export class SolutionService {
     return publishers.data?.[0]?.publisherid;
   }
 
+  private async enrichSolutionSummary(record: SolutionInspectRecord | undefined): Promise<SolutionSummary | undefined> {
+    if (!record) {
+      return undefined;
+    }
+
+    const publisherFromExpand = normalizePublisherSummary(record.publisherid);
+
+    if (publisherFromExpand) {
+      return {
+        solutionid: record.solutionid,
+        uniquename: record.uniquename,
+        friendlyname: record.friendlyname,
+        version: record.version,
+        ismanaged: record.ismanaged,
+        publisher: publisherFromExpand,
+      };
+    }
+
+    const publisherId = record._publisherid_value;
+
+    if (!publisherId) {
+      return {
+        solutionid: record.solutionid,
+        uniquename: record.uniquename,
+        friendlyname: record.friendlyname,
+        version: record.version,
+        ismanaged: record.ismanaged,
+      };
+    }
+
+    const publisher = await this.dataverseClient.query<SolutionPublisherSummary>({
+      table: 'publishers',
+      select: ['publisherid', 'uniquename', 'friendlyname', 'customizationprefix', 'customizationoptionvalueprefix'],
+      filter: `publisherid eq ${publisherId}`,
+      top: 1,
+    });
+
+    return {
+      solutionid: record.solutionid,
+      uniquename: record.uniquename,
+      friendlyname: record.friendlyname,
+      version: record.version,
+      ismanaged: record.ismanaged,
+      publisher: normalizePublisherSummary(publisher.success ? publisher.data?.[0] : undefined) ?? { publisherid: publisherId },
+    };
+  }
+
   private async runPacCommand(options: { pacExecutable?: string; args: string[]; cwd?: string }) {
     return this.commandRunner.run({
       executable: options.pacExecutable ?? 'pac',
@@ -1073,6 +1143,20 @@ function normalizeSolutionComponent(component: SolutionComponentRecord): Solutio
     componentTypeLabel: describeComponentType(component.componenttype),
     isMetadata: component.ismetadata,
     rootComponentBehavior: component.rootcomponentbehavior,
+  };
+}
+
+function normalizePublisherSummary(publisher: SolutionPublisherSummary | undefined): SolutionPublisherSummary | undefined {
+  if (!publisher?.publisherid) {
+    return undefined;
+  }
+
+  return {
+    publisherid: publisher.publisherid,
+    uniquename: publisher.uniquename,
+    friendlyname: publisher.friendlyname,
+    customizationprefix: publisher.customizationprefix,
+    customizationoptionvalueprefix: publisher.customizationoptionvalueprefix,
   };
 }
 

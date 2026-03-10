@@ -12,6 +12,15 @@ interface StubData {
     uniquename: string;
     friendlyname?: string;
     version?: string;
+    ismanaged?: boolean;
+    _publisherid_value?: string;
+    publisherid?: {
+      publisherid: string;
+      uniquename?: string;
+      friendlyname?: string;
+      customizationprefix?: string;
+      customizationoptionvalueprefix?: number;
+    };
   };
   publishers?: Array<Record<string, unknown>>;
   components: Array<Record<string, unknown>>;
@@ -230,6 +239,84 @@ function createStubCommandRunner(
 }
 
 describe('SolutionService', () => {
+  it('inspects a solution with inline publisher metadata when Dataverse expands the lookup', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core Solution',
+          version: '1.0.1.0',
+          ismanaged: false,
+          publisherid: {
+            publisherid: 'pub-1',
+            uniquename: 'pp',
+            friendlyname: 'Power Platform Publisher',
+            customizationprefix: 'pp',
+            customizationoptionvalueprefix: 12560,
+          },
+        },
+        components: [],
+        dependencies: [],
+      })
+    );
+
+    const inspect = await service.inspect('Core');
+
+    expect(inspect.success).toBe(true);
+    expect(inspect.data).toMatchObject({
+      solutionid: 'sol-1',
+      uniquename: 'Core',
+      ismanaged: false,
+      publisher: {
+        publisherid: 'pub-1',
+        uniquename: 'pp',
+        customizationprefix: 'pp',
+        customizationoptionvalueprefix: 12560,
+      },
+    });
+  });
+
+  it('falls back to querying the publisher table when the solution row only exposes the lookup id', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core Solution',
+          version: '1.0.1.0',
+          ismanaged: false,
+          _publisherid_value: 'pub-1',
+        },
+        publishers: [
+          {
+            publisherid: 'pub-1',
+            uniquename: 'pp',
+            friendlyname: 'Power Platform Publisher',
+            customizationprefix: 'pp',
+            customizationoptionvalueprefix: 12560,
+          },
+        ],
+        components: [],
+        dependencies: [],
+      })
+    );
+
+    const inspect = await service.inspect('Core');
+
+    expect(inspect.success).toBe(true);
+    expect(inspect.data).toMatchObject({
+      solutionid: 'sol-1',
+      uniquename: 'Core',
+      publisher: {
+        publisherid: 'pub-1',
+        uniquename: 'pp',
+        customizationprefix: 'pp',
+        customizationoptionvalueprefix: 12560,
+      },
+    });
+  });
+
   it('lists components and flags missing dependencies', async () => {
     const service = new SolutionService(
       createStubClient({

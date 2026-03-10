@@ -491,6 +491,12 @@ Current solution output includes:
 - `uniquename`
 - `friendlyname`
 - `version`
+- `ismanaged`
+- `publisher.publisherid`
+- `publisher.uniquename`
+- `publisher.friendlyname`
+- `publisher.customizationprefix`
+- `publisher.customizationoptionvalueprefix`
 - normalized component inventory
 - dependency edges with missing-required-component flags
 - connection-reference validation failures
