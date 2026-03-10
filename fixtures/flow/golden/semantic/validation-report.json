@@ -19,8 +19,10 @@
       "actionCount": 0,
       "controlFlowEdgeCount": 0,
       "dynamicContentReferenceCount": 0,
+      "expressionCount": 0,
       "nodeCount": 0,
       "scopeCount": 0,
+      "templateExpressionCount": 0,
       "triggerCount": 0,
       "variableReadCount": 0,
       "variableWriteCount": 0
@@ -33,6 +35,7 @@
       "actionCount": 0,
       "controlFlowEdgeCount": 0,
       "dynamicContentReferenceCount": 0,
+      "expressionCount": 0,
       "initializedVariables": [],
       "referenceCounts": {
         "actions": 0,
@@ -42,6 +45,7 @@
         "variables": 0
       },
       "scopeCount": 0,
+      "templateExpressionCount": 0,
       "triggerCount": 0,
       "variableUsage": {
         "reads": 0,

@@ -1,9 +1,10 @@
 {
-  "actionCount": 9,
+  "actionCount": 10,
   "artifactName": "Semantic Diagnostic Flow",
   "controlFlowEdgeCount": 0,
-  "dynamicContentReferenceCount": 6,
-  "nodeCount": 10,
+  "dynamicContentReferenceCount": 8,
+  "expressionCount": 8,
+  "nodeCount": 11,
   "nodes": [
     {
       "branch": "root",
@@ -19,6 +20,20 @@
             "kind": "action",
             "name": "MissingAction",
             "path": "definition.actions.ComposeBadAction.inputs"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "body('MissingAction')",
+            "path": "definition.actions.ComposeBadAction.inputs",
+            "references": [
+              {
+                "kind": "action",
+                "name": "MissingAction",
+                "path": "definition.actions.ComposeBadAction.inputs"
+              }
+            ],
+            "syntax": "expression"
           }
         ],
         "reads": [
@@ -60,6 +75,20 @@
             "path": "definition.actions.ComposeBadParam.inputs"
           }
         ],
+        "expressions": [
+          {
+            "expression": "parameters('MissingParam')",
+            "path": "definition.actions.ComposeBadParam.inputs",
+            "references": [
+              {
+                "kind": "parameter",
+                "name": "MissingParam",
+                "path": "definition.actions.ComposeBadParam.inputs"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
         "reads": [
           {
             "kind": "parameter",
@@ -99,6 +128,20 @@
             "path": "definition.actions.ComposeBadVariable.inputs"
           }
         ],
+        "expressions": [
+          {
+            "expression": "variables('MissingVariable')",
+            "path": "definition.actions.ComposeBadVariable.inputs",
+            "references": [
+              {
+                "kind": "variable",
+                "name": "MissingVariable",
+                "path": "definition.actions.ComposeBadVariable.inputs"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
         "reads": [
           {
             "kind": "variable",
@@ -131,7 +174,83 @@
         "unresolvedDependsOn": []
       },
       "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "variable",
+            "name": "Counter",
+            "path": "definition.actions.ComposeTemplateSummary.inputs"
+          },
+          {
+            "kind": "parameter",
+            "name": "ApiBaseUrl",
+            "path": "definition.actions.ComposeTemplateSummary.inputs"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "variables('Counter')",
+            "path": "definition.actions.ComposeTemplateSummary.inputs",
+            "references": [
+              {
+                "kind": "variable",
+                "name": "Counter",
+                "path": "definition.actions.ComposeTemplateSummary.inputs"
+              }
+            ],
+            "syntax": "template"
+          },
+          {
+            "expression": "parameters('ApiBaseUrl')",
+            "path": "definition.actions.ComposeTemplateSummary.inputs",
+            "references": [
+              {
+                "kind": "parameter",
+                "name": "ApiBaseUrl",
+                "path": "definition.actions.ComposeTemplateSummary.inputs"
+              }
+            ],
+            "syntax": "template"
+          }
+        ],
+        "reads": [
+          {
+            "kind": "variable",
+            "name": "Counter",
+            "path": "definition.actions.ComposeTemplateSummary.inputs"
+          },
+          {
+            "kind": "parameter",
+            "name": "ApiBaseUrl",
+            "path": "definition.actions.ComposeTemplateSummary.inputs"
+          }
+        ],
+        "writes": []
+      },
+      "id": "action:actions.ComposeTemplateSummary",
+      "kind": "action",
+      "name": "ComposeTemplateSummary",
+      "path": "actions.ComposeTemplateSummary",
+      "runAfter": [],
+      "type": "Compose",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [
+          "Counter"
+        ],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
         "dynamicContentReferences": [],
+        "expressions": [],
         "reads": [],
         "writes": [
           {
@@ -173,6 +292,20 @@
             "path": "definition.actions.RetryHot.inputs"
           }
         ],
+        "expressions": [
+          {
+            "expression": "environmentVariables('pp_ApiUrl')",
+            "path": "definition.actions.RetryHot.inputs",
+            "references": [
+              {
+                "kind": "environmentVariable",
+                "name": "pp_ApiUrl",
+                "path": "definition.actions.RetryHot.inputs"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
         "reads": [
           {
             "kind": "environmentVariable",
@@ -206,6 +339,7 @@
       },
       "dataFlow": {
         "dynamicContentReferences": [],
+        "expressions": [],
         "reads": [],
         "writes": []
       },
@@ -235,6 +369,20 @@
             "kind": "variable",
             "name": "Counter",
             "path": "definition.actions.ScopeA.actions.SetCounter.inputs.value"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "variables('Counter')",
+            "path": "definition.actions.ScopeA.actions.SetCounter.inputs.value",
+            "references": [
+              {
+                "kind": "variable",
+                "name": "Counter",
+                "path": "definition.actions.ScopeA.actions.SetCounter.inputs.value"
+              }
+            ],
+            "syntax": "expression"
           }
         ],
         "reads": [
@@ -285,6 +433,20 @@
             "path": "definition.actions.SendMail.inputs.host.connection.name"
           }
         ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_missing']['connectionId']",
+            "path": "definition.actions.SendMail.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_missing",
+                "path": "definition.actions.SendMail.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
         "reads": [],
         "writes": []
       },
@@ -310,6 +472,7 @@
       },
       "dataFlow": {
         "dynamicContentReferences": [],
+        "expressions": [],
         "reads": [],
         "writes": [
           {
@@ -343,6 +506,7 @@
       },
       "dataFlow": {
         "dynamicContentReferences": [],
+        "expressions": [],
         "reads": [],
         "writes": []
       },
@@ -360,7 +524,8 @@
     }
   ],
   "scopeCount": 1,
+  "templateExpressionCount": 2,
   "triggerCount": 1,
-  "variableReadCount": 2,
+  "variableReadCount": 3,
   "variableWriteCount": 3
 }

@@ -425,7 +425,11 @@ describe('FlowService', () => {
                     count: 12,
                   },
                 },
-                inputs: "@{environmentVariables('pp_ApiUrl')}",
+                inputs: "@environmentVariables('pp_ApiUrl')",
+              },
+              ComposeTemplateSummary: {
+                type: 'Compose',
+                inputs: "Counter @{variables('Counter')} via @{parameters('ApiBaseUrl')}",
               },
               SendMail: {
                 type: 'OpenApiConnection',
@@ -471,20 +475,22 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 9,
+      actionCount: 10,
       scopeCount: 1,
+      expressionCount: 8,
+      templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
-        reads: 2,
+        reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 6,
+      dynamicContentReferenceCount: 8,
       controlFlowEdgeCount: 0,
       referenceCounts: {
-        parameters: 1,
+        parameters: 2,
         environmentVariables: 1,
         actions: 1,
-        variables: 2,
+        variables: 3,
         connectionReferences: 1,
       },
     });
@@ -505,13 +511,15 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 10,
+      nodeCount: 11,
       triggerCount: 1,
-      actionCount: 9,
+      actionCount: 10,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      dynamicContentReferenceCount: 6,
-      variableReadCount: 2,
+      expressionCount: 8,
+      templateExpressionCount: 2,
+      dynamicContentReferenceCount: 8,
+      variableReadCount: 3,
       variableWriteCount: 3,
     });
   });
@@ -595,6 +603,8 @@ describe('FlowService', () => {
       actionCount: 6,
       scopeCount: 2,
       controlFlowEdgeCount: 1,
+      expressionCount: 0,
+      templateExpressionCount: 0,
       dynamicContentReferenceCount: 0,
       variableReadCount: 0,
       variableWriteCount: 0,
@@ -618,6 +628,7 @@ describe('FlowService', () => {
           dependentIds: ['action:actions.SwitchA.cases.First.actions.ComposeCase'],
         },
         dataFlow: {
+          expressions: [],
           reads: [],
           writes: [],
           dynamicContentReferences: [],
@@ -644,6 +655,7 @@ describe('FlowService', () => {
           dependentIds: [],
         },
         dataFlow: {
+          expressions: [],
           reads: [],
           writes: [],
           dynamicContentReferences: [],
@@ -670,6 +682,7 @@ describe('FlowService', () => {
           dependentIds: [],
         },
         dataFlow: {
+          expressions: [],
           reads: [],
           writes: [],
           dynamicContentReferences: [],
@@ -698,6 +711,7 @@ describe('FlowService', () => {
           dependentIds: [],
         },
         dataFlow: {
+          expressions: [],
           reads: [],
           writes: [],
           dynamicContentReferences: [],
@@ -724,6 +738,7 @@ describe('FlowService', () => {
           dependentIds: [],
         },
         dataFlow: {
+          expressions: [],
           reads: [],
           writes: [],
           dynamicContentReferences: [],
@@ -750,6 +765,7 @@ describe('FlowService', () => {
           dependentIds: [],
         },
         dataFlow: {
+          expressions: [],
           reads: [],
           writes: [],
           dynamicContentReferences: [],
@@ -775,6 +791,7 @@ describe('FlowService', () => {
           dependentIds: [],
         },
         dataFlow: {
+          expressions: [],
           reads: [],
           writes: [],
           dynamicContentReferences: [],

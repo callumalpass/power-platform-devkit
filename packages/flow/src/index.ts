@@ -99,6 +99,8 @@ export interface FlowSemanticSummary {
   triggerCount: number;
   actionCount: number;
   scopeCount: number;
+  expressionCount: number;
+  templateExpressionCount: number;
   initializedVariables: string[];
   variableUsage: {
     reads: number;
@@ -135,6 +137,7 @@ export interface FlowIntermediateNode {
     dependentIds: string[];
   };
   dataFlow: {
+    expressions: FlowExpressionUsage[];
     reads: FlowDynamicContentReference[];
     writes: FlowVariableWrite[];
     dynamicContentReferences: FlowDynamicContentReference[];
@@ -152,6 +155,8 @@ export interface FlowIntermediateRepresentationSummary {
   actionCount: number;
   scopeCount: number;
   controlFlowEdgeCount: number;
+  expressionCount: number;
+  templateExpressionCount: number;
   dynamicContentReferenceCount: number;
   variableReadCount: number;
   variableWriteCount: number;
@@ -256,6 +261,7 @@ interface FlowNodeSummary {
     dependentIds: string[];
   };
   dataFlow: {
+    expressions: FlowExpressionUsage[];
     reads: FlowDynamicContentReference[];
     writes: FlowVariableWrite[];
     dynamicContentReferences: FlowDynamicContentReference[];
@@ -289,6 +295,13 @@ export interface FlowDynamicContentReference {
   kind: 'parameter' | 'environmentVariable' | 'action' | 'variable' | 'connectionReference';
   name: string;
   path: string;
+}
+
+export interface FlowExpressionUsage {
+  path: string;
+  syntax: 'expression' | 'template';
+  expression: string;
+  references: FlowDynamicContentReference[];
 }
 
 export interface FlowVariableWrite {
@@ -1293,13 +1306,17 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
   const triggerNodes = intermediateRepresentation.nodes.filter((node) => node.kind === 'trigger');
   const actionNodes = intermediateRepresentation.nodes.filter((node) => node.kind !== 'trigger');
   const actionNodeNames = new Set(actionNodes.map((node) => node.name));
-  const parameterNames = new Set(Object.keys(normalizeFlowParameters(asRecord(definition.parameters) ?? artifact.metadata.parameters)));
+  const parameterNames = new Set([
+    ...Object.keys(normalizeFlowParameters(artifact.metadata.parameters)),
+    ...Object.keys(normalizeFlowParameters(asRecord(definition.parameters))),
+  ]);
   const definitionConnectionReferences = collectDefinitionConnectionReferences(definition);
   const metadataConnectionReferences = new Map(
     artifact.metadata.connectionReferences.map((reference) => [reference.name, reference] as const)
   );
   const variableNames = new Set(intermediateRepresentation.nodes.flatMap((node) => node.variableUsage.initializes));
   const references = intermediateRepresentation.nodes.flatMap((node) => node.dataFlow.dynamicContentReferences);
+  const expressions = intermediateRepresentation.nodes.flatMap((node) => node.dataFlow.expressions);
   const connectionReferenceUsages = collectConnectionReferenceUsages(artifact.definition);
   const hasDefinitionConnections = definitionConnectionReferences.size > 0;
   const writeOperations = intermediateRepresentation.nodes.flatMap((node) => node.dataFlow.writes);
@@ -1534,6 +1551,8 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
       triggerCount: triggerNodes.length,
       actionCount: actionNodes.length,
       scopeCount: intermediateRepresentation.scopeCount,
+      expressionCount: expressions.length,
+      templateExpressionCount: expressions.filter((expression) => expression.syntax === 'template').length,
       initializedVariables: Array.from(variableNames).sort(),
       variableUsage: {
         reads: intermediateRepresentation.nodes.reduce((total, node) => total + node.variableUsage.reads.length, 0),
@@ -1624,7 +1643,8 @@ function buildFlowIntermediateRepresentation(artifact: FlowArtifact): FlowInterm
       const path = `${pathPrefix}.${name}`;
       const id = `${nodeKind}:${path}`;
       const nodeSemanticSlice = withoutChildBranches(record);
-      const dynamicContentReferences = collectDynamicContentReferences(nodeSemanticSlice, `definition.${path}`);
+      const expressions = collectFlowExpressionUsages(nodeSemanticSlice, `definition.${path}`);
+      const dynamicContentReferences = expressions.flatMap((expression) => expression.references);
       const variableWrites = collectVariableWrites(nodeSemanticSlice, `definition.${path}`);
       const initializedVariables = variableWrites.filter((write) => write.operation === 'initialize').map((write) => write.name);
       const variableReads = dynamicContentReferences
@@ -1648,6 +1668,7 @@ function buildFlowIntermediateRepresentation(artifact: FlowArtifact): FlowInterm
           dependentIds: [],
         },
         dataFlow: {
+          expressions,
           reads: dynamicContentReferences.filter((reference) => reference.kind !== 'connectionReference'),
           writes: variableWrites,
           dynamicContentReferences,
@@ -1731,6 +1752,11 @@ function summarizeFlowIntermediateRepresentation(
     actionCount: model.actionCount,
     scopeCount: model.scopeCount,
     controlFlowEdgeCount: model.nodes.reduce((total, node) => total + node.controlFlow.dependsOn.length, 0),
+    expressionCount: model.nodes.reduce((total, node) => total + node.dataFlow.expressions.length, 0),
+    templateExpressionCount: model.nodes.reduce(
+      (total, node) => total + node.dataFlow.expressions.filter((expression) => expression.syntax === 'template').length,
+      0
+    ),
     dynamicContentReferenceCount: model.nodes.reduce((total, node) => total + node.dataFlow.dynamicContentReferences.length, 0),
     variableReadCount: model.nodes.reduce((total, node) => total + node.variableUsage.reads.length, 0),
     variableWriteCount: model.nodes.reduce((total, node) => total + node.variableUsage.writes.length, 0),
@@ -1753,54 +1779,39 @@ function readInitializeVariableNames(value: unknown): string[] {
   return names;
 }
 
-function collectDynamicContentReferences(value: unknown, path = 'definition'): FlowDynamicContentReference[] {
-  const references: FlowDynamicContentReference[] = [];
+function collectFlowExpressionUsages(value: unknown, path = 'definition'): FlowExpressionUsage[] {
+  const expressions: FlowExpressionUsage[] = [];
 
   for (const location of collectFlowStrings(value, path)) {
-    for (const match of location.value.matchAll(/(parameters|environmentVariables|variables|actions|body|outputs)\('([^']+)'\)/g)) {
-      const rawKind = match[1];
-      const name = match[2];
+    const wholeExpression = extractWholeFlowExpression(location.value);
 
-      if (!rawKind || !name) {
-        continue;
-      }
-
-      if (rawKind === 'parameters' && name === '$connections') {
-        continue;
-      }
-
-      references.push({
-        kind:
-          rawKind === 'parameters'
-            ? 'parameter'
-            : rawKind === 'environmentVariables'
-              ? 'environmentVariable'
-              : rawKind === 'variables'
-                ? 'variable'
-                : 'action',
-        name,
+    if (wholeExpression) {
+      expressions.push({
         path: location.path,
+        syntax: 'expression',
+        expression: wholeExpression,
+        references: collectSupportedReferencesFromExpression(wholeExpression, location.path),
+      });
+      continue;
+    }
+
+    for (const match of location.value.matchAll(/@\{([^{}]+)\}/g)) {
+      const expression = match[1]?.trim();
+
+      if (!expression) {
+        continue;
+      }
+
+      expressions.push({
+        path: location.path,
+        syntax: 'template',
+        expression,
+        references: collectSupportedReferencesFromExpression(expression, location.path),
       });
     }
   }
 
-  for (const location of collectFlowStrings(value, path)) {
-    for (const match of location.value.matchAll(/parameters\(\s*['"]\$connections['"]\s*\)\s*\[\s*['"]([^'"]+)['"]\s*\]/g)) {
-      const name = match[1];
-
-      if (!name) {
-        continue;
-      }
-
-      references.push({
-        kind: 'connectionReference',
-        name,
-        path: location.path,
-      });
-    }
-  }
-
-  return references;
+  return expressions;
 }
 
 function collectVariableWrites(value: unknown, path: string): FlowVariableWrite[] {
@@ -1879,24 +1890,76 @@ function collectDefinitionConnectionReferences(value: Record<string, unknown>): 
 }
 
 function collectConnectionReferenceUsages(value: unknown): Array<{ name: string; path: string }> {
-  const usages: Array<{ name: string; path: string }> = [];
+  return collectFlowExpressionUsages(value).flatMap((expression) =>
+    expression.references
+      .filter((reference) => reference.kind === 'connectionReference')
+      .map((reference) => ({
+        name: reference.name,
+        path: reference.path,
+      }))
+  );
+}
 
-  for (const location of collectFlowStrings(value)) {
-    for (const match of location.value.matchAll(/parameters\(\s*['"]\$connections['"]\s*\)\s*\[\s*['"]([^'"]+)['"]\s*\]/g)) {
-      const name = match[1];
+function extractWholeFlowExpression(value: string): string | undefined {
+  const trimmed = value.trim();
 
-      if (!name) {
-        continue;
-      }
-
-      usages.push({
-        name,
-        path: location.path,
-      });
-    }
+  if (trimmed.startsWith('@{') && trimmed.endsWith('}')) {
+    const inner = trimmed.slice(2, -1).trim();
+    return inner.length > 0 ? inner : undefined;
   }
 
-  return usages;
+  if (/^@[A-Za-z_]/.test(trimmed)) {
+    const inner = trimmed.slice(1).trim();
+    return inner.length > 0 ? inner : undefined;
+  }
+
+  return undefined;
+}
+
+function collectSupportedReferencesFromExpression(expression: string, path: string): FlowDynamicContentReference[] {
+  const references: FlowDynamicContentReference[] = [];
+
+  for (const match of expression.matchAll(/(parameters|environmentVariables|variables|actions|body|outputs)\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    const rawKind = match[1];
+    const name = match[2];
+
+    if (!rawKind || !name) {
+      continue;
+    }
+
+    if (rawKind === 'parameters' && name === '$connections') {
+      continue;
+    }
+
+    references.push({
+      kind:
+        rawKind === 'parameters'
+          ? 'parameter'
+          : rawKind === 'environmentVariables'
+            ? 'environmentVariable'
+            : rawKind === 'variables'
+              ? 'variable'
+              : 'action',
+      name,
+      path,
+    });
+  }
+
+  for (const match of expression.matchAll(/parameters\(\s*['"]\$connections['"]\s*\)\s*\[\s*['"]([^'"]+)['"]\s*\]/g)) {
+    const name = match[1];
+
+    if (!name) {
+      continue;
+    }
+
+    references.push({
+      kind: 'connectionReference',
+      name,
+      path,
+    });
+  }
+
+  return references;
 }
 
 function collectFlowStrings(value: unknown, path = 'definition'): FlowStringLocation[] {

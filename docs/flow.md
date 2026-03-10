@@ -134,6 +134,8 @@ artifact-first and bounded:
   preserved for downstream diagnostics and refactors
 - each parsed node now carries a local control-flow/data-flow slice:
   - resolved and unresolved `runAfter` edges plus reverse dependents
+  - supported workflow-expression occurrences for both whole-expression values
+    and embedded `@{...}` template segments
   - dynamic-content references for supported parameters, environment
     variables, action outputs, variables, and `$connections` lookups
   - variable initialization and write targets for supported variable actions
@@ -181,6 +183,9 @@ Current validation checks:
   `definition.parameters.$connections.value` for the supported canonical shape
 - supported `$connections` expression references resolve to declared
   connection-reference keys
+- supported workflow-expression parsing covers both whole-expression values
+  (for example `@parameters('Name')` or `@{variables('X')}`) and embedded
+  template segments inside larger strings
 - supported expression references resolve for:
   - `parameters('...')`
   - `variables('...')`
@@ -192,11 +197,13 @@ Current validation checks:
   retry counts
 
 Validation now also returns a `semanticSummary` with trigger/action/scope
-counts, initialized variable names, variable read/write counts, dynamic-content
-reference counts, control-flow edge counts, and supported reference counts so
-fixture and CLI outputs can correlate diagnostics back to the normalized source
-model. It also returns an `intermediateRepresentation` summary with parsed node
-counts plus control-flow/data-flow totals from the stable IR surface.
+counts, expression and template-expression counts, initialized variable names,
+variable read/write counts, dynamic-content reference counts, control-flow edge
+counts, and supported reference counts so fixture and CLI outputs can
+correlate diagnostics back to the normalized source model. It also returns an
+`intermediateRepresentation` summary with parsed node counts plus
+control-flow/data-flow totals from the stable IR surface, and each parsed node
+retains the supported expression occurrences that produced its reference slice.
 
 This is the artifact-first foundation for the runtime diagnostics and doctor
 work that follows.

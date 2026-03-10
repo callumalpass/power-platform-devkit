@@ -84,7 +84,11 @@
             "count": 12
           }
         },
-        "inputs": "@{environmentVariables('pp_ApiUrl')}"
+        "inputs": "@environmentVariables('pp_ApiUrl')"
+      },
+      "ComposeTemplateSummary": {
+        "type": "Compose",
+        "inputs": "Counter @{variables('Counter')} via @{parameters('ApiBaseUrl')}"
       },
       "SendMail": {
         "type": "OpenApiConnection",
