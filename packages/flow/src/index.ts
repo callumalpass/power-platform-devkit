@@ -378,6 +378,7 @@ interface FlowSupportedConnectorOperationParameter {
   name: string;
   kind: 'string' | 'integer' | 'boolean';
   bucket?: 'parameters' | 'queries' | 'pathParameters';
+  buckets?: Array<'parameters' | 'queries' | 'pathParameters'>;
   required?: boolean;
 }
 
@@ -438,29 +439,29 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
     apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
     operationId: 'ListRecords',
     parameters: [
-      { name: 'entityName', kind: 'string', required: true },
-      { name: '$select', kind: 'string' },
-      { name: '$filter', kind: 'string' },
-      { name: '$orderby', kind: 'string' },
-      { name: '$expand', kind: 'string' },
-      { name: 'fetchXml', kind: 'string' },
-      { name: '$top', kind: 'integer' },
-      { name: '$skiptoken', kind: 'string' },
-      { name: 'partitionId', kind: 'string' },
-      { name: 'returntotalrecordcount', kind: 'boolean' },
-      { name: 'x-ms-odata-metadata-full', kind: 'boolean' },
+      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+      { name: '$select', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: '$filter', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: '$orderby', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: '$expand', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: 'fetchXml', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: '$top', kind: 'integer', buckets: ['parameters', 'queries'] },
+      { name: '$skiptoken', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: 'partitionId', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: 'returntotalrecordcount', kind: 'boolean', buckets: ['parameters', 'queries'] },
+      { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
     ],
   },
   {
     apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
     operationId: 'GetItem',
     parameters: [
-      { name: 'entityName', kind: 'string', required: true },
-      { name: 'recordId', kind: 'string', required: true },
-      { name: '$select', kind: 'string' },
-      { name: '$expand', kind: 'string' },
-      { name: 'partitionId', kind: 'string' },
-      { name: 'x-ms-odata-metadata-full', kind: 'boolean' },
+      { name: 'entityName', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+      { name: 'recordId', kind: 'string', buckets: ['parameters', 'pathParameters'], required: true },
+      { name: '$select', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: '$expand', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: 'partitionId', kind: 'string', buckets: ['parameters', 'queries'] },
+      { name: 'x-ms-odata-metadata-full', kind: 'boolean', buckets: ['parameters', 'queries'] },
     ],
   },
 ];
@@ -1753,36 +1754,43 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
 
       if (supportedOperation) {
         const inputs = asRecord(nodeRecord?.inputs);
-        const missingBuckets = new Set<string>();
+        const missingBucketGroups = new Set<string>();
 
         for (const parameter of supportedOperation.parameters) {
-          const bucket = parameter.bucket ?? 'parameters';
-          const bucketRecord = readConnectorInputBucket(inputs, bucket);
-          const bucketPath = `${node.path}.${describeConnectorInputBucket(bucket)}`;
-          const parameterPath = describeConnectorParameterPath(node.path, bucket, parameter.name);
+          const supportedBuckets = resolveConnectorParameterBuckets(parameter);
+          const bucketRecords = supportedBuckets.map((bucket) => ({
+            bucket,
+            record: readConnectorInputBucket(inputs, bucket),
+          }));
+          const presentBucketRecords = bucketRecords.filter((entry) => entry.record);
+          const valueEntry = presentBucketRecords.find((entry) => entry.record?.[parameter.name] !== undefined);
+          const parameterPath = describeConnectorParameterPath(node.path, valueEntry?.bucket ?? supportedBuckets[0], parameter.name);
 
-          if (!bucketRecord) {
-            if (parameter.required && !missingBuckets.has(bucket)) {
-              diagnostics.push(
-                createDiagnostic(
-                  'error',
-                  bucket === 'parameters' ? 'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING' : 'FLOW_CONNECTOR_INPUT_BUCKET_MISSING',
-                  `Connector action ${name} does not declare the supported ${describeConnectorInputBucket(bucket)} object required by ${supportedOperation.operationId}.`,
-                  {
-                    source: '@pp/flow',
-                    path: bucketPath,
-                  }
-                )
-              );
-              missingBuckets.add(bucket);
-            }
-            continue;
-          }
+          if (!valueEntry) {
+            if (parameter.required && presentBucketRecords.length === 0) {
+              const bucketGroupKey = supportedBuckets.join('|');
 
-          const value = bucketRecord[parameter.name];
+              if (!missingBucketGroups.has(bucketGroupKey)) {
+                const bucketDescription = describeConnectorSupportedBuckets(supportedBuckets);
+                const diagnosticCode =
+                  supportedBuckets.length === 1 && supportedBuckets[0] === 'parameters'
+                    ? 'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING'
+                    : 'FLOW_CONNECTOR_INPUT_BUCKET_MISSING';
 
-          if (value === undefined) {
-            if (parameter.required) {
+                diagnostics.push(
+                  createDiagnostic(
+                    'error',
+                    diagnosticCode,
+                    `Connector action ${name} does not declare any supported ${bucketDescription} object required by ${supportedOperation.operationId}.`,
+                    {
+                      source: '@pp/flow',
+                      path: node.path,
+                    }
+                  )
+                );
+                missingBucketGroups.add(bucketGroupKey);
+              }
+            } else if (parameter.required) {
               diagnostics.push(
                 createDiagnostic(
                   'error',
@@ -1795,8 +1803,11 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
                 )
               );
             }
+
             continue;
           }
+
+          const value = valueEntry.record?.[parameter.name];
 
           const parameterIssue = validateConnectorParameterValue(value, parameter.kind);
 
@@ -2539,6 +2550,16 @@ function readConnectorInputBucket(
   return asRecord(inputs?.[bucket]);
 }
 
+function resolveConnectorParameterBuckets(
+  parameter: FlowSupportedConnectorOperationParameter
+): Array<'parameters' | 'queries' | 'pathParameters'> {
+  if (parameter.buckets && parameter.buckets.length > 0) {
+    return [...new Set(parameter.buckets)];
+  }
+
+  return [parameter.bucket ?? 'parameters'];
+}
+
 function describeConnectorInputBucket(bucket: 'parameters' | 'queries' | 'pathParameters'): string {
   if (bucket === 'pathParameters') {
     return 'inputs.pathParameters';
@@ -2549,6 +2570,10 @@ function describeConnectorInputBucket(bucket: 'parameters' | 'queries' | 'pathPa
   }
 
   return 'inputs.parameters';
+}
+
+function describeConnectorSupportedBuckets(buckets: Array<'parameters' | 'queries' | 'pathParameters'>): string {
+  return buckets.map((bucket) => describeConnectorInputBucket(bucket)).join(' or ');
 }
 
 function describeConnectorParameterPath(

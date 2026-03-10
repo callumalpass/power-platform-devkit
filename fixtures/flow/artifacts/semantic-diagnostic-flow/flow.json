@@ -298,6 +298,67 @@
           }
         }
       },
+      "DataverseGetRowPathQueryValid": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "pathParameters": {
+            "entityName": "accounts",
+            "recordId": "00000000-0000-0000-0000-000000000002"
+          },
+          "queries": {
+            "$select": "name",
+            "x-ms-odata-metadata-full": true
+          }
+        }
+      },
+      "DataverseGetRowPathQueryBadSelectShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "GetItem",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "pathParameters": {
+            "entityName": "accounts",
+            "recordId": "00000000-0000-0000-0000-000000000003"
+          },
+          "queries": {
+            "$select": [
+              "name"
+            ]
+          }
+        }
+      },
+      "DataverseListRowsPathQueryBadTopShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "ListRecords",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "pathParameters": {
+            "entityName": "accounts"
+          },
+          "queries": {
+            "$top": {
+              "value": 5
+            }
+          }
+        }
+      },
       "SetGhost": {
         "type": "SetVariable",
         "inputs": {

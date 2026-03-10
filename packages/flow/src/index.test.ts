@@ -275,6 +275,97 @@ describe('FlowService', () => {
     expect(normalized.definition.lastModifiedTime).toBeUndefined();
   });
 
+  it('accepts supported Dataverse connector parameters across path and query buckets', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Dataverse Multi Bucket Flow',
+            parameters: {},
+            environmentVariables: [],
+            connectionReferences: [
+              {
+                name: 'shared_commondataserviceforapps',
+                connectionReferenceLogicalName: 'shared_commondataserviceforapps',
+                apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+              },
+            ],
+          },
+          definition: {
+            parameters: {
+              '$connections': {
+                value: {
+                  shared_commondataserviceforapps: {
+                    connectionReferenceLogicalName: 'shared_commondataserviceforapps',
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connectionId: '/connections/dataverse',
+                  },
+                },
+              },
+            },
+            actions: {
+              DataverseGetRow: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'GetItem',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  pathParameters: {
+                    entityName: 'accounts',
+                    recordId: '00000000-0000-0000-0000-000000000001',
+                  },
+                  queries: {
+                    '$select': 'name',
+                    'x-ms-odata-metadata-full': true,
+                  },
+                },
+              },
+              DataverseListRows: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'ListRecords',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  pathParameters: {
+                    entityName: 'accounts',
+                  },
+                  queries: {
+                    '$top': 5,
+                    '$filter': "name eq 'Contoso'",
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(true);
+    expect(validation.diagnostics).toEqual([]);
+    expect(validation.warnings).toEqual([]);
+  });
+
   it('summarizes runtime failures and doctor findings from flow runs', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
@@ -1021,7 +1112,7 @@ describe('FlowService', () => {
     expect(graph.data).toMatchObject({
       artifactName: 'Semantic Diagnostic Flow',
       summary: {
-        nodeCount: 22,
+        nodeCount: 25,
         unresolvedEdgeCount: 6,
       },
       resources: {

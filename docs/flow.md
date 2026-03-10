@@ -216,24 +216,17 @@ Current validation checks:
     `inputs.parameters.dataset`, `inputs.parameters.table`, and
     `inputs.parameters.item/Title`
   - `shared_commondataserviceforapps` `ListRecords` with required
-    `inputs.parameters.entityName` plus typed optional
-    `inputs.parameters.$select`,
-    `inputs.parameters.$filter`,
-    `inputs.parameters.$orderby`,
-    `inputs.parameters.$expand`,
-    `inputs.parameters.fetchXml`,
-    `inputs.parameters.$top`,
-    `inputs.parameters.$skiptoken`,
-    `inputs.parameters.partitionId`,
-    `inputs.parameters.returntotalrecordcount`, and
-    `inputs.parameters.x-ms-odata-metadata-full`
+    `inputs.parameters.entityName` or `inputs.pathParameters.entityName` plus
+    typed optional query inputs accepted from either `inputs.parameters` or
+    `inputs.queries`, including `$select`, `$filter`, `$orderby`, `$expand`,
+    `fetchXml`, `$top`, `$skiptoken`, `partitionId`,
+    `returntotalrecordcount`, and `x-ms-odata-metadata-full`
   - `shared_commondataserviceforapps` `GetItem` with required
-    `inputs.parameters.entityName` and
-    `inputs.parameters.recordId` plus typed optional
-    `inputs.parameters.$select`,
-    `inputs.parameters.$expand`,
-    `inputs.parameters.partitionId`, and
-    `inputs.parameters.x-ms-odata-metadata-full`
+    `inputs.parameters.entityName` / `inputs.parameters.recordId` or
+    `inputs.pathParameters.entityName` /
+    `inputs.pathParameters.recordId` plus typed optional query inputs accepted
+    from either `inputs.parameters` or `inputs.queries`, including `$select`,
+    `$expand`, `partitionId`, and `x-ms-odata-metadata-full`
   - required string fields must remain string literals or string-valued
     expressions, integer fields must remain integer literals or whole
     expressions, and boolean fields must remain boolean literals or whole

@@ -44,6 +44,20 @@
       "to": "connectionReference:shared_commondataserviceforapps"
     },
     {
+      "from": "action:actions.DataverseGetRowPathQueryBadSelectShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseGetRowPathQueryBadSelectShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
+      "from": "action:actions.DataverseGetRowPathQueryValid",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseGetRowPathQueryValid.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
       "from": "action:actions.DataverseListRowsBadCountShape",
       "kind": "connectionReferenceReference",
       "path": "definition.actions.DataverseListRowsBadCountShape.inputs.host.connection.name",
@@ -61,6 +75,13 @@
       "from": "action:actions.DataverseListRowsMissingEntity",
       "kind": "connectionReferenceReference",
       "path": "definition.actions.DataverseListRowsMissingEntity.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
+      "from": "action:actions.DataverseListRowsPathQueryBadTopShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseListRowsPathQueryBadTopShape.inputs.host.connection.name",
       "resolved": true,
       "to": "connectionReference:shared_commondataserviceforapps"
     },
@@ -475,6 +496,54 @@
       "childIds": [],
       "dependentIds": [],
       "dependsOn": [],
+      "id": "action:actions.DataverseGetRowPathQueryBadSelectShape",
+      "kind": "action",
+      "name": "DataverseGetRowPathQueryBadSelectShape",
+      "path": "actions.DataverseGetRowPathQueryBadSelectShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.DataverseGetRowPathQueryValid",
+      "kind": "action",
+      "name": "DataverseGetRowPathQueryValid",
+      "path": "actions.DataverseGetRowPathQueryValid",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
       "id": "action:actions.DataverseListRowsBadCountShape",
       "kind": "action",
       "name": "DataverseListRowsBadCountShape",
@@ -527,6 +596,30 @@
       "kind": "action",
       "name": "DataverseListRowsMissingEntity",
       "path": "actions.DataverseListRowsMissingEntity",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.DataverseListRowsPathQueryBadTopShape",
+      "kind": "action",
+      "name": "DataverseListRowsPathQueryBadTopShape",
+      "path": "actions.DataverseListRowsPathQueryBadTopShape",
       "referenceCounts": {
         "actions": 0,
         "connectionReferences": 1,
@@ -820,10 +913,10 @@
     ]
   },
   "summary": {
-    "actionCount": 21,
+    "actionCount": 24,
     "edgeCounts": {
       "actionReference": 1,
-      "connectionReferenceReference": 11,
+      "connectionReferenceReference": 14,
       "containment": 1,
       "environmentVariableReference": 1,
       "parameterReference": 2,
@@ -831,7 +924,7 @@
       "variableReference": 3,
       "variableWrite": 3
     },
-    "nodeCount": 22,
+    "nodeCount": 25,
     "scopeCount": 1,
     "triggerCount": 1,
     "unresolvedEdgeCount": 6

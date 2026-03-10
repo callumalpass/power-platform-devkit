@@ -26,11 +26,11 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 21,
+      "actionCount": 24,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 18,
-      "expressionCount": 18,
-      "nodeCount": 22,
+      "dynamicContentReferenceCount": 21,
+      "expressionCount": 21,
+      "nodeCount": 25,
       "scopeCount": 1,
       "templateExpressionCount": 2,
       "triggerCount": 1,
@@ -43,16 +43,16 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 21,
+      "actionCount": 24,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 18,
-      "expressionCount": 18,
+      "dynamicContentReferenceCount": 21,
+      "expressionCount": 21,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
-        "connectionReferences": 11,
+        "connectionReferences": 14,
         "environmentVariables": 1,
         "parameters": 2,
         "variables": 3
@@ -106,8 +106,8 @@
     {
       "code": "FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING",
       "level": "error",
-      "message": "Connector action ConnectorUnsupportedShape does not declare the supported inputs.parameters object required by SendEmailV2.",
-      "path": "actions.ConnectorUnsupportedShape.inputs.parameters",
+      "message": "Connector action ConnectorUnsupportedShape does not declare any supported inputs.parameters object required by SendEmailV2.",
+      "path": "actions.ConnectorUnsupportedShape",
       "source": "@pp/flow"
     },
     {
@@ -122,6 +122,13 @@
       "level": "error",
       "message": "Connector action DataverseGetRowMissingRecordId is missing required parameter recordId for GetItem.",
       "path": "actions.DataverseGetRowMissingRecordId.inputs.parameters.recordId",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action DataverseGetRowPathQueryBadSelectShape parameter $select for GetItem must be a string expression or literal, not array.",
+      "path": "actions.DataverseGetRowPathQueryBadSelectShape.inputs.queries.$select",
       "source": "@pp/flow"
     },
     {
@@ -143,6 +150,13 @@
       "level": "error",
       "message": "Connector action DataverseListRowsMissingEntity is missing required parameter entityName for ListRecords.",
       "path": "actions.DataverseListRowsMissingEntity.inputs.parameters.entityName",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action DataverseListRowsPathQueryBadTopShape parameter $top for ListRecords must be an integer literal or expression, not object.",
+      "path": "actions.DataverseListRowsPathQueryBadTopShape.inputs.queries.$top",
       "source": "@pp/flow"
     },
     {
