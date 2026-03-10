@@ -1766,6 +1766,76 @@ describe('ALM services', () => {
     );
   });
 
+  it('validates an empty solution after retrying without unsupported optional columns', async () => {
+    const httpClient = new FakeHttpClient([
+      {
+        success: false,
+        diagnostics: [
+          {
+            level: 'error',
+            code: 'HTTP_REQUEST_FAILED',
+            message:
+              'GET connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Ccustomconnectorid%2C_solutionid_value%2Cstatecode returned 400',
+            detail:
+              '{"error":{"code":"0x80060888","message":"Could not find a property named \'customconnectorid\' on type \'Microsoft.Dynamics.CRM.connectionreference\'."}}',
+            source: '@pp/http',
+          },
+        ],
+        warnings: [],
+        supportTier: 'preview',
+      },
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              connectionreferenceid: 'ref-1',
+              connectionreferencelogicalname: 'pp_shared',
+              connectionreferencedisplayname: 'Shared Connector',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+              connectionid: 'conn-1',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Harness',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.validate({ solutionUniqueName: 'Harness' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE');
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode%2Ccustomconnectorid',
+      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode',
+      'solutions?%24select=solutionid%2Cuniquename&%24top=1&%24filter=uniquename+eq+%27Harness%27',
+      'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+371',
+    ]);
+  });
+
   it('joins environment variable definitions with current values', async () => {
     const httpClient = new FakeHttpClient([
       ok({

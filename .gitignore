@@ -6,5 +6,6 @@ coverage
 .ops/.mdbase/
 .ops/harness/runs/
 .ops/harness/runner/
+.ops/harness/config/browser-profiles/test-canvas-harvest/
 packages/canvas/powerfx-bridge/bin/
 packages/canvas/powerfx-bridge/obj/
