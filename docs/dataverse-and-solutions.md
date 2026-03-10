@@ -57,6 +57,74 @@ Supported flags:
 - repeated `--header "Name: value"`
 - `--format`
 
+## `dv action`
+
+For first-class Dataverse actions, use:
+
+```bash
+pp dv action ExportSolution --env dev --body '{"SolutionName":"Core","Managed":false}'
+pp dv action AddToQueue --env dev --bound-path 'queues(<queue-id>)' --body-file ./queue-item.json
+```
+
+Supported flags:
+
+- `--body`
+- `--body-file`
+- `--bound-path`
+- `--response-type json|text|void`
+- repeated `--header "Name: value"`
+- `--solution`
+- `--format`
+
+## `dv function`
+
+For first-class Dataverse functions, use:
+
+```bash
+pp dv function sample_GetCount --env dev --param logicalName=account
+pp dv function RetrieveTotalRecordCount --env dev --param-json includeInternal=false
+```
+
+Supported flags:
+
+- repeated `--param key=value`
+- repeated `--param-json key=JSON`
+- `--bound-path`
+- `--response-type json|text|void`
+- repeated `--header "Name: value"`
+- `--format`
+
+## `dv batch`
+
+Execute a Dataverse `$batch` manifest:
+
+```bash
+pp dv batch --env dev --file ./specs/account-batch.yaml
+```
+
+Supported flags:
+
+- `--file`
+- `--continue-on-error`
+- `--solution`
+- `--annotations`
+- `--format`
+
+Example batch manifest:
+
+```yaml
+requests:
+  - id: query
+    method: GET
+    path: accounts?$select=accountid,name
+  - id: update
+    method: PATCH
+    path: accounts(00000000-0000-0000-0000-000000000001)
+    atomicGroup: writes
+    body:
+      name: Updated from batch
+```
+
 ## `dv query`
 
 ```bash
@@ -544,6 +612,7 @@ Implemented today:
 - solution create for unmanaged shells
 - solution export through the Dataverse `ExportSolution` action with `pp` release manifests
 - solution import through the Dataverse `ImportSolution` action with structured retry guidance
+- typed Dataverse action, function, and `$batch` invocation helpers plus CLI commands
 - local solution pack and unpack orchestration through `pac solution pack|unpack`
 - Dataverse `WhoAmI`
 - generic Web API request execution

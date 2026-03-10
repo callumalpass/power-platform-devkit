@@ -3399,24 +3399,28 @@ describe('cli fixture-backed workflows', () => {
               : ([] as T[]),
           { supportTier: 'preview' }
         ),
-      requestJson: async <T>(options: { path: string; body?: Record<string, unknown> }) => {
-        sourceRequests.push({ path: options.path, body: options.body });
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>) => {
+        sourceRequests.push({ path: name, body: parameters });
         return ok(
           {
-            ExportSolutionFile: Buffer.from('cli-solution-package').toString('base64'),
-          } as T,
+            status: 200,
+            headers: {},
+            body: {
+              ExportSolutionFile: Buffer.from('cli-solution-package').toString('base64'),
+            } as T,
+          },
           { supportTier: 'preview' }
         );
       },
     } as unknown as DataverseClient;
     const targetClient = {
-      request: async (options: { path: string; body?: Record<string, unknown> }) => {
-        targetRequests.push({ path: options.path, body: options.body });
+      invokeAction: async (_name: string, parameters?: Record<string, unknown>) => {
+        targetRequests.push({ path: 'ImportSolution', body: parameters });
         return ok(
           {
             status: 204,
             headers: {},
-            data: undefined,
+            body: undefined,
           },
           { supportTier: 'preview' }
         );
@@ -4046,6 +4050,164 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('invokes Dataverse actions through the CLI entrypoint', async () => {
+    const actionCalls: Array<{ name: string; parameters: Record<string, unknown>; options?: Record<string, unknown> }> = [];
+    const client = {
+      invokeAction: async (name: string, parameters: Record<string, unknown>, options?: Record<string, unknown>) => {
+        actionCalls.push({ name, parameters, options });
+        return ok(
+          {
+            status: 200,
+            headers: {},
+            body: {
+              ExportSolutionFile: 'ZXhwb3J0',
+            },
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: { client },
+    });
+
+    const action = await runCli([
+      'dv',
+      'action',
+      'ExportSolution',
+      '--environment',
+      'source',
+      '--body',
+      '{"SolutionName":"Core","Managed":false}',
+      '--format',
+      'json',
+    ]);
+
+    expect(action.code).toBe(0);
+    expect(action.stderr).toBe('');
+    expect(JSON.parse(action.stdout)).toEqual({
+      status: 200,
+      headers: {},
+      body: {
+        ExportSolutionFile: 'ZXhwb3J0',
+      },
+    });
+    expect(actionCalls).toEqual([
+      {
+        name: 'ExportSolution',
+        parameters: {
+          SolutionName: 'Core',
+          Managed: false,
+        },
+        options: {
+          boundPath: undefined,
+          responseType: 'json',
+          headers: undefined,
+          includeAnnotations: undefined,
+          solutionUniqueName: undefined,
+        },
+      },
+    ]);
+  });
+
+  it('invokes Dataverse batches through the CLI entrypoint', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'pp-cli-dv-batch-'));
+    tempDirs.push(tempDir);
+    const batchPath = join(tempDir, 'batch.yaml');
+    await writeFile(
+      batchPath,
+      [
+        'requests:',
+        '  - id: query',
+        '    method: GET',
+        "    path: accounts?$select=accountid",
+        '  - id: update',
+        '    method: PATCH',
+        "    path: accounts(1)",
+        '    atomicGroup: writes',
+        '    body:',
+        '      name: Acme',
+      ].join('\n')
+    );
+
+    const batchCalls: Array<{ requests: unknown; options?: Record<string, unknown> }> = [];
+    const client = {
+      executeBatch: async (requests: unknown, options?: Record<string, unknown>) => {
+        batchCalls.push({ requests, options });
+        return ok(
+          [
+            {
+              id: 'query',
+              status: 200,
+              headers: {},
+              body: { value: [{ accountid: '1' }] },
+              contentId: 'query',
+            },
+            {
+              id: 'update',
+              status: 204,
+              headers: {},
+              contentId: 'update',
+            },
+          ],
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: { client },
+    });
+
+    const batch = await runCli(['dv', 'batch', '--environment', 'source', '--file', batchPath, '--format', 'json']);
+
+    expect(batch.code).toBe(0);
+    expect(batch.stderr).toBe('');
+    expect(JSON.parse(batch.stdout)).toEqual([
+      {
+        id: 'query',
+        status: 200,
+        headers: {},
+        body: { value: [{ accountid: '1' }] },
+        contentId: 'query',
+      },
+      {
+        id: 'update',
+        status: 204,
+        headers: {},
+        contentId: 'update',
+      },
+    ]);
+    expect(batchCalls).toEqual([
+      {
+        requests: [
+          {
+            id: 'query',
+            method: 'GET',
+            path: 'accounts?$select=accountid',
+            headers: undefined,
+            body: undefined,
+            atomicGroup: undefined,
+          },
+          {
+            id: 'update',
+            method: 'PATCH',
+            path: 'accounts(1)',
+            headers: undefined,
+            body: { name: 'Acme' },
+            atomicGroup: 'writes',
+          },
+        ],
+        options: {
+          continueOnError: false,
+          includeAnnotations: undefined,
+          solutionUniqueName: undefined,
+        },
+      },
+    ]);
+  });
+
   it('accepts --environment as an alias for --env on solution list', async () => {
     const fixture = (await readJsonFile(
       resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
@@ -4090,22 +4252,19 @@ describe('cli fixture-backed workflows', () => {
           { supportTier: 'preview' }
         ),
       queryAll: async <T>() => ok([] as T[], { supportTier: 'preview' }),
-      requestJson: async <T>(options: { path: string; body?: Record<string, unknown> }) => {
-        requests.push({ path: options.path, body: options.body });
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>) => {
+        requests.push({ path: name, body: parameters });
+
         return ok(
           {
-            ExportSolutionFile: Buffer.from('cli-export').toString('base64'),
-          } as T,
-          { supportTier: 'preview' }
-        );
-      },
-      request: async (options: { path: string; body?: Record<string, unknown> }) => {
-        requests.push({ path: options.path, body: options.body });
-        return ok(
-          {
-            status: 204,
+            status: name === 'ExportSolution' ? 200 : 204,
             headers: {},
-            data: undefined,
+            body:
+              name === 'ExportSolution'
+                ? ({
+                    ExportSolutionFile: Buffer.from('cli-export').toString('base64'),
+                  } as T)
+                : undefined,
           },
           { supportTier: 'preview' }
         );

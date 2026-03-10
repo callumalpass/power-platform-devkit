@@ -772,21 +772,16 @@ export class SolutionService {
     const outputPath = resolveOutputPath(uniqueName, packageType, options.outPath, options.outDir);
     await mkdir(dirname(outputPath), { recursive: true });
 
-    const exportResult = await this.dataverseClient.requestJson<{ ExportSolutionFile?: string }>({
-      path: 'ExportSolution',
-      method: 'POST',
-      body: {
-        SolutionName: uniqueName,
-        Managed: packageType === 'managed',
-      },
-      responseType: 'json',
+    const exportResult = await this.dataverseClient.invokeAction<{ ExportSolutionFile?: string }>('ExportSolution', {
+      SolutionName: uniqueName,
+      Managed: packageType === 'managed',
     });
 
     if (!exportResult.success) {
       return exportResult as unknown as OperationResult<SolutionExportResult>;
     }
 
-    const exportFile = exportResult.data?.ExportSolutionFile;
+    const exportFile = exportResult.data?.body?.ExportSolutionFile;
 
     if (!exportFile) {
       return fail(
@@ -848,17 +843,14 @@ export class SolutionService {
       importJobId: options.importJobId,
     };
 
-    const importResult = await this.dataverseClient.request<void>({
-      path: 'ImportSolution',
-      method: 'POST',
-      body: {
-        CustomizationFile: packageBytes.toString('base64'),
-        PublishWorkflows: normalizedOptions.publishWorkflows,
-        OverwriteUnmanagedCustomizations: normalizedOptions.overwriteUnmanagedCustomizations,
-        HoldingSolution: normalizedOptions.holdingSolution,
-        SkipProductUpdateDependencies: normalizedOptions.skipProductUpdateDependencies,
-        ...(normalizedOptions.importJobId ? { ImportJobId: normalizedOptions.importJobId } : {}),
-      },
+    const importResult = await this.dataverseClient.invokeAction<void>('ImportSolution', {
+      CustomizationFile: packageBytes.toString('base64'),
+      PublishWorkflows: normalizedOptions.publishWorkflows,
+      OverwriteUnmanagedCustomizations: normalizedOptions.overwriteUnmanagedCustomizations,
+      HoldingSolution: normalizedOptions.holdingSolution,
+      SkipProductUpdateDependencies: normalizedOptions.skipProductUpdateDependencies,
+      ...(normalizedOptions.importJobId ? { ImportJobId: normalizedOptions.importJobId } : {}),
+    }, {
       responseType: 'void',
     });
 

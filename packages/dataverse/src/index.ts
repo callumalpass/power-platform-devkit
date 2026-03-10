@@ -117,6 +117,47 @@ export interface DataverseWriteResult<T = unknown> {
   location?: string;
 }
 
+export interface DataverseOperationResult<T = unknown> {
+  status: number;
+  headers: Record<string, string>;
+  body?: T;
+  entityId?: string;
+  location?: string;
+}
+
+export interface DataverseActionOptions
+  extends Pick<DataverseRequestOptions, 'headers' | 'responseType' | 'includeAnnotations' | 'solutionUniqueName'> {
+  boundPath?: string;
+}
+
+export interface DataverseFunctionOptions
+  extends Pick<DataverseRequestOptions, 'headers' | 'responseType' | 'includeAnnotations'> {
+  boundPath?: string;
+}
+
+export interface DataverseBatchRequest {
+  id?: string;
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  path: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  atomicGroup?: string;
+}
+
+export interface DataverseBatchOptions {
+  continueOnError?: boolean;
+  includeAnnotations?: string[];
+  solutionUniqueName?: string;
+}
+
+export interface DataverseBatchResponse<T = unknown> {
+  id?: string;
+  status: number;
+  headers: Record<string, string>;
+  body?: T;
+  contentId?: string;
+}
+
 export interface DataverseMetadataWriteOptions extends MetadataBuildOptions {
   solutionUniqueName?: string;
   publish?: boolean;
@@ -367,6 +408,122 @@ export class DataverseClient {
       headers: buildDataverseHeaders(options),
       authenticated: options.authenticated,
       responseType: options.responseType ?? 'json',
+    });
+  }
+
+  async invokeAction<TResult = unknown>(
+    name: string,
+    parameters: Record<string, unknown> = {},
+    options: DataverseActionOptions = {}
+  ): Promise<OperationResult<DataverseOperationResult<TResult>>> {
+    const response = await this.request<TResult | undefined>({
+      path: buildDataverseActionPath(name, options.boundPath),
+      method: 'POST',
+      body: parameters,
+      responseType: options.responseType ?? 'json',
+      headers: options.headers,
+      includeAnnotations: options.includeAnnotations,
+      solutionUniqueName: options.solutionUniqueName,
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseOperationResult<TResult>>;
+    }
+
+    return ok(
+      {
+        status: response.data?.status ?? 204,
+        headers: response.data?.headers ?? {},
+        body: response.data?.data,
+        entityId: extractEntityId(response.data?.headers),
+        location: extractLocation(response.data?.headers),
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: response.diagnostics,
+        warnings: response.warnings,
+      }
+    );
+  }
+
+  async invokeFunction<TResult = unknown>(
+    name: string,
+    parameters: Record<string, unknown> = {},
+    options: DataverseFunctionOptions = {}
+  ): Promise<OperationResult<DataverseOperationResult<TResult>>> {
+    const functionPath = buildDataverseFunctionPath(name, parameters, options.boundPath);
+
+    if (!functionPath.success || !functionPath.data) {
+      return functionPath as unknown as OperationResult<DataverseOperationResult<TResult>>;
+    }
+
+    const response = await this.request<TResult | undefined>({
+      path: functionPath.data,
+      method: 'GET',
+      responseType: options.responseType ?? 'json',
+      headers: options.headers,
+      includeAnnotations: options.includeAnnotations,
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseOperationResult<TResult>>;
+    }
+
+    return ok(
+      {
+        status: response.data?.status ?? 200,
+        headers: response.data?.headers ?? {},
+        body: response.data?.data,
+        entityId: extractEntityId(response.data?.headers),
+        location: extractLocation(response.data?.headers),
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: response.diagnostics,
+        warnings: response.warnings,
+      }
+    );
+  }
+
+  async executeBatch<TResult = unknown>(
+    requests: DataverseBatchRequest[],
+    options: DataverseBatchOptions = {}
+  ): Promise<OperationResult<DataverseBatchResponse<TResult>[]>> {
+    if (requests.length === 0) {
+      return fail(
+        createDiagnostic('error', 'DATAVERSE_BATCH_EMPTY', 'Dataverse batch execution requires at least one request.', {
+          source: '@pp/dataverse',
+        })
+      );
+    }
+
+    const payload = buildDataverseBatchPayload(requests);
+    const response = await this.request<string>({
+      path: '$batch',
+      method: 'POST',
+      rawBody: payload.body,
+      responseType: 'text',
+      headers: {
+        ...buildDataverseBatchHeaders(payload.boundary, options),
+      },
+      includeAnnotations: options.includeAnnotations,
+      solutionUniqueName: options.solutionUniqueName,
+    });
+
+    if (!response.success) {
+      return response as unknown as OperationResult<DataverseBatchResponse<TResult>[]>;
+    }
+
+    const parsed = parseDataverseBatchResponse<TResult>(response.data?.data ?? '', response.data?.headers['content-type']);
+
+    if (!parsed.success || !parsed.data) {
+      return parsed;
+    }
+
+    return ok(parsed.data, {
+      supportTier: 'preview',
+      diagnostics: response.diagnostics,
+      warnings: response.warnings,
     });
   }
 
@@ -1796,6 +1953,54 @@ export function buildEntityPath(
   return buildODataPath(`${table}(${id})`, options);
 }
 
+export function buildDataverseActionPath(name: string, boundPath?: string): string {
+  const normalizedName = name.trim();
+  return boundPath ? `${trimDataversePath(boundPath)}/${normalizedName}` : normalizedName;
+}
+
+export function buildDataverseFunctionPath(
+  name: string,
+  parameters: Record<string, unknown> = {},
+  boundPath?: string
+): OperationResult<string> {
+  const normalizedName = name.trim();
+  const aliases: string[] = [];
+  const queryEntries: Array<[string, string]> = [];
+  let aliasIndex = 0;
+
+  for (const [key, value] of Object.entries(parameters)) {
+    const alias = `@p${aliasIndex}`;
+    const serialized = serializeDataverseFunctionParameter(value);
+
+    if (!serialized.success || serialized.data === undefined) {
+      return serialized as OperationResult<string>;
+    }
+
+    aliases.push(`${key}=${alias}`);
+    queryEntries.push([alias, serialized.data]);
+    aliasIndex += 1;
+  }
+
+  const actionPath = buildDataverseActionPath(normalizedName, boundPath);
+  const basePath = aliases.length > 0 ? `${actionPath}(${aliases.join(',')})` : `${actionPath}()`;
+
+  if (queryEntries.length === 0) {
+    return ok(basePath, {
+      supportTier: 'preview',
+    });
+  }
+
+  const query = new URLSearchParams();
+
+  for (const [key, value] of queryEntries) {
+    query.set(key, value);
+  }
+
+  return ok(`${basePath}?${query.toString()}`, {
+    supportTier: 'preview',
+  });
+}
+
 export function buildCollectionPath(
   table: string,
   options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
@@ -2994,4 +3199,288 @@ function readNumber(value: unknown): number | undefined {
 
 function compactObject<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function serializeDataverseFunctionParameter(value: unknown): OperationResult<string> {
+  if (value === null) {
+    return ok('null', {
+      supportTier: 'preview',
+    });
+  }
+
+  if (typeof value === 'string') {
+    return ok(`'${escapeODataLiteral(value)}'`, {
+      supportTier: 'preview',
+    });
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return ok(String(value), {
+      supportTier: 'preview',
+    });
+  }
+
+  return fail(
+    createDiagnostic(
+      'error',
+      'DATAVERSE_FUNCTION_PARAMETER_UNSUPPORTED',
+      'Dataverse function parameters currently support string, number, boolean, and null values.',
+      {
+        source: '@pp/dataverse',
+        detail: value === undefined ? 'undefined' : typeof value,
+      }
+    )
+  );
+}
+
+function buildDataverseBatchHeaders(boundary: string, options: DataverseBatchOptions): Record<string, string> {
+  const headers: Record<string, string> = {
+    'content-type': `multipart/mixed;boundary=${boundary}`,
+  };
+
+  const prefers = mergePrefer(
+    options.continueOnError ? ['odata.continue-on-error'] : undefined,
+    buildAnnotationPrefer(options.includeAnnotations)
+  );
+
+  if (prefers && prefers.length > 0) {
+    headers.prefer = prefers.join(',');
+  }
+
+  if (options.solutionUniqueName) {
+    headers['MSCRM.SolutionUniqueName'] = options.solutionUniqueName;
+  }
+
+  return headers;
+}
+
+function buildDataverseBatchPayload(requests: DataverseBatchRequest[]): { boundary: string; body: string } {
+  const boundary = `batch_${randomBoundaryId()}`;
+  const lines: string[] = [];
+  const groupedAtomicRequests = new Map<string, DataverseBatchRequest[]>();
+  const emittedAtomicGroups = new Set<string>();
+
+  const appendRequest = (request: DataverseBatchRequest, contentId?: string): void => {
+    lines.push('--' + boundary);
+    lines.push('Content-Type: application/http');
+    lines.push('Content-Transfer-Encoding: binary');
+    if (contentId) {
+      lines.push(`Content-ID: ${contentId}`);
+    }
+    lines.push('');
+    appendHttpRequest(lines, request);
+    lines.push('');
+  };
+
+  for (const request of requests) {
+    if (request.atomicGroup) {
+      const group = groupedAtomicRequests.get(request.atomicGroup) ?? [];
+      group.push(request);
+      groupedAtomicRequests.set(request.atomicGroup, group);
+      continue;
+    }
+
+    appendRequest(request, request.id);
+  }
+
+  for (const request of requests) {
+    if (!request.atomicGroup || emittedAtomicGroups.has(request.atomicGroup)) {
+      continue;
+    }
+
+    emittedAtomicGroups.add(request.atomicGroup);
+    const changeSetBoundary = `changeset_${randomBoundaryId()}`;
+    lines.push('--' + boundary);
+    lines.push(`Content-Type: multipart/mixed;boundary=${changeSetBoundary}`);
+    lines.push('');
+
+    for (const atomicRequest of groupedAtomicRequests.get(request.atomicGroup) ?? []) {
+      lines.push('--' + changeSetBoundary);
+      lines.push('Content-Type: application/http');
+      lines.push('Content-Transfer-Encoding: binary');
+      if (atomicRequest.id) {
+        lines.push(`Content-ID: ${atomicRequest.id}`);
+      }
+      lines.push('');
+      appendHttpRequest(lines, atomicRequest);
+      lines.push('');
+    }
+
+    lines.push('--' + changeSetBoundary + '--');
+    lines.push('');
+  }
+
+  lines.push('--' + boundary + '--');
+
+  return {
+    boundary,
+    body: lines.join('\r\n'),
+  };
+}
+
+function appendHttpRequest(lines: string[], request: DataverseBatchRequest): void {
+  lines.push(`${request.method} ${normalizeBatchRequestPath(request.path)} HTTP/1.1`);
+
+  const headers = compactObject({
+    accept: 'application/json',
+    ...(request.body !== undefined ? { 'content-type': 'application/json; charset=utf-8' } : {}),
+    ...(request.headers ?? {}),
+  });
+
+  for (const [key, value] of Object.entries(headers)) {
+    lines.push(`${key}: ${value}`);
+  }
+
+  lines.push('');
+
+  if (request.body !== undefined) {
+    lines.push(JSON.stringify(request.body));
+  }
+}
+
+function normalizeBatchRequestPath(path: string): string {
+  const trimmed = trimDataversePath(path);
+  if (trimmed.startsWith('$')) {
+    return trimmed;
+  }
+
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+function parseDataverseBatchResponse<T>(
+  payload: string,
+  contentType: string | undefined
+): OperationResult<DataverseBatchResponse<T>[]> {
+  const boundary = readMultipartBoundary(contentType);
+
+  if (!boundary) {
+    return fail(
+      createDiagnostic('error', 'DATAVERSE_BATCH_BOUNDARY_MISSING', 'Dataverse batch response did not declare a multipart boundary.', {
+        source: '@pp/dataverse',
+      })
+    );
+  }
+
+  try {
+    return ok(parseMultipartResponses<T>(payload, boundary), {
+      supportTier: 'preview',
+    });
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'DATAVERSE_BATCH_PARSE_FAILED', 'Dataverse batch response could not be parsed.', {
+        source: '@pp/dataverse',
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    );
+  }
+}
+
+function parseMultipartResponses<T>(payload: string, boundary: string): DataverseBatchResponse<T>[] {
+  const responses: DataverseBatchResponse<T>[] = [];
+
+  for (const part of splitMultipartBody(payload, boundary)) {
+    const parsed = parseMultipartPartHeaders(part);
+
+    if ((parsed.headers['content-type'] ?? '').toLowerCase().startsWith('multipart/mixed')) {
+      const nestedBoundary = readMultipartBoundary(parsed.headers['content-type']);
+
+      if (!nestedBoundary) {
+        continue;
+      }
+
+      responses.push(...parseMultipartResponses<T>(parsed.body, nestedBoundary));
+      continue;
+    }
+
+    responses.push(parseHttpBatchResponse<T>(parsed.body, parsed.headers['content-id']));
+  }
+
+  return responses;
+}
+
+function parseMultipartPartHeaders(part: string): { headers: Record<string, string>; body: string } {
+  const separator = '\r\n\r\n';
+  const headerEnd = part.indexOf(separator);
+
+  if (headerEnd === -1) {
+    return { headers: {}, body: part.trim() };
+  }
+
+  return {
+    headers: parseHeaderLines(part.slice(0, headerEnd)),
+    body: part.slice(headerEnd + separator.length),
+  };
+}
+
+function parseHttpBatchResponse<T>(part: string, contentId?: string): DataverseBatchResponse<T> {
+  const normalizedPart = part.trim();
+  const separator = '\r\n\r\n';
+  const headerEnd = normalizedPart.indexOf(separator);
+  const head = headerEnd === -1 ? normalizedPart : normalizedPart.slice(0, headerEnd);
+  const bodyText = headerEnd === -1 ? '' : normalizedPart.slice(headerEnd + separator.length).trim();
+  const lines = head.split('\r\n');
+  const statusLine = lines.shift() ?? '';
+  const statusMatch = statusLine.match(/^HTTP\/1\.[01]\s+(\d{3})/i);
+
+  if (!statusMatch) {
+    throw new Error(`Unsupported batch status line: ${statusLine}`);
+  }
+
+  const headers = parseHeaderLines(lines.join('\r\n'));
+  const contentType = headers['content-type']?.toLowerCase();
+  const body = !bodyText
+    ? undefined
+    : contentType?.includes('application/json')
+      ? (JSON.parse(bodyText) as T)
+      : (bodyText as T);
+
+  return {
+    id: contentId,
+    status: Number(statusMatch[1]),
+    headers,
+    body,
+    contentId,
+  };
+}
+
+function splitMultipartBody(payload: string, boundary: string): string[] {
+  const marker = `--${boundary}`;
+  return payload
+    .split(marker)
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '--');
+}
+
+function parseHeaderLines(input: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+
+  for (const line of input.split('\r\n')) {
+    const separatorIndex = line.indexOf(':');
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim().toLowerCase();
+    const value = line.slice(separatorIndex + 1).trim();
+
+    if (key) {
+      headers[key] = value;
+    }
+  }
+
+  return headers;
+}
+
+function readMultipartBoundary(contentType: string | undefined): string | undefined {
+  const match = contentType?.match(/boundary=([^;]+)/i);
+  return match?.[1]?.replace(/^"|"$/g, '');
+}
+
+function trimDataversePath(path: string): string {
+  return path.replace(/^\/+/, '').trim();
+}
+
+function randomBoundaryId(): string {
+  return Math.random().toString(16).slice(2, 10);
 }

@@ -611,12 +611,16 @@ describe('FlowService', () => {
           supportTier: 'preview',
         });
       },
-      requestJson: async <T>(options: { path: string; body?: Record<string, unknown> }): Promise<OperationResult<T>> => {
-        sourceRequests.push({ path: options.path, body: options.body });
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>) => {
+        sourceRequests.push({ path: name, body: parameters });
         return ok(
           {
-            ExportSolutionFile: Buffer.from('solution-package').toString('base64'),
-          } as T,
+            status: 200,
+            headers: {},
+            body: {
+              ExportSolutionFile: Buffer.from('solution-package').toString('base64'),
+            } as T,
+          },
           {
             supportTier: 'preview',
           }
@@ -625,13 +629,13 @@ describe('FlowService', () => {
     } as unknown as DataverseClient;
     const targetClient = {
       ...createStubDataverseClient(),
-      request: async (options: { path: string; body?: Record<string, unknown> }) => {
-        targetRequests.push({ path: options.path, body: options.body });
+      invokeAction: async (_name: string, parameters?: Record<string, unknown>) => {
+        targetRequests.push({ path: 'ImportSolution', body: parameters });
         return ok(
           {
             status: 204,
             headers: {},
-            data: undefined,
+            body: undefined,
           },
           {
             supportTier: 'preview',

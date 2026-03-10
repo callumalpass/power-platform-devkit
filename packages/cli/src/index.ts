@@ -39,6 +39,7 @@ import {
 import {
   parseColumnCreateSpec,
   ConnectionReferenceService,
+  type DataverseBatchRequest,
   EnvironmentVariableService,
   parseCustomerRelationshipCreateSpec,
   parseGlobalOptionSetCreateSpec,
@@ -423,6 +424,12 @@ async function runDataverse(command: string | undefined, args: string[]): Promis
       return runDataverseWhoAmI(args);
     case 'request':
       return runDataverseRequest(args);
+    case 'action':
+      return runDataverseAction(args);
+    case 'function':
+      return runDataverseFunction(args);
+    case 'batch':
+      return runDataverseBatch(args);
     case 'query':
       return runDataverseQuery(args);
     case 'get':
@@ -2779,6 +2786,148 @@ async function runDataverseRequest(args: string[]): Promise<number> {
     },
     outputFormat(args, 'json')
   );
+  return 0;
+}
+
+async function runDataverseAction(args: string[]): Promise<number> {
+  const name = positionalArgs(args)[0];
+
+  if (!name) {
+    return printFailure(argumentFailure('DV_ACTION_NAME_REQUIRED', 'Usage: dv action <name> --environment <alias> [--body JSON|--body-file FILE]'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const body = await readJsonBodyArgument(args);
+
+  if (!body.success) {
+    return printFailure(body);
+  }
+
+  if (body.data !== undefined && (!body.data || typeof body.data !== 'object' || Array.isArray(body.data))) {
+    return printFailure(argumentFailure('DV_ACTION_BODY_INVALID', '--body or --body-file must contain a JSON object when provided.'));
+  }
+
+  const parameters = (body.data ?? {}) as Record<string, unknown>;
+  const preview = maybeHandleMutationPreview(args, 'json', 'dv.action', { name, boundPath: readFlag(args, '--bound-path') }, parameters);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const responseType = readDataverseResponseType(args);
+
+  if (!responseType.success || !responseType.data) {
+    return printFailure(responseType);
+  }
+
+  const result = await resolution.data.client.invokeAction<Record<string, unknown> | string | void>(name, parameters, {
+    boundPath: readFlag(args, '--bound-path'),
+    responseType: responseType.data,
+    headers: readHeaderFlags(args),
+    includeAnnotations: readListFlag(args, '--annotations'),
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseFunction(args: string[]): Promise<number> {
+  const name = positionalArgs(args)[0];
+
+  if (!name) {
+    return printFailure(
+      argumentFailure(
+        'DV_FUNCTION_NAME_REQUIRED',
+        'Usage: dv function <name> --environment <alias> [--param key=value] [--param-json key=JSON]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const parameters = readDataverseFunctionParameters(args);
+
+  if (!parameters.success || !parameters.data) {
+    return printFailure(parameters);
+  }
+
+  const responseType = readDataverseResponseType(args);
+
+  if (!responseType.success || !responseType.data) {
+    return printFailure(responseType);
+  }
+
+  const result = await resolution.data.client.invokeFunction<Record<string, unknown> | string | void>(name, parameters.data, {
+    boundPath: readFlag(args, '--bound-path'),
+    responseType: responseType.data,
+    headers: readHeaderFlags(args),
+    includeAnnotations: readListFlag(args, '--annotations'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseBatch(args: string[]): Promise<number> {
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const batch = await readDataverseBatchArgument(args);
+
+  if (!batch.success || !batch.data) {
+    return printFailure(batch);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'dv.batch',
+    {
+      requestCount: batch.data.length,
+      continueOnError: hasFlag(args, '--continue-on-error'),
+    },
+    batch.data
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await resolution.data.client.executeBatch<Record<string, unknown> | string>(
+    batch.data,
+    {
+      continueOnError: hasFlag(args, '--continue-on-error'),
+      includeAnnotations: readListFlag(args, '--annotations'),
+      solutionUniqueName: readFlag(args, '--solution'),
+    }
+  );
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
   return 0;
 }
 
@@ -6376,6 +6525,58 @@ function mergeUniqueStrings(base: readonly string[], extra: string[] | undefined
   return [...new Set([...base, ...(extra ?? [])])];
 }
 
+function readDataverseResponseType(args: string[]): OperationResult<'json' | 'text' | 'void'> {
+  const value = readFlag(args, '--response-type') ?? 'json';
+
+  if (value === 'json' || value === 'text' || value === 'void') {
+    return ok(value, {
+      supportTier: 'preview',
+    });
+  }
+
+  return argumentFailure('DV_RESPONSE_TYPE_INVALID', 'Unsupported --response-type. Use `json`, `text`, or `void`.');
+}
+
+function readDataverseFunctionParameters(args: string[]): OperationResult<Record<string, unknown>> {
+  const parameters: Record<string, unknown> = {};
+
+  for (const entry of readRepeatedFlags(args, '--param')) {
+    const separatorIndex = entry.indexOf('=');
+
+    if (separatorIndex <= 0) {
+      return argumentFailure('DV_FUNCTION_PARAM_INVALID', 'Use `--param key=value` for Dataverse function parameters.');
+    }
+
+    parameters[entry.slice(0, separatorIndex)] = entry.slice(separatorIndex + 1);
+  }
+
+  for (const entry of readRepeatedFlags(args, '--param-json')) {
+    const separatorIndex = entry.indexOf('=');
+
+    if (separatorIndex <= 0) {
+      return argumentFailure('DV_FUNCTION_PARAM_JSON_INVALID', 'Use `--param-json key=JSON` for typed Dataverse function parameters.');
+    }
+
+    const key = entry.slice(0, separatorIndex);
+    const rawValue = entry.slice(separatorIndex + 1);
+
+    try {
+      parameters[key] = JSON.parse(rawValue);
+    } catch (error) {
+      return fail(
+        createDiagnostic('error', 'DV_FUNCTION_PARAM_JSON_INVALID', `Failed to parse JSON value for function parameter ${key}.`, {
+          source: '@pp/cli',
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      );
+    }
+  }
+
+  return ok(parameters, {
+    supportTier: 'preview',
+  });
+}
+
 async function readJsonBodyArgument(args: string[]): Promise<OperationResult<unknown | undefined>> {
   try {
     const inlineBody = readFlag(args, '--body');
@@ -6452,6 +6653,94 @@ async function readStructuredSpecArgument(
   }
 
   return readStructuredSpecFile(file);
+}
+
+async function readDataverseBatchArgument(args: string[]): Promise<OperationResult<DataverseBatchRequest[]>> {
+  const file = readFlag(args, '--file');
+
+  if (!file) {
+    return argumentFailure('DV_BATCH_FILE_REQUIRED', 'Usage: dv batch --file FILE --environment <alias>');
+  }
+
+  const document = await readStructuredSpecFile(file);
+
+  if (!document.success || !document.data) {
+    return document as unknown as OperationResult<DataverseBatchRequest[]>;
+  }
+
+  if (!isRecord(document.data)) {
+    return fail(
+      createDiagnostic('error', 'DV_BATCH_SPEC_INVALID', 'Dataverse batch files must parse to an object with a requests array.', {
+        source: '@pp/cli',
+        path: file,
+      })
+    );
+  }
+
+  const requests = document.data.requests;
+
+  if (!Array.isArray(requests) || requests.length === 0) {
+    return fail(
+      createDiagnostic('error', 'DV_BATCH_REQUESTS_REQUIRED', 'Dataverse batch files require a non-empty requests array.', {
+        source: '@pp/cli',
+        path: file,
+      })
+    );
+  }
+
+  const normalized: DataverseBatchRequest[] = [];
+
+  for (let index = 0; index < requests.length; index += 1) {
+    const entry = requests[index];
+
+    if (!isRecord(entry)) {
+      return fail(
+        createDiagnostic('error', 'DV_BATCH_REQUEST_INVALID', `Batch request ${index + 1} must be an object.`, {
+          source: '@pp/cli',
+          path: file,
+        })
+      );
+    }
+
+    const method = typeof entry.method === 'string' ? entry.method.toUpperCase() : undefined;
+    const path = typeof entry.path === 'string' ? entry.path : undefined;
+
+    if (!path || !method || !['GET', 'POST', 'PATCH', 'DELETE'].includes(method)) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'DV_BATCH_REQUEST_INVALID',
+          `Batch request ${index + 1} must include method GET|POST|PATCH|DELETE and path.`,
+          {
+            source: '@pp/cli',
+            path: file,
+          }
+        )
+      );
+    }
+
+    if (entry.headers !== undefined && !isRecord(entry.headers)) {
+      return fail(
+        createDiagnostic('error', 'DV_BATCH_HEADERS_INVALID', `Batch request ${index + 1} headers must be an object when provided.`, {
+          source: '@pp/cli',
+          path: file,
+        })
+      );
+    }
+
+    normalized.push({
+      id: typeof entry.id === 'string' ? entry.id : undefined,
+      method: method as DataverseBatchRequest['method'],
+      path,
+      headers: entry.headers as Record<string, string> | undefined,
+      body: entry.body,
+      atomicGroup: typeof entry.atomicGroup === 'string' ? entry.atomicGroup : undefined,
+    });
+  }
+
+  return ok(normalized, {
+    supportTier: 'preview',
+  });
 }
 
 async function readMetadataApplyPlanArgument(args: string[]): Promise<OperationResult<MetadataApplyPlan>> {
@@ -6745,6 +7034,7 @@ const BOOLEAN_FLAGS = new Set([
   '--all',
   '--allow-delete',
   '--count',
+  '--continue-on-error',
   '--dry-run',
   '--device-code',
   '--device-code-fallback',
@@ -6898,6 +7188,18 @@ class NullDataverseClient {
     throw new Error('NullDataverseClient should not be used for Dataverse reads.');
   }
 
+  invokeAction(): never {
+    throw new Error('NullDataverseClient should not be used for Dataverse writes.');
+  }
+
+  invokeFunction(): never {
+    throw new Error('NullDataverseClient should not be used for Dataverse reads.');
+  }
+
+  executeBatch(): never {
+    throw new Error('NullDataverseClient should not be used for Dataverse writes.');
+  }
+
   request(): never {
     throw new Error('NullDataverseClient should not be used for Dataverse requests.');
   }
@@ -6941,6 +7243,9 @@ function printHelp(): void {
       '',
       '  dv whoami --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '  dv request --environment ALIAS --path PATH [--method GET] [--body JSON|--body-file FILE] [--response-type json|text|void] [--header "Name: value"] [--config-dir path]',
+      '  dv action <name> --environment ALIAS [--body JSON|--body-file FILE] [--bound-path PATH] [--response-type json|text|void] [--solution UNIQUE_NAME] [--header "Name: value"] [--config-dir path]',
+      '  dv function <name> --environment ALIAS [--param key=value] [--param-json key=JSON] [--bound-path PATH] [--response-type json|text|void] [--header "Name: value"] [--config-dir path]',
+      '  dv batch --environment ALIAS --file FILE [--continue-on-error] [--solution UNIQUE_NAME] [--config-dir path]',
       '  dv query <table> --environment ALIAS [--select a,b] [--expand x,y] [--orderby expr] [--top N] [--filter expr] [--count] [--all|--page-info] [--config-dir path]',
       '  dv get <table> <id> --environment ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
       '  dv create <table> --environment ALIAS --body JSON|--body-file FILE [--return-representation] [--select a,b] [--expand x,y] [--config-dir path]',
@@ -7087,6 +7392,9 @@ function printDataverseHelp(): void {
       'Commands:',
       '  whoami                      resolve the current caller and target environment',
       '  request                     issue a raw Dataverse Web API request',
+      '  action <name>               invoke a Dataverse action with typed parameters',
+      '  function <name>             invoke a Dataverse function with typed parameters',
+      '  batch                       execute a Dataverse $batch manifest',
       '  query <table>               query table rows through Dataverse',
       '  get <table> <id>            fetch one Dataverse row by id',
       '  create <table>              create one Dataverse row',

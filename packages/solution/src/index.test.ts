@@ -171,33 +171,39 @@ function createStubClient(data: StubData): DataverseClient {
         }
       );
     },
-    requestJson: async <T>(options: { path: string; body?: Record<string, unknown> }): Promise<OperationResult<T>> => {
+    invokeAction: async <T>(name: string, parameters?: Record<string, unknown>): Promise<OperationResult<{ status: number; headers: Record<string, string>; body?: T }>> => {
       data.requestRecorder?.push({
-        path: options.path,
-        body: options.body,
+        path: name,
+        body: parameters,
       });
 
-      if (options.path === 'ExportSolution') {
+      if (name === 'ExportSolution') {
         return ok(
           {
-            ExportSolutionFile: data.exportPayloadBase64 ?? Buffer.from('solution-zip').toString('base64'),
-          } as T,
+            status: 200,
+            headers: {},
+            body: {
+              ExportSolutionFile: data.exportPayloadBase64 ?? Buffer.from('solution-zip').toString('base64'),
+            } as T,
+          },
           {
             supportTier: 'preview',
           }
         );
       }
 
-      return ok({} as T, {
-        supportTier: 'preview',
-      });
+      return ok(
+        {
+          status: 204,
+          headers: {},
+          body: {} as T,
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
     },
-    request: async (options: { path: string; body?: Record<string, unknown> }) => {
-      data.requestRecorder?.push({
-        path: options.path,
-        body: options.body,
-      });
-
+    request: async () => {
       return ok(
         {
           status: 204,
@@ -209,6 +215,10 @@ function createStubClient(data: StubData): DataverseClient {
         }
       );
     },
+    requestJson: async <T>() =>
+      ok({} as T, {
+        supportTier: 'preview',
+      }),
   } as unknown as DataverseClient;
 }
 

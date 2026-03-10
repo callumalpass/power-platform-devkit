@@ -8,6 +8,7 @@ import { HttpClient, type HttpRequestOptions, type HttpResponse } from '@pp/http
 import {
   ConnectionReferenceService,
   DataverseClient,
+  buildDataverseFunctionPath,
   EnvironmentVariableService,
   buildMetadataAttributePath,
   buildGlobalOptionSetPath,
@@ -162,6 +163,152 @@ describe('DataverseClient', () => {
     });
     expect(httpClient.requests[0]?.method).toBe('POST');
     expect(httpClient.requests[0]?.headers?.prefer).toContain('return=representation');
+  });
+
+  it('invokes Dataverse actions through a first-class helper', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {
+          location: 'https://example.crm.dynamics.com/api/data/v9.2/ExportSolution',
+        },
+        data: {
+          ExportSolutionFile: 'ZXhwb3J0',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.invokeAction<{ ExportSolutionFile: string }>('ExportSolution', {
+      SolutionName: 'Core',
+      Managed: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.body).toEqual({
+      ExportSolutionFile: 'ZXhwb3J0',
+    });
+    expect(httpClient.requests[0]?.path).toBe('ExportSolution');
+    expect(httpClient.requests[0]?.method).toBe('POST');
+    expect(httpClient.requests[0]?.body).toEqual({
+      SolutionName: 'Core',
+      Managed: false,
+    });
+  });
+
+  it('builds Dataverse function paths with aliased parameters', () => {
+    const path = buildDataverseFunctionPath('RetrieveTotalRecordCount', {
+      EntityNames: 'account',
+      IncludeInternal: false,
+    });
+
+    expect(path.success).toBe(true);
+    expect(path.data).toBe('RetrieveTotalRecordCount(EntityNames=@p0,IncludeInternal=@p1)?%40p0=%27account%27&%40p1=false');
+  });
+
+  it('invokes Dataverse functions through a first-class helper', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          Count: 12,
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.invokeFunction<{ Count: number }>('sample_GetCount', {
+      logicalName: 'account',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.body).toEqual({
+      Count: 12,
+    });
+    expect(httpClient.requests[0]?.path).toBe("sample_GetCount(logicalName=@p0)?%40p0=%27account%27");
+    expect(httpClient.requests[0]?.method).toBe('GET');
+  });
+
+  it('executes Dataverse batch requests and parses multipart responses', async () => {
+    const boundary = 'batchresponse_123';
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {
+          'content-type': `multipart/mixed;boundary=${boundary}`,
+        },
+        data: `--${boundary}\r
+Content-Type: application/http\r
+Content-Transfer-Encoding: binary\r
+Content-ID: 1\r
+\r
+HTTP/1.1 200 OK\r
+Content-Type: application/json; charset=utf-8\r
+\r
+{"value":[{"accountid":"1"}]}\r
+--${boundary}\r
+Content-Type: multipart/mixed;boundary=changesetresponse_456\r
+\r
+--changesetresponse_456\r
+Content-Type: application/http\r
+Content-Transfer-Encoding: binary\r
+Content-ID: 2\r
+\r
+HTTP/1.1 204 No Content\r
+OData-Version: 4.0\r
+\r
+\r
+--changesetresponse_456--\r
+--${boundary}--`,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.executeBatch([
+      {
+        id: '1',
+        method: 'GET',
+        path: 'accounts?$select=accountid',
+      },
+      {
+        id: '2',
+        method: 'PATCH',
+        path: 'accounts(1)',
+        body: { name: 'Acme' },
+        atomicGroup: 'writes',
+      },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      {
+        id: '1',
+        status: 200,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+        },
+        body: {
+          value: [{ accountid: '1' }],
+        },
+        contentId: '1',
+      },
+      {
+        id: '2',
+        status: 204,
+        headers: {
+          'odata-version': '4.0',
+        },
+        body: undefined,
+        contentId: '2',
+      },
+    ]);
+    expect(httpClient.requests[0]?.path).toBe('$batch');
+    expect(httpClient.requests[0]?.method).toBe('POST');
+    expect(httpClient.requests[0]?.headers?.['content-type']).toContain('multipart/mixed;boundary=batch_');
+    expect(typeof httpClient.requests[0]?.rawBody).toBe('string');
+    expect(String(httpClient.requests[0]?.rawBody)).toContain('GET /accounts?$select=accountid HTTP/1.1');
+    expect(String(httpClient.requests[0]?.rawBody)).toContain('PATCH /accounts(1) HTTP/1.1');
   });
 
   it('adds solution headers to solution-scoped row writes', async () => {
@@ -716,6 +863,7 @@ describe('DataverseClient', () => {
             spec: {
               schemaName: 'pp_project_task',
               referencedEntity: 'pp_project',
+              referencedAttribute: 'id',
               referencingEntity: 'pp_task',
               lookup: {
                 schemaName: 'pp_ProjectId',
