@@ -30,6 +30,27 @@
       "to": "connectionReference:shared_office365"
     },
     {
+      "from": "action:actions.DataverseListRowsBadCountShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseListRowsBadCountShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
+      "from": "action:actions.DataverseListRowsBadTopShape",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseListRowsBadTopShape.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
+      "from": "action:actions.DataverseListRowsMissingEntity",
+      "kind": "connectionReferenceReference",
+      "path": "definition.actions.DataverseListRowsMissingEntity.inputs.host.connection.name",
+      "resolved": true,
+      "to": "connectionReference:shared_commondataserviceforapps"
+    },
+    {
       "from": "action:actions.SendMail",
       "kind": "connectionReferenceReference",
       "path": "definition.actions.SendMail.inputs.host.connection.name",
@@ -178,14 +199,14 @@
     {
       "kind": "referenceDensity",
       "metric": 1,
-      "nodeId": "action:actions.RetryHot",
-      "nodeName": "RetryHot"
+      "nodeId": "action:actions.DataverseListRowsBadCountShape",
+      "nodeName": "DataverseListRowsBadCountShape"
     },
     {
       "kind": "referenceDensity",
       "metric": 1,
-      "nodeId": "action:actions.ScopeA.actions.SetCounter",
-      "nodeName": "SetCounter"
+      "nodeId": "action:actions.DataverseListRowsBadTopShape",
+      "nodeName": "DataverseListRowsBadTopShape"
     }
   ],
   "nodes": [
@@ -375,6 +396,78 @@
       "referenceCounts": {
         "actions": 0,
         "connectionReferences": 0,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.DataverseListRowsBadCountShape",
+      "kind": "action",
+      "name": "DataverseListRowsBadCountShape",
+      "path": "actions.DataverseListRowsBadCountShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.DataverseListRowsBadTopShape",
+      "kind": "action",
+      "name": "DataverseListRowsBadTopShape",
+      "path": "actions.DataverseListRowsBadTopShape",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "type": "OpenApiConnection",
+      "unresolvedDependsOn": [],
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "dependentIds": [],
+      "dependsOn": [],
+      "id": "action:actions.DataverseListRowsMissingEntity",
+      "kind": "action",
+      "name": "DataverseListRowsMissingEntity",
+      "path": "actions.DataverseListRowsMissingEntity",
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 1,
         "environmentVariables": 0,
         "parameters": 0,
         "variables": 0
@@ -619,6 +712,7 @@
   ],
   "resources": {
     "connectionReferences": [
+      "shared_commondataserviceforapps",
       "shared_declared_only",
       "shared_definition_only",
       "shared_office365",
@@ -664,10 +758,10 @@
     ]
   },
   "summary": {
-    "actionCount": 16,
+    "actionCount": 19,
     "edgeCounts": {
       "actionReference": 1,
-      "connectionReferenceReference": 6,
+      "connectionReferenceReference": 9,
       "containment": 1,
       "environmentVariableReference": 1,
       "parameterReference": 2,
@@ -675,7 +769,7 @@
       "variableReference": 3,
       "variableWrite": 3
     },
-    "nodeCount": 17,
+    "nodeCount": 20,
     "scopeCount": 1,
     "triggerCount": 1,
     "unresolvedEdgeCount": 6

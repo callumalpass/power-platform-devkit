@@ -362,6 +362,11 @@ describe('FlowService', () => {
                 connectionReferenceLogicalName: 'shared_sharepointonline',
                 apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
               },
+              {
+                name: 'shared_commondataserviceforapps',
+                connectionReferenceLogicalName: 'shared_commondataserviceforapps',
+                apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+              },
             ],
             parameters: {
               ApiBaseUrl: 'https://example.test',
@@ -382,13 +387,18 @@ describe('FlowService', () => {
                       apiId: '/providers/microsoft.powerapps/apis/shared_definition_only',
                       connectionId: '/connections/definition-only',
                     },
-                    shared_sharepointonline: {
-                      connectionReferenceLogicalName: 'shared_sharepointonline',
-                      apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
-                      connectionId: '/connections/sharepointonline',
-                    },
+                  shared_sharepointonline: {
+                    connectionReferenceLogicalName: 'shared_sharepointonline',
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connectionId: '/connections/sharepointonline',
+                  },
+                  shared_commondataserviceforapps: {
+                    connectionReferenceLogicalName: 'shared_commondataserviceforapps',
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connectionId: '/connections/dataverse',
                   },
                 },
+              },
             },
             triggers: {
               Manual: {
@@ -542,6 +552,55 @@ describe('FlowService', () => {
                   },
                 },
               },
+              DataverseListRowsMissingEntity: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'ListRecords',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    $top: 10,
+                  },
+                },
+              },
+              DataverseListRowsBadTopShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'ListRecords',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    entityName: 'accounts',
+                    $top: {
+                      value: 10,
+                    },
+                  },
+                },
+              },
+              DataverseListRowsBadCountShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'ListRecords',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+                    connection: {
+                      name: "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    entityName: 'accounts',
+                    returntotalrecordcount: ['true'],
+                  },
+                },
+              },
               SetGhost: {
                 type: 'SetVariable',
                 inputs: {
@@ -576,23 +635,23 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 16,
+      actionCount: 19,
       scopeCount: 1,
-      expressionCount: 13,
+      expressionCount: 16,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 13,
+      dynamicContentReferenceCount: 16,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 6,
+        connectionReferences: 9,
       },
     });
     expect(validation.diagnostics.map((item) => item.code)).toEqual([
@@ -602,6 +661,9 @@ describe('FlowService', () => {
       'FLOW_CONNECTOR_OPERATION_ID_MISSING',
       'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
       'FLOW_CONNECTOR_PARAMETERS_OBJECT_MISSING',
+      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+      'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+      'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
       'FLOW_CONNECTOR_API_ID_MISSING',
       'FLOW_CONNECTOR_OPERATION_ID_MISSING',
       'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
@@ -622,14 +684,14 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 17,
+      nodeCount: 20,
       triggerCount: 1,
-      actionCount: 16,
+      actionCount: 19,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 13,
+      expressionCount: 16,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 13,
+      dynamicContentReferenceCount: 16,
       variableReadCount: 3,
       variableWriteCount: 3,
     });
@@ -923,7 +985,7 @@ describe('FlowService', () => {
     expect(graph.data).toMatchObject({
       artifactName: 'Semantic Diagnostic Flow',
       summary: {
-        nodeCount: 17,
+        nodeCount: 20,
         unresolvedEdgeCount: 6,
       },
       resources: {

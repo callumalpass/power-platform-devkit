@@ -2,6 +2,11 @@
   "data": {
     "connectionReferences": [
       {
+        "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+        "connectionReferenceLogicalName": "shared_commondataserviceforapps",
+        "name": "shared_commondataserviceforapps"
+      },
+      {
         "apiId": "/providers/microsoft.powerapps/apis/shared_declared_only",
         "connectionReferenceLogicalName": "shared_declared_only",
         "name": "shared_declared_only"
@@ -21,11 +26,11 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 16,
+      "actionCount": 19,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 13,
-      "expressionCount": 13,
-      "nodeCount": 17,
+      "dynamicContentReferenceCount": 16,
+      "expressionCount": 16,
+      "nodeCount": 20,
       "scopeCount": 1,
       "templateExpressionCount": 2,
       "triggerCount": 1,
@@ -38,16 +43,16 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 16,
+      "actionCount": 19,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 13,
-      "expressionCount": 13,
+      "dynamicContentReferenceCount": 16,
+      "expressionCount": 16,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
-        "connectionReferences": 6,
+        "connectionReferences": 9,
         "environmentVariables": 1,
         "parameters": 2,
         "variables": 3
@@ -103,6 +108,27 @@
       "level": "error",
       "message": "Connector action ConnectorUnsupportedShape does not declare the supported inputs.parameters object required by SendEmailV2.",
       "path": "actions.ConnectorUnsupportedShape.inputs.parameters",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action DataverseListRowsBadCountShape parameter returntotalrecordcount for ListRecords must be a boolean literal or expression, not array.",
+      "path": "actions.DataverseListRowsBadCountShape.inputs.parameters.returntotalrecordcount",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action DataverseListRowsBadTopShape parameter $top for ListRecords must be an integer literal or expression, not object.",
+      "path": "actions.DataverseListRowsBadTopShape.inputs.parameters.$top",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action DataverseListRowsMissingEntity is missing required parameter entityName for ListRecords.",
+      "path": "actions.DataverseListRowsMissingEntity.inputs.parameters.entityName",
       "source": "@pp/flow"
     },
     {

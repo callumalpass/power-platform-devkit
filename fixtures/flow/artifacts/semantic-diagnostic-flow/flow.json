@@ -18,6 +18,11 @@
         "name": "shared_sharepointonline",
         "connectionReferenceLogicalName": "shared_sharepointonline",
         "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline"
+      },
+      {
+        "name": "shared_commondataserviceforapps",
+        "connectionReferenceLogicalName": "shared_commondataserviceforapps",
+        "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps"
       }
     ],
     "parameters": {
@@ -43,6 +48,11 @@
             "connectionReferenceLogicalName": "shared_sharepointonline",
             "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
             "connectionId": "/connections/sharepointonline"
+          },
+          "shared_commondataserviceforapps": {
+            "connectionReferenceLogicalName": "shared_commondataserviceforapps",
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connectionId": "/connections/dataverse"
           }
         }
       }
@@ -200,6 +210,57 @@
             "item/Title": {
               "value": "Draft item"
             }
+          }
+        }
+      },
+      "DataverseListRowsMissingEntity": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "ListRecords",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "parameters": {
+            "$top": 10
+          }
+        }
+      },
+      "DataverseListRowsBadTopShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "ListRecords",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "parameters": {
+            "entityName": "accounts",
+            "$top": {
+              "value": 10
+            }
+          }
+        }
+      },
+      "DataverseListRowsBadCountShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "ListRecords",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+            "connection": {
+              "name": "@parameters('$connections')['shared_commondataserviceforapps']['connectionId']"
+            }
+          },
+          "parameters": {
+            "entityName": "accounts",
+            "returntotalrecordcount": [
+              "true"
+            ]
           }
         }
       },

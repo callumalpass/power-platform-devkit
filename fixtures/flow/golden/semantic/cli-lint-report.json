@@ -1,6 +1,11 @@
 {
   "connectionReferences": [
     {
+      "apiId": "/providers/microsoft.powerapps/apis/shared_commondataserviceforapps",
+      "connectionReferenceLogicalName": "shared_commondataserviceforapps",
+      "name": "shared_commondataserviceforapps"
+    },
+    {
       "apiId": "/providers/microsoft.powerapps/apis/shared_declared_only",
       "connectionReferenceLogicalName": "shared_declared_only",
       "name": "shared_declared_only"
@@ -20,11 +25,11 @@
     "pp_ApiUrl"
   ],
   "intermediateRepresentation": {
-    "actionCount": 16,
+    "actionCount": 19,
     "controlFlowEdgeCount": 0,
-    "dynamicContentReferenceCount": 13,
-    "expressionCount": 13,
-    "nodeCount": 17,
+    "dynamicContentReferenceCount": 16,
+    "expressionCount": 16,
+    "nodeCount": 20,
     "scopeCount": 1,
     "templateExpressionCount": 2,
     "triggerCount": 1,
@@ -37,16 +42,16 @@
   ],
   "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
   "semanticSummary": {
-    "actionCount": 16,
+    "actionCount": 19,
     "controlFlowEdgeCount": 0,
-    "dynamicContentReferenceCount": 13,
-    "expressionCount": 13,
+    "dynamicContentReferenceCount": 16,
+    "expressionCount": 16,
     "initializedVariables": [
       "Counter"
     ],
     "referenceCounts": {
       "actions": 1,
-      "connectionReferences": 6,
+      "connectionReferences": 9,
       "environmentVariables": 1,
       "parameters": 2,
       "variables": 3

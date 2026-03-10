@@ -376,14 +376,15 @@ interface FlowConnectorActionContract {
 
 interface FlowSupportedConnectorOperationParameter {
   name: string;
-  kind: 'string';
+  kind: 'string' | 'integer' | 'boolean';
   bucket?: 'parameters' | 'queries' | 'pathParameters';
+  required?: boolean;
 }
 
 interface FlowSupportedConnectorOperation {
   apiId: string;
   operationId: string;
-  requiredParameters: FlowSupportedConnectorOperationParameter[];
+  parameters: FlowSupportedConnectorOperationParameter[];
 }
 
 export interface FlowDynamicContentReference {
@@ -418,19 +419,29 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
   {
     apiId: '/providers/microsoft.powerapps/apis/shared_office365',
     operationId: 'SendEmailV2',
-    requiredParameters: [
-      { name: 'emailMessage/To', kind: 'string' },
-      { name: 'emailMessage/Subject', kind: 'string' },
-      { name: 'emailMessage/Body', kind: 'string' },
+    parameters: [
+      { name: 'emailMessage/To', kind: 'string', required: true },
+      { name: 'emailMessage/Subject', kind: 'string', required: true },
+      { name: 'emailMessage/Body', kind: 'string', required: true },
     ],
   },
   {
     apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
     operationId: 'CreateItem',
-    requiredParameters: [
-      { name: 'dataset', kind: 'string' },
-      { name: 'table', kind: 'string' },
-      { name: 'item/Title', kind: 'string' },
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'table', kind: 'string', required: true },
+      { name: 'item/Title', kind: 'string', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_commondataserviceforapps',
+    operationId: 'ListRecords',
+    parameters: [
+      { name: 'entityName', kind: 'string', required: true },
+      { name: '$top', kind: 'integer' },
+      { name: 'returntotalrecordcount', kind: 'boolean' },
+      { name: 'x-ms-odata-metadata-full', kind: 'boolean' },
     ],
   },
 ];
@@ -1725,14 +1736,14 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
         const inputs = asRecord(nodeRecord?.inputs);
         const missingBuckets = new Set<string>();
 
-        for (const parameter of supportedOperation.requiredParameters) {
+        for (const parameter of supportedOperation.parameters) {
           const bucket = parameter.bucket ?? 'parameters';
           const bucketRecord = readConnectorInputBucket(inputs, bucket);
           const bucketPath = `${node.path}.${describeConnectorInputBucket(bucket)}`;
           const parameterPath = describeConnectorParameterPath(node.path, bucket, parameter.name);
 
           if (!bucketRecord) {
-            if (!missingBuckets.has(bucket)) {
+            if (parameter.required && !missingBuckets.has(bucket)) {
               diagnostics.push(
                 createDiagnostic(
                   'error',
@@ -1752,37 +1763,7 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
           const value = bucketRecord[parameter.name];
 
           if (value === undefined) {
-            diagnostics.push(
-              createDiagnostic(
-                'error',
-                'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
-                `Connector action ${name} is missing required parameter ${parameter.name} for ${supportedOperation.operationId}.`,
-                {
-                  source: '@pp/flow',
-                  path: parameterPath,
-                }
-              )
-            );
-            continue;
-          }
-
-          if (parameter.kind === 'string') {
-            if (typeof value !== 'string') {
-              diagnostics.push(
-                createDiagnostic(
-                  'error',
-                  'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
-                  `Connector action ${name} parameter ${parameter.name} for ${supportedOperation.operationId} must be a string expression or literal, not ${describeFlowJsonShape(value)}.`,
-                  {
-                    source: '@pp/flow',
-                    path: parameterPath,
-                  }
-                )
-              );
-              continue;
-            }
-
-            if (!value.trim()) {
+            if (parameter.required) {
               diagnostics.push(
                 createDiagnostic(
                   'error',
@@ -1795,6 +1776,38 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
                 )
               );
             }
+            continue;
+          }
+
+          const parameterIssue = validateConnectorParameterValue(value, parameter.kind);
+
+          if (parameterIssue) {
+            diagnostics.push(
+              createDiagnostic(
+                'error',
+                'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+                `Connector action ${name} parameter ${parameter.name} for ${supportedOperation.operationId} ${parameterIssue}.`,
+                {
+                  source: '@pp/flow',
+                  path: parameterPath,
+                }
+              )
+            );
+            continue;
+          }
+
+          if (parameter.required && typeof value === 'string' && !value.trim()) {
+            diagnostics.push(
+              createDiagnostic(
+                'error',
+                'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+                `Connector action ${name} is missing required parameter ${parameter.name} for ${supportedOperation.operationId}.`,
+                {
+                  source: '@pp/flow',
+                  path: parameterPath,
+                }
+              )
+            );
           }
         }
       }
@@ -2525,6 +2538,65 @@ function describeConnectorParameterPath(
   name: string
 ): string {
   return `${nodePath}.${describeConnectorInputBucket(bucket)}.${name}`;
+}
+
+function validateConnectorParameterValue(
+  value: unknown,
+  kind: FlowSupportedConnectorOperationParameter['kind']
+): string | undefined {
+  if (kind === 'string') {
+    if (typeof value !== 'string') {
+      return `must be a string expression or literal, not ${describeFlowJsonShape(value)}`;
+    }
+
+    return undefined;
+  }
+
+  if (kind === 'integer') {
+    if (typeof value === 'number' && Number.isInteger(value)) {
+      return undefined;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+
+      if (!trimmed) {
+        return undefined;
+      }
+
+      if (extractWholeFlowExpression(trimmed)) {
+        return undefined;
+      }
+
+      if (/^-?\d+$/.test(trimmed)) {
+        return undefined;
+      }
+    }
+
+    return `must be an integer literal or expression, not ${describeFlowJsonShape(value)}`;
+  }
+
+  if (typeof value === 'boolean') {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return undefined;
+    }
+
+    if (extractWholeFlowExpression(trimmed)) {
+      return undefined;
+    }
+
+    if (/^(true|false)$/i.test(trimmed)) {
+      return undefined;
+    }
+  }
+
+  return `must be a boolean literal or expression, not ${describeFlowJsonShape(value)}`;
 }
 
 function getOrCreateVariableGraph(

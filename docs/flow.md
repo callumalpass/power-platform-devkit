@@ -206,7 +206,8 @@ Current validation checks:
   - a supported `operationId` is present
   - the action-level `apiId` matches the resolved connection-reference `apiId`
 - supported connector-operation contracts now validate bounded required-field
-  shapes across supported input buckets, currently covering:
+  and typed optional-field shapes across supported input buckets, currently
+  covering:
   - `shared_office365` `SendEmailV2` with required
     `inputs.parameters.emailMessage/To`,
     `inputs.parameters.emailMessage/Subject`, and
@@ -214,8 +215,15 @@ Current validation checks:
   - `shared_sharepointonline` `CreateItem` with required
     `inputs.parameters.dataset`, `inputs.parameters.table`, and
     `inputs.parameters.item/Title`
-  - those required fields must remain string literals or string-valued
-    expressions, not arrays or nested objects
+  - `shared_commondataserviceforapps` `ListRecords` with required
+    `inputs.parameters.entityName` plus typed optional
+    `inputs.parameters.$top`,
+    `inputs.parameters.returntotalrecordcount`, and
+    `inputs.parameters.x-ms-odata-metadata-full`
+  - required string fields must remain string literals or string-valued
+    expressions, integer fields must remain integer literals or whole
+    expressions, and boolean fields must remain boolean literals or whole
+    expressions instead of arrays or nested objects
 - unsupported connector connection-name shapes fail explicitly instead of being
   guessed during contract validation
 - supported workflow-expression parsing covers both whole-expression values
