@@ -16,10 +16,14 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 8,
-      "nodeCount": 9,
+      "actionCount": 9,
+      "controlFlowEdgeCount": 0,
+      "dynamicContentReferenceCount": 6,
+      "nodeCount": 10,
       "scopeCount": 1,
-      "triggerCount": 1
+      "triggerCount": 1,
+      "variableReadCount": 2,
+      "variableWriteCount": 3
     },
     "name": "Semantic Diagnostic Flow",
     "parameters": [
@@ -27,18 +31,25 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 8,
+      "actionCount": 9,
+      "controlFlowEdgeCount": 0,
+      "dynamicContentReferenceCount": 6,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
+        "connectionReferences": 1,
         "environmentVariables": 1,
         "parameters": 1,
         "variables": 2
       },
       "scopeCount": 1,
-      "triggerCount": 1
+      "triggerCount": 1,
+      "variableUsage": {
+        "reads": 2,
+        "writes": 3
+      }
     },
     "valid": false
   },
@@ -76,6 +87,13 @@
       "level": "error",
       "message": "Flow expression references missing connection reference shared_missing.",
       "path": "definition.actions.SendMail.inputs.host.connection.name",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_VARIABLE_TARGET_UNRESOLVED",
+      "level": "error",
+      "message": "Flow variable operation targets missing variable Ghost.",
+      "path": "definition.actions.SetGhost.inputs.name",
       "source": "@pp/flow"
     },
     {

@@ -96,6 +96,13 @@
           }
         }
       },
+      "SetGhost": {
+        "type": "SetVariable",
+        "inputs": {
+          "name": "Ghost",
+          "value": 1
+        }
+      },
       "ScopeA": {
         "type": "Scope",
         "actions": {

@@ -132,6 +132,11 @@ artifact-first and bounded:
 - parent-child relationships, branch membership (`actions`, `else`, `default`,
   and named `case:*` branches), and declared `runAfter` dependencies are
   preserved for downstream diagnostics and refactors
+- each parsed node now carries a local control-flow/data-flow slice:
+  - resolved and unresolved `runAfter` edges plus reverse dependents
+  - dynamic-content references for supported parameters, environment
+    variables, action outputs, variables, and `$connections` lookups
+  - variable initialization and write targets for supported variable actions
 
 ## Patch model
 
@@ -180,15 +185,18 @@ Current validation checks:
   - `parameters('...')`
   - `variables('...')`
   - `actions('...')`, `body('...')`, and `outputs('...')`
+- supported variable write operations (`InitializeVariable`, `SetVariable`,
+  append, increment, decrement) target declared variables
 - `runAfter` dependencies point at known trigger or action nodes
 - reliability warnings surface for enabled trigger/action concurrency and high
   retry counts
 
 Validation now also returns a `semanticSummary` with trigger/action/scope
-counts, initialized variable names, and supported reference counts so fixture
-and CLI outputs can correlate diagnostics back to the normalized source model.
-It also returns an `intermediateRepresentation` summary with parsed node counts
-from the stable IR surface.
+counts, initialized variable names, variable read/write counts, dynamic-content
+reference counts, control-flow edge counts, and supported reference counts so
+fixture and CLI outputs can correlate diagnostics back to the normalized source
+model. It also returns an `intermediateRepresentation` summary with parsed node
+counts plus control-flow/data-flow totals from the stable IR surface.
 
 This is the artifact-first foundation for the runtime diagnostics and doctor
 work that follows.

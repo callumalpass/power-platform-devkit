@@ -17,9 +17,13 @@
     "environmentVariables": [],
     "intermediateRepresentation": {
       "actionCount": 0,
+      "controlFlowEdgeCount": 0,
+      "dynamicContentReferenceCount": 0,
       "nodeCount": 0,
       "scopeCount": 0,
-      "triggerCount": 0
+      "triggerCount": 0,
+      "variableReadCount": 0,
+      "variableWriteCount": 0
     },
     "parameters": [
       "ApiBaseUrl"
@@ -27,15 +31,22 @@
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow",
     "semanticSummary": {
       "actionCount": 0,
+      "controlFlowEdgeCount": 0,
+      "dynamicContentReferenceCount": 0,
       "initializedVariables": [],
       "referenceCounts": {
         "actions": 0,
+        "connectionReferences": 0,
         "environmentVariables": 0,
         "parameters": 0,
         "variables": 0
       },
       "scopeCount": 0,
-      "triggerCount": 0
+      "triggerCount": 0,
+      "variableUsage": {
+        "reads": 0,
+        "writes": 0
+      }
     },
     "valid": false
   },

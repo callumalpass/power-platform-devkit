@@ -12,9 +12,13 @@
   ],
   "intermediateRepresentation": {
     "actionCount": 1,
+    "controlFlowEdgeCount": 0,
+    "dynamicContentReferenceCount": 2,
     "nodeCount": 1,
     "scopeCount": 0,
-    "triggerCount": 0
+    "triggerCount": 0,
+    "variableReadCount": 0,
+    "variableWriteCount": 0
   },
   "name": "Invoice Flow",
   "parameters": [
@@ -24,15 +28,22 @@
   "path": "<TMP_DIR>/unpacked",
   "semanticSummary": {
     "actionCount": 1,
+    "controlFlowEdgeCount": 0,
+    "dynamicContentReferenceCount": 2,
     "initializedVariables": [],
     "referenceCounts": {
       "actions": 0,
+      "connectionReferences": 0,
       "environmentVariables": 1,
       "parameters": 1,
       "variables": 0
     },
     "scopeCount": 0,
-    "triggerCount": 0
+    "triggerCount": 0,
+    "variableUsage": {
+      "reads": 0,
+      "writes": 0
+    }
   },
   "valid": true
 }

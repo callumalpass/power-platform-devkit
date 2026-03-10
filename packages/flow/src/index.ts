@@ -100,11 +100,18 @@ export interface FlowSemanticSummary {
   actionCount: number;
   scopeCount: number;
   initializedVariables: string[];
+  variableUsage: {
+    reads: number;
+    writes: number;
+  };
+  dynamicContentReferenceCount: number;
+  controlFlowEdgeCount: number;
   referenceCounts: {
     parameters: number;
     environmentVariables: number;
     actions: number;
     variables: number;
+    connectionReferences: number;
   };
 }
 
@@ -122,6 +129,21 @@ export interface FlowIntermediateNode {
   branch: FlowNodeBranch;
   runAfter: string[];
   childIds: string[];
+  controlFlow: {
+    dependsOn: string[];
+    unresolvedDependsOn: string[];
+    dependentIds: string[];
+  };
+  dataFlow: {
+    reads: FlowDynamicContentReference[];
+    writes: FlowVariableWrite[];
+    dynamicContentReferences: FlowDynamicContentReference[];
+  };
+  variableUsage: {
+    initializes: string[];
+    reads: string[];
+    writes: string[];
+  };
 }
 
 export interface FlowIntermediateRepresentationSummary {
@@ -129,6 +151,10 @@ export interface FlowIntermediateRepresentationSummary {
   triggerCount: number;
   actionCount: number;
   scopeCount: number;
+  controlFlowEdgeCount: number;
+  dynamicContentReferenceCount: number;
+  variableReadCount: number;
+  variableWriteCount: number;
 }
 
 export interface FlowIntermediateRepresentation extends FlowIntermediateRepresentationSummary {
@@ -224,6 +250,21 @@ interface FlowNodeSummary {
   branch: FlowNodeBranch;
   runAfter: string[];
   childIds: string[];
+  controlFlow: {
+    dependsOn: string[];
+    unresolvedDependsOn: string[];
+    dependentIds: string[];
+  };
+  dataFlow: {
+    reads: FlowDynamicContentReference[];
+    writes: FlowVariableWrite[];
+    dynamicContentReferences: FlowDynamicContentReference[];
+  };
+  variableUsage: {
+    initializes: string[];
+    reads: string[];
+    writes: string[];
+  };
 }
 
 interface FlowSemanticAnalysis {
@@ -242,6 +283,18 @@ interface FlowDefinitionConnectionReference {
   name: string;
   connectionReferenceLogicalName?: string;
   apiId?: string;
+}
+
+export interface FlowDynamicContentReference {
+  kind: 'parameter' | 'environmentVariable' | 'action' | 'variable' | 'connectionReference';
+  name: string;
+  path: string;
+}
+
+export interface FlowVariableWrite {
+  name: string;
+  path: string;
+  operation: 'initialize' | 'set' | 'append' | 'increment' | 'decrement';
 }
 
 const NOISY_FLOW_KEYS = new Set([
@@ -1245,13 +1298,14 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
   const metadataConnectionReferences = new Map(
     artifact.metadata.connectionReferences.map((reference) => [reference.name, reference] as const)
   );
-  const variableNames = collectInitializedVariables(artifact.definition, allNodes);
-  const references = collectExpressionReferences(artifact.definition);
+  const variableNames = new Set(intermediateRepresentation.nodes.flatMap((node) => node.variableUsage.initializes));
+  const references = intermediateRepresentation.nodes.flatMap((node) => node.dataFlow.dynamicContentReferences);
   const connectionReferenceUsages = collectConnectionReferenceUsages(artifact.definition);
   const hasDefinitionConnections = definitionConnectionReferences.size > 0;
+  const writeOperations = intermediateRepresentation.nodes.flatMap((node) => node.dataFlow.writes);
 
   for (const node of allNodes.values()) {
-    for (const dependency of node.runAfter) {
+    for (const dependency of node.controlFlow.unresolvedDependsOn) {
       if (!allNodes.has(dependency)) {
         diagnostics.push(
           createDiagnostic(
@@ -1266,6 +1320,24 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
         );
       }
     }
+  }
+
+  for (const write of writeOperations) {
+    if (variableNames.has(write.name)) {
+      continue;
+    }
+
+    diagnostics.push(
+      createDiagnostic(
+        'error',
+        'FLOW_VARIABLE_TARGET_UNRESOLVED',
+        `Flow variable operation targets missing variable ${write.name}.`,
+        {
+          source: '@pp/flow',
+          path: write.path,
+        }
+      )
+    );
   }
 
   for (const reference of references) {
@@ -1463,11 +1535,18 @@ function analyzeFlowSemantics(artifact: FlowArtifact, sourcePath: string): FlowS
       actionCount: actionNodes.length,
       scopeCount: intermediateRepresentation.scopeCount,
       initializedVariables: Array.from(variableNames).sort(),
+      variableUsage: {
+        reads: intermediateRepresentation.nodes.reduce((total, node) => total + node.variableUsage.reads.length, 0),
+        writes: intermediateRepresentation.nodes.reduce((total, node) => total + node.variableUsage.writes.length, 0),
+      },
+      dynamicContentReferenceCount: references.length,
+      controlFlowEdgeCount: intermediateRepresentation.controlFlowEdgeCount,
       referenceCounts: {
         parameters: references.filter((reference) => reference.kind === 'parameter').length,
         environmentVariables: references.filter((reference) => reference.kind === 'environmentVariable').length,
         actions: references.filter((reference) => reference.kind === 'action').length,
         variables: references.filter((reference) => reference.kind === 'variable').length,
+        connectionReferences: references.filter((reference) => reference.kind === 'connectionReference').length,
       },
     },
     diagnostics: diagnostics.sort(compareDiagnostics),
@@ -1544,6 +1623,15 @@ function buildFlowIntermediateRepresentation(artifact: FlowArtifact): FlowInterm
       const nodeKind: FlowNodeKind = kind === 'trigger' ? 'trigger' : isFlowScopeType(type) ? 'scope' : 'action';
       const path = `${pathPrefix}.${name}`;
       const id = `${nodeKind}:${path}`;
+      const nodeSemanticSlice = withoutChildBranches(record);
+      const dynamicContentReferences = collectDynamicContentReferences(nodeSemanticSlice, `definition.${path}`);
+      const variableWrites = collectVariableWrites(nodeSemanticSlice, `definition.${path}`);
+      const initializedVariables = variableWrites.filter((write) => write.operation === 'initialize').map((write) => write.name);
+      const variableReads = dynamicContentReferences
+        .filter((reference) => reference.kind === 'variable')
+        .map((reference) => reference.name)
+        .sort();
+      const variableWriteNames = variableWrites.map((write) => write.name).sort();
       nodes.push({
         id,
         name,
@@ -1554,6 +1642,21 @@ function buildFlowIntermediateRepresentation(artifact: FlowArtifact): FlowInterm
         branch,
         runAfter: Object.keys(asRecord(record.runAfter) ?? {}).sort(),
         childIds: [],
+        controlFlow: {
+          dependsOn: [],
+          unresolvedDependsOn: [],
+          dependentIds: [],
+        },
+        dataFlow: {
+          reads: dynamicContentReferences.filter((reference) => reference.kind !== 'connectionReference'),
+          writes: variableWrites,
+          dynamicContentReferences,
+        },
+        variableUsage: {
+          initializes: initializedVariables.sort(),
+          reads: variableReads,
+          writes: variableWriteNames,
+        },
       });
       registerChildren(parentId, id);
 
@@ -1582,10 +1685,31 @@ function buildFlowIntermediateRepresentation(artifact: FlowArtifact): FlowInterm
     }))
     .sort((left, right) => left.path.localeCompare(right.path));
 
+  const nodeIdByName = new Map(finalizedNodes.map((node) => [node.name, node.id] as const));
+  const dependentIdsByNode = new Map<string, string[]>();
+
+  for (const node of finalizedNodes) {
+    const dependsOn = node.runAfter.map((dependency) => nodeIdByName.get(dependency)).filter((value): value is string => Boolean(value));
+
+    for (const dependencyId of dependsOn) {
+      const dependents = dependentIdsByNode.get(dependencyId) ?? [];
+      dependents.push(node.id);
+      dependentIdsByNode.set(dependencyId, dependents);
+    }
+
+    node.controlFlow = {
+      dependsOn: dependsOn.sort(),
+      unresolvedDependsOn: node.runAfter.filter((dependency) => !nodeIdByName.has(dependency)).sort(),
+      dependentIds: [],
+    };
+  }
+
+  for (const node of finalizedNodes) {
+    node.controlFlow.dependentIds = (dependentIdsByNode.get(node.id) ?? []).sort();
+  }
+
   const summary = summarizeFlowIntermediateRepresentation({
-    artifactName: artifact.metadata.displayName ?? artifact.metadata.name,
     nodes: finalizedNodes,
-    nodeCount: finalizedNodes.length,
     triggerCount: finalizedNodes.filter((node) => node.kind === 'trigger').length,
     actionCount: finalizedNodes.filter((node) => node.kind !== 'trigger').length,
     scopeCount: finalizedNodes.filter((node) => node.kind === 'scope').length,
@@ -1606,24 +1730,11 @@ function summarizeFlowIntermediateRepresentation(
     triggerCount: model.triggerCount,
     actionCount: model.actionCount,
     scopeCount: model.scopeCount,
+    controlFlowEdgeCount: model.nodes.reduce((total, node) => total + node.controlFlow.dependsOn.length, 0),
+    dynamicContentReferenceCount: model.nodes.reduce((total, node) => total + node.dataFlow.dynamicContentReferences.length, 0),
+    variableReadCount: model.nodes.reduce((total, node) => total + node.variableUsage.reads.length, 0),
+    variableWriteCount: model.nodes.reduce((total, node) => total + node.variableUsage.writes.length, 0),
   };
-}
-
-function collectInitializedVariables(root: Record<string, FlowJsonValue>, nodes: Map<string, FlowNodeSummary | FlowIntermediateNode>): Set<string> {
-  const variables = new Set<string>();
-
-  for (const node of nodes.values()) {
-    if (node.type !== 'InitializeVariable') {
-      continue;
-    }
-
-    const nodeValue = readNodeAtPath(root, parseFlowPath(node.path));
-    for (const candidate of readInitializeVariableNames(nodeValue)) {
-      variables.add(candidate);
-    }
-  }
-
-  return variables;
 }
 
 function readInitializeVariableNames(value: unknown): string[] {
@@ -1642,10 +1753,10 @@ function readInitializeVariableNames(value: unknown): string[] {
   return names;
 }
 
-function collectExpressionReferences(value: unknown): Array<{ kind: 'parameter' | 'environmentVariable' | 'action' | 'variable'; name: string; path: string }> {
-  const references: Array<{ kind: 'parameter' | 'environmentVariable' | 'action' | 'variable'; name: string; path: string }> = [];
+function collectDynamicContentReferences(value: unknown, path = 'definition'): FlowDynamicContentReference[] {
+  const references: FlowDynamicContentReference[] = [];
 
-  for (const location of collectFlowStrings(value)) {
+  for (const location of collectFlowStrings(value, path)) {
     for (const match of location.value.matchAll(/(parameters|environmentVariables|variables|actions|body|outputs)\('([^']+)'\)/g)) {
       const rawKind = match[1];
       const name = match[2];
@@ -1673,7 +1784,77 @@ function collectExpressionReferences(value: unknown): Array<{ kind: 'parameter' 
     }
   }
 
+  for (const location of collectFlowStrings(value, path)) {
+    for (const match of location.value.matchAll(/parameters\(\s*['"]\$connections['"]\s*\)\s*\[\s*['"]([^'"]+)['"]\s*\]/g)) {
+      const name = match[1];
+
+      if (!name) {
+        continue;
+      }
+
+      references.push({
+        kind: 'connectionReference',
+        name,
+        path: location.path,
+      });
+    }
+  }
+
   return references;
+}
+
+function collectVariableWrites(value: unknown, path: string): FlowVariableWrite[] {
+  const record = asRecord(value);
+  const inputs = asRecord(record?.inputs);
+  const type = readString(record?.type);
+
+  if (!type || !inputs) {
+    return [];
+  }
+
+  if (type === 'InitializeVariable') {
+    return readInitializeVariableNames(value).map((name, index) => ({
+      name,
+      path: `${path}.inputs.variables.${index}.name`,
+      operation: 'initialize',
+    }));
+  }
+
+  const variableName = readString(inputs.name);
+
+  if (!variableName) {
+    return [];
+  }
+
+  const operation =
+    type === 'SetVariable'
+      ? 'set'
+      : type === 'AppendToStringVariable' || type === 'AppendToArrayVariable'
+        ? 'append'
+        : type === 'IncrementVariable'
+          ? 'increment'
+          : type === 'DecrementVariable'
+            ? 'decrement'
+            : undefined;
+
+  return operation
+    ? [
+        {
+          name: variableName,
+          path: `${path}.inputs.name`,
+          operation,
+        },
+      ]
+    : [];
+}
+
+function withoutChildBranches(record: Record<string, unknown>): Record<string, unknown> {
+  const clone: Record<string, unknown> = { ...record };
+  delete clone.actions;
+  delete clone.else;
+  delete clone.cases;
+  delete clone.default;
+  return clone;
 }
 
 function collectDefinitionConnectionReferences(value: Record<string, unknown>): Map<string, FlowDefinitionConnectionReference> {
