@@ -60,6 +60,68 @@ The adapter packages call the shared deploy service rather than reimplementing d
 
 Each adapter discovers the project and invokes the shared deploy execution path, so CI wrappers stay thin.
 
+The adapter entrypoints now resolve a small pipeline-friendly contract before calling shared deploy services:
+
+- `projectPath`
+- `stage`
+- `mode`
+- `parameterOverrides`
+
+Explicit function options win over environment variables. If no explicit `projectPath` is provided, each adapter falls back to the workspace variables that are natural for that CI host.
+
+### GitHub Actions
+
+- Workspace fallback: `GITHUB_WORKSPACE`
+- Input aliases: `INPUT_PROJECT_PATH`, `INPUT_STAGE`, `INPUT_MODE`, `INPUT_PARAMETER_OVERRIDES`
+- Shared fallback aliases: `PP_DEPLOY_PROJECT_PATH`, `PP_DEPLOY_STAGE`, `PP_DEPLOY_MODE`, `PP_DEPLOY_PARAMETER_OVERRIDES`
+
+Example:
+
+```yaml
+- name: Deploy with shared orchestration
+  env:
+    INPUT_STAGE: prod
+    INPUT_MODE: dry-run
+    INPUT_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}'
+  run: node ./scripts/run-github-deploy.mjs
+```
+
+### Azure DevOps
+
+- Workspace fallback: `BUILD_SOURCESDIRECTORY`, then `SYSTEM_DEFAULTWORKINGDIRECTORY`
+- Stage aliases: `PP_DEPLOY_STAGE`, `RELEASE_ENVIRONMENTNAME`, `SYSTEM_STAGEDISPLAYNAME`
+- Mode and parameter overrides: `PP_DEPLOY_MODE`, `PP_DEPLOY_PARAMETER_OVERRIDES`
+
+Example:
+
+```yaml
+steps:
+  - script: node ./scripts/run-azure-deploy.mjs
+    env:
+      PP_DEPLOY_STAGE: prod
+      PP_DEPLOY_MODE: plan
+      PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}'
+```
+
+### Power Platform Pipelines
+
+- Workspace fallback: `PIPELINE_WORKSPACE`, then `SYSTEM_DEFAULTWORKINGDIRECTORY`
+- Stage aliases: `PP_DEPLOY_STAGE`, `PIPELINE_STAGE`
+- Mode and parameter overrides: `PP_DEPLOY_MODE`, `PP_DEPLOY_PARAMETER_OVERRIDES`
+
+Example:
+
+```yaml
+steps:
+  - script: node ./scripts/run-pp-pipeline-deploy.mjs
+    env:
+      PP_DEPLOY_STAGE: prod
+      PP_DEPLOY_MODE: dry-run
+      PP_DEPLOY_PARAMETER_OVERRIDES: '{"tenantDomain":"contoso.example"}'
+```
+
+`*_PARAMETER_OVERRIDES` values must be JSON objects whose values are strings, numbers, or booleans. Invalid JSON or unsupported `mode` values fail before project discovery or deploy execution begins.
+
 ## Current limits
 
 - Only `dataverse-envvar` mappings are applied today.
