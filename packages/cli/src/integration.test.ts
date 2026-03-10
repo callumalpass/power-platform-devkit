@@ -3270,6 +3270,22 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/solution/golden/dependencies-report.json');
   });
 
+  it('rejects unsupported output formats instead of falling back to json', async () => {
+    const fixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(fixture.source),
+    });
+
+    const components = await runCli(['solution', 'components', 'Core', '--env', 'source', '--format', 'csv']);
+
+    expect(components.code).toBe(1);
+    expect(components.stdout).toBe('');
+    expect(components.stderr).toContain('ERROR CLI_OUTPUT_FORMAT_INVALID: Unsupported --format.');
+  });
+
   it('accepts --environment as an alias for --env on dv whoami', async () => {
     const client = {
       whoAmI: async () => ({

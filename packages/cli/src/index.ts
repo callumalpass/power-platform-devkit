@@ -22,6 +22,7 @@ import { CanvasService, type CanvasBuildMode, type CanvasTemplateProvenance } fr
 import {
   createMutationPreview,
   readMutationFlags,
+  readOutputFormat,
   renderFailure,
   renderOutput,
   renderResultDiagnostics,
@@ -100,11 +101,18 @@ const ATTRIBUTE_COMMON_SELECT_FIELDS = [
 const POWER_PLATFORM_ENVIRONMENTS_API_VERSION = '2020-10-01';
 
 export async function main(argv: string[]): Promise<number> {
-  const [group, command, ...rest] = normalizeCliArgs(argv);
+  const normalizedArgv = normalizeCliArgs(argv);
+  const [group, command, ...rest] = normalizedArgv;
 
   if (!group || group === 'help' || group === '--help') {
     printHelp();
     return 0;
+  }
+
+  const requestedFormat = readOutputFormat(normalizedArgv, 'json');
+
+  if (!requestedFormat.success) {
+    return printFailure(requestedFormat);
   }
 
   if (group === 'auth') {
