@@ -264,7 +264,8 @@ Remote mutation placeholders:
 - when the environment alias does not already store `makerEnvironmentId`, the
   placeholder create/import flow also tries to discover it live from the Power
   Platform environments API so exact Maker handoff URLs still work without a
-  manual override
+  manual override, and real create/import runs cache that discovered id onto
+  the alias for later handoffs
 - both placeholders also accept `--open --browser-profile NAME` for apply mode,
   which launches the resolved Maker handoff URL directly into a persisted
   browser profile instead of only printing fallback instructions

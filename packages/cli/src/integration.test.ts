@@ -1594,6 +1594,106 @@ describe('cli fixture-backed workflows', () => {
     );
   });
 
+  it('persists a discovered maker environment id onto the saved alias during apply-mode canvas create', async () => {
+    const configDir = await createTempDir();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          value: [
+            {
+              name: 'env-123',
+              properties: {
+                linkedEnvironmentMetadata: {
+                  instanceApiUrl: 'https://fixture.crm.dynamics.com',
+                },
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }
+      )
+    );
+
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {
+          url: 'https://fixture.crm.dynamics.com',
+        },
+        authProfile: {
+          name: 'fixture-static',
+          type: 'static-token',
+          token: 'bap-token',
+        },
+      },
+    });
+
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-static',
+            },
+          },
+          authProfiles: {
+            'fixture-static': {
+              name: 'fixture-static',
+              type: 'static-token',
+              token: 'bap-token',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const create = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--config-dir',
+      configDir,
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    const savedConfig = JSON.parse(await readFile(join(configDir, 'config.json'), 'utf8')) as {
+      environments: Record<string, { makerEnvironmentId?: string }>;
+    };
+    expect(savedConfig.environments.fixture?.makerEnvironmentId).toBe('env-123');
+  });
+
   it('lets placeholder canvas mutation guidance override the alias maker environment id per command', async () => {
     const configDir = await createTempDir();
     mockDataverseResolution({

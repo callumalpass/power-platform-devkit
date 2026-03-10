@@ -518,7 +518,10 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     explicitMakerEnvironmentId,
     resolution.data.environment,
     resolution.data.authProfile,
-    configOptions
+    configOptions,
+    {
+      persistDiscovered: mutation.data.mode === 'apply',
+    }
   );
 
   let resolvedSolutionId: string | undefined;
@@ -878,7 +881,10 @@ async function resolveCanvasMakerEnvironmentId(
   explicitMakerEnvironmentId: string | undefined,
   environment: EnvironmentAlias,
   authProfile: AuthProfile,
-  configOptions: ConfigStoreOptions
+  configOptions: ConfigStoreOptions,
+  options: {
+    persistDiscovered?: boolean;
+  } = {}
 ): Promise<string | undefined> {
   if (explicitMakerEnvironmentId) {
     return explicitMakerEnvironmentId;
@@ -889,7 +895,22 @@ async function resolveCanvasMakerEnvironmentId(
   }
 
   const discovered = await discoverMakerEnvironmentIdForEnvironment(environment, authProfile, configOptions);
-  return discovered.success ? discovered.data : undefined;
+
+  if (!discovered.success || !discovered.data) {
+    return undefined;
+  }
+
+  if (options.persistDiscovered) {
+    await saveEnvironmentAlias(
+      {
+        ...environment,
+        makerEnvironmentId: discovered.data,
+      },
+      configOptions
+    );
+  }
+
+  return discovered.data;
 }
 
 async function discoverMakerEnvironmentIdForEnvironment(

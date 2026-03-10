@@ -205,7 +205,12 @@ Optional fields supported today:
 that lets `pp` print exact Maker deep links for workflows such as the current
 canvas create/import fallback guidance. For one-off runs, `pp canvas create`
 and `pp canvas import` also accept `--maker-env-id` directly so you do not have
-to persist that metadata on the alias first.
+to persist that metadata on the alias first. When the alias does not already
+store `makerEnvironmentId`, those canvas fallback commands now also try to
+discover it live from the authenticated Power Platform environments API before
+they fall back to generic Maker guidance. On real create/import runs, `pp` also
+caches the discovered id back onto the saved alias so later Maker handoffs do
+not need to rediscover or re-enter it.
 
 Inspect and remove aliases:
 
