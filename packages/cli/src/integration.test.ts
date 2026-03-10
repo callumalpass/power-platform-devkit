@@ -458,6 +458,28 @@ describe('cli fixture-backed workflows', () => {
     expect(stdout.join('')).toContain('canvas create --environment ALIAS');
     expect(stdout.join('')).toContain('canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME]');
     expect(stdout.join('')).toContain('[preview: returns not-implemented diagnostics]');
+    expect(stdout.join('')).toContain('completion <bash|zsh|fish>');
+    expect(stdout.join('')).toContain('diagnostics <doctor|bundle> [path]');
+  });
+
+  it('prints version, completion, and diagnostics help as first-class product commands', async () => {
+    const version = await runCli(['version', '--format', 'raw']);
+    const completion = await runCli(['completion', 'bash']);
+    const diagnosticsHelp = await runCli(['diagnostics', '--help']);
+
+    expect(version.code).toBe(0);
+    expect(version.stderr).toBe('');
+    expect(version.stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+
+    expect(completion.code).toBe(0);
+    expect(completion.stderr).toBe('');
+    expect(completion.stdout).toContain('complete -F _pp_complete pp');
+    expect(completion.stdout).toContain('diagnostics');
+
+    expect(diagnosticsHelp.code).toBe(0);
+    expect(diagnosticsHelp.stderr).toBe('');
+    expect(diagnosticsHelp.stdout).toContain('Usage: diagnostics <doctor|bundle> [path] [options]');
+    expect(diagnosticsHelp.stdout).toContain('pp diagnostics bundle ./repo --format json > pp-diagnostics.json');
   });
 
   it('prints canvas-specific help with remote workflow guidance', async () => {

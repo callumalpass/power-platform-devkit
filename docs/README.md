@@ -5,6 +5,7 @@ This folder documents the parts of `pp` that are implemented and usable today.
 Start here:
 
 - [Quickstart](quickstart.md): build the repo, sign in, register an environment, and run the first Dataverse commands
+- [Operability](operability.md): install/package the CLI, enable shell completion, collect diagnostics bundles, and run `pp` safely in larger repos
 - [Auth and environments](auth-and-environments.md): auth profile types, browser login, device code, and environment aliases
 - [Command contract](command-contract.md): shared output formats, mutation flags, and project-scoped CLI overrides
 - [Safety and provenance](safety-and-provenance.md): result metadata expectations, mutation safety rules, and `.ops` task-path conventions

@@ -98,6 +98,13 @@ import {
 import { SharePointClient } from '@pp/sharepoint';
 import { SolutionService, type SolutionAnalysis, type SolutionPackageType } from '@pp/solution';
 import { runDelegatedCanvasCreate } from './canvas-create-delegate';
+import {
+  CLI_PACKAGE_NAME,
+  CLI_VERSION,
+  collectOperabilityBundle,
+  collectOperabilityDoctorReport,
+  renderCompletionScript,
+} from './operability';
 import YAML from 'yaml';
 
 type OutputFormat = CliOutputFormat;
@@ -107,6 +114,16 @@ type SolutionCompareInputKind = 'environment' | 'zip' | 'folder';
 interface SolutionCompareInput {
   kind: SolutionCompareInputKind;
   value: string;
+}
+
+interface CanvasCliContext {
+  path: string;
+  options: {
+    root: string;
+    registries: string[];
+    cacheDir?: string;
+    mode: CanvasBuildMode;
+  };
 }
 
 const ATTRIBUTE_COMMON_SELECT_FIELDS = [
@@ -141,6 +158,18 @@ export async function main(argv: string[]): Promise<number> {
   if (!group || group === 'help' || group === '--help') {
     printHelp();
     return 0;
+  }
+
+  if (group === 'version' || group === '--version') {
+    return runVersion([command, ...rest].filter((value): value is string => value !== undefined));
+  }
+
+  if (group === 'completion') {
+    return runCompletion([command, ...rest].filter((value): value is string => value !== undefined));
+  }
+
+  if (group === 'diagnostics') {
+    return runDiagnostics(command, rest);
   }
 
   const requestedFormat = readOutputFormat(normalizedArgv, 'json');
@@ -267,6 +296,31 @@ async function runProject(command: string | undefined, args: string[]): Promise<
   }
 }
 
+async function runDiagnostics(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printDiagnosticsHelp();
+    return 0;
+  }
+
+  switch (command) {
+    case 'doctor':
+      if (args.includes('--help') || args.includes('help')) {
+        printDiagnosticsDoctorHelp();
+        return 0;
+      }
+      return runDiagnosticsDoctor(args);
+    case 'bundle':
+      if (args.includes('--help') || args.includes('help')) {
+        printDiagnosticsBundleHelp();
+        return 0;
+      }
+      return runDiagnosticsBundle(args);
+    default:
+      printDiagnosticsHelp();
+      return 1;
+  }
+}
+
 async function runSharePoint(command: string | undefined, args: string[]): Promise<number> {
   if (!command || command === 'help' || command === '--help') {
     printSharePointHelp();
@@ -319,6 +373,75 @@ async function runPowerBi(command: string | undefined, args: string[]): Promise<
       printPowerBiHelp();
       return 1;
   }
+}
+
+async function runVersion(args: string[]): Promise<number> {
+  const format = outputFormat(args, 'json');
+  const payload = {
+    name: 'pp',
+    packageName: CLI_PACKAGE_NAME,
+    version: CLI_VERSION,
+  };
+
+  if (format === 'raw') {
+    process.stdout.write(`${CLI_VERSION}\n`);
+    return 0;
+  }
+
+  printByFormat(payload, format);
+  return 0;
+}
+
+async function runCompletion(args: string[]): Promise<number> {
+  const shell = positionalArgs(args)[0] as 'bash' | 'zsh' | 'fish' | undefined;
+
+  if (!shell || args.includes('--help') || args.includes('help')) {
+    printCompletionHelp();
+    return shell ? 0 : 1;
+  }
+
+  if (shell !== 'bash' && shell !== 'zsh' && shell !== 'fish') {
+    return printFailure(
+      fail(
+        createDiagnostic('error', 'COMPLETION_SHELL_UNSUPPORTED', `Unsupported completion shell ${shell}.`, {
+          source: '@pp/cli',
+          hint: 'Use one of: bash, zsh, fish.',
+        }),
+        {
+          suggestedNextActions: ['pp completion bash', 'pp completion zsh', 'pp completion fish'],
+        }
+      )
+    );
+  }
+
+  process.stdout.write(renderCompletionScript(shell));
+  return 0;
+}
+
+async function runDiagnosticsDoctor(args: string[]): Promise<number> {
+  const report = await collectOperabilityDoctorReport(positionalArgs(args)[0], readConfigOptions(args));
+
+  if (!report.success || !report.data) {
+    return printFailure(report);
+  }
+
+  const format = outputFormat(args, 'json');
+  printByFormat(report.data, format);
+  printResultDiagnostics(report, format);
+  return report.diagnostics.length > 0 ? 1 : 0;
+}
+
+async function runDiagnosticsBundle(args: string[]): Promise<number> {
+  const bundle = await collectOperabilityBundle(positionalArgs(args)[0], readConfigOptions(args));
+
+  if (!bundle.success || !bundle.data) {
+    return printFailure(bundle);
+  }
+
+  const format = outputFormat(args, 'json');
+  printByFormat(bundle.data, format);
+  printResultDiagnostics(bundle, format);
+  return bundle.diagnostics.length > 0 ? 1 : 0;
 }
 
 async function runAuth(command: string | undefined, args: string[]): Promise<number> {
@@ -6547,33 +6670,18 @@ async function resolveDataverseClientByFlag(args: string[], flag: string) {
   });
 }
 
-async function resolveCanvasCliContext(args: string[], canvasTarget?: string) {
+async function resolveCanvasCliContext(args: string[], canvasTarget?: string): Promise<OperationResult<CanvasCliContext>> {
   const discoveryOptions = readProjectDiscoveryOptions(args);
 
   if (!discoveryOptions.success || !discoveryOptions.data) {
-    return discoveryOptions as unknown as OperationResult<{
-      options: {
-        root: string;
-        registries: string[];
-        cacheDir?: string;
-        mode: CanvasBuildMode;
-      };
-    }>;
+    return discoveryOptions as unknown as OperationResult<CanvasCliContext>;
   }
 
   const projectPath = readFlag(args, '--project') ?? process.cwd();
   const project = await discoverProject(projectPath, discoveryOptions.data);
 
   if (!project.success || !project.data) {
-    return project as unknown as OperationResult<{
-      path: string;
-      options: {
-        root: string;
-        registries: string[];
-        cacheDir?: string;
-        mode: CanvasBuildMode;
-      };
-    }>;
+    return project as unknown as OperationResult<CanvasCliContext>;
   }
 
   const mode = readCanvasBuildMode(readFlag(args, '--mode') ?? readProjectCanvasBuildMode(project.data.build) ?? 'strict');
@@ -6596,15 +6704,7 @@ async function resolveCanvasCliContext(args: string[], canvasTarget?: string) {
     });
 
     if (!workspace.success || !workspace.data) {
-      return workspace as unknown as OperationResult<{
-        path: string;
-        options: {
-          root: string;
-          registries: string[];
-          cacheDir?: string;
-          mode: CanvasBuildMode;
-        };
-      }>;
+      return workspace as unknown as OperationResult<CanvasCliContext>;
     }
 
     path = workspace.data.path;
@@ -8615,6 +8715,11 @@ function printHelp(): void {
     [
       'pp',
       '',
+      'Product commands:',
+      '  version',
+      '  completion <bash|zsh|fish>',
+      '  diagnostics <doctor|bundle> [path] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
       'Commands:',
       '  auth profile list [--config-dir path]',
       '  auth profile inspect <name> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -9314,6 +9419,82 @@ function printProjectInspectHelp(): void {
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printCompletionHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: completion <bash|zsh|fish>',
+      '',
+      'Status:',
+      '  Emits a shell completion script for `pp`.',
+      '',
+      'Examples:',
+      '  pp completion zsh > ~/.zfunc/_pp',
+      '  autoload -U compinit && compinit',
+      '  pp completion fish > ~/.config/fish/completions/pp.fish',
+      '',
+      'Notes:',
+      '  - Completion covers top-level commands plus the next subcommand layer.',
+      '  - Redirect the output into your shell completion directory; `pp` does not edit shell startup files for you.',
+      '',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDiagnosticsHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: diagnostics <doctor|bundle> [path] [options]',
+      '',
+      'Commands:',
+      '  doctor [path]              summarize install, config, and project operability findings',
+      '  bundle [path]              emit a structured debug bundle for support or CI artifacts',
+      '',
+      'Examples:',
+      '  pp diagnostics doctor',
+      '  pp diagnostics doctor ./repo --format table',
+      '  pp diagnostics bundle ./repo --format json > pp-diagnostics.json',
+      '',
+      'Common options:',
+      '  --config-dir path',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+      '',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDiagnosticsDoctorHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: diagnostics doctor [path] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Status:',
+      '  Summarizes install, config, and local project operability findings for `pp` itself.',
+      '',
+      'Behavior:',
+      '  - Checks whether the diagnostics target exists.',
+      '  - Reports global config and MSAL cache paths plus whether they already exist.',
+      '  - Tries to discover a local `pp.config.*` project and surfaces unresolved project diagnostics when one is found.',
+      '',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDiagnosticsBundleHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: diagnostics bundle [path] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Status:',
+      '  Emits a structured debug bundle for `pp` install, runtime, config, and project context.',
+      '',
+      'Behavior:',
+      '  - Includes CLI version, runtime metadata, config roots, and project-discovery state.',
+      '  - Intended for CI artifacts, support triage, or before/after troubleshooting snapshots.',
+      '',
     ].join('\n') + '\n'
   );
 }

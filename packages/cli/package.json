@@ -1,11 +1,25 @@
 {
   "name": "@pp/cli",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "description": "Agent-oriented Power Platform CLI with project, diagnostics, and deployment workflows.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "power-platform",
+    "dataverse",
+    "cli",
+    "agents"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -23,20 +37,6 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@pp/analysis": "workspace:*",
-    "@pp/auth": "workspace:*",
-    "@pp/artifacts": "workspace:*",
-    "@pp/canvas": "workspace:*",
-    "@pp/config": "workspace:*",
-    "@pp/dataverse": "workspace:*",
-    "@pp/deploy": "workspace:*",
-    "@pp/diagnostics": "workspace:*",
-    "@pp/flow": "workspace:*",
-    "@pp/model": "workspace:*",
-    "@pp/project": "workspace:*",
-    "@pp/powerbi": "workspace:*",
-    "@pp/sharepoint": "workspace:*",
-    "@pp/solution": "workspace:*",
     "playwright-core": "^1.52.0",
     "yaml": "^2.7.1"
   }

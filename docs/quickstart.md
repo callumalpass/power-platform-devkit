@@ -22,6 +22,13 @@ Once built, you can also call the CLI directly:
 node packages/cli/dist/index.js project doctor
 ```
 
+Sanity-check the packaged CLI surface:
+
+```bash
+pp version --format raw
+pp diagnostics doctor
+```
+
 The examples below use `pp` for brevity.
 
 ## 2. Sign in

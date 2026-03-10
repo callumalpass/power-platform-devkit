@@ -64,6 +64,16 @@ pp project inspect
 
 The examples below use `pp` for brevity. When working directly from the repo, replace `pp` with either `pnpm --filter @pp/cli dev --` or `node packages/cli/dist/index.js`.
 
+For packaging and operator workflows:
+
+```bash
+pnpm pack:cli
+pp version --format raw
+pp completion zsh > ~/.zfunc/_pp
+pp diagnostics doctor
+pp diagnostics bundle --format json > pp-diagnostics.json
+```
+
 ## Getting started
 
 ### 1. Install and build
@@ -239,6 +249,7 @@ The `project`, `analysis`, and `deploy` commands work entirely from local repo s
 
 The project config format and parameter resolution rules are documented in [docs/project-config.md](docs/project-config.md).
 Deploy usage and CI examples are documented in [docs/deploy.md](docs/deploy.md).
+Install/completion/diagnostics guidance is documented in [docs/operability.md](docs/operability.md).
 
 ## Live smoke
 
