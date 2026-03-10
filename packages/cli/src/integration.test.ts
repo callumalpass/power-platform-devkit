@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readJsonFile } from '@pp/artifacts';
+import { AuthService } from '@pp/auth';
 import { type DataverseFixture, createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
 import { expectGoldenJson, expectGoldenText, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
 import { main } from './index';
@@ -341,9 +342,12 @@ describe('cli fixture-backed workflows', () => {
     expect(createHelp.stdout).toContain('Usage: canvas create --env ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
     expect(createHelp.stdout).toContain('Preview placeholder. Remote blank-app creation is not implemented yet.');
     expect(createHelp.stdout).toContain('--maker-env-id ID');
+    expect(createHelp.stdout).toContain('--open');
+    expect(createHelp.stdout).toContain('--browser-profile NAME');
     expect(createHelp.stdout).toContain('--dry-run');
     expect(createHelp.stdout).toContain('--plan');
     expect(createHelp.stdout).toContain('Finish blank-app creation in Maker when you need a new remote canvas app.');
+    expect(createHelp.stdout).toContain('Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.');
 
     expect(importHelp.code).toBe(0);
     expect(importHelp.stderr).toBe('');
@@ -351,9 +355,12 @@ describe('cli fixture-backed workflows', () => {
     expect(importHelp.stdout).toContain('Preview placeholder. Remote canvas import is not implemented yet.');
     expect(importHelp.stdout).toContain('--name DISPLAY_NAME');
     expect(importHelp.stdout).toContain('--maker-env-id ID');
+    expect(importHelp.stdout).toContain('--open');
+    expect(importHelp.stdout).toContain('--browser-profile NAME');
     expect(importHelp.stdout).toContain('--dry-run');
     expect(importHelp.stdout).toContain('--plan');
     expect(importHelp.stdout).toContain('Use Maker or solution tooling for the remote import step until `pp canvas import` exists.');
+    expect(importHelp.stdout).toContain('Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.');
   });
 
   it('prints stable help for remote canvas discovery commands', async () => {
@@ -1593,6 +1600,195 @@ describe('cli fixture-backed workflows', () => {
         },
       });
     }
+  });
+
+  it('launches the Maker handoff for placeholder canvas mutations through a persisted browser profile', async () => {
+    const launchBrowserProfile = vi.spyOn(AuthService.prototype, 'launchBrowserProfile').mockResolvedValue({
+      success: true,
+      data: {
+        profile: {
+          name: 'maker-fixture',
+          kind: 'edge',
+        },
+        url: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+        command: 'fake-browser',
+        args: ['--user-data-dir=/tmp/maker-fixture', 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1'],
+        profileDir: '/tmp/maker-fixture',
+      },
+    });
+
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {
+          makerEnvironmentId: 'env-123',
+        },
+      },
+    });
+
+    const create = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--open',
+      '--browser-profile',
+      'maker-fixture',
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(0);
+    expect(create.stderr).toBe('');
+    expect(JSON.parse(create.stdout)).toMatchObject({
+      action: 'canvas.create.remote.handoff',
+      delegated: true,
+      launched: true,
+      browserProfile: 'maker-fixture',
+      target: {
+        envAlias: 'fixture',
+        solutionUniqueName: 'HarnessSolution',
+        solutionId: 'solution-1',
+        makerEnvironmentId: 'env-123',
+        supported: false,
+      },
+      handoff: {
+        handoff: {
+          kind: 'maker-blank-app',
+          recommendedUrl: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+        },
+        verification: {
+          inspectCommand: 'pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution',
+        },
+      },
+      launch: {
+        command: 'fake-browser',
+        profileDir: '/tmp/maker-fixture',
+      },
+      suggestedNextActions: expect.arrayContaining([
+        'Use Maker blank-app creation for now when you need a new remote canvas app.',
+        'After saving in Maker, run `pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
+      ]),
+    });
+
+    expect(launchBrowserProfile).toHaveBeenCalledWith(
+      'maker-fixture',
+      'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1'
+    );
+  });
+
+  it('requires browser-profile launch context when opening a Maker handoff', async () => {
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {
+          makerEnvironmentId: 'env-123',
+        },
+      },
+    });
+
+    const missingBrowserProfile = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--open',
+      '--format',
+      'json',
+    ]);
+
+    expect(missingBrowserProfile.code).toBe(1);
+    expect(JSON.parse(missingBrowserProfile.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'AUTH_BROWSER_PROFILE_NAME_REQUIRED',
+          message: 'Use --browser-profile NAME with --open so pp can launch the Maker handoff in a persisted browser profile.',
+        },
+      ],
+    });
+  });
+
+  it('returns a stable diagnostic when a Maker handoff URL cannot be opened yet', async () => {
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {},
+      },
+    });
+
+    const create = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--open',
+      '--browser-profile',
+      'maker-fixture',
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(1);
+    expect(JSON.parse(create.stderr)).toMatchObject({
+      success: false,
+      diagnostics: [
+        {
+          code: 'CANVAS_MAKER_HANDOFF_URL_UNAVAILABLE',
+          message: 'A Maker handoff URL is not available for this canvas workflow yet.',
+          source: '@pp/cli',
+        },
+      ],
+      suggestedNextActions: expect.arrayContaining([
+        'Use Maker blank-app creation for now when you need a new remote canvas app.',
+      ]),
+      knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
+    });
   });
 
   it('covers canvas inspect, validate, build, and diff through the CLI entrypoint', async () => {

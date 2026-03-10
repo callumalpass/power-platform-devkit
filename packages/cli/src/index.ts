@@ -357,6 +357,8 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
   const explicitSolutionUniqueName = readFlag(args, '--solution');
   const explicitMakerEnvironmentId = readFlag(args, '--maker-env-id');
   const explicitDisplayName = readFlag(args, '--name');
+  const browserProfileName = readFlag(args, '--browser-profile');
+  const openMakerHandoff = hasFlag(args, '--open');
   const displayName = command === 'create' ? explicitDisplayName : undefined;
   const importPath = command === 'import' ? positionalArgs(args)[0] : undefined;
   const inferredImportDisplayName =
@@ -469,6 +471,73 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           knownLimitations,
         }
       ),
+      outputFormat(args, 'json')
+    );
+    return 0;
+  }
+
+  if (openMakerHandoff) {
+    if (!browserProfileName) {
+      return printFailure(
+        argumentFailure(
+          'AUTH_BROWSER_PROFILE_NAME_REQUIRED',
+          'Use --browser-profile NAME with --open so pp can launch the Maker handoff in a persisted browser profile.'
+        )
+      );
+    }
+
+    if (!fallbackDetails.handoff.recommendedUrl) {
+      return printFailure(
+        fail(
+          createDiagnostic(
+            'error',
+            'CANVAS_MAKER_HANDOFF_URL_UNAVAILABLE',
+            'A Maker handoff URL is not available for this canvas workflow yet.',
+            {
+              source: '@pp/cli',
+              hint:
+                'Provide --maker-env-id or configure makerEnvironmentId on the environment alias so pp can build an exact Maker handoff URL.',
+            }
+          ),
+          {
+            supportTier: 'preview',
+            details: fallbackDetails,
+            suggestedNextActions,
+            knownLimitations,
+          }
+        )
+      );
+    }
+
+    const auth = new AuthService(configOptions);
+    const launched = await auth.launchBrowserProfile(browserProfileName, fallbackDetails.handoff.recommendedUrl);
+
+    if (!launched.success || !launched.data) {
+      return printFailure(launched);
+    }
+
+    printByFormat(
+      {
+        action: `canvas.${command}.remote.handoff`,
+        delegated: true,
+        launched: true,
+        browserProfile: browserProfileName,
+        target: {
+          envAlias,
+          solutionUniqueName,
+          solutionId: resolvedSolutionId,
+          makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
+          supported: false,
+        },
+        input: {
+          displayName: displayName ?? explicitDisplayName ?? inferredImportDisplayName,
+          importPath,
+        },
+        handoff: fallbackDetails,
+        launch: launched.data,
+        suggestedNextActions,
+        knownLimitations,
+      },
       outputFormat(args, 'json')
     );
     return 0;
@@ -4393,10 +4462,13 @@ function printCanvasCreateHelp(): void {
       '',
       'Options:',
       '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
+      '  --open                     Launch the resolved Maker handoff URL instead of only printing it',
+      '  --browser-profile NAME     Browser profile to use with --open for the Maker handoff',
       '',
       'What works today:',
       '  - Use `pp canvas list --env <alias> --solution <solution>` to inspect existing remote canvas apps.',
       '  - Use `pp canvas inspect <displayName|name|id> --env <alias> --solution <solution>` to inspect a specific remote app.',
+      '  - Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.',
       '',
       'Next steps for new apps today:',
       '  - Finish blank-app creation in Maker when you need a new remote canvas app.',
@@ -4450,10 +4522,13 @@ function printCanvasImportHelp(): void {
       'Options:',
       '  --name DISPLAY_NAME        Expected remote display name for post-import verification guidance',
       '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
+      '  --open                     Launch the resolved Maker handoff URL instead of only printing it',
+      '  --browser-profile NAME     Browser profile to use with --open for the Maker handoff',
       '',
       'What works today:',
       '  - Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
       '  - Use `pp canvas list --env <alias> --solution <solution>` to inspect existing remote canvas apps.',
+      '  - Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.',
       '',
       'Next steps for remote import today:',
       '  - Use Maker or solution tooling for the remote import step until `pp canvas import` exists.',

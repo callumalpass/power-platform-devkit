@@ -256,6 +256,9 @@ Remote mutation placeholders:
 - both placeholders also accept `--maker-env-id ID` when you want exact Maker
   deep links for a one-off run without persisting that metadata on the
   environment alias first
+- both placeholders also accept `--open --browser-profile NAME` for apply mode,
+  which launches the resolved Maker handoff URL directly into a persisted
+  browser profile instead of only printing fallback instructions
 - both placeholder commands resolve the target environment first, validate the
   requested solution when one is provided or inherited from `defaultSolution`,
   and then return suggested next actions for Maker fallback plus `pp canvas
@@ -267,6 +270,9 @@ Remote mutation placeholders:
   command provides `--maker-env-id`, the placeholder diagnostics include exact
   solution-scoped Maker URLs for the blank-app or import fallback path instead
   of only generic portal guidance
+- if `--open` is requested before `pp` can build an exact Maker URL, the
+  command now returns a stable `CANVAS_MAKER_HANDOFF_URL_UNAVAILABLE`
+  diagnostic instead of failing deeper in browser-launch logic
 
 Path detection is automatic:
 
