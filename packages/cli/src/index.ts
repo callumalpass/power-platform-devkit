@@ -61,7 +61,15 @@ import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } fro
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { HttpClient } from '@pp/http';
 import { ModelService } from '@pp/model';
-import { discoverProject, doctorProject, initProject, planProjectInit, summarizeProject, summarizeResolvedParameter } from '@pp/project';
+import {
+  discoverProject,
+  doctorProject,
+  feedbackProject,
+  initProject,
+  planProjectInit,
+  summarizeProject,
+  summarizeResolvedParameter,
+} from '@pp/project';
 import { SolutionService, type SolutionAnalysis, type SolutionPackageType } from '@pp/solution';
 import { runDelegatedCanvasCreate } from './canvas-create-delegate';
 import YAML from 'yaml';
@@ -197,6 +205,12 @@ async function runProject(command: string | undefined, args: string[]): Promise<
         return 0;
       }
       return runProjectDoctor(args);
+    case 'feedback':
+      if (args.includes('--help') || args.includes('help')) {
+        printProjectFeedbackHelp();
+        return 0;
+      }
+      return runProjectFeedback(args);
     case 'inspect':
       if (args.includes('--help') || args.includes('help')) {
         printProjectInspectHelp();
@@ -1452,6 +1466,28 @@ async function runProjectDoctor(args: string[]): Promise<number> {
 
   printByFormat(result.data, format);
   printResultDiagnostics(result, format);
+  return 0;
+}
+
+async function runProjectFeedback(args: string[]): Promise<number> {
+  const root = positionalArgs(args)[0] ?? process.cwd();
+  const format = outputFormat(args, 'json');
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const result = await feedbackProject(root, discoveryOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, format);
+  if (!isMachineReadableOutputFormat(format)) {
+    printResultDiagnostics(result, format);
+  }
   return 0;
 }
 
@@ -6326,6 +6362,7 @@ function printHelp(): void {
       '',
       '  project init [path] [--name NAME] [--environment ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [--force] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  project doctor [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  project feedback [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -6658,16 +6695,18 @@ function printProjectHelp(): void {
       'Commands:',
       '  init [path]                 scaffold a minimal local pp project layout',
       '  doctor [path]               validate project config, assets, and required inputs',
+      '  feedback [path]             capture conceptual project feedback and derive follow-up tasks',
       '  inspect [path]              inspect resolved project topology and asset roots',
       '',
       'Examples:',
       '  pp project init ./demo --name Demo --environment dev --solution Core',
       '  pp project doctor ./demo --stage prod --format json',
+      '  pp project feedback ./demo --stage prod --format markdown',
       '  pp project inspect ./demo --stage prod --param releaseName=2026.03.10 --format json',
       '',
       'Notes:',
       '  - Use `pp project init --plan` or `--dry-run` to preview scaffold changes without writing files.',
-      '  - `pp project doctor` and `pp project inspect` are read-only local-structure workflows.',
+      '  - `pp project doctor`, `pp project feedback`, and `pp project inspect` are read-only local-structure workflows.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -6718,6 +6757,25 @@ function printProjectDoctorHelp(): void {
       '',
       'Behavior:',
       '  - Reports config presence, asset-path checks, provider bindings, topology, registries, and unresolved required parameters.',
+      '  - Reads project context without mutating the filesystem.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printProjectFeedbackHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: project feedback [path] [--stage STAGE] [--param NAME=VALUE] [options]',
+      '',
+      'Status:',
+      '  Captures retrospective conceptual feedback for a local pp project.',
+      '',
+      'Behavior:',
+      '  - Reuses the discovered project model to summarize workflow wins, current frictions, and concrete follow-up tasks.',
+      '  - Renders the canonical bundle path and stage mappings so retrospectives can stay inside `pp`.',
       '  - Reads project context without mutating the filesystem.',
       '',
       'Common output options:',

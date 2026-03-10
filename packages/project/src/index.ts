@@ -243,6 +243,40 @@ export interface ProjectDoctorReport {
   checks: ProjectDoctorCheck[];
 }
 
+export interface ProjectFeedbackObservation {
+  title: string;
+  detail: string;
+  evidence?: string[];
+}
+
+export interface ProjectFeedbackTask {
+  title: string;
+  rationale: string;
+}
+
+export interface ProjectFeedbackSummary {
+  selectedStage?: string;
+  activeEnvironment?: string;
+  activeSolution?: string;
+  layoutProfile: ProjectLayoutAssessment['profile'];
+  editableAssetRoots: string[];
+  canonicalBundlePath: string;
+  unresolvedRequiredParameters: string[];
+}
+
+export interface ProjectFeedbackReport {
+  root: string;
+  inspectedPath: string;
+  canonicalProjectRoot: string;
+  configPath?: string;
+  discovery?: ProjectDiscoveryDetails;
+  contract: ProjectContractSummary;
+  summary: ProjectFeedbackSummary;
+  workflowWins: ProjectFeedbackObservation[];
+  frictions: ProjectFeedbackObservation[];
+  recommendedTasks: ProjectFeedbackTask[];
+}
+
 interface SecretResolution {
   found: boolean;
   value?: string;
@@ -280,7 +314,6 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
   const contract = buildProjectContractSummary(config, topology, {
     profile: layout.scaffoldProfile,
     editableAssetRoots: layout.scaffoldedAssetRoots,
-    generatedBundlePaths: [],
     normalizedAssets: {
       apps: 'apps',
       docs: 'docs',
@@ -288,7 +321,6 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
       solutionBundle: layout.recommendedBundlePath,
       solutions: 'solutions',
     },
-    recommendations: [],
   });
 
   return {
@@ -582,6 +614,156 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
         unresolvedRequiredParameters.map((parameter) => parameter.name),
         layout
       ),
+    }
+  );
+}
+
+export async function feedbackProject(
+  root = process.cwd(),
+  options: ProjectDiscoveryOptions = {}
+): Promise<OperationResult<ProjectFeedbackReport>> {
+  const inspection = await discoverProject(root, options);
+
+  if (!inspection.success || !inspection.data) {
+    return fail(inspection.diagnostics, {
+      supportTier: inspection.supportTier,
+      warnings: inspection.warnings,
+      suggestedNextActions: inspection.suggestedNextActions,
+      provenance: inspection.provenance,
+      knownLimitations: inspection.knownLimitations,
+    });
+  }
+
+  const project = inspection.data;
+  const layout = assessProjectLayout(project.root, project.assets, project.config);
+  const contract = buildProjectContractSummary(project.config, project.topology, layout);
+  const unresolvedRequiredParameters = Object.values(project.parameters)
+    .filter((parameter) => parameter.definition.required && !parameter.hasValue)
+    .map((parameter) => parameter.name)
+    .sort((left, right) => left.localeCompare(right));
+
+  const workflowWins: ProjectFeedbackObservation[] = [];
+  const frictions: ProjectFeedbackObservation[] = [];
+  const recommendedTasks: ProjectFeedbackTask[] = [];
+
+  if (project.configPath) {
+    workflowWins.push({
+      title: 'Single config anchor',
+      detail: `The local project model resolves through ${relative(project.root, project.configPath) || 'pp.config.*'}, which keeps the repo contract anchored in one place.`,
+      evidence: [relative(project.root, project.configPath) || '.'],
+    });
+  }
+
+  if (contract.editableAssetRoots.length > 0) {
+    workflowWins.push({
+      title: 'Source-first asset contract',
+      detail: `Editable assets stay under ${contract.editableAssetRoots.join(', ')}, while packaged solution bundles are expected at ${contract.canonicalBundlePath}.`,
+      evidence: [...contract.editableAssetRoots, contract.canonicalBundlePath],
+    });
+  }
+
+  if (contract.stageMappings.length > 0) {
+    const activeStage = contract.activeTarget.stage ?? project.topology.selectedStage;
+    workflowWins.push({
+      title: 'Stage-aware topology',
+      detail:
+        activeStage !== undefined
+          ? `The project already maps stage ${activeStage} to environment ${contract.activeTarget.environmentAlias ?? '<unset>'} and solution ${contract.activeTarget.solutionUniqueName ?? '<unset>'}.`
+          : `The project defines ${contract.stageMappings.length} stage mapping(s) that tie environments and solutions back to the local config anchor.`,
+      evidence: contract.stageMappings.map((stage) =>
+        `${stage.stage}:${stage.environmentAlias ?? '<unset>'}:${stage.solutionUniqueName ?? '<unset>'}`
+      ),
+    });
+  }
+
+  if (project.discovery.autoSelectedProjectRoot) {
+    frictions.push({
+      title: 'Project root remains implicit from the inspected path',
+      detail:
+        project.discovery.canonicalAnchorReason ??
+        `The canonical project root was auto-selected as ${project.discovery.autoSelectedProjectRoot} instead of being explicit in the invocation.`,
+      evidence: [project.discovery.autoSelectedProjectRoot],
+    });
+    recommendedTasks.push({
+      title: 'Explain descendant project auto-selection in inspect and doctor',
+      rationale: 'Monorepo-style roots still require manual confirmation when pp silently pivots to a descendant project root.',
+    });
+  }
+
+  if (layout.profile === 'source-first-inline-bundle') {
+    frictions.push({
+      title: 'Recommended bundle placement is still not canonical everywhere',
+      detail: `This project still mixes packaged bundles into editable solution space. The preferred bundle output is ${contract.canonicalBundlePath}, but the current layout tolerates inline solution zips.`,
+      evidence: [contract.canonicalBundlePath],
+    });
+    recommendedTasks.push({
+      title: 'Tighten layout validation around canonical bundle output',
+      rationale: 'Agents still have to infer whether inline solution bundles are merely supported or actually recommended.',
+    });
+  }
+
+  if (contract.stageMappings.length > 0) {
+    const mappingPreview = contract.stageMappings
+      .map(
+        (stage) =>
+          `${stage.stage} -> ${stage.environmentAlias ?? '<unset>'} / ${stage.solutionUniqueName ?? '<unset>'}`
+      )
+      .join('; ');
+    frictions.push({
+      title: 'Stage mappings still need an operator-oriented explanation',
+      detail: `The model is present, but other commands still make users infer the full stage-to-environment-to-solution story. Current mapping: ${mappingPreview}.`,
+      evidence: contract.stageMappings.flatMap((stage) => (stage.stage ? [stage.stage] : [])),
+    });
+    recommendedTasks.push({
+      title: 'Render stage-to-environment-to-solution mappings directly in project doctor',
+      rationale: 'Operators should not need to open pp.config.yaml to explain how stages map to environments and solution targets.',
+    });
+  }
+
+  if (unresolvedRequiredParameters.length > 0) {
+    frictions.push({
+      title: 'Required inputs remain unresolved',
+      detail: `The local model is structurally coherent, but these required parameters still block a fully deployable project: ${unresolvedRequiredParameters.join(', ')}.`,
+      evidence: unresolvedRequiredParameters,
+    });
+  }
+
+  if (recommendedTasks.length === 0) {
+    recommendedTasks.push({
+      title: 'Keep project feedback aligned with the local contract',
+      rationale: 'No new structural follow-up slice is implied by the current project shape beyond maintaining the discovered config, layout, and stage mapping contract.',
+    });
+  }
+
+  return ok(
+    {
+      root: project.root,
+      inspectedPath: resolve(root),
+      canonicalProjectRoot: project.root,
+      configPath: project.configPath,
+      discovery:
+        project.discovery.usedDefaultLayout || project.discovery.autoSelectedProjectRoot ? project.discovery : undefined,
+      contract,
+      summary: {
+        selectedStage: project.topology.selectedStage,
+        activeEnvironment: project.topology.activeEnvironment,
+        activeSolution: project.topology.activeSolution?.uniqueName,
+        layoutProfile: layout.profile,
+        editableAssetRoots: contract.editableAssetRoots,
+        canonicalBundlePath: contract.canonicalBundlePath,
+        unresolvedRequiredParameters,
+      },
+      workflowWins,
+      frictions,
+      recommendedTasks,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: inspection.diagnostics,
+      warnings: inspection.warnings,
+      suggestedNextActions: recommendedTasks.map((task) => task.title),
+      provenance: inspection.provenance,
+      knownLimitations: inspection.knownLimitations,
     }
   );
 }

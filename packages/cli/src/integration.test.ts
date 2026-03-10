@@ -462,6 +462,7 @@ describe('cli fixture-backed workflows', () => {
     const projectHelp = await runCli(['project', '--help']);
     const initHelp = await runCli(['project', 'init', tempDir, '--help']);
     const doctorHelp = await runCli(['project', 'doctor', tempDir, '--help']);
+    const feedbackHelp = await runCli(['project', 'feedback', tempDir, '--help']);
     const inspectHelp = await runCli(['project', 'inspect', tempDir, '--help']);
 
     const after = await readdir(tempDir);
@@ -471,6 +472,7 @@ describe('cli fixture-backed workflows', () => {
     expect(projectHelp.stdout).toContain('Usage: project <command> [options]');
     expect(projectHelp.stdout).toContain('init [path]');
     expect(projectHelp.stdout).toContain('doctor [path]');
+    expect(projectHelp.stdout).toContain('feedback [path]');
     expect(projectHelp.stdout).toContain('inspect [path]');
 
     expect(initHelp.code).toBe(0);
@@ -485,6 +487,12 @@ describe('cli fixture-backed workflows', () => {
     expect(doctorHelp.stderr).toBe('');
     expect(doctorHelp.stdout).toContain('Usage: project doctor [path] [--stage STAGE] [--param NAME=VALUE] [options]');
     expect(doctorHelp.stdout).toContain('Reads project context without mutating the filesystem.');
+
+    expect(feedbackHelp.code).toBe(0);
+    expect(feedbackHelp.stderr).toBe('');
+    expect(feedbackHelp.stdout).toContain('Usage: project feedback [path] [--stage STAGE] [--param NAME=VALUE] [options]');
+    expect(feedbackHelp.stdout).toContain('Captures retrospective conceptual feedback for a local pp project.');
+    expect(feedbackHelp.stdout).toContain('can stay inside `pp`.');
 
     expect(inspectHelp.code).toBe(0);
     expect(inspectHelp.stderr).toBe('');
@@ -1005,6 +1013,24 @@ describe('cli fixture-backed workflows', () => {
     });
     await expectGoldenJson(JSON.parse(doctor.stdout), 'fixtures/cli/golden/protocol/project-doctor.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+  });
+
+  it('derives conceptual feedback for the fixture project through the CLI entrypoint', async () => {
+    const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
+    const feedback = await runCli(['project', 'feedback', fixtureRoot, '--format', 'json'], {
+      env: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SECRET_app_token: 'super-secret',
+        PP_SQL_ENDPOINT: undefined,
+      },
+    });
+
+    expect(feedback.code).toBe(0);
+    expect(feedback.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(feedback.stdout), 'fixtures/cli/golden/protocol/project-feedback.json', {
+      normalize: (value) => normalizeCliSnapshot(value),
     });
   });
 

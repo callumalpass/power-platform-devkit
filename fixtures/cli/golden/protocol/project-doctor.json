@@ -25,6 +25,7 @@
       "path": "<TMP_DIR>/docs"
     }
   ],
+  "canonicalProjectRoot": "<TMP_DIR>",
   "checks": [
     {
       "code": "PROJECT_DOCTOR_CONFIG_PRESENT",
@@ -114,6 +115,7 @@
       }
     ]
   },
+  "inspectedPath": "<TMP_DIR>",
   "layout": {
     "editableAssetRoots": [
       "apps",

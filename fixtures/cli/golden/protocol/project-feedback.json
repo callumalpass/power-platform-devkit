@@ -1,0 +1,138 @@
+{
+  "canonicalProjectRoot": "<REPO_ROOT>/fixtures/analysis/project",
+  "configPath": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
+  "contract": {
+    "activeTarget": {
+      "environmentAlias": "prod",
+      "solutionAlias": "core",
+      "solutionUniqueName": "CoreManaged",
+      "stage": "prod"
+    },
+    "canonicalBundlePath": "artifacts/solutions/core.zip",
+    "defaultTarget": {
+      "environmentAlias": "prod",
+      "solutionAlias": "core",
+      "solutionUniqueName": "CoreManaged",
+      "stage": "prod"
+    },
+    "editableAssetRoots": [
+      "apps",
+      "flows",
+      "docs"
+    ],
+    "layoutProfile": "source-first-inline-bundle",
+    "solutionSourceRoot": "solutions",
+    "stageMappings": [
+      {
+        "environmentAlias": "dev",
+        "parameterOverrides": [],
+        "solutionAlias": "core",
+        "solutionMappings": [
+          {
+            "alias": "core",
+            "environmentAlias": "dev",
+            "source": "project",
+            "uniqueName": "CoreDev"
+          }
+        ],
+        "solutionUniqueName": "CoreDev",
+        "stage": "dev"
+      },
+      {
+        "environmentAlias": "prod",
+        "parameterOverrides": [
+          "releaseName"
+        ],
+        "solutionAlias": "core",
+        "solutionMappings": [
+          {
+            "alias": "core",
+            "environmentAlias": "prod",
+            "source": "stage",
+            "uniqueName": "CoreManaged"
+          }
+        ],
+        "solutionUniqueName": "CoreManaged",
+        "stage": "prod"
+      }
+    ]
+  },
+  "frictions": [
+    {
+      "detail": "This project still mixes packaged bundles into editable solution space. The preferred bundle output is artifacts/solutions/core.zip, but the current layout tolerates inline solution zips.",
+      "evidence": [
+        "artifacts/solutions/core.zip"
+      ],
+      "title": "Recommended bundle placement is still not canonical everywhere"
+    },
+    {
+      "detail": "The model is present, but other commands still make users infer the full stage-to-environment-to-solution story. Current mapping: dev -> dev / CoreDev; prod -> prod / CoreManaged.",
+      "evidence": [
+        "dev",
+        "prod"
+      ],
+      "title": "Stage mappings still need an operator-oriented explanation"
+    },
+    {
+      "detail": "The local model is structurally coherent, but these required parameters still block a fully deployable project: sqlEndpoint.",
+      "evidence": [
+        "sqlEndpoint"
+      ],
+      "title": "Required inputs remain unresolved"
+    }
+  ],
+  "inspectedPath": "<REPO_ROOT>/fixtures/analysis/project",
+  "recommendedTasks": [
+    {
+      "rationale": "Agents still have to infer whether inline solution bundles are merely supported or actually recommended.",
+      "title": "Tighten layout validation around canonical bundle output"
+    },
+    {
+      "rationale": "Operators should not need to open pp.config.yaml to explain how stages map to environments and solution targets.",
+      "title": "Render stage-to-environment-to-solution mappings directly in project doctor"
+    }
+  ],
+  "root": "<REPO_ROOT>/fixtures/analysis/project",
+  "summary": {
+    "activeEnvironment": "prod",
+    "activeSolution": "CoreManaged",
+    "canonicalBundlePath": "artifacts/solutions/core.zip",
+    "editableAssetRoots": [
+      "apps",
+      "flows",
+      "docs"
+    ],
+    "layoutProfile": "source-first-inline-bundle",
+    "selectedStage": "prod",
+    "unresolvedRequiredParameters": [
+      "sqlEndpoint"
+    ]
+  },
+  "workflowWins": [
+    {
+      "detail": "The local project model resolves through pp.config.yaml, which keeps the repo contract anchored in one place.",
+      "evidence": [
+        "pp.config.yaml"
+      ],
+      "title": "Single config anchor"
+    },
+    {
+      "detail": "Editable assets stay under apps, flows, docs, while packaged solution bundles are expected at artifacts/solutions/core.zip.",
+      "evidence": [
+        "apps",
+        "flows",
+        "docs",
+        "artifacts/solutions/core.zip"
+      ],
+      "title": "Source-first asset contract"
+    },
+    {
+      "detail": "The project already maps stage prod to environment prod and solution CoreManaged.",
+      "evidence": [
+        "dev:dev:CoreDev",
+        "prod:prod:CoreManaged"
+      ],
+      "title": "Stage-aware topology"
+    }
+  ]
+}
