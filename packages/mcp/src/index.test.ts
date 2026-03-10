@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,8 +14,36 @@ describe('@pp/mcp', () => {
     clients.length = 0;
   });
 
-  it('connects over stdio and exposes the read-first tool surface', async () => {
-    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+  async function createClient(args: { configDir: string; projectPath: string; env?: Record<string, string> }): Promise<Client> {
+    const client = new Client({
+      name: 'pp-mcp-test-client',
+      version: '0.1.0',
+    });
+    clients.push(client);
+
+    await client.connect(
+      new StdioClientTransport({
+        command: resolveRepoPath('node_modules', '.bin', 'tsx'),
+        args: [
+          resolveRepoPath('packages', 'mcp', 'src', 'server.ts'),
+          '--config-dir',
+          args.configDir,
+          '--project',
+          args.projectPath,
+        ],
+        cwd: resolveRepoPath(),
+        env: {
+          ...process.env,
+          ...(args.env ?? {}),
+        } as Record<string, string>,
+        stderr: 'pipe',
+      })
+    );
+
+    return client;
+  }
+
+  async function writeFixtureConfig(configDir: string): Promise<void> {
     await mkdir(configDir, { recursive: true });
     await writeFile(
       join(configDir, 'config.json'),
@@ -44,33 +72,21 @@ describe('@pp/mcp', () => {
       ) + '\n',
       'utf8'
     );
+  }
 
-    const client = new Client({
-      name: 'pp-mcp-test-client',
-      version: '0.1.0',
+  it('connects over stdio and exposes the read and controlled mutation surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    const client = await createClient({
+      configDir,
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
+      env: {
+        PP_TENANT_DOMAIN: 'contoso.example',
+        PP_SQL_ENDPOINT: 'tcp:sql.example.test,1433',
+        PP_SECRET_APP_TOKEN: 'fixture-secret',
+      },
     });
-    clients.push(client);
-
-    await client.connect(
-      new StdioClientTransport({
-        command: resolveRepoPath('node_modules', '.bin', 'tsx'),
-        args: [
-          resolveRepoPath('packages', 'mcp', 'src', 'server.ts'),
-          '--config-dir',
-          configDir,
-          '--project',
-          resolveRepoPath('fixtures', 'analysis', 'project'),
-        ],
-        cwd: resolveRepoPath(),
-        env: {
-          ...process.env,
-          PP_TENANT_DOMAIN: 'contoso.example',
-          PP_SQL_ENDPOINT: 'tcp:sql.example.test,1433',
-          PP_SECRET_APP_TOKEN: 'fixture-secret',
-        } as Record<string, string>,
-        stderr: 'pipe',
-      })
-    );
 
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name)).toEqual(
@@ -88,6 +104,8 @@ describe('@pp/mcp', () => {
         'pp.analysis.drift',
         'pp.analysis.usage',
         'pp.analysis.policy',
+        'pp.deploy.plan',
+        'pp.deploy.apply',
         'pp.domain.list',
       ])
     );
@@ -157,6 +175,174 @@ describe('@pp/mcp', () => {
       arguments: {},
     });
     expect(domains.isError).toBeFalsy();
-    expect((domains.structuredContent as { data: Array<{ name: string }> }).data.map((item) => item.name)).toContain('dataverse');
+    expect((domains.structuredContent as { data: Array<{ name: string }> }).data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'dataverse',
+        }),
+        expect.objectContaining({
+          name: 'project',
+          mutationToolsAvailable: true,
+          mutationTools: expect.arrayContaining(['pp.deploy.plan', 'pp.deploy.apply']),
+        }),
+      ])
+    );
+  });
+
+  it('supports deploy plan-then-apply with explicit approval gating', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-deploy-project-'));
+    await mkdir(join(projectRoot, 'flows', 'invoice'), { recursive: true });
+    await writeFile(
+      join(projectRoot, 'pp.config.yaml'),
+      [
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev: {}',
+        'parameters:',
+        '  apiBaseUrl:',
+        '    type: string',
+        '    value: https://contoso.example',
+        '    mapsTo:',
+        '      - kind: flow-parameter',
+        '        path: flows/invoice/flow.json',
+        '        target: ApiBaseUrl',
+      ].join('\n'),
+      'utf8'
+    );
+    await writeFile(
+      join(projectRoot, 'flows', 'invoice', 'flow.json'),
+      await readFile(resolveRepoPath('fixtures', 'flow', 'golden', 'unpacked.flow.json'), 'utf8'),
+      'utf8'
+    );
+
+    const client = await createClient({
+      configDir,
+      projectPath: projectRoot,
+    });
+
+    const plan = await client.callTool({
+      name: 'pp.deploy.plan',
+      arguments: {},
+    });
+    expect(plan.isError).toBeFalsy();
+    expect(plan.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.deploy.plan',
+        mutationPolicy: {
+          mode: 'controlled',
+          mutationsExposed: true,
+          approvalRequired: true,
+          sessionRequired: true,
+        },
+      },
+      data: {
+        session: {
+          operationCount: 1,
+          operationKinds: ['flow-parameter-set'],
+        },
+        preview: {
+          mode: 'plan',
+          preflight: {
+            ok: true,
+          },
+        },
+      },
+    });
+
+    const sessionId = (plan.structuredContent as { data: { session: { id: string } } }).data.session.id;
+
+    const blockedApply = await client.callTool({
+      name: 'pp.deploy.apply',
+      arguments: {
+        sessionId,
+      },
+    });
+    expect(blockedApply.isError).toBeFalsy();
+    expect(blockedApply.structuredContent).toMatchObject({
+      success: true,
+      data: {
+        approval: {
+          required: true,
+          confirmed: false,
+          matchedSession: false,
+        },
+        result: {
+          mode: 'apply',
+          confirmation: {
+            required: true,
+            confirmed: false,
+            status: 'blocked',
+          },
+          preflight: {
+            ok: false,
+          },
+        },
+      },
+    });
+
+    const apply = await client.callTool({
+      name: 'pp.deploy.apply',
+      arguments: {
+        sessionId,
+        approval: {
+          confirmed: true,
+          sessionId,
+          reason: 'fixture test',
+        },
+      },
+    });
+    expect(apply.isError).toBeFalsy();
+    expect(apply.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.deploy.apply',
+        mutationPolicy: {
+          mode: 'controlled',
+          mutationsExposed: true,
+        },
+      },
+      data: {
+        approval: {
+          required: true,
+          confirmed: true,
+          matchedSession: true,
+        },
+        result: {
+          mode: 'apply',
+          confirmation: {
+            required: true,
+            confirmed: true,
+            status: 'confirmed',
+          },
+          preflight: {
+            ok: true,
+          },
+          apply: {
+            summary: {
+              applied: 1,
+            },
+            operations: [
+              expect.objectContaining({
+                kind: 'flow-parameter-set',
+                status: 'applied',
+                changed: true,
+              }),
+            ],
+          },
+        },
+      },
+    });
+
+    const updatedArtifact = JSON.parse(await readFile(join(projectRoot, 'flows', 'invoice', 'flow.json'), 'utf8')) as {
+      metadata: { parameters: Record<string, unknown> };
+      definition: { parameters: Record<string, { defaultValue?: unknown }> };
+    };
+    expect(updatedArtifact.metadata.parameters.ApiBaseUrl).toBe('https://contoso.example');
+    expect(updatedArtifact.definition.parameters.ApiBaseUrl?.defaultValue).toBe('https://contoso.example');
   });
 });

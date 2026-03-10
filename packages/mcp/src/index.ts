@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -10,6 +11,7 @@ import {
   type ConnectionReferenceSummary,
   type EnvironmentVariableSummary,
 } from '@pp/dataverse';
+import { executeDeploy, executeDeployPlan, type DeployExecutionMode, type DeployPlan } from '@pp/deploy';
 import { createDiagnostic, fail, type Diagnostic, type OperationResult, type ProvenanceRecord, type SupportTier, ok } from '@pp/diagnostics';
 import { ModelService, type ModelAppSummary, type ModelInspectResult } from '@pp/model';
 import { discoverProject, type ProjectContext } from '@pp/project';
@@ -34,6 +36,7 @@ export interface SupportedDomainSummary {
   supportTier: SupportTier;
   readTools: string[];
   mutationToolsAvailable: boolean;
+  mutationTools?: string[];
   notes?: string;
 }
 
@@ -51,6 +54,34 @@ interface ResolvedRemoteRuntime {
     : never;
 }
 
+interface DeploySessionRecord {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  workspaceRoot: string;
+  selectedStage?: string;
+  plan: DeployPlan;
+}
+
+interface ToolMutationPolicyReadOnly {
+  mode: 'read-only';
+  mutationsExposed: false;
+  optInStrategy: string;
+}
+
+interface ToolMutationPolicyControlled {
+  mode: 'controlled';
+  mutationsExposed: true;
+  approvalRequired: boolean;
+  approvalStrategy: string;
+  supportedExecutionModes: DeployExecutionMode[];
+  sessionRequired: boolean;
+}
+
+type ToolMutationPolicy = ToolMutationPolicyReadOnly | ToolMutationPolicyControlled;
+
+const DEPLOY_SESSION_TTL_MS = 30 * 60 * 1000;
+
 const diagnosticSchema = z.object({
   level: z.enum(['error', 'warning', 'info']),
   code: z.string(),
@@ -67,15 +98,27 @@ const provenanceSchema = z.object({
   detail: z.string().optional(),
 });
 
+const mutationPolicySchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('read-only'),
+    mutationsExposed: z.literal(false),
+    optInStrategy: z.string(),
+  }),
+  z.object({
+    mode: z.literal('controlled'),
+    mutationsExposed: z.literal(true),
+    approvalRequired: z.boolean(),
+    approvalStrategy: z.string(),
+    supportedExecutionModes: z.array(z.enum(['apply', 'dry-run', 'plan'])),
+    sessionRequired: z.boolean(),
+  }),
+]);
+
 const outputEnvelopeSchema = z
   .object({
     tool: z.object({
       name: z.string(),
-      mutationPolicy: z.object({
-        mode: z.literal('read-only'),
-        mutationsExposed: z.literal(false),
-        optInStrategy: z.string(),
-      }),
+      mutationPolicy: mutationPolicySchema,
     }),
     success: z.boolean(),
     data: z.unknown().optional(),
@@ -108,6 +151,24 @@ const portfolioScopeSchema = z.object({
   stage: z.string().min(1).optional(),
   allowedProviderKinds: z.array(z.string().min(1)).optional(),
   focusAsset: z.string().min(1).optional(),
+});
+
+const deployScopeSchema = z.object({
+  projectPath: z.string().min(1).optional(),
+  stage: z.string().min(1).optional(),
+});
+
+const deployApplySchema = z.object({
+  sessionId: z.string().uuid(),
+  mode: z.enum(['apply', 'dry-run']).optional(),
+  parameterOverrides: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  approval: z
+    .object({
+      confirmed: z.boolean(),
+      sessionId: z.string().uuid(),
+      reason: z.string().min(1).optional(),
+    })
+    .optional(),
 });
 
 export const initialMcpTools: McpToolDefinition[] = [
@@ -177,6 +238,16 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'Inspect governance findings such as missing ownership, missing provenance, and unsupported connectors.',
   },
   {
+    name: 'pp.deploy.plan',
+    title: 'Plan Deploy Apply',
+    description: 'Resolve a bounded deploy plan, preflight it, and store an MCP plan session for later apply.',
+  },
+  {
+    name: 'pp.deploy.apply',
+    title: 'Apply Planned Deploy',
+    description: 'Execute a previously planned deploy session in dry-run or apply mode with explicit approval for live writes.',
+  },
+  {
     name: 'pp.domain.list',
     title: 'List Supported Domains',
     description: 'Describe the current MCP read surface and the mutation boundary for each exposed domain.',
@@ -189,8 +260,9 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     kind: 'local-context',
     supportTier: 'preview',
     readTools: ['pp.project.inspect', 'pp.analysis.context', 'pp.analysis.portfolio', 'pp.analysis.drift', 'pp.analysis.usage', 'pp.analysis.policy'],
-    mutationToolsAvailable: false,
-    notes: 'Reads local project topology, parameters, and analysis context without mutating the filesystem.',
+    mutationToolsAvailable: true,
+    mutationTools: ['pp.deploy.plan', 'pp.deploy.apply'],
+    notes: 'Reads local project topology and can drive bounded deploy plan-then-apply workflows against the resolved workspace.',
   },
   {
     name: 'dataverse',
@@ -220,31 +292,44 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     name: 'mcp',
     kind: 'interface',
     supportTier: 'preview',
-    readTools: initialMcpTools.map((tool) => tool.name),
-    mutationToolsAvailable: false,
-    notes: 'Mutation tools are intentionally absent from this server release.',
+    readTools: initialMcpTools
+      .filter((tool) => tool.name !== 'pp.deploy.plan' && tool.name !== 'pp.deploy.apply')
+      .map((tool) => tool.name),
+    mutationToolsAvailable: true,
+    mutationTools: ['pp.deploy.plan', 'pp.deploy.apply'],
+    notes: 'Mutation tools are exposed through stored plan sessions plus explicit approval for live apply.',
   },
 ];
 
 export function createReadFirstMcpServer(options: PpMcpServerOptions = {}): McpServer {
+  return createPpMcpServer(options);
+}
+
+export function createPpMcpServer(options: PpMcpServerOptions = {}): McpServer {
   const server = new McpServer({
     name: '@pp/mcp',
     version: '0.1.0',
     title: 'pp MCP',
   });
 
-  registerReadFirstTools(server, options);
+  registerTools(server, options);
   return server;
 }
 
 export async function startReadFirstMcpServer(options: PpMcpServerOptions = {}): Promise<{ server: McpServer; transport: StdioServerTransport }> {
+  return startPpMcpServer(options);
+}
+
+export async function startPpMcpServer(options: PpMcpServerOptions = {}): Promise<{ server: McpServer; transport: StdioServerTransport }> {
   const server = createReadFirstMcpServer(options);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   return { server, transport };
 }
 
-function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions): void {
+function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
+  const deploySessions = new Map<string, DeploySessionRecord>();
+
   server.registerTool(
     'pp.environment.list',
     {
@@ -258,7 +343,7 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
     },
     async ({ configDir }) => {
       const result = await listEnvironments(readConfigOptions(configDir, defaults));
-      return toToolResult('pp.environment.list', result);
+      return toToolResult('pp.environment.list', result, readOnlyPolicy());
     }
   );
 
@@ -275,11 +360,11 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
       const resolution = await resolveRemoteRuntime(args, defaults);
 
       if (!resolution.success || !resolution.data) {
-        return toToolResult('pp.solution.list', resolution);
+        return toToolResult('pp.solution.list', resolution, readOnlyPolicy());
       }
 
       const result = await new SolutionService(resolution.data.client).list();
-      return toToolResult('pp.solution.list', result);
+      return toToolResult('pp.solution.list', result, readOnlyPolicy());
     }
   );
 
@@ -298,11 +383,11 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
       const resolution = await resolveRemoteRuntime(args, defaults);
 
       if (!resolution.success || !resolution.data) {
-        return toToolResult('pp.solution.inspect', resolution);
+        return toToolResult('pp.solution.inspect', resolution, readOnlyPolicy());
       }
 
       const result = await new SolutionService(resolution.data.client).analyze(uniqueName);
-      return toToolResult('pp.solution.inspect', result);
+      return toToolResult('pp.solution.inspect', result, readOnlyPolicy());
     }
   );
 
@@ -329,7 +414,7 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
       const resolution = await resolveRemoteRuntime(args, defaults);
 
       if (!resolution.success || !resolution.data) {
-        return toToolResult('pp.dataverse.query', resolution);
+        return toToolResult('pp.dataverse.query', resolution, readOnlyPolicy());
       }
 
       const result = await resolution.data.client.queryAll<Record<string, unknown>>({
@@ -344,7 +429,7 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
         includeAnnotations,
       });
 
-      return toToolResult('pp.dataverse.query', result);
+      return toToolResult('pp.dataverse.query', result, readOnlyPolicy());
     }
   );
 
@@ -363,15 +448,15 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
       const resolution = await resolveRemoteRuntime(args, defaults);
 
       if (!resolution.success || !resolution.data) {
-        return toToolResult('pp.connection-reference.inspect', resolution);
+        return toToolResult('pp.connection-reference.inspect', resolution, readOnlyPolicy());
       }
 
       const service = new ConnectionReferenceService(resolution.data.client);
       if (identifier) {
-        return toToolResult('pp.connection-reference.inspect', await service.inspect(identifier, { solutionUniqueName }));
+        return toToolResult('pp.connection-reference.inspect', await service.inspect(identifier, { solutionUniqueName }), readOnlyPolicy());
       }
 
-      return toToolResult('pp.connection-reference.inspect', await service.list({ solutionUniqueName }));
+      return toToolResult('pp.connection-reference.inspect', await service.list({ solutionUniqueName }), readOnlyPolicy());
     }
   );
 
@@ -390,15 +475,15 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
       const resolution = await resolveRemoteRuntime(args, defaults);
 
       if (!resolution.success || !resolution.data) {
-        return toToolResult('pp.environment-variable.inspect', resolution);
+        return toToolResult('pp.environment-variable.inspect', resolution, readOnlyPolicy());
       }
 
       const service = new EnvironmentVariableService(resolution.data.client);
       if (identifier) {
-        return toToolResult('pp.environment-variable.inspect', await service.inspect(identifier, { solutionUniqueName }));
+        return toToolResult('pp.environment-variable.inspect', await service.inspect(identifier, { solutionUniqueName }), readOnlyPolicy());
       }
 
-      return toToolResult('pp.environment-variable.inspect', await service.list({ solutionUniqueName }));
+      return toToolResult('pp.environment-variable.inspect', await service.list({ solutionUniqueName }), readOnlyPolicy());
     }
   );
 
@@ -417,15 +502,15 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
       const resolution = await resolveRemoteRuntime(args, defaults);
 
       if (!resolution.success || !resolution.data) {
-        return toToolResult('pp.model-app.inspect', resolution);
+        return toToolResult('pp.model-app.inspect', resolution, readOnlyPolicy());
       }
 
       const service = new ModelService(resolution.data.client);
       if (identifier) {
-        return toToolResult('pp.model-app.inspect', await service.inspect(identifier, { solutionUniqueName }));
+        return toToolResult('pp.model-app.inspect', await service.inspect(identifier, { solutionUniqueName }), readOnlyPolicy());
       }
 
-      return toToolResult('pp.model-app.inspect', await service.list({ solutionUniqueName }));
+      return toToolResult('pp.model-app.inspect', await service.list({ solutionUniqueName }), readOnlyPolicy());
     }
   );
 
@@ -443,7 +528,7 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
         stage,
         environment: process.env,
       });
-      return toToolResult('pp.project.inspect', result);
+      return toToolResult('pp.project.inspect', result, readOnlyPolicy());
     }
   );
 
@@ -465,11 +550,11 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
       });
 
       if (!project.success || !project.data) {
-        return toToolResult('pp.analysis.context', project);
+        return toToolResult('pp.analysis.context', project, readOnlyPolicy());
       }
 
       const result = generateContextPack(project.data, focusAsset);
-      return toToolResult('pp.analysis.context', result);
+      return toToolResult('pp.analysis.context', result, readOnlyPolicy());
     }
   );
 
@@ -550,6 +635,155 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
   );
 
   server.registerTool(
+    'pp.deploy.plan',
+    {
+      title: 'Plan Deploy Apply',
+      description: 'Resolve a bounded deploy plan, preflight it, and store an MCP plan session for later apply.',
+      inputSchema: deployScopeSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Plan Deploy Apply'),
+    },
+    async ({ projectPath, stage }) => {
+      const project = await discoverProject(resolveProjectPath(projectPath, defaults), {
+        stage,
+        environment: process.env,
+      });
+
+      if (!project.success || !project.data) {
+        return toToolResult('pp.deploy.plan', project, controlledMutationPolicy(true));
+      }
+
+      const preview = await executeDeploy(project.data, {
+        mode: 'plan',
+      });
+
+      if (!preview.success || !preview.data) {
+        return toToolResult('pp.deploy.plan', preview, controlledMutationPolicy(true));
+      }
+
+      const session = createDeploySession(project.data, preview.data.plan);
+      deploySessions.set(session.id, session);
+
+      return toToolResult(
+        'pp.deploy.plan',
+        ok(
+          {
+            session: summarizeDeploySession(session),
+            workspace: {
+              projectRoot: project.data.root,
+              selectedStage: project.data.topology.selectedStage,
+              activeEnvironment: project.data.topology.activeEnvironment,
+              activeSolution: project.data.topology.activeSolution?.uniqueName,
+            },
+            preview: preview.data,
+          },
+          {
+            diagnostics: preview.diagnostics,
+            warnings: preview.warnings,
+            supportTier: preview.supportTier,
+            suggestedNextActions: [
+              `Call pp.deploy.apply with sessionId ${session.id} and mode dry-run to re-check the stored plan without writing.`,
+              `Call pp.deploy.apply with sessionId ${session.id} and approval.confirmed=true to authorize live apply for this exact plan session.`,
+              ...(preview.suggestedNextActions ?? []),
+            ],
+            provenance: [
+              ...(preview.provenance ?? []),
+              {
+                kind: 'inferred',
+                source: '@pp/mcp deploy session',
+                detail: `Stored plan session ${session.id} for ${project.data.root} until ${session.expiresAt}.`,
+              },
+            ],
+            knownLimitations: preview.knownLimitations,
+          }
+        ),
+        controlledMutationPolicy(true)
+      );
+    }
+  );
+
+  server.registerTool(
+    'pp.deploy.apply',
+    {
+      title: 'Apply Planned Deploy',
+      description: 'Execute a previously planned deploy session in dry-run or apply mode with explicit approval for live writes.',
+      inputSchema: deployApplySchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Apply Planned Deploy'),
+    },
+    async ({ sessionId, mode, parameterOverrides, approval }) => {
+      pruneExpiredDeploySessions(deploySessions);
+      const session = deploySessions.get(sessionId);
+
+      if (!session) {
+        return toToolResult(
+          'pp.deploy.apply',
+          fail(
+            [
+              createDiagnostic('error', 'MCP_DEPLOY_SESSION_NOT_FOUND', `Deploy session ${sessionId} was not found or has expired.`, {
+                source: '@pp/mcp',
+                detail: `sessionId=${sessionId}`,
+              }),
+            ],
+            {
+              supportTier: 'preview',
+              suggestedNextActions: ['Call pp.deploy.plan again to create a fresh bounded plan session before applying it.'],
+              knownLimitations: ['Deploy apply currently depends on an in-memory MCP plan session and does not persist sessions across server restarts.'],
+            }
+          ),
+          controlledMutationPolicy(true)
+        );
+      }
+
+      const executionMode = mode ?? 'apply';
+      const confirmed = executionMode === 'apply' && approval?.confirmed === true && approval.sessionId === sessionId;
+      const result = await executeDeployPlan(session.plan, {
+        mode: executionMode,
+        confirmed,
+        parameterOverrides,
+      });
+
+      return toToolResult(
+        'pp.deploy.apply',
+        ok(
+          {
+            session: summarizeDeploySession(session),
+            approval: {
+              required: executionMode === 'apply',
+              confirmed,
+              matchedSession: approval?.sessionId === sessionId,
+              reason: approval?.reason,
+            },
+            result: result.data,
+          },
+          {
+            diagnostics: result.diagnostics,
+            warnings: result.warnings,
+            supportTier: result.supportTier,
+            suggestedNextActions: [
+              executionMode === 'apply' && !confirmed
+                ? `Re-run pp.deploy.apply with sessionId ${sessionId} and approval { confirmed: true, sessionId: "${sessionId}" } to authorize live apply.`
+                : `Re-run pp.deploy.plan if the workspace changed and you need a fresh bounded plan.`,
+              ...(result.suggestedNextActions ?? []),
+            ],
+            provenance: [
+              ...(result.provenance ?? []),
+              {
+                kind: 'inferred',
+                source: '@pp/mcp deploy session',
+                detail: `Executed ${executionMode} against stored plan session ${session.id}.`,
+              },
+            ],
+            knownLimitations: result.knownLimitations,
+          }
+        ),
+        controlledMutationPolicy(true),
+        !result.success
+      );
+    }
+  );
+
+  server.registerTool(
     'pp.domain.list',
     {
       title: 'List Supported Domains',
@@ -557,7 +791,7 @@ function registerReadFirstTools(server: McpServer, defaults: PpMcpServerOptions)
       outputSchema: outputEnvelopeSchema,
       annotations: readOnlyAnnotations('List Supported Domains'),
     },
-    async () => toToolResult('pp.domain.list', ok(initialSupportedDomains, { supportTier: 'preview' }))
+    async () => toToolResult('pp.domain.list', ok(initialSupportedDomains, { supportTier: 'preview' }), readOnlyPolicy())
   );
 }
 
@@ -643,7 +877,7 @@ async function runPortfolioTool(
   const projects = await resolvePortfolioProjects(args.projectPaths, args.stage, defaults);
 
   if (!projects.success || !projects.data) {
-    return toToolResult(toolName, projects);
+    return toToolResult(toolName, projects, readOnlyPolicy());
   }
 
   const result = generatePortfolioReport(projects.data, {
@@ -652,7 +886,7 @@ async function runPortfolioTool(
   });
 
   if (!result.success || !result.data) {
-    return toToolResult(toolName, result);
+    return toToolResult(toolName, result, readOnlyPolicy());
   }
 
   const data =
@@ -673,7 +907,8 @@ async function runPortfolioTool(
       suggestedNextActions: result.suggestedNextActions,
       provenance: result.provenance,
       knownLimitations: result.knownLimitations,
-    })
+    }),
+    readOnlyPolicy()
   );
 }
 
@@ -705,15 +940,11 @@ async function resolveRemoteRuntime(args: RemoteToolArgs, defaults: PpMcpServerO
   );
 }
 
-function toToolResult<T>(toolName: string, result: OperationResult<T>) {
+function toToolResult<T>(toolName: string, result: OperationResult<T>, mutationPolicy: ToolMutationPolicy, forceError = !result.success) {
   const envelope = {
     tool: {
       name: toolName,
-      mutationPolicy: {
-        mode: 'read-only' as const,
-        mutationsExposed: false as const,
-        optInStrategy: 'No mutation tools are exposed by this MCP server release.',
-      },
+      mutationPolicy,
     },
     success: result.success,
     ...(result.data !== undefined ? { data: result.data } : {}),
@@ -733,8 +964,71 @@ function toToolResult<T>(toolName: string, result: OperationResult<T>) {
       },
     ],
     structuredContent: envelope,
-    isError: !result.success,
+    isError: forceError,
   };
+}
+
+function readOnlyPolicy(): ToolMutationPolicyReadOnly {
+  return {
+    mode: 'read-only',
+    mutationsExposed: false,
+    optInStrategy: 'No mutation tools are exposed by this tool.',
+  };
+}
+
+function controlledMutationPolicy(approvalRequired: boolean): ToolMutationPolicyControlled {
+  return {
+    mode: 'controlled',
+    mutationsExposed: true,
+    approvalRequired,
+    approvalStrategy: 'Plan first, then execute a stored MCP deploy session. Live apply requires explicit approval bound to the exact session id.',
+    supportedExecutionModes: ['plan', 'dry-run', 'apply'],
+    sessionRequired: true,
+  };
+}
+
+function controlledMutationAnnotations(title: string) {
+  return {
+    title,
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: false,
+  } as const;
+}
+
+function createDeploySession(project: ProjectContext, plan: DeployPlan): DeploySessionRecord {
+  const createdAt = new Date().toISOString();
+  return {
+    id: randomUUID(),
+    createdAt,
+    expiresAt: new Date(Date.now() + DEPLOY_SESSION_TTL_MS).toISOString(),
+    workspaceRoot: project.root,
+    selectedStage: project.topology.selectedStage,
+    plan,
+  };
+}
+
+function summarizeDeploySession(session: DeploySessionRecord) {
+  return {
+    id: session.id,
+    createdAt: session.createdAt,
+    expiresAt: session.expiresAt,
+    workspaceRoot: session.workspaceRoot,
+    selectedStage: session.selectedStage,
+    target: session.plan.target,
+    operationCount: session.plan.operations.length,
+    operationKinds: [...new Set(session.plan.operations.map((operation) => operation.kind))],
+  };
+}
+
+function pruneExpiredDeploySessions(sessions: Map<string, DeploySessionRecord>): void {
+  const now = Date.now();
+  for (const [sessionId, session] of sessions.entries()) {
+    if (Date.parse(session.expiresAt) <= now) {
+      sessions.delete(sessionId);
+    }
+  }
 }
 
 function summarizeEnvelope(
