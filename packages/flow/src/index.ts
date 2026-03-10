@@ -37,6 +37,7 @@ export interface FlowConnectionReference extends DataverseCloudFlowConnectionRef
 export interface FlowSummary {
   id: string;
   name?: string;
+  description?: string;
   uniqueName?: string;
   category?: number;
   stateCode?: number;
@@ -58,6 +59,7 @@ export interface FlowArtifact {
     id?: string;
     name?: string;
     displayName?: string;
+    description?: string;
     uniqueName?: string;
     category?: number;
     stateCode?: number;
@@ -2345,6 +2347,7 @@ function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspe
   return {
     id: record.id,
     name: record.name,
+    description: record.description,
     uniqueName: record.uniqueName,
     category: record.category,
     stateCode: record.stateCode,
@@ -2378,6 +2381,7 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
     {
       id: flow.id,
       name: flow.name,
+      description: flow.description,
       uniquename: flow.uniqueName,
       category: flow.category,
       statecode: flow.stateCode,
@@ -2386,6 +2390,7 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
       properties: {
         definition: cloneJsonValue(definition),
         ...(flow.name ? { name: flow.name, displayName: flow.name } : {}),
+        ...(flow.description ? { description: flow.description } : {}),
         ...(flow.uniqueName ? { uniquename: flow.uniqueName } : {}),
         ...(flow.category !== undefined ? { category: flow.category } : {}),
         ...(flow.stateCode !== undefined ? { statecode: flow.stateCode } : {}),
@@ -2673,6 +2678,7 @@ function normalizeCanonicalFlowArtifact(record: Record<string, unknown>, sourceP
         id: readString(metadata.id),
         name: readString(metadata.name),
         displayName: readString(metadata.displayName),
+        description: readString(metadata.description),
         uniqueName: readString(metadata.uniqueName),
         category: readNumber(metadata.category),
         stateCode: readNumber(metadata.stateCode),
@@ -2723,6 +2729,7 @@ function normalizeRawFlowArtifact(record: Record<string, unknown>, sourcePath: s
         id: readString(record.id) ?? readString(record.workflowid),
         name: readString(record.name) ?? readString(properties.name),
         displayName: readString(record.displayName) ?? readString(properties.displayName) ?? readString(record.name),
+        description: readString(record.description) ?? readString(properties.description),
         uniqueName: readString(record.uniquename) ?? readString(properties.uniquename),
         category: readNumber(record.category) ?? readNumber(properties.category),
         stateCode: readNumber(record.statecode) ?? readNumber(properties.statecode),
@@ -2796,6 +2803,7 @@ function buildFlowDeployCreateEntity(artifact: FlowArtifact): Record<string, unk
   return {
     category: artifact.metadata.category ?? 5,
     name: artifact.metadata.displayName ?? artifact.metadata.name ?? artifact.metadata.uniqueName,
+    ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
     uniquename: artifact.metadata.uniqueName,
     clientdata: buildFlowDeployClientData(artifact),
     ...(artifact.metadata.stateCode !== undefined ? { statecode: artifact.metadata.stateCode } : {}),
@@ -2811,6 +2819,7 @@ function buildFlowDeployUpdateEntity(artifact: FlowArtifact): Record<string, unk
           name: artifact.metadata.displayName ?? artifact.metadata.name,
         }
       : {}),
+    ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
     ...(artifact.metadata.category !== undefined ? { category: artifact.metadata.category } : {}),
     ...(artifact.metadata.stateCode !== undefined ? { statecode: artifact.metadata.stateCode } : {}),
     ...(artifact.metadata.statusCode !== undefined ? { statuscode: artifact.metadata.statusCode } : {}),
@@ -2829,6 +2838,7 @@ function buildRawFlowArtifactDocument(artifact: FlowArtifact): Record<string, Fl
       definition: cloneJsonValue(artifact.definition),
       ...(artifact.metadata.displayName ? { displayName: artifact.metadata.displayName } : {}),
       ...(artifact.metadata.name ? { name: artifact.metadata.name } : {}),
+      ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
       ...(artifact.metadata.uniqueName ? { uniquename: artifact.metadata.uniqueName } : {}),
       ...(artifact.metadata.category !== undefined ? { category: artifact.metadata.category } : {}),
       ...(artifact.metadata.stateCode !== undefined ? { statecode: artifact.metadata.stateCode } : {}),

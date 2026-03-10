@@ -27,7 +27,7 @@ pp flow promote "Invoice Sync" --source-environment dev --source-solution Core -
 
 Current remote inspection returns:
 
-- flow id, name, and unique name
+- flow id, name, bounded description metadata, and unique name
 - state and status codes
 - whether client-definition data was present
 - parsed connection reference names
@@ -90,6 +90,7 @@ The canonical unpacked artifact is `flow.json`:
   "metadata": {
     "name": "Invoice Flow",
     "displayName": "Invoice Flow",
+    "description": "Synchronize invoice payloads to downstream systems.",
     "category": 5,
     "connectionReferences": [
       {
@@ -153,7 +154,8 @@ now carries that lifecycle one step further for an already-existing target cloud
 flow by validating the local artifact, resolving a remote workflow by `--target`
 or the artifact metadata (`uniqueName`, then `name`, then `displayName`, then
 `id`), and PATCHing the normalized definition plus a bounded workflow-shell
-metadata slice (`name`, `category`, `statecode`, and `statuscode` when present)
+metadata slice (`name`, `description`, `category`, `statecode`, and `statuscode`
+when present)
 back into Dataverse `workflows`.
 When `--create-if-missing` is supplied, the same command can also provision a
 bounded missing cloud-flow shell using the artifact `metadata.uniqueName`,
@@ -193,8 +195,8 @@ The current pack/deploy boundary is:
   fields from `workflows.clientdata` in the canonical local artifact instead
   of flattening them away
 - writes a raw `properties.definition` payload plus supported metadata fields
-  such as `displayName`, `name`, `uniquename`, `category`, `statecode`, and
-  `statuscode`
+  such as `displayName`, `name`, `description`, `uniquename`, `category`,
+  `statecode`, and `statuscode`
 - repack also restores that bounded preserved `clientdata` context alongside
   `properties.definition` so local export/edit/repack flows can round-trip the
   supported remote payload shape
@@ -202,7 +204,7 @@ The current pack/deploy boundary is:
 - intentionally does not reintroduce stripped noisy timestamps such as
   `createdTime` or `lastModifiedTime`
 - remote deploy currently updates only a bounded workflow shell (`name`,
-  `category`, `statecode`, `statuscode`) plus the normalized `clientdata`
+  `description`, `category`, `statecode`, `statuscode`) plus the normalized `clientdata`
   definition and any preserved bounded `clientdata` siblings after the shared
   local validator passes, and when a destination solution scope is supplied it
   also checks that projected connection references and environment variables
@@ -216,7 +218,7 @@ The current pack/deploy boundary is:
   `--source-solution`, does not support `--target` or `--create-if-missing`,
   and accepts the same bounded import controls as `pp solution import`
 - create-if-missing currently requires artifact `metadata.uniqueName`, creates
-  only a bounded workflow shell (`category`, `name`, `uniquename`,
+  only a bounded workflow shell (`category`, `name`, `description`, `uniquename`,
   `statecode`/`statuscode` when present, plus normalized `clientdata`), and
   fails explicitly instead of guessing if the same flow already exists outside
   the requested solution filter

@@ -588,6 +588,7 @@ export interface ModelDrivenAppSitemapSummary {
 export interface CloudFlowRecord {
   workflowid: string;
   name?: string;
+  description?: string;
   category?: number;
   statecode?: number;
   statuscode?: number;
@@ -605,6 +606,7 @@ export interface CloudFlowConnectionReference {
 export interface CloudFlowSummary {
   id: string;
   name?: string;
+  description?: string;
   uniqueName?: string;
   category?: number;
   stateCode?: number;
@@ -2523,7 +2525,7 @@ export class CloudFlowService {
   async list(): Promise<OperationResult<CloudFlowInspectResult[]>> {
     const workflows = await this.dataverseClient.queryAll<CloudFlowRecord>({
       table: 'workflows',
-      select: ['workflowid', 'name', 'category', 'statecode', 'statuscode', 'uniquename', 'clientdata'],
+      select: ['workflowid', 'name', 'description', 'category', 'statecode', 'statuscode', 'uniquename', 'clientdata'],
       filter: 'category eq 5',
     });
 
@@ -3731,6 +3733,7 @@ function normalizeCloudFlow(record: CloudFlowRecord): CloudFlowInspectResult {
   return {
     id: record.workflowid,
     name: record.name,
+    description: record.description,
     uniqueName: record.uniquename,
     category: record.category,
     stateCode: record.statecode,

@@ -41,6 +41,7 @@
         "name": "shared_office365"
       }
     ],
+    "description": "Synchronize invoice payloads to downstream systems.",
     "displayName": "Invoice Flow",
     "environmentVariables": [
       "pp_ApiUrl"

@@ -5,6 +5,7 @@
   },
   "properties": {
     "category": 5,
+    "description": "Synchronize invoice payloads to downstream systems.",
     "definition": {
       "actions": {
         "ComposePayload": {

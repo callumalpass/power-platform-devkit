@@ -56,6 +56,7 @@ function createStubDataverseClient(): DataverseClient {
               {
                 workflowid: 'flow-1',
                 name: 'Invoice Sync',
+                description: 'Synchronize invoices from Dataverse to downstream systems.',
                 uniquename: 'crd_InvoiceSync',
                 category: 5,
                 statecode: 1,
@@ -212,6 +213,7 @@ describe('FlowService', () => {
     expect(list.data?.[0]).toMatchObject({
       id: 'flow-1',
       name: 'Invoice Sync',
+      description: 'Synchronize invoices from Dataverse to downstream systems.',
       parameters: ['ApiBaseUrl'],
       environmentVariables: ['pp_ApiUrl'],
     });
@@ -258,6 +260,7 @@ describe('FlowService', () => {
         id: 'flow-1',
         name: 'Invoice Sync',
         displayName: 'Invoice Sync',
+        description: 'Synchronize invoices from Dataverse to downstream systems.',
         uniqueName: 'crd_InvoiceSync',
         category: 5,
         sourcePath: 'dataverse://workflows/flow-1',
@@ -294,6 +297,7 @@ describe('FlowService', () => {
               {
                 workflowid: 'flow-1',
                 name: 'Invoice Flow',
+                description: 'Synchronize invoice payloads to downstream systems.',
                 uniquename: 'crd_InvoiceFlow',
                 category: 5,
                 statecode: 1,
@@ -361,7 +365,7 @@ describe('FlowService', () => {
         uniqueName: 'crd_InvoiceFlow',
         solutionUniqueName: 'Core',
       },
-      updatedFields: ['clientdata', 'name', 'category', 'statecode', 'statuscode'],
+      updatedFields: ['clientdata', 'name', 'description', 'category', 'statecode', 'statuscode'],
       validation: {
         valid: true,
       },
@@ -373,6 +377,7 @@ describe('FlowService', () => {
       solutionUniqueName: 'Core',
       entity: {
         name: 'Invoice Flow',
+        description: 'Synchronize invoice payloads to downstream systems.',
         category: 5,
         statecode: 1,
         statuscode: 2,
@@ -433,6 +438,7 @@ describe('FlowService', () => {
             entity: {
               workflowid: 'flow-created-1',
               name: 'Invoice Flow',
+              description: 'Synchronize invoice payloads to downstream systems.',
               uniquename: 'crd_InvoiceFlow',
               category: 5,
               statecode: 1,
@@ -462,7 +468,7 @@ describe('FlowService', () => {
         uniqueName: 'crd_InvoiceFlow',
         solutionUniqueName: 'Core',
       },
-      updatedFields: ['category', 'name', 'uniquename', 'clientdata', 'statecode', 'statuscode'],
+      updatedFields: ['category', 'name', 'description', 'uniquename', 'clientdata', 'statecode', 'statuscode'],
       validation: {
         valid: true,
       },
@@ -475,6 +481,7 @@ describe('FlowService', () => {
     expect(creates[0]?.entity).toMatchObject({
       category: 5,
       name: 'Invoice Flow',
+      description: 'Synchronize invoice payloads to downstream systems.',
       uniquename: 'crd_InvoiceFlow',
       statecode: 1,
       statuscode: 2,
@@ -963,6 +970,7 @@ describe('FlowService', () => {
         {
           name: 'Invoice Flow',
           properties: {
+            description: 'Synchronize invoice payloads to downstream systems.',
             displayName: 'Invoice Flow',
             definition: {
               parameters: {
@@ -1016,8 +1024,10 @@ describe('FlowService', () => {
     });
 
     const normalized = JSON.parse(await readFile(join(dir, 'artifacts', 'flow.json'), 'utf8')) as {
+      metadata: Record<string, unknown>;
       definition: Record<string, unknown>;
     };
+    expect(normalized.metadata.description).toBe('Synchronize invoice payloads to downstream systems.');
     expect(normalized.definition.lastModifiedTime).toBeUndefined();
   });
 
@@ -1063,6 +1073,7 @@ describe('FlowService', () => {
             },
           }),
           properties: {
+            description: 'Synchronize invoice payloads to downstream systems.',
             displayName: 'Invoice Flow',
             name: 'Invoice Flow',
             uniquename: 'crd_InvoiceFlow',
@@ -1119,6 +1130,7 @@ describe('FlowService', () => {
         preserve: true,
       },
       properties: {
+        description: 'Synchronize invoice payloads to downstream systems.',
         displayName: 'Invoice Flow',
         name: 'Invoice Flow',
         uniquename: 'crd_InvoiceFlow',
