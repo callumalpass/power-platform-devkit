@@ -1,4 +1,8 @@
-level    code          message                         source    path
--------  ------------  ------------------------------  --------  -----------------------
-error    TEST_FAILURE  Something went wrong            @pp/test  fixtures/cli/input.json
-warning  TEST_WARNING  This is only a preview warning  @pp/test
+level    code          message                         source    path                     hint                                                    detail
+-------  ------------  ------------------------------  --------  -----------------------  ------------------------------------------------------  ------
+error    TEST_FAILURE  Something went wrong            @pp/test  fixtures/cli/input.json  Check the committed fixture payload.
+warning  TEST_WARNING  This is only a preview warning  @pp/test                           Warnings should stay visible in the rendered contract.
+
+Next actions:
+- Retry with --format json
+- Refresh the committed fixture if the contract changed intentionally

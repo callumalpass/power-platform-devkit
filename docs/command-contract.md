@@ -35,7 +35,8 @@ Commands still emit primary payloads on stdout and diagnostics on stderr.
   diagnostic envelopes on stderr whenever commands surface diagnostics, even if
   they also emit a primary payload on stdout
 - human-oriented formats (`table`, `markdown`, `raw`) emit readable diagnostic
-  summaries on stderr for the same cases
+  summaries on stderr for the same cases, including `suggestedNextActions`
+  when the command can point to a canonical next step
 - warnings stay off stdout so structured payloads remain parseable
 
 `project inspect` is the current exception for machine-readable formats:

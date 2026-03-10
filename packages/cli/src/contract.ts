@@ -165,7 +165,7 @@ function renderDiagnostics(result: OperationResult<unknown>, format: CliOutputFo
   const diagnostics = [...result.diagnostics, ...result.warnings];
 
   if (format === 'table') {
-    return renderTable(
+    const renderedTable = renderTable(
       diagnosticRows(diagnostics).map((row) => ({
         ...row,
         path: row.path ?? '',
@@ -174,9 +174,11 @@ function renderDiagnostics(result: OperationResult<unknown>, format: CliOutputFo
         detail: row.detail ?? '',
       }))
     );
+
+    return appendSuggestedNextActions(renderedTable, result.suggestedNextActions);
   }
 
-  return ensureTrailingNewline(
+  const renderedDiagnostics = ensureTrailingNewline(
     diagnostics
       .map((diagnostic) => {
         const details = [
@@ -190,6 +192,8 @@ function renderDiagnostics(result: OperationResult<unknown>, format: CliOutputFo
       })
       .join('\n')
   );
+
+  return appendSuggestedNextActions(renderedDiagnostics, result.suggestedNextActions);
 }
 
 function isOutputFormat(value: string): value is CliOutputFormat {
@@ -311,6 +315,19 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function ensureTrailingNewline(value: string): string {
   return value.endsWith('\n') ? value : `${value}\n`;
+}
+
+function appendSuggestedNextActions(value: string, suggestedNextActions: string[] | undefined): string {
+  if (!suggestedNextActions || suggestedNextActions.length === 0) {
+    return value;
+  }
+
+  const renderedActions = [
+    'Next actions:',
+    ...suggestedNextActions.map((action) => `- ${action}`),
+  ].join('\n');
+
+  return `${value.replace(/\n$/, '')}\n\n${renderedActions}\n`;
 }
 
 function asJsonValue(value: unknown): unknown {

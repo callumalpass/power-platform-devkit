@@ -2,3 +2,7 @@ level    code                     message                                    sou
 -------  -----------------------  -----------------------------------------  --------  ----------------------------------------  ----------------------------------------------------------  ------
 error    TEST_SUCCESS_DIAGNOSTIC  Success payload still carries diagnostics  @pp/test  fixtures/analysis/project/pp.config.yaml  Diagnostics should stay on stderr without changing stdout.
 warning  TEST_SUCCESS_WARNING     Success payload still carries warnings     @pp/test                                            Warnings should render beside diagnostics.
+
+Next actions:
+- Review the diagnostics channel
+- Keep stdout machine-parseable
