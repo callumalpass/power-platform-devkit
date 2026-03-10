@@ -1,5 +1,8 @@
 {
-  "details": {
+  "action": "canvas.create.remote.handoff",
+  "browserProfile": "maker-from-auth",
+  "delegated": true,
+  "handoff": {
     "handoff": {
       "displayName": "Harness Canvas",
       "kind": "maker-blank-app",
@@ -16,19 +19,27 @@
       "solutionComponentsCommand": "pp solution components HarnessSolution --environment fixture --format json"
     }
   },
-  "diagnostics": [
-    {
-      "code": "CANVAS_REMOTE_CREATE_NOT_IMPLEMENTED",
-      "hint": "Use pp canvas list/inspect for remote discovery today, or finish blank-app creation in Maker until a first-class pp canvas create command exists.",
-      "level": "error",
-      "message": "Remote canvas create is not implemented yet.",
-      "source": "@pp/cli"
-    }
-  ],
+  "input": {
+    "displayName": "Harness Canvas"
+  },
   "knownLimitations": [
     "Remote canvas coverage in pp is currently read-only.",
     "pp does not yet return a remote canvas app id for create/import workflows."
   ],
+  "launch": {
+    "args": [
+      "--user-data-dir=/tmp/maker-from-auth",
+      "https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1"
+    ],
+    "command": "fake-browser",
+    "profile": {
+      "kind": "edge",
+      "name": "maker-from-auth"
+    },
+    "profileDir": "/tmp/maker-from-auth",
+    "url": "https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1"
+  },
+  "launched": true,
   "provenance": [
     {
       "detail": "Environment alias fixture was resolved through configured Dataverse metadata and solution HarnessSolution.",
@@ -41,7 +52,6 @@
       "source": "@pp/cli canvas Maker fallback guidance"
     }
   ],
-  "success": false,
   "suggestedNextActions": [
     "Use Maker blank-app creation for now when you need a new remote canvas app.",
     "Open https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1 to start the solution-scoped blank canvas app flow in Maker.",
@@ -50,5 +60,11 @@
     "Run `pp solution components HarnessSolution --environment fixture --format json` to verify that the app was added to the solution."
   ],
   "supportTier": "preview",
-  "warnings": []
+  "target": {
+    "envAlias": "fixture",
+    "makerEnvironmentId": "env-123",
+    "solutionId": "solution-1",
+    "solutionUniqueName": "HarnessSolution",
+    "supported": false
+  }
 }

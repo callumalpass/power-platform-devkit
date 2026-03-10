@@ -409,7 +409,9 @@ describe('cli fixture-backed workflows', () => {
     expect(createHelp.stdout).toContain('--dry-run');
     expect(createHelp.stdout).toContain('--plan');
     expect(createHelp.stdout).toContain('Finish blank-app creation in Maker when you need a new remote canvas app.');
-    expect(createHelp.stdout).toContain('Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.');
+    expect(createHelp.stdout).toContain(
+      'Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.'
+    );
 
     expect(importHelp.code).toBe(0);
     expect(importHelp.stderr).toBe('');
@@ -422,7 +424,9 @@ describe('cli fixture-backed workflows', () => {
     expect(importHelp.stdout).toContain('--dry-run');
     expect(importHelp.stdout).toContain('--plan');
     expect(importHelp.stdout).toContain('Use Maker or solution tooling for the remote import step until `pp canvas import` exists.');
-    expect(importHelp.stdout).toContain('Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.');
+    expect(importHelp.stdout).toContain(
+      'Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.'
+    );
   });
 
   it('prints stable help for remote canvas discovery commands', async () => {
@@ -1148,6 +1152,12 @@ describe('cli fixture-backed workflows', () => {
         environment: {
           makerEnvironmentId: 'env-123',
         },
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+          defaultResource: 'https://fixture.crm.dynamics.com',
+          browserProfile: 'maker-from-auth',
+        },
       },
     });
 
@@ -1201,6 +1211,11 @@ describe('cli fixture-backed workflows', () => {
         }),
         environment: {
           makerEnvironmentId: 'env-123',
+        },
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+          defaultResource: 'https://fixture.crm.dynamics.com',
         },
       },
     });
@@ -1277,9 +1292,9 @@ describe('cli fixture-backed workflows', () => {
         },
       ],
       suggestedNextActions: [
-        'Run `pp solution list --env fixture` to discover the available solution unique names in this environment.',
+        'Run `pp solution list --environment fixture` to discover the available solution unique names in this environment.',
         'Retry with a valid `--solution` value, or configure fixture with `defaultSolution` if this workflow should stay solution-scoped by default.',
-        'Once you have the right solution, use `pp solution inspect MissingSolution --env fixture` to confirm it resolves before retrying the canvas workflow.',
+        'Once you have the right solution, use `pp solution inspect MissingSolution --environment fixture` to confirm it resolves before retrying the canvas workflow.',
       ],
       knownLimitations: expect.arrayContaining(['Remote canvas coverage in pp is currently read-only.']),
     });
@@ -1303,6 +1318,12 @@ describe('cli fixture-backed workflows', () => {
         }),
         environment: {
           makerEnvironmentId: 'env-123',
+        },
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+          defaultResource: 'https://fixture.crm.dynamics.com',
+          browserProfile: 'maker-from-auth',
         },
       },
     });
@@ -1347,9 +1368,9 @@ describe('cli fixture-backed workflows', () => {
       suggestedNextActions: expect.arrayContaining([
         'Using default solution HarnessSolution from environment alias fixture, keep the Maker step and verification scoped to that solution.',
         'Open https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1 to start the solution-scoped blank canvas app flow in Maker.',
-        'After saving in Maker, run `pp canvas inspect "Harness Canvas" --env fixture --solution HarnessSolution` to confirm the remote app id.',
-        'After the Maker step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.',
-        'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the app was added to the solution.',
+        'After saving in Maker, run `pp canvas inspect "Harness Canvas" --environment fixture --solution HarnessSolution` to confirm the remote app id.',
+        'After the Maker step, run `pp canvas list --environment fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.',
+        'Run `pp solution components HarnessSolution --environment fixture --format json` to verify that the app was added to the solution.',
       ]),
     });
 
@@ -1359,9 +1380,9 @@ describe('cli fixture-backed workflows', () => {
       suggestedNextActions: expect.arrayContaining([
         'Using default solution HarnessSolution from environment alias fixture, keep the Maker step and verification scoped to that solution.',
         'Open https://make.powerapps.com/environments/env-123/solutions/solution-1/apps to continue the import from the solution-scoped apps view in Maker.',
-        'After the import step, run `pp canvas inspect "Harness App" --env fixture --solution HarnessSolution` to confirm the remote app id.',
-        'After the import step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the app is visible in Dataverse.',
-        'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the imported app was added to the solution.',
+        'After the import step, run `pp canvas inspect "Harness App" --environment fixture --solution HarnessSolution` to confirm the remote app id.',
+        'After the import step, run `pp canvas list --environment fixture --solution HarnessSolution` to confirm the app is visible in Dataverse.',
+        'Run `pp solution components HarnessSolution --environment fixture --format json` to verify that the imported app was added to the solution.',
       ]),
     });
   });
@@ -1384,6 +1405,11 @@ describe('cli fixture-backed workflows', () => {
         }),
         environment: {
           makerEnvironmentId: 'env-123',
+        },
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+          defaultResource: 'https://fixture.crm.dynamics.com',
         },
       },
     });
@@ -1559,6 +1585,12 @@ describe('cli fixture-backed workflows', () => {
         environment: {
           makerEnvironmentId: 'env-123',
         },
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+          defaultResource: 'https://fixture.crm.dynamics.com',
+          browserProfile: 'maker-from-auth',
+        },
       },
     });
 
@@ -1698,7 +1730,106 @@ describe('cli fixture-backed workflows', () => {
     );
   });
 
-  it('requires browser-profile launch context when opening a Maker handoff', async () => {
+  it('reuses the environment auth profile browser profile when opening a Maker handoff', async () => {
+    const configDir = await createTempDir();
+    const launchBrowserProfile = vi.spyOn(AuthService.prototype, 'launchBrowserProfile').mockResolvedValue({
+      success: true,
+      diagnostics: [],
+      warnings: [],
+      supportTier: 'preview',
+      data: {
+        profile: {
+          name: 'maker-from-auth',
+          kind: 'edge',
+        },
+        url: 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+        command: 'fake-browser',
+        args: ['--user-data-dir=/tmp/maker-from-auth', 'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1'],
+        profileDir: '/tmp/maker-from-auth',
+      },
+    });
+
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {
+          makerEnvironmentId: 'env-123',
+        },
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+          defaultResource: 'https://fixture.crm.dynamics.com',
+          browserProfile: 'maker-from-auth',
+        },
+      },
+    });
+
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://fixture.crm.dynamics.com',
+              browserProfile: 'maker-from-auth',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+              makerEnvironmentId: 'env-123',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const create = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--open',
+      '--config-dir',
+      configDir,
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(0);
+    expect(create.stderr).toBe('');
+    await expectGoldenJson(JSON.parse(create.stdout), 'fixtures/cli/golden/protocol/canvas-remote-create-open-inferred-browser-profile.json');
+    expect(launchBrowserProfile).toHaveBeenCalledWith(
+      'maker-from-auth',
+      'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1'
+    );
+  });
+
+  it('requires browser-profile launch context when neither the command nor auth profile provides one', async () => {
+    const configDir = await createTempDir();
     mockDataverseResolution({
       fixture: {
         client: createFixtureDataverseClient({
@@ -1719,6 +1850,33 @@ describe('cli fixture-backed workflows', () => {
       },
     });
 
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://fixture.crm.dynamics.com',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+              makerEnvironmentId: 'env-123',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
     const missingBrowserProfile = await runCli([
       'canvas',
       'create',
@@ -1729,6 +1887,8 @@ describe('cli fixture-backed workflows', () => {
       '--name',
       'Harness Canvas',
       '--open',
+      '--config-dir',
+      configDir,
       '--format',
       'json',
     ]);

@@ -14,7 +14,6 @@ import {
   summarizeProfile,
   type AuthProfile,
   type BrowserProfile,
-  type UserAuthProfile,
 } from '@pp/auth';
 import { CanvasService, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
 import {
@@ -462,7 +461,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
   const explicitSolutionUniqueName = readFlag(args, '--solution');
   const explicitMakerEnvironmentId = readFlag(args, '--maker-env-id');
   const explicitDisplayName = readFlag(args, '--name');
-  const browserProfileName = readFlag(args, '--browser-profile');
+  const explicitBrowserProfileName = readFlag(args, '--browser-profile');
   const openMakerHandoff = hasFlag(args, '--open');
   const displayName = command === 'create' ? explicitDisplayName : undefined;
   const importPath = command === 'import' ? positionalArgs(args)[0] : undefined;
@@ -597,11 +596,14 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
   }
 
   if (openMakerHandoff) {
+    const browserProfileName =
+      explicitBrowserProfileName ?? resolveBrowserProfileNameFromAuthProfile(resolution.data.authProfile);
+
     if (!browserProfileName) {
       return printFailure(
         argumentFailure(
           'AUTH_BROWSER_PROFILE_NAME_REQUIRED',
-          'Use --browser-profile NAME with --open so pp can launch the Maker handoff in a persisted browser profile.'
+          'Use --browser-profile NAME with --open, or configure browserProfile on the environment auth profile, so pp can launch the Maker handoff in a persisted browser profile.'
         )
       );
     }
@@ -930,6 +932,14 @@ function buildCanvasMissingSolutionSuggestions(envAlias: string, solutionUniqueN
     `Retry with a valid \`--solution\` value, or configure ${formattedEnvAlias} with \`defaultSolution\` if this workflow should stay solution-scoped by default.`,
     `Once you have the right solution, use \`pp solution inspect ${formattedSolutionUniqueName} --environment ${formattedEnvAlias}\` to confirm it resolves before retrying the canvas workflow.`,
   ];
+}
+
+function resolveBrowserProfileNameFromAuthProfile(profile: AuthProfile): string | undefined {
+  if (profile.type === 'user') {
+    return profile.browserProfile;
+  }
+
+  return undefined;
 }
 
 async function readEnvironmentDefaultSolution(alias: string, configOptions: ConfigStoreOptions): Promise<string | undefined> {
@@ -5412,12 +5422,13 @@ function printCanvasCreateHelp(): void {
       'Options:',
       '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
       '  --open                     Launch the resolved Maker handoff URL instead of only printing it',
-      '  --browser-profile NAME     Browser profile to use with --open for the Maker handoff',
+      '  --browser-profile NAME     Optional override for the browser profile used with --open',
       '',
       'What works today:',
       '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps.',
       '  - Use `pp canvas inspect <displayName|name|id> --environment <alias> --solution <solution>` to inspect a specific remote app.',
-      '  - Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.',
+      '  - Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.',
+      '  - Use `--open --browser-profile <name>` to override that browser profile for a one-off handoff.',
       '',
       'Next steps for new apps today:',
       '  - Finish blank-app creation in Maker when you need a new remote canvas app.',
@@ -5472,12 +5483,13 @@ function printCanvasImportHelp(): void {
       '  --name DISPLAY_NAME        Expected remote display name for post-import verification guidance',
       '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
       '  --open                     Launch the resolved Maker handoff URL instead of only printing it',
-      '  --browser-profile NAME     Browser profile to use with --open for the Maker handoff',
+      '  --browser-profile NAME     Optional override for the browser profile used with --open',
       '',
       'What works today:',
       '  - Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
       '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps.',
-      '  - Use `--open --browser-profile <name>` to launch the resolved Maker handoff from pp.',
+      '  - Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.',
+      '  - Use `--open --browser-profile <name>` to override that browser profile for a one-off handoff.',
       '',
       'Next steps for remote import today:',
       '  - Use Maker or solution tooling for the remote import step until `pp canvas import` exists.',
