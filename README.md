@@ -30,7 +30,7 @@ Implemented today:
 
 Preview or intentionally bounded:
 
-- remote canvas create/import still fall back to a Maker handoff or explicit not-yet-implemented diagnostics
+- remote canvas download now works for solution-scoped apps via Dataverse solution export, while remote canvas create/import still fall back to a Maker handoff or explicit not-yet-implemented diagnostics
 - flow deploy/promotion is intentionally bounded to the current normalized artifact contract, not the full cloud-flow lifecycle
 - SharePoint and Power BI currently expose targeted inspection and deploy-adjacent workflows, not full authoring surfaces
 - broader distribution, packaging, and marketplace-style extension delivery remain early

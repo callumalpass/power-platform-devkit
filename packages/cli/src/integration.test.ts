@@ -351,6 +351,15 @@ async function unzipCanvasPackage(packagePath: string, root: string): Promise<st
   return unzipDir;
 }
 
+async function createZipPackage(sourceDir: string, outPath: string): Promise<void> {
+  const zipResult = spawnSync('zip', ['-rqX', outPath, '.'], {
+    cwd: sourceDir,
+    encoding: 'utf8',
+  });
+
+  expect(zipResult.status).toBe(0);
+}
+
 function normalizeNativeHeaderSnapshot<T>(value: T): T {
   const normalized = normalizeCliSnapshot(value);
 
@@ -459,6 +468,7 @@ describe('cli fixture-backed workflows', () => {
       'Remote Dataverse-backed commands accept [--no-interactive-auth] to fail fast with structured diagnostics instead of opening browser auth.'
     );
     expect(stdout.join('')).toContain('canvas create --environment ALIAS');
+    expect(stdout.join('')).toContain('canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE]');
     expect(stdout.join('')).toContain('canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME]');
     expect(stdout.join('')).toContain('[preview: returns not-implemented diagnostics]');
     expect(stdout.join('')).toContain('completion <bash|zsh|fish>');
@@ -506,6 +516,10 @@ describe('cli fixture-backed workflows', () => {
     expect(stderr.join('')).toBe('');
     expect(stdout.join('')).toContain('Usage: canvas <command> [options]');
     expect(stdout.join('')).toContain('pp canvas list --environment dev --solution Core');
+    expect(stdout.join('')).toContain('pp canvas download "Harness Canvas" --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp');
+    expect(stdout.join('')).toContain(
+      'Remote canvas download exports the containing solution through Dataverse and extracts CanvasApps/*.msapp without leaving pp.'
+    );
     expect(stdout.join('')).toContain('Remote create/import still use preview flows rather than first-class server-side APIs.');
     expect(stdout.join('')).toContain('`canvas create --delegate` can drive the Maker blank-app flow and wait for the created app id through Dataverse.');
     expect(stdout.join('')).toContain('Attempted remote create/import calls return machine-readable diagnostics with next steps.');
@@ -554,6 +568,7 @@ describe('cli fixture-backed workflows', () => {
 
   it('prints stable help for remote canvas discovery commands', async () => {
     const listHelp = await runCli(['canvas', 'list', '--help']);
+    const downloadHelp = await runCli(['canvas', 'download', '--help']);
     const inspectHelp = await runCli(['canvas', 'inspect', '--help']);
 
     expect(listHelp.code).toBe(0);
@@ -561,6 +576,14 @@ describe('cli fixture-backed workflows', () => {
     expect(listHelp.stdout).toContain('Usage: canvas list --environment ALIAS [--solution UNIQUE_NAME] [options]');
     expect(listHelp.stdout).toContain('Lists remote canvas apps through Dataverse.');
     expect(listHelp.stdout).toContain('pp canvas list --environment dev --solution Core');
+
+    expect(downloadHelp.code).toBe(0);
+    expect(downloadHelp.stderr).toBe('');
+    expect(downloadHelp.stdout).toContain(
+      'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [options]'
+    );
+    expect(downloadHelp.stdout).toContain('Exports the containing solution through Dataverse and extracts the matching CanvasApps/*.msapp entry.');
+    expect(downloadHelp.stdout).toContain('pp canvas download "Harness Canvas" --environment dev --solution Core');
 
     expect(inspectHelp.code).toBe(0);
     expect(inspectHelp.stderr).toBe('');
@@ -1805,6 +1828,93 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.stderr).toBe('');
     await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/cli/golden/protocol/canvas-remote-list.json');
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/canvas-remote-inspect.json');
+  });
+
+  it('downloads a remote canvas app through the CLI entrypoint without pac', async () => {
+    const tempDir = await createTempDir();
+    const sourceDir = join(tempDir, 'solution');
+    await mkdir(join(sourceDir, 'CanvasApps'), { recursive: true });
+    await writeFile(join(sourceDir, 'CanvasApps', 'crd_HarnessCanvas.msapp'), 'cli-exported-msapp', 'utf8');
+    const solutionZip = join(tempDir, 'Core.zip');
+    await createZipPackage(sourceDir, solutionZip);
+
+    const client = {
+      ...createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+              friendlyname: 'Core',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'comp-1',
+              objectid: 'canvas-1',
+              componenttype: 300,
+            },
+          ],
+          canvasapps: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+              tags: 'harness;solution',
+            },
+          ],
+        },
+      }),
+      invokeAction: async <T>(name: string) =>
+        ok(
+          {
+            body: {
+              ExportSolutionFile: name === 'ExportSolution' ? (await readFile(solutionZip)).toString('base64') : undefined,
+            } as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        ),
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      fixture: {
+        client,
+      },
+    });
+
+    const outPath = join(tempDir, 'artifacts', 'HarnessCanvas.msapp');
+    const result = await runCli([
+      'canvas',
+      'download',
+      'Harness Canvas',
+      '--env',
+      'fixture',
+      '--solution',
+      'Core',
+      '--out',
+      outPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      solutionUniqueName: 'Core',
+      outPath,
+      exportedEntry: 'CanvasApps/crd_HarnessCanvas.msapp',
+      availableEntries: ['CanvasApps/crd_HarnessCanvas.msapp'],
+      app: {
+        id: 'canvas-1',
+        displayName: 'Harness Canvas',
+      },
+    });
+    expect(await readFile(outPath, 'utf8')).toBe('cli-exported-msapp');
   });
 
   it('returns explicit diagnostics for unsupported remote canvas mutations', async () => {

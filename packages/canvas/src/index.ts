@@ -1,5 +1,7 @@
-import { cp, stat } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
+import { spawn } from 'node:child_process';
+import { cp, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
 import { CanvasAppService, type CanvasAppSummary as DataverseCanvasAppSummary, type DataverseClient } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type OperationResult, type ProvenanceClass } from '@pp/diagnostics';
@@ -544,6 +546,14 @@ export type CanvasAppSummary = DataverseCanvasAppSummary & {
   inSolution?: boolean;
 };
 
+export interface CanvasRemoteDownloadResult {
+  app: CanvasAppSummary;
+  solutionUniqueName: string;
+  outPath: string;
+  exportedEntry: string;
+  availableEntries: string[];
+}
+
 interface CanvasTemplateCandidate {
   template: CanvasTemplateRecord;
   matchedBy: CanvasTemplateMatchType;
@@ -749,6 +759,268 @@ export class CanvasService {
       warnings: apps.warnings,
     });
   }
+
+  async downloadRemote(
+    identifier: string,
+    options: {
+      solutionUniqueName: string;
+      outPath?: string;
+    }
+  ): Promise<OperationResult<CanvasRemoteDownloadResult>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote canvas app download.', {
+          source: '@pp/canvas',
+        })
+      );
+    }
+
+    const app = await this.inspectRemote(identifier, {
+      solutionUniqueName: options.solutionUniqueName,
+    });
+
+    if (!app.success) {
+      return app as unknown as OperationResult<CanvasRemoteDownloadResult>;
+    }
+
+    if (!app.data) {
+        return fail(
+          [
+            ...app.diagnostics,
+            createDiagnostic('error', 'CANVAS_REMOTE_NOT_FOUND', `Canvas app ${identifier} was not found in solution ${options.solutionUniqueName}.`, {
+              source: '@pp/canvas',
+            }),
+          ],
+          {
+            supportTier: 'preview',
+            warnings: app.warnings,
+          }
+        );
+    }
+
+    const exportRoot = await mkdtemp(join(tmpdir(), 'pp-canvas-remote-download-'));
+
+    try {
+      const packagePath = join(exportRoot, `${options.solutionUniqueName}.zip`);
+      const exported = await new SolutionService(this.dataverseClient).exportSolution(options.solutionUniqueName, {
+        outPath: packagePath,
+      });
+
+      if (!exported.success || !exported.data) {
+        return exported as unknown as OperationResult<CanvasRemoteDownloadResult>;
+      }
+
+      const listedEntries = await listZipEntries(packagePath);
+
+      if (!listedEntries.success || !listedEntries.data) {
+        return listedEntries as unknown as OperationResult<CanvasRemoteDownloadResult>;
+      }
+
+      const availableEntries = listedEntries.data.filter((entry) => /^CanvasApps\/.+\.msapp$/i.test(entry));
+
+      if (availableEntries.length === 0) {
+        return fail(
+          [
+            ...app.diagnostics,
+            ...exported.diagnostics,
+            createDiagnostic(
+              'error',
+              'CANVAS_REMOTE_EXPORT_MISSING_MSAPP',
+              `Solution ${options.solutionUniqueName} exported successfully but did not contain any CanvasApps/*.msapp entries.`,
+              {
+                source: '@pp/canvas',
+                path: packagePath,
+                hint: 'Confirm the target app is part of the specified solution and has been saved into solution-aware exportable state.',
+              }
+            ),
+          ],
+          {
+            supportTier: 'preview',
+            warnings: [...app.warnings, ...exported.warnings],
+          }
+        );
+      }
+
+      const matchedEntry = resolveCanvasMsappEntry(app.data, availableEntries);
+
+      if (!matchedEntry) {
+        return fail(
+          [
+            ...app.diagnostics,
+            ...exported.diagnostics,
+            createDiagnostic(
+              'error',
+              'CANVAS_REMOTE_EXPORT_ENTRY_AMBIGUOUS',
+              `Could not map canvas app ${identifier} to a single CanvasApps/*.msapp entry in solution ${options.solutionUniqueName}.`,
+              {
+                source: '@pp/canvas',
+                hint: `Available entries: ${availableEntries.join(', ')}`,
+              }
+            ),
+          ],
+          {
+            supportTier: 'preview',
+            warnings: [...app.warnings, ...exported.warnings],
+          }
+        );
+      }
+
+      const content = await extractZipEntry(packagePath, matchedEntry);
+
+      if (!content.success || content.data === undefined) {
+        return content as unknown as OperationResult<CanvasRemoteDownloadResult>;
+      }
+
+      const outPath = resolve(options.outPath ?? `${defaultCanvasDownloadBaseName(app.data)}.msapp`);
+      await mkdir(dirname(outPath), { recursive: true });
+      await writeFile(outPath, content.data);
+
+      return ok(
+        {
+          app: app.data,
+          solutionUniqueName: options.solutionUniqueName,
+          outPath,
+          exportedEntry: matchedEntry,
+          availableEntries,
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: [...app.diagnostics, ...exported.diagnostics],
+          warnings: [...app.warnings, ...exported.warnings],
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse ExportSolution',
+            },
+          ],
+        }
+      );
+    } finally {
+      await rm(exportRoot, { recursive: true, force: true });
+    }
+  }
+}
+
+function defaultCanvasDownloadBaseName(app: CanvasAppSummary): string {
+  return sanitizeCanvasArtifactName(app.displayName ?? app.name ?? app.id);
+}
+
+function resolveCanvasMsappEntry(app: CanvasAppSummary, entries: string[]): string | undefined {
+  if (entries.length === 1) {
+    return entries[0];
+  }
+
+  const candidates = new Set(
+    [app.displayName, app.name, app.id]
+      .filter((value): value is string => Boolean(value))
+      .map(normalizeCanvasArtifactToken)
+      .filter((value) => value.length > 0)
+  );
+
+  const matches = entries.filter((entry) => {
+    const fileName = basename(entry, extname(entry));
+    const normalized = normalizeCanvasArtifactToken(fileName);
+    return candidates.has(normalized);
+  });
+
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function sanitizeCanvasArtifactName(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/-+/g, '-')
+    .trim();
+  return normalized || 'canvas-app';
+}
+
+function normalizeCanvasArtifactToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+async function listZipEntries(packagePath: string): Promise<OperationResult<string[]>> {
+  const result = await runCommand('unzip', ['-Z1', packagePath]);
+
+  if (!result.success || result.data === undefined) {
+    return result as unknown as OperationResult<string[]>;
+  }
+
+  return ok(
+    result.data
+      .toString('utf8')
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+    {
+      supportTier: 'preview',
+      diagnostics: result.diagnostics,
+      warnings: result.warnings,
+    }
+  );
+}
+
+async function extractZipEntry(packagePath: string, entry: string): Promise<OperationResult<Buffer>> {
+  const result = await runCommand('unzip', ['-p', packagePath, entry]);
+
+  if (!result.success || result.data === undefined) {
+    return result as unknown as OperationResult<Buffer>;
+  }
+
+  return ok(result.data, {
+    supportTier: 'preview',
+    diagnostics: result.diagnostics,
+    warnings: result.warnings,
+  });
+}
+
+async function runCommand(command: string, args: string[]): Promise<OperationResult<Buffer>> {
+  return new Promise((resolvePromise) => {
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.on('error', (error) =>
+      resolvePromise(
+        fail(
+          createDiagnostic('error', 'CANVAS_REMOTE_ZIP_TOOL_UNAVAILABLE', `Failed to execute ${command}.`, {
+            source: '@pp/canvas',
+            hint: error instanceof Error ? error.message : 'Install unzip and retry.',
+          }),
+          {
+            supportTier: 'preview',
+          }
+        )
+      )
+    );
+    child.on('close', (code) => {
+      if (code !== 0) {
+        resolvePromise(
+          fail(
+            createDiagnostic('error', 'CANVAS_REMOTE_ZIP_COMMAND_FAILED', `${command} exited with code ${code ?? 'unknown'}.`, {
+              source: '@pp/canvas',
+              hint: stderr.length > 0 ? Buffer.concat(stderr).toString('utf8').trim() : undefined,
+            }),
+            {
+              supportTier: 'preview',
+            }
+          )
+        );
+        return;
+      }
+
+      resolvePromise(
+        ok(Buffer.concat(stdout), {
+          supportTier: 'preview',
+        })
+      );
+    });
+  });
 }
 
 export async function loadCanvasTemplateRegistryBundle(
@@ -896,12 +1168,14 @@ export async function resolveCanvasWorkspaceTarget(
 
   if (!matched) {
     return fail(
-      createDiagnostic('error', 'CANVAS_WORKSPACE_APP_NOT_FOUND', `Canvas workspace ${loaded.data.document.name} does not define app ${target}.`, {
-        source: '@pp/canvas',
-      }),
+      [
+        ...loaded.diagnostics,
+        createDiagnostic('error', 'CANVAS_WORKSPACE_APP_NOT_FOUND', `Canvas workspace ${loaded.data.document.name} does not define app ${target}.`, {
+          source: '@pp/canvas',
+        }),
+      ],
       {
         supportTier: 'preview',
-        diagnostics: loaded.diagnostics,
         warnings: loaded.warnings,
       }
     );
@@ -1139,12 +1413,14 @@ export async function applyCanvasPatch(
 
   if (!plan.data.valid) {
     return fail(
-      createDiagnostic('error', 'CANVAS_PATCH_PLAN_INVALID', `Canvas patch plan for ${path} contains invalid operations.`, {
-        source: '@pp/canvas',
-      }),
+      [
+        ...plan.diagnostics,
+        createDiagnostic('error', 'CANVAS_PATCH_PLAN_INVALID', `Canvas patch plan for ${path} contains invalid operations.`, {
+          source: '@pp/canvas',
+        }),
+      ],
       {
         supportTier: 'preview',
-        diagnostics: plan.diagnostics,
         warnings: plan.warnings,
       }
     );

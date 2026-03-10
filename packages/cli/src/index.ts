@@ -719,6 +719,12 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
   }
 
   switch (command) {
+    case 'download':
+      if (args.includes('--help') || args.includes('help')) {
+        printCanvasDownloadHelp();
+        return 0;
+      }
+      return runCanvasDownload(args);
     case 'create':
       if (args.includes('--help') || args.includes('help')) {
         printCanvasCreateHelp();
@@ -5662,6 +5668,43 @@ async function runCanvasList(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runCanvasDownload(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure(
+        'CANVAS_DOWNLOAD_ARG_REQUIRED',
+        'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE]'
+      )
+    );
+  }
+
+  const solutionUniqueName = readFlag(args, '--solution');
+
+  if (!solutionUniqueName) {
+    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', '--solution UNIQUE_NAME is required.'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new CanvasService(resolution.data.client).downloadRemote(identifier, {
+    solutionUniqueName,
+    outPath: readFlag(args, '--out'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runCanvasBuild(args: string[]): Promise<number> {
   const canvasPath = positionalArgs(args)[0];
 
@@ -8963,6 +9006,7 @@ function printHelp(): void {
       '  envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [--delegate] [preview handoff or delegated Maker automation]',
       '  canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
       '  canvas validate <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
@@ -9044,6 +9088,7 @@ function printCanvasHelp(): void {
       '',
       'Remote canvas commands:',
       '  list                         list remote canvas apps through Dataverse',
+      '  download <displayName|name|id> export a solution-scoped remote canvas app into an .msapp',
       '  inspect <displayName|name|id> inspect a remote canvas app when used with --environment',
       '  create                       preview handoff today; `--delegate` can drive the Maker blank-app flow through a browser profile',
       '  import <file.msapp>          reserved for future remote import; currently returns diagnostics',
@@ -9068,12 +9113,13 @@ function printCanvasHelp(): void {
       '',
       'Examples:',
       '  pp canvas list --environment dev --solution Core',
+      '  pp canvas download "Harness Canvas" --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp',
       '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
       '  pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp',
       '',
       'Notes:',
-      '  - Remote canvas coverage today is read-only: list and inspect.',
+      '  - Remote canvas download exports the containing solution through Dataverse and extracts CanvasApps/*.msapp without leaving pp.',
       '  - Remote create/import still use preview flows rather than first-class server-side APIs.',
       '  - `canvas create --delegate` can drive the Maker blank-app flow and wait for the created app id through Dataverse.',
       '  - Attempted remote create/import calls return machine-readable diagnostics with next steps.',
@@ -9463,6 +9509,29 @@ function printCanvasCreateHelp(): void {
       'Preview options:',
       '  --dry-run                     Resolve env/solution context and print a structured no-op preview',
       '  --plan                        Resolve env/solution context and print a structured fallback plan',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printCanvasDownloadHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [options]',
+      '',
+      'Status:',
+      '  Exports the containing solution through Dataverse and extracts the matching CanvasApps/*.msapp entry.',
+      '',
+      'Behavior:',
+      '  - Requires `--environment` and `--solution` so pp can export the correct solution package.',
+      '  - Uses the existing pp Dataverse auth context; it does not shell out to pac for canvas download.',
+      '  - When `--out` is omitted, writes `<displayName|name|id>.msapp` in the current working directory.',
+      '',
+      'Examples:',
+      '  pp canvas download "Harness Canvas" --environment dev --solution Core',
+      '  pp canvas download crd_HarnessCanvas --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

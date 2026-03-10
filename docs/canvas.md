@@ -283,6 +283,10 @@ Useful flags:
 
 Remote mutation placeholders:
 
+- `pp canvas download <displayName|name|id> --env <alias> --solution UNIQUE_NAME [--out FILE]`
+  exports the containing solution through Dataverse, extracts the matching
+  `CanvasApps/*.msapp`, and writes a live `.msapp` artifact without leaving
+  `pp`
 - `pp canvas create --env <alias> [--solution UNIQUE_NAME] [--name DISPLAY_NAME]`
   still returns a stable machine-readable diagnostic by default instead of
   performing server-side blank-app creation
