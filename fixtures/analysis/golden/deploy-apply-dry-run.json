@@ -1,31 +1,31 @@
 {
-  "assets": [
-    {
-      "exists": true,
-      "kind": "directory",
-      "name": "apps",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/apps"
-    },
-    {
-      "exists": true,
-      "kind": "directory",
-      "name": "flows",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/flows"
-    },
-    {
-      "exists": true,
-      "kind": "file",
-      "name": "solutionBundle",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/solutions/Core.zip"
-    },
-    {
-      "exists": true,
-      "kind": "directory",
-      "name": "docs",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/docs"
+  "apply": {
+    "operations": [
+      {
+        "changed": true,
+        "currentValue": "old.example",
+        "kind": "dataverse-envvar-set",
+        "message": "Preview only.",
+        "nextValue": "contoso.example",
+        "parameter": "tenantDomain",
+        "sensitive": false,
+        "source": "environment",
+        "status": "planned",
+        "target": "pp_TenantDomain",
+        "targetExists": true,
+        "valuePreview": "contoso.example"
+      }
+    ],
+    "summary": {
+      "applied": 0,
+      "attempted": 0,
+      "changed": 1,
+      "failed": 0,
+      "skipped": 1
     }
-  ],
-  "deployPlan": {
+  },
+  "mode": "dry-run",
+  "plan": {
     "activeEnvironment": "prod",
     "activeSolution": "CoreManaged",
     "assets": [
@@ -169,97 +169,26 @@
       }
     ]
   },
-  "focusAsset": "apps",
-  "generatedAt": "<GENERATED_AT>",
-  "parameters": [
-    {
-      "hasValue": true,
-      "mappings": [
-        {
-          "kind": "dataverse-envvar",
-          "target": "pp_TenantDomain"
-        }
-      ],
-      "name": "tenantDomain",
-      "sensitive": false,
-      "source": "environment"
-    },
-    {
-      "hasValue": true,
-      "mappings": [
-        {
-          "kind": "deploy-secret",
-          "target": "api-token"
-        }
-      ],
-      "name": "apiToken",
-      "reference": "app_token",
-      "sensitive": true,
-      "source": "secret"
-    },
-    {
-      "hasValue": false,
-      "mappings": [
-        {
-          "kind": "deploy-input",
-          "target": "sql-endpoint"
-        }
-      ],
-      "name": "sqlEndpoint",
-      "sensitive": false,
-      "source": "missing"
-    },
-    {
-      "hasValue": true,
-      "mappings": [],
-      "name": "releaseName",
-      "sensitive": false,
-      "source": "value"
-    },
-    {
-      "hasValue": true,
-      "mappings": [],
-      "name": "useManagedIdentity",
-      "sensitive": false,
-      "source": "value"
-    }
-  ],
-  "project": {
-    "activeEnvironment": "prod",
-    "activeSolution": "CoreManaged",
-    "assetCount": 4,
-    "configPath": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
-    "defaultEnvironment": "dev",
-    "defaultSolution": "core",
-    "missingRequiredParameters": [
-      "sqlEndpoint"
-    ],
-    "parameterCount": 5,
-    "providerBindingCount": 2,
-    "root": "<REPO_ROOT>/fixtures/analysis/project",
-    "selectedStage": "prod",
-    "topologyStageCount": 2
-  },
-  "providerBindings": {
-    "financeSharePoint": "sharepoint-site:https://example.sharepoint.com/sites/finance",
-    "primaryDataverse": "dataverse:dev"
-  },
-  "topology": {
-    "activeEnvironment": "prod",
-    "activeSolution": "CoreManaged",
-    "defaultStage": "prod",
-    "selectedStage": "prod",
-    "stages": [
+  "preflight": {
+    "checks": [
       {
-        "defaultSolution": "CoreDev",
-        "environment": "dev",
-        "name": "dev"
-      },
-      {
-        "defaultSolution": "CoreManaged",
-        "environment": "prod",
-        "name": "prod"
+        "code": "DEPLOY_PREFLIGHT_SOLUTION_FOUND",
+        "message": "Solution CoreManaged is available in prod.",
+        "status": "pass",
+        "target": "CoreManaged"
       }
-    ]
+    ],
+    "ok": true
+  },
+  "report": {
+    "durationMs": 0,
+    "finishedAt": "<GENERATED_AT>",
+    "startedAt": "<GENERATED_AT>"
+  },
+  "target": {
+    "environmentAlias": "prod",
+    "solutionAlias": "core",
+    "solutionUniqueName": "CoreManaged",
+    "stage": "prod"
   }
 }

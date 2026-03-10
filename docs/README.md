@@ -8,6 +8,7 @@ Start here:
 - [Auth and environments](auth-and-environments.md): auth profile types, browser login, device code, and environment aliases
 - [Command contract](command-contract.md): shared output formats, mutation flags, and project-scoped CLI overrides
 - [Project config](project-config.md): `pp.config.*` structure, parameter resolution, and local analysis commands
+- [Deploy](deploy.md): deploy plan/apply orchestration, supported mappings, and adapter behavior
 - [Dataverse and solutions](dataverse-and-solutions.md): `dv` and `solution` commands, query options, and environment setup
 - [Canvas registries](canvas.md): template registry schema, provenance rules, support matrix resolution, and project wiring
 - [Canvas harvesting](canvas-harvesting.md): manual TEST-environment refresh workflow for pinned canvas registries

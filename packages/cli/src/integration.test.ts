@@ -275,6 +275,44 @@ describe('cli fixture-backed workflows', () => {
       PP_SQL_ENDPOINT: undefined,
     };
 
+    mockDataverseResolution({
+      prod: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-prod-1',
+              uniquename: 'CoreManaged',
+              friendlyname: 'Core Managed',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [],
+          dependencies: [],
+          connectionreferences: [],
+          environmentvariabledefinitions: [
+            {
+              environmentvariabledefinitionid: 'envvar-def-1',
+              schemaname: 'pp_TenantDomain',
+              displayname: 'Tenant Domain',
+              defaultvalue: '',
+              type: 'string',
+              _solutionid_value: 'solution-prod-1',
+            },
+          ],
+          environmentvariablevalues: [
+            {
+              environmentvariablevalueid: 'envvar-value-1',
+              value: 'old.example',
+              _environmentvariabledefinitionid_value: 'envvar-def-1',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+    });
+
     const projectInspect = await runCli(['project', 'inspect', fixtureRoot, '--format', 'json'], {
       env,
     });
@@ -287,11 +325,15 @@ describe('cli fixture-backed workflows', () => {
     const deployPlan = await runCli(['deploy', 'plan', '--project', fixtureRoot, '--format', 'json'], {
       env,
     });
+    const deployApply = await runCli(['deploy', 'apply', '--project', fixtureRoot, '--dry-run', '--format', 'json'], {
+      env,
+    });
 
     expect(projectInspect.code).toBe(0);
     expect(report.code).toBe(0);
     expect(context.code).toBe(0);
     expect(deployPlan.code).toBe(0);
+    expect(deployApply.code).toBe(0);
 
     await expectGoldenJson(JSON.parse(projectInspect.stdout), 'fixtures/analysis/golden/project-inspect.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
@@ -305,10 +347,43 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(deployPlan.stdout), 'fixtures/analysis/golden/deploy-plan.json', {
       normalize: (value) => normalizeCliAnalysisSnapshot(value),
     });
+    await expectGoldenJson(JSON.parse(deployApply.stdout), 'fixtures/analysis/golden/deploy-apply-dry-run.json', {
+      normalize: (value) => normalizeCliAnalysisSnapshot(value),
+    });
     await expectGoldenJson(JSON.parse(projectInspect.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
     await expectGoldenText(report.stderr, 'fixtures/cli/golden/protocol/project-discovery-diagnostics.raw.txt');
     await expectGoldenJson(JSON.parse(context.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
     await expectGoldenJson(JSON.parse(deployPlan.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
+    await expectGoldenJson(JSON.parse(deployApply.stderr), 'fixtures/cli/golden/protocol/project-discovery-diagnostics.json');
+  });
+
+  it('covers project init and doctor through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+
+    const initPlan = await runCli(
+      ['project', 'init', tempDir, '--name', 'HarnessDemo', '--env', 'sandbox', '--solution', 'CoreLifecycle', '--plan', '--format', 'json']
+    );
+    const initApply = await runCli(
+      ['project', 'init', tempDir, '--name', 'HarnessDemo', '--env', 'sandbox', '--solution', 'CoreLifecycle', '--format', 'json']
+    );
+    const doctor = await runCli(['project', 'doctor', tempDir, '--format', 'json']);
+
+    expect(initPlan.code).toBe(0);
+    expect(initPlan.stderr).toBe('');
+    expect(initApply.code).toBe(0);
+    expect(initApply.stderr).toBe('');
+    expect(doctor.code).toBe(0);
+    expect(doctor.stderr).toBe('');
+
+    await expectGoldenJson(JSON.parse(initPlan.stdout), 'fixtures/cli/golden/protocol/project-init-plan.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(initApply.stdout), 'fixtures/cli/golden/protocol/project-init-result.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
+    await expectGoldenJson(JSON.parse(doctor.stdout), 'fixtures/cli/golden/protocol/project-doctor.json', {
+      normalize: (value) => normalizeCliSnapshot(value, tempDir),
+    });
   });
 
   it('covers real CLI protocol outputs for representative success paths', async () => {

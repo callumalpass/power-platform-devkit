@@ -19,7 +19,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pp/dataverse": "workspace:*",
     "@pp/diagnostics": "workspace:*",
-    "@pp/project": "workspace:*"
+    "@pp/project": "workspace:*",
+    "@pp/solution": "workspace:*"
   }
 }

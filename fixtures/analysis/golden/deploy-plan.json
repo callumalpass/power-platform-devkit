@@ -34,6 +34,13 @@
   },
   "defaultEnvironment": "dev",
   "defaultSolution": "core",
+  "executionStages": [
+    "resolve",
+    "preflight",
+    "plan",
+    "apply",
+    "report"
+  ],
   "generatedAt": "<GENERATED_AT>",
   "inputs": [
     {
@@ -92,12 +99,33 @@
       "value": false
     }
   ],
+  "operations": [
+    {
+      "kind": "dataverse-envvar-set",
+      "parameter": "tenantDomain",
+      "sensitive": false,
+      "source": "environment",
+      "target": "pp_TenantDomain",
+      "valuePreview": "contoso.example"
+    }
+  ],
   "projectRoot": "<REPO_ROOT>/fixtures/analysis/project",
   "providerBindings": [
     "primaryDataverse",
     "financeSharePoint"
   ],
   "selectedStage": "prod",
+  "supportedAdapters": [
+    "github-actions",
+    "azure-devops",
+    "power-platform-pipelines"
+  ],
+  "target": {
+    "environmentAlias": "prod",
+    "solutionAlias": "core",
+    "solutionUniqueName": "CoreManaged",
+    "stage": "prod"
+  },
   "templateRegistries": [
     "./registries/canvas-controls.json"
   ],

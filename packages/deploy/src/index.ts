@@ -1,5 +1,7 @@
-import { ok, type OperationResult } from '@pp/diagnostics';
+import { EnvironmentVariableService, resolveDataverseClient } from '@pp/dataverse';
+import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { summarizeResolvedParameter, type ProjectContext, type ResolvedProjectParameter } from '@pp/project';
+import { SolutionService } from '@pp/solution';
 
 export interface DeployInput {
   name: string;
@@ -11,14 +13,36 @@ export interface DeployInput {
   mappings: Array<{ kind: string; target: string }>;
 }
 
+export type DeployExecutionStage = 'resolve' | 'preflight' | 'plan' | 'apply' | 'report';
+export type DeployExecutionMode = 'apply' | 'dry-run' | 'plan';
+
+export interface DeployTarget {
+  stage?: string;
+  environmentAlias?: string;
+  solutionAlias?: string;
+  solutionUniqueName?: string;
+}
+
+export interface DeployOperationPlan {
+  kind: 'dataverse-envvar-set';
+  parameter: string;
+  source: ResolvedProjectParameter['source'];
+  sensitive: boolean;
+  target: string;
+  valuePreview?: string | number | boolean;
+}
+
 export interface DeployPlan {
   projectRoot: string;
   generatedAt: string;
+  executionStages: DeployExecutionStage[];
+  supportedAdapters: string[];
   defaultEnvironment?: string;
   defaultSolution?: string;
   selectedStage?: string;
   activeEnvironment?: string;
   activeSolution?: string;
+  target: DeployTarget;
   inputs: DeployInput[];
   providerBindings: string[];
   topology: Array<{
@@ -34,6 +58,53 @@ export interface DeployPlan {
     kind: string;
     exists: boolean;
   }>;
+  operations: DeployOperationPlan[];
+}
+
+export interface DeployPreflightCheck {
+  status: 'pass' | 'warn' | 'fail';
+  code: string;
+  message: string;
+  target?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface DeployPreflightSummary {
+  ok: boolean;
+  checks: DeployPreflightCheck[];
+}
+
+export interface DeployOperationResult extends DeployOperationPlan {
+  status: 'planned' | 'applied' | 'skipped' | 'failed';
+  targetExists?: boolean;
+  currentValue?: string;
+  nextValue?: string;
+  changed?: boolean;
+  message?: string;
+}
+
+export interface DeployApplySummary {
+  attempted: number;
+  applied: number;
+  failed: number;
+  skipped: number;
+  changed: number;
+}
+
+export interface DeployExecutionResult {
+  mode: DeployExecutionMode;
+  target: DeployTarget;
+  plan: DeployPlan;
+  preflight: DeployPreflightSummary;
+  apply: {
+    summary: DeployApplySummary;
+    operations: DeployOperationResult[];
+  };
+  report: {
+    startedAt: string;
+    finishedAt: string;
+    durationMs: number;
+  };
 }
 
 export function buildDeployPlan(project: ProjectContext): OperationResult<DeployPlan> {
@@ -49,16 +120,42 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
       mappings: summary.mappings,
     };
   });
+  const operations = collectDeployOperations(project).map(({ plan }) => plan);
+  const diagnostics: Diagnostic[] = [];
+
+  if (!project.topology.activeEnvironment) {
+    diagnostics.push(
+      createDiagnostic('error', 'DEPLOY_TARGET_ENVIRONMENT_MISSING', 'Deploy target environment is not resolved from the project topology.', {
+        source: '@pp/deploy',
+      })
+    );
+  }
+
+  if (!project.topology.activeSolution?.uniqueName) {
+    diagnostics.push(
+      createDiagnostic('error', 'DEPLOY_TARGET_SOLUTION_MISSING', 'Deploy target solution is not resolved from the project topology.', {
+        source: '@pp/deploy',
+      })
+    );
+  }
 
   return ok(
     {
       projectRoot: project.root,
       generatedAt: new Date().toISOString(),
+      executionStages: ['resolve', 'preflight', 'plan', 'apply', 'report'],
+      supportedAdapters: ['github-actions', 'azure-devops', 'power-platform-pipelines'],
       defaultEnvironment: project.config.defaults?.environment,
       defaultSolution: project.config.defaults?.solution,
       selectedStage: project.topology.selectedStage,
       activeEnvironment: project.topology.activeEnvironment,
       activeSolution: project.topology.activeSolution?.uniqueName,
+      target: {
+        stage: project.topology.selectedStage,
+        environmentAlias: project.topology.activeEnvironment,
+        solutionAlias: project.topology.activeSolution?.alias,
+        solutionUniqueName: project.topology.activeSolution?.uniqueName,
+      },
       inputs,
       providerBindings: Object.keys(project.providerBindings),
       topology: Object.values(project.topology.stages).map((stage) => ({
@@ -74,9 +171,354 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
         kind: asset.kind,
         exists: asset.exists,
       })),
+      operations,
     },
     {
       supportTier: 'preview',
+      diagnostics,
     }
   );
+}
+
+export async function executeDeploy(
+  project: ProjectContext,
+  options: {
+    mode?: DeployExecutionMode;
+  } = {}
+): Promise<OperationResult<DeployExecutionResult>> {
+  const startedAt = Date.now();
+  const planResult = buildDeployPlan(project);
+  const mode = options.mode ?? 'apply';
+  const diagnostics = [...planResult.diagnostics];
+  const warnings = [...planResult.warnings];
+  const checks: DeployPreflightCheck[] = [];
+  const applyOperations: DeployOperationResult[] = [];
+  const preparedOperations = collectDeployOperations(project);
+  const target = planResult.data?.target ?? {
+    stage: project.topology.selectedStage,
+    environmentAlias: project.topology.activeEnvironment,
+    solutionAlias: project.topology.activeSolution?.alias,
+    solutionUniqueName: project.topology.activeSolution?.uniqueName,
+  };
+
+  if (!target.environmentAlias) {
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_ENVIRONMENT_MISSING',
+      message: 'Deploy target environment is not resolved.',
+    });
+  }
+
+  if (!target.solutionUniqueName) {
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_SOLUTION_MISSING',
+      message: 'Deploy target solution is not resolved.',
+    });
+  }
+
+  if (preparedOperations.length === 0) {
+    checks.push({
+      status: 'warn',
+      code: 'DEPLOY_PREFLIGHT_NO_SUPPORTED_OPERATIONS',
+      message: 'The current deploy slice found no supported operations for apply.',
+    });
+  }
+
+  if (!target.environmentAlias || !target.solutionUniqueName || !planResult.data) {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, checks, applyOperations, startedAt), {
+      supportTier: 'preview',
+      diagnostics,
+      warnings,
+    });
+  }
+
+  const resolution = await resolveDataverseClient(target.environmentAlias);
+
+  if (!resolution.success || !resolution.data) {
+    diagnostics.push(...resolution.diagnostics);
+    warnings.push(...resolution.warnings);
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_DATAVERSE_RESOLUTION_FAILED',
+      message: `Could not resolve Dataverse environment alias ${target.environmentAlias}.`,
+      target: target.environmentAlias,
+    });
+    return ok(finalizeDeployExecution(mode, target, planResult.data, checks, applyOperations, startedAt), {
+      supportTier: 'preview',
+      diagnostics,
+      warnings,
+    });
+  }
+
+  const solutionService = new SolutionService(resolution.data.client);
+  const environmentVariables = new EnvironmentVariableService(resolution.data.client);
+  const [analysis, variables] = await Promise.all([
+    solutionService.analyze(target.solutionUniqueName),
+    environmentVariables.list({ solutionUniqueName: target.solutionUniqueName }),
+  ]);
+
+  if (!analysis.success) {
+    diagnostics.push(...analysis.diagnostics);
+    warnings.push(...analysis.warnings);
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_SOLUTION_ANALYZE_FAILED',
+      message: `Failed to analyze solution ${target.solutionUniqueName} before deploy.`,
+      target: target.solutionUniqueName,
+    });
+  }
+
+  if (!variables.success) {
+    diagnostics.push(...variables.diagnostics);
+    warnings.push(...variables.warnings);
+    checks.push({
+      status: 'fail',
+      code: 'DEPLOY_PREFLIGHT_ENVVAR_DISCOVERY_FAILED',
+      message: `Failed to inspect environment variables for solution ${target.solutionUniqueName}.`,
+      target: target.solutionUniqueName,
+    });
+  }
+
+  const solutionAnalysis = analysis.success ? analysis.data : undefined;
+  const discoveredVariables = variables.success ? variables.data ?? [] : [];
+  const variableBySchema = new Map(
+    discoveredVariables
+      .filter((variable) => variable.schemaName)
+      .map((variable) => [variable.schemaName!.toLowerCase(), variable] as const)
+  );
+
+  if (analysis.success) {
+    if (!solutionAnalysis) {
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_SOLUTION_NOT_FOUND',
+        message: `Solution ${target.solutionUniqueName} was not found in ${target.environmentAlias}.`,
+        target: target.solutionUniqueName,
+      });
+    } else {
+      checks.push({
+        status: 'pass',
+        code: 'DEPLOY_PREFLIGHT_SOLUTION_FOUND',
+        message: `Solution ${target.solutionUniqueName} is available in ${target.environmentAlias}.`,
+        target: target.solutionUniqueName,
+      });
+
+      if (solutionAnalysis.invalidConnectionReferences.length > 0) {
+        checks.push({
+          status: 'warn',
+          code: 'DEPLOY_PREFLIGHT_CONNECTION_REFS_INVALID',
+          message: `Solution ${target.solutionUniqueName} has ${solutionAnalysis.invalidConnectionReferences.length} invalid connection reference(s).`,
+          target: target.solutionUniqueName,
+        });
+      }
+
+      if (solutionAnalysis.missingEnvironmentVariables.length > 0) {
+        checks.push({
+          status: 'warn',
+          code: 'DEPLOY_PREFLIGHT_ENVVARS_MISSING_VALUES',
+          message: `Solution ${target.solutionUniqueName} has ${solutionAnalysis.missingEnvironmentVariables.length} environment variable(s) without an effective value.`,
+          target: target.solutionUniqueName,
+        });
+      }
+    }
+  }
+
+  for (const operation of preparedOperations) {
+    const variable = variableBySchema.get(operation.plan.target.toLowerCase());
+
+    if (!variable) {
+      checks.push({
+        status: 'fail',
+        code: 'DEPLOY_PREFLIGHT_ENVVAR_TARGET_MISSING',
+        message: `Environment variable ${operation.plan.target} was not found in solution ${target.solutionUniqueName}.`,
+        target: operation.plan.target,
+        details: {
+          parameter: operation.plan.parameter,
+        },
+      });
+      applyOperations.push({
+        ...operation.plan,
+        status: 'skipped',
+        targetExists: false,
+        nextValue: stringifyDeployValue(operation.value),
+        message: 'Target environment variable is missing.',
+      });
+      continue;
+    }
+
+    applyOperations.push({
+      ...operation.plan,
+      status: mode === 'apply' ? 'planned' : 'planned',
+      targetExists: true,
+      currentValue: variable.effectiveValue,
+      nextValue: stringifyDeployValue(operation.value),
+      changed: variable.effectiveValue !== stringifyDeployValue(operation.value),
+      message: mode === 'apply' ? 'Ready to apply.' : 'Preview only.',
+    });
+  }
+
+  const preflightOk = checks.every((check) => check.status !== 'fail');
+
+  if (!preflightOk || mode !== 'apply') {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, checks, applyOperations, startedAt), {
+      supportTier: 'preview',
+      diagnostics,
+      warnings,
+    });
+  }
+
+  for (const operation of preparedOperations) {
+    const index = applyOperations.findIndex((entry) => entry.parameter === operation.plan.parameter && entry.target === operation.plan.target);
+
+    if (index === -1 || applyOperations[index]?.targetExists === false) {
+      continue;
+    }
+
+    const existingOperation = applyOperations[index]!;
+
+    const result = await environmentVariables.setValue(operation.plan.target, stringifyDeployValue(operation.value), {
+      solutionUniqueName: target.solutionUniqueName,
+    });
+
+    if (!result.success || !result.data) {
+      diagnostics.push(...result.diagnostics);
+      warnings.push(...result.warnings);
+      applyOperations[index] = {
+        ...existingOperation,
+        status: 'failed',
+        message: `Failed to update ${operation.plan.target}.`,
+      };
+      continue;
+    }
+
+    applyOperations[index] = {
+      ...existingOperation,
+      status: 'applied',
+      currentValue: result.data.currentValue,
+      nextValue: result.data.effectiveValue,
+      changed: true,
+      message: `Updated ${operation.plan.target}.`,
+    };
+  }
+
+  return ok(finalizeDeployExecution(mode, target, planResult.data, checks, applyOperations, startedAt), {
+    supportTier: 'preview',
+    diagnostics,
+    warnings,
+  });
+}
+
+function collectDeployOperations(project: ProjectContext): Array<{ plan: DeployOperationPlan; value: string | number | boolean }> {
+  const operations: Array<{ plan: DeployOperationPlan; value: string | number | boolean }> = [];
+
+  for (const parameter of Object.values(project.parameters)) {
+    if (!parameter.hasValue || parameter.value === undefined) {
+      continue;
+    }
+
+    for (const mapping of parameter.definition.mapsTo ?? []) {
+      if (mapping.kind !== 'dataverse-envvar') {
+        continue;
+      }
+
+      operations.push({
+        plan: {
+          kind: 'dataverse-envvar-set',
+          parameter: parameter.name,
+          source: parameter.source,
+          sensitive: parameter.sensitive,
+          target: mapping.target,
+          valuePreview: parameter.sensitive ? '<redacted>' : parameter.value,
+        },
+        value: parameter.value,
+      });
+    }
+  }
+
+  return operations;
+}
+
+function finalizeDeployExecution(
+  mode: DeployExecutionMode,
+  target: DeployTarget,
+  plan: DeployPlan | undefined,
+  checks: DeployPreflightCheck[],
+  operations: DeployOperationResult[],
+  startedAt: number
+): DeployExecutionResult {
+  const finishedAt = Date.now();
+  const normalizedPlan: DeployPlan =
+    plan ??
+    ({
+      projectRoot: '',
+      generatedAt: new Date(startedAt).toISOString(),
+      executionStages: ['resolve', 'preflight', 'plan', 'apply', 'report'],
+      supportedAdapters: ['github-actions', 'azure-devops', 'power-platform-pipelines'],
+      target,
+      inputs: [],
+      providerBindings: [],
+      topology: [],
+      templateRegistries: [],
+      build: {},
+      assets: [],
+      operations: [],
+    } as DeployPlan);
+  const summary = summarizeApplyOperations(operations);
+
+  return {
+    mode,
+    target,
+    plan: normalizedPlan,
+    preflight: {
+      ok: checks.every((check) => check.status !== 'fail'),
+      checks,
+    },
+    apply: {
+      summary,
+      operations,
+    },
+    report: {
+      startedAt: new Date(startedAt).toISOString(),
+      finishedAt: new Date(finishedAt).toISOString(),
+      durationMs: mode === 'apply' ? finishedAt - startedAt : 0,
+    },
+  };
+}
+
+function summarizeApplyOperations(operations: DeployOperationResult[]): DeployApplySummary {
+  return operations.reduce<DeployApplySummary>(
+    (summary, operation) => {
+      if (operation.status === 'applied') {
+        summary.applied += 1;
+      } else if (operation.status === 'failed') {
+        summary.failed += 1;
+      } else if (operation.status === 'skipped') {
+        summary.skipped += 1;
+      }
+
+      if (operation.changed) {
+        summary.changed += 1;
+      }
+
+      if (operation.status !== 'planned') {
+        summary.attempted += 1;
+      } else if (operation.targetExists !== false) {
+        summary.skipped += 1;
+      }
+
+      return summary;
+    },
+    {
+      attempted: 0,
+      applied: 0,
+      failed: 0,
+      skipped: 0,
+      changed: 0,
+    }
+  );
+}
+
+function stringifyDeployValue(value: string | number | boolean): string {
+  return typeof value === 'string' ? value : String(value);
 }

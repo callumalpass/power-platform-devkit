@@ -51,11 +51,11 @@ import {
   type AttributeMetadataView,
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
-import { buildDeployPlan } from '@pp/deploy';
+import { buildDeployPlan, executeDeploy } from '@pp/deploy';
 import { fail, ok, createDiagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument } from '@pp/flow';
 import { ModelService } from '@pp/model';
-import { discoverProject, summarizeProject, summarizeResolvedParameter } from '@pp/project';
+import { discoverProject, doctorProject, initProject, planProjectInit, summarizeProject, summarizeResolvedParameter } from '@pp/project';
 import { SolutionService } from '@pp/solution';
 import YAML from 'yaml';
 
@@ -131,6 +131,10 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   switch (`${group} ${command ?? ''}`.trim()) {
+    case 'project init':
+      return runProjectInit(rest);
+    case 'project doctor':
+      return runProjectDoctor(rest);
     case 'project inspect':
       return runProjectInspect(rest);
     case 'analysis report':
@@ -139,6 +143,8 @@ export async function main(argv: string[]): Promise<number> {
       return runAnalysisContext(rest);
     case 'deploy plan':
       return runDeployPlan(rest);
+    case 'deploy apply':
+      return runDeployApply(rest);
     default:
       printHelp();
       return 1;
@@ -409,6 +415,54 @@ async function runProjectInspect(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runProjectInit(args: string[]): Promise<number> {
+  const root = positionalArgs(args)[0] ?? process.cwd();
+  const format = outputFormat(args, 'json');
+  const options = {
+    name: readFlag(args, '--name'),
+    environment: readFlag(args, '--env') ?? readFlag(args, '--environment'),
+    solution: readFlag(args, '--solution'),
+    stage: readFlag(args, '--stage'),
+    force: hasFlag(args, '--force'),
+  } as const;
+  const plan = planProjectInit(root, options);
+  const preview = maybeHandleMutationPreview(args, 'json', 'project.init', { root: plan.root, configPath: plan.configPath }, plan);
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await initProject(root, options);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, format);
+  printResultDiagnostics(result, format);
+  return 0;
+}
+
+async function runProjectDoctor(args: string[]): Promise<number> {
+  const root = positionalArgs(args)[0] ?? process.cwd();
+  const format = outputFormat(args, 'json');
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const result = await doctorProject(root, discoveryOptions.data);
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, format);
+  printResultDiagnostics(result, format);
+  return 0;
+}
+
 async function runAnalysisReport(args: string[]): Promise<number> {
   const path = positionalArgs(args)[0] ?? process.cwd();
   const format = outputFormat(args, 'markdown');
@@ -495,6 +549,41 @@ async function runDeployPlan(args: string[]): Promise<number> {
   printResultDiagnostics(project, format);
   printResultDiagnostics(plan, format);
   return 0;
+}
+
+async function runDeployApply(args: string[]): Promise<number> {
+  const projectPath = readFlag(args, '--project') ?? process.cwd();
+  const format = outputFormat(args, 'json');
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return printFailure(discoveryOptions);
+  }
+
+  const mutation = readMutationFlags(args);
+
+  if (!mutation.success || !mutation.data) {
+    return printFailure(mutation);
+  }
+
+  const project = await discoverProject(projectPath, discoveryOptions.data);
+
+  if (!project.success || !project.data) {
+    return printFailure(project);
+  }
+
+  const result = await executeDeploy(project.data, {
+    mode: mutation.data.mode,
+  });
+
+  if (!result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, format);
+  printResultDiagnostics(project, format);
+  printResultDiagnostics(result, format);
+  return result.data.preflight.ok && result.data.apply.summary.failed === 0 ? 0 : 1;
 }
 
 async function runAuthProfileList(auth: AuthService, args: string[]): Promise<number> {
@@ -3544,10 +3633,13 @@ function printHelp(): void {
       '  model views <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  model dependencies <name|id|uniqueName> --env ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
+      '  project init [path] [--name NAME] [--env ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [--force] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  project doctor [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  deploy plan [--project path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  deploy apply [--project path] [--stage STAGE] [--param NAME=VALUE] [--dry-run|--plan] [--yes] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
