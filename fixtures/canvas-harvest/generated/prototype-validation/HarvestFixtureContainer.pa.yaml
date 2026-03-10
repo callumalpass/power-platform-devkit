@@ -1,29 +1,19 @@
-- HarvestFixtureContainer:
-    Control: GroupContainer@1.5.0
-    Variant: ManualLayout
-    Properties:
-      DropShadow: =DropShadow.None
-      Height: =212
-      Width: =628
-      X: =40
-      Y: =220
+Screens:
+  HarvestFixtureContainer:
     Children:
-      - HarvestClassicButton:
-          Control: Classic/Button@2.2.0
+      - HarvestClassicBarcodeScanner:
+          Control: BarcodeScanner@2.5.0
           Properties:
             Height: =40
             Width: =160
             X: =24
             Y: =24
-            Align: =Align.Center
             DisplayMode: =DisplayMode.Edit
-            Text: ="Button"
-            VerticalAlign: =VerticalAlign.Middle
-      - HarvestClassicDatePicker:
-          Control: Classic/DatePicker@2.6.0
+      - HarvestClassicGallery:
+          Control: Gallery@2.15.0
           Properties:
-            Height: =40
-            Width: =328
+            Height: =575
+            Width: =640
             X: =324
             Y: =24
             DisplayMode: =DisplayMode.Edit
@@ -52,11 +42,29 @@
             X: =24
             Y: =144
             Text: ="Classic Label fixture"
-      - HarvestModernInfoButton:
-          Control: ModernInformationButton@1.0.0
+      - HarvestClassicShape:
+          Control: Rectangle@2.3.0
           Properties:
-            Height: =32
-            Width: =32
+            Height: =8
+            Width: =4
             X: =324
             Y: =144
+            DisplayMode: =DisplayMode.Edit
+      - HarvestClassicWebBarcodeScanner:
+          Control: BarcodeScanner@2.5.0
+          Properties:
+            Height: =40
+            Width: =160
+            X: =24
+            Y: =204
+            DisplayMode: =DisplayMode.Edit
+      - HarvestModernTextInput:
+          Control: ModernText@1.0.0
+          Properties:
+            Height: =137
+            Width: =150
+            X: =324
+            Y: =204
+            Align: =Align.Left
+            AutoHeight: =false
             DisplayMode: =DisplayMode.Edit

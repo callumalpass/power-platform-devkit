@@ -2330,12 +2330,17 @@ export function recordCanvasHarvestFixturePrototypeValidations(
 }
 
 export function renderCanvasHarvestFixture(options: RenderCanvasHarvestFixtureOptions): RenderedCanvasHarvestFixture {
-  const containerConstructor = options.containerConstructor ?? 'GroupContainer';
+  const defaultContainerConstructor = options.containerConstructor ?? 'GroupContainer';
   const markerConstructor = options.markerConstructor ?? 'ModernText';
-  const containerTemplate = resolveTemplateForConstructor(options.registry, containerConstructor);
+  const requestedContainerTemplate = resolveTemplateForConstructor(options.registry, defaultContainerConstructor);
+  const screenTemplate =
+    requestedContainerTemplate || options.containerConstructor
+      ? undefined
+      : options.registry.templates.find((template) => normalizeToken(template.templateName) === 'screen');
+  const containerTemplate = requestedContainerTemplate ?? screenTemplate;
 
   if (!containerTemplate) {
-    throw new Error(`The pinned registry does not expose a constructor alias for ${containerConstructor}.`);
+    throw new Error(`The pinned registry does not expose a constructor alias for ${defaultContainerConstructor}.`);
   }
 
   const includePendingMarkers = options.includePendingMarkers ?? true;
@@ -2401,35 +2406,42 @@ export function renderCanvasHarvestFixture(options: RenderCanvasHarvestFixtureOp
   const rows = renderedControls.length === 0 ? 1 : Math.ceil(renderedControls.length / columns);
   const containerWidth = paddingX * 2 + cellWidth * columns + gutterX * Math.max(0, columns - 1);
   const containerHeight = paddingY * 2 + cellHeight * rows + gutterY * Math.max(0, rows - 1);
-  const lines = [
-    `- ${options.containerName ?? 'HarvestFixtureContainer'}:`,
-    `    Control: ${containerConstructor}@${containerTemplate.templateVersion}`,
-  ];
+  const containerName = options.containerName ?? 'HarvestFixtureContainer';
+  const usesScreenFallback = !requestedContainerTemplate && containerTemplate === screenTemplate;
+  const containerConstructor = usesScreenFallback ? 'Screen' : defaultContainerConstructor;
+  const lines = usesScreenFallback ? ['Screens:', `  ${containerName}:`, '    Children:'] : [];
 
-  if (options.containerVariant ?? 'ManualLayout') {
-    lines.push(`    Variant: ${options.containerVariant ?? 'ManualLayout'}`);
-  }
+  if (!usesScreenFallback) {
+    lines.push(`- ${containerName}:`);
+    lines.push(`    Control: ${containerConstructor}@${containerTemplate.templateVersion}`);
 
-  lines.push('    Properties:');
-  lines.push('      DropShadow: =DropShadow.None');
-  lines.push(`      Height: =${containerHeight}`);
-  lines.push(`      Width: =${containerWidth}`);
-  lines.push(`      X: =${containerX}`);
-  lines.push(`      Y: =${containerY}`);
-  lines.push('    Children:');
-
-  for (const control of renderedControls) {
-    lines.push(`      - ${control.name}:`);
-    lines.push(`          Control: ${control.control}`);
-
-    if (control.variant) {
-      lines.push(`          Variant: ${control.variant}`);
+    if (options.containerVariant ?? 'ManualLayout') {
+      lines.push(`    Variant: ${options.containerVariant ?? 'ManualLayout'}`);
     }
 
-    lines.push('          Properties:');
+    lines.push('    Properties:');
+    lines.push('      DropShadow: =DropShadow.None');
+    lines.push(`      Height: =${containerHeight}`);
+    lines.push(`      Width: =${containerWidth}`);
+    lines.push(`      X: =${containerX}`);
+    lines.push(`      Y: =${containerY}`);
+    lines.push('    Children:');
+  }
+
+  for (const control of renderedControls) {
+    const childPrefix = usesScreenFallback ? '      ' : '      ';
+    const propertyPrefix = usesScreenFallback ? '            ' : '            ';
+    lines.push(`${childPrefix}- ${control.name}:`);
+    lines.push(`${childPrefix}    Control: ${control.control}`);
+
+    if (control.variant) {
+      lines.push(`${childPrefix}    Variant: ${control.variant}`);
+    }
+
+    lines.push(`${childPrefix}    Properties:`);
 
     for (const [name, value] of Object.entries(control.properties)) {
-      lines.push(`            ${name}: ${value}`);
+      lines.push(`${propertyPrefix}${name}: ${value}`);
     }
   }
 

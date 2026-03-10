@@ -1,22 +1,38 @@
 {
   "controls": [
     {
+      "catalogName": "Barcode scanner",
+      "constructor": "BarcodeScanner",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:23.463Z",
+        "status": "pending"
+      },
+      "notes": [
+        "The source fixture plan already resolves this pinned prototype.",
+        "Constructor BarcodeScanner resolves to barcodeScanner@2.5.0.",
+        "Recorded live validation keeps this control pending as of 2026-03-10T01:16:23.463Z."
+      ],
+      "planAlignment": "aligned",
+      "planReason": "Fixture prototype BarcodeScanner resolves to barcodeScanner@2.5.0.",
+      "planStatus": "resolved",
+      "prototypeNotes": [
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor BarcodeScanner resolves to barcodeScanner@2.5.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Barcode scanner"
+      ],
+      "templateName": "barcodeScanner",
+      "templateVersion": "2.5.0",
+      "validationStatus": "pending"
+    },
+    {
       "catalogName": "Button",
       "constructor": "Classic/Button",
       "family": "classic",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Button"
-        ],
-        "chosenCandidate": {
-          "category": "Classic",
-          "iconName": "#icon-button",
-          "title": "Button"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "liveValidation": {
         "method": "promoted-draft",
         "notes": [
@@ -26,14 +42,13 @@
         "status": "pending"
       },
       "notes": [
-        "The source fixture plan already resolves this pinned prototype.",
-        "Constructor Classic/Button resolves to button@2.2.0.",
-        "Recorded live validation keeps this control pending via promoted-draft as of 2026-03-10T00:54:16+11:00.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Button (Classic) using insert-pane-search. Queries: Button."
+        "The source fixture plan already tracks this prototype, but the harvested registry still lacks a matching constructor alias.",
+        "The pinned harvested registry does not currently resolve constructor Classic/Button; keep registry refresh work separate from live validation.",
+        "Recorded live validation keeps this control pending via promoted-draft as of 2026-03-10T00:54:16+11:00."
       ],
       "planAlignment": "aligned",
-      "planReason": "Fixture prototype Classic/Button resolves to button@2.2.0.",
-      "planStatus": "resolved",
+      "planReason": "Fixture prototype Classic/Button exists, but the pinned harvested registry does not expose a matching constructor alias yet.",
+      "planStatus": "registry-missing",
       "prototypeNotes": [
         "Promoted from generated draft artifact 2026-03-09T13:23:07.191Z (fixture plan 2026-03-09T12:21:27.948Z).",
         "Constructor Classic/Button resolves to button@2.2.0 in the pinned harvested registry.",
@@ -44,40 +59,24 @@
       "suggestedInsertQueries": [
         "Button"
       ],
-      "templateName": "button",
-      "templateVersion": "2.2.0",
       "validationStatus": "pending"
     },
     {
       "catalogName": "Date picker",
       "constructor": "Classic/DatePicker",
       "family": "classic",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Date picker"
-        ],
-        "chosenCandidate": {
-          "category": "Classic",
-          "iconName": "#icon-datepicker",
-          "title": "Date picker"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "liveValidation": {
         "recordedAt": "2026-03-09T16:03:57.912Z",
         "status": "pending"
       },
       "notes": [
-        "The source fixture plan already resolves this pinned prototype.",
-        "Constructor Classic/DatePicker resolves to datepicker@2.6.0.",
-        "Recorded live validation keeps this control pending as of 2026-03-09T16:03:57.912Z.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Date picker (Classic) using insert-pane-search. Queries: Date picker."
+        "The source fixture plan already tracks this prototype, but the harvested registry still lacks a matching constructor alias.",
+        "The pinned harvested registry does not currently resolve constructor Classic/DatePicker; keep registry refresh work separate from live validation.",
+        "Recorded live validation keeps this control pending as of 2026-03-09T16:03:57.912Z."
       ],
       "planAlignment": "aligned",
-      "planReason": "Fixture prototype Classic/DatePicker resolves to datepicker@2.6.0.",
-      "planStatus": "resolved",
+      "planReason": "Fixture prototype Classic/DatePicker exists, but the pinned harvested registry does not expose a matching constructor alias yet.",
+      "planStatus": "registry-missing",
       "prototypeNotes": [
         "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
         "Constructor Classic/DatePicker resolves to datepicker@2.6.0 in the pinned harvested registry.",
@@ -88,8 +87,36 @@
       "suggestedInsertQueries": [
         "Date picker"
       ],
-      "templateName": "datepicker",
-      "templateVersion": "2.6.0",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Gallery",
+      "constructor": "Gallery",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:23.463Z",
+        "status": "pending"
+      },
+      "notes": [
+        "The source fixture plan already resolves this pinned prototype.",
+        "Constructor Gallery resolves to gallery@2.15.0.",
+        "Recorded live validation keeps this control pending as of 2026-03-10T01:16:23.463Z."
+      ],
+      "planAlignment": "aligned",
+      "planReason": "Fixture prototype Gallery resolves to gallery@2.15.0.",
+      "planStatus": "resolved",
+      "prototypeNotes": [
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor Gallery resolves to gallery@2.15.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Gallery",
+        "Vertical gallery"
+      ],
+      "templateName": "gallery",
+      "templateVersion": "2.15.0",
       "validationStatus": "pending"
     },
     {
@@ -156,19 +183,6 @@
       "catalogName": "Label",
       "constructor": "Label",
       "family": "classic",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Label"
-        ],
-        "chosenCandidate": {
-          "category": "Classic",
-          "iconName": "#icon-label",
-          "title": "Text label"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "liveValidation": {
         "method": "migrated-note-state",
         "notes": [
@@ -180,8 +194,7 @@
       "notes": [
         "The source fixture plan already resolves this pinned prototype.",
         "Constructor Label resolves to label@2.5.1.",
-        "Recorded live validation keeps this control pending via migrated-note-state as of 2026-03-10T00:54:16+11:00.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Text label (Classic) using insert-pane-search. Queries: Label."
+        "Recorded live validation keeps this control pending via migrated-note-state as of 2026-03-10T00:54:16+11:00."
       ],
       "planAlignment": "aligned",
       "planReason": "Fixture prototype Label resolves to label@2.5.1.",
@@ -198,36 +211,81 @@
       "validationStatus": "pending"
     },
     {
+      "catalogName": "Shape",
+      "constructor": "Rectangle",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:23.463Z",
+        "status": "pending"
+      },
+      "notes": [
+        "The source fixture plan already resolves this pinned prototype.",
+        "Constructor Rectangle resolves to rectangle@2.3.0.",
+        "Recorded live validation keeps this control pending as of 2026-03-10T01:16:23.463Z."
+      ],
+      "planAlignment": "aligned",
+      "planReason": "Fixture prototype Rectangle resolves to rectangle@2.3.0.",
+      "planStatus": "resolved",
+      "prototypeNotes": [
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor Rectangle resolves to rectangle@2.3.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Shape",
+        "Rectangle"
+      ],
+      "templateName": "rectangle",
+      "templateVersion": "2.3.0",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Web barcode scanner",
+      "constructor": "BarcodeScanner",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:23.463Z",
+        "status": "pending"
+      },
+      "notes": [
+        "The source fixture plan already resolves this pinned prototype.",
+        "Constructor BarcodeScanner resolves to barcodeScanner@2.5.0.",
+        "Recorded live validation keeps this control pending as of 2026-03-10T01:16:23.463Z."
+      ],
+      "planAlignment": "aligned",
+      "planReason": "Fixture prototype BarcodeScanner resolves to barcodeScanner@2.5.0.",
+      "planStatus": "resolved",
+      "prototypeNotes": [
+        "Promoted from generated draft artifact 2026-03-10T01:15:32.529Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor BarcodeScanner resolves to barcodeScanner@2.5.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Web barcode scanner",
+        "Barcode reader"
+      ],
+      "templateName": "barcodeScanner",
+      "templateVersion": "2.5.0",
+      "validationStatus": "pending"
+    },
+    {
       "catalogName": "Info button",
       "constructor": "ModernInformationButton",
       "family": "modern",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Info button",
-          "Information button"
-        ],
-        "chosenCandidate": {
-          "category": "Display",
-          "iconName": "#fluent-infobutton",
-          "title": "Information button"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "liveValidation": {
         "recordedAt": "2026-03-09T16:03:57.912Z",
         "status": "pending"
       },
       "notes": [
-        "The source fixture plan already resolves this pinned prototype.",
-        "Constructor ModernInformationButton resolves to modernInformationButton@1.0.0.",
-        "Recorded live validation keeps this control pending as of 2026-03-09T16:03:57.912Z.",
-        "Latest Studio insert attempt (2026-03-09T14:29:09.702Z) inserted this control via Information button (Display) using insert-pane-search. Queries: Info button, Information button."
+        "The source fixture plan already tracks this prototype, but the harvested registry still lacks a matching constructor alias.",
+        "The pinned harvested registry does not currently resolve constructor ModernInformationButton; keep registry refresh work separate from live validation.",
+        "Recorded live validation keeps this control pending as of 2026-03-09T16:03:57.912Z."
       ],
       "planAlignment": "aligned",
-      "planReason": "Fixture prototype ModernInformationButton resolves to modernInformationButton@1.0.0.",
-      "planStatus": "resolved",
+      "planReason": "Fixture prototype ModernInformationButton exists, but the pinned harvested registry does not expose a matching constructor alias yet.",
+      "planStatus": "registry-missing",
       "prototypeNotes": [
         "Promoted from generated draft artifact 2026-03-09T15:44:21.817Z (fixture plan 2026-03-09T15:44:21.694Z).",
         "Constructor ModernInformationButton resolves to modernInformationButton@1.0.0 in the pinned harvested registry.",
@@ -239,7 +297,34 @@
         "Info button",
         "Information button"
       ],
-      "templateName": "modernInformationButton",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Text input",
+      "constructor": "ModernText",
+      "family": "modern",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:30.939Z",
+        "status": "pending"
+      },
+      "notes": [
+        "The source fixture plan already resolves this pinned prototype.",
+        "Constructor ModernText resolves to modernText@1.0.0.",
+        "Recorded live validation keeps this control pending as of 2026-03-10T01:16:30.939Z."
+      ],
+      "planAlignment": "aligned",
+      "planReason": "Fixture prototype ModernText resolves to modernText@1.0.0.",
+      "planStatus": "resolved",
+      "prototypeNotes": [
+        "Promoted from generated draft artifact 2026-03-10T01:16:23.463Z (fixture plan 2026-03-10T01:15:29.502Z).",
+        "Constructor ModernText resolves to modernText@1.0.0 in the pinned harvested registry.",
+        "Properties started from harvested runtime metadata: Align, AutoHeight, DisplayMode, Height, Width.",
+        "Live paste validation inside HarvestFixtureContainer is still pending."
+      ],
+      "suggestedInsertQueries": [
+        "Text input"
+      ],
+      "templateName": "modernText",
       "templateVersion": "1.0.0",
       "validationStatus": "pending"
     },
@@ -275,19 +360,19 @@
     }
   ],
   "counts": {
-    "alignedPlanControls": 7,
+    "alignedPlanControls": 12,
     "failedValidationControls": 0,
-    "pendingValidationControls": 6,
-    "prototypeControls": 7,
+    "pendingValidationControls": 11,
+    "prototypeControls": 12,
     "prototypeOnlyControls": 0,
-    "registryMissingControls": 0,
+    "registryMissingControls": 3,
     "stalePlanControls": 0,
     "unknownValidationControls": 0,
     "validatedControls": 1
   },
-  "generatedAt": "2026-03-09T16:04:21.224Z",
+  "generatedAt": "2026-03-10T01:23:11.762Z",
   "schemaVersion": 1,
-  "sourcePlanGeneratedAt": "2026-03-09T16:04:13.450Z",
-  "sourcePrototypeGeneratedAt": "2026-03-09T16:03:57.912Z",
-  "sourceRegistryGeneratedAt": "2026-03-09T14:29:42.064Z"
+  "sourcePlanGeneratedAt": "2026-03-10T01:22:35.587Z",
+  "sourcePrototypeGeneratedAt": "2026-03-10T01:16:30.939Z",
+  "sourceRegistryGeneratedAt": "2026-03-10T00:48:54.575Z"
 }

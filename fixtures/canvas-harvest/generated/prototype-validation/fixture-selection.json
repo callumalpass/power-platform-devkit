@@ -1,9 +1,9 @@
 {
   "counts": {
     "pendingMarkers": 0,
-    "renderedControls": 6,
-    "selectedControls": 6,
-    "skippedControls": 0
+    "renderedControls": 8,
+    "selectedControls": 8,
+    "skippedControls": 3
   },
   "filters": {
     "statuses": [
@@ -12,7 +12,7 @@
       "unknown"
     ]
   },
-  "generatedAt": "2026-03-09T16:57:30.676Z",
+  "generatedAt": "2026-03-10T01:23:20.350Z",
   "paths": {
     "backlog": "/home/calluma/projects/pp/fixtures/canvas-harvest/generated/prototype-validation-backlog.json",
     "prototypes": "/home/calluma/projects/pp/fixtures/canvas-harvest/prototypes.json",
@@ -22,65 +22,36 @@
   "schemaVersion": 1,
   "selectedControls": [
     {
-      "catalogName": "Button",
-      "constructor": "Classic/Button",
+      "catalogName": "Barcode scanner",
+      "constructor": "BarcodeScanner",
       "family": "classic",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Button"
-        ],
-        "chosenCandidate": {
-          "category": "Classic",
-          "iconName": "#icon-button",
-          "title": "Button"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "liveValidation": {
-        "method": "promoted-draft",
-        "notes": [
-          "Backfilled from the promotion-time pending note on 2026-03-10."
-        ],
-        "recordedAt": "2026-03-10T00:54:16+11:00",
+        "recordedAt": "2026-03-10T01:16:23.463Z",
         "status": "pending"
       },
       "planAlignment": "aligned",
       "suggestedInsertQueries": [
-        "Button"
+        "Barcode scanner"
       ],
-      "templateName": "button",
-      "templateVersion": "2.2.0",
+      "templateName": "barcodeScanner",
+      "templateVersion": "2.5.0",
       "validationStatus": "pending"
     },
     {
-      "catalogName": "Date picker",
-      "constructor": "Classic/DatePicker",
+      "catalogName": "Gallery",
+      "constructor": "Gallery",
       "family": "classic",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Date picker"
-        ],
-        "chosenCandidate": {
-          "category": "Classic",
-          "iconName": "#icon-datepicker",
-          "title": "Date picker"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "liveValidation": {
-        "recordedAt": "2026-03-09T16:03:57.912Z",
+        "recordedAt": "2026-03-10T01:16:23.463Z",
         "status": "pending"
       },
       "planAlignment": "aligned",
       "suggestedInsertQueries": [
-        "Date picker"
+        "Gallery",
+        "Vertical gallery"
       ],
-      "templateName": "datepicker",
-      "templateVersion": "2.6.0",
+      "templateName": "gallery",
+      "templateVersion": "2.15.0",
       "validationStatus": "pending"
     },
     {
@@ -127,19 +98,6 @@
       "catalogName": "Label",
       "constructor": "Label",
       "family": "classic",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Label"
-        ],
-        "chosenCandidate": {
-          "category": "Classic",
-          "iconName": "#icon-label",
-          "title": "Text label"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
       "liveValidation": {
         "method": "migrated-note-state",
         "notes": [
@@ -158,39 +116,83 @@
       "validationStatus": "pending"
     },
     {
-      "catalogName": "Info button",
-      "constructor": "ModernInformationButton",
-      "family": "modern",
-      "latestInsertObservation": {
-        "attemptedQueries": [
-          "Info button",
-          "Information button"
-        ],
-        "chosenCandidate": {
-          "category": "Display",
-          "iconName": "#fluent-infobutton",
-          "title": "Information button"
-        },
-        "generatedAt": "2026-03-09T14:29:09.702Z",
-        "outcome": "inserted",
-        "strategy": "insert-pane-search"
-      },
+      "catalogName": "Shape",
+      "constructor": "Rectangle",
+      "family": "classic",
       "liveValidation": {
-        "recordedAt": "2026-03-09T16:03:57.912Z",
+        "recordedAt": "2026-03-10T01:16:23.463Z",
         "status": "pending"
       },
       "planAlignment": "aligned",
       "suggestedInsertQueries": [
-        "Info button",
-        "Information button"
+        "Shape",
+        "Rectangle"
       ],
-      "templateName": "modernInformationButton",
+      "templateName": "rectangle",
+      "templateVersion": "2.3.0",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Web barcode scanner",
+      "constructor": "BarcodeScanner",
+      "family": "classic",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:23.463Z",
+        "status": "pending"
+      },
+      "planAlignment": "aligned",
+      "suggestedInsertQueries": [
+        "Web barcode scanner",
+        "Barcode reader"
+      ],
+      "templateName": "barcodeScanner",
+      "templateVersion": "2.5.0",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Text input",
+      "constructor": "ModernText",
+      "family": "modern",
+      "liveValidation": {
+        "recordedAt": "2026-03-10T01:16:30.939Z",
+        "status": "pending"
+      },
+      "planAlignment": "aligned",
+      "suggestedInsertQueries": [
+        "Text input"
+      ],
+      "templateName": "modernText",
       "templateVersion": "1.0.0",
       "validationStatus": "pending"
     }
   ],
-  "skippedControls": [],
-  "sourceBacklogGeneratedAt": "2026-03-09T16:04:21.224Z",
-  "sourcePrototypeGeneratedAt": "2026-03-09T16:03:57.912Z",
-  "sourceRegistryGeneratedAt": "2026-03-09T14:29:42.064Z"
+  "skippedControls": [
+    {
+      "catalogName": "Button",
+      "constructor": "Classic/Button",
+      "family": "classic",
+      "planAlignment": "aligned",
+      "reason": "The pinned harvested registry does not currently resolve constructor Classic/Button.",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Date picker",
+      "constructor": "Classic/DatePicker",
+      "family": "classic",
+      "planAlignment": "aligned",
+      "reason": "The pinned harvested registry does not currently resolve constructor Classic/DatePicker.",
+      "validationStatus": "pending"
+    },
+    {
+      "catalogName": "Info button",
+      "constructor": "ModernInformationButton",
+      "family": "modern",
+      "planAlignment": "aligned",
+      "reason": "The pinned harvested registry does not currently resolve constructor ModernInformationButton.",
+      "validationStatus": "pending"
+    }
+  ],
+  "sourceBacklogGeneratedAt": "2026-03-10T01:23:11.762Z",
+  "sourcePrototypeGeneratedAt": "2026-03-10T01:16:30.939Z",
+  "sourceRegistryGeneratedAt": "2026-03-10T00:48:54.575Z"
 }

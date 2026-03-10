@@ -3902,4 +3902,43 @@ describe('canvas harvest fixture planning', () => {
     expect(rendered.yaml).toContain('- HarvestModernButtonMarker:');
     expect(rendered.yaml).toContain('Text: ="Modern: Button [registry missing]"');
   });
+
+  it('falls back to a screen document when the pinned registry no longer exposes GroupContainer', () => {
+    const plan = buildCanvasHarvestFixturePlan({
+      catalog,
+      registry: {
+        ...registry,
+        templates: registry.templates.filter((template) => template.templateName !== 'groupContainer'),
+      },
+      prototypes,
+      generatedAt: '2026-03-10T02:00:00.000Z',
+    });
+    const rendered = renderCanvasHarvestFixture({
+      plan,
+      registry: {
+        ...registry,
+        templates: [
+          ...registry.templates.filter((template) => template.templateName !== 'groupContainer'),
+          {
+            templateName: 'screen',
+            templateVersion: '1.0',
+            contentHash: 'screen-template',
+            provenance: {
+              kind: 'harvested',
+              source: 'test',
+            },
+          },
+        ],
+      },
+      prototypes,
+    });
+
+    expect(rendered.containerTemplateName).toBe('screen');
+    expect(rendered.containerTemplateVersion).toBe('1.0');
+    expect(rendered.yaml).toContain('Screens:');
+    expect(rendered.yaml).toContain('  HarvestFixtureContainer:');
+    expect(rendered.yaml).not.toContain('Control: GroupContainer@');
+    expect(rendered.yaml).toContain('      - HarvestClassicIcon:');
+    expect(rendered.yaml).toContain('      - HarvestClassicButtonMarker:');
+  });
 });
