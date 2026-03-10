@@ -1,0 +1,103 @@
+{
+  "assets": [
+    {
+      "exists": false,
+      "kind": "missing",
+      "name": "apps",
+      "path": "<REPO_ROOT>/apps"
+    },
+    {
+      "exists": false,
+      "kind": "missing",
+      "name": "flows",
+      "path": "<REPO_ROOT>/flows"
+    },
+    {
+      "exists": false,
+      "kind": "missing",
+      "name": "solutions",
+      "path": "<REPO_ROOT>/solutions"
+    },
+    {
+      "exists": true,
+      "kind": "directory",
+      "name": "docs",
+      "path": "<REPO_ROOT>/docs"
+    }
+  ],
+  "checks": [
+    {
+      "code": "PROJECT_DOCTOR_CONFIG_MISSING",
+      "hint": "Run `pp project init` to scaffold a minimal config, then tune it for your environment aliases, solution names, and parameter sources.",
+      "message": "No `pp.config.*` file was found. `pp` can inspect defaults, but the local project model is only inferred.",
+      "path": "<REPO_ROOT>/pp.config.yaml",
+      "status": "warn"
+    },
+    {
+      "code": "PROJECT_DOCTOR_DESCENDANT_PROJECT_FOUND",
+      "hint": "Re-run with fixtures/analysis/project or --project fixtures/analysis/project.",
+      "message": "Found descendant pp project root at fixtures/analysis/project.",
+      "path": "<REPO_ROOT>/fixtures/analysis/project",
+      "status": "info"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_MISSING",
+      "hint": "Create apps or update the project assets map if this repo uses a different layout.",
+      "message": "Expected asset path apps is missing for apps",
+      "path": "<REPO_ROOT>/apps",
+      "status": "warn"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_MISSING",
+      "hint": "Create flows or update the project assets map if this repo uses a different layout.",
+      "message": "Expected asset path flows is missing for flows",
+      "path": "<REPO_ROOT>/flows",
+      "status": "warn"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_MISSING",
+      "hint": "Create solutions or update the project assets map if this repo uses a different layout.",
+      "message": "Expected asset path solutions is missing for solutions",
+      "path": "<REPO_ROOT>/solutions",
+      "status": "warn"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+      "message": "Asset path docs is present for docs",
+      "path": "<REPO_ROOT>/docs",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_CONFIG_NOT_FOUND",
+      "hint": "Found descendant project config at fixtures/analysis/project/pp.config.yaml. Re-run with that path or --project fixtures/analysis/project.",
+      "message": "No project config file was found at or above <REPO_ROOT>. Using defaults.",
+      "path": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
+      "status": "warn"
+    }
+  ],
+  "discovery": {
+    "configFound": false,
+    "descendantProjectConfigs": [
+      "fixtures/analysis/project/pp.config.yaml"
+    ],
+    "descendantProjectRoots": [
+      "fixtures/analysis/project"
+    ],
+    "inspectedPath": "<REPO_ROOT>",
+    "nearestProjectRoot": "fixtures/analysis/project",
+    "resolvedRoot": "<REPO_ROOT>",
+    "usedDefaultLayout": true
+  },
+  "root": "<REPO_ROOT>",
+  "summary": {
+    "configuredAssetCount": 4,
+    "existingAssetCount": 1,
+    "hasConfig": false,
+    "hasProviderBindings": false,
+    "hasTemplateRegistries": false,
+    "hasTopology": false,
+    "missingAssetCount": 3,
+    "requiredParameterCount": 0,
+    "unresolvedRequiredParameterCount": 0
+  }
+}

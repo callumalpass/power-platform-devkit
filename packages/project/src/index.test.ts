@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { discoverProject } from './index';
+import { discoverProject, doctorProject, initProject, planProjectInit } from './index';
 
 describe('discoverProject', () => {
   it('loads config and resolves environment-backed parameters', async () => {
@@ -116,4 +116,111 @@ describe('discoverProject', () => {
     expect(result.data?.parameters.apiToken?.sensitive).toBe(true);
     expect(result.data?.parameters.apiToken?.hasValue).toBe(true);
   });
+
+  it('scaffolds a minimal project config and default asset directories', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-project-init-'));
+    const plan = planProjectInit(root, {
+      name: 'demo',
+      environment: 'sandbox',
+      solution: 'CoreLifecycle',
+      stage: 'dev',
+    });
+
+    expect(plan.configPath).toBe(join(root, 'pp.config.yaml'));
+    expect(plan.actions).toHaveLength(5);
+
+    const result = await initProject(root, {
+      name: 'demo',
+      environment: 'sandbox',
+      solution: 'CoreLifecycle',
+      stage: 'dev',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.created).toContain(join(root, 'pp.config.yaml'));
+    expect(result.data?.created).toContain(join(root, 'apps'));
+    expect(result.data?.created).toContain(join(root, 'flows'));
+    expect(result.data?.created).toContain(join(root, 'solutions'));
+    expect(result.data?.created).toContain(join(root, 'docs'));
+
+    const discovery = await discoverProject(root);
+    expect(discovery.success).toBe(true);
+    expect(discovery.data?.config.defaults?.environment).toBe('sandbox');
+    expect(discovery.data?.topology.activeSolution?.uniqueName).toBe('CoreLifecycle');
+  });
+
+  it('reports layout problems and missing required parameters through doctorProject', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-project-doctor-'));
+    await mkdir(join(root, 'apps'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  environment: dev',
+        '  solution: Core',
+        'parameters:',
+        '  tenantDomain:',
+        '    type: string',
+        '    fromEnv: PP_TENANT_DOMAIN',
+        '    required: true',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const report = await doctorProject(root, {
+      environment: {
+        PP_TENANT_DOMAIN: undefined,
+      },
+    });
+
+    expect(report.success).toBe(true);
+    expect(report.data?.summary.hasConfig).toBe(true);
+    expect(report.data?.summary.missingAssetCount).toBeGreaterThan(0);
+    expect(report.data?.summary.unresolvedRequiredParameterCount).toBe(1);
+    expect(report.data?.checks.some((check) => check.code === 'PROJECT_PARAMETER_MISSING')).toBe(true);
+    expect(report.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_ASSET_MISSING')).toBe(true);
+  });
+
+  it('surfaces descendant project roots when discovery falls back to the inspected path', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-project-discovery-'));
+    const fixtureProjectRoot = join(root, 'fixtures', 'analysis', 'project');
+    await mkdir(fixtureProjectRoot, { recursive: true });
+    await writeFile(
+      join(fixtureProjectRoot, 'pp.config.yaml'),
+      [
+        'defaults:',
+        '  environment: prod',
+        '  solution: core',
+        'topology:',
+        '  defaultStage: prod',
+        '  stages:',
+        '    prod:',
+        '      environment: prod',
+        '      solution: core',
+        'solutions:',
+        '  core:',
+        '    uniqueName: CoreManaged',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(root);
+    const doctor = await doctorProject(root);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data?.discovery).toEqual({
+      inspectedPath: root,
+      resolvedRoot: root,
+      configFound: false,
+      usedDefaultLayout: true,
+      descendantProjectConfigs: ['fixtures/analysis/project/pp.config.yaml'],
+      descendantProjectRoots: ['fixtures/analysis/project'],
+      nearestProjectRoot: 'fixtures/analysis/project',
+    });
+
+    expect(doctor.success).toBe(true);
+    expect(doctor.data?.discovery?.descendantProjectRoots).toEqual(['fixtures/analysis/project']);
+    expect(doctor.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_DESCENDANT_PROJECT_FOUND')).toBe(true);
+  });
+
 });

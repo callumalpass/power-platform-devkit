@@ -933,6 +933,21 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('surfaces descendant project roots in project inspect and doctor JSON at repo root', async () => {
+    const inspect = await runCli(['project', 'inspect', repoRoot, '--format', 'json']);
+    const doctor = await runCli(['project', 'doctor', repoRoot, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(doctor.code).toBe(0);
+
+    await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/project-root-inspect.json', {
+      normalize: (value) => normalizeCliSnapshot(value),
+    });
+    await expectGoldenJson(JSON.parse(doctor.stdout), 'fixtures/cli/golden/protocol/project-root-doctor.json', {
+      normalize: (value) => normalizeCliSnapshot(value),
+    });
+  });
+
   it('creates an environment variable definition through the first-class CLI surface', async () => {
     mockDataverseResolution({
       fixture: createFixtureDataverseClient({

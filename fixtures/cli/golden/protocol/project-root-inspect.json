@@ -1,0 +1,56 @@
+{
+  "assets": [
+    {
+      "exists": false,
+      "kind": "missing",
+      "name": "apps",
+      "path": "<REPO_ROOT>/apps"
+    },
+    {
+      "exists": false,
+      "kind": "missing",
+      "name": "flows",
+      "path": "<REPO_ROOT>/flows"
+    },
+    {
+      "exists": false,
+      "kind": "missing",
+      "name": "solutions",
+      "path": "<REPO_ROOT>/solutions"
+    },
+    {
+      "exists": true,
+      "kind": "directory",
+      "name": "docs",
+      "path": "<REPO_ROOT>/docs"
+    }
+  ],
+  "build": {},
+  "discovery": {
+    "configFound": false,
+    "descendantProjectConfigs": [
+      "fixtures/analysis/project/pp.config.yaml"
+    ],
+    "descendantProjectRoots": [
+      "fixtures/analysis/project"
+    ],
+    "inspectedPath": "<REPO_ROOT>",
+    "nearestProjectRoot": "fixtures/analysis/project",
+    "resolvedRoot": "<REPO_ROOT>",
+    "usedDefaultLayout": true
+  },
+  "parameters": {},
+  "providerBindings": {},
+  "summary": {
+    "assetCount": 4,
+    "missingRequiredParameters": [],
+    "parameterCount": 0,
+    "providerBindingCount": 0,
+    "root": "<REPO_ROOT>",
+    "topologyStageCount": 0
+  },
+  "templateRegistries": [],
+  "topology": {
+    "stages": {}
+  }
+}

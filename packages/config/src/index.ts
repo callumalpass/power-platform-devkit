@@ -1,4 +1,5 @@
 import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { createDiagnostic, fail, ok, withWarning, type OperationResult } from '@pp/diagnostics';
@@ -748,7 +749,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function findDescendantProjectConfigs(startDir: string): Promise<string[]> {
+export async function findDescendantProjectConfigs(startDir: string): Promise<string[]> {
   const results: string[] = [];
   await collectDescendantProjectConfigs(resolve(startDir), 0, results);
   return results.sort((left, right) => left.localeCompare(right));
@@ -771,7 +772,7 @@ async function collectDescendantProjectConfigs(currentDir: string, depth: number
     return;
   }
 
-  let entries: Awaited<ReturnType<typeof readdir>>;
+  let entries: Dirent<string>[];
 
   try {
     entries = await readdir(currentDir, { withFileTypes: true });

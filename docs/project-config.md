@@ -287,7 +287,9 @@ Returns:
 When the current directory is not itself a `pp` project, `project inspect` keeps
 the default-layout fallback but now includes descendant `pp.config.*` candidates
 in its warning output when it finds committed project roots below the inspected
-path.
+path. The JSON payload also includes a `discovery` object in that fallback case
+so automation can see the nearest descendant project root without scraping
+stderr.
 
 ### Analysis report
 
