@@ -161,6 +161,13 @@ Suggested provenance classes:
 ### 7.9 Provider extensibility
 Adjacent provider domains such as SharePoint or Power BI should be added as explicit provider packages. CI/CD systems should be modeled as adapters or deployment integrations, not as peer business domains unless a clear domain model justifies it.
 
+The extension contract should be explicit rather than magical:
+
+- providers, analysis modules, deploy adapters, CLI commands, and MCP tools should register through typed contribution records
+- extension manifests should declare support tier, support model, trust level, and compatibility with the core extension API
+- built-in, repo-local, and third-party extensions should participate in the same diagnostics and policy reporting model
+- operator policy should be able to allow only selected source kinds or block experimental extensions entirely
+
 ### 7.10 Documentation-friendly outputs
 The toolkit should expose structured facts, summaries, and context packs that help humans and coding agents produce accurate documentation. Free-form prose may be generated for convenience, but it must not become the canonical source of truth.
 
@@ -998,6 +1005,33 @@ const runs = await client.flow.getRuns({ flow: 'InvoiceSync', status: 'Failed' }
 
 ### 20.3 Public API stability
 The project should use explicit package exports and avoid leaking internal deep imports.
+
+### 20.4 Extension architecture
+
+The toolkit should expose a dedicated extension-contract package rather than treating ad hoc imports as the extension story.
+
+Requirements:
+
+- a typed manifest with `name`, `version`, `supportTier`, `supportModel`, `trustLevel`, and compatibility declarations
+- activation that returns explicit contributions for:
+  - provider packages
+  - analysis modules
+  - deploy adapters
+  - CLI commands
+  - MCP tools
+- registry-owned capability discovery so interfaces can report which extension supplied each surface
+- compatibility checks before activation
+- policy-driven loading for trusted versus experimental extensions
+- deterministic duplicate handling so two extensions cannot silently override the same registered contribution id
+
+Loading rules should start narrow:
+
+- built-in modules may load by default
+- repo-local or package extensions should be opt-in through explicit loader policy
+- API compatibility may initially be enforced by major version and simple core-version patterns
+- experimental extensions should require an explicit policy allowance even when they are discoverable
+
+This should be enough to let `pp` grow beyond the current monorepo packages without committing to a public marketplace or arbitrary runtime hooks.
 
 ---
 

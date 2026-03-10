@@ -20,6 +20,7 @@
       "@pp/auth": ["packages/auth/src/index.ts"],
       "@pp/http": ["packages/http/src/index.ts"],
       "@pp/diagnostics": ["packages/diagnostics/src/index.ts"],
+      "@pp/extensions": ["packages/extensions/src/index.ts"],
       "@pp/cache": ["packages/cache/src/index.ts"],
       "@pp/config": ["packages/config/src/index.ts"],
       "@pp/project": ["packages/project/src/index.ts"],

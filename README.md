@@ -19,6 +19,7 @@ Implemented today:
 - analysis outputs for agent context and markdown reports
 - deploy-plan generation plus the first shared `deploy apply` orchestration slice for Dataverse environment variable mappings
 - thin CI/CD adapters and repo-local runner scripts for GitHub Actions, Azure DevOps, and Power Platform Pipelines
+- a typed extension contract and registry for provider, analysis, deploy-adapter, CLI, and MCP contributions
 - read-only live smoke coverage through `pnpm smoke:live`
 
 Scaffolded but not yet implemented in depth:
@@ -34,6 +35,7 @@ Scaffolded but not yet implemented in depth:
 - local context: `project`
 - domains: `dataverse`, `solution`, `model`, `canvas`, `flow`, `artifacts`, `sharepoint`, `powerbi`
 - application: `analysis`, `deploy`
+- extensibility: `extensions`
 - interfaces: `cli`, `mcp`
 - adapters: `github-actions`, `azure-devops`, `power-platform-pipelines`
 
@@ -207,6 +209,20 @@ pp auth profile add-client-secret \
 ```
 
 More detail is in [docs/auth-and-environments.md](docs/auth-and-environments.md).
+
+## Extension architecture
+
+The repo now includes [`@pp/extensions`](/home/calluma/projects/pp/packages/extensions/src/index.ts), a narrow extension contract for:
+
+- provider packages
+- analysis modules
+- deploy adapters
+- CLI command registration
+- MCP tool registration
+
+Extensions declare compatibility, support tier, support model, and trust level up front. The registry enforces those rules during loading so repo-local and third-party additions participate in the same diagnostics and policy model as built-in capabilities.
+
+More detail is in [docs/extensions.md](docs/extensions.md).
 
 ## Project analysis
 
