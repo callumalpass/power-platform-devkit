@@ -154,9 +154,14 @@ export interface NormalizedRelationshipDefinition {
   referencedEntity?: string;
   referencedAttribute?: string;
   referencingEntity?: string;
+  referencingAttribute?: string;
   lookupLogicalName?: string;
   lookupSchemaName?: string;
   lookupDisplayName?: string;
+  associatedMenuLabel?: string;
+  associatedMenuBehavior?: string;
+  associatedMenuGroup?: string;
+  associatedMenuOrder?: number;
   cascade?: Record<string, unknown>;
   entity1LogicalName?: string;
   entity2LogicalName?: string;
@@ -1622,11 +1627,13 @@ export function normalizeGlobalOptionSetDefinition(optionSet: GlobalOptionSetDef
 
 export function normalizeRelationshipDefinition(relationship: RelationshipDefinition): NormalizedRelationshipDefinition {
   const odataType = readString(relationship['@odata.type']);
-  const relationshipType: NormalizedRelationshipDefinition['relationshipType'] = odataType?.includes('ManyToManyRelationshipMetadata')
-    ? 'many-to-many'
-    : odataType?.includes('OneToManyRelationshipMetadata')
-      ? 'one-to-many'
-      : 'unknown';
+  const rawRelationshipType = readString(relationship.RelationshipType);
+  const relationshipType: NormalizedRelationshipDefinition['relationshipType'] =
+    odataType?.includes('ManyToManyRelationshipMetadata') || rawRelationshipType === 'ManyToManyRelationship'
+      ? 'many-to-many'
+      : odataType?.includes('OneToManyRelationshipMetadata') || rawRelationshipType === 'OneToManyRelationship'
+        ? 'one-to-many'
+        : 'unknown';
 
   if (relationshipType === 'many-to-many') {
     return compactObject({
@@ -1642,6 +1649,9 @@ export function normalizeRelationshipDefinition(relationship: RelationshipDefini
     });
   }
 
+  const lookup = relationship.Lookup as Record<string, unknown> | undefined;
+  const associatedMenu = relationship.AssociatedMenuConfiguration as Record<string, unknown> | undefined;
+
   return compactObject({
     schemaName: readString(relationship.SchemaName),
     metadataId: readString(relationship.MetadataId),
@@ -1650,9 +1660,14 @@ export function normalizeRelationshipDefinition(relationship: RelationshipDefini
     referencedEntity: readString(relationship.ReferencedEntity),
     referencedAttribute: readString(relationship.ReferencedAttribute),
     referencingEntity: readString(relationship.ReferencingEntity),
-    lookupLogicalName: readString((relationship.Lookup as Record<string, unknown> | undefined)?.LogicalName),
-    lookupSchemaName: readString((relationship.Lookup as Record<string, unknown> | undefined)?.SchemaName),
-    lookupDisplayName: readLocalizedLabel((relationship.Lookup as Record<string, unknown> | undefined)?.DisplayName),
+    referencingAttribute: readString(relationship.ReferencingAttribute),
+    lookupLogicalName: readString(lookup?.LogicalName) ?? readString(relationship.ReferencingAttribute),
+    lookupSchemaName: readString(lookup?.SchemaName),
+    lookupDisplayName: readLocalizedLabel(lookup?.DisplayName),
+    associatedMenuLabel: readLocalizedLabel(associatedMenu?.Label),
+    associatedMenuBehavior: readString(associatedMenu?.Behavior),
+    associatedMenuGroup: readString(associatedMenu?.Group),
+    associatedMenuOrder: readNumber(associatedMenu?.Order),
     cascade: normalizeCascadeConfiguration(relationship.CascadeConfiguration),
   });
 }

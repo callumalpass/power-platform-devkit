@@ -1383,6 +1383,7 @@ describe('metadata normalization helpers', () => {
       ReferencedEntity: 'account',
       ReferencedAttribute: 'accountid',
       ReferencingEntity: 'pp_project',
+      ReferencingAttribute: 'pp_accountid',
       Lookup: {
         LogicalName: 'pp_accountid',
         SchemaName: 'pp_AccountId',
@@ -1411,6 +1412,7 @@ describe('metadata normalization helpers', () => {
       referencedEntity: 'account',
       referencedAttribute: 'accountid',
       referencingEntity: 'pp_project',
+      referencingAttribute: 'pp_accountid',
       lookupLogicalName: 'pp_accountid',
       lookupSchemaName: 'pp_AccountId',
       lookupDisplayName: 'Account',
@@ -1425,6 +1427,51 @@ describe('metadata normalization helpers', () => {
       entity1LogicalName: 'pp_project',
       entity2LogicalName: 'contact',
       intersectEntityName: 'pp_project_contact',
+    });
+  });
+
+  it('normalizes freshly created one-to-many relationships without odata type or lookup expansion', () => {
+    const relationship = normalizeRelationshipDefinition({
+      SchemaName: 'pph34135_project_pph34135_task',
+      RelationshipType: 'OneToManyRelationship',
+      MetadataId: 'ccf160a6-361c-f111-8341-6045bde68dac',
+      ReferencedEntity: 'pph34135_project',
+      ReferencedAttribute: 'pph34135_projectid',
+      ReferencingEntity: 'pph34135_task',
+      ReferencingAttribute: 'pph34135_projectid',
+      AssociatedMenuConfiguration: {
+        Behavior: 'UseCollectionName',
+        Group: 'Details',
+        Order: 10000,
+        Label: {
+          UserLocalizedLabel: {
+            Label: 'Tasks',
+          },
+        },
+      },
+      CascadeConfiguration: {
+        Assign: 'Cascade',
+        Delete: 'RemoveLink',
+      },
+    });
+
+    expect(relationship).toEqual({
+      schemaName: 'pph34135_project_pph34135_task',
+      metadataId: 'ccf160a6-361c-f111-8341-6045bde68dac',
+      relationshipType: 'one-to-many',
+      referencedEntity: 'pph34135_project',
+      referencedAttribute: 'pph34135_projectid',
+      referencingEntity: 'pph34135_task',
+      referencingAttribute: 'pph34135_projectid',
+      lookupLogicalName: 'pph34135_projectid',
+      associatedMenuLabel: 'Tasks',
+      associatedMenuBehavior: 'UseCollectionName',
+      associatedMenuGroup: 'Details',
+      associatedMenuOrder: 10000,
+      cascade: {
+        assign: 'Cascade',
+        delete: 'RemoveLink',
+      },
     });
   });
 });
