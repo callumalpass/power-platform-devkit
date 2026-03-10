@@ -6,7 +6,6 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r --if-present build",
-    "canvas:create-solution": "tsx scripts/create-solution-canvas-app.ts",
     "clean": "pnpm -r --if-present clean",
     "dev:cli": "pnpm --filter @pp/cli dev",
     "fetch:canvas-catalog": "tsx scripts/fetch-canvas-control-catalog.ts",

@@ -8,7 +8,7 @@ import {
   selectEmbeddedStudioFrame,
 } from './canvas-create-delegate';
 
-describe('create-solution-canvas-app URL routing', () => {
+describe('canvas delegated create URL routing', () => {
   it('prefers the solution-scoped blank-app deep link when Maker metadata is available', () => {
     expect(
       resolveInitialTargetUrl({

@@ -239,10 +239,10 @@ Remote mutation placeholders:
   currently returns a stable machine-readable diagnostic instead of importing a
   remote app
 - `pp canvas create --env <alias> --solution UNIQUE_NAME --name DISPLAY_NAME --delegate --browser-profile NAME`
-  can now drive the solution-scoped Maker blank-app flow through a persisted
-  browser profile, save/publish in Studio, wait for the Dataverse `canvasapps`
-  row, and return the created app id plus screenshot/session artifacts when it
-  succeeds
+  is the canonical browser-mediated create path inside `pp`; it drives the
+  solution-scoped Maker blank-app flow through a persisted browser profile,
+  saves/publishes in Studio, waits for the Dataverse `canvasapps` row, and
+  returns the created app id plus screenshot/session artifacts when it succeeds
 - adding `--dry-run` or `--plan` to either placeholder resolves the target
   environment and solution, then returns a structured no-op preview with the
   Maker handoff URLs, verification commands, and known limitations instead of a
