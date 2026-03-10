@@ -297,8 +297,17 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
 }
 
 async function runDataverse(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printDataverseHelp();
+    return 0;
+  }
+
   switch (command) {
     case 'whoami':
+      if (args.includes('--help') || args.includes('help')) {
+        printDataverseWhoAmIHelp();
+        return 0;
+      }
       return runDataverseWhoAmI(args);
     case 'request':
       return runDataverseRequest(args);
@@ -321,12 +330,21 @@ async function runDataverse(command: string | undefined, args: string[]): Promis
 }
 
 async function runSolution(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printSolutionHelp();
+    return 0;
+  }
+
   switch (command) {
     case 'create':
       return runSolutionCreate(args);
     case 'set-metadata':
       return runSolutionSetMetadata(args);
     case 'list':
+      if (args.includes('--help') || args.includes('help')) {
+        printSolutionListHelp();
+        return 0;
+      }
       return runSolutionList(args);
     case 'inspect':
       return runSolutionInspect(args);
@@ -367,12 +385,21 @@ async function runConnectionReference(command: string | undefined, args: string[
 }
 
 async function runEnvironmentVariable(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printEnvironmentVariableHelp();
+    return 0;
+  }
+
   switch (command) {
     case 'create':
       return runEnvironmentVariableCreate(args);
     case 'list':
       return runEnvironmentVariableList(args);
     case 'inspect':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentVariableInspectHelp();
+        return 0;
+      }
       return runEnvironmentVariableInspect(args);
     case 'set':
       return runEnvironmentVariableSet(args);
@@ -5233,6 +5260,140 @@ function printCanvasHelp(): void {
       '  - Remote create/import commands are not implemented yet.',
       '  - Attempted remote create/import calls return machine-readable diagnostics with next steps.',
       '  - Use --environment to switch canvas inspect from local-path mode to remote lookup mode.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDataverseHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: dv <command> [options]',
+      '',
+      'Commands:',
+      '  whoami                      resolve the current caller and target environment',
+      '  request                     issue a raw Dataverse Web API request',
+      '  query <table>               query table rows through Dataverse',
+      '  get <table> <id>            fetch one Dataverse row by id',
+      '  create <table>              create one Dataverse row',
+      '  update <table> <id>         update one Dataverse row',
+      '  delete <table> <id>         delete one Dataverse row',
+      '  metadata ...                inspect or mutate Dataverse metadata',
+      '',
+      'Examples:',
+      '  pp dv whoami --environment dev --format json',
+      '  pp dv query solutions --environment dev --select solutionid,uniquename --top 5',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDataverseWhoAmIHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: dv whoami --environment ALIAS [options]',
+      '',
+      'Behavior:',
+      '  - Resolves the target environment alias and auth profile.',
+      '  - Returns the current Dataverse caller and business unit ids with environment context.',
+      '',
+      'Examples:',
+      '  pp dv whoami --environment dev',
+      '  pp dv whoami --environment dev --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printSolutionHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution <command> [options]',
+      '',
+      'Remote commands:',
+      '  create <uniqueName>         create a solution shell in an environment',
+      '  set-metadata <uniqueName>   update solution publisher or version metadata',
+      '  list                        list solutions in an environment',
+      '  inspect <uniqueName>        inspect one solution',
+      '  components <uniqueName>     list solution components',
+      '  dependencies <uniqueName>   list solution dependencies',
+      '  analyze <uniqueName>        render a normalized analysis view',
+      '  compare [uniqueName]        compare source and target solution states',
+      '  export <uniqueName>         export a solution package',
+      '  import <path.zip>           import a solution package',
+      '',
+      'Local package commands:',
+      '  pack <folder>               pack a local solution folder into a zip',
+      '  unpack <path.zip>           unpack a solution zip into a folder',
+      '',
+      'Examples:',
+      '  pp solution list --environment dev --format json',
+      '  pp solution inspect Core --environment dev',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printSolutionListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution list --environment ALIAS [options]',
+      '',
+      'Behavior:',
+      '  - Lists installed solutions in the target environment.',
+      '  - Returns structured records with solution ids, unique names, friendly names, versions, and managed state.',
+      '',
+      'Examples:',
+      '  pp solution list --environment dev',
+      '  pp solution list --environment dev --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentVariableHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: envvar <command> [options]',
+      '',
+      'Commands:',
+      '  create <schemaName>         create an environment variable definition',
+      '  list                        list environment variable definitions and values',
+      '  inspect <identifier>        inspect one environment variable by schema name, display name, or id',
+      '  set <identifier>            set the current value for one environment variable',
+      '',
+      'Examples:',
+      '  pp envvar list --environment dev --solution Core --format json',
+      '  pp envvar inspect pp_ApiUrl --environment dev',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentVariableInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Behavior:',
+      '  - Resolves one environment variable definition and its current value when present.',
+      '  - Returns a stable ENVVAR_NOT_FOUND diagnostic when the identifier does not match a definition in the target scope.',
+      '',
+      'Examples:',
+      '  pp envvar inspect pp_ApiUrl --environment dev',
+      '  pp envvar inspect pp_ApiUrl --environment dev --solution Core --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

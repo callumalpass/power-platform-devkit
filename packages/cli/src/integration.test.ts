@@ -3083,6 +3083,53 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.stdout).not.toContain('AUTH_PROFILE_NAME_REQUIRED');
   });
 
+  it('prints group and subcommand help for remote discovery commands with the shared output contract', async () => {
+    const dvHelp = await runCli(['dv', '--help']);
+    const whoAmIHelp = await runCli(['dv', 'whoami', '--help']);
+    const solutionHelp = await runCli(['solution', '--help']);
+    const solutionListHelp = await runCli(['solution', 'list', '--help']);
+    const envvarHelp = await runCli(['envvar', '--help']);
+    const envvarInspectHelp = await runCli(['envvar', 'inspect', '--help']);
+
+    expect(dvHelp.code).toBe(0);
+    expect(dvHelp.stderr).toBe('');
+    expect(dvHelp.stdout).toContain('Usage: dv <command> [options]');
+    expect(dvHelp.stdout).toContain('whoami');
+    expect(dvHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
+
+    expect(whoAmIHelp.code).toBe(0);
+    expect(whoAmIHelp.stderr).toBe('');
+    expect(whoAmIHelp.stdout).toContain('Usage: dv whoami --environment ALIAS [options]');
+    expect(whoAmIHelp.stdout).toContain('pp dv whoami --environment dev --format json');
+    expect(whoAmIHelp.stdout).not.toContain('DV_ENV_REQUIRED');
+
+    expect(solutionHelp.code).toBe(0);
+    expect(solutionHelp.stderr).toBe('');
+    expect(solutionHelp.stdout).toContain('Usage: solution <command> [options]');
+    expect(solutionHelp.stdout).toContain('list');
+    expect(solutionHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
+
+    expect(solutionListHelp.code).toBe(0);
+    expect(solutionListHelp.stderr).toBe('');
+    expect(solutionListHelp.stdout).toContain('Usage: solution list --environment ALIAS [options]');
+    expect(solutionListHelp.stdout).toContain('pp solution list --environment dev --format json');
+    expect(solutionListHelp.stdout).not.toContain('DV_ENV_REQUIRED');
+
+    expect(envvarHelp.code).toBe(0);
+    expect(envvarHelp.stderr).toBe('');
+    expect(envvarHelp.stdout).toContain('Usage: envvar <command> [options]');
+    expect(envvarHelp.stdout).toContain('inspect <identifier>');
+    expect(envvarHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
+
+    expect(envvarInspectHelp.code).toBe(0);
+    expect(envvarInspectHelp.stderr).toBe('');
+    expect(envvarInspectHelp.stdout).toContain(
+      'Usage: envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [options]'
+    );
+    expect(envvarInspectHelp.stdout).toContain('stable ENVVAR_NOT_FOUND diagnostic');
+    expect(envvarInspectHelp.stdout).not.toContain('ENVVAR_IDENTIFIER_REQUIRED');
+  });
+
   it('returns a stable not-found contract for missing environment variables', async () => {
     mockDataverseResolution({
       source: createFixtureDataverseClient({
