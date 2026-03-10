@@ -179,6 +179,10 @@ Remote inspection plus export/deploy/promote results now also surface the
 normalized workflow-state label alongside raw `stateCode` / `statusCode`, so
 automation and CLI users do not need to decode the supported Dataverse pairs
 manually.
+Those same remote source/target summaries now retain bounded workflow
+`description` and `category` fields too, so lifecycle automation can inspect
+the shell metadata that export/deploy/promote already preserve without
+re-reading the local artifact or Dataverse row separately.
 The same bounded lifecycle also enforces the supported cloud-flow category
 contract: when `category` is declared locally it must remain `5`, and when it
 is omitted the repack and direct deploy surfaces normalize it back to category

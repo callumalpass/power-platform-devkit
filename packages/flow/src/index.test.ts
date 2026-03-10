@@ -243,7 +243,9 @@ describe('FlowService', () => {
       source: {
         id: 'flow-1',
         name: 'Invoice Sync',
+        description: 'Synchronize invoices from Dataverse to downstream systems.',
         uniqueName: 'crd_InvoiceSync',
+        category: 5,
         workflowState: 'activated',
         solutionUniqueName: 'Core',
       },
@@ -373,10 +375,23 @@ describe('FlowService', () => {
       operation: 'updated',
       target: {
         id: 'flow-1',
+        description: 'Synchronize invoice payloads to downstream systems.',
         uniqueName: 'crd_InvoiceFlow',
+        category: 5,
         solutionUniqueName: 'Core',
       },
-      updatedFields: ['clientdata', 'name', 'description', 'category', 'statecode', 'statuscode'],
+      updatedFields: [
+        'clientdata',
+        'name',
+        'description',
+        'category',
+        'type',
+        'mode',
+        'ondemand',
+        'primaryentity',
+        'statecode',
+        'statuscode',
+      ],
       validation: {
         valid: true,
       },
@@ -654,10 +669,24 @@ describe('FlowService', () => {
       operation: 'created',
       target: {
         id: 'flow-created-1',
+        description: 'Synchronize invoice payloads to downstream systems.',
         uniqueName: 'crd_InvoiceFlow',
+        category: 5,
         solutionUniqueName: 'Core',
       },
-      updatedFields: ['category', 'name', 'description', 'uniquename', 'clientdata', 'statecode', 'statuscode'],
+      updatedFields: [
+        'category',
+        'type',
+        'mode',
+        'ondemand',
+        'primaryentity',
+        'name',
+        'description',
+        'uniquename',
+        'clientdata',
+        'statecode',
+        'statuscode',
+      ],
       validation: {
         valid: true,
       },
@@ -946,7 +975,9 @@ describe('FlowService', () => {
       identifier: 'Invoice Sync',
       source: {
         id: 'flow-1',
+        description: 'Synchronize invoices from Dataverse to downstream systems.',
         uniqueName: 'crd_InvoiceSync',
+        category: 5,
         workflowState: 'activated',
         solutionUniqueName: 'Core',
       },
@@ -954,7 +985,9 @@ describe('FlowService', () => {
       operation: 'updated',
       target: {
         id: 'target-flow-1',
+        description: 'Synchronize invoices from Dataverse to downstream systems.',
         uniqueName: 'crd_InvoiceSync',
+        category: 5,
         solutionUniqueName: 'CoreTarget',
       },
       validation: {
@@ -1026,13 +1059,17 @@ describe('FlowService', () => {
     expect(result.data).toMatchObject({
       promotionMode: 'artifact',
       source: {
+        description: 'Synchronize invoices from Dataverse to downstream systems.',
+        category: 5,
         workflowState: 'activated',
         stateCode: 1,
         statusCode: 2,
       },
       target: {
         id: 'target-flow-state-1',
+        description: 'Synchronize invoices from Dataverse to downstream systems.',
         uniqueName: 'crd_InvoiceSync',
+        category: 5,
         workflowState: 'draft',
         stateCode: 0,
         statusCode: 1,
@@ -1244,6 +1281,7 @@ describe('FlowService', () => {
               {
                 workflowid: 'flow-1',
                 name: 'Invoice Sync',
+                description: 'Synchronize invoices from Dataverse to downstream systems.',
                 uniquename: 'crd_InvoiceSync',
                 category: 5,
                 statecode: 1,
@@ -1332,6 +1370,13 @@ describe('FlowService', () => {
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({
       identifier: 'Invoice Sync',
+      source: {
+        description: 'Synchronize invoices from Dataverse to downstream systems.',
+        category: 5,
+        workflowState: 'activated',
+        stateCode: 1,
+        statusCode: 2,
+      },
       operation: 'imported-solution',
       promotionMode: 'solution-package',
       targetSolutionUniqueName: 'Core',

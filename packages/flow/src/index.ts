@@ -302,7 +302,9 @@ export interface FlowExportResult {
   source: {
     id: string;
     name?: string;
+    description?: string;
     uniqueName?: string;
+    category?: number;
     workflowMetadata?: FlowWorkflowShellMetadata;
     workflowState?: FlowWorkflowStateLabel;
     stateCode?: number;
@@ -326,7 +328,9 @@ export interface FlowDeployResult {
   target: {
     id: string;
     name?: string;
+    description?: string;
     uniqueName?: string;
+    category?: number;
     workflowMetadata?: FlowWorkflowShellMetadata;
     workflowState?: FlowWorkflowStateLabel;
     stateCode?: number;
@@ -362,7 +366,9 @@ export interface FlowArtifactPromoteResult {
   source: {
     id: string;
     name?: string;
+    description?: string;
     uniqueName?: string;
+    category?: number;
     workflowMetadata?: FlowWorkflowShellMetadata;
     workflowState?: FlowWorkflowStateLabel;
     stateCode?: number;
@@ -374,7 +380,9 @@ export interface FlowArtifactPromoteResult {
   target: {
     id: string;
     name?: string;
+    description?: string;
     uniqueName?: string;
+    category?: number;
     workflowMetadata?: FlowWorkflowShellMetadata;
     workflowState?: FlowWorkflowStateLabel;
     stateCode?: number;
@@ -394,8 +402,13 @@ export interface FlowSolutionPackagePromoteResult {
   source: {
     id: string;
     name?: string;
+    description?: string;
     uniqueName?: string;
+    category?: number;
+    workflowMetadata?: FlowWorkflowShellMetadata;
     workflowState?: FlowWorkflowStateLabel;
+    stateCode?: number;
+    statusCode?: number;
     solutionUniqueName?: string;
   };
   operation: 'imported-solution';
@@ -1435,7 +1448,9 @@ export async function promoteRemoteFlowArtifact(
       source: {
         id: sourceFlow.data.id,
         name: sourceFlow.data.name,
+        description: sourceFlow.data.description,
         uniqueName: sourceFlow.data.uniqueName,
+        category: sourceFlow.data.category,
         workflowMetadata: sourceFlow.data.workflowMetadata,
         workflowState: sourceFlow.data.workflowState,
         stateCode: sourceFlow.data.stateCode,
@@ -1613,7 +1628,9 @@ async function promoteRemoteFlowArtifactAsSolutionPackage(
         source: {
           id: sourceFlow.id,
           name: sourceFlow.name,
+          description: sourceFlow.description,
           uniqueName: sourceFlow.uniqueName,
+          category: sourceFlow.category,
           workflowMetadata: sourceFlow.workflowMetadata,
           workflowState: sourceFlow.workflowState,
           stateCode: sourceFlow.stateCode,
@@ -1761,7 +1778,9 @@ export async function exportRemoteFlowArtifact(
       source: {
         id: flow.data.id,
         name: flow.data.name,
+        description: flow.data.description,
         uniqueName: flow.data.uniqueName,
+        category: flow.data.category,
         workflowMetadata: flow.data.workflowMetadata,
         workflowState: flow.data.workflowState,
         stateCode: flow.data.stateCode,
@@ -1974,7 +1993,9 @@ async function deployLoadedFlowArtifact(
           target: {
             id: create.data?.entity?.workflowid ?? create.data?.entityId ?? '',
             name: create.data?.entity?.name ?? artifact.metadata.displayName ?? artifact.metadata.name ?? createIdentifier,
+            description: readString(create.data?.entity?.description) ?? artifact.metadata.description,
             uniqueName: create.data?.entity?.uniquename ?? createIdentifier,
+            category: readNumber(create.data?.entity?.category) ?? resolveSupportedFlowWorkflowCategory(artifact.metadata.category).category,
             workflowMetadata:
               normalizeFlowWorkflowShellMetadata({
                 type: create.data?.entity?.type,
@@ -2062,7 +2083,9 @@ async function deployLoadedFlowArtifact(
       target: {
         id: remoteFlow.data.id,
         name: artifact.metadata.displayName ?? artifact.metadata.name ?? remoteFlow.data.name,
+        description: artifact.metadata.description ?? remoteFlow.data.description,
         uniqueName: artifact.metadata.uniqueName ?? remoteFlow.data.uniqueName,
+        category: resolveSupportedFlowWorkflowCategory(artifact.metadata.category ?? remoteFlow.data.category).category,
         workflowMetadata: resolveSupportedFlowWorkflowShellMetadata(
           artifact.metadata.workflowMetadata ?? remoteFlow.data.workflowMetadata
         ).workflowMetadata,
