@@ -32,16 +32,7 @@ describe('loadProjectConfig', () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.path).toBe(join(fixtureProjectRoot, 'pp.config.yaml'));
-    expect(result.warnings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: 'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED',
-          hint: expect.stringContaining('fixtures/analysis/project'),
-          detail: expect.stringMatching(/Treat fixtures\/analysis\/project as the canonical local project[\s\S]*Stages: prod\./),
-          path: join(fixtureProjectRoot, 'pp.config.yaml'),
-        }),
-      ])
-    );
+    expect(result.warnings).toEqual([]);
     expect(result.suggestedNextActions).toBeUndefined();
   });
 });

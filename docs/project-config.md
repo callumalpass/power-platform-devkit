@@ -340,13 +340,14 @@ Returns:
 
 When the current directory is not itself a `pp` project, `project inspect`
 auto-selects the lone descendant `pp.config.*` it finds below the inspected path
-and treats that project as the canonical local anchor. If there are multiple
-descendant projects, it keeps the default-layout fallback and reports the
-candidates in diagnostics. The JSON payload includes a `discovery` object when
-`pp` had to infer or auto-select the local project root, including the
-auto-selection reason, a `canonicalAnchorReason` summary, plus anchor evidence
-such as the selected config path, asset keys, stage names, provider bindings,
-and docs paths.
+and treats that project as the canonical local anchor for repo-root project
+commands, so you do not need to rerun the command with the descendant path just
+to confirm the local target. If there are multiple descendant projects, it
+keeps the default-layout fallback and reports the candidates in diagnostics. The
+JSON payload includes a `discovery` object when `pp` had to infer or
+auto-select the local project root, including the auto-selection reason, a
+`canonicalAnchorReason` summary, plus anchor evidence such as the selected
+config path, asset keys, stage names, provider bindings, and docs paths.
 
 ### Analysis report
 

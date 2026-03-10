@@ -1573,11 +1573,12 @@ describe('cli fixture-backed workflows', () => {
       normalize: (value) => normalizeCliSnapshot(value),
     });
     expect(JSON.parse(context.stderr)).toMatchObject({
-      warnings: [
-        {
-          code: 'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED',
-        },
-      ],
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'PROJECT_PARAMETER_MISSING',
+        }),
+      ]),
+      warnings: [],
     });
     expect(JSON.parse(context.stdout)).toMatchObject({
       discovery: {

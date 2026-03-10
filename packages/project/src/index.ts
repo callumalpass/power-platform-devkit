@@ -508,7 +508,7 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
         code: 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT',
         message: `Auto-selected descendant pp project root at ${project.discovery.autoSelectedProjectRoot}.`,
         path: join(resolvedRoot, project.discovery.autoSelectedProjectRoot),
-        hint: `Re-run with ${project.discovery.autoSelectedProjectRoot} when you want to make that local project path explicit.`,
+        hint: `This descendant root is already the canonical local project anchor for repo-root project commands.`,
         detail: describeProjectAnchorEvidence(project.discovery),
       });
     }
@@ -735,20 +735,6 @@ export async function feedbackProject(
       evidence: contract.stageMappings.map((stage) =>
         `${stage.stage}:${stage.environmentAlias ?? '<unset>'}:${stage.solutionUniqueName ?? '<unset>'}`
       ),
-    });
-  }
-
-  if (project.discovery.autoSelectedProjectRoot) {
-    frictions.push({
-      title: 'Project root remains implicit from the inspected path',
-      detail:
-        project.discovery.canonicalAnchorReason ??
-        `The canonical project root was auto-selected as ${project.discovery.autoSelectedProjectRoot} instead of being explicit in the invocation.`,
-      evidence: [project.discovery.autoSelectedProjectRoot],
-    });
-    recommendedTasks.push({
-      title: 'Explain descendant project auto-selection in inspect and doctor',
-      rationale: 'Monorepo-style roots still require manual confirmation when pp silently pivots to a descendant project root.',
     });
   }
 

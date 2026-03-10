@@ -36,7 +36,7 @@
     {
       "code": "PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT",
       "detail": "Treat fixtures/analysis/project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path. It defines its own config, 4 asset path(s), 2 stage(s), 2 provider binding(s), 1 docs path(s). Config: fixtures/analysis/project/pp.config.yaml. Assets: apps, docs, flows, solutionBundle. Stages: dev, prod. Provider bindings: financeSharePoint, primaryDataverse. Docs: docs.",
-      "hint": "Re-run with fixtures/analysis/project when you want to make that local project path explicit.",
+      "hint": "This descendant root is already the canonical local project anchor for repo-root project commands.",
       "message": "Auto-selected descendant pp project root at fixtures/analysis/project.",
       "path": "<REPO_ROOT>/fixtures/analysis/project",
       "status": "info"
@@ -120,14 +120,6 @@
       "hint": "Set PP_SQL_ENDPOINT or provide an explicit value in the project config.",
       "message": "Required project parameter sqlEndpoint is not resolved",
       "status": "fail"
-    },
-    {
-      "code": "PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED",
-      "detail": "No project config was found at or above <REPO_ROOT>, so the only descendant project was used as the local anchor. Treat fixtures/analysis/project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path. It defines its own config, 4 asset path(s), 2 stage(s), 2 provider binding(s), 1 docs path(s). Config: fixtures/analysis/project/pp.config.yaml. Assets: apps, docs, flows, solutionBundle. Stages: dev, prod. Provider bindings: financeSharePoint, primaryDataverse. Docs: docs.",
-      "hint": "Use fixtures/analysis/project when you want to scope commands to that local project explicitly.",
-      "message": "Auto-selected descendant project config fixtures/analysis/project/pp.config.yaml.",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
-      "status": "warn"
     }
   ],
   "configPath": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",

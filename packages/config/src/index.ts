@@ -283,26 +283,7 @@ export async function loadProjectConfig(startDir = process.cwd()): Promise<Opera
     const candidateList = descendantCandidates.map((candidate) => relativePathFrom(resolvedStartDir, candidate));
 
     if (descendantCandidates.length === 1 && nearestCandidate) {
-      const loaded = await readLocatedConfig(nearestCandidate, projectConfigSchema, '@pp/config');
-
-      if (!loaded.success) {
-        return loaded;
-      }
-
-      return withWarning(
-        loaded,
-        createDiagnostic(
-          'warning',
-          'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED',
-          `Auto-selected descendant project config ${relativePathFrom(resolvedStartDir, nearestCandidate)}.`,
-          {
-            source: '@pp/config',
-            path: nearestCandidate,
-            hint: `Use ${relativePathFrom(resolvedStartDir, dirname(nearestCandidate))} when you want to scope commands to that local project explicitly.`,
-            detail: buildAutoSelectedProjectDetail(resolvedStartDir, nearestCandidate, loaded.data.config),
-          }
-        )
-      );
+      return readLocatedConfig(nearestCandidate, projectConfigSchema, '@pp/config');
     }
 
     return withWarning(
@@ -869,37 +850,6 @@ function buildCanonicalAnchorReason(
   }
 
   return `${reasons[0]} ${reasons.slice(1).join(', ')}.`;
-}
-
-function buildAutoSelectedProjectDetail(startDir: string, configPath: string, config: ProjectConfig): string {
-  const configRoot = dirname(configPath);
-  const segments = [
-    `No project config was found at or above ${startDir}, so the only descendant project was used as the local anchor.`,
-    buildCanonicalAnchorReason(startDir, configPath, config),
-    `Config: ${relativePathFrom(startDir, configPath)}.`,
-  ];
-
-  const assetKeys = Object.keys(config.assets ?? {}).sort();
-  if (assetKeys.length > 0) {
-    segments.push(`Assets: ${assetKeys.join(', ')}.`);
-  }
-
-  const stageNames = Object.keys(config.topology?.stages ?? {}).sort();
-  if (stageNames.length > 0) {
-    segments.push(`Stages: ${stageNames.join(', ')}.`);
-  }
-
-  const providerBindingNames = Object.keys(config.providerBindings ?? {}).sort();
-  if (providerBindingNames.length > 0) {
-    segments.push(`Provider bindings: ${providerBindingNames.join(', ')}.`);
-  }
-
-  const docsPaths = (config.docs?.paths ?? []).map((entry) => relative(configRoot, join(configRoot, entry)) || '.').sort();
-  if (docsPaths.length > 0) {
-    segments.push(`Docs: ${docsPaths.join(', ')}.`);
-  }
-
-  return segments.join(' ');
 }
 
 function relativePathFrom(fromDir: string, targetPath: string): string {

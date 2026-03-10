@@ -393,12 +393,13 @@ describe('discoverProject', () => {
     expect(doctor.data?.canonicalProjectRoot).toBe(fixtureProjectRoot);
     expect(doctor.data?.discovery?.autoSelectedProjectRoot).toBe('fixtures/analysis/project');
     expect(doctor.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')).toBe(true);
+    expect(doctor.data?.checks.find((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')?.hint).toBe(
+      'This descendant root is already the canonical local project anchor for repo-root project commands.'
+    );
     expect(doctor.data?.checks.find((check) => check.code === 'PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT')?.detail).toContain(
       'Treat fixtures/analysis/project as the canonical local project for this invocation'
     );
-    expect(doctor.data?.checks.find((check) => check.code === 'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED')?.detail).toContain(
-      'the only descendant project was used as the local anchor'
-    );
+    expect(doctor.data?.checks.some((check) => check.code === 'PROJECT_CONFIG_DESCENDANT_AUTO_SELECTED')).toBe(false);
   });
 
   it('flags source-first projects that keep generated bundles inside solutions', async () => {
