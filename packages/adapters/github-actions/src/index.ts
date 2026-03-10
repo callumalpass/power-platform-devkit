@@ -1,6 +1,12 @@
-import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
-import { executeDeploy, type DeployExecutionMode, type DeployExecutionResult } from '@pp/deploy';
-import { discoverProject } from '@pp/project';
+import {
+  resolveDeployConfirm,
+  resolveDeployMode,
+  resolveParameterOverrides,
+  runResolvedDeploy,
+  type ResolvedDeployAdapterOptions,
+} from '../../shared/src/index';
+import { fail, ok, type OperationResult } from '@pp/diagnostics';
+import { type DeployExecutionMode, type DeployExecutionResult } from '@pp/deploy';
 
 export const adapter_github_actionsPackage = '@pp/adapter-github-actions';
 
@@ -13,14 +19,7 @@ export interface GitHubActionsDeployOptions {
   confirm?: boolean;
 }
 
-export interface ResolvedGitHubActionsDeployOptions {
-  projectPath?: string;
-  stage?: string;
-  parameterOverrides?: Record<string, string | number | boolean>;
-  environment: NodeJS.ProcessEnv;
-  mode?: DeployExecutionMode;
-  confirm?: boolean;
-}
+export type ResolvedGitHubActionsDeployOptions = ResolvedDeployAdapterOptions;
 
 export function resolveGitHubActionsDeployOptions(
   options: GitHubActionsDeployOptions = {}
@@ -31,7 +30,8 @@ export function resolveGitHubActionsDeployOptions(
   const modeResult = resolveDeployMode(
     options.mode,
     environment.INPUT_MODE ?? environment.PP_DEPLOY_MODE,
-    '@pp/adapter-github-actions'
+    '@pp/adapter-github-actions',
+    'Set INPUT_MODE or PP_DEPLOY_MODE to apply, dry-run, or plan.'
   );
 
   if (!modeResult.success) {
@@ -47,7 +47,8 @@ export function resolveGitHubActionsDeployOptions(
   const parameterOverridesResult = resolveParameterOverrides(
     options.parameterOverrides,
     environment.INPUT_PARAMETER_OVERRIDES ?? environment.PP_DEPLOY_PARAMETER_OVERRIDES,
-    '@pp/adapter-github-actions'
+    '@pp/adapter-github-actions',
+    'Set INPUT_PARAMETER_OVERRIDES or PP_DEPLOY_PARAMETER_OVERRIDES to a JSON object such as {"tenantDomain":"contoso.example"}.'
   );
 
   if (!parameterOverridesResult.success) {
@@ -60,7 +61,12 @@ export function resolveGitHubActionsDeployOptions(
     });
   }
 
-  const confirmResult = resolveDeployConfirm(options.confirm, environment.INPUT_CONFIRM ?? environment.PP_DEPLOY_CONFIRM, '@pp/adapter-github-actions');
+  const confirmResult = resolveDeployConfirm(
+    options.confirm,
+    environment.INPUT_CONFIRM ?? environment.PP_DEPLOY_CONFIRM,
+    '@pp/adapter-github-actions',
+    'Set INPUT_CONFIRM or PP_DEPLOY_CONFIRM to true, false, yes, no, 1, or 0.'
+  );
 
   if (!confirmResult.success) {
     return fail(confirmResult.diagnostics, {
@@ -82,14 +88,7 @@ export function resolveGitHubActionsDeployOptions(
   });
 }
 
-export async function runGitHubActionsDeploy(options: {
-  projectPath?: string;
-  stage?: string;
-  parameterOverrides?: Record<string, string | number | boolean>;
-  environment?: NodeJS.ProcessEnv;
-  mode?: DeployExecutionMode;
-  confirm?: boolean;
-} = {}): Promise<OperationResult<DeployExecutionResult>> {
+export async function runGitHubActionsDeploy(options: GitHubActionsDeployOptions = {}): Promise<OperationResult<DeployExecutionResult>> {
   const resolved = resolveGitHubActionsDeployOptions(options);
 
   if (!resolved.success || !resolved.data) {
@@ -102,130 +101,5 @@ export async function runGitHubActionsDeploy(options: {
     });
   }
 
-  const project = await discoverProject(resolved.data.projectPath, {
-    stage: resolved.data.stage,
-    parameterOverrides: resolved.data.parameterOverrides,
-    environment: resolved.data.environment,
-  });
-
-  if (!project.success || !project.data) {
-    return fail(project.diagnostics, {
-      supportTier: project.supportTier,
-      warnings: project.warnings,
-      suggestedNextActions: project.suggestedNextActions,
-      provenance: project.provenance,
-      knownLimitations: project.knownLimitations,
-    });
-  }
-
-  return executeDeploy(project.data, {
-    mode: resolved.data.mode,
-    confirmed: resolved.data.confirm,
-  });
-}
-
-function resolveDeployMode(
-  explicitMode: DeployExecutionMode | undefined,
-  environmentMode: string | undefined,
-  source: string
-): OperationResult<DeployExecutionMode | undefined> {
-  const mode = explicitMode ?? environmentMode;
-
-  if (mode === undefined) {
-    return ok(undefined);
-  }
-
-  if (mode === 'apply' || mode === 'dry-run' || mode === 'plan') {
-    return ok(mode);
-  }
-
-  return fail(
-    createDiagnostic('error', 'DEPLOY_ADAPTER_MODE_INVALID', `Unsupported deploy mode "${mode}". Expected apply, dry-run, or plan.`, {
-      source,
-      hint: 'Set INPUT_MODE or PP_DEPLOY_MODE to apply, dry-run, or plan.',
-    })
-  );
-}
-
-function resolveParameterOverrides(
-  explicitOverrides: Record<string, string | number | boolean> | undefined,
-  serializedOverrides: string | undefined,
-  source: string
-): OperationResult<Record<string, string | number | boolean> | undefined> {
-  if (explicitOverrides) {
-    return ok(explicitOverrides);
-  }
-
-  if (!serializedOverrides) {
-    return ok(undefined);
-  }
-
-  try {
-    const parsed = JSON.parse(serializedOverrides) as unknown;
-
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return fail(
-        createDiagnostic('error', 'DEPLOY_ADAPTER_PARAMETER_OVERRIDES_INVALID', 'Deploy parameter overrides must be a JSON object.', {
-          source,
-          hint: 'Set INPUT_PARAMETER_OVERRIDES or PP_DEPLOY_PARAMETER_OVERRIDES to a JSON object such as {"tenantDomain":"contoso.example"}.',
-        })
-      );
-    }
-
-    const normalized: Record<string, string | number | boolean> = {};
-
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
-        return fail(
-          createDiagnostic(
-            'error',
-            'DEPLOY_ADAPTER_PARAMETER_OVERRIDE_VALUE_INVALID',
-            `Deploy parameter override "${key}" must resolve to a string, number, or boolean.`,
-            {
-              source,
-            }
-          )
-        );
-      }
-
-      normalized[key] = value;
-    }
-
-    return ok(normalized);
-  } catch (error) {
-    return fail(
-      createDiagnostic('error', 'DEPLOY_ADAPTER_PARAMETER_OVERRIDES_PARSE_FAILED', 'Could not parse deploy parameter overrides JSON.', {
-        source,
-        detail: error instanceof Error ? error.message : String(error),
-        hint: 'Set INPUT_PARAMETER_OVERRIDES or PP_DEPLOY_PARAMETER_OVERRIDES to valid JSON.',
-      })
-    );
-  }
-}
-
-function resolveDeployConfirm(explicitConfirm: boolean | undefined, serializedConfirm: string | undefined, source: string): OperationResult<boolean | undefined> {
-  if (explicitConfirm !== undefined) {
-    return ok(explicitConfirm);
-  }
-
-  if (serializedConfirm === undefined || serializedConfirm === '') {
-    return ok(undefined);
-  }
-
-  const normalized = serializedConfirm.trim().toLowerCase();
-
-  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
-    return ok(true);
-  }
-
-  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
-    return ok(false);
-  }
-
-  return fail(
-    createDiagnostic('error', 'DEPLOY_ADAPTER_CONFIRM_INVALID', `Unsupported deploy confirmation value "${serializedConfirm}". Expected true/false, yes/no, or 1/0.`, {
-      source,
-      hint: 'Set INPUT_CONFIRM or PP_DEPLOY_CONFIRM to true or false.',
-    })
-  );
+  return runResolvedDeploy(resolved.data);
 }
