@@ -1016,6 +1016,35 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('renders a scaffold preview for project init in markdown output', async () => {
+    const tempDir = await createTempDir();
+
+    const initPlan = await runCli([
+      'project',
+      'init',
+      tempDir,
+      '--name',
+      'HarnessDemo',
+      '--env',
+      'sandbox',
+      '--solution',
+      'CoreLifecycle',
+      '--plan',
+      '--format',
+      'markdown',
+    ]);
+
+    expect(initPlan.code).toBe(0);
+    expect(initPlan.stderr).toBe('');
+    expect(initPlan.stdout).toContain('# Scaffold plan');
+    expect(initPlan.stdout).toContain('## Scaffold Shape');
+    expect(initPlan.stdout).toContain('`solutions` (editable-root): Editable solution source root for unpacked solution content.');
+    expect(initPlan.stdout).toContain('./artifacts/solutions/CoreLifecycle.zip  # recommended packaged solution output');
+    expect(initPlan.stdout).toContain(
+      'Packaged solution exports belong under `artifacts/solutions/CoreLifecycle.zip`, separate from source assets.'
+    );
+  });
+
   it('derives conceptual feedback for the fixture project through the CLI entrypoint', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const feedback = await runCli(['project', 'feedback', fixtureRoot, '--format', 'json'], {

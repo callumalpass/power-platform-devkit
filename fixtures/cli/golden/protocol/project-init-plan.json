@@ -129,6 +129,71 @@
       "scaffoldProfile": "source-first",
       "sourceFirstConvention": "The default scaffold is source-first: keep editable solution source in `solutions/` alongside `apps/`, `flows/`, and `docs/`."
     },
+    "preview": {
+      "artifactRoots": [
+        "artifacts/solutions"
+      ],
+      "configFile": "pp.config.yaml",
+      "editableAssetRoots": [
+        "apps",
+        "flows",
+        "solutions",
+        "docs"
+      ],
+      "entries": [
+        {
+          "kind": "config",
+          "path": "pp.config.yaml",
+          "purpose": "Project config anchor that defines defaults, assets, bindings, and topology."
+        },
+        {
+          "kind": "editable-root",
+          "path": "apps",
+          "purpose": "Editable source asset root tracked directly in the repo."
+        },
+        {
+          "kind": "editable-root",
+          "path": "flows",
+          "purpose": "Editable source asset root tracked directly in the repo."
+        },
+        {
+          "kind": "editable-root",
+          "path": "solutions",
+          "purpose": "Editable solution source root for unpacked solution content."
+        },
+        {
+          "kind": "editable-root",
+          "path": "docs",
+          "purpose": "Editable source asset root tracked directly in the repo."
+        },
+        {
+          "kind": "artifact-root",
+          "path": "artifacts/solutions",
+          "purpose": "Artifact root for generated outputs that should stay separate from editable source."
+        },
+        {
+          "kind": "recommended-bundle",
+          "path": "artifacts/solutions/CoreLifecycle.zip",
+          "purpose": "Canonical packaged solution zip path when the repo stores exported bundles."
+        }
+      ],
+      "layoutLines": [
+        "./pp.config.yaml",
+        "./apps/",
+        "./flows/",
+        "./solutions/",
+        "./docs/",
+        "./artifacts/",
+        "./artifacts/solutions/",
+        "./artifacts/solutions/CoreLifecycle.zip  # recommended packaged solution output"
+      ],
+      "recommendedBundlePath": "artifacts/solutions/CoreLifecycle.zip",
+      "relationshipSummary": [
+        "Editable solution source lives under `solutions/`.",
+        "Packaged solution exports belong under `artifacts/solutions/CoreLifecycle.zip`, separate from source assets.",
+        "Default stage `dev` maps environment `sandbox` to solution `CoreLifecycle`."
+      ]
+    },
     "root": "<TMP_DIR>"
   },
   "knownLimitations": [],

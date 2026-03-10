@@ -138,6 +138,12 @@ The scaffold is intentionally lightweight. It creates:
 - `flows/`
 - `solutions/`
 - `docs/`
+- `artifacts/solutions/`
+
+`pp project init --plan --format markdown` now renders the scaffold shape,
+including the recommended packaged solution output path under
+`artifacts/solutions/<Solution>.zip`, so you do not need to inspect the
+filesystem to understand the source-vs-artifact split.
 
 If you prefer to create the config manually, start with:
 

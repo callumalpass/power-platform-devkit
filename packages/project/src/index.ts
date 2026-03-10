@@ -157,6 +157,7 @@ export interface ProjectInitPlan {
   config: ProjectConfig;
   layout: ProjectInitLayoutGuidance;
   contract: ProjectContractSummary;
+  preview: ProjectInitPreview;
 }
 
 export interface ProjectInitResult extends ProjectInitPlan {
@@ -171,6 +172,22 @@ export interface ProjectInitLayoutGuidance {
   recommendedBundlePath: string;
   sourceFirstConvention: string;
   bundleFirstConvention: string;
+}
+
+export interface ProjectInitPreviewEntry {
+  path: string;
+  kind: 'config' | 'editable-root' | 'artifact-root' | 'recommended-bundle';
+  purpose: string;
+}
+
+export interface ProjectInitPreview {
+  configFile: string;
+  editableAssetRoots: string[];
+  artifactRoots: string[];
+  recommendedBundlePath: string;
+  layoutLines: string[];
+  entries: ProjectInitPreviewEntry[];
+  relationshipSummary: string[];
 }
 
 export interface ProjectContractTarget {
@@ -344,6 +361,7 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
       solutions: 'solutions',
     },
   });
+  const preview = buildProjectInitPreview(configFilename, layout, contract);
 
   return {
     root: resolvedRoot,
@@ -369,6 +387,7 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
     config,
     layout,
     contract,
+    preview,
   };
 }
 
@@ -1487,6 +1506,59 @@ function buildProjectInitLayoutGuidance(solutionName: string): ProjectInitLayout
     sourceFirstConvention:
       'The default scaffold is source-first: keep editable solution source in `solutions/` alongside `apps/`, `flows/`, and `docs/`.',
     bundleFirstConvention: `If the repo primarily tracks exported packages, keep packaged solution zips under \`${recommendedBundlePath}\` instead of mixing them into \`solutions/\`.`,
+  };
+}
+
+function buildProjectInitPreview(
+  configFilename: string,
+  layout: ProjectInitLayoutGuidance,
+  contract: ProjectContractSummary
+): ProjectInitPreview {
+  const artifactRoot = dirname(layout.recommendedBundlePath).replaceAll('\\', '/');
+  const artifactSegments = artifactRoot.split('/').filter(Boolean);
+  const layoutLines = [
+    `./${configFilename}`,
+    ...layout.scaffoldedAssetRoots.map((assetRoot) => `./${assetRoot}/`),
+    ...artifactSegments.map((_, index) => `./${artifactSegments.slice(0, index + 1).join('/')}/`),
+    `./${layout.recommendedBundlePath}  # recommended packaged solution output`,
+  ];
+
+  return {
+    configFile: configFilename,
+    editableAssetRoots: [...layout.scaffoldedAssetRoots],
+    artifactRoots: [artifactRoot],
+    recommendedBundlePath: layout.recommendedBundlePath,
+    layoutLines,
+    entries: [
+      {
+        path: configFilename,
+        kind: 'config',
+        purpose: 'Project config anchor that defines defaults, assets, bindings, and topology.',
+      },
+      ...layout.scaffoldedAssetRoots.map((assetRoot) => ({
+        path: assetRoot,
+        kind: 'editable-root' as const,
+        purpose:
+          assetRoot === contract.solutionSourceRoot
+            ? 'Editable solution source root for unpacked solution content.'
+            : 'Editable source asset root tracked directly in the repo.',
+      })),
+      {
+        path: artifactRoot,
+        kind: 'artifact-root',
+        purpose: 'Artifact root for generated outputs that should stay separate from editable source.',
+      },
+      {
+        path: layout.recommendedBundlePath,
+        kind: 'recommended-bundle',
+        purpose: 'Canonical packaged solution zip path when the repo stores exported bundles.',
+      },
+    ],
+    relationshipSummary: [
+      `Editable solution source lives under \`${contract.solutionSourceRoot}/\`.`,
+      `Packaged solution exports belong under \`${layout.recommendedBundlePath}\`, separate from source assets.`,
+      `Default stage \`${contract.defaultTarget.stage ?? 'dev'}\` maps environment \`${contract.defaultTarget.environmentAlias ?? 'dev'}\` to solution \`${contract.defaultTarget.solutionUniqueName ?? contract.defaultTarget.solutionAlias ?? 'Core'}\`.`,
+    ],
   };
 }
 

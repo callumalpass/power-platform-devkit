@@ -69,6 +69,8 @@ import {
   planProjectInit,
   summarizeProject,
   summarizeResolvedParameter,
+  type ProjectInitPlan,
+  type ProjectInitResult,
 } from '@pp/project';
 import { SolutionService, type SolutionAnalysis, type SolutionPackageType } from '@pp/solution';
 import { runDelegatedCanvasCreate } from './canvas-create-delegate';
@@ -1432,10 +1434,21 @@ async function runProjectInit(args: string[]): Promise<number> {
     force: hasFlag(args, '--force'),
   } as const;
   const plan = planProjectInit(root, options);
-  const preview = maybeHandleMutationPreview(args, 'json', 'project.init', { root: plan.root, configPath: plan.configPath }, plan);
+  const mutation = readMutationFlags(args);
 
-  if (preview !== undefined) {
-    return preview;
+  if (!mutation.success || !mutation.data) {
+    return printFailure(mutation);
+  }
+
+  if (mutation.data.mode !== 'apply') {
+    const payload = createMutationPreview('project.init', mutation.data, { root: plan.root, configPath: plan.configPath }, plan);
+
+    if (isMachineReadableOutputFormat(format)) {
+      printByFormat(payload, format);
+    } else {
+      process.stdout.write(renderProjectInitOutput(plan, format, mutation.data.mode));
+    }
+    return 0;
   }
 
   const result = await initProject(root, options);
@@ -1444,7 +1457,11 @@ async function runProjectInit(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, format);
+  if (isMachineReadableOutputFormat(format)) {
+    printByFormat(result.data, format);
+  } else {
+    process.stdout.write(renderProjectInitOutput(result.data, format));
+  }
   printResultDiagnostics(result, format);
   return 0;
 }
@@ -5328,6 +5345,102 @@ function printByFormat(value: unknown, format: OutputFormat): void {
 
 function isMachineReadableOutputFormat(format: OutputFormat): boolean {
   return format === 'json' || format === 'yaml' || format === 'ndjson';
+}
+
+function renderProjectInitOutput(
+  result: ProjectInitPlan | ProjectInitResult,
+  format: Extract<OutputFormat, 'table' | 'markdown' | 'raw'>,
+  mode: 'apply' | 'dry-run' | 'plan' = 'apply'
+): string {
+  const createdPaths = 'created' in result ? result.created : [];
+  const overwrittenPaths = 'overwritten' in result ? result.overwritten : [];
+  const untouchedPaths = 'untouched' in result ? result.untouched : [];
+  const modeLabel = mode === 'apply' ? 'Applied scaffold' : mode === 'plan' ? 'Scaffold plan' : 'Dry-run scaffold preview';
+  const actionRows = result.actions.map((action) => ({
+    action: action.action,
+    kind: action.kind,
+    path: action.path,
+  }));
+  const summaryRows = [
+    { field: 'mode', value: modeLabel },
+    { field: 'root', value: result.root },
+    { field: 'config', value: result.configPath },
+    { field: 'source roots', value: result.preview.editableAssetRoots.join(', ') },
+    { field: 'artifact root', value: result.preview.artifactRoots.join(', ') },
+    { field: 'bundle output', value: result.preview.recommendedBundlePath },
+    { field: 'default target', value: formatProjectContractTarget(result.contract.defaultTarget) },
+  ];
+
+  if (format === 'table') {
+    return [
+      renderOutput(summaryRows, 'table').trimEnd(),
+      '',
+      'Scaffold shape',
+      renderOutput(result.preview.entries, 'table').trimEnd(),
+      '',
+      'Layout preview',
+      ...result.preview.layoutLines,
+      '',
+      'Source-to-artifact contract',
+      ...result.preview.relationshipSummary.map((line) => `- ${line}`),
+      '',
+      'Planned filesystem actions',
+      renderOutput(actionRows, 'table').trimEnd(),
+      ...('created' in result
+        ? [
+            '',
+            `Created: ${createdPaths.length > 0 ? createdPaths.join(', ') : '(none)'}`,
+            `Overwritten: ${overwrittenPaths.length > 0 ? overwrittenPaths.join(', ') : '(none)'}`,
+            `Untouched: ${untouchedPaths.length > 0 ? untouchedPaths.join(', ') : '(none)'}`,
+          ]
+        : []),
+      '',
+    ].join('\n');
+  }
+
+  return [
+    `# ${modeLabel}`,
+    '',
+    `- Root: \`${result.root}\``,
+    `- Config: \`${result.configPath}\``,
+    `- Source roots: ${result.preview.editableAssetRoots.map((value) => `\`${value}\``).join(', ')}`,
+    `- Artifact root: ${result.preview.artifactRoots.map((value) => `\`${value}\``).join(', ')}`,
+    `- Bundle output: \`${result.preview.recommendedBundlePath}\``,
+    `- Default target: ${formatProjectContractTarget(result.contract.defaultTarget)}`,
+    '',
+    '## Scaffold Shape',
+    ...result.preview.entries.map((entry) => `- \`${entry.path}\` (${entry.kind}): ${entry.purpose}`),
+    '',
+    '## Layout Preview',
+    '```text',
+    ...result.preview.layoutLines,
+    '```',
+    '',
+    '## Source-to-Artifact Contract',
+    ...result.preview.relationshipSummary.map((line) => `- ${line}`),
+    '',
+    '## Filesystem Actions',
+    ...actionRows.map((row) => `- ${row.action} ${row.kind} \`${row.path}\``),
+    ...('created' in result
+      ? [
+          '',
+          '## Result',
+          `- Created: ${createdPaths.length > 0 ? createdPaths.map((value) => `\`${value}\``).join(', ') : '(none)'}`,
+          `- Overwritten: ${overwrittenPaths.length > 0 ? overwrittenPaths.map((value) => `\`${value}\``).join(', ') : '(none)'}`,
+          `- Untouched: ${untouchedPaths.length > 0 ? untouchedPaths.map((value) => `\`${value}\``).join(', ') : '(none)'}`,
+        ]
+      : []),
+    '',
+  ].join('\n');
+}
+
+function formatProjectContractTarget(target: {
+  stage?: string;
+  environmentAlias?: string;
+  solutionAlias?: string;
+  solutionUniqueName?: string;
+}): string {
+  return `stage ${target.stage ?? '<unset>'} -> environment ${target.environmentAlias ?? '<unset>'} -> solution ${target.solutionUniqueName ?? target.solutionAlias ?? '<unset>'}`;
 }
 
 function printFailure(result: OperationResult<unknown>): number {

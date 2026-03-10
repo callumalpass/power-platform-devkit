@@ -21,8 +21,10 @@ pp project doctor
 
 - writes a minimal `pp.config.yaml`
 - creates `apps/`, `flows/`, `solutions/`, and `docs/` if they do not exist
+- creates `artifacts/solutions/` as the default packaged-solution artifact root
 - seeds one default stage, one solution alias, and one primary Dataverse provider binding
 - returns an explicit `contract` summary describing the editable solution root, canonical bundle path, and stage-to-environment-to-solution mapping
+- returns a `preview` block that renders the scaffold shape and explains how `solutions/` relates to `artifacts/solutions/<Solution>.zip`
 
 It does not try to create remote environments, auth profiles, solutions, or
 provider-specific artifacts.
@@ -238,7 +240,9 @@ pp project init /path/to/repo --name demo --env dev --solution Core --stage prod
 ```
 
 Use `--plan` or `--dry-run` when you want the scaffold plan without writing
-files. Use `--force` to replace an existing `pp.config.*` file.
+files. Use `--force` to replace an existing `pp.config.*` file. For human review,
+`--format markdown` renders the planned layout and the source-to-artifact
+contract directly.
 
 ### Doctor
 

@@ -137,6 +137,64 @@ describe('discoverProject', () => {
       bundleFirstConvention:
         'If the repo primarily tracks exported packages, keep packaged solution zips under `artifacts/solutions/CoreLifecycle.zip` instead of mixing them into `solutions/`.',
     });
+    expect(plan.preview).toEqual({
+      configFile: 'pp.config.yaml',
+      editableAssetRoots: ['apps', 'flows', 'solutions', 'docs'],
+      artifactRoots: ['artifacts/solutions'],
+      recommendedBundlePath: 'artifacts/solutions/CoreLifecycle.zip',
+      layoutLines: [
+        './pp.config.yaml',
+        './apps/',
+        './flows/',
+        './solutions/',
+        './docs/',
+        './artifacts/',
+        './artifacts/solutions/',
+        './artifacts/solutions/CoreLifecycle.zip  # recommended packaged solution output',
+      ],
+      entries: [
+        {
+          path: 'pp.config.yaml',
+          kind: 'config',
+          purpose: 'Project config anchor that defines defaults, assets, bindings, and topology.',
+        },
+        {
+          path: 'apps',
+          kind: 'editable-root',
+          purpose: 'Editable source asset root tracked directly in the repo.',
+        },
+        {
+          path: 'flows',
+          kind: 'editable-root',
+          purpose: 'Editable source asset root tracked directly in the repo.',
+        },
+        {
+          path: 'solutions',
+          kind: 'editable-root',
+          purpose: 'Editable solution source root for unpacked solution content.',
+        },
+        {
+          path: 'docs',
+          kind: 'editable-root',
+          purpose: 'Editable source asset root tracked directly in the repo.',
+        },
+        {
+          path: 'artifacts/solutions',
+          kind: 'artifact-root',
+          purpose: 'Artifact root for generated outputs that should stay separate from editable source.',
+        },
+        {
+          path: 'artifacts/solutions/CoreLifecycle.zip',
+          kind: 'recommended-bundle',
+          purpose: 'Canonical packaged solution zip path when the repo stores exported bundles.',
+        },
+      ],
+      relationshipSummary: [
+        'Editable solution source lives under `solutions/`.',
+        'Packaged solution exports belong under `artifacts/solutions/CoreLifecycle.zip`, separate from source assets.',
+        'Default stage `dev` maps environment `sandbox` to solution `CoreLifecycle`.',
+      ],
+    });
 
     const result = await initProject(root, {
       name: 'demo',
@@ -153,6 +211,7 @@ describe('discoverProject', () => {
     expect(result.data?.created).toContain(join(root, 'docs'));
     expect(result.data?.created).toContain(join(root, 'artifacts', 'solutions'));
     expect(result.data?.layout.recommendedBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
+    expect(result.data?.preview).toEqual(plan.preview);
     expect(result.data?.contract).toEqual({
       layoutProfile: 'source-first',
       editableAssetRoots: ['apps', 'flows', 'solutions', 'docs'],
