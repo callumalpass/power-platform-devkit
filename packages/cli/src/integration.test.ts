@@ -1054,6 +1054,7 @@ describe('cli fixture-backed workflows', () => {
       ],
       suggestedNextActions: expect.arrayContaining([
         'Use Maker or solution tooling to import `./dist/Harness App.msapp` until `pp canvas import` exists.',
+        'After the import step, run `pp canvas inspect "Harness App" --env fixture --solution HarnessSolution` to confirm the remote app id.',
         'After the import step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the app is visible in Dataverse.',
         'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the imported app was added to the solution.',
         'Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
@@ -1197,6 +1198,7 @@ describe('cli fixture-backed workflows', () => {
       suggestedNextActions: expect.arrayContaining([
         'Using default solution HarnessSolution from environment alias fixture, keep the Maker step and verification scoped to that solution.',
         'Open https://make.powerapps.com/environments/env-123/solutions/solution-1/apps to continue the import from the solution-scoped apps view in Maker.',
+        'After the import step, run `pp canvas inspect "Harness App" --env fixture --solution HarnessSolution` to confirm the remote app id.',
         'After the import step, run `pp canvas list --env fixture --solution HarnessSolution` to confirm the app is visible in Dataverse.',
         'Run `pp solution components HarnessSolution --env fixture --format json` to verify that the imported app was added to the solution.',
       ]),

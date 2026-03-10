@@ -2,7 +2,7 @@
 
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { resolve as resolvePath } from 'node:path';
+import { basename, extname, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -358,6 +358,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
   const explicitMakerEnvironmentId = readFlag(args, '--maker-env-id');
   const displayName = command === 'create' ? readFlag(args, '--name') : undefined;
   const importPath = command === 'import' ? positionalArgs(args)[0] : undefined;
+  const inferredImportDisplayName = command === 'import' && importPath ? inferCanvasImportDisplayName(importPath) : undefined;
   const defaultSolutionUniqueName =
     !explicitSolutionUniqueName && envAlias ? await readEnvironmentDefaultSolution(envAlias, configOptions) : undefined;
   const solutionUniqueName = explicitSolutionUniqueName ?? defaultSolutionUniqueName;
@@ -441,7 +442,7 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
           envAlias,
           solutionUniqueName,
           solutionId: resolvedSolutionId,
-          displayName,
+          displayName: displayName ?? inferredImportDisplayName,
           importPath,
           makerEnvironmentId: explicitMakerEnvironmentId ?? resolution.data.environment.makerEnvironmentId,
           derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
@@ -524,6 +525,12 @@ function buildCanvasRemoteMutationSuggestions(
     suggestions.push(`Open ${makerUrls.solutionsUrl} to continue the import from the environment's Solutions view in Maker.`);
   }
 
+  if (context.displayName) {
+    suggestions.push(
+      `After the import step, run \`pp canvas inspect ${formatCliArg(context.displayName)}${envSuffix}${solutionSuffix}\` to confirm the remote app id.`
+    );
+  }
+
   suggestions.push(`After the import step, run \`${listCommand}\` to confirm the app is visible in Dataverse.`);
 
   if (solutionComponentsCommand) {
@@ -602,6 +609,19 @@ async function readEnvironmentDefaultSolution(alias: string, configOptions: Conf
 
 function formatCliArg(value: string): string {
   return /^[A-Za-z0-9._:/=-]+$/.test(value) ? value : JSON.stringify(value);
+}
+
+function inferCanvasImportDisplayName(importPath: string): string | undefined {
+  const filename = basename(importPath);
+
+  if (!filename) {
+    return undefined;
+  }
+
+  const extension = extname(filename);
+  const displayName = extension ? filename.slice(0, -extension.length) : filename;
+  const normalized = displayName.trim();
+  return normalized || undefined;
 }
 
 async function runCanvasTemplates(args: string[]): Promise<number> {

@@ -238,6 +238,10 @@ Remote mutation placeholders:
 - `pp canvas import <file.msapp> --env <alias> [--solution UNIQUE_NAME]`
   currently returns a stable machine-readable diagnostic instead of importing a
   remote app
+- when `pp canvas import` receives a file path, the placeholder guidance
+  derives a likely display name from the `.msapp` filename and includes an
+  exact `pp canvas inspect ... --env ... [--solution ...]` verification command
+  for the post-import path
 - both placeholders also accept `--maker-env-id ID` when you want exact Maker
   deep links for a one-off run without persisting that metadata on the
   environment alias first
