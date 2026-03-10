@@ -223,7 +223,20 @@ async function readResponse<T>(
   response: Response,
   responseType: HttpResponseType
 ): Promise<{ data: T; text?: string }> {
-  if (responseType === 'void' || response.status === 204 || response.status === 205) {
+  if (responseType === 'void') {
+    if (response.ok || response.status === 204 || response.status === 205) {
+      return {
+        data: undefined as T,
+      };
+    }
+
+    return {
+      data: undefined as T,
+      text: await response.text(),
+    };
+  }
+
+  if (response.status === 204 || response.status === 205) {
     return {
       data: undefined as T,
     };

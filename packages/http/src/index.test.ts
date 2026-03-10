@@ -52,4 +52,35 @@ describe('HttpClient', () => {
       },
     });
   });
+
+  it('preserves error response bodies for void requests', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ error: { code: '0x80040203', message: 'Invalid option set metadata.' } }), {
+        status: 400,
+        headers: {
+          'content-type': 'application/json',
+        },
+      })
+    );
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new HttpClient({
+      baseUrl: 'https://example.com/api/',
+    });
+
+    const response = await client.request<void>({
+      path: 'EntityDefinitions(LogicalName=\'pp_project\')/Attributes',
+      method: 'POST',
+      responseType: 'void',
+      body: { test: true },
+    });
+
+    expect(response.success).toBe(false);
+    expect(response.diagnostics[0]).toMatchObject({
+      code: 'HTTP_REQUEST_FAILED',
+      message: "POST EntityDefinitions(LogicalName='pp_project')/Attributes returned 400",
+      detail: '{"error":{"code":"0x80040203","message":"Invalid option set metadata."}}',
+    });
+  });
 });

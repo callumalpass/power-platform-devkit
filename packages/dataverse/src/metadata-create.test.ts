@@ -117,6 +117,26 @@ describe('metadata-create payloads', () => {
     expect(payload.OptionSet).toBeUndefined();
   });
 
+  it('builds a local choice column payload with a non-global option set', () => {
+    const payload = buildColumnCreatePayload({
+      kind: 'choice',
+      schemaName: 'pp_Status',
+      displayName: 'Status',
+      options: [{ label: 'Proposed' }, { label: 'Active' }],
+    });
+
+    expect(payload).toMatchObject({
+      '@odata.type': 'Microsoft.Dynamics.CRM.PicklistAttributeMetadata',
+      SchemaName: 'pp_Status',
+      LogicalName: 'pp_status',
+      OptionSet: {
+        '@odata.type': 'Microsoft.Dynamics.CRM.OptionSetMetadata',
+        IsGlobal: false,
+        OptionSetType: 'Picklist',
+      },
+    });
+  });
+
   it('builds an autonumber column payload', () => {
     const payload = buildColumnCreatePayload({
       kind: 'autonumber',

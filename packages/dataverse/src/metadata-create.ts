@@ -438,6 +438,7 @@ export function buildColumnCreatePayload(spec: ColumnCreateSpec, options: Metada
         OptionSet: spec.options
           ? {
               '@odata.type': 'Microsoft.Dynamics.CRM.OptionSetMetadata',
+              IsGlobal: false,
               OptionSetType: 'Picklist',
               Options: spec.options.map((option) => buildOptionMetadata(option, languageCode)),
             }
