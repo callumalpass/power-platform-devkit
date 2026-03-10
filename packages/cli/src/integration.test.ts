@@ -283,6 +283,30 @@ async function runCli(
 }
 
 describe('cli fixture-backed workflows', () => {
+  it('lists canvas remote mutation placeholders in root help', async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stdout.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stdout.write);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stderr.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stderr.write);
+
+    const code = await main(['--help']);
+
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+
+    expect(code).toBe(0);
+    expect(stderr.join('')).toBe('');
+    expect(stdout.join('')).toContain('canvas create --env ALIAS');
+    expect(stdout.join('')).toContain('canvas import <file.msapp> --env ALIAS');
+    expect(stdout.join('')).toContain('[preview: returns not-implemented diagnostics]');
+  });
+
   it('prints canvas-specific help with remote workflow guidance', async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -305,6 +329,7 @@ describe('cli fixture-backed workflows', () => {
     expect(stdout.join('')).toContain('Usage: canvas <command> [options]');
     expect(stdout.join('')).toContain('pp canvas list --env dev --solution Core');
     expect(stdout.join('')).toContain('Remote create/import commands are not implemented yet.');
+    expect(stdout.join('')).toContain('Attempted remote create/import calls return machine-readable diagnostics with next steps.');
   });
 
   it('renders analysis report and context outputs from the fixture project', async () => {
