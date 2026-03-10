@@ -242,6 +242,9 @@ Remote mutation placeholders:
   requested solution when one is provided or inherited from `defaultSolution`,
   and then return suggested next actions for Maker fallback plus `pp canvas
   list`, `pp canvas inspect`, and `pp solution components` verification
+- when the target environment alias also carries `makerEnvironmentId`, the
+  placeholder diagnostics include exact solution-scoped Maker URLs for the
+  blank-app or import fallback path instead of only generic portal guidance
 
 Path detection is automatic:
 

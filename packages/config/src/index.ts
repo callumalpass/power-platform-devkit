@@ -172,6 +172,7 @@ const environmentAliasSchema = z.object({
   tenantId: z.string().optional(),
   displayName: z.string().optional(),
   defaultSolution: z.string().optional(),
+  makerEnvironmentId: z.string().optional(),
   apiPath: z.string().optional(),
 });
 

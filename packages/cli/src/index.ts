@@ -379,6 +379,8 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     return printFailure(resolution);
   }
 
+  let resolvedSolutionId: string | undefined;
+
   if (solutionUniqueName) {
     const solution = await new SolutionService(resolution.data.client).inspect(solutionUniqueName);
 
@@ -414,6 +416,8 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
         )
       );
     }
+
+    resolvedSolutionId = solution.data.solutionid;
   }
 
   return printFailure(
@@ -435,8 +439,10 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
         suggestedNextActions: buildCanvasRemoteMutationSuggestions(command, {
           envAlias,
           solutionUniqueName,
+          solutionId: resolvedSolutionId,
           displayName,
           importPath,
+          makerEnvironmentId: resolution.data.environment.makerEnvironmentId,
           derivedSolutionFromEnvironmentAlias: !explicitSolutionUniqueName && solutionUniqueName ? envAlias : undefined,
         }),
         knownLimitations,
@@ -450,8 +456,10 @@ function buildCanvasRemoteMutationSuggestions(
   context: {
     envAlias?: string;
     solutionUniqueName?: string;
+    solutionId?: string;
     displayName?: string;
     importPath?: string;
+    makerEnvironmentId?: string;
     derivedSolutionFromEnvironmentAlias?: string;
   }
 ): string[] {
@@ -465,12 +473,21 @@ function buildCanvasRemoteMutationSuggestions(
   const resolvedSolutionSuggestion = context.derivedSolutionFromEnvironmentAlias && context.solutionUniqueName
     ? `Using default solution ${formatCliArg(context.solutionUniqueName)} from environment alias ${envAlias}, keep the Maker step and verification scoped to that solution.`
     : undefined;
+  const makerUrls = buildMakerCanvasUrls(context);
 
   if (command === 'create') {
     const suggestions = ['Use Maker blank-app creation for now when you need a new remote canvas app.'];
 
     if (resolvedSolutionSuggestion) {
       suggestions.push(resolvedSolutionSuggestion);
+    }
+
+    if (makerUrls.blankAppUrl) {
+      suggestions.push(`Open ${makerUrls.blankAppUrl} to start the solution-scoped blank canvas app flow in Maker.`);
+    } else if (makerUrls.solutionAppsUrl) {
+      suggestions.push(`Open ${makerUrls.solutionAppsUrl} to continue from the solution-scoped apps view in Maker.`);
+    } else if (makerUrls.solutionsUrl) {
+      suggestions.push(`Open ${makerUrls.solutionsUrl} to continue from the environment's Solutions view in Maker.`);
     }
 
     if (context.displayName) {
@@ -500,6 +517,12 @@ function buildCanvasRemoteMutationSuggestions(
     suggestions.push(resolvedSolutionSuggestion);
   }
 
+  if (makerUrls.solutionAppsUrl) {
+    suggestions.push(`Open ${makerUrls.solutionAppsUrl} to continue the import from the solution-scoped apps view in Maker.`);
+  } else if (makerUrls.solutionsUrl) {
+    suggestions.push(`Open ${makerUrls.solutionsUrl} to continue the import from the environment's Solutions view in Maker.`);
+  }
+
   suggestions.push(`After the import step, run \`${listCommand}\` to confirm the app is visible in Dataverse.`);
 
   if (solutionComponentsCommand) {
@@ -508,6 +531,51 @@ function buildCanvasRemoteMutationSuggestions(
 
   suggestions.push('Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.');
   return suggestions;
+}
+
+function buildMakerCanvasUrls(context: {
+  makerEnvironmentId?: string;
+  solutionId?: string;
+  solutionUniqueName?: string;
+  displayName?: string;
+}): {
+  solutionsUrl?: string;
+  solutionAppsUrl?: string;
+  blankAppUrl?: string;
+} {
+  if (!context.makerEnvironmentId) {
+    return {};
+  }
+
+  const solutionsUrl = `https://make.powerapps.com/environments/${encodeURIComponent(context.makerEnvironmentId)}/solutions`;
+
+  if (!context.solutionId) {
+    return {
+      solutionsUrl,
+    };
+  }
+
+  const solutionAppsUrl = `${solutionsUrl}/${encodeURIComponent(context.solutionId)}/apps`;
+
+  if (!context.displayName) {
+    return {
+      solutionsUrl,
+      solutionAppsUrl,
+    };
+  }
+
+  const params = new URLSearchParams({
+    action: 'new-blank',
+    'form-factor': 'tablet',
+    name: context.displayName,
+    'solution-id': context.solutionId,
+  });
+
+  return {
+    solutionsUrl,
+    solutionAppsUrl,
+    blankAppUrl: `https://make.powerapps.com/e/${encodeURIComponent(context.makerEnvironmentId)}/canvas/?${params.toString()}`,
+  };
 }
 
 function buildCanvasMissingSolutionSuggestions(envAlias: string, solutionUniqueName: string): string[] {
@@ -1356,6 +1424,7 @@ async function runEnvironmentAdd(configOptions: ConfigStoreOptions, args: string
     tenantId: readFlag(args, '--tenant-id'),
     displayName: readFlag(args, '--display-name'),
     defaultSolution: readFlag(args, '--default-solution'),
+    makerEnvironmentId: readFlag(args, '--maker-env-id'),
     apiPath: readFlag(args, '--api-path'),
   };
 
@@ -4053,7 +4122,7 @@ function printHelp(): void {
       '  auth token --profile NAME [--resource URL] [--format raw|json]',
       '',
       '  env list [--config-dir path]',
-      '  env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--config-dir path]',
+      '  env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]',
       '  env inspect <alias> [--config-dir path]',
       '  env remove <alias> [--config-dir path]',
       '',

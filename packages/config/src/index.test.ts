@@ -41,6 +41,7 @@ describe('global config store', () => {
         alias: 'dev',
         url: 'https://example.crm.dynamics.com',
         authProfile: 'dev-profile',
+        makerEnvironmentId: '00000000-0000-0000-0000-000000000001',
       },
       options
     );
@@ -56,5 +57,6 @@ describe('global config store', () => {
     expect(profile && profile.type === 'user' ? profile.loginHint : undefined).toBe('user@example.com');
     expect(profile && profile.type === 'user' ? profile.browserProfile : undefined).toBe('tenant-a');
     expect(config.data?.config.environments.dev?.url).toBe('https://example.crm.dynamics.com');
+    expect(config.data?.config.environments.dev?.makerEnvironmentId).toBe('00000000-0000-0000-0000-000000000001');
   });
 });

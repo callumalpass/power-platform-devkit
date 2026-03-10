@@ -194,8 +194,13 @@ Optional fields supported today:
 
 - `--default-solution`
 - `--display-name`
+- `--maker-env-id`
 - `--tenant-id`
 - `--api-path`
+
+`--maker-env-id` does not affect Dataverse resolution. It is optional metadata
+that lets `pp` print exact Maker deep links for workflows such as the current
+canvas create/import fallback guidance.
 
 Inspect and remove aliases:
 

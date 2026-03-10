@@ -9,6 +9,12 @@ export interface DataverseFixture {
   listTables?: EntityDefinition[];
 }
 
+export interface DataverseResolutionFixture {
+  client: DataverseClient;
+  environment?: Record<string, unknown>;
+  authProfile?: Record<string, unknown>;
+}
+
 export function createFixtureDataverseClient(fixture: DataverseFixture): DataverseClient {
   const queryState = new Map(Object.entries(structuredClone(fixture.query ?? {})));
   const queryAllState = new Map(Object.entries(structuredClone(fixture.queryAll ?? {})));
@@ -86,11 +92,11 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
   } as unknown as DataverseClient;
 }
 
-export function mockDataverseResolution(fixtures: Record<string, DataverseClient>): void {
+export function mockDataverseResolution(fixtures: Record<string, DataverseClient | DataverseResolutionFixture>): void {
   vi.spyOn(dataverseModule, 'resolveDataverseClient').mockImplementation(async (environmentAlias: string) => {
-    const client = fixtures[environmentAlias];
+    const fixture = fixtures[environmentAlias];
 
-    if (!client) {
+    if (!fixture) {
       return fail(
         createDiagnostic('error', 'DATAVERSE_ENV_NOT_FOUND', `Environment alias ${environmentAlias} was not found in the test fixture.`, {
           source: '@pp/test',
@@ -98,19 +104,23 @@ export function mockDataverseResolution(fixtures: Record<string, DataverseClient
       );
     }
 
+    const resolved = 'client' in fixture ? fixture : { client: fixture };
+
     return ok(
       {
         environment: {
-          name: environmentAlias,
+          alias: environmentAlias,
           url: `https://${environmentAlias}.example.crm.dynamics.com`,
           authProfile: `${environmentAlias}-profile`,
+          ...resolved.environment,
         } as never,
         authProfile: {
           name: `${environmentAlias}-profile`,
           kind: 'static-token',
           token: `${environmentAlias}-token`,
+          ...resolved.authProfile,
         } as never,
-        client,
+        client: resolved.client,
       },
       {
         supportTier: 'preview',

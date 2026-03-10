@@ -450,6 +450,12 @@ When adding an environment alias, these fields currently influence Dataverse res
 - `--profile`
 - `--api-path`
 
+Additional alias metadata used by other workflows:
+
+- `--default-solution`
+- `--maker-env-id`: optional Maker environment id for building deep links in
+  canvas fallback diagnostics
+
 If `--api-path` is omitted, Dataverse defaults to:
 
 ```text
