@@ -278,6 +278,26 @@ Current validation checks:
     `inputs.parameters.body`
   - `shared_sharepointonline` `DeleteFile` with required
     `inputs.parameters.dataset` and `inputs.parameters.id`
+  - `shared_sharepointonline` `CopyFileAsync` with required
+    `inputs.parameters.dataset`, `inputs.parameters.sourceFileId`,
+    `inputs.parameters.destinationDataset`,
+    `inputs.parameters.destinationFolderPath`, and
+    `inputs.parameters.nameConflictBehavior`
+  - `shared_sharepointonline` `MoveFileAsync` with required
+    `inputs.parameters.dataset`, `inputs.parameters.sourceFileId`,
+    `inputs.parameters.destinationDataset`,
+    `inputs.parameters.destinationFolderPath`, and
+    `inputs.parameters.nameConflictBehavior`
+  - `shared_sharepointonline` `CopyFolderAsync` with required
+    `inputs.parameters.dataset`, `inputs.parameters.sourceFolderId`,
+    `inputs.parameters.destinationDataset`,
+    `inputs.parameters.destinationFolderPath`, and
+    `inputs.parameters.nameConflictBehavior`
+  - `shared_sharepointonline` `MoveFolderAsync` with required
+    `inputs.parameters.dataset`, `inputs.parameters.sourceFolderId`,
+    `inputs.parameters.destinationDataset`,
+    `inputs.parameters.destinationFolderPath`, and
+    `inputs.parameters.nameConflictBehavior`
   - `shared_sharepointonline` `GetFolderMetadata` with required
     `inputs.parameters.dataset` and `inputs.parameters.id`
   - `shared_sharepointonline` `GetFolderMetadataByPath` with required

@@ -26,11 +26,11 @@
       "pp_ApiUrl"
     ],
     "intermediateRepresentation": {
-      "actionCount": 46,
+      "actionCount": 50,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 43,
-      "expressionCount": 43,
-      "nodeCount": 47,
+      "dynamicContentReferenceCount": 47,
+      "expressionCount": 47,
+      "nodeCount": 51,
       "scopeCount": 1,
       "templateExpressionCount": 2,
       "triggerCount": 1,
@@ -43,16 +43,16 @@
     ],
     "path": "<REPO_ROOT>/fixtures/flow/artifacts/semantic-diagnostic-flow",
     "semanticSummary": {
-      "actionCount": 46,
+      "actionCount": 50,
       "controlFlowEdgeCount": 0,
-      "dynamicContentReferenceCount": 43,
-      "expressionCount": 43,
+      "dynamicContentReferenceCount": 47,
+      "expressionCount": 47,
       "initializedVariables": [
         "Counter"
       ],
       "referenceCounts": {
         "actions": 1,
-        "connectionReferences": 36,
+        "connectionReferences": 40,
         "environmentVariables": 1,
         "parameters": 2,
         "variables": 3
@@ -216,6 +216,20 @@
       "source": "@pp/flow"
     },
     {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointCopyFileMissingDestinationDataset is missing required parameter destinationDataset for CopyFileAsync.",
+      "path": "actions.SharePointCopyFileMissingDestinationDataset.inputs.parameters.destinationDataset",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action SharePointCopyFolderMissingSourceFolderId is missing required parameter sourceFolderId for CopyFolderAsync.",
+      "path": "actions.SharePointCopyFolderMissingSourceFolderId.inputs.parameters.sourceFolderId",
+      "source": "@pp/flow"
+    },
+    {
       "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
       "level": "error",
       "message": "Connector action SharePointCreateBadTitleShape parameter item/Title for CreateItem must be a string expression or literal, not object.",
@@ -325,6 +339,20 @@
       "level": "error",
       "message": "Connector action SharePointGetItemsMissingTable is missing required parameter table for GetItems.",
       "path": "actions.SharePointGetItemsMissingTable.inputs.parameters.table",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointMoveFileBadConflictShape parameter nameConflictBehavior for MoveFileAsync must be an integer literal or expression, not object.",
+      "path": "actions.SharePointMoveFileBadConflictShape.inputs.parameters.nameConflictBehavior",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action SharePointMoveFolderBadDestinationShape parameter destinationFolderPath for MoveFolderAsync must be a string expression or literal, not object.",
+      "path": "actions.SharePointMoveFolderBadDestinationShape.inputs.parameters.destinationFolderPath",
       "source": "@pp/flow"
     },
     {

@@ -1,10 +1,10 @@
 {
-  "actionCount": 46,
+  "actionCount": 50,
   "artifactName": "Semantic Diagnostic Flow",
   "controlFlowEdgeCount": 0,
-  "dynamicContentReferenceCount": 43,
-  "expressionCount": 43,
-  "nodeCount": 47,
+  "dynamicContentReferenceCount": 47,
+  "expressionCount": 47,
+  "nodeCount": 51,
   "nodes": [
     {
       "branch": "root",
@@ -1300,6 +1300,96 @@
           {
             "kind": "connectionReference",
             "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointCopyFileMissingDestinationDataset.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointCopyFileMissingDestinationDataset.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointCopyFileMissingDestinationDataset.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointCopyFileMissingDestinationDataset",
+      "kind": "action",
+      "name": "SharePointCopyFileMissingDestinationDataset",
+      "path": "actions.SharePointCopyFileMissingDestinationDataset",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointCopyFolderMissingSourceFolderId.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointCopyFolderMissingSourceFolderId.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointCopyFolderMissingSourceFolderId.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointCopyFolderMissingSourceFolderId",
+      "kind": "action",
+      "name": "SharePointCopyFolderMissingSourceFolderId",
+      "path": "actions.SharePointCopyFolderMissingSourceFolderId",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
             "path": "definition.actions.SharePointCreateBadTitleShape.inputs.host.connection.name"
           }
         ],
@@ -1999,6 +2089,96 @@
       "kind": "action",
       "name": "SharePointGetItemsMissingTable",
       "path": "actions.SharePointGetItemsMissingTable",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointMoveFileBadConflictShape.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointMoveFileBadConflictShape.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointMoveFileBadConflictShape.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointMoveFileBadConflictShape",
+      "kind": "action",
+      "name": "SharePointMoveFileBadConflictShape",
+      "path": "actions.SharePointMoveFileBadConflictShape",
+      "runAfter": [],
+      "type": "OpenApiConnection",
+      "variableUsage": {
+        "initializes": [],
+        "reads": [],
+        "writes": []
+      }
+    },
+    {
+      "branch": "root",
+      "childIds": [],
+      "controlFlow": {
+        "dependentIds": [],
+        "dependsOn": [],
+        "unresolvedDependsOn": []
+      },
+      "dataFlow": {
+        "dynamicContentReferences": [
+          {
+            "kind": "connectionReference",
+            "name": "shared_sharepointonline",
+            "path": "definition.actions.SharePointMoveFolderBadDestinationShape.inputs.host.connection.name"
+          }
+        ],
+        "expressions": [
+          {
+            "expression": "parameters('$connections')['shared_sharepointonline']['connectionId']",
+            "path": "definition.actions.SharePointMoveFolderBadDestinationShape.inputs.host.connection.name",
+            "references": [
+              {
+                "kind": "connectionReference",
+                "name": "shared_sharepointonline",
+                "path": "definition.actions.SharePointMoveFolderBadDestinationShape.inputs.host.connection.name"
+              }
+            ],
+            "syntax": "expression"
+          }
+        ],
+        "reads": [],
+        "writes": []
+      },
+      "id": "action:actions.SharePointMoveFolderBadDestinationShape",
+      "kind": "action",
+      "name": "SharePointMoveFolderBadDestinationShape",
+      "path": "actions.SharePointMoveFolderBadDestinationShape",
       "runAfter": [],
       "type": "OpenApiConnection",
       "variableUsage": {

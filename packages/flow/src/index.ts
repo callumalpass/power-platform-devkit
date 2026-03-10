@@ -584,6 +584,50 @@ const FLOW_SUPPORTED_CONNECTOR_OPERATIONS: FlowSupportedConnectorOperation[] = [
   },
   {
     apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'CopyFileAsync',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'sourceFileId', kind: 'string', required: true },
+      { name: 'destinationDataset', kind: 'string', required: true },
+      { name: 'destinationFolderPath', kind: 'string', required: true },
+      { name: 'nameConflictBehavior', kind: 'integer', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'MoveFileAsync',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'sourceFileId', kind: 'string', required: true },
+      { name: 'destinationDataset', kind: 'string', required: true },
+      { name: 'destinationFolderPath', kind: 'string', required: true },
+      { name: 'nameConflictBehavior', kind: 'integer', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'CopyFolderAsync',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'sourceFolderId', kind: 'string', required: true },
+      { name: 'destinationDataset', kind: 'string', required: true },
+      { name: 'destinationFolderPath', kind: 'string', required: true },
+      { name: 'nameConflictBehavior', kind: 'integer', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+    operationId: 'MoveFolderAsync',
+    parameters: [
+      { name: 'dataset', kind: 'string', required: true },
+      { name: 'sourceFolderId', kind: 'string', required: true },
+      { name: 'destinationDataset', kind: 'string', required: true },
+      { name: 'destinationFolderPath', kind: 'string', required: true },
+      { name: 'nameConflictBehavior', kind: 'integer', required: true },
+    ],
+  },
+  {
+    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
     operationId: 'GetFolderMetadata',
     parameters: [
       { name: 'dataset', kind: 'string', required: true },

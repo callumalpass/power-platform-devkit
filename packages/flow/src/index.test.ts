@@ -824,6 +824,82 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointCopyFile: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CopyFileAsync',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    sourceFileId: 'file-42',
+                    destinationDataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    destinationFolderPath: '/Shared Documents/Archive',
+                    nameConflictBehavior: 1,
+                  },
+                },
+              },
+              SharePointMoveFile: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'MoveFileAsync',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    sourceFileId: 'file-43',
+                    destinationDataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    destinationFolderPath: '/Shared Documents/Published',
+                    nameConflictBehavior: '@int(1)',
+                  },
+                },
+              },
+              SharePointCopyFolder: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CopyFolderAsync',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    sourceFolderId: 'folder-42',
+                    destinationDataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    destinationFolderPath: '/Shared Documents/Archive',
+                    nameConflictBehavior: 0,
+                  },
+                },
+              },
+              SharePointMoveFolder: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'MoveFolderAsync',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    sourceFolderId: 'folder-43',
+                    destinationDataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    destinationFolderPath: '/Shared Documents/Published',
+                    nameConflictBehavior: 2,
+                  },
+                },
+              },
             },
           },
         },
@@ -1392,6 +1468,84 @@ describe('FlowService', () => {
                   },
                 },
               },
+              SharePointCopyFileMissingDestinationDataset: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CopyFileAsync',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    sourceFileId: 'file-77',
+                    destinationFolderPath: '/Shared Documents/Archive',
+                    nameConflictBehavior: 1,
+                  },
+                },
+              },
+              SharePointMoveFileBadConflictShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'MoveFileAsync',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    sourceFileId: 'file-78',
+                    destinationDataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    destinationFolderPath: '/Shared Documents/Published',
+                    nameConflictBehavior: {
+                      replace: true,
+                    },
+                  },
+                },
+              },
+              SharePointCopyFolderMissingSourceFolderId: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'CopyFolderAsync',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    destinationDataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    destinationFolderPath: '/Shared Documents/Archive',
+                    nameConflictBehavior: 0,
+                  },
+                },
+              },
+              SharePointMoveFolderBadDestinationShape: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  operationId: 'MoveFolderAsync',
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_sharepointonline',
+                    connection: {
+                      name: "@parameters('$connections')['shared_sharepointonline']['connectionId']",
+                    },
+                  },
+                  parameters: {
+                    dataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    sourceFolderId: 'folder-77',
+                    destinationDataset: 'https://contoso.sharepoint.com/sites/Engineering',
+                    destinationFolderPath: {
+                      path: '/Shared Documents/Published',
+                    },
+                    nameConflictBehavior: 2,
+                  },
+                },
+              },
               DataverseListRowsMissingEntity: {
                 type: 'OpenApiConnection',
                 inputs: {
@@ -1611,23 +1765,23 @@ describe('FlowService', () => {
     expect(validation.data?.valid).toBe(false);
     expect(validation.data?.semanticSummary).toEqual({
       triggerCount: 1,
-      actionCount: 43,
+      actionCount: 47,
       scopeCount: 1,
-      expressionCount: 40,
+      expressionCount: 44,
       templateExpressionCount: 2,
       initializedVariables: ['Counter'],
       variableUsage: {
         reads: 3,
         writes: 3,
       },
-      dynamicContentReferenceCount: 40,
+      dynamicContentReferenceCount: 44,
       controlFlowEdgeCount: 0,
       referenceCounts: {
         parameters: 2,
         environmentVariables: 1,
         actions: 1,
         variables: 3,
-        connectionReferences: 33,
+        connectionReferences: 37,
       },
     });
     expect(validation.diagnostics.map((item) => item.code)).toEqual(
@@ -1707,6 +1861,30 @@ describe('FlowService', () => {
     expect(validation.diagnostics).toContainEqual(
       expect.objectContaining({
         code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+        path: 'actions.SharePointCopyFileMissingDestinationDataset.inputs.parameters.destinationDataset',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+        path: 'actions.SharePointMoveFileBadConflictShape.inputs.parameters.nameConflictBehavior',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
+        path: 'actions.SharePointCopyFolderMissingSourceFolderId.inputs.parameters.sourceFolderId',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED',
+        path: 'actions.SharePointMoveFolderBadDestinationShape.inputs.parameters.destinationFolderPath',
+      })
+    );
+    expect(validation.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING',
         path: 'actions.DataverseDeleteRowMissingRecordId.inputs.parameters.recordId',
       })
     );
@@ -1721,14 +1899,14 @@ describe('FlowService', () => {
       'FLOW_TRIGGER_CONCURRENCY_ENABLED',
     ]);
     expect(validation.data?.intermediateRepresentation).toEqual({
-      nodeCount: 44,
+      nodeCount: 48,
       triggerCount: 1,
-      actionCount: 43,
+      actionCount: 47,
       scopeCount: 1,
       controlFlowEdgeCount: 0,
-      expressionCount: 40,
+      expressionCount: 44,
       templateExpressionCount: 2,
-      dynamicContentReferenceCount: 40,
+      dynamicContentReferenceCount: 44,
       variableReadCount: 3,
       variableWriteCount: 3,
     });
@@ -2022,7 +2200,7 @@ describe('FlowService', () => {
     expect(graph.data).toMatchObject({
       artifactName: 'Semantic Diagnostic Flow',
       summary: {
-        nodeCount: 47,
+        nodeCount: 51,
         unresolvedEdgeCount: 6,
       },
       resources: {

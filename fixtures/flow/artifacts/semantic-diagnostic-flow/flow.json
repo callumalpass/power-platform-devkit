@@ -489,6 +489,84 @@
           }
         }
       },
+      "SharePointCopyFileMissingDestinationDataset": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "CopyFileAsync",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "sourceFileId": "file-77",
+            "destinationFolderPath": "/Shared Documents/Archive",
+            "nameConflictBehavior": 1
+          }
+        }
+      },
+      "SharePointMoveFileBadConflictShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "MoveFileAsync",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "sourceFileId": "file-78",
+            "destinationDataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "destinationFolderPath": "/Shared Documents/Published",
+            "nameConflictBehavior": {
+              "replace": true
+            }
+          }
+        }
+      },
+      "SharePointCopyFolderMissingSourceFolderId": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "CopyFolderAsync",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "destinationDataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "destinationFolderPath": "/Shared Documents/Archive",
+            "nameConflictBehavior": 0
+          }
+        }
+      },
+      "SharePointMoveFolderBadDestinationShape": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "operationId": "MoveFolderAsync",
+          "host": {
+            "apiId": "/providers/microsoft.powerapps/apis/shared_sharepointonline",
+            "connection": {
+              "name": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+            }
+          },
+          "parameters": {
+            "dataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "sourceFolderId": "folder-77",
+            "destinationDataset": "https://contoso.sharepoint.com/sites/Engineering",
+            "destinationFolderPath": {
+              "path": "/Shared Documents/Published"
+            },
+            "nameConflictBehavior": 2
+          }
+        }
+      },
       "DataverseListRowsMissingEntity": {
         "type": "OpenApiConnection",
         "inputs": {
