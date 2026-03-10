@@ -111,6 +111,15 @@ The profile summary includes the effective client ID, tenant, cache key, and sto
 
 When the workflow already has an environment alias, `pp auth profile inspect --env <alias>` resolves the bound auth profile first so you do not need to translate the alias back to its profile name manually.
 
+When you inspect through an environment alias, the output also includes:
+
+- `resolvedEnvironmentUrl`, the Dataverse URL bound to that alias
+- `targetResource`, the resource `pp` will target for environment-scoped commands
+- `defaultResourceMatchesResolvedEnvironment`, which is `false` when the stored profile home resource differs from the resolved environment URL
+
+That makes stale profile defaults explicit without forcing a separate `env inspect`
+just to confirm which org the alias actually points at.
+
 ## Browser profiles
 
 Browser profiles let interactive auth launch a dedicated persistent browser

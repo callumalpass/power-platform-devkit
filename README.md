@@ -245,9 +245,14 @@ Examples:
 ```bash
 pp auth profile list
 pp auth profile inspect dev-user
+pp auth profile inspect --env dev
 pp auth token --profile dev-user --resource https://example.crm.dynamics.com
 pp env list
 ```
+
+When you inspect a profile through `--env`, the JSON output includes the
+resolved environment URL and a boolean that tells you whether the profile's
+stored `defaultResource` still matches that environment.
 
 Headless and automation-friendly profiles are also supported:
 

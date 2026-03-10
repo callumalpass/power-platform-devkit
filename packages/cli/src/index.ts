@@ -2173,6 +2173,13 @@ async function runAuthProfileInspect(auth: AuthService, configOptions: ConfigSto
       ? {
           ...summary,
           resolvedFromEnvironment: target.data.environmentAlias,
+          resolvedEnvironmentUrl: target.data.environmentUrl,
+          targetResource: target.data.environmentUrl,
+          defaultResourceMatchesResolvedEnvironment:
+            typeof summary.defaultResource === 'string' && typeof target.data.environmentUrl === 'string'
+              ? normalizeAuthProfileInspectResource(summary.defaultResource) ===
+                normalizeAuthProfileInspectResource(target.data.environmentUrl)
+              : undefined,
         }
       : summary,
     format
@@ -2183,7 +2190,7 @@ async function runAuthProfileInspect(auth: AuthService, configOptions: ConfigSto
 async function resolveAuthProfileInspectTarget(
   configOptions: ConfigStoreOptions,
   args: string[]
-): Promise<OperationResult<{ name: string; environmentAlias?: string }>> {
+): Promise<OperationResult<{ name: string; environmentAlias?: string; environmentUrl?: string }>> {
   const name = positionalArgs(args)[0];
 
   if (name) {
@@ -2228,6 +2235,7 @@ async function resolveAuthProfileInspectTarget(
     {
       name: environment.data.authProfile,
       environmentAlias,
+      environmentUrl: environment.data.url,
     },
     {
       supportTier: 'preview',
@@ -2235,6 +2243,14 @@ async function resolveAuthProfileInspectTarget(
       warnings: environment.warnings,
     }
   );
+}
+
+function normalizeAuthProfileInspectResource(resource: string): string {
+  try {
+    return new URL(resource).origin;
+  } catch {
+    return resource.replace(/\/+$/, '');
+  }
 }
 
 async function runAuthBrowserProfileList(auth: AuthService, args: string[]): Promise<number> {

@@ -5566,6 +5566,9 @@ describe('cli fixture-backed workflows', () => {
       prompt: 'select_account',
       fallbackToDeviceCode: true,
       resolvedFromEnvironment: 'fixture',
+      resolvedEnvironmentUrl: 'https://fixture.crm.dynamics.com',
+      targetResource: 'https://fixture.crm.dynamics.com',
+      defaultResourceMatchesResolvedEnvironment: true,
     });
   });
 
@@ -5618,6 +5621,9 @@ describe('cli fixture-backed workflows', () => {
       prompt: 'select_account',
       fallbackToDeviceCode: true,
       resolvedFromEnvironment: 'fixture',
+      resolvedEnvironmentUrl: 'https://fixture.crm.dynamics.com',
+      targetResource: 'https://fixture.crm.dynamics.com',
+      defaultResourceMatchesResolvedEnvironment: true,
     });
   });
 
@@ -5678,10 +5684,67 @@ describe('cli fixture-backed workflows', () => {
         prompt: 'select_account',
         fallbackToDeviceCode: true,
         resolvedFromEnvironment: 'fixture',
+        resolvedEnvironmentUrl: 'https://fixture.crm.dynamics.com',
+        targetResource: 'https://fixture.crm.dynamics.com',
+        defaultResourceMatchesResolvedEnvironment: true,
       });
     } finally {
       process.chdir(originalCwd);
     }
+  });
+
+  it('flags when an environment-targeted auth profile points at a different default resource', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://other.crm.dynamics.com',
+              loginHint: 'fixture.user@example.com',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await runCli(['auth', 'profile', 'inspect', '--env', 'fixture', '--config-dir', configDir, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(inspect.stdout)).toEqual({
+      name: 'fixture-user',
+      type: 'user',
+      tenantId: 'common',
+      clientId: '51f81489-12ee-4a9e-aaae-a2591f45987d',
+      tokenCacheKey: 'fixture-user',
+      defaultResource: 'https://other.crm.dynamics.com',
+      loginHint: 'fixture.user@example.com',
+      accountUsername: undefined,
+      homeAccountId: undefined,
+      localAccountId: undefined,
+      browserProfile: undefined,
+      prompt: 'select_account',
+      fallbackToDeviceCode: true,
+      resolvedFromEnvironment: 'fixture',
+      resolvedEnvironmentUrl: 'https://fixture.crm.dynamics.com',
+      targetResource: 'https://fixture.crm.dynamics.com',
+      defaultResourceMatchesResolvedEnvironment: false,
+    });
   });
 
   it('fails auth profile inspect when --env points at a missing alias', async () => {
