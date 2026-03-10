@@ -113,6 +113,62 @@
     }
   ],
   "configPath": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
+  "contract": {
+    "activeTarget": {
+      "environmentAlias": "prod",
+      "solutionAlias": "core",
+      "solutionUniqueName": "CoreManaged",
+      "stage": "prod"
+    },
+    "canonicalBundlePath": "artifacts/solutions/core.zip",
+    "defaultTarget": {
+      "environmentAlias": "prod",
+      "solutionAlias": "core",
+      "solutionUniqueName": "CoreManaged",
+      "stage": "prod"
+    },
+    "editableAssetRoots": [
+      "apps",
+      "flows",
+      "docs"
+    ],
+    "layoutProfile": "source-first-inline-bundle",
+    "solutionSourceRoot": "solutions",
+    "stageMappings": [
+      {
+        "environmentAlias": "dev",
+        "parameterOverrides": [],
+        "solutionAlias": "core",
+        "solutionMappings": [
+          {
+            "alias": "core",
+            "environmentAlias": "dev",
+            "source": "project",
+            "uniqueName": "CoreDev"
+          }
+        ],
+        "solutionUniqueName": "CoreDev",
+        "stage": "dev"
+      },
+      {
+        "environmentAlias": "prod",
+        "parameterOverrides": [
+          "releaseName"
+        ],
+        "solutionAlias": "core",
+        "solutionMappings": [
+          {
+            "alias": "core",
+            "environmentAlias": "prod",
+            "source": "stage",
+            "uniqueName": "CoreManaged"
+          }
+        ],
+        "solutionUniqueName": "CoreManaged",
+        "stage": "prod"
+      }
+    ]
+  },
   "discovery": {
     "anchorEvidence": {
       "assetKeys": [

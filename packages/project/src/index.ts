@@ -156,6 +156,7 @@ export interface ProjectInitPlan {
   actions: ProjectInitAction[];
   config: ProjectConfig;
   layout: ProjectInitLayoutGuidance;
+  contract: ProjectContractSummary;
 }
 
 export interface ProjectInitResult extends ProjectInitPlan {
@@ -170,6 +171,33 @@ export interface ProjectInitLayoutGuidance {
   recommendedBundlePath: string;
   sourceFirstConvention: string;
   bundleFirstConvention: string;
+}
+
+export interface ProjectContractTarget {
+  stage?: string;
+  environmentAlias?: string;
+  solutionAlias?: string;
+  solutionUniqueName?: string;
+}
+
+export interface ProjectContractStageMapping extends ProjectContractTarget {
+  solutionMappings: Array<{
+    alias: string;
+    environmentAlias?: string;
+    uniqueName: string;
+    source: ResolvedSolutionTarget['source'];
+  }>;
+  parameterOverrides: string[];
+}
+
+export interface ProjectContractSummary {
+  layoutProfile: ProjectLayoutAssessment['profile'] | ProjectInitLayoutGuidance['scaffoldProfile'];
+  editableAssetRoots: string[];
+  solutionSourceRoot: string;
+  canonicalBundlePath: string;
+  defaultTarget: ProjectContractTarget;
+  activeTarget: ProjectContractTarget;
+  stageMappings: ProjectContractStageMapping[];
 }
 
 export interface ProjectDoctorCheck {
@@ -209,6 +237,7 @@ export interface ProjectDoctorReport {
   summary: ProjectDoctorSummary;
   assets: ProjectAsset[];
   layout: ProjectLayoutAssessment;
+  contract: ProjectContractSummary;
   checks: ProjectDoctorCheck[];
 }
 
@@ -245,6 +274,20 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
     stage,
   });
   const layout = buildProjectInitLayoutGuidance(solution);
+  const topology = resolveProjectTopology(config, stage).topology;
+  const contract = buildProjectContractSummary(config, topology, {
+    profile: layout.scaffoldProfile,
+    editableAssetRoots: layout.scaffoldedAssetRoots,
+    generatedBundlePaths: [],
+    normalizedAssets: {
+      apps: 'apps',
+      docs: 'docs',
+      flows: 'flows',
+      solutionBundle: layout.recommendedBundlePath,
+      solutions: 'solutions',
+    },
+    recommendations: [],
+  });
 
   return {
     root: resolvedRoot,
@@ -269,6 +312,7 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
     ],
     config,
     layout,
+    contract,
   };
 }
 
@@ -520,6 +564,7 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
       },
       assets,
       layout,
+      contract: buildProjectContractSummary(project?.config ?? {}, project?.topology ?? { stages: {} }, layout),
       checks,
     },
     {
@@ -1287,6 +1332,64 @@ function buildDoctorSuggestedNextActions(
   }
 
   return actions;
+}
+
+function buildProjectContractSummary(
+  config: ProjectConfig,
+  topology: ResolvedProjectTopology,
+  layout: Pick<ProjectLayoutAssessment, 'profile' | 'editableAssetRoots' | 'normalizedAssets'>
+): ProjectContractSummary {
+  const solutionSourceRoot = layout.normalizedAssets.solutions ?? 'solutions';
+  const canonicalBundlePath = layout.normalizedAssets.solutionBundle ?? join('artifacts', 'solutions', 'solution.zip').replaceAll('\\', '/');
+  const defaultTarget = resolveContractTarget(config, topology, topology.defaultStage);
+  const activeTarget = resolveContractTarget(config, topology, topology.selectedStage, {
+    environmentAlias: topology.activeEnvironment,
+    solutionAlias: topology.activeSolution?.alias,
+    solutionUniqueName: topology.activeSolution?.uniqueName,
+  });
+
+  return {
+    layoutProfile: layout.profile,
+    editableAssetRoots: layout.editableAssetRoots,
+    solutionSourceRoot,
+    canonicalBundlePath,
+    defaultTarget,
+    activeTarget,
+    stageMappings: Object.values(topology.stages)
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((stage) => ({
+        stage: stage.name,
+        environmentAlias: stage.environment,
+        solutionAlias: stage.defaultSolution?.alias,
+        solutionUniqueName: stage.defaultSolution?.uniqueName,
+        solutionMappings: Object.values(stage.solutions)
+          .sort((left, right) => left.alias.localeCompare(right.alias))
+          .map((solution) => ({
+            alias: solution.alias,
+            environmentAlias: solution.environment,
+            uniqueName: solution.uniqueName,
+            source: solution.source,
+          })),
+        parameterOverrides: stage.parameterOverrides,
+      })),
+  };
+}
+
+function resolveContractTarget(
+  config: ProjectConfig,
+  topology: ResolvedProjectTopology,
+  stage: string | undefined,
+  overrides: Partial<ProjectContractTarget> = {}
+): ProjectContractTarget {
+  const stageConfig = stage ? topology.stages[stage] : undefined;
+
+  return {
+    stage,
+    environmentAlias: overrides.environmentAlias ?? stageConfig?.environment ?? config.defaults?.environment,
+    solutionAlias: overrides.solutionAlias ?? stageConfig?.defaultSolution?.alias ?? config.defaults?.solution,
+    solutionUniqueName:
+      overrides.solutionUniqueName ?? stageConfig?.defaultSolution?.uniqueName ?? config.defaults?.solution,
+  };
 }
 
 async function pathExists(path: string): Promise<boolean> {

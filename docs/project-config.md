@@ -22,6 +22,7 @@ pp project doctor
 - writes a minimal `pp.config.yaml`
 - creates `apps/`, `flows/`, `solutions/`, and `docs/` if they do not exist
 - seeds one default stage, one solution alias, and one primary Dataverse provider binding
+- returns an explicit `contract` summary describing the editable solution root, canonical bundle path, and stage-to-environment-to-solution mapping
 
 It does not try to create remote environments, auth profiles, solutions, or
 provider-specific artifacts.
@@ -33,6 +34,7 @@ provider-specific artifacts.
 - whether provider bindings and topology are defined
 - whether required parameters remain unresolved
 - existing project-discovery diagnostics in a more explicit local-layout check list
+- a `contract` block that makes the solution-source vs. artifact-bundle split and per-stage target mapping explicit
 
 ## Shape
 
@@ -250,6 +252,7 @@ Returns a repo-local layout report with:
 - summary flags for config, assets, topology, provider bindings, registries, and required inputs
 - a per-check assessment list (`pass`, `warn`, `fail`, `info`)
 - the resolved asset inventory used by `pp`
+- a `contract` summary with `solutionSourceRoot`, `canonicalBundlePath`, `defaultTarget`, `activeTarget`, and ordered `stageMappings`
 
 ## Template registries
 

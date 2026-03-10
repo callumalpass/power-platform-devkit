@@ -77,6 +77,46 @@
     },
     "configExists": false,
     "configPath": "<TMP_DIR>/pp.config.yaml",
+    "contract": {
+      "activeTarget": {
+        "environmentAlias": "sandbox",
+        "solutionAlias": "CoreLifecycle",
+        "solutionUniqueName": "CoreLifecycle",
+        "stage": "dev"
+      },
+      "canonicalBundlePath": "artifacts/solutions/CoreLifecycle.zip",
+      "defaultTarget": {
+        "environmentAlias": "sandbox",
+        "solutionAlias": "CoreLifecycle",
+        "solutionUniqueName": "CoreLifecycle",
+        "stage": "dev"
+      },
+      "editableAssetRoots": [
+        "apps",
+        "flows",
+        "solutions",
+        "docs"
+      ],
+      "layoutProfile": "source-first",
+      "solutionSourceRoot": "solutions",
+      "stageMappings": [
+        {
+          "environmentAlias": "sandbox",
+          "parameterOverrides": [],
+          "solutionAlias": "CoreLifecycle",
+          "solutionMappings": [
+            {
+              "alias": "CoreLifecycle",
+              "environmentAlias": "sandbox",
+              "source": "project",
+              "uniqueName": "CoreLifecycle"
+            }
+          ],
+          "solutionUniqueName": "CoreLifecycle",
+          "stage": "dev"
+        }
+      ]
+    },
     "layout": {
       "bundleFirstConvention": "If the repo primarily tracks exported packages, keep packaged solution zips under `artifacts/solutions/CoreLifecycle.zip` instead of mixing them into `solutions/`.",
       "recommendedBundlePath": "artifacts/solutions/CoreLifecycle.zip",

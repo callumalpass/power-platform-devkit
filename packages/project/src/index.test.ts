@@ -153,6 +153,41 @@ describe('discoverProject', () => {
     expect(result.data?.created).toContain(join(root, 'docs'));
     expect(result.data?.created).toContain(join(root, 'artifacts', 'solutions'));
     expect(result.data?.layout.recommendedBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
+    expect(result.data?.contract).toEqual({
+      layoutProfile: 'source-first',
+      editableAssetRoots: ['apps', 'flows', 'solutions', 'docs'],
+      solutionSourceRoot: 'solutions',
+      canonicalBundlePath: 'artifacts/solutions/CoreLifecycle.zip',
+      defaultTarget: {
+        stage: 'dev',
+        environmentAlias: 'sandbox',
+        solutionAlias: 'CoreLifecycle',
+        solutionUniqueName: 'CoreLifecycle',
+      },
+      activeTarget: {
+        stage: 'dev',
+        environmentAlias: 'sandbox',
+        solutionAlias: 'CoreLifecycle',
+        solutionUniqueName: 'CoreLifecycle',
+      },
+      stageMappings: [
+        {
+          stage: 'dev',
+          environmentAlias: 'sandbox',
+          solutionAlias: 'CoreLifecycle',
+          solutionUniqueName: 'CoreLifecycle',
+          solutionMappings: [
+            {
+              alias: 'CoreLifecycle',
+              environmentAlias: 'sandbox',
+              uniqueName: 'CoreLifecycle',
+              source: 'project',
+            },
+          ],
+          parameterOverrides: [],
+        },
+      ],
+    });
     expect(result.suggestedNextActions).toEqual(
       expect.arrayContaining([
         'Run `pp project doctor` to inspect the scaffolded layout and any missing inputs.',
@@ -169,6 +204,24 @@ describe('discoverProject', () => {
     expect(doctor.success).toBe(true);
     expect(doctor.data?.summary.layoutProfile).toBe('source-first');
     expect(doctor.data?.layout.normalizedAssets.solutionBundle).toBe('artifacts/solutions/CoreLifecycle.zip');
+    expect(doctor.data?.contract.canonicalBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
+    expect(doctor.data?.contract.stageMappings).toEqual([
+      {
+        stage: 'dev',
+        environmentAlias: 'sandbox',
+        solutionAlias: 'CoreLifecycle',
+        solutionUniqueName: 'CoreLifecycle',
+        solutionMappings: [
+          {
+            alias: 'CoreLifecycle',
+            environmentAlias: 'sandbox',
+            uniqueName: 'CoreLifecycle',
+            source: 'project',
+          },
+        ],
+        parameterOverrides: [],
+      },
+    ]);
   });
 
   it('reports layout problems and missing required parameters through doctorProject', async () => {
@@ -273,6 +326,30 @@ describe('discoverProject', () => {
     expect(report.data?.summary.layoutProfile).toBe('source-first-inline-bundle');
     expect(report.data?.layout.generatedBundlePaths).toContain('solutions/Core.zip');
     expect(report.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE')).toBe(true);
+    expect(report.data?.contract).toMatchObject({
+      solutionSourceRoot: 'solutions',
+      canonicalBundlePath: 'artifacts/solutions/core.zip',
+      activeTarget: {
+        stage: 'prod',
+        environmentAlias: 'prod',
+        solutionAlias: 'core',
+        solutionUniqueName: 'CoreManaged',
+      },
+      stageMappings: [
+        {
+          stage: 'dev',
+          environmentAlias: 'dev',
+          solutionAlias: 'core',
+          solutionUniqueName: 'CoreDev',
+        },
+        {
+          stage: 'prod',
+          environmentAlias: 'prod',
+          solutionAlias: 'core',
+          solutionUniqueName: 'CoreManaged',
+        },
+      ],
+    });
     expect(report.suggestedNextActions).toEqual(
       expect.arrayContaining([expect.stringContaining('artifacts/solutions/core.zip')])
     );
