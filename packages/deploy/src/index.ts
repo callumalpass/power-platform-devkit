@@ -23,14 +23,30 @@ export interface DeployTarget {
   solutionUniqueName?: string;
 }
 
-export interface DeployOperationPlan {
-  kind: 'dataverse-envvar-set';
+interface DeployOperationPlanBase {
   parameter: string;
   source: ResolvedProjectParameter['source'];
   sensitive: boolean;
   target: string;
   valuePreview?: string | number | boolean;
 }
+
+export interface DataverseEnvvarDeployOperationPlan extends DeployOperationPlanBase {
+  kind: 'dataverse-envvar-set';
+}
+
+export interface DeployInputBindingOperationPlan extends DeployOperationPlanBase {
+  kind: 'deploy-input-bind';
+}
+
+export interface DeploySecretBindingOperationPlan extends DeployOperationPlanBase {
+  kind: 'deploy-secret-bind';
+}
+
+export type DeployOperationPlan =
+  | DataverseEnvvarDeployOperationPlan
+  | DeployInputBindingOperationPlan
+  | DeploySecretBindingOperationPlan;
 
 export interface DeployPlan {
   projectRoot: string;
@@ -58,6 +74,7 @@ export interface DeployPlan {
     kind: string;
     exists: boolean;
   }>;
+  bindings: DeployBindingSummary;
   operations: DeployOperationPlan[];
 }
 
@@ -74,14 +91,14 @@ export interface DeployPreflightSummary {
   checks: DeployPreflightCheck[];
 }
 
-export interface DeployOperationResult extends DeployOperationPlan {
-  status: 'planned' | 'applied' | 'skipped' | 'failed';
+export type DeployOperationResult = DeployOperationPlan & {
+  status: 'planned' | 'resolved' | 'applied' | 'skipped' | 'failed';
   targetExists?: boolean;
   currentValue?: string;
   nextValue?: string;
   changed?: boolean;
   message?: string;
-}
+};
 
 export interface DeployApplySummary {
   attempted: number;
@@ -89,6 +106,7 @@ export interface DeployApplySummary {
   failed: number;
   skipped: number;
   changed: number;
+  resolved: number;
 }
 
 export interface DeployConfirmation {
@@ -97,10 +115,36 @@ export interface DeployConfirmation {
   status: 'not-required' | 'confirmed' | 'blocked';
 }
 
+export interface DeployBindingSummaryEntry {
+  kind: 'deploy-input' | 'deploy-secret';
+  parameter: string;
+  source: ResolvedProjectParameter['source'];
+  sensitive: boolean;
+  target: string;
+  status: 'resolved' | 'missing';
+  reference?: string;
+  valuePreview?: string | number | boolean;
+}
+
+export interface DeployBindingSummary {
+  inputs: DeployBindingSummaryEntry[];
+  secrets: DeployBindingSummaryEntry[];
+}
+
+export interface ResolvedDeployBindingEntry extends DeployBindingSummaryEntry {
+  value?: string | number | boolean;
+}
+
+export interface ResolvedDeployBindings {
+  inputs: ResolvedDeployBindingEntry[];
+  secrets: ResolvedDeployBindingEntry[];
+}
+
 export interface DeployExecutionResult {
   mode: DeployExecutionMode;
   target: DeployTarget;
   plan: DeployPlan;
+  bindings: DeployBindingSummary;
   confirmation: DeployConfirmation;
   preflight: DeployPreflightSummary;
   apply: {
@@ -115,6 +159,7 @@ export interface DeployExecutionResult {
 }
 
 export function buildDeployPlan(project: ProjectContext): OperationResult<DeployPlan> {
+  const bindings = summarizeResolvedDeployBindings(resolveDeployBindings(project));
   const inputs = Object.values(project.parameters).map((parameter) => {
     const summary = summarizeResolvedParameter(parameter);
     return {
@@ -129,8 +174,9 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
   });
   const operations = collectDeployOperations(project).map(({ plan }) => plan);
   const diagnostics: Diagnostic[] = [];
+  const dataverseOperations = operations.filter(isDataverseEnvvarOperation);
 
-  if (!project.topology.activeEnvironment) {
+  if (dataverseOperations.length > 0 && !project.topology.activeEnvironment) {
     diagnostics.push(
       createDiagnostic('error', 'DEPLOY_TARGET_ENVIRONMENT_MISSING', 'Deploy target environment is not resolved from the project topology.', {
         source: '@pp/deploy',
@@ -138,7 +184,7 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
     );
   }
 
-  if (!project.topology.activeSolution?.uniqueName) {
+  if (dataverseOperations.length > 0 && !project.topology.activeSolution?.uniqueName) {
     diagnostics.push(
       createDiagnostic('error', 'DEPLOY_TARGET_SOLUTION_MISSING', 'Deploy target solution is not resolved from the project topology.', {
         source: '@pp/deploy',
@@ -178,6 +224,7 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
         kind: asset.kind,
         exists: asset.exists,
       })),
+      bindings,
       operations,
     },
     {
@@ -196,6 +243,8 @@ export async function executeDeploy(
 ): Promise<OperationResult<DeployExecutionResult>> {
   const startedAt = Date.now();
   const planResult = buildDeployPlan(project);
+  const resolvedBindings = resolveDeployBindings(project);
+  const bindingSummary = summarizeResolvedDeployBindings(resolvedBindings);
   const mode = options.mode ?? 'apply';
   const confirmation = resolveDeployConfirmation(mode, options.confirmed === true);
   const diagnostics = [...planResult.diagnostics];
@@ -203,6 +252,8 @@ export async function executeDeploy(
   const checks: DeployPreflightCheck[] = [];
   const applyOperations: DeployOperationResult[] = [];
   const preparedOperations = collectDeployOperations(project);
+  const dataverseOperations = preparedOperations.filter((operation) => isDataverseEnvvarOperation(operation.plan));
+  const adapterBindingOperations = preparedOperations.filter((operation) => !isDataverseEnvvarOperation(operation.plan));
   const target = planResult.data?.target ?? {
     stage: project.topology.selectedStage,
     environmentAlias: project.topology.activeEnvironment,
@@ -210,7 +261,21 @@ export async function executeDeploy(
     solutionUniqueName: project.topology.activeSolution?.uniqueName,
   };
 
-  if (!target.environmentAlias) {
+  checks.push(...collectMissingMappingChecks(project));
+
+  for (const operation of adapterBindingOperations) {
+    applyOperations.push({
+      ...operation.plan,
+      status: 'resolved',
+      changed: false,
+      message:
+        operation.plan.kind === 'deploy-secret-bind'
+          ? 'Resolved secret binding for adapter consumption.'
+          : 'Resolved input binding for adapter consumption.',
+    });
+  }
+
+  if (dataverseOperations.length > 0 && !target.environmentAlias) {
     checks.push({
       status: 'fail',
       code: 'DEPLOY_PREFLIGHT_ENVIRONMENT_MISSING',
@@ -218,7 +283,7 @@ export async function executeDeploy(
     });
   }
 
-  if (!target.solutionUniqueName) {
+  if (dataverseOperations.length > 0 && !target.solutionUniqueName) {
     checks.push({
       status: 'fail',
       code: 'DEPLOY_PREFLIGHT_SOLUTION_MISSING',
@@ -245,8 +310,16 @@ export async function executeDeploy(
     });
   }
 
+  if (dataverseOperations.length === 0) {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
+      supportTier: 'preview',
+      diagnostics,
+      warnings,
+    });
+  }
+
   if (!target.environmentAlias || !target.solutionUniqueName || !planResult.data) {
-    return ok(finalizeDeployExecution(mode, target, planResult.data, confirmation, checks, applyOperations, startedAt), {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
@@ -264,7 +337,7 @@ export async function executeDeploy(
       message: `Could not resolve Dataverse environment alias ${target.environmentAlias}.`,
       target: target.environmentAlias,
     });
-    return ok(finalizeDeployExecution(mode, target, planResult.data, confirmation, checks, applyOperations, startedAt), {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
@@ -344,7 +417,7 @@ export async function executeDeploy(
     }
   }
 
-  for (const operation of preparedOperations) {
+  for (const operation of dataverseOperations) {
     const variable = variableBySchema.get(operation.plan.target.toLowerCase());
 
     if (!variable) {
@@ -381,14 +454,14 @@ export async function executeDeploy(
   const preflightOk = checks.every((check) => check.status !== 'fail');
 
   if (!preflightOk || mode !== 'apply') {
-    return ok(finalizeDeployExecution(mode, target, planResult.data, confirmation, checks, applyOperations, startedAt), {
+    return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
       supportTier: 'preview',
       diagnostics,
       warnings,
     });
   }
 
-  for (const operation of preparedOperations) {
+  for (const operation of dataverseOperations) {
     const index = applyOperations.findIndex((entry) => entry.parameter === operation.plan.parameter && entry.target === operation.plan.target);
 
     if (index === -1 || applyOperations[index]?.targetExists === false) {
@@ -422,7 +495,7 @@ export async function executeDeploy(
     };
   }
 
-  return ok(finalizeDeployExecution(mode, target, planResult.data, confirmation, checks, applyOperations, startedAt), {
+  return ok(finalizeDeployExecution(mode, target, planResult.data, bindingSummary, confirmation, checks, applyOperations, startedAt), {
     supportTier: 'preview',
     diagnostics,
     warnings,
@@ -438,31 +511,111 @@ function collectDeployOperations(project: ProjectContext): Array<{ plan: DeployO
     }
 
     for (const mapping of parameter.definition.mapsTo ?? []) {
-      if (mapping.kind !== 'dataverse-envvar') {
-        continue;
-      }
+      const plan = createDeployOperationPlan(parameter, mapping.kind, mapping.target);
 
-      operations.push({
-        plan: {
-          kind: 'dataverse-envvar-set',
-          parameter: parameter.name,
-          source: parameter.source,
-          sensitive: parameter.sensitive,
-          target: mapping.target,
-          valuePreview: parameter.sensitive ? '<redacted>' : parameter.value,
-        },
-        value: parameter.value,
-      });
+      if (plan) {
+        operations.push({
+          plan,
+          value: parameter.value,
+        });
+      }
     }
   }
 
   return operations;
 }
 
+function createDeployOperationPlan(
+  parameter: ResolvedProjectParameter,
+  mappingKind: string,
+  target: string
+): DeployOperationPlan | undefined {
+  const valuePreview = parameter.sensitive ? '<redacted>' : parameter.value;
+
+  switch (mappingKind) {
+    case 'dataverse-envvar':
+      return {
+        kind: 'dataverse-envvar-set',
+        parameter: parameter.name,
+        source: parameter.source,
+        sensitive: parameter.sensitive,
+        target,
+        valuePreview,
+      };
+    case 'deploy-input':
+      return {
+        kind: 'deploy-input-bind',
+        parameter: parameter.name,
+        source: parameter.source,
+        sensitive: parameter.sensitive,
+        target,
+        valuePreview,
+      };
+    case 'deploy-secret':
+      return {
+        kind: 'deploy-secret-bind',
+        parameter: parameter.name,
+        source: parameter.source,
+        sensitive: parameter.sensitive,
+        target,
+        valuePreview,
+      };
+    default:
+      return undefined;
+  }
+}
+
+function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCheck[] {
+  const checks: DeployPreflightCheck[] = [];
+
+  for (const parameter of Object.values(project.parameters)) {
+    if (parameter.hasValue) {
+      continue;
+    }
+
+    for (const mapping of parameter.definition.mapsTo ?? []) {
+      if (mapping.kind === 'dataverse-envvar') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_ENVVAR_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to Dataverse environment variable ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+          },
+        });
+      } else if (mapping.kind === 'deploy-input') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_INPUT_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to deploy input ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+          },
+        });
+      } else if (mapping.kind === 'deploy-secret') {
+        checks.push({
+          status: 'fail',
+          code: 'DEPLOY_PREFLIGHT_SECRET_SOURCE_MISSING',
+          message: `Deploy parameter ${parameter.name} is unresolved but maps to deploy secret ${mapping.target}.`,
+          target: mapping.target,
+          details: {
+            parameter: parameter.name,
+          },
+        });
+      }
+    }
+  }
+
+  return checks;
+}
+
 function finalizeDeployExecution(
   mode: DeployExecutionMode,
   target: DeployTarget,
   plan: DeployPlan | undefined,
+  bindings: DeployBindingSummary,
   confirmation: DeployConfirmation,
   checks: DeployPreflightCheck[],
   operations: DeployOperationResult[],
@@ -483,6 +636,7 @@ function finalizeDeployExecution(
       templateRegistries: [],
       build: {},
       assets: [],
+      bindings,
       operations: [],
     } as DeployPlan);
   const summary = summarizeApplyOperations(operations);
@@ -491,6 +645,7 @@ function finalizeDeployExecution(
     mode,
     target,
     plan: normalizedPlan,
+    bindings: plan?.bindings ?? bindings,
     confirmation,
     preflight: {
       ok: checks.every((check) => check.status !== 'fail'),
@@ -517,6 +672,8 @@ function summarizeApplyOperations(operations: DeployOperationResult[]): DeployAp
         summary.failed += 1;
       } else if (operation.status === 'skipped') {
         summary.skipped += 1;
+      } else if (operation.status === 'resolved') {
+        summary.resolved += 1;
       }
 
       if (operation.changed) {
@@ -537,8 +694,13 @@ function summarizeApplyOperations(operations: DeployOperationResult[]): DeployAp
       failed: 0,
       skipped: 0,
       changed: 0,
+      resolved: 0,
     }
   );
+}
+
+function isDataverseEnvvarOperation(operation: DeployOperationPlan): operation is DataverseEnvvarDeployOperationPlan {
+  return operation.kind === 'dataverse-envvar-set';
 }
 
 function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean): DeployConfirmation {
@@ -559,4 +721,47 @@ function resolveDeployConfirmation(mode: DeployExecutionMode, confirmed: boolean
 
 function stringifyDeployValue(value: string | number | boolean): string {
   return typeof value === 'string' ? value : String(value);
+}
+
+export function resolveDeployBindings(project: ProjectContext): ResolvedDeployBindings {
+  const inputs: ResolvedDeployBindingEntry[] = [];
+  const secrets: ResolvedDeployBindingEntry[] = [];
+
+  for (const parameter of Object.values(project.parameters)) {
+    for (const mapping of parameter.definition.mapsTo ?? []) {
+      if (mapping.kind !== 'deploy-input' && mapping.kind !== 'deploy-secret') {
+        continue;
+      }
+
+      const entry: ResolvedDeployBindingEntry = {
+        kind: mapping.kind,
+        parameter: parameter.name,
+        source: parameter.source,
+        sensitive: parameter.sensitive,
+        target: mapping.target,
+        status: parameter.hasValue && parameter.value !== undefined ? 'resolved' : 'missing',
+        reference: parameter.reference,
+        valuePreview: parameter.sensitive ? '<redacted>' : parameter.value,
+        value: parameter.hasValue ? parameter.value : undefined,
+      };
+
+      if (mapping.kind === 'deploy-secret') {
+        secrets.push(entry);
+      } else {
+        inputs.push(entry);
+      }
+    }
+  }
+
+  return {
+    inputs,
+    secrets,
+  };
+}
+
+function summarizeResolvedDeployBindings(bindings: ResolvedDeployBindings): DeployBindingSummary {
+  return {
+    inputs: bindings.inputs.map(({ value: _value, ...entry }) => entry),
+    secrets: bindings.secrets.map(({ value: _value, ...entry }) => entry),
+  };
 }

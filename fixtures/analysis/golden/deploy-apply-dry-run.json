@@ -2,6 +2,17 @@
   "apply": {
     "operations": [
       {
+        "changed": false,
+        "kind": "deploy-secret-bind",
+        "message": "Resolved secret binding for adapter consumption.",
+        "parameter": "apiToken",
+        "sensitive": true,
+        "source": "secret",
+        "status": "resolved",
+        "target": "api-token",
+        "valuePreview": "<redacted>"
+      },
+      {
         "changed": true,
         "currentValue": "old.example",
         "kind": "dataverse-envvar-set",
@@ -18,11 +29,36 @@
     ],
     "summary": {
       "applied": 0,
-      "attempted": 0,
+      "attempted": 1,
       "changed": 1,
       "failed": 0,
+      "resolved": 1,
       "skipped": 1
     }
+  },
+  "bindings": {
+    "inputs": [
+      {
+        "kind": "deploy-input",
+        "parameter": "sqlEndpoint",
+        "sensitive": false,
+        "source": "missing",
+        "status": "missing",
+        "target": "sql-endpoint"
+      }
+    ],
+    "secrets": [
+      {
+        "kind": "deploy-secret",
+        "parameter": "apiToken",
+        "reference": "app_token",
+        "sensitive": true,
+        "source": "secret",
+        "status": "resolved",
+        "target": "api-token",
+        "valuePreview": "<redacted>"
+      }
+    ]
   },
   "confirmation": {
     "confirmed": false,
@@ -59,6 +95,30 @@
         "path": "<REPO_ROOT>/fixtures/analysis/project/docs"
       }
     ],
+    "bindings": {
+      "inputs": [
+        {
+          "kind": "deploy-input",
+          "parameter": "sqlEndpoint",
+          "sensitive": false,
+          "source": "missing",
+          "status": "missing",
+          "target": "sql-endpoint"
+        }
+      ],
+      "secrets": [
+        {
+          "kind": "deploy-secret",
+          "parameter": "apiToken",
+          "reference": "app_token",
+          "sensitive": true,
+          "source": "secret",
+          "status": "resolved",
+          "target": "api-token",
+          "valuePreview": "<redacted>"
+        }
+      ]
+    },
     "build": {
       "canvas": {
         "mode": "seeded"
@@ -139,6 +199,14 @@
         "source": "environment",
         "target": "pp_TenantDomain",
         "valuePreview": "contoso.example"
+      },
+      {
+        "kind": "deploy-secret-bind",
+        "parameter": "apiToken",
+        "sensitive": true,
+        "source": "secret",
+        "target": "api-token",
+        "valuePreview": "<redacted>"
       }
     ],
     "projectRoot": "<REPO_ROOT>/fixtures/analysis/project",
@@ -177,13 +245,22 @@
   "preflight": {
     "checks": [
       {
+        "code": "DEPLOY_PREFLIGHT_INPUT_SOURCE_MISSING",
+        "details": {
+          "parameter": "sqlEndpoint"
+        },
+        "message": "Deploy parameter sqlEndpoint is unresolved but maps to deploy input sql-endpoint.",
+        "status": "fail",
+        "target": "sql-endpoint"
+      },
+      {
         "code": "DEPLOY_PREFLIGHT_SOLUTION_FOUND",
         "message": "Solution CoreManaged is available in prod.",
         "status": "pass",
         "target": "CoreManaged"
       }
     ],
-    "ok": true
+    "ok": false
   },
   "report": {
     "durationMs": 0,

@@ -7,12 +7,16 @@
 
 ## Supported apply slice
 
-The implemented `apply` path currently supports project parameters mapped with:
+The shared deploy contract currently recognizes project parameters mapped with:
 
 ```yaml
 mapsTo:
   - kind: dataverse-envvar
     target: pp_TenantDomain
+  - kind: deploy-secret
+    target: api-token
+  - kind: deploy-input
+    target: sql-endpoint
 ```
 
 During `deploy apply`, `pp`:
@@ -21,7 +25,8 @@ During `deploy apply`, `pp`:
 2. resolves the Dataverse client for the active environment alias
 3. analyzes the target solution for preflight facts
 4. inspects environment variables in that solution
-5. updates matching environment variable values for supported mappings
+5. resolves adapter-facing input and secret bindings into the shared operation result
+6. updates matching environment variable values for supported Dataverse mappings
 
 ## Local usage
 
@@ -49,9 +54,10 @@ preflight failure instead of mutating the target environment.
 The output includes:
 
 - `plan`: resolved deploy target, inputs, and supported operations
+- `bindings`: adapter-facing deploy inputs and secrets as a machine-readable summary with secret values redacted
 - `confirmation`: whether live apply required confirmation and whether it was provided
 - `preflight`: machine-readable checks and pass/warn/fail status
-- `apply`: per-operation results and summary counts
+- `apply`: per-operation results and summary counts, including adapter-facing bindings that resolved locally
 - `report`: execution timestamps and duration
 
 ## CI and adapters
@@ -63,6 +69,7 @@ The adapter packages call the shared deploy service rather than reimplementing d
 - `@pp/adapter-power-platform-pipelines`
 
 Each adapter discovers the project and invokes the shared deploy execution path, so CI wrappers stay thin.
+Library consumers that need the resolved binding values directly can also call `resolveDeployBindings()` from `@pp/deploy`; the JSON plan/result shape keeps that same information in a redacted `bindings` summary.
 
 The repo now includes turnkey Node entrypoints for those wrappers:
 
@@ -148,6 +155,8 @@ steps:
 
 ## Current limits
 
-- Only `dataverse-envvar` mappings are applied today.
+- `dataverse-envvar` is still the only mapping kind that mutates a remote target today.
+- `deploy-input` and `deploy-secret` bindings are included in the shared deploy plan/result model, but they resolve locally for adapter consumption rather than calling a remote API.
+- Mapped parameters without a resolved value now fail deploy preflight explicitly.
 - Missing target environment variables fail preflight.
 - Connection reference and missing-environment-variable findings from solution analysis are surfaced as warnings in preflight.
