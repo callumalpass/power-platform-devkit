@@ -146,12 +146,21 @@ export interface ProjectInitPlan {
   configExists: boolean;
   actions: ProjectInitAction[];
   config: ProjectConfig;
+  layout: ProjectInitLayoutGuidance;
 }
 
 export interface ProjectInitResult extends ProjectInitPlan {
   created: string[];
   overwritten: string[];
   untouched: string[];
+}
+
+export interface ProjectInitLayoutGuidance {
+  scaffoldProfile: 'source-first';
+  scaffoldedAssetRoots: string[];
+  recommendedBundlePath: string;
+  sourceFirstConvention: string;
+  bundleFirstConvention: string;
 }
 
 export interface ProjectDoctorCheck {
@@ -224,6 +233,7 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
     solution,
     stage,
   });
+  const layout = buildProjectInitLayoutGuidance(solution);
 
   return {
     root: resolvedRoot,
@@ -242,6 +252,7 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
       })),
     ],
     config,
+    layout,
   };
 }
 
@@ -308,6 +319,7 @@ export async function initProject(root = process.cwd(), options: ProjectInitOpti
       supportTier: 'preview',
       suggestedNextActions: [
         'Run `pp project doctor` to inspect the scaffolded layout and any missing inputs.',
+        `When the repo also tracks packaged solution exports, keep unpacked source under \`solutions/\` and write generated zips to \`${plan.layout.recommendedBundlePath}\`.`,
         'Update provider bindings, parameters, and topology in the generated config to match your environment aliases and solution names.',
       ],
     }
@@ -1072,6 +1084,19 @@ function buildProjectInitConfig(input: { name: string; environment: string; solu
     docs: {
       paths: ['docs'],
     },
+  };
+}
+
+function buildProjectInitLayoutGuidance(solutionName: string): ProjectInitLayoutGuidance {
+  const recommendedBundlePath = join('artifacts', 'solutions', `${solutionName}.zip`).replaceAll('\\', '/');
+
+  return {
+    scaffoldProfile: 'source-first',
+    scaffoldedAssetRoots: [...DEFAULT_ASSET_PATHS],
+    recommendedBundlePath,
+    sourceFirstConvention:
+      'The default scaffold is source-first: keep editable solution source in `solutions/` alongside `apps/`, `flows/`, and `docs/`.',
+    bundleFirstConvention: `If the repo primarily tracks exported packages, keep packaged solution zips under \`${recommendedBundlePath}\` instead of mixing them into \`solutions/\`.`,
   };
 }
 

@@ -128,6 +128,15 @@ describe('discoverProject', () => {
 
     expect(plan.configPath).toBe(join(root, 'pp.config.yaml'));
     expect(plan.actions).toHaveLength(5);
+    expect(plan.layout).toEqual({
+      scaffoldProfile: 'source-first',
+      scaffoldedAssetRoots: ['apps', 'flows', 'solutions', 'docs'],
+      recommendedBundlePath: 'artifacts/solutions/CoreLifecycle.zip',
+      sourceFirstConvention:
+        'The default scaffold is source-first: keep editable solution source in `solutions/` alongside `apps/`, `flows/`, and `docs/`.',
+      bundleFirstConvention:
+        'If the repo primarily tracks exported packages, keep packaged solution zips under `artifacts/solutions/CoreLifecycle.zip` instead of mixing them into `solutions/`.',
+    });
 
     const result = await initProject(root, {
       name: 'demo',
@@ -142,6 +151,13 @@ describe('discoverProject', () => {
     expect(result.data?.created).toContain(join(root, 'flows'));
     expect(result.data?.created).toContain(join(root, 'solutions'));
     expect(result.data?.created).toContain(join(root, 'docs'));
+    expect(result.data?.layout.recommendedBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Run `pp project doctor` to inspect the scaffolded layout and any missing inputs.',
+        'When the repo also tracks packaged solution exports, keep unpacked source under `solutions/` and write generated zips to `artifacts/solutions/CoreLifecycle.zip`.',
+      ])
+    );
 
     const discovery = await discoverProject(root);
     expect(discovery.success).toBe(true);
