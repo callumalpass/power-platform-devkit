@@ -162,7 +162,7 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
       case 'list':
         return runAuthProfileList(auth, rest);
       case 'inspect':
-        return runAuthProfileInspect(auth, rest);
+        return runAuthProfileInspect(auth, configOptions, rest);
       case 'add-user':
         return runAuthProfileSave(auth, rest, 'user');
       case 'add-static':
@@ -1114,26 +1114,93 @@ async function runAuthProfileList(auth: AuthService, args: string[]): Promise<nu
   return 0;
 }
 
-async function runAuthProfileInspect(auth: AuthService, args: string[]): Promise<number> {
-  const name = positionalArgs(args)[0];
+async function runAuthProfileInspect(auth: AuthService, configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
+  const target = await resolveAuthProfileInspectTarget(configOptions, args);
 
-  if (!name) {
-    return printFailure(argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name is required.'));
+  if (!target.success || !target.data) {
+    return printFailure(target);
   }
 
   const format = outputFormat(args, 'json');
-  const profile = await auth.getProfile(name);
+  const profile = await auth.getProfile(target.data.name);
 
   if (!profile.success) {
     return printFailure(profile);
   }
 
   if (!profile.data) {
-    return printFailure(fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${name} was not found.`)));
+    return printFailure(fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${target.data.name} was not found.`)));
   }
 
-  printByFormat(summarizeProfile(profile.data), format);
+  const summary = summarizeProfile(profile.data);
+
+  printByFormat(
+    target.data.environmentAlias
+      ? {
+          ...summary,
+          resolvedFromEnvironment: target.data.environmentAlias,
+        }
+      : summary,
+    format
+  );
   return 0;
+}
+
+async function resolveAuthProfileInspectTarget(
+  configOptions: ConfigStoreOptions,
+  args: string[]
+): Promise<OperationResult<{ name: string; environmentAlias?: string }>> {
+  const name = positionalArgs(args)[0];
+
+  if (name) {
+    return ok(
+      {
+        name,
+      },
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  const environmentAlias = readFlag(args, '--env');
+
+  if (!environmentAlias) {
+    return argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name or --env <alias> is required.');
+  }
+
+  const environment = await getEnvironmentAlias(environmentAlias, configOptions);
+
+  if (!environment.success) {
+    return fail(environment.diagnostics, {
+      warnings: environment.warnings,
+      supportTier: environment.supportTier,
+      details: environment.details,
+      suggestedNextActions: environment.suggestedNextActions,
+      provenance: environment.provenance,
+      knownLimitations: environment.knownLimitations,
+    });
+  }
+
+  if (!environment.data) {
+    return fail(
+      createDiagnostic('error', 'ENV_NOT_FOUND', `Environment alias ${environmentAlias} was not found.`, {
+        source: '@pp/cli',
+      })
+    );
+  }
+
+  return ok(
+    {
+      name: environment.data.authProfile,
+      environmentAlias,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: environment.diagnostics,
+      warnings: environment.warnings,
+    }
+  );
 }
 
 async function runAuthBrowserProfileList(auth: AuthService, args: string[]): Promise<number> {
@@ -4373,6 +4440,7 @@ function printHelp(): void {
       'Commands:',
       '  auth profile list [--config-dir path]',
       '  auth profile inspect <name> [--config-dir path]',
+      '  auth profile inspect --env ALIAS [--config-dir path]',
       '  auth profile add-user --name NAME [--resource URL] [--login-hint user@contoso.com] [--browser-profile NAME] [--config-dir path]',
       '  auth profile add-static --name NAME --token TOKEN [--resource URL]',
       '  auth profile add-env --name NAME --env-var ENV_VAR [--resource URL]',

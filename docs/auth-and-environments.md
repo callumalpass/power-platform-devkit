@@ -103,10 +103,13 @@ List, inspect, and remove profiles:
 ```bash
 pp auth profile list
 pp auth profile inspect dev-user
+pp auth profile inspect --env dev
 pp auth profile remove temp
 ```
 
 The profile summary includes the effective client ID, tenant, cache key, and stored account identifiers for user-style profiles. That matters when several named identities live on the same machine.
+
+When the workflow already has an environment alias, `pp auth profile inspect --env <alias>` resolves the bound auth profile first so you do not need to translate the alias back to its profile name manually.
 
 ## Browser profiles
 
