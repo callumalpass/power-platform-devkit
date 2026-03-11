@@ -10,20 +10,15 @@ import { renderMarkdownPortfolioReport, renderMarkdownReport, generateContextPac
 import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
   AuthService,
-  DEFAULT_BROWSER_BOOTSTRAP_URL,
   createTokenProvider,
   resolveBrowserProfileDirectory,
-  summarizeBrowserProfile,
   summarizeProfile,
   type AuthProfile,
-  type BrowserProfile,
-  type UserAuthProfile,
 } from '@pp/auth';
 import { CanvasService, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
 import {
   createMutationPreview,
   readMutationFlags,
-  readOutputFormat,
   resolveOutputFormat,
   renderFailure,
   renderOutput,
@@ -66,14 +61,6 @@ import {
   type DataverseMetadataSnapshot,
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
-import {
-  buildDeployPlan,
-  executeDeploy,
-  executeDeployPlan,
-  executeReleaseManifest,
-  type DeployPlan,
-  type ReleaseManifest,
-} from '@pp/deploy';
 import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument, type FlowWorkflowStateLabel } from '@pp/flow';
 import { HttpClient } from '@pp/http';
@@ -110,16 +97,82 @@ import {
   renderCompletionScript,
 } from './operability';
 import YAML from 'yaml';
+import * as cliHelp from './help';
+import {
+  runAuthGroup,
+  runAnalysisGroup,
+  runCanvasGroup,
+  runConnectionReferenceGroup,
+  runDataverseGroup,
+  runDeployGroup,
+  runDiagnosticsGroup,
+  runEnvironmentGroup,
+  runEnvironmentVariableGroup,
+  runFlowGroup,
+  runModelGroup,
+  runPowerBiGroup,
+  runProjectGroup,
+  runSharePointGroup,
+  runSolutionGroup,
+} from './command-groups';
+import {
+  runProjectDoctorCommand,
+  runProjectFeedbackCommand,
+  runProjectInitCommand,
+  runProjectInspectCommand,
+} from './project-commands';
+import {
+  runAnalysisContextCommand,
+  runAnalysisDriftCommand,
+  runAnalysisPolicyCommand,
+  runAnalysisPortfolioCommand,
+  runAnalysisReportCommand,
+  runAnalysisUsageCommand,
+} from './analysis-commands';
+import {
+  runSolutionAnalyzeCommand,
+  runSolutionComponentsCommand,
+  runSolutionCompareCommand,
+  runSolutionCreateCommand,
+  runSolutionDeleteCommand,
+  runSolutionDependenciesCommand,
+  runSolutionExportCommand,
+  runSolutionImportCommand,
+  runSolutionInspectCommand,
+  runSolutionListCommand,
+  runSolutionPackCommand,
+  runSolutionSetMetadataCommand,
+  runSolutionUnpackCommand,
+  createLocalSolutionService,
+} from './solution-commands';
+import { runDeployApplyCommand, runDeployPlanCommand, runDeployReleaseCommand } from './deploy-commands';
+import {
+  runAuthBrowserProfileBootstrapCommand,
+  runAuthBrowserProfileInspectCommand,
+  runAuthBrowserProfileListCommand,
+  runAuthBrowserProfileRemoveCommand,
+  runAuthBrowserProfileSaveCommand,
+  runAuthLoginCommand,
+  runAuthProfileInspectCommand,
+  runAuthProfileListCommand,
+  runAuthProfileRemoveCommand,
+  runAuthProfileSaveCommand,
+  runAuthTokenCommand,
+} from './auth-commands';
+import {
+  runEnvironmentAddCommand,
+  runEnvironmentCleanupCommand,
+  runEnvironmentCleanupPlanCommand,
+  runEnvironmentInspectCommand,
+  runEnvironmentListCommand,
+  runEnvironmentRemoveCommand,
+  runEnvironmentResetCommand,
+  runEnvironmentResolveMakerIdCommand,
+} from './environment-commands';
+import { dispatchMainCommand } from './routing';
 
 type OutputFormat = CliOutputFormat;
 type AttributeListView = Extract<AttributeMetadataView, 'common' | 'raw'>;
-type SolutionCompareInputKind = 'environment' | 'zip' | 'folder';
-
-interface SolutionCompareInput {
-  kind: SolutionCompareInputKind;
-  value: string;
-}
-
 interface CanvasCliContext {
   path: string;
   options: {
@@ -156,297 +209,62 @@ const ATTRIBUTE_COMMON_SELECT_FIELDS = [
 const POWER_PLATFORM_ENVIRONMENTS_API_VERSION = '2020-10-01';
 
 export async function main(argv: string[]): Promise<number> {
-  const normalizedArgv = normalizeCliArgs(argv);
-  const [group, command, ...rest] = normalizedArgv;
-
-  if (!group || group === 'help' || group === '--help') {
-    printHelp();
-    return 0;
-  }
-
-  if (group === 'version' || group === '--version') {
-    return runVersion([command, ...rest].filter((value): value is string => value !== undefined));
-  }
-
-  if (group === 'completion') {
-    return runCompletion([command, ...rest].filter((value): value is string => value !== undefined));
-  }
-
-  if (group === 'diagnostics') {
-    return runDiagnostics(command, rest);
-  }
-
-  const requestedFormat = readOutputFormat(normalizedArgv, 'json');
-
-  if (!requestedFormat.success) {
-    return printFailure(requestedFormat);
-  }
-
-  if (group === 'auth') {
-    return runAuth(command, rest);
-  }
-
-  if (group === 'env') {
-    return runEnvironment(command, rest);
-  }
-
-  if (group === 'dv') {
-    return runDataverse(command, rest);
-  }
-
-  if (group === 'solution') {
-    return runSolution(command, rest);
-  }
-
-  if (group === 'connref') {
-    return runConnectionReference(command, rest);
-  }
-
-  if (group === 'envvar') {
-    return runEnvironmentVariable(command, rest);
-  }
-
-  if (group === 'canvas') {
-    return runCanvas(command, rest);
-  }
-
-  if (group === 'flow') {
-    return runFlow(command, rest);
-  }
-
-  if (group === 'model') {
-    return runModel(command, rest);
-  }
-
-  if (group === 'project') {
-    return runProject(command, rest);
-  }
-
-  if (group === 'sharepoint') {
-    return runSharePoint(command, rest);
-  }
-
-  if (group === 'powerbi') {
-    return runPowerBi(command, rest);
-  }
-
-  if (group === 'analysis') {
-    return runAnalysis(command, rest);
-  }
-
-  if (group === 'deploy') {
-    return runDeploy(command, rest);
-  }
-
-  switch (`${group} ${command ?? ''}`.trim()) {
-    default:
-      printHelp();
-      return 1;
-  }
-}
-
-function normalizeCliArgs(argv: string[]): string[] {
-  if (argv[0] === '--') {
-    return argv.slice(1);
-  }
-
-  return argv;
+  return dispatchMainCommand(argv, {
+    runVersion,
+    runCompletion,
+    runDiagnostics,
+    runAuth,
+    runEnvironment,
+    runDataverse,
+    runSolution,
+    runConnectionReference,
+    runEnvironmentVariable,
+    runCanvas,
+    runFlow,
+    runModel,
+    runProject,
+    runSharePoint,
+    runPowerBi,
+    runAnalysis,
+    runDeploy,
+    printFailureForInvalidFormat: (result) => printFailure(result),
+  });
 }
 
 async function runProject(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printProjectHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'init':
-      if (args.includes('--help') || args.includes('help')) {
-        printProjectInitHelp();
-        return 0;
-      }
-      return runProjectInit(args);
-    case 'doctor':
-      if (args.includes('--help') || args.includes('help')) {
-        printProjectDoctorHelp();
-        return 0;
-      }
-      return runProjectDoctor(args);
-    case 'feedback':
-      if (args.includes('--help') || args.includes('help')) {
-        printProjectFeedbackHelp();
-        return 0;
-      }
-      return runProjectFeedback(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        printProjectInspectHelp();
-        return 0;
-      }
-      return runProjectInspect(args);
-    default:
-      printHelp();
-      return 1;
-  }
+  return runProjectGroup(command, args, { runProjectInit, runProjectDoctor, runProjectFeedback, runProjectInspect });
 }
 
 async function runAnalysis(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printAnalysisHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'report':
-      if (args.includes('--help') || args.includes('help')) {
-        printAnalysisReportHelp();
-        return 0;
-      }
-      return runAnalysisReport(args);
-    case 'context':
-      if (args.includes('--help') || args.includes('help')) {
-        printAnalysisContextHelp();
-        return 0;
-      }
-      return runAnalysisContext(args);
-    case 'portfolio':
-      if (args.includes('--help') || args.includes('help')) {
-        printAnalysisPortfolioHelp();
-        return 0;
-      }
-      return runAnalysisPortfolio(args);
-    case 'drift':
-      if (args.includes('--help') || args.includes('help')) {
-        printAnalysisPortfolioViewHelp('drift');
-        return 0;
-      }
-      return runAnalysisDrift(args);
-    case 'usage':
-      if (args.includes('--help') || args.includes('help')) {
-        printAnalysisPortfolioViewHelp('usage');
-        return 0;
-      }
-      return runAnalysisUsage(args);
-    case 'policy':
-      if (args.includes('--help') || args.includes('help')) {
-        printAnalysisPortfolioViewHelp('policy');
-        return 0;
-      }
-      return runAnalysisPolicy(args);
-    default:
-      printAnalysisHelp();
-      return 1;
-  }
+  return runAnalysisGroup(command, args, {
+    runAnalysisReport,
+    runAnalysisContext,
+    runAnalysisPortfolio,
+    runAnalysisDrift,
+    runAnalysisUsage,
+    runAnalysisPolicy,
+  });
 }
 
 async function runDeploy(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printDeployHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'plan':
-      if (args.includes('--help') || args.includes('help')) {
-        printDeployPlanHelp();
-        return 0;
-      }
-      return runDeployPlan(args);
-    case 'apply':
-      if (args.includes('--help') || args.includes('help')) {
-        printDeployApplyHelp();
-        return 0;
-      }
-      return runDeployApply(args);
-    case 'release':
-      if (args.includes('--help') || args.includes('help')) {
-        printDeployReleaseHelp();
-        return 0;
-      }
-      return runDeployRelease(args);
-    default:
-      printDeployHelp();
-      return 1;
-  }
+  return runDeployGroup(command, args, { runDeployPlan, runDeployApply, runDeployRelease });
 }
 
 async function runDiagnostics(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printDiagnosticsHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'doctor':
-      if (args.includes('--help') || args.includes('help')) {
-        printDiagnosticsDoctorHelp();
-        return 0;
-      }
-      return runDiagnosticsDoctor(args);
-    case 'bundle':
-      if (args.includes('--help') || args.includes('help')) {
-        printDiagnosticsBundleHelp();
-        return 0;
-      }
-      return runDiagnosticsBundle(args);
-    default:
-      printDiagnosticsHelp();
-      return 1;
-  }
+  return runDiagnosticsGroup(command, args, { runDiagnosticsDoctor, runDiagnosticsBundle });
 }
 
 async function runSharePoint(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printSharePointHelp();
-    return 0;
-  }
-
-  const [action, ...rest] = args;
-
-  if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
-    printSharePointHelp();
-    return 0;
-  }
-
-  switch (`${command} ${action}`) {
-    case 'site inspect':
-      return runSharePointSiteInspect(rest);
-    case 'list inspect':
-      return runSharePointListInspect(rest);
-    case 'file inspect':
-      return runSharePointFileInspect(rest);
-    case 'permissions inspect':
-      return runSharePointPermissionsInspect(rest);
-    default:
-      printSharePointHelp();
-      return 1;
-  }
+  return runSharePointGroup(command, args, {
+    runSharePointSiteInspect,
+    runSharePointListInspect,
+    runSharePointFileInspect,
+    runSharePointPermissionsInspect,
+  });
 }
 
 async function runPowerBi(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printPowerBiHelp();
-    return 0;
-  }
-
-  const [action, ...rest] = args;
-
-  if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
-    printPowerBiHelp();
-    return 0;
-  }
-
-  switch (`${command} ${action}`) {
-    case 'workspace inspect':
-      return runPowerBiWorkspaceInspect(rest);
-    case 'dataset inspect':
-      return runPowerBiDatasetInspect(rest);
-    case 'report inspect':
-      return runPowerBiReportInspect(rest);
-    default:
-      printPowerBiHelp();
-      return 1;
-  }
+  return runPowerBiGroup(command, args, { runPowerBiWorkspaceInspect, runPowerBiDatasetInspect, runPowerBiReportInspect });
 }
 
 async function runVersion(args: string[]): Promise<number> {
@@ -470,7 +288,7 @@ async function runCompletion(args: string[]): Promise<number> {
   const shell = positionalArgs(args)[0] as 'bash' | 'zsh' | 'fish' | undefined;
 
   if (!shell || args.includes('--help') || args.includes('help')) {
-    printCompletionHelp();
+    cliHelp.printCompletionHelp();
     return shell ? 0 : 1;
   }
 
@@ -522,433 +340,103 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
   const configOptions = readConfigOptions(args);
   const auth = new AuthService(configOptions);
 
-  if (!command || command === 'help' || command === '--help') {
-    printAuthHelp();
-    return 0;
-  }
-
-  if (command === 'profile') {
-    const [action, ...rest] = args;
-
-    if (!action || action === 'help' || action === '--help') {
-      printAuthProfileHelp();
-      return 0;
-    }
-
-    switch (action) {
-      case 'list':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthProfileListHelp();
-          return 0;
-        }
-        return runAuthProfileList(auth, rest);
-      case 'inspect':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthProfileInspectHelp();
-          return 0;
-        }
-        return runAuthProfileInspect(auth, configOptions, rest);
-      case 'add-user':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthProfileAddUserHelp();
-          return 0;
-        }
-        return runAuthProfileSave(auth, rest, 'user');
-      case 'add-static':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthProfileAddStaticHelp();
-          return 0;
-        }
-        return runAuthProfileSave(auth, rest, 'static-token');
-      case 'add-env':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthProfileAddEnvHelp();
-          return 0;
-        }
-        return runAuthProfileSave(auth, rest, 'environment-token');
-      case 'add-client-secret':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthProfileAddClientSecretHelp();
-          return 0;
-        }
-        return runAuthProfileSave(auth, rest, 'client-secret');
-      case 'add-device-code':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthProfileAddDeviceCodeHelp();
-          return 0;
-        }
-        return runAuthProfileSave(auth, rest, 'device-code');
-      case 'remove':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthProfileRemoveHelp();
-          return 0;
-        }
-        return runAuthProfileRemove(auth, rest);
-      default:
-        printAuthProfileHelp();
-        return 1;
-    }
-  }
-
-  if (command === 'browser-profile') {
-    const [action, ...rest] = args;
-
-    if (!action || action === 'help' || action === '--help') {
-      printAuthBrowserProfileHelp();
-      return 0;
-    }
-
-    switch (action) {
-      case 'list':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthBrowserProfileListHelp();
-          return 0;
-        }
-        return runAuthBrowserProfileList(auth, rest);
-      case 'inspect':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthBrowserProfileInspectHelp();
-          return 0;
-        }
-        return runAuthBrowserProfileInspect(auth, rest);
-      case 'add':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthBrowserProfileAddHelp();
-          return 0;
-        }
-        return runAuthBrowserProfileSave(auth, rest);
-      case 'bootstrap':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthBrowserProfileBootstrapHelp();
-          return 0;
-        }
-        return runAuthBrowserProfileBootstrap(auth, rest);
-      case 'remove':
-        if (rest.includes('--help') || rest.includes('help')) {
-          printAuthBrowserProfileRemoveHelp();
-          return 0;
-        }
-        return runAuthBrowserProfileRemove(auth, rest);
-      default:
-        printAuthBrowserProfileHelp();
-        return 1;
-    }
-  }
-
-  if (command === 'login') {
-    if (args.includes('--help') || args.includes('help')) {
-      printAuthLoginHelp();
-      return 0;
-    }
-    return runAuthLogin(auth, args);
-  }
-
-  if (command === 'token') {
-    if (args.includes('--help') || args.includes('help')) {
-      printAuthTokenHelp();
-      return 0;
-    }
-    return runAuthToken(auth, args);
-  }
-
-  printAuthHelp();
-  return 1;
+  return runAuthGroup(command, args, auth, configOptions, {
+    runAuthProfileList,
+    runAuthProfileInspect,
+    runAuthProfileSave,
+    runAuthProfileRemove,
+    runAuthBrowserProfileList,
+    runAuthBrowserProfileInspect,
+    runAuthBrowserProfileSave,
+    runAuthBrowserProfileBootstrap,
+    runAuthBrowserProfileRemove,
+    runAuthLogin,
+    runAuthToken,
+  });
 }
 
 async function runEnvironment(command: string | undefined, args: string[]): Promise<number> {
   const configOptions = readConfigOptions(args);
 
-  if (!command || command === 'help' || command === '--help') {
-    printEnvironmentHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentListHelp();
-        return 0;
-      }
-      return runEnvironmentList(configOptions, args);
-    case 'add':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentAddHelp();
-        return 0;
-      }
-      return runEnvironmentAdd(configOptions, args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentInspectHelp();
-        return 0;
-      }
-      return runEnvironmentInspect(configOptions, args);
-    case 'resolve-maker-id':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentResolveMakerIdHelp();
-        return 0;
-      }
-      return runEnvironmentResolveMakerId(configOptions, args);
-    case 'cleanup-plan':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentCleanupPlanHelp();
-        return 0;
-      }
-      return runEnvironmentCleanupPlan(configOptions, args);
-    case 'reset':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentResetHelp();
-        return 0;
-      }
-      return runEnvironmentReset(configOptions, args);
-    case 'cleanup':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentCleanupHelp();
-        return 0;
-      }
-      return runEnvironmentCleanup(configOptions, args);
-    case 'remove':
-      return runEnvironmentRemove(configOptions, args);
-    default:
-      printEnvironmentHelp();
-      return 1;
-  }
+  return runEnvironmentGroup(command, args, configOptions, {
+    runEnvironmentList,
+    runEnvironmentAdd,
+    runEnvironmentInspect,
+    runEnvironmentResolveMakerId,
+    runEnvironmentCleanupPlan,
+    runEnvironmentReset,
+    runEnvironmentCleanup,
+    runEnvironmentRemove,
+  });
 }
 
 async function runDataverse(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printDataverseHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'whoami':
-      if (args.includes('--help') || args.includes('help')) {
-        printDataverseWhoAmIHelp();
-        return 0;
-      }
-      return runDataverseWhoAmI(args);
-    case 'request':
-      return runDataverseRequest(args);
-    case 'action':
-      return runDataverseAction(args);
-    case 'function':
-      return runDataverseFunction(args);
-    case 'batch':
-      return runDataverseBatch(args);
-    case 'rows':
-      if (args.includes('--help') || args.includes('help')) {
-        const [action] = positionalArgs(args);
-
-        if (action === 'export') {
-          printDataverseRowsExportHelp();
-        } else if (action === 'apply') {
-          printDataverseRowsApplyHelp();
-        } else {
-          printDataverseRowsHelp();
-        }
-        return 0;
-      }
-      return runDataverseRows(args);
-    case 'query':
-      return runDataverseQuery(args);
-    case 'get':
-      return runDataverseGet(args);
-    case 'create':
-      return runDataverseCreate(args);
-    case 'update':
-      return runDataverseUpdate(args);
-    case 'delete':
-      return runDataverseDelete(args);
-    case 'metadata':
-      if (args.includes('--help') || args.includes('help')) {
-        printDataverseMetadataHelp();
-        return 0;
-      }
-      return runDataverseMetadata(args);
-    default:
-      printHelp();
-      return 1;
-  }
+  return runDataverseGroup(command, args, {
+    positionalArgs,
+    runDataverseWhoAmI,
+    runDataverseRequest,
+    runDataverseAction,
+    runDataverseFunction,
+    runDataverseBatch,
+    runDataverseRows,
+    runDataverseQuery,
+    runDataverseGet,
+    runDataverseCreate,
+    runDataverseUpdate,
+    runDataverseDelete,
+    runDataverseMetadata,
+  });
 }
 
 async function runSolution(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printSolutionHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'create':
-      return runSolutionCreate(args);
-    case 'delete':
-      return runSolutionDelete(args);
-    case 'set-metadata':
-      return runSolutionSetMetadata(args);
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        printSolutionListHelp();
-        return 0;
-      }
-      return runSolutionList(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        printSolutionInspectHelp();
-        return 0;
-      }
-      return runSolutionInspect(args);
-    case 'components':
-      if (args.includes('--help') || args.includes('help')) {
-        printSolutionComponentsHelp();
-        return 0;
-      }
-      return runSolutionComponents(args);
-    case 'dependencies':
-      if (args.includes('--help') || args.includes('help')) {
-        printSolutionDependenciesHelp();
-        return 0;
-      }
-      return runSolutionDependencies(args);
-    case 'analyze':
-      return runSolutionAnalyze(args);
-    case 'compare':
-      return runSolutionCompare(args);
-    case 'export':
-      return runSolutionExport(args);
-    case 'import':
-      return runSolutionImport(args);
-    case 'pack':
-      return runSolutionPack(args);
-    case 'unpack':
-      return runSolutionUnpack(args);
-    default:
-      printHelp();
-      return 1;
-  }
+  return runSolutionGroup(command, args, {
+    runSolutionCreate,
+    runSolutionDelete,
+    runSolutionSetMetadata,
+    runSolutionList,
+    runSolutionInspect,
+    runSolutionComponents,
+    runSolutionDependencies,
+    runSolutionAnalyze,
+    runSolutionCompare,
+    runSolutionExport,
+    runSolutionImport,
+    runSolutionPack,
+    runSolutionUnpack,
+  });
 }
 
 async function runConnectionReference(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printConnectionReferenceHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        printConnectionReferenceListHelp();
-        return 0;
-      }
-      return runConnectionReferenceList(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        printConnectionReferenceInspectHelp();
-        return 0;
-      }
-      return runConnectionReferenceInspect(args);
-    case 'validate':
-      if (args.includes('--help') || args.includes('help')) {
-        printConnectionReferenceValidateHelp();
-        return 0;
-      }
-      return runConnectionReferenceValidate(args);
-    default:
-      printHelp();
-      return 1;
-  }
+  return runConnectionReferenceGroup(command, args, {
+    runConnectionReferenceList,
+    runConnectionReferenceInspect,
+    runConnectionReferenceValidate,
+  });
 }
 
 async function runEnvironmentVariable(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printEnvironmentVariableHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'create':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentVariableCreateHelp();
-        return 0;
-      }
-      return runEnvironmentVariableCreate(args);
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentVariableListHelp();
-        return 0;
-      }
-      return runEnvironmentVariableList(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentVariableInspectHelp();
-        return 0;
-      }
-      return runEnvironmentVariableInspect(args);
-    case 'set':
-      if (args.includes('--help') || args.includes('help')) {
-        printEnvironmentVariableSetHelp();
-        return 0;
-      }
-      return runEnvironmentVariableSet(args);
-    default:
-      printHelp();
-      return 1;
-  }
+  return runEnvironmentVariableGroup(command, args, {
+    runEnvironmentVariableCreate,
+    runEnvironmentVariableList,
+    runEnvironmentVariableInspect,
+    runEnvironmentVariableSet,
+  });
 }
 
 async function runCanvas(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printCanvasHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'download':
-      if (args.includes('--help') || args.includes('help')) {
-        printCanvasDownloadHelp();
-        return 0;
-      }
-      return runCanvasDownload(args);
-    case 'create':
-      if (args.includes('--help') || args.includes('help')) {
-        printCanvasCreateHelp();
-        return 0;
-      }
-      return runCanvasUnsupportedRemoteMutation('create', args);
-    case 'import':
-      if (args.includes('--help') || args.includes('help')) {
-        printCanvasImportHelp();
-        return 0;
-      }
-      return runCanvasUnsupportedRemoteMutation('import', args);
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        printCanvasListHelp();
-        return 0;
-      }
-      return runCanvasList(args);
-    case 'templates':
-      return runCanvasTemplates(args);
-    case 'workspace':
-      return runCanvasWorkspace(args);
-    case 'patch':
-      return runCanvasPatch(args);
-    case 'lint':
-      return runCanvasLint(args);
-    case 'validate':
-      return runCanvasValidate(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        printCanvasInspectHelp();
-        return 0;
-      }
-      return runCanvasInspect(args);
-    case 'build':
-      return runCanvasBuild(args);
-    case 'diff':
-      return runCanvasDiff(args);
-    default:
-      printHelp();
-      return 1;
-  }
+  return runCanvasGroup(command, args, {
+    runCanvasDownload,
+    runCanvasUnsupportedRemoteMutation,
+    runCanvasList,
+    runCanvasTemplates,
+    runCanvasWorkspace,
+    runCanvasPatch,
+    runCanvasLint,
+    runCanvasValidate,
+    runCanvasInspect,
+    runCanvasBuild,
+    runCanvasDiff,
+  });
 }
 
 async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number> {
@@ -1832,7 +1320,7 @@ async function runCanvasTemplates(args: string[]): Promise<number> {
     case 'audit':
       return runCanvasTemplateAudit(rest);
     default:
-      printHelp();
+      cliHelp.printHelp();
       return 1;
   }
 }
@@ -1844,7 +1332,7 @@ async function runCanvasWorkspace(args: string[]): Promise<number> {
     case 'inspect':
       return runCanvasWorkspaceInspect(rest);
     default:
-      printHelp();
+      cliHelp.printHelp();
       return 1;
   }
 }
@@ -1858,949 +1346,372 @@ async function runCanvasPatch(args: string[]): Promise<number> {
     case 'apply':
       return runCanvasPatchApply(rest);
     default:
-      printHelp();
+      cliHelp.printHelp();
       return 1;
   }
 }
 
 async function runFlow(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printFlowHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowListHelp();
-        return 0;
-      }
-      return runFlowList(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowInspectHelp();
-        return 0;
-      }
-      return runFlowInspect(args);
-    case 'export':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowExportHelp();
-        return 0;
-      }
-      return runFlowExport(args);
-    case 'promote':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowPromoteHelp();
-        return 0;
-      }
-      return runFlowPromote(args);
-    case 'unpack':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowUnpackHelp();
-        return 0;
-      }
-      return runFlowUnpack(args);
-    case 'pack':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowPackHelp();
-        return 0;
-      }
-      return runFlowPack(args);
-    case 'deploy':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowDeployHelp();
-        return 0;
-      }
-      return runFlowDeploy(args);
-    case 'normalize':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowNormalizeHelp();
-        return 0;
-      }
-      return runFlowNormalize(args);
-    case 'validate':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowValidateHelp();
-        return 0;
-      }
-      return runFlowValidate(args);
-    case 'graph':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowGraphHelp();
-        return 0;
-      }
-      return runFlowGraph(args);
-    case 'patch':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowPatchHelp();
-        return 0;
-      }
-      return runFlowPatch(args);
-    case 'runs':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowRunsHelp();
-        return 0;
-      }
-      return runFlowRuns(args);
-    case 'errors':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowErrorsHelp();
-        return 0;
-      }
-      return runFlowErrors(args);
-    case 'connrefs':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowConnrefsHelp();
-        return 0;
-      }
-      return runFlowConnrefs(args);
-    case 'doctor':
-      if (args.includes('--help') || args.includes('help')) {
-        printFlowDoctorHelp();
-        return 0;
-      }
-      return runFlowDoctor(args);
-    default:
-      printFlowHelp();
-      return 1;
-  }
+  return runFlowGroup(command, args, {
+    runFlowList,
+    runFlowInspect,
+    runFlowExport,
+    runFlowPromote,
+    runFlowUnpack,
+    runFlowPack,
+    runFlowDeploy,
+    runFlowNormalize,
+    runFlowValidate,
+    runFlowGraph,
+    runFlowPatch,
+    runFlowRuns,
+    runFlowErrors,
+    runFlowConnrefs,
+    runFlowDoctor,
+  });
 }
 
 async function runModel(command: string | undefined, args: string[]): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    printModelHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'create':
-      return runModelCreate(args);
-    case 'attach':
-      return runModelAttach(args);
-    case 'list':
-      return runModelList(args);
-    case 'inspect':
-      return runModelInspect(args);
-    case 'composition':
-      return runModelComposition(args);
-    case 'impact':
-      return runModelImpact(args);
-    case 'sitemap':
-      return runModelSitemap(args);
-    case 'forms':
-      return runModelForms(args);
-    case 'views':
-      return runModelViews(args);
-    case 'dependencies':
-      return runModelDependencies(args);
-    case 'patch':
-      return runModelPatch(args);
-    default:
-      printHelp();
-      return 1;
-  }
+  return runModelGroup(command, args, {
+    runModelCreate,
+    runModelAttach,
+    runModelList,
+    runModelInspect,
+    runModelComposition,
+    runModelImpact,
+    runModelSitemap,
+    runModelForms,
+    runModelViews,
+    runModelDependencies,
+    runModelPatch,
+  });
 }
 
 async function runProjectInspect(args: string[]): Promise<number> {
-  const path = resolveInvocationPath(positionalArgs(args)[0]);
-  const format = outputFormat(args, 'json');
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const project = await discoverProject(path, discoveryOptions.data);
-
-  if (!project.success || !project.data) {
-    return printFailure(project);
-  }
-
-  const payload = {
-    success: true,
-    summary: summarizeProject(project.data),
-    contract: summarizeProjectContract(project.data),
-    discovery:
-      project.data.discovery.usedDefaultLayout || project.data.discovery.autoSelectedProjectRoot ? project.data.discovery : undefined,
-    topology: project.data.topology,
-    providerBindings: project.data.providerBindings,
-    parameters: Object.fromEntries(
-      Object.values(project.data.parameters).map((parameter) => [parameter.name, summarizeResolvedParameter(parameter)])
-    ),
-    assets: project.data.assets,
-    templateRegistries: project.data.templateRegistries,
-    build: project.data.build,
-    docs: project.data.docs,
-    diagnostics: project.diagnostics,
-    warnings: project.warnings,
-    suggestedNextActions: project.suggestedNextActions ?? [],
-    supportTier: project.supportTier,
-    provenance: project.provenance,
-    knownLimitations: project.knownLimitations,
-  };
-
-  if (format === 'table' || format === 'markdown') {
-    process.stdout.write(renderProjectInspectOutput(project.data, format));
-  } else {
-    printByFormat(payload, format);
-  }
-  if (!isMachineReadableOutputFormat(format)) {
-    printResultDiagnostics(project, format);
-  }
-  return 0;
+  return runProjectInspectCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    isMachineReadableOutputFormat,
+    printResultDiagnostics,
+    readFlag,
+    readEnvironmentAlias,
+    hasFlag,
+  });
 }
 
 async function runProjectInit(args: string[]): Promise<number> {
-  const root = resolveInvocationPath(positionalArgs(args)[0]);
-  const format = outputFormat(args, 'json');
-  const options = {
-    name: readFlag(args, '--name'),
-    environment: readEnvironmentAlias(args),
-    solution: readFlag(args, '--solution'),
-    stage: readFlag(args, '--stage'),
-    force: hasFlag(args, '--force'),
-  } as const;
-  const plan = planProjectInit(root, options);
-  const mutation = readMutationFlags(args);
-
-  if (!mutation.success || !mutation.data) {
-    return printFailure(mutation);
-  }
-
-  if (mutation.data.mode !== 'apply') {
-    const payload = createMutationPreview('project.init', mutation.data, { root: plan.root, configPath: plan.configPath }, plan);
-
-    if (isMachineReadableOutputFormat(format)) {
-      printByFormat(payload, format);
-    } else {
-      process.stdout.write(renderProjectInitOutput(plan, format as Extract<OutputFormat, 'table' | 'markdown' | 'raw'>, mutation.data.mode));
-    }
-    return 0;
-  }
-
-  const result = await initProject(root, options);
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  if (isMachineReadableOutputFormat(format)) {
-    printByFormat(result.data, format);
-  } else {
-    process.stdout.write(renderProjectInitOutput(result.data, format as Extract<OutputFormat, 'table' | 'markdown' | 'raw'>));
-  }
-  printResultDiagnostics(result, format);
-  return 0;
+  return runProjectInitCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    isMachineReadableOutputFormat,
+    printResultDiagnostics,
+    readFlag,
+    readEnvironmentAlias,
+    hasFlag,
+  });
 }
 
 async function runProjectDoctor(args: string[]): Promise<number> {
-  const root = resolveInvocationPath(positionalArgs(args)[0]);
-  const format = outputFormat(args, 'json');
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const result = await doctorProject(root, discoveryOptions.data);
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  if (format === 'table' || format === 'markdown') {
-    process.stdout.write(renderProjectDoctorOutput(result.data, format));
-  } else {
-    printByFormat(
-      {
-        success: true,
-        ...result.data,
-        diagnostics: result.diagnostics,
-        warnings: result.warnings,
-        suggestedNextActions: result.suggestedNextActions ?? [],
-        supportTier: result.supportTier,
-        provenance: result.provenance,
-        knownLimitations: result.knownLimitations,
-      },
-      format
-    );
-  }
-  if (!isMachineReadableOutputFormat(format)) {
-    printResultDiagnostics(result, format);
-  }
-  return 0;
+  return runProjectDoctorCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    isMachineReadableOutputFormat,
+    printResultDiagnostics,
+    readFlag,
+    readEnvironmentAlias,
+    hasFlag,
+  });
 }
 
 async function runProjectFeedback(args: string[]): Promise<number> {
-  const root = resolveInvocationPath(positionalArgs(args)[0]);
-  const format = outputFormat(args, 'json');
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const result = await feedbackProject(root, discoveryOptions.data);
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  if (format === 'table' || format === 'markdown') {
-    process.stdout.write(renderProjectFeedbackOutput(result.data, format));
-  } else {
-    printByFormat(result.data, format);
-  }
-  if (!isMachineReadableOutputFormat(format)) {
-    printResultDiagnostics(result, format);
-  }
-  return 0;
+  return runProjectFeedbackCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    isMachineReadableOutputFormat,
+    printResultDiagnostics,
+    readFlag,
+    readEnvironmentAlias,
+    hasFlag,
+  });
 }
 
 async function runAnalysisReport(args: string[]): Promise<number> {
-  const path = positionalArgs(args)[0] ?? resolveDefaultInvocationPath();
-  const format = outputFormat(args, 'markdown');
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const project = await discoverProject(path, discoveryOptions.data);
-
-  if (!project.success || !project.data) {
-    return printFailure(project);
-  }
-
-  if (format === 'markdown') {
-    process.stdout.write(renderMarkdownReport(project.data) + '\n');
-    printResultDiagnostics(project, format);
-    return 0;
-  }
-
-  const context = generateContextPack(project.data);
-
-  if (!context.success || !context.data) {
-    return printFailure(context);
-  }
-
-  printByFormat(context.data, format);
-  printResultDiagnostics(project, format);
-  printResultDiagnostics(context, format);
-  return 0;
+  return runAnalysisReportCommand(args, {
+    positionalArgs,
+    resolveDefaultInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    printResultDiagnostics,
+    readFlag,
+    readRepeatedFlags,
+    readAnalysisPortfolioProjectPaths,
+  });
 }
 
 async function runAnalysisContext(args: string[]): Promise<number> {
-  if (args.includes('--help') || args.includes('help')) {
-    printAnalysisContextHelp();
-    return 0;
-  }
-
-  const projectPath = readFlag(args, '--project') ?? resolveDefaultInvocationPath();
-  const asset = readFlag(args, '--asset');
-  const format = outputFormat(args, 'json');
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const project = await discoverProject(projectPath, discoveryOptions.data);
-
-  if (!project.success || !project.data) {
-    return printFailure(project);
-  }
-
-  const context = generateContextPack(project.data, asset);
-
-  if (!context.success || !context.data) {
-    return printFailure(context);
-  }
-
-  printByFormat(context.data, format);
-  printResultDiagnostics(project, format);
-  printResultDiagnostics(context, format);
-  return 0;
+  return runAnalysisContextCommand(args, {
+    positionalArgs,
+    resolveDefaultInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    printResultDiagnostics,
+    readFlag,
+    readRepeatedFlags,
+    readAnalysisPortfolioProjectPaths,
+  });
 }
 
 async function runAnalysisPortfolio(args: string[]): Promise<number> {
-  const format = outputFormat(args, 'json');
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const projects = await discoverAnalysisPortfolioProjects(args, discoveryOptions.data);
-
-  if (!projects.success || !projects.data) {
-    return printFailure(projects);
-  }
-
-  const report = generatePortfolioReport(projects.data, {
-    focusAsset: readFlag(args, '--asset'),
-    allowedProviderKinds: readRepeatedFlags(args, '--allow-provider-kind'),
+  return runAnalysisPortfolioCommand(args, {
+    positionalArgs,
+    resolveDefaultInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    printResultDiagnostics,
+    readFlag,
+    readRepeatedFlags,
+    readAnalysisPortfolioProjectPaths,
   });
-
-  if (!report.success || !report.data) {
-    return printFailure(report);
-  }
-
-  if (format === 'markdown') {
-    process.stdout.write(renderMarkdownPortfolioReport(report.data) + '\n');
-  } else {
-    printByFormat(report.data, format);
-  }
-
-  printResultDiagnostics(projects, format);
-  printResultDiagnostics(report, format);
-  return 0;
 }
 
 async function runAnalysisDrift(args: string[]): Promise<number> {
-  return runAnalysisPortfolioView(args, 'drift');
+  return runAnalysisDriftCommand(args, {
+    positionalArgs,
+    resolveDefaultInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    printResultDiagnostics,
+    readFlag,
+    readRepeatedFlags,
+    readAnalysisPortfolioProjectPaths,
+  });
 }
 
 async function runAnalysisUsage(args: string[]): Promise<number> {
-  return runAnalysisPortfolioView(args, 'usage');
+  return runAnalysisUsageCommand(args, {
+    positionalArgs,
+    resolveDefaultInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    printResultDiagnostics,
+    readFlag,
+    readRepeatedFlags,
+    readAnalysisPortfolioProjectPaths,
+  });
 }
 
 async function runAnalysisPolicy(args: string[]): Promise<number> {
-  return runAnalysisPortfolioView(args, 'policy');
-}
-
-async function runAnalysisPortfolioView(args: string[], view: 'drift' | 'usage' | 'policy'): Promise<number> {
-  const format = outputFormat(args, 'json');
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const projects = await discoverAnalysisPortfolioProjects(args, discoveryOptions.data);
-
-  if (!projects.success || !projects.data) {
-    return printFailure(projects);
-  }
-
-  const report = generatePortfolioReport(projects.data, {
-    focusAsset: readFlag(args, '--asset'),
-    allowedProviderKinds: readRepeatedFlags(args, '--allow-provider-kind'),
+  return runAnalysisPolicyCommand(args, {
+    positionalArgs,
+    resolveDefaultInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    printResultDiagnostics,
+    readFlag,
+    readRepeatedFlags,
+    readAnalysisPortfolioProjectPaths,
   });
-
-  if (!report.success || !report.data) {
-    return printFailure(report);
-  }
-
-  const payload =
-    view === 'drift' ? report.data.drift : view === 'usage' ? report.data.inventories : report.data.governance;
-
-  printByFormat(payload, format);
-  printResultDiagnostics(projects, format);
-  printResultDiagnostics(report, format);
-  return 0;
 }
 
 async function runDeployPlan(args: string[]): Promise<number> {
-  const projectPath = readFlag(args, '--project') ?? resolveDefaultInvocationPath();
-  const format = outputFormat(args, 'json');
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const project = await discoverProject(projectPath, discoveryOptions.data);
-
-  if (!project.success || !project.data) {
-    return printFailure(project);
-  }
-
-  const plan = buildDeployPlan(project.data);
-
-  if (!plan.success || !plan.data) {
-    return printFailure(plan);
-  }
-
-  printByFormat(plan.data, format);
-  printResultDiagnostics(project, format);
-  printResultDiagnostics(plan, format);
-  return 0;
-}
-
-async function discoverAnalysisPortfolioProjects(
-  args: string[],
-  options: { stage?: string; parameterOverrides?: Record<string, string> }
-): Promise<OperationResult<ProjectContext[]>> {
-  const projectPaths = readAnalysisPortfolioProjectPaths(args);
-  const projects: ProjectContext[] = [];
-  const warnings: Diagnostic[] = [];
-  const seen = new Set<string>();
-
-  for (const projectPath of projectPaths) {
-    const resolvedPath = resolvePath(projectPath);
-
-    if (seen.has(resolvedPath)) {
-      warnings.push(
-        createDiagnostic('warning', 'ANALYSIS_PORTFOLIO_DUPLICATE_PROJECT', `Skipping duplicate portfolio project ${resolvedPath}`, {
-          source: '@pp/cli',
-        })
-      );
-      continue;
-    }
-
-    seen.add(resolvedPath);
-    const project = await discoverProject(resolvedPath, {
-      ...options,
-      environment: process.env,
-    });
-
-    if (!project.success || !project.data) {
-      return fail([...warnings, ...project.diagnostics], {
-        warnings: [...warnings, ...project.warnings],
-        supportTier: project.supportTier,
-        suggestedNextActions: project.suggestedNextActions,
-        provenance: project.provenance,
-        knownLimitations: project.knownLimitations,
-      });
-    }
-
-    warnings.push(...project.warnings);
-    projects.push(project.data);
-  }
-
-  return ok(projects, {
-    warnings,
-    supportTier: 'preview',
+  return runDeployPlanCommand(args, {
+    resolveDefaultInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    printResultDiagnostics,
+    readFlag,
+    positionalArgs,
+    readRepeatedFlags,
+    hasFlag,
+    readValueFlag,
+    argumentFailure,
+    printHelp: cliHelp.printHelp,
   });
 }
 
 async function runDeployApply(args: string[]): Promise<number> {
-  const explicitProjectPath = readFlag(args, '--project');
-  const projectPath = explicitProjectPath ?? resolveDefaultInvocationPath();
-  const format = outputFormat(args, 'json');
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const mutation = readDeployApplyFlags(args);
-
-  if (!mutation.success || !mutation.data) {
-    return printFailure(mutation);
-  }
-
-  const expectedPlan = mutation.data.planPath ? await loadDeployPlanFile(mutation.data.planPath) : ok<DeployPlan | undefined>(undefined, { supportTier: 'preview' });
-
-  if (!expectedPlan.success) {
-    return printFailure(expectedPlan);
-  }
-
-  if (expectedPlan.data && !explicitProjectPath) {
-    const result = await executeDeployPlan(expectedPlan.data, {
-      mode: mutation.data.mode,
-      confirmed: mutation.data.yes,
-      parameterOverrides: discoveryOptions.data.parameterOverrides,
-    });
-
-    if (!result.data) {
-      return printFailure(result);
-    }
-
-    printByFormat(result.data, format);
-    printResultDiagnostics(result, format);
-    return result.data.preflight.ok && result.data.apply.summary.failed === 0 ? 0 : 1;
-  }
-
-  const project = await discoverProject(projectPath, discoveryOptions.data);
-
-  if (!project.success || !project.data) {
-    return printFailure(project);
-  }
-
-  const result = await executeDeploy(project.data, {
-    mode: mutation.data.mode,
-    confirmed: mutation.data.yes,
-    expectedPlan: expectedPlan.data,
+  return runDeployApplyCommand(args, {
+    resolveDefaultInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    printResultDiagnostics,
+    readFlag,
+    positionalArgs,
+    readRepeatedFlags,
+    hasFlag,
+    readValueFlag,
+    argumentFailure,
+    printHelp: cliHelp.printHelp,
   });
-
-  if (!result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, format);
-  printResultDiagnostics(project, format);
-  printResultDiagnostics(result, format);
-  return result.data.preflight.ok && result.data.apply.summary.failed === 0 ? 0 : 1;
 }
 
 async function runDeployRelease(args: string[]): Promise<number> {
-  const [action, ...rest] = args;
-
-  if (!action || action === 'help' || action === '--help') {
-    printHelp();
-    return 0;
-  }
-
-  const format = outputFormat(rest, 'json');
-  const manifestPath = readFlag(rest, '--file') ?? positionalArgs(rest)[0];
-
-  if (!manifestPath) {
-    return printFailure(argumentFailure('RELEASE_MANIFEST_REQUIRED', 'Use `deploy release <plan|apply> --file <manifest.yml>`.'));
-  }
-
-  const manifest = await loadReleaseManifestFile(manifestPath);
-
-  if (!manifest.success || !manifest.data) {
-    return printFailure(manifest);
-  }
-
-  const discoveryOptions = readProjectDiscoveryOptions(rest);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return printFailure(discoveryOptions);
-  }
-
-  const yes = hasFlag(rest, '--yes');
-  const mode: 'plan' | 'dry-run' | 'apply' = action === 'plan' ? 'plan' : hasFlag(rest, '--dry-run') ? 'dry-run' : 'apply';
-  const result = await executeReleaseManifest(manifest.data, {
-    mode,
-    confirmed: yes,
-    approvedStages: readRepeatedFlags(rest, '--approve'),
-    parameterOverrides: discoveryOptions.data.parameterOverrides,
+  return runDeployReleaseCommand(args, {
+    resolveDefaultInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    printFailure,
+    printByFormat,
+    printResultDiagnostics,
+    readFlag,
+    positionalArgs,
+    readRepeatedFlags,
+    hasFlag,
+    readValueFlag,
+    argumentFailure,
+    printHelp: cliHelp.printHelp,
   });
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, format);
-  printResultDiagnostics(result, format);
-  return result.data.summary.failed === 0 && result.data.summary.blocked === 0 && result.data.summary.rollbackFailed === 0 ? 0 : 1;
 }
 
 async function runAuthProfileList(auth: AuthService, args: string[]): Promise<number> {
-  const format = outputFormat(args, 'json');
-  const profiles = await auth.listProfiles();
-
-  if (!profiles.success) {
-    return printFailure(profiles);
-  }
-
-  printByFormat((profiles.data ?? []).map(summarizeProfile), format);
-  return 0;
+  return runAuthProfileListCommand(auth, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
+  });
 }
 
 async function runAuthProfileInspect(auth: AuthService, configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  const target = await resolveAuthProfileInspectTarget(configOptions, args);
-
-  if (!target.success || !target.data) {
-    return printFailure(target);
-  }
-
-  const format = outputFormat(args, 'json');
-  const profile = await auth.getProfile(target.data.name);
-
-  if (!profile.success) {
-    return printFailure(profile);
-  }
-
-  if (!profile.data) {
-    return printFailure(fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${target.data.name} was not found.`)));
-  }
-
-  const summary = summarizeProfile(profile.data);
-
-  printByFormat(
-    target.data.environmentAlias
-      ? {
-          ...omitAuthProfileInspectDefaultResource(summary),
-          resolvedFromEnvironment: target.data.environmentAlias,
-          resolvedEnvironmentUrl: target.data.environmentUrl,
-          targetResource: target.data.environmentUrl,
-          profileDefaultResource: summary.defaultResource,
-          defaultResourceMatchesResolvedEnvironment:
-            typeof summary.defaultResource === 'string' && typeof target.data.environmentUrl === 'string'
-              ? normalizeAuthProfileInspectResource(summary.defaultResource) ===
-                normalizeAuthProfileInspectResource(target.data.environmentUrl)
-              : undefined,
-        }
-      : summary,
-    format
-  );
-  return 0;
-}
-
-async function resolveAuthProfileInspectTarget(
-  configOptions: ConfigStoreOptions,
-  args: string[]
-): Promise<OperationResult<{ name: string; environmentAlias?: string; environmentUrl?: string }>> {
-  const name = positionalArgs(args)[0];
-
-  if (name) {
-    return ok(
-      {
-        name,
-      },
-      {
-        supportTier: 'preview',
-      }
-    );
-  }
-
-  const environmentAlias = readEnvironmentAlias(args);
-
-  if (!environmentAlias) {
-    return argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name or --environment <alias> is required.');
-  }
-
-  const environment = await getEnvironmentAlias(environmentAlias, configOptions);
-
-  if (!environment.success) {
-    return fail(environment.diagnostics, {
-      warnings: environment.warnings,
-      supportTier: environment.supportTier,
-      details: environment.details,
-      suggestedNextActions: environment.suggestedNextActions,
-      provenance: environment.provenance,
-      knownLimitations: environment.knownLimitations,
-    });
-  }
-
-  if (!environment.data) {
-    return fail(
-      createDiagnostic('error', 'ENV_NOT_FOUND', `Environment alias ${environmentAlias} was not found.`, {
-        source: '@pp/cli',
-      })
-    );
-  }
-
-  return ok(
-    {
-      name: environment.data.authProfile,
-      environmentAlias,
-      environmentUrl: environment.data.url,
-    },
-    {
-      supportTier: 'preview',
-      diagnostics: environment.diagnostics,
-      warnings: environment.warnings,
-    }
-  );
-}
-
-function normalizeAuthProfileInspectResource(resource: string): string {
-  try {
-    return new URL(resource).origin;
-  } catch {
-    return resource.replace(/\/+$/, '');
-  }
-}
-
-function omitAuthProfileInspectDefaultResource(summary: Record<string, unknown>): Record<string, unknown> {
-  const { defaultResource: _defaultResource, ...withoutDefaultResource } = summary;
-  return withoutDefaultResource;
+  return runAuthProfileInspectCommand(auth, configOptions, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
+  });
 }
 
 async function runAuthBrowserProfileList(auth: AuthService, args: string[]): Promise<number> {
-  const format = outputFormat(args, 'json');
-  const profiles = await auth.listBrowserProfiles();
-
-  if (!profiles.success) {
-    return printFailure(profiles);
-  }
-
-  printByFormat((profiles.data ?? []).map((profile) => summarizeBrowserProfile(profile, readConfigOptions(args))), format);
-  return 0;
+  return runAuthBrowserProfileListCommand(auth, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
+  });
 }
 
 async function runAuthBrowserProfileInspect(auth: AuthService, args: string[]): Promise<number> {
-  const name = positionalArgs(args)[0];
-
-  if (!name) {
-    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_NAME_REQUIRED', 'Browser profile name is required.'));
-  }
-
-  const profile = await auth.getBrowserProfile(name);
-
-  if (!profile.success) {
-    return printFailure(profile);
-  }
-
-  if (!profile.data) {
-    return printFailure(fail(createDiagnostic('error', 'AUTH_BROWSER_PROFILE_NOT_FOUND', `Browser profile ${name} was not found.`)));
-  }
-
-  printByFormat(summarizeBrowserProfile(profile.data, readConfigOptions(args)), outputFormat(args, 'json'));
-  return 0;
+  return runAuthBrowserProfileInspectCommand(auth, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
+  });
 }
 
 async function runAuthBrowserProfileSave(auth: AuthService, args: string[]): Promise<number> {
-  const name = readFlag(args, '--name');
-
-  if (!name) {
-    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_NAME_REQUIRED', '--name is required for browser profile add.'));
-  }
-
-  const kind = (readFlag(args, '--kind') ?? 'edge') as BrowserProfile['kind'];
-
-  if (!isBrowserProfileKind(kind)) {
-    return printFailure(
-      argumentFailure('AUTH_BROWSER_PROFILE_KIND_INVALID', 'Unsupported browser profile kind. Use `edge`, `chrome`, `chromium`, or `custom`.')
-    );
-  }
-
-  if (kind === 'custom' && !readFlag(args, '--command')) {
-    return printFailure(
-      argumentFailure('AUTH_BROWSER_PROFILE_COMMAND_REQUIRED', '--command is required when browser profile kind is `custom`.')
-    );
-  }
-
-  const profile: BrowserProfile = {
-    name,
-    kind,
-    description: readFlag(args, '--description'),
-    command: readFlag(args, '--command'),
-    args: readRepeatedFlags(args, '--arg'),
-    directory: readFlag(args, '--directory'),
-  };
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'auth.browser-profile.add', { name, kind }, summarizeBrowserProfile(profile, readConfigOptions(args)));
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const saved = await auth.saveBrowserProfile(profile);
-
-  if (!saved.success || !saved.data) {
-    return printFailure(saved);
-  }
-
-  printByFormat(summarizeBrowserProfile(saved.data, readConfigOptions(args)), outputFormat(args, 'json'));
-  return 0;
+  return runAuthBrowserProfileSaveCommand(auth, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
+  });
 }
 
 async function runAuthBrowserProfileRemove(auth: AuthService, args: string[]): Promise<number> {
-  const name = positionalArgs(args)[0];
-
-  if (!name) {
-    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_NAME_REQUIRED', 'Browser profile name is required.'));
-  }
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'auth.browser-profile.remove', { name });
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const removed = await auth.removeBrowserProfile(name);
-
-  if (!removed.success) {
-    return printFailure(removed);
-  }
-
-  printByFormat({ removed: removed.data ?? false, name }, 'json');
-  return 0;
+  return runAuthBrowserProfileRemoveCommand(auth, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
+  });
 }
 
 async function runAuthBrowserProfileBootstrap(auth: AuthService, args: string[]): Promise<number> {
-  const name = positionalArgs(args)[0];
-
-  if (!name) {
-    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_NAME_REQUIRED', 'Browser profile name is required.'));
-  }
-
-  const url = readFlag(args, '--url') ?? DEFAULT_BROWSER_BOOTSTRAP_URL;
-  const noWait = hasFlag(args, '--no-wait');
-  const format = outputFormat(args, 'json');
-  const profile = await auth.getBrowserProfile(name);
-
-  try {
-    new URL(url);
-  } catch {
-    return printFailure(argumentFailure('AUTH_BROWSER_PROFILE_BOOTSTRAP_URL_INVALID', `Bootstrap URL must be an absolute URL. Received: ${url}`));
-  }
-
-  if (!profile.success) {
-    return printFailure(profile);
-  }
-
-  if (!profile.data) {
-    return printFailure(fail(createDiagnostic('error', 'AUTH_BROWSER_PROFILE_NOT_FOUND', `Browser profile ${name} was not found.`)));
-  }
-
-  const preview = maybeHandleMutationPreview(
-    args,
-    'json',
-    'auth.browser-profile.bootstrap',
-    { name, url },
-    {
-      ...summarizeBrowserProfile(profile.data, readConfigOptions(args)),
-      bootstrapUrl: url,
-    }
-  );
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  if (!noWait && !process.stdin.isTTY) {
-    return printFailure(
-      argumentFailure(
-        'AUTH_BROWSER_PROFILE_BOOTSTRAP_TTY_REQUIRED',
-        'Browser profile bootstrap requires an interactive terminal unless --no-wait is supplied.'
-      )
-    );
-  }
-
-  const launched = await auth.launchBrowserProfile(name, url);
-
-  if (!launched.success || !launched.data) {
-    return printFailure(launched);
-  }
-
-  if (noWait) {
-    printByFormat(
-      {
-        launched: true,
-        browserProfile: summarizeBrowserProfile(profile.data, readConfigOptions(args)),
-        bootstrapUrl: url,
-      },
-      format
-    );
-    return 0;
-  }
-
-  process.stderr.write(
-    [
-      `Opened browser profile ${name}.`,
-      `Target URL: ${url}`,
-      'Complete the one-time Microsoft / Power Apps web sign-in in that browser.',
-      'Wait until Power Apps is loaded, then close the browser window and press Enter here.',
-    ].join('\n') + '\n'
-  );
-
-  await promptForEnter('');
-
-  const marked = await auth.markBrowserProfileBootstrapped(name, {
-    url,
+  return runAuthBrowserProfileBootstrapCommand(auth, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
   });
-
-  if (!marked.success || !marked.data) {
-    return printFailure(marked);
-  }
-
-  printByFormat(
-    {
-      bootstrapped: true,
-      browserProfile: summarizeBrowserProfile(marked.data, readConfigOptions(args)),
-      bootstrapUrl: url,
-    },
-    format
-  );
-  return 0;
 }
 
 async function runAuthProfileSave(
@@ -2808,785 +1719,175 @@ async function runAuthProfileSave(
   args: string[],
   type: AuthProfile['type']
 ): Promise<number> {
-  const name = readFlag(args, '--name');
-  const description = readFlag(args, '--description');
-  const tenantId = readFlag(args, '--tenant-id');
-  const clientId = readFlag(args, '--client-id');
-  const defaultResource = readFlag(args, '--resource');
-  const scopes = readListFlag(args, '--scope');
-
-  if (!name) {
-    return printFailure(argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name is required.'));
-  }
-
-  let profile: AuthProfile;
-
-  switch (type) {
-    case 'user': {
-      profile = buildPublicClientProfile(
-        {
-          name,
-          type,
-        },
-        args
-      );
-      break;
-    }
-    case 'static-token': {
-      const token = readFlag(args, '--token');
-
-      if (!token) {
-        return printFailure(argumentFailure('AUTH_TOKEN_REQUIRED', '--token is required for add-static.'));
-      }
-
-      profile = {
-        name,
-        type,
-        token,
-        description,
-        tenantId,
-        clientId,
-        scopes,
-        defaultResource,
-      };
-      break;
-    }
-    case 'environment-token': {
-      const environmentVariable = readFlag(args, '--env-var');
-
-      if (!environmentVariable) {
-        return printFailure(argumentFailure('AUTH_ENV_VAR_REQUIRED', '--env-var is required for add-env.'));
-      }
-
-      profile = {
-        name,
-        type,
-        environmentVariable,
-        description,
-        tenantId,
-        clientId,
-        scopes,
-        defaultResource,
-      };
-      break;
-    }
-    case 'client-secret': {
-      const clientSecretEnv = readFlag(args, '--secret-env');
-
-      if (!tenantId || !clientId || !clientSecretEnv) {
-        return printFailure(
-          argumentFailure(
-            'AUTH_CLIENT_SECRET_FIELDS_REQUIRED',
-            '--tenant-id, --client-id, and --secret-env are required for add-client-secret.'
-          )
-        );
-      }
-
-      profile = {
-        name,
-        type,
-        tenantId,
-        clientId,
-        clientSecretEnv,
-        description,
-        scopes,
-        defaultResource,
-      };
-      break;
-    }
-    case 'device-code': {
-      profile = buildPublicClientProfile(
-        {
-          name,
-          type,
-        },
-        args
-      );
-      break;
-    }
-  }
-
-  const preview = maybeHandleMutationPreview(args, 'json', `auth.profile.${type === 'user' ? 'add-user' : `add-${type}`}`, { name }, summarizeProfile(profile));
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const saved = await auth.saveProfile(profile);
-
-  if (!saved.success || !saved.data) {
-    return printFailure(saved);
-  }
-
-  printByFormat(summarizeProfile(saved.data), outputFormat(args, 'json'));
-  return 0;
+  return runAuthProfileSaveCommand(auth, args, type, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
+  });
 }
 
 async function runAuthLogin(auth: AuthService, args: string[]): Promise<number> {
-  const name = readFlag(args, '--name');
-
-  if (!name) {
-    return printFailure(argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name is required.'));
-  }
-
-  const existing = await auth.getProfile(name);
-
-  if (!existing.success) {
-    return printFailure(existing);
-  }
-
-  if (existing.data && existing.data.type !== 'user' && existing.data.type !== 'device-code') {
-    return printFailure(
-      argumentFailure(
-        'AUTH_PROFILE_TYPE_CONFLICT',
-        `Auth profile ${name} already exists with type ${existing.data.type}. Use a different name for browser login.`
-      )
-    );
-  }
-
-  const requestedType: UserAuthProfile['type'] = hasFlag(args, '--device-code')
-    ? 'device-code'
-    : hasFlag(args, '--interactive')
-      ? 'user'
-      : existing.data?.type === 'device-code'
-        ? 'device-code'
-        : 'user';
-
-  const baseProfile: UserAuthProfile =
-    existing.data && (existing.data.type === 'user' || existing.data.type === 'device-code')
-      ? existing.data
-      : {
-          name,
-          type: requestedType,
-        };
-
-  const profile = buildPublicClientProfile(
-    {
-      ...baseProfile,
-      name,
-      type: requestedType,
-    },
-    args
-  );
-
-  const resource = resolveRequestedResource(profile, readFlag(args, '--resource'));
-
-  if (resource === undefined) {
-    return printFailure(
-      argumentFailure(
-        'AUTH_RESOURCE_REQUIRED',
-        '--resource is required unless the profile already defines a default resource or explicit scopes.'
-      )
-    );
-  }
-
-  const login = await auth.loginProfile(profile, resource, {
-    forcePrompt: hasFlag(args, '--force-prompt'),
-    preferredFlow: profile.type === 'device-code' ? 'device-code' : 'interactive',
+  return runAuthLoginCommand(auth, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
   });
-
-  if (!login.success || !login.data) {
-    return printFailure(login);
-  }
-
-  printByFormat(
-    {
-      profile: summarizeProfile(login.data.profile),
-      resource: resource || undefined,
-      authenticated: true,
-    },
-    outputFormat(args, 'json')
-  );
-  return 0;
 }
 
 async function runAuthProfileRemove(auth: AuthService, args: string[]): Promise<number> {
-  const name = positionalArgs(args)[0];
-
-  if (!name) {
-    return printFailure(argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name is required.'));
-  }
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'auth.profile.remove', { name });
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const removed = await auth.removeProfile(name);
-
-  if (!removed.success) {
-    return printFailure(removed);
-  }
-
-  printByFormat({ removed: removed.data ?? false, name }, 'json');
-  return 0;
+  return runAuthProfileRemoveCommand(auth, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
+  });
 }
 
 async function runAuthToken(auth: AuthService, args: string[]): Promise<number> {
-  const profileName = readFlag(args, '--profile');
-  const format = outputFormat(args, 'raw');
-
-  if (!profileName) {
-    return printFailure(argumentFailure('AUTH_TOKEN_PROFILE_REQUIRED', '--profile is required.'));
-  }
-
-  const profile = await auth.getProfile(profileName);
-
-  if (!profile.success) {
-    return printFailure(profile);
-  }
-
-  if (!profile.data) {
-    return printFailure(fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${profileName} was not found.`)));
-  }
-
-  const resource = resolveRequestedResource(profile.data, readFlag(args, '--resource'));
-
-  if (resource === undefined) {
-    return printFailure(
-      argumentFailure(
-        'AUTH_TOKEN_RESOURCE_REQUIRED',
-        '--resource is required unless the profile already defines a default resource or explicit scopes.'
-      )
-    );
-  }
-
-  const token = await auth.getAccessToken(profileName, resource);
-
-  if (!token.success || !token.data) {
-    return printFailure(token);
-  }
-
-  if (format === 'raw') {
-    process.stdout.write(token.data.token + '\n');
-    return 0;
-  }
-
-  printByFormat(
-    {
-      profile: summarizeProfile(token.data.profile),
-      resource: resource || undefined,
-      token: token.data.token,
-    },
-    format
-  );
-  return 0;
+  return runAuthTokenCommand(auth, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    readListFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    argumentFailure,
+    promptForEnter,
+  });
 }
 
 async function runEnvironmentList(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  const environments = await listEnvironments(configOptions);
-
-  if (!environments.success) {
-    return printFailure(environments);
-  }
-
-  printByFormat(environments.data ?? [], outputFormat(args, 'json'));
-  return 0;
+  return runEnvironmentListCommand(configOptions, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
+  });
 }
 
 async function runEnvironmentAdd(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  const alias = readFlag(args, '--name');
-  const url = readFlag(args, '--url');
-  const authProfile = readFlag(args, '--profile');
-
-  if (!alias || !url || !authProfile) {
-    return printFailure(argumentFailure('ENV_ADD_ARGS_REQUIRED', '--name, --url, and --profile are required.'));
-  }
-
-  const environment: EnvironmentAlias = {
-    alias,
-    url,
-    authProfile,
-    tenantId: readFlag(args, '--tenant-id'),
-    displayName: readFlag(args, '--display-name'),
-    defaultSolution: readFlag(args, '--default-solution'),
-    makerEnvironmentId: readFlag(args, '--maker-env-id'),
-    apiPath: readFlag(args, '--api-path'),
-  };
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'env.add', { alias, url, authProfile }, environment);
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const saved = await saveEnvironmentAlias(environment, configOptions);
-
-  if (!saved.success || !saved.data) {
-    return printFailure(saved);
-  }
-
-  printByFormat(saved.data, outputFormat(args, 'json'));
-  return 0;
+  return runEnvironmentAddCommand(configOptions, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
+  });
 }
 
 async function runEnvironmentInspect(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  const alias = positionalArgs(args)[0];
-
-  if (!alias) {
-    return printFailure(argumentFailure('ENV_ALIAS_REQUIRED', 'Environment alias is required.'));
-  }
-
-  const environment = await getEnvironmentAlias(alias, configOptions);
-
-  if (!environment.success) {
-    return printFailure(environment);
-  }
-
-  if (!environment.data) {
-    return printFailure(fail(createDiagnostic('error', 'ENV_NOT_FOUND', `Environment alias ${alias} was not found.`)));
-  }
-
-  const auth = new AuthService(configOptions);
-  const profile = await auth.getProfile(environment.data.authProfile);
-
-  printByFormat(
-    buildEnvironmentInspectView(environment.data, profile.success ? profile.data ?? undefined : undefined),
-    outputFormat(args, 'json')
-  );
-  return 0;
-}
-
-function buildEnvironmentInspectView(environment: EnvironmentAlias, profile: AuthProfile | undefined): Record<string, unknown> {
-  return {
-    ...environment,
-    auth: buildEnvironmentAuthSummary(environment, profile),
-    tooling: {
-      pp: {
-        authContextSource: 'pp-config',
-        usesEnvironmentAuthProfile: true,
-      },
-      pac: buildPacEnvironmentGuidance(profile),
-    },
-  };
-}
-
-function buildEnvironmentAuthSummary(environment: EnvironmentAlias, profile: AuthProfile | undefined): Record<string, unknown> {
-  if (!profile) {
-    return {
-      name: environment.authProfile,
-      status: 'missing',
-    };
-  }
-
-  return {
-    ...summarizeProfile(profile),
-    status: 'configured',
-  };
-}
-
-function buildPacEnvironmentGuidance(profile: AuthProfile | undefined): Record<string, unknown> {
-  const base = {
-    sharesPpAuthContext: false,
-    recommendedAction:
-      'Treat pac as a separately authenticated tool. Do not assume a successful `pp dv whoami` means pac can reuse that environment or session.',
-  };
-
-  if (!profile) {
-    return {
-      ...base,
-      risk: 'unknown',
-      reason: 'The bound pp auth profile could not be resolved from local config.',
-    };
-  }
-
-  switch (profile.type) {
-    case 'user':
-      return {
-        ...base,
-        risk: profile.browserProfile ? 'high' : 'medium',
-        reason: profile.browserProfile
-          ? `This alias uses pp user auth with browser profile ${profile.browserProfile}, but pac does not read pp browser-profile bootstrap state or its auth cache.`
-          : 'This alias uses pp user auth, but pac does not read pp auth profiles or their cached session state.',
-      };
-    case 'device-code':
-      return {
-        ...base,
-        risk: 'medium',
-        reason: 'This alias uses a pp device-code profile, but pac still requires its own auth bootstrap instead of reusing pp config.',
-      };
-    case 'client-secret':
-      return {
-        ...base,
-        risk: 'low',
-        reason: 'This alias uses a non-interactive pp client-secret profile, but pac still needs separate credentials or environment setup.',
-      };
-    case 'environment-token':
-      return {
-        ...base,
-        risk: 'low',
-        reason: 'This alias uses a pp environment-token profile, but pac still needs a separate token/bootstrap path.',
-      };
-    case 'static-token':
-      return {
-        ...base,
-        risk: 'low',
-        reason: 'This alias uses a pp static token, but pac still cannot consume pp config directly.',
-      };
-  }
+  return runEnvironmentInspectCommand(configOptions, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
+  });
 }
 
 async function runEnvironmentResolveMakerId(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  const alias = positionalArgs(args)[0];
-
-  if (!alias) {
-    return printFailure(
-      argumentFailure('ENV_ALIAS_REQUIRED', 'Usage: env resolve-maker-id <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]')
-    );
-  }
-
-  const environment = await getEnvironmentAlias(alias, configOptions);
-
-  if (!environment.success) {
-    return printFailure(environment);
-  }
-
-  if (!environment.data) {
-    return printFailure(fail(createDiagnostic('error', 'ENV_NOT_FOUND', `Environment alias ${alias} was not found.`)));
-  }
-
-  const auth = new AuthService(configOptions);
-  const profile = await auth.getProfile(environment.data.authProfile);
-
-  if (!profile.success) {
-    return printFailure(profile);
-  }
-
-  if (!profile.data) {
-    return printFailure(
-      fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${environment.data.authProfile} was not found.`))
-    );
-  }
-
-  const preview = maybeHandleMutationPreview(
-    args,
-    'json',
-    'env.resolve-maker-id',
-    { alias },
-    {
-      url: environment.data.url,
-      authProfile: environment.data.authProfile,
-    }
-  );
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  if (environment.data.makerEnvironmentId) {
-    printByFormat(
-      {
-        environment: environment.data,
-        resolution: {
-          source: 'configured',
-          persisted: false,
-          api: 'power-platform-environments',
-        },
-      },
-      outputFormat(args, 'json')
-    );
-    return 0;
-  }
-
-  const discovered = await discoverMakerEnvironmentIdForEnvironment(environment.data, profile.data, configOptions);
-
-  if (!discovered.success) {
-    return printFailure(discovered);
-  }
-
-  if (!discovered.data) {
-    return printFailure(
-      fail(
-        createDiagnostic(
-          'error',
-          'ENV_MAKER_ID_NOT_FOUND',
-          `Could not discover makerEnvironmentId for environment alias ${alias}.`,
-          {
-            source: '@pp/cli',
-            hint:
-              'Confirm the alias URL matches the target Dataverse environment and that the bound auth profile can read the Power Platform environments API, or rerun `pp env add` with --maker-env-id.',
-          }
-        ),
-        {
-          supportTier: 'preview',
-        }
-      )
-    );
-  }
-
-  const saved = await saveEnvironmentAlias(
-    {
-      ...environment.data,
-      makerEnvironmentId: discovered.data,
-    },
-    configOptions
-  );
-
-  if (!saved.success || !saved.data) {
-    return printFailure(saved);
-  }
-
-  printByFormat(
-    {
-      environment: saved.data,
-      resolution: {
-        source: 'discovered',
-        persisted: true,
-        api: 'power-platform-environments',
-      },
-    },
-    outputFormat(args, 'json')
-  );
-  return 0;
+  return runEnvironmentResolveMakerIdCommand(configOptions, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
+  });
 }
 
 async function runEnvironmentRemove(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  const alias = positionalArgs(args)[0];
-
-  if (!alias) {
-    return printFailure(argumentFailure('ENV_ALIAS_REQUIRED', 'Environment alias is required.'));
-  }
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'env.remove', { alias });
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const removed = await removeEnvironmentAlias(alias, configOptions);
-
-  if (!removed.success) {
-    return printFailure(removed);
-  }
-
-  printByFormat({ removed: removed.data ?? false, alias }, 'json');
-  return 0;
+  return runEnvironmentRemoveCommand(configOptions, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
+  });
 }
 
 async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  const alias = positionalArgs(args)[0];
-  const prefix = readFlag(args, '--prefix');
-
-  if (!alias) {
-    return printFailure(argumentFailure('ENV_ALIAS_REQUIRED', 'Environment alias is required.'));
-  }
-
-  if (!prefix) {
-    return printFailure(argumentFailure('ENV_CLEANUP_PREFIX_REQUIRED', '--prefix is required.'));
-  }
-
-  const plan = await buildEnvironmentCleanupPlan(configOptions, alias, prefix);
-
-  if (!plan.success || !plan.data) {
-    return printFailure(plan);
-  }
-
-  printByFormat(plan.data, outputFormat(args, 'json'));
-  return 0;
+  return runEnvironmentCleanupPlanCommand(configOptions, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
+  });
 }
 
 async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  return runEnvironmentCleanupLike(configOptions, args, {
-    actionName: 'env.cleanup',
-    suggestedPlanCommand: 'pp env cleanup',
+  return runEnvironmentCleanupCommand(configOptions, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
   });
 }
 
 async function runEnvironmentReset(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  return runEnvironmentCleanupLike(configOptions, args, {
-    actionName: 'env.reset',
-    suggestedPlanCommand: 'pp env reset',
+  return runEnvironmentResetCommand(configOptions, args, {
+    positionalArgs,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
   });
-}
-
-async function runEnvironmentCleanupLike(
-  configOptions: ConfigStoreOptions,
-  args: string[],
-  behavior: {
-    actionName: 'env.cleanup' | 'env.reset';
-    suggestedPlanCommand: 'pp env cleanup' | 'pp env reset';
-  }
-): Promise<number> {
-  const alias = positionalArgs(args)[0];
-  const prefix = readFlag(args, '--prefix');
-
-  if (!alias) {
-    return printFailure(argumentFailure('ENV_ALIAS_REQUIRED', 'Environment alias is required.'));
-  }
-
-  if (!prefix) {
-    return printFailure(argumentFailure('ENV_CLEANUP_PREFIX_REQUIRED', '--prefix is required.'));
-  }
-
-  const plan = await buildEnvironmentCleanupPlan(configOptions, alias, prefix);
-
-  if (!plan.success || !plan.data) {
-    return printFailure(plan);
-  }
-
-  const preview = maybeHandleMutationPreview(
-    args,
-    'json',
-    behavior.actionName,
-    {
-      environment: plan.data.environment,
-      prefix,
-      candidateCount: plan.data.candidateCount,
-    },
-    {
-      cleanupCandidates: plan.data.cleanupCandidates,
-    }
-  );
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const resolution = await resolveDataverseClient(alias, configOptions);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const deleted: Array<{ removed: boolean; solution: { solutionid: string; uniquename: string; friendlyname?: string; version?: string } }> = [];
-  const failures: Array<{ solution: { solutionid: string; uniquename: string; friendlyname?: string; version?: string }; diagnostics: Diagnostic[] }> = [];
-  const warnings: Diagnostic[] = [];
-
-  for (const candidate of plan.data.cleanupCandidates) {
-    const result = await service.delete(candidate.uniquename);
-
-    warnings.push(...result.warnings);
-
-    if (!result.success || !result.data) {
-      failures.push({
-        solution: candidate,
-        diagnostics: result.diagnostics,
-      });
-      continue;
-    }
-
-    deleted.push(result.data);
-  }
-
-  const summary = {
-    environment: plan.data.environment,
-    prefix,
-    candidateCount: plan.data.candidateCount,
-    deletedCount: deleted.length,
-    failedCount: failures.length,
-    deleted,
-    failures: failures.map((failure) => ({
-      solution: failure.solution,
-      diagnostics: failure.diagnostics,
-    })),
-  };
-
-  if (failures.length > 0) {
-    return printFailure(
-      fail(failures.flatMap((failure) => failure.diagnostics), {
-        details: summary,
-        warnings,
-        supportTier: 'preview',
-        suggestedNextActions: [
-          'Inspect the failing solution diagnostics to see whether dependencies or managed-state restrictions blocked deletion.',
-          `Re-run \`pp env cleanup-plan ${alias} --prefix ${prefix}\` to confirm which disposable assets remain after \`${behavior.suggestedPlanCommand} ${alias} --prefix ${prefix}\`.`,
-        ],
-      })
-    );
-  }
-
-  printWarnings(
-    ok(summary, {
-      supportTier: 'preview',
-      warnings,
-    })
-  );
-  printByFormat(summary, outputFormat(args, 'json'));
-  return 0;
-}
-
-async function buildEnvironmentCleanupPlan(
-  configOptions: ConfigStoreOptions,
-  alias: string,
-  prefix: string
-): Promise<
-  OperationResult<{
-    environment: {
-      alias: string;
-      url: string;
-      authProfile: string;
-      defaultSolution?: string;
-      makerEnvironmentId?: string;
-    };
-    prefix: string;
-    matchStrategy: {
-      kind: string;
-      fields: string[];
-    };
-    remoteResetSupported: boolean;
-    cleanupCandidates: Array<{ solutionid: string; uniquename: string; friendlyname?: string; version?: string }>;
-    candidateCount: number;
-    suggestedNextActions: string[];
-    knownLimitations: string[];
-  }>
-> {
-  const resolution = await resolveDataverseClient(alias, configOptions);
-
-  if (!resolution.success || !resolution.data) {
-    return resolution as OperationResult<never>;
-  }
-
-  const solutions = await new SolutionService(resolution.data.client).list();
-
-  if (!solutions.success) {
-    return solutions as OperationResult<never>;
-  }
-
-  const normalizedPrefix = prefix.toLowerCase();
-  const cleanupCandidates = (solutions.data ?? []).filter((solution) => {
-    const uniqueName = solution.uniquename?.toLowerCase() ?? '';
-    const friendlyName = solution.friendlyname?.toLowerCase() ?? '';
-    return uniqueName.startsWith(normalizedPrefix) || friendlyName.startsWith(normalizedPrefix);
-  });
-
-  return ok(
-    {
-      environment: {
-        alias: resolution.data.environment.alias,
-        url: resolution.data.environment.url,
-        authProfile: resolution.data.authProfile.name,
-        defaultSolution: resolution.data.environment.defaultSolution,
-        makerEnvironmentId: resolution.data.environment.makerEnvironmentId,
-      },
-      prefix,
-      matchStrategy: {
-        kind: 'case-insensitive-prefix',
-        fields: ['uniquename', 'friendlyname'],
-      },
-      remoteResetSupported: true,
-      cleanupCandidates,
-      candidateCount: cleanupCandidates.length,
-      suggestedNextActions:
-        cleanupCandidates.length > 0
-          ? [
-              'Review the matching solutions before deleting anything remotely.',
-              `Run \`pp env cleanup ${alias} --prefix ${prefix}\` to delete the listed disposable solutions through pp.`,
-              `Re-run \`pp env cleanup-plan ${alias} --prefix ${prefix}\` to confirm the environment is clean before bootstrap.`,
-            ]
-          : [
-              'No matching solutions were found for this prefix.',
-              'Proceed with bootstrap using the same prefix or generate a new run-scoped prefix if you still want quarantine semantics.',
-            ],
-      knownLimitations: [],
-    },
-    {
-      supportTier: 'preview',
-      diagnostics: solutions.diagnostics,
-      warnings: solutions.warnings,
-    }
-  );
 }
 
 async function runDataverseWhoAmI(args: string[]): Promise<number> {
@@ -5160,502 +3461,225 @@ async function runDataverseMetadataCreateCustomerRelationship(args: string[]): P
 }
 
 async function runSolutionList(args: string[]): Promise<number> {
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const result = await service.list({
-    uniqueName: readFlag(args, '--unique-name'),
-    prefix: readFlag(args, '--prefix'),
+  return runSolutionListCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
   });
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
-  return 0;
 }
 
 async function runSolutionCreate(args: string[]): Promise<number> {
-  const uniqueName = positionalArgs(args)[0];
-
-  if (!uniqueName) {
-    return printFailure(
-      argumentFailure(
-        'SOLUTION_CREATE_ARGS_REQUIRED',
-        'Usage: solution create <uniqueName> --environment <alias> [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)'
-      )
-    );
-  }
-
-  const publisherId = readFlag(args, '--publisher-id');
-  const publisherUniqueName = readFlag(args, '--publisher-unique-name');
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const result = await service.create(uniqueName, {
-    friendlyName: readFlag(args, '--friendly-name'),
-    version: readFlag(args, '--version'),
-    description: readFlag(args, '--description'),
-    publisherId,
-    publisherUniqueName,
+  return runSolutionCreateCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
   });
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
 }
 
 async function runSolutionDelete(args: string[]): Promise<number> {
-  const uniqueName = positionalArgs(args)[0];
-
-  if (!uniqueName) {
-    return printFailure(argumentFailure('SOLUTION_DELETE_ARGS_REQUIRED', 'Usage: solution delete <uniqueName> --environment <alias>'));
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const solution = await service.inspect(uniqueName);
-
-  if (!solution.success) {
-    return printFailure(solution);
-  }
-
-  if (!solution.data) {
-    return printFailure(fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`)));
-  }
-
-  const preview = maybeHandleMutationPreview(
-    args,
-    'json',
-    'solution.delete',
-    {
-      environment: resolution.data.environment.alias,
-      uniqueName,
-      solutionId: solution.data.solutionid,
-    },
-    solution.data
-  );
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const result = await service.delete(uniqueName);
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printWarnings(result);
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
+  return runSolutionDeleteCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
 }
 
 async function runSolutionInspect(args: string[]): Promise<number> {
-  const uniqueName = positionalArgs(args)[0];
-
-  if (!uniqueName) {
-    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const result = await service.inspect(uniqueName);
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  if (!result.data) {
-    return printFailure(fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`)));
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
+  return runSolutionInspectCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
 }
 
 async function runSolutionSetMetadata(args: string[]): Promise<number> {
-  const uniqueName = positionalArgs(args)[0];
-
-  if (!uniqueName) {
-    return printFailure(
-      argumentFailure(
-        'SOLUTION_SET_METADATA_ARGS_REQUIRED',
-        'Usage: solution set-metadata <uniqueName> --environment <alias> [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]'
-      )
-    );
-  }
-
-  const version = readFlag(args, '--version');
-  const publisherId = readFlag(args, '--publisher-id');
-  const publisherUniqueName = readFlag(args, '--publisher-unique-name');
-
-  if (!version && !publisherId && !publisherUniqueName) {
-    return printFailure(
-      argumentFailure(
-        'SOLUTION_METADATA_UPDATE_REQUIRED',
-        'Use --version, --publisher-id, or --publisher-unique-name when updating solution metadata.'
-      )
-    );
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const result = await service.setMetadata(uniqueName, {
-    version,
-    publisherId,
-    publisherUniqueName,
+  return runSolutionSetMetadataCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
   });
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
 }
 
 async function runSolutionComponents(args: string[]): Promise<number> {
-  const uniqueName = positionalArgs(args)[0];
-
-  if (!uniqueName) {
-    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const result = await service.components(uniqueName);
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
-  return 0;
+  return runSolutionComponentsCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
 }
 
 async function runSolutionDependencies(args: string[]): Promise<number> {
-  const uniqueName = positionalArgs(args)[0];
-
-  if (!uniqueName) {
-    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const result = await service.dependencies(uniqueName);
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
-  return 0;
+  return runSolutionDependenciesCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
 }
 
 async function runSolutionAnalyze(args: string[]): Promise<number> {
-  const uniqueName = positionalArgs(args)[0];
-
-  if (!uniqueName) {
-    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const result = await service.analyze(uniqueName);
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  if (!result.data) {
-    return printFailure(fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`)));
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
+  return runSolutionAnalyzeCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
 }
 
 async function runSolutionCompare(args: string[]): Promise<number> {
-  const uniqueName = positionalArgs(args)[0];
-  const sourceInput = readSolutionCompareInput(args, 'source');
-
-  if (!sourceInput.success || !sourceInput.data) {
-    return printFailure(sourceInput);
-  }
-
-  const targetInput = readSolutionCompareInput(args, 'target');
-
-  if (!targetInput.success || !targetInput.data) {
-    return printFailure(targetInput);
-  }
-
-  if ((sourceInput.data.kind === 'environment' || targetInput.data.kind === 'environment') && !uniqueName) {
-    return printFailure(
-      argumentFailure(
-        'SOLUTION_UNIQUE_NAME_REQUIRED',
-        'Solution unique name is required when either compare side targets an environment.'
-      )
-    );
-  }
-
-  const sourceAnalysis = await resolveSolutionCompareAnalysis(args, 'source', sourceInput.data, uniqueName);
-
-  if (!sourceAnalysis.success || !sourceAnalysis.data) {
-    return printFailure(sourceAnalysis);
-  }
-
-  const targetAnalysis = await resolveSolutionCompareAnalysis(args, 'target', targetInput.data, uniqueName);
-
-  if (!targetAnalysis.success || !targetAnalysis.data) {
-    return printFailure(targetAnalysis);
-  }
-
-  const compareUniqueName =
-    uniqueName ?? sourceAnalysis.data.solution.uniquename ?? targetAnalysis.data.solution.uniquename ?? 'local-solution';
-  const service = createLocalSolutionService();
-  const result = service.compareLocal(compareUniqueName, sourceAnalysis.data, targetAnalysis.data);
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
+  return runSolutionCompareCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    resolveDataverseClientByFlag,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
 }
 
 async function runSolutionExport(args: string[]): Promise<number> {
-  const uniqueName = positionalArgs(args)[0];
-
-  if (!uniqueName) {
-    return printFailure(
-      argumentFailure(
-        'SOLUTION_EXPORT_ARGS_REQUIRED',
-        'Usage: solution export <uniqueName> --environment <alias> [--out PATH] [--managed] [--manifest FILE]'
-      )
-    );
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const outputTarget = readSolutionOutputTarget(readFlag(args, '--out'));
-  const preview = maybeHandleMutationPreview(args, 'json', 'solution.export', {
-    environment: resolution.data.environment.alias,
-    uniqueName,
-    ...(outputTarget.outPath ? { outPath: outputTarget.outPath } : {}),
-    ...(outputTarget.outDir ? { outDir: outputTarget.outDir } : {}),
-    managed: args.includes('--managed'),
+  return runSolutionExportCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
   });
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const result = await service.exportSolution(uniqueName, {
-    managed: args.includes('--managed'),
-    outPath: outputTarget.outPath,
-    outDir: outputTarget.outDir,
-    manifestPath: readFlag(args, '--manifest'),
-  });
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printWarnings(result);
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
 }
 
 async function runSolutionImport(args: string[]): Promise<number> {
-  const packagePath = positionalArgs(args)[0];
-
-  if (!packagePath) {
-    return printFailure(
-      argumentFailure(
-        'SOLUTION_IMPORT_ARGS_REQUIRED',
-        'Usage: solution import <path.zip> --environment <alias> [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows]'
-      )
-    );
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'solution.import', {
-    environment: resolution.data.environment.alias,
-    packagePath,
+  return runSolutionImportCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
   });
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const service = new SolutionService(resolution.data.client);
-  const result = await service.importSolution(packagePath, {
-    publishWorkflows: !args.includes('--no-publish-workflows'),
-    overwriteUnmanagedCustomizations: args.includes('--overwrite-unmanaged-customizations'),
-    holdingSolution: args.includes('--holding-solution'),
-    skipProductUpdateDependencies: args.includes('--skip-product-update-dependencies'),
-    importJobId: readFlag(args, '--import-job-id'),
-  });
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printWarnings(result);
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
 }
 
 async function runSolutionPack(args: string[]): Promise<number> {
-  const sourceFolder = positionalArgs(args)[0];
-
-  if (!sourceFolder) {
-    return printFailure(argumentFailure('SOLUTION_PACK_ARGS_REQUIRED', 'Usage: solution pack <folder> --out <file.zip> [--package-type managed|unmanaged|both] [--pac PATH]'));
-  }
-
-  const outPath = readFlag(args, '--out');
-
-  if (!outPath) {
-    return printFailure(argumentFailure('SOLUTION_PACK_OUT_REQUIRED', '--out <file.zip> is required.'));
-  }
-
-  const packageType = readSolutionPackageTypeFlag(args);
-
-  if (!packageType.success || !packageType.data) {
-    return printFailure(packageType);
-  }
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'solution.pack', {
-    sourceFolder,
-    outPath,
-    packageType: packageType.data,
+  return runSolutionPackCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
   });
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const service = createLocalSolutionService();
-  const result = await service.pack(sourceFolder, {
-    outPath,
-    packageType: packageType.data,
-    pacExecutable: readFlag(args, '--pac'),
-    mapFile: readFlag(args, '--map'),
-  });
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printWarnings(result);
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
 }
 
 async function runSolutionUnpack(args: string[]): Promise<number> {
-  const packagePath = positionalArgs(args)[0];
-
-  if (!packagePath) {
-    return printFailure(
-      argumentFailure(
-        'SOLUTION_UNPACK_ARGS_REQUIRED',
-        'Usage: solution unpack <path.zip> --out <dir> [--package-type managed|unmanaged|both] [--allow-delete] [--pac PATH]'
-      )
-    );
-  }
-
-  const outDir = readFlag(args, '--out');
-
-  if (!outDir) {
-    return printFailure(argumentFailure('SOLUTION_UNPACK_OUT_REQUIRED', '--out <dir> is required.'));
-  }
-
-  const packageType = readSolutionPackageTypeFlag(args);
-
-  if (!packageType.success || !packageType.data) {
-    return printFailure(packageType);
-  }
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'solution.unpack', {
-    packagePath,
-    outDir,
-    packageType: packageType.data,
+  return runSolutionUnpackCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
   });
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const service = createLocalSolutionService();
-  const result = await service.unpack(packagePath, {
-    outDir,
-    packageType: packageType.data,
-    pacExecutable: readFlag(args, '--pac'),
-    allowDelete: args.includes('--allow-delete'),
-    mapFile: readFlag(args, '--map'),
-  });
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printWarnings(result);
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
 }
 
 async function runConnectionReferenceList(args: string[]): Promise<number> {
@@ -7195,7 +5219,7 @@ async function runModelPatch(args: string[]): Promise<number> {
     case 'plan':
       return runModelPatchPlan(rest);
     default:
-      printHelp();
+      cliHelp.printHelp();
       return 1;
   }
 }
@@ -7251,62 +5275,6 @@ function readModelTargetKind(args: string[]): ModelArtifactMutationKind | undefi
 
   if (kind === 'app' || kind === 'form' || kind === 'view' || kind === 'sitemap') {
     return kind;
-  }
-
-  return undefined;
-}
-
-function buildPublicClientProfile(
-  baseProfile: UserAuthProfile,
-  args: string[]
-): UserAuthProfile {
-  const prompt = readFlag(args, '--prompt');
-  const scopes = readListFlag(args, '--scope');
-  const explicitFallback = hasFlag(args, '--no-device-code-fallback')
-    ? false
-    : hasFlag(args, '--device-code-fallback')
-      ? true
-      : undefined;
-
-  if (baseProfile.type === 'device-code') {
-    return {
-      ...baseProfile,
-      description: readFlag(args, '--description') ?? baseProfile.description,
-      tenantId: readFlag(args, '--tenant-id') ?? baseProfile.tenantId,
-      clientId: readFlag(args, '--client-id') ?? baseProfile.clientId,
-      defaultResource: readFlag(args, '--resource') ?? baseProfile.defaultResource,
-      scopes: scopes ?? baseProfile.scopes,
-      tokenCacheKey: readFlag(args, '--cache-key') ?? baseProfile.tokenCacheKey,
-      loginHint: readFlag(args, '--login-hint') ?? baseProfile.loginHint,
-    };
-  }
-
-  return {
-    ...baseProfile,
-    description: readFlag(args, '--description') ?? baseProfile.description,
-    tenantId: readFlag(args, '--tenant-id') ?? baseProfile.tenantId,
-    clientId: readFlag(args, '--client-id') ?? baseProfile.clientId,
-    defaultResource: readFlag(args, '--resource') ?? baseProfile.defaultResource,
-    scopes: scopes ?? baseProfile.scopes,
-    tokenCacheKey: readFlag(args, '--cache-key') ?? baseProfile.tokenCacheKey,
-    loginHint: readFlag(args, '--login-hint') ?? baseProfile.loginHint,
-    browserProfile: readFlag(args, '--browser-profile') ?? baseProfile.browserProfile,
-    prompt: isPromptValue(prompt) ? prompt : baseProfile.prompt,
-    fallbackToDeviceCode: explicitFallback ?? baseProfile.fallbackToDeviceCode,
-  };
-}
-
-function resolveRequestedResource(profile: AuthProfile, requestedResource: string | undefined): string | undefined {
-  if (requestedResource) {
-    return requestedResource;
-  }
-
-  if (profile.defaultResource) {
-    return profile.defaultResource;
-  }
-
-  if (profile.scopes?.length) {
-    return '';
   }
 
   return undefined;
@@ -7884,335 +5852,6 @@ function isMachineReadableOutputFormat(format: OutputFormat): boolean {
   return format === 'json' || format === 'yaml' || format === 'ndjson';
 }
 
-function renderProjectInitOutput(
-  result: ProjectInitPlan | ProjectInitResult,
-  format: Extract<OutputFormat, 'table' | 'markdown' | 'raw'>,
-  mode: 'apply' | 'dry-run' | 'plan' = 'apply'
-): string {
-  const createdPaths = 'created' in result ? result.created : [];
-  const overwrittenPaths = 'overwritten' in result ? result.overwritten : [];
-  const untouchedPaths = 'untouched' in result ? result.untouched : [];
-  const modeLabel = mode === 'apply' ? 'Applied scaffold' : mode === 'plan' ? 'Scaffold plan' : 'Dry-run scaffold preview';
-  const actionRows = result.actions.map((action) => ({
-    action: action.action,
-    kind: action.kind,
-    path: action.path,
-  }));
-  const summaryRows = [
-    { field: 'mode', value: modeLabel },
-    { field: 'root', value: result.root },
-    { field: 'config', value: result.configPath },
-    { field: 'source roots', value: result.preview.editableAssetRoots.join(', ') },
-    { field: 'artifact root', value: result.preview.artifactRoots.join(', ') },
-    { field: 'bundle output', value: result.preview.recommendedBundlePath },
-    { field: 'default target', value: formatProjectContractTarget(result.contract.defaultTarget) },
-  ];
-
-  if (format === 'table') {
-    return [
-      renderOutput(summaryRows, 'table').trimEnd(),
-      '',
-      'Scaffold shape',
-      renderOutput(result.preview.entries, 'table').trimEnd(),
-      '',
-      'Layout preview',
-      ...result.preview.layoutLines,
-      '',
-      'Source-to-artifact contract',
-      ...result.preview.relationshipSummary.map((line) => `- ${line}`),
-      '',
-      'Planned filesystem actions',
-      renderOutput(actionRows, 'table').trimEnd(),
-      ...('created' in result
-        ? [
-            '',
-            `Created: ${createdPaths.length > 0 ? createdPaths.join(', ') : '(none)'}`,
-            `Overwritten: ${overwrittenPaths.length > 0 ? overwrittenPaths.join(', ') : '(none)'}`,
-            `Untouched: ${untouchedPaths.length > 0 ? untouchedPaths.join(', ') : '(none)'}`,
-          ]
-        : []),
-      '',
-    ].join('\n');
-  }
-
-  return [
-    `# ${modeLabel}`,
-    '',
-    `- Root: \`${result.root}\``,
-    `- Config: \`${result.configPath}\``,
-    `- Source roots: ${result.preview.editableAssetRoots.map((value) => `\`${value}\``).join(', ')}`,
-    `- Artifact root: ${result.preview.artifactRoots.map((value) => `\`${value}\``).join(', ')}`,
-    `- Bundle output: \`${result.preview.recommendedBundlePath}\``,
-    `- Default target: ${formatProjectContractTarget(result.contract.defaultTarget)}`,
-    '',
-    '## Scaffold Shape',
-    ...result.preview.entries.map((entry) => `- \`${entry.path}\` (${entry.kind}): ${entry.purpose}`),
-    '',
-    '## Layout Preview',
-    '```text',
-    ...result.preview.layoutLines,
-    '```',
-    '',
-    '## Source-to-Artifact Contract',
-    ...result.preview.relationshipSummary.map((line) => `- ${line}`),
-    '',
-    '## Filesystem Actions',
-    ...actionRows.map((row) => `- ${row.action} ${row.kind} \`${row.path}\``),
-    ...('created' in result
-      ? [
-          '',
-          '## Result',
-          `- Created: ${createdPaths.length > 0 ? createdPaths.map((value) => `\`${value}\``).join(', ') : '(none)'}`,
-          `- Overwritten: ${overwrittenPaths.length > 0 ? overwrittenPaths.map((value) => `\`${value}\``).join(', ') : '(none)'}`,
-          `- Untouched: ${untouchedPaths.length > 0 ? untouchedPaths.map((value) => `\`${value}\``).join(', ') : '(none)'}`,
-        ]
-      : []),
-    '',
-  ].join('\n');
-}
-
-function renderProjectInspectOutput(project: ProjectContext, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
-  const summary = summarizeProject(project);
-  const contract = summarizeProjectContract(project);
-  const discoveryNote = summarizeProjectDiscoveryNote(project.discovery);
-  const parameterRows = Object.values(project.parameters).map((parameter) => ({
-    name: parameter.name,
-    source: parameter.source,
-    required: parameter.definition.required ? 'yes' : 'no',
-    value: parameter.hasValue ? (parameter.sensitive ? '<secret>' : String(parameter.value)) : '<missing>',
-  }));
-  const assetRows = project.assets.map((asset) => ({
-    asset: asset.name,
-    kind: asset.kind,
-    exists: asset.exists ? 'yes' : 'no',
-    path: asset.path,
-  }));
-  const bindingRows = Object.entries(project.providerBindings).map(([name, binding]) => ({
-    binding: name,
-    kind: binding.kind,
-    target: binding.target,
-  }));
-  const summaryRows = [
-    { field: 'inspected path', value: project.discovery.inspectedPath },
-    { field: 'canonical project root', value: project.root },
-    { field: 'config path', value: project.configPath ?? '<default layout>' },
-    { field: 'selected stage', value: summary.selectedStage ?? '<unset>' },
-    { field: 'active environment', value: summary.activeEnvironment ?? '<unset>' },
-    { field: 'active solution', value: summary.activeSolution ?? '<unset>' },
-    { field: 'editable roots', value: contract.editableAssetRoots.join(', ') || '<none>' },
-    { field: 'solution source root', value: contract.solutionSourceRoot },
-    { field: 'canonical bundle path', value: contract.canonicalBundlePath },
-  ];
-
-  if (format === 'table') {
-    return [
-      renderOutput(summaryRows, 'table').trimEnd(),
-      discoveryNote ? '' : undefined,
-      discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
-      '',
-      `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
-      `Deployment route: ${contract.deploymentRouteSummary}`,
-      '',
-      'Assets',
-      renderOutput(assetRows, 'table').trimEnd(),
-      '',
-      'Parameters',
-      renderOutput(parameterRows, 'table').trimEnd(),
-      ...(bindingRows.length > 0 ? ['', 'Provider bindings', renderOutput(bindingRows, 'table').trimEnd()] : []),
-      '',
-    ]
-      .filter((line): line is string => line !== undefined)
-      .join('\n');
-  }
-
-  return [
-    '# Project Inspect',
-    '',
-    `- Inspected path: \`${project.discovery.inspectedPath}\``,
-    `- Canonical project root: \`${project.root}\``,
-    `- Config path: \`${project.configPath ?? '<default layout>'}\``,
-    `- Selected stage: \`${summary.selectedStage ?? '<unset>'}\``,
-    `- Active environment: \`${summary.activeEnvironment ?? '<unset>'}\``,
-    `- Active solution: \`${summary.activeSolution ?? '<unset>'}\``,
-    `- Editable roots: \`${contract.editableAssetRoots.join('`, `') || '<none>'}\``,
-    `- Solution source root: \`${contract.solutionSourceRoot}\``,
-    `- Canonical bundle path: \`${contract.canonicalBundlePath}\``,
-    ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
-    '',
-    `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
-    `Deployment route: ${contract.deploymentRouteSummary}`,
-    '',
-    '## Assets',
-    ...assetRows.map((row) => `- \`${row.asset}\` (${row.kind}, exists=${row.exists}): \`${row.path}\``),
-    '',
-    '## Parameters',
-    ...(parameterRows.length > 0
-      ? parameterRows.map((row) => `- \`${row.name}\` from ${row.source} (required=${row.required}): \`${row.value}\``)
-      : ['- None']),
-    ...(bindingRows.length > 0
-      ? ['', '## Provider Bindings', ...bindingRows.map((row) => `- \`${row.binding}\` (${row.kind}): \`${row.target}\``)]
-      : []),
-    '',
-  ].join('\n');
-}
-
-function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
-  const summaryRows = [
-    { field: 'inspected path', value: report.inspectedPath },
-    { field: 'canonical project root', value: report.canonicalProjectRoot },
-    { field: 'config path', value: report.configPath ?? '<default layout>' },
-    { field: 'layout profile', value: report.summary.layoutProfile },
-    { field: 'canonical bundle path', value: report.summary.canonicalBundlePath },
-    { field: 'bundle status', value: report.summary.canonicalBundlePresent ? 'present' : 'not generated yet' },
-    { field: 'selected stage', value: report.topology.selectedStage ?? '<unset>' },
-    { field: 'active target', value: report.summary.activeTargetSummary },
-  ];
-  const discoveryNote = summarizeProjectDiscoveryNote(report.discovery);
-  const checkRows = report.checks.map((check) => ({
-    status: check.status,
-    code: check.code,
-    message: check.message,
-    path: check.path ?? '',
-  }));
-
-  if (format === 'table') {
-    return [
-      renderOutput(summaryRows, 'table').trimEnd(),
-      discoveryNote ? '' : undefined,
-      discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
-      report.summary.environmentAliasProvenance ? '' : undefined,
-      report.summary.environmentAliasProvenance ? `Environment alias provenance: ${report.summary.environmentAliasProvenance}` : undefined,
-      '',
-      `Bundle lifecycle: ${report.summary.bundleLifecycleSummary}`,
-      '',
-      'Checks',
-      renderOutput(checkRows, 'table').trimEnd(),
-      '',
-    ]
-      .filter((line): line is string => line !== undefined)
-      .join('\n');
-  }
-
-  return [
-    '# Project Doctor',
-    '',
-    `- Inspected path: \`${report.inspectedPath}\``,
-    `- Canonical project root: \`${report.canonicalProjectRoot}\``,
-    `- Config path: \`${report.configPath ?? '<default layout>'}\``,
-    `- Layout profile: \`${report.summary.layoutProfile}\``,
-    `- Canonical bundle path: \`${report.summary.canonicalBundlePath}\``,
-    `- Bundle status: \`${report.summary.canonicalBundlePresent ? 'present' : 'not generated yet'}\``,
-    `- Selected stage: \`${report.topology.selectedStage ?? '<unset>'}\``,
-    `- Active target: ${report.summary.activeTargetSummary}`,
-    ...(report.summary.environmentAliasProvenance ? [`- Environment alias provenance: ${report.summary.environmentAliasProvenance}`] : []),
-    `- Bundle lifecycle: ${report.summary.bundleLifecycleSummary}`,
-    ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
-    '',
-    '## Checks',
-    ...report.checks.map((check) => `- \`${check.status}\` \`${check.code}\`: ${check.message}`),
-    '',
-  ].join('\n');
-}
-
-function renderProjectFeedbackOutput(report: ProjectFeedbackReport, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
-  const summaryRows = [
-    { field: 'inspected path', value: report.inspectedPath },
-    { field: 'canonical project root', value: report.canonicalProjectRoot },
-    { field: 'config path', value: report.configPath ?? '<default layout>' },
-    { field: 'layout profile', value: report.summary.layoutProfile },
-    { field: 'canonical bundle path', value: report.summary.canonicalBundlePath },
-    { field: 'bundle status', value: report.summary.canonicalBundlePresent ? 'present' : 'not generated yet' },
-    { field: 'deployment route', value: report.summary.deploymentRouteSummary },
-  ];
-  const discoveryNote = summarizeProjectDiscoveryNote(report.discovery);
-  const workflowWinsRows = report.workflowWins.map((item) => ({ title: item.title, detail: item.detail }));
-  const frictionRows = report.frictions.map((item) => ({
-    title: item.title,
-    detail: item.detail,
-    evidence: (item.evidence ?? []).join(', '),
-  }));
-  const taskRows = report.recommendedTasks.map((item) => ({
-    task: item.title,
-    rationale: item.rationale,
-  }));
-
-  if (format === 'table') {
-    return [
-      renderOutput(summaryRows, 'table').trimEnd(),
-      discoveryNote ? '' : undefined,
-      discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
-      '',
-      'Workflow wins',
-      renderOutput(workflowWinsRows, 'table').trimEnd(),
-      '',
-      'Frictions',
-      renderOutput(frictionRows, 'table').trimEnd(),
-      '',
-      'Recommended tasks',
-      renderOutput(taskRows, 'table').trimEnd(),
-      '',
-    ]
-      .filter((line): line is string => line !== undefined)
-      .join('\n');
-  }
-
-  return [
-    '# Project Feedback',
-    '',
-    `- Inspected path: \`${report.inspectedPath}\``,
-    `- Canonical project root: \`${report.canonicalProjectRoot}\``,
-    `- Config path: \`${report.configPath ?? '<default layout>'}\``,
-    `- Layout profile: \`${report.summary.layoutProfile}\``,
-    `- Canonical bundle path: \`${report.summary.canonicalBundlePath}\``,
-    `- Bundle status: \`${report.summary.canonicalBundlePresent ? 'present' : 'not generated yet'}\``,
-    `- Deployment route: ${report.summary.deploymentRouteSummary}`,
-    ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
-    '',
-    '## Workflow Wins',
-    ...(report.workflowWins.length > 0
-      ? report.workflowWins.map((item) => renderProjectObservation(item.title, item.detail, item.evidence))
-      : ['- None']),
-    '',
-    '## Frictions',
-    ...(report.frictions.length > 0
-      ? report.frictions.map((item) => renderProjectObservation(item.title, item.detail, item.evidence))
-      : ['- None']),
-    '',
-    '## Recommended Tasks',
-    ...report.recommendedTasks.map((item) => `- ${item.title}: ${item.rationale}`),
-    '',
-  ].join('\n');
-}
-
-function summarizeProjectDiscoveryNote(
-  discovery?: Pick<ProjectContext['discovery'], 'inspectedPath' | 'autoSelectedProjectRoot' | 'canonicalAnchorReason'>
-): string | undefined {
-  if (!discovery?.autoSelectedProjectRoot) {
-    return undefined;
-  }
-
-  return discovery.canonicalAnchorReason
-    ? `${discovery.canonicalAnchorReason} Inspected path: ${discovery.inspectedPath}.`
-    : `Auto-selected descendant project root ${discovery.autoSelectedProjectRoot} from ${discovery.inspectedPath}.`;
-}
-
-function renderProjectObservation(title: string, detail: string, evidence: string[] | undefined): string {
-  if (!evidence || evidence.length === 0) {
-    return `- ${title}: ${detail}`;
-  }
-
-  return `- ${title}: ${detail} Evidence: ${evidence.map((item) => `\`${item}\``).join(', ')}`;
-}
-
-function formatProjectContractTarget(target: {
-  stage?: string;
-  environmentAlias?: string;
-  solutionAlias?: string;
-  solutionUniqueName?: string;
-}): string {
-  return `stage ${target.stage ?? '<unset>'} -> environment ${target.environmentAlias ?? '<unset>'} -> solution ${target.solutionUniqueName ?? target.solutionAlias ?? '<unset>'}`;
-}
-
 function printFailure(result: OperationResult<unknown>): number {
   process.stderr.write(renderFailure(result, resolveProcessOutputFormat()));
 
@@ -8419,32 +6058,6 @@ function readParameterOverrides(args: string[]): OperationResult<Record<string, 
   });
 }
 
-function readDeployApplyFlags(
-  args: string[]
-): OperationResult<{ mode: 'apply' | 'dry-run' | 'plan'; dryRun: boolean; plan: boolean; yes: boolean; planPath?: string }> {
-  const dryRun = args.includes('--dry-run');
-  const planPath = readValueFlag(args, '--plan');
-  const plan = args.includes('--plan') && !planPath;
-  const yes = args.includes('--yes');
-
-  if (dryRun && (plan || planPath)) {
-    return argumentFailure('CLI_MUTATION_MODE_CONFLICT', 'Use either --dry-run, --plan, or --plan <file>, not multiple preview/apply modes.');
-  }
-
-  return ok(
-    {
-      mode: plan ? 'plan' : dryRun ? 'dry-run' : 'apply',
-      dryRun,
-      plan,
-      yes,
-      planPath,
-    },
-    {
-      supportTier: 'preview',
-    }
-  );
-}
-
 function readListFlag(args: string[], name: string): string[] | undefined {
   const value = readFlag(args, name);
   return value ? value.split(',').map((item) => item.trim()).filter(Boolean) : undefined;
@@ -8477,143 +6090,6 @@ function readValueFlag(args: string[], name: string): string | undefined {
   }
 
   return value;
-}
-
-async function loadDeployPlanFile(path: string): Promise<OperationResult<DeployPlan>> {
-  let raw: string;
-
-  try {
-    raw = await readFile(path, 'utf8');
-  } catch (error) {
-    return fail(
-      createDiagnostic('error', 'DEPLOY_PLAN_FILE_READ_FAILED', `Could not read deploy plan file ${path}.`, {
-        source: '@pp/cli',
-        path,
-        hint: error instanceof Error ? error.message : undefined,
-      })
-    );
-  }
-
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    return fail(
-      createDiagnostic('error', 'DEPLOY_PLAN_FILE_INVALID_JSON', `Deploy plan file ${path} is not valid JSON.`, {
-        source: '@pp/cli',
-        path,
-        hint: error instanceof Error ? error.message : undefined,
-      })
-    );
-  }
-
-  if (!isDeployPlanShape(parsed)) {
-    return fail(
-      createDiagnostic('error', 'DEPLOY_PLAN_FILE_INVALID', `Deploy plan file ${path} does not match the expected deploy plan shape.`, {
-        source: '@pp/cli',
-        path,
-      })
-    );
-  }
-
-  return ok(parsed, {
-    supportTier: 'preview',
-  });
-}
-
-async function loadReleaseManifestFile(path: string): Promise<OperationResult<ReleaseManifest>> {
-  let raw: string;
-
-  try {
-    raw = await readFile(path, 'utf8');
-  } catch (error) {
-    return fail(
-      createDiagnostic('error', 'RELEASE_MANIFEST_READ_FAILED', `Could not read release manifest ${path}.`, {
-        source: '@pp/cli',
-        path,
-        hint: error instanceof Error ? error.message : undefined,
-      })
-    );
-  }
-
-  let parsed: unknown;
-
-  try {
-    parsed = YAML.parse(raw);
-  } catch (error) {
-    return fail(
-      createDiagnostic('error', 'RELEASE_MANIFEST_INVALID', `Release manifest ${path} is not valid YAML or JSON.`, {
-        source: '@pp/cli',
-        path,
-        hint: error instanceof Error ? error.message : undefined,
-      })
-    );
-  }
-
-  if (!isReleaseManifestShape(parsed)) {
-    return fail(
-      createDiagnostic('error', 'RELEASE_MANIFEST_SHAPE_INVALID', `Release manifest ${path} does not match the expected release manifest shape.`, {
-        source: '@pp/cli',
-        path,
-      })
-    );
-  }
-
-  return ok(resolveReleaseManifestPaths(parsed, path), {
-    supportTier: 'preview',
-  });
-}
-
-function isDeployPlanShape(value: unknown): value is DeployPlan {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const candidate = value as Partial<DeployPlan>;
-  return typeof candidate.generatedAt === 'string' && typeof candidate.projectRoot === 'string' && Array.isArray(candidate.operations);
-}
-
-function isReleaseManifestShape(value: unknown): value is ReleaseManifest {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const candidate = value as Partial<ReleaseManifest>;
-  return candidate.schemaVersion === 1 && candidate.kind === 'pp.release' && typeof candidate.name === 'string' && Array.isArray(candidate.stages);
-}
-
-function resolveReleaseManifestPaths(manifest: ReleaseManifest, manifestPath: string): ReleaseManifest {
-  const manifestDir = dirname(resolvePath(manifestPath));
-  return {
-    ...manifest,
-    projectRoot: manifest.projectRoot
-      ? isAbsolute(manifest.projectRoot)
-        ? manifest.projectRoot
-        : resolvePath(manifestDir, manifest.projectRoot)
-      : manifest.projectRoot,
-    bundle: manifest.bundle
-      ? {
-          ...manifest.bundle,
-          manifestPath: resolvePath(manifestPath),
-        }
-      : {
-          manifestPath: resolvePath(manifestPath),
-        },
-    stages: manifest.stages.map((stage) => ({
-      ...stage,
-      projectPath: stage.projectPath
-        ? isAbsolute(stage.projectPath)
-          ? stage.projectPath
-          : resolvePath(manifestDir, stage.projectPath)
-        : stage.projectPath,
-      planPath: stage.planPath
-        ? isAbsolute(stage.planPath)
-          ? stage.planPath
-          : resolvePath(manifestDir, stage.planPath)
-        : stage.planPath,
-    })),
-  };
 }
 
 function readMetadataCreateOptions(
@@ -9482,14 +6958,6 @@ function argumentFailure(code: string, message: string): OperationResult<never> 
   );
 }
 
-function isPromptValue(value: string | undefined): value is Extract<UserAuthProfile, { type: 'user' }>['prompt'] {
-  return value === 'select_account' || value === 'login' || value === 'consent' || value === 'none';
-}
-
-function isBrowserProfileKind(value: string): value is BrowserProfile['kind'] {
-  return value === 'edge' || value === 'chrome' || value === 'chromium' || value === 'custom';
-}
-
 function readSolutionOutputTarget(value: string | undefined): { outPath?: string; outDir?: string } {
   if (!value) {
     return {};
@@ -9526,2220 +6994,6 @@ function readFlowWorkflowStateFlag(args: string[]): OperationResult<FlowWorkflow
   }
 
   return argumentFailure('FLOW_WORKFLOW_STATE_INVALID', 'Use --workflow-state draft, activated, or suspended.');
-}
-
-function readSolutionCompareInput(args: string[], side: 'source' | 'target'): OperationResult<SolutionCompareInput> {
-  const options = [
-    {
-      kind: 'environment' as const,
-      value: readFlag(args, `--${side}-env`),
-    },
-    {
-      kind: 'zip' as const,
-      value: readFlag(args, `--${side}-zip`),
-    },
-    {
-      kind: 'folder' as const,
-      value: readFlag(args, `--${side}-folder`),
-    },
-  ].filter((option): option is SolutionCompareInput => Boolean(option.value));
-
-  if (options.length !== 1) {
-    return argumentFailure(
-      'SOLUTION_COMPARE_INPUT_INVALID',
-      `Provide exactly one of --${side}-env, --${side}-zip, or --${side}-folder.`
-    );
-  }
-
-  return ok(options[0]!, {
-    supportTier: 'preview',
-  });
-}
-
-async function resolveSolutionCompareAnalysis(
-  args: string[],
-  side: 'source' | 'target',
-  input: SolutionCompareInput,
-  uniqueName: string | undefined
-): Promise<OperationResult<SolutionAnalysis>> {
-  if (input.kind === 'environment') {
-    if (!uniqueName) {
-      return argumentFailure(
-        'SOLUTION_UNIQUE_NAME_REQUIRED',
-        'Solution unique name is required when comparing against an environment.'
-      ) as OperationResult<SolutionAnalysis>;
-    }
-
-    const resolution = await resolveDataverseClientByFlag(args, `--${side}-env`);
-
-    if (!resolution.success || !resolution.data) {
-      return resolution as unknown as OperationResult<SolutionAnalysis>;
-    }
-
-    const analysis = await new SolutionService(resolution.data.client).analyze(uniqueName);
-
-    if (!analysis.success) {
-      return analysis as OperationResult<SolutionAnalysis>;
-    }
-
-    if (!analysis.data) {
-      return fail(
-        [
-          ...analysis.diagnostics,
-          createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found in environment ${input.value}.`, {
-            source: '@pp/cli',
-          }),
-        ],
-        {
-          supportTier: 'preview',
-          warnings: analysis.warnings,
-        }
-      ) as OperationResult<SolutionAnalysis>;
-    }
-
-    return ok(analysis.data, {
-      supportTier: 'preview',
-      diagnostics: analysis.diagnostics,
-      warnings: analysis.warnings,
-    });
-  }
-
-  const service = createLocalSolutionService();
-  return input.kind === 'zip'
-    ? service.analyzeArtifact({
-        packagePath: input.value,
-        pacExecutable: readFlag(args, '--pac'),
-      })
-    : service.analyzeArtifact({
-        unpackedPath: input.value,
-      });
-}
-
-function createLocalSolutionService(): SolutionService {
-  return new SolutionService(new NullDataverseClient() as never);
-}
-
-class NullDataverseClient {
-  query(): never {
-    throw new Error('NullDataverseClient should not be used for Dataverse reads.');
-  }
-
-  queryAll(): never {
-    throw new Error('NullDataverseClient should not be used for Dataverse reads.');
-  }
-
-  invokeAction(): never {
-    throw new Error('NullDataverseClient should not be used for Dataverse writes.');
-  }
-
-  invokeFunction(): never {
-    throw new Error('NullDataverseClient should not be used for Dataverse reads.');
-  }
-
-  executeBatch(): never {
-    throw new Error('NullDataverseClient should not be used for Dataverse writes.');
-  }
-
-  request(): never {
-    throw new Error('NullDataverseClient should not be used for Dataverse requests.');
-  }
-
-  requestJson(): never {
-    throw new Error('NullDataverseClient should not be used for Dataverse requests.');
-  }
-}
-
-function printHelp(): void {
-  process.stdout.write(
-    [
-      'pp',
-      '',
-      'Power Platform CLI for local project work, Dataverse environments, solutions, and deployment workflows.',
-      '',
-      'Concepts:',
-      '  auth profile        how pp gets credentials',
-      '  environment alias   named Dataverse target that points to a URL and auth profile',
-      '  stage               project topology selector for deploy and analysis workflows',
-      '',
-      'Top-level areas:',
-      '  auth          manage auth profiles, browser profiles, login, and tokens',
-      '  env           manage Dataverse environment aliases',
-      '  dv            Dataverse requests, rows, and metadata workflows',
-      '  solution      inspect and mutate solutions',
-      '  connref       inspect and validate connection references',
-      '  envvar        inspect and mutate environment variables',
-      '  canvas        inspect and package canvas apps',
-      '  flow          inspect and package flows',
-      '  model         inspect model-driven apps',
-      '  project       manage local pp project layout and topology',
-      '  analysis      project analysis and context capture',
-      '  deploy        deployment planning and apply workflows',
-      '  sharepoint    inspect SharePoint bindings and assets',
-      '  powerbi       inspect Power BI bindings and assets',
-      '  diagnostics   install/config/project diagnostics',
-      '  completion    shell completion script generation',
-      '  version       print the CLI version',
-      '',
-      'Getting started:',
-      '  pp auth profile add-user --name work',
-      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
-      '  pp dv whoami --environment dev',
-      '',
-      'Examples:',
-      '  pp auth --help',
-      '  pp auth profile --help',
-      '  pp env add --help',
-      '  pp solution list --help',
-      '',
-      'Common output option:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-      '',
-      'Mutation command options:',
-      '  --dry-run  render a mutation preview without side effects',
-      '  --plan     render a mutation plan without side effects',
-      '  --yes      record non-interactive confirmation for guarded workflows',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth <command> [options]',
-      '',
-      'Manage how pp authenticates to remote services.',
-      '',
-      'Commands:',
-      '  profile         create, inspect, and remove auth profiles',
-      '  browser-profile manage browser launch profiles used by interactive auth or Maker handoff flows',
-      '  login           acquire a token for one profile and resource',
-      '  token           print a token for one profile and resource',
-      '',
-      'Concepts:',
-      '  auth profile      stores how pp gets credentials',
-      '  browser profile   stores how pp launches a browser session when a flow needs one',
-      '',
-      'Examples:',
-      '  pp auth profile add-user --name work',
-      '  pp auth profile add-env --name ci --env-var PP_ACCESS_TOKEN',
-      '  pp auth browser-profile add --name edge-work --kind edge',
-      '  pp auth login --name work --resource https://contoso.crm.dynamics.com',
-      '',
-      'See also:',
-      '  - Use `pp env add` to bind a Dataverse environment URL to an existing auth profile.',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthProfileHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth profile <command> [options]',
-      '',
-      'Manage authentication profiles used by pp.',
-      '',
-      'A profile defines how pp gets credentials.',
-      'Use `pp env add` separately to bind a Dataverse environment URL to a profile.',
-      '',
-      'Commands:',
-      '  list                 list auth profiles',
-      '  inspect <name>       inspect one profile, or resolve the profile behind an environment alias',
-      '  add-user             create a profile that uses interactive user login',
-      '  add-static           create a profile backed by a literal token value',
-      '  add-env              create a profile backed by a token environment variable',
-      '  add-client-secret    create an app-based profile using client credentials',
-      '  add-device-code      create a profile that signs in with the device code flow',
-      '  remove <name>        remove one profile',
-      '',
-      'Examples:',
-      '  pp auth profile add-user --name work',
-      '  pp auth profile add-env --name ci --env-var PP_ACCESS_TOKEN',
-      '  pp auth profile inspect work',
-      '  pp auth profile inspect --environment dev',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthProfileListHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth profile list [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Behavior:',
-      '  - Lists auth profiles known to pp.',
-      '  - Returns the profile name, type, default resource, and browser-profile association when present.',
-      '',
-      'Examples:',
-      '  pp auth profile list',
-      '  pp auth profile list --format json',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthProfileInspectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage:',
-      '  auth profile inspect <name> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  auth profile inspect --environment ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Behavior:',
-      '  - Inspects one auth profile directly by name.',
-      '  - Or resolves the auth profile attached to a Dataverse environment alias.',
-      '',
-      'Examples:',
-      '  pp auth profile inspect work',
-      '  pp auth profile inspect --environment dev',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthProfileAddUserHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth profile add-user --name NAME [--resource URL] [--login-hint user@contoso.com] [--browser-profile NAME] [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Creates an auth profile that can sign in as a user through the browser flow.',
-      '  - Optionally records a browser profile for later interactive auth or Maker handoff use.',
-      '',
-      'Examples:',
-      '  pp auth profile add-user --name work',
-      '  pp auth profile add-user --name work --login-hint user@contoso.com --browser-profile edge-work',
-      '',
-      'See also:',
-      '  - Use `pp env add --name dev --url https://contoso.crm.dynamics.com --profile work` after the profile exists.',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthProfileAddStaticHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth profile add-static --name NAME --token TOKEN [--resource URL]',
-      '',
-      'Behavior:',
-      '  - Creates an auth profile backed by a literal access token value.',
-      '  - Best suited to short-lived testing or controlled automation, not long-lived local setup.',
-      '',
-      'Examples:',
-      '  pp auth profile add-static --name fixture --token eyJ...',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthProfileAddEnvHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth profile add-env --name NAME --env-var ENV_VAR [--resource URL]',
-      '',
-      'Behavior:',
-      '  - Creates an auth profile that reads its token from an environment variable.',
-      '  - This does not add a Dataverse environment alias.',
-      '',
-      'When to use this:',
-      '  - CI or automation already provides an access token in an env var.',
-      '',
-      'Common confusion:',
-      '  - If you want to add a new Dataverse environment to pp, use `pp env add` instead.',
-      '',
-      'Examples:',
-      '  pp auth profile add-env --name ci --env-var PP_ACCESS_TOKEN',
-      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile ci',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthProfileAddClientSecretHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth profile add-client-secret --name NAME --tenant-id TENANT --client-id CLIENT --secret-env ENV_VAR [--resource URL] [--scope s1,s2]',
-      '',
-      'Behavior:',
-      '  - Creates an app-based auth profile using client credentials.',
-      '  - The client secret is read from the named environment variable at runtime.',
-      '',
-      'Examples:',
-      '  pp auth profile add-client-secret --name ci-app --tenant-id <tenant> --client-id <app-id> --secret-env PP_CLIENT_SECRET',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthProfileAddDeviceCodeHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth profile add-device-code --name NAME [--resource URL] [--login-hint user@contoso.com] [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Creates an auth profile that signs in with the device code flow.',
-      '  - Useful when a browser is unavailable or you want a more explicit interactive flow.',
-      '',
-      'Examples:',
-      '  pp auth profile add-device-code --name work-device',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthProfileRemoveHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth profile remove <name> [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Removes one auth profile from pp config.',
-      '  - Environment aliases that point to this profile will need to be updated separately.',
-      '',
-      'Examples:',
-      '  pp auth profile remove work',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthBrowserProfileHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth browser-profile <command> [options]',
-      '',
-      'Manage browser launch profiles used by interactive auth and Maker handoff workflows.',
-      '',
-      'Commands:',
-      '  list            list browser profiles',
-      '  inspect <name>  inspect one browser profile',
-      '  add             create a browser profile',
-      '  bootstrap <name> open a browser profile against a target URL',
-      '  remove <name>   remove a browser profile',
-      '',
-      'Examples:',
-      '  pp auth browser-profile add --name edge-work --kind edge',
-      '  pp auth browser-profile bootstrap edge-work',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthBrowserProfileListHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth browser-profile list [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Lists configured browser profiles and their launch configuration.',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthBrowserProfileInspectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth browser-profile inspect <name> [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Inspects one browser profile, including its launcher kind and directory when configured.',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthBrowserProfileAddHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth browser-profile add --name NAME [--kind edge|chrome|chromium|custom] [--command PATH] [--arg ARG] [--directory PATH] [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Creates a named browser launch profile for interactive auth or Maker handoff flows.',
-      '',
-      'Examples:',
-      '  pp auth browser-profile add --name edge-work --kind edge',
-      '  pp auth browser-profile add --name custom-chrome --kind custom --command /path/to/chrome --directory ~/.config/pp-chrome',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthBrowserProfileBootstrapHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth browser-profile bootstrap <name> [--url URL] [--no-wait] [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Launches the named browser profile against a bootstrap URL.',
-      '  - Useful for warming a session before interactive auth or Maker automation.',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthBrowserProfileRemoveHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth browser-profile remove <name> [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Removes one browser profile from pp config.',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthLoginHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth login --name NAME --resource URL [--login-hint user@contoso.com] [--browser-profile NAME] [--force-prompt] [--device-code] [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Performs an interactive sign-in for the named auth profile and target resource.',
-      '  - Use `--device-code` to force the device code flow.',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAuthTokenHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: auth token --profile NAME [--resource URL] [--format raw|json]',
-      '',
-      'Behavior:',
-      '  - Prints an access token resolved through the named auth profile.',
-      '  - Useful for debugging profile setup or wiring pp auth into adjacent tooling.',
-    ].join('\n') + '\n'
-  );
-}
-
-function printModelHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: model <command> [options]',
-      '',
-      'Commands:',
-      '  create <uniqueName>         create a model-driven app through a solution-aware Dataverse workflow',
-      '  attach <name|id|uniqueName> attach an existing model-driven app to a solution through AddSolutionComponent',
-      '  list                        list model-driven apps',
-      '  inspect <name|id|uniqueName> inspect one model-driven app',
-      '  composition <name|id|uniqueName> emit a normalized composition graph',
-      '  impact <name|id|uniqueName> preview artifact impact within one model-driven app',
-      '  sitemap <name|id|uniqueName> list sitemap artifacts',
-      '  forms <name|id|uniqueName>   list form artifacts',
-      '  views <name|id|uniqueName>   list view artifacts',
-      '  dependencies <name|id|uniqueName> list dependency artifacts',
-      '  patch plan <name|id|uniqueName> preview bounded rename mutations',
-      '',
-      'Examples:',
-      '  pp model create SalesHub --environment dev --name "Sales Hub" --solution Core',
-      '  pp model attach SalesHub --environment dev --solution Core',
-      '  pp model inspect SalesHub --environment dev --solution Core',
-      '',
-      'Notes:',
-      '  - `model create` uses solution-scoped Dataverse creation when `--solution` or the environment alias defaultSolution is available.',
-      '  - `model attach` uses `--solution` when provided, otherwise the environment alias defaultSolution when configured.',
-      '  - `model attach` uses the supported solution component action rather than direct raw row writes.',
-      '  - Composition inspection and patch planning remain bounded to the current read-first model surface.',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printCanvasHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: canvas <command> [options]',
-      '',
-      'Work with canvas apps in two modes:',
-      '  remote  inspect or download apps already in Dataverse',
-      '  local   validate, inspect, patch, diff, and build source trees in the repo',
-      '',
-      'Remote canvas commands:',
-      '  list                         list remote canvas apps through Dataverse',
-      '  download <displayName|name|id> export a solution-scoped remote canvas app into an .msapp',
-      '  inspect <displayName|name|id> inspect a remote canvas app when used with --environment',
-      '  create                       preview handoff today; `--delegate` can drive the Maker blank-app flow through a browser profile',
-      '  import <file.msapp>          reserved for future remote import; currently returns diagnostics',
-      '',
-      'Local canvas commands:',
-      '  validate <path>              validate a local canvas source tree',
-      '  lint <path>                  emit metadata-aware lint diagnostics for a local canvas source tree',
-      '  inspect <path>               inspect a local canvas source tree',
-      '  build <path>                 package a local canvas source tree into an .msapp',
-      '  diff <leftPath> <rightPath>  diff two local canvas source trees',
-      '  workspace inspect <path>     inspect a versioned canvas workspace manifest',
-      '  patch plan <path> --file ... preview a bounded canvas patch against json-manifest apps',
-      '  patch apply <path> --file ... apply a bounded canvas patch in place or into --out',
-      '',
-      'Template registry commands:',
-      '  templates import <sourcePath> import harvested or official template metadata',
-      '  templates inspect <registry> summarize a pinned registry snapshot',
-      '  templates diff <left> <right> compare two registry snapshots',
-      '  templates pin <registry> --out FILE normalize and write a pinned registry file',
-      '  templates refresh <source>   re-import a source catalog and optionally diff against --current',
-      '  templates audit <registry>   summarize provenance coverage and version metadata',
-      '',
-      'How to think about it:',
-      '  - Use remote commands when the app already exists in an environment and you need discovery or export.',
-      '  - Use local commands once the artifact is in source form and you want deterministic validation or packaging.',
-      '  - Create/import still rely on preview handoff flows because Microsoft does not expose a fully supported server-side path here.',
-      '',
-      'Examples:',
-      '  pp canvas list --environment dev --solution Core',
-      '  pp canvas download "Harness Canvas" --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp',
-      '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
-      '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
-      '  pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp',
-      '',
-      'Notes:',
-      '  - Remote canvas download exports the containing solution through Dataverse and extracts CanvasApps/*.msapp without leaving pp.',
-      '  - Remote create/import still use preview flows rather than first-class server-side APIs.',
-      '  - `canvas create --delegate` can drive the Maker blank-app flow and wait for the created app id through Dataverse.',
-      '  - Attempted remote create/import calls return machine-readable diagnostics with next steps.',
-      '  - Use --environment to switch canvas inspect from local-path mode to remote lookup mode.',
-      '  - Use --workspace to resolve a workspace app name plus shared registry catalogs.',
-      '  - Canvas patching currently targets the supported json-manifest source slice only.',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDataverseHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: dv <command> [options]',
-      '',
-      'Commands:',
-      '  whoami                      resolve the current caller and target environment',
-      '  request                     issue a raw Dataverse Web API request',
-      '  action <name>               invoke a Dataverse action with typed parameters',
-      '  function <name>             invoke a Dataverse function with typed parameters',
-      '  batch                       execute a Dataverse $batch manifest',
-      '  rows ...                    export row sets or apply typed row manifests',
-      '  query <table>               query table rows through Dataverse',
-      '  get <table> <id>            fetch one Dataverse row by id',
-      '  create <table>              create one Dataverse row',
-      '  update <table> <id>         update one Dataverse row',
-      '  delete <table> <id>         delete one Dataverse row',
-      '  metadata ...                inspect or mutate Dataverse metadata',
-      '',
-      'Examples:',
-      '  pp dv whoami --environment dev --format json',
-      '  pp dv query solutions --environment dev --select solutionid,uniquename --top 5',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDataverseWhoAmIHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: dv whoami --environment ALIAS [options]',
-      '',
-      'Behavior:',
-      '  - Resolves the target environment alias and auth profile.',
-      '  - Returns the current Dataverse caller and business unit ids with environment context.',
-      '',
-      'Examples:',
-      '  pp dv whoami --environment dev',
-      '  pp dv whoami --environment dev --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDataverseRowsHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: dv rows <command> [options]',
-      '',
-      'Commands:',
-      '  export <table>              export a Dataverse row set with query metadata',
-      '  apply                       apply a typed row-mutation manifest through Dataverse batch',
-      '',
-      'Examples:',
-      '  pp dv rows export accounts --environment dev --select accountid,name --all --out ./accounts.json',
-      '  pp dv rows apply --environment dev --file ./account-ops.yaml --solution Core',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDataverseRowsExportHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: dv rows export <table> --environment ALIAS [options]',
-      '',
-      'Behavior:',
-      '  - Queries Dataverse rows and packages them into a stable row-set artifact.',
-      '  - Includes query metadata so the exported file records how the slice was collected.',
-      '  - Writes JSON or YAML when `--out` is provided; otherwise prints the artifact to stdout.',
-      '',
-      'Examples:',
-      '  pp dv rows export accounts --environment dev --select accountid,name --top 100',
-      '  pp dv rows export accounts --environment dev --filter "statecode eq 0" --all --out ./accounts.yaml',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDataverseRowsApplyHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: dv rows apply --file FILE --environment ALIAS [options]',
-      '',
-      'Behavior:',
-      '  - Reads a typed row-mutation manifest instead of raw HTTP batch parts.',
-      '  - Supports `create`, `update`, `upsert`, and `delete` operations.',
-      '  - Uses Dataverse batch under the hood while preserving row-level paths and results.',
-      '',
-      'Examples:',
-      '  pp dv rows apply --environment dev --file ./account-ops.yaml',
-      '  pp dv rows apply --environment dev --file ./account-ops.yaml --continue-on-error --solution Core',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDataverseMetadataHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: dv metadata <command> [options]',
-      '',
-      'Read commands:',
-      '  tables                                  list Dataverse tables',
-      '  table <logicalName>                     inspect one table definition',
-      '  columns <tableLogicalName>              list columns for a table',
-      '  column <tableLogicalName> <column>      inspect one column definition',
-      '  option-set <name>                       inspect one global option set',
-      '  relationship <schemaName>               inspect one relationship definition',
-      '  snapshot <kind> ...                     save stable table, columns, option-set, or relationship snapshots',
-      '  diff --left FILE --right FILE           compare two saved metadata snapshots',
-      '',
-      'Write commands:',
-      '  apply --file FILE                       apply a metadata manifest',
-      '  create-table --file FILE                create a new Dataverse table',
-      '  update-table <table> --file FILE        update a table definition',
-      '  add-column <table> --file FILE          create a new column on an existing table',
-      '  update-column <table> <column> --file FILE',
-      '                                         update an existing column definition',
-      '  create-option-set --file FILE           create a global option set',
-      '  update-option-set --file FILE           update a global option set',
-      '  create-relationship --file FILE         create a one-to-many relationship',
-      '  update-relationship <schemaName> --kind one-to-many|many-to-many --file FILE',
-      '                                         update an existing relationship',
-      '  create-many-to-many --file FILE         create a many-to-many relationship',
-      '  create-customer-relationship --file FILE',
-      '                                         create a customer lookup and paired relationships',
-      '',
-      'Notes:',
-      '  - Read commands accept `--environment ALIAS` plus `--select`, `--expand`, `--filter`, and view flags where supported.',
-      '  - Write commands accept `--environment ALIAS`, `--file FILE`, optional `--solution UNIQUE_NAME`, and publish controls.',
-      '  - Write results include `entitySummary`; `dv metadata apply` also includes a grouped `summary` for touched tables, columns, relationships, and option sets.',
-      '',
-      'Examples:',
-      '  pp dv metadata tables --environment dev --top 10 --format json',
-      '  pp dv metadata column account name --environment dev --view detailed',
-      '  pp dv metadata create-table --environment dev --solution Core --file ./specs/project.table.yaml --format json',
-      '  pp dv metadata create-relationship --environment dev --solution Core --file ./specs/project-account.relationship.yaml --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printSolutionHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: solution <command> [options]',
-      '',
-      'Manage the remote application boundary inside a Dataverse environment.',
-      '',
-      'Remote commands:',
-      '  create <uniqueName>         create a solution shell in an environment',
-      '  delete <uniqueName>         delete one solution from an environment',
-      '  set-metadata <uniqueName>   update solution publisher or version metadata',
-      '  list                        list solutions in an environment',
-      '  inspect <uniqueName>        inspect one solution',
-      '  components <uniqueName>     list solution components',
-      '  dependencies <uniqueName>   list solution dependencies',
-      '  analyze <uniqueName>        render a normalized analysis view',
-      '  compare [uniqueName]        compare source and target solution states',
-      '  export <uniqueName>         export a solution package',
-      '  import <path.zip>           import a solution package',
-      '',
-      'Local package commands:',
-      '  pack <folder>               pack a local solution folder into a zip',
-      '  unpack <path.zip>           unpack a solution zip into a folder',
-      '',
-      'How to think about it:',
-      '  - Use remote commands when the solution already lives in Dataverse and you need inventory, metadata, or lifecycle operations.',
-      '  - Use pack/unpack when you are moving between editable local source and packaged zip artifacts.',
-      '  - A solution is the ALM boundary that groups canvas apps, flows, model-driven apps, env vars, and connection references.',
-      '',
-      'Examples:',
-      '  pp solution list --environment dev --format json',
-      '  pp solution list --environment dev --prefix ppHarness --format json',
-      '  pp solution inspect Core --environment dev',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printSolutionListHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: solution list --environment ALIAS [options]',
-      '',
-      'Behavior:',
-      '  - Lists installed solutions in the target environment across all Dataverse pages.',
-      '  - Returns structured records with solution ids, unique names, friendly names, versions, and managed state.',
-      '  - Use --prefix to narrow by unique/friendly name prefix or --unique-name for one exact solution.',
-      '',
-      'Choose this when:',
-      '  - You know the environment but not yet the exact solution boundary you need.',
-      '',
-      'Examples:',
-      '  pp solution list --environment dev',
-      '  pp solution list --environment dev --format json',
-      '  pp solution list --environment dev --prefix ppHarness20260310T200706248Z --format json',
-      '',
-      'Options:',
-      '  --prefix PREFIX            Match solution unique names or friendly names starting with PREFIX',
-      '  --unique-name NAME        Match one exact solution unique name',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printSolutionComponentsHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: solution components <uniqueName> --environment ALIAS [options]',
-      '',
-      'Behavior:',
-      '  - Lists the components currently attached to one solution in the target environment.',
-      '  - Returns stable structured rows including the component type, display name, object id, and solution metadata when available.',
-      '  - `--help` only prints this text and never validates the solution name or environment flags.',
-      '',
-      'Choose this when:',
-      '  - You need to verify what a solution contains before export, deploy, or troubleshooting.',
-      '',
-      'Examples:',
-      '  pp solution components Core --environment dev',
-      '  pp solution components Core --environment dev --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printSolutionInspectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: solution inspect <uniqueName> --environment ALIAS [options]',
-      '',
-      'Behavior:',
-      '  - Inspects one solution in the target environment.',
-      '  - Returns one structured record with the solution id, unique name, friendly name, version, publisher metadata, and managed state when available.',
-      '  - `--help` only prints this text and never validates the solution name or environment flags.',
-      '',
-      'Choose this when:',
-      '  - You already know the solution unique name and want metadata rather than the full inventory.',
-      '',
-      'Examples:',
-      '  pp solution inspect Core --environment dev',
-      '  pp solution inspect Core --environment dev --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printSolutionDependenciesHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: solution dependencies <uniqueName> --environment ALIAS [options]',
-      '',
-      'Behavior:',
-      '  - Lists solution dependency rows for one solution in the target environment.',
-      '  - Returns stable structured rows that identify the required and dependent components when Dataverse exposes them.',
-      '  - `--help` only prints this text and never validates the solution name or environment flags.',
-      '',
-      'Choose this when:',
-      '  - You suspect missing prerequisites, ALM drift, or packaging/import problems.',
-      '',
-      'Examples:',
-      '  pp solution dependencies Core --environment dev',
-      '  pp solution dependencies Core --environment dev --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: env <command> [options]',
-      '',
-      'Manage Dataverse environment aliases used by pp.',
-      '',
-      'An environment alias is a named Dataverse target that points to a URL and an existing auth profile.',
-      '',
-      'Commands:',
-      '  list                         list saved environment aliases',
-      '  add                          add or update one environment alias',
-      '  inspect <alias>              inspect one saved alias',
-      '  resolve-maker-id <alias>     discover and persist the Maker environment id for an alias',
-      '  cleanup-plan <alias>         list disposable solutions matching a run prefix before bootstrap reset',
-      '  reset <alias>                delete disposable solutions matching a run prefix for bootstrap reset',
-      '  cleanup <alias>              delete disposable solutions matching a run prefix',
-      '  remove <alias>               remove one saved alias from local config',
-      '',
-      'Examples:',
-      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
-      '  pp env list',
-      '  pp env inspect dev',
-      '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json',
-      '  pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json',
-      '  pp env cleanup test --prefix ppHarness20260310T013401820Z --dry-run --format json',
-      '',
-      'Common confusion:',
-      '  - `pp env add` adds a Dataverse environment alias.',
-      '  - `pp auth profile add-env` adds an auth profile backed by a token environment variable.',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentListHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: env list [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Behavior:',
-      '  - Lists Dataverse environment aliases known to pp.',
-      '  - Shows the bound URL, auth profile, default solution, and Maker environment id when available.',
-      '',
-      'Examples:',
-      '  pp env list',
-      '  pp env list --format json',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentAddHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]',
-      '',
-      'Behavior:',
-      '  - Adds one Dataverse environment alias that points to an existing auth profile.',
-      '  - The alias becomes the value you pass later with `--environment ALIAS`.',
-      '',
-      'Requirements:',
-      '  - `--profile` must name an existing auth profile.',
-      '',
-      'Examples:',
-      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
-      '  pp env add --name uat --url https://contoso-uat.crm.dynamics.com --profile work --default-solution Core',
-      '',
-      'See also:',
-      '  - If you still need credentials, create the profile first with `pp auth profile add-user` or another `auth profile add-*` command.',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentInspectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: env inspect <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Behavior:',
-      '  - Inspects one Dataverse environment alias and its bound auth profile state.',
-      '  - Includes tooling advisories such as whether pac is likely to share the pp auth context.',
-      '',
-      'Examples:',
-      '  pp env inspect dev',
-      '  pp env inspect dev --format json',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentResolveMakerIdHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: env resolve-maker-id <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Behavior:',
-      '  - Resolves the Maker environment id for the alias through the Power Platform environments API.',
-      '  - Persists the resolved id so later Maker handoff commands do not need an explicit override.',
-      '',
-      'Examples:',
-      '  pp env resolve-maker-id dev',
-      '  pp env resolve-maker-id dev --format json',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentCleanupPlanHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Behavior:',
-      '  - Lists remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
-      '  - Intended for harness bootstrap or disposable-environment reset flows where stale disposable harness assets should be removed before reuse.',
-      '  - Returns candidate solutions together with next-step guidance for `pp env reset`.',
-      '  - Follow with `pp env reset <alias> --prefix PREFIX [--dry-run|--plan]` when you are ready to delete the matches.',
-      '  - Related commands: env reset <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw], env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Examples:',
-      '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z',
-      '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentResetHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: env reset <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Behavior:',
-      '  - Deletes remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
-      '  - Intended as the first-class bootstrap reset command for clearing stale disposable harness assets before environment reuse.',
-      '  - Use `--dry-run` or `--plan` first to preview the matching solutions without mutating the environment.',
-      '  - Equivalent remote deletion behavior to `pp env cleanup`, but named for bootstrap/reset workflows.',
-      '',
-      'Examples:',
-      '  pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json',
-      '  pp env reset test --prefix ppHarness20260310T013401820Z --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentCleanupHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Behavior:',
-      '  - Deletes remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
-      '  - Use `--dry-run` or `--plan` first to preview the matching solutions without mutating the environment.',
-      '  - Intended for clearing stale disposable harness assets before bootstrap reuses an environment.',
-      '',
-      'Examples:',
-      '  pp env cleanup test --prefix ppHarness20260310T013401820Z --dry-run --format json',
-      '  pp env cleanup test --prefix ppHarness20260310T013401820Z --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentVariableHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: envvar <command> [options]',
-      '',
-      'Commands:',
-      '  create <schemaName>         create an environment variable definition',
-      '  list                        list environment variable definitions and values',
-      '  inspect <identifier>        inspect one environment variable by schema name, display name, or id',
-      '  set <identifier>            set the current value for one environment variable',
-      '',
-      'Examples:',
-      '  pp envvar list --environment dev --solution Core --no-interactive-auth --format json',
-      '  pp envvar inspect pp_ApiUrl --environment dev --no-interactive-auth',
-      '',
-      'Remote auth option:',
-      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printConnectionReferenceHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: connref <command> [options]',
-      '',
-      'Commands:',
-      '  list                        list connection references',
-      '  inspect <identifier>        inspect one connection reference by logical name, display name, or id',
-      '  validate                    validate connection reference bindings and health',
-      '',
-      'Examples:',
-      '  pp connref list --environment dev --solution Core --no-interactive-auth --format json',
-      '  pp connref validate --environment dev --solution Core --no-interactive-auth',
-      '',
-      'Remote auth option:',
-      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printConnectionReferenceListHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: connref list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
-      '',
-      'Behavior:',
-      '  - Lists connection references visible in the target environment or solution scope.',
-      '  - Returns stable structured rows with logical names, connector metadata, and bound connection ids when available.',
-      '',
-      'Examples:',
-      '  pp connref list --environment dev',
-      '  pp connref list --environment dev --solution Core --no-interactive-auth --format json',
-      '',
-      'Remote auth option:',
-      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printConnectionReferenceInspectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: connref inspect <logicalName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
-      '',
-      'Behavior:',
-      '  - Resolves one connection reference in the target environment or solution scope.',
-      '  - Returns a stable CONNREF_NOT_FOUND diagnostic when the identifier does not match a connection reference in scope.',
-      '',
-      'Examples:',
-      '  pp connref inspect shared_office365 --environment dev',
-      '  pp connref inspect shared_office365 --environment dev --solution Core --no-interactive-auth --format json',
-      '',
-      'Remote auth option:',
-      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printConnectionReferenceValidateHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: connref validate --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
-      '',
-      'Behavior:',
-      '  - Validates connection references visible in the target environment or solution scope.',
-      '  - Returns stable structured rows for missing bindings, connector mismatches, or other validation findings.',
-      '',
-      'Examples:',
-      '  pp connref validate --environment dev',
-      '  pp connref validate --environment dev --solution Core --no-interactive-auth --format json',
-      '',
-      'Remote auth option:',
-      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentVariableCreateHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: envvar create <schemaName> --environment ALIAS [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
-      '',
-      'Behavior:',
-      '  - Creates one environment variable definition in the target environment.',
-      '  - Uses the schema name as the display name when `--display-name` is omitted.',
-      '',
-      'Examples:',
-      '  pp envvar create pp_ApiUrl --environment dev --solution Core --type string',
-      '  pp envvar create pp_ApiUrl --environment dev --solution Core --no-interactive-auth --format json',
-      '',
-      'Remote auth option:',
-      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentVariableListHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: envvar list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
-      '',
-      'Behavior:',
-      '  - Lists environment variable definitions and current values visible in the target environment or solution scope.',
-      '  - Returns stable structured rows including schema names, types, default values, and current values when present.',
-      '',
-      'Examples:',
-      '  pp envvar list --environment dev',
-      '  pp envvar list --environment dev --solution Core --no-interactive-auth --format json',
-      '',
-      'Remote auth option:',
-      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentVariableInspectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
-      '',
-      'Behavior:',
-      '  - Resolves one environment variable definition and its current value when present.',
-      '  - Returns a stable ENVVAR_NOT_FOUND diagnostic when the identifier does not match a definition in the target scope.',
-      '',
-      'Examples:',
-      '  pp envvar inspect pp_ApiUrl --environment dev',
-      '  pp envvar inspect pp_ApiUrl --environment dev --solution Core --no-interactive-auth --format json',
-      '',
-      'Remote auth option:',
-      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printEnvironmentVariableSetHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
-      '',
-      'Behavior:',
-      '  - Sets the current value for one environment variable in the target environment or solution scope.',
-      '  - Returns the updated definition and current value after the write succeeds.',
-      '',
-      'Examples:',
-      '  pp envvar set pp_ApiUrl --environment dev --value https://next.example.test',
-      '  pp envvar set pp_ApiUrl --environment dev --solution Core --value https://next.example.test --no-interactive-auth --format json',
-      '',
-      'Remote auth option:',
-      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printCanvasCreateHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
-      '',
-      'Status:',
-      '  Preview handoff by default. `--delegate` can drive the Maker blank-app flow through a persisted browser profile.',
-      '',
-      'Choose this when:',
-      '  - You need a brand-new remote canvas app in a Dataverse environment.',
-      '  - You are willing to use a Maker handoff or delegated browser automation because there is no first-class server-side create API.',
-      '',
-      'Choose a different path when:',
-      '  - The app already exists remotely and you only need to inspect or export it: use `pp canvas list`, `inspect`, or `download`.',
-      '  - You already have local source and need a package artifact: use `pp canvas build`.',
-      '',
-      'Options:',
-      '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
-      '  --delegate                 Drive the solution-scoped Maker blank-app flow and wait for the created app id',
-      '  --open                     Launch the resolved Maker handoff URL instead of only printing it',
-      '  --browser-profile NAME     Optional override for the browser profile used with --open',
-      '  --artifacts-dir DIR        Persist delegated screenshots/session metadata under DIR',
-      '  --timeout-ms N             Delegated Studio readiness timeout in milliseconds',
-      '  --poll-timeout-ms N        Delegated Dataverse polling timeout in milliseconds',
-      '  --settle-ms N              Delegated post-save and post-publish settle delay in milliseconds',
-      '  --slow-mo-ms N             Delegated browser slow motion delay in milliseconds',
-      '  --debug                    Keep the delegated browser visible instead of running headless',
-      '',
-      'What works today:',
-      '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps.',
-      '  - Use `pp canvas inspect <displayName|name|id> --environment <alias> --solution <solution>` to inspect a specific remote app.',
-      '  - Use `--delegate --browser-profile <name> --solution <solution> --name <display-name>` to let pp drive the Maker blank-app flow and return the created app id when Studio save/publish succeeds.',
-      '  - Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.',
-      '  - Use `--open --browser-profile <name>` to override that browser profile for a one-off handoff.',
-      '',
-      'Recommended flow:',
-      '  1. Confirm the target environment and solution with `pp env inspect <alias>` and `pp solution inspect <uniqueName> --environment <alias>`.',
-      '  2. Start with `--delegate` if you want pp to wait for the resulting app id.',
-      '  3. Fall back to `--open` if you only want pp to construct the Maker handoff URL and launch context.',
-      '',
-      'Next steps for new apps today:',
-      '  - Prefer `--delegate` when you want pp to wait for the created app id through Dataverse.',
-      '  - Finish blank-app creation in Maker when you need a new remote canvas app but do not want delegated browser automation.',
-      '  - Use `pp canvas build <path> --out <file.msapp>` if you are packaging a local canvas source tree.',
-      '',
-      'Known limitations:',
-      '  - Delegated create still depends on Maker browser automation rather than a first-class remote API.',
-      '  - Studio readiness and publish timing can still vary by tenant and browser session.',
-      '',
-      'Preview options:',
-      '  --dry-run                     Resolve env/solution context and print a structured no-op preview',
-      '  --plan                        Resolve env/solution context and print a structured fallback plan',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printCanvasDownloadHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [options]',
-      '',
-      'Status:',
-      '  Exports the containing solution through Dataverse and extracts the matching CanvasApps/*.msapp entry.',
-      '',
-      'Behavior:',
-      '  - Requires `--environment` and `--solution` so pp can export the correct solution package.',
-      '  - Uses the existing pp Dataverse auth context; it does not shell out to pac for canvas download.',
-      '  - When `--out` is omitted, writes `<displayName|name|id>.msapp` in the current working directory.',
-      '',
-      'Examples:',
-      '  pp canvas download "Harness Canvas" --environment dev --solution Core',
-      '  pp canvas download crd_HarnessCanvas --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printCanvasListHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: canvas list --environment ALIAS [--solution UNIQUE_NAME] [options]',
-      '',
-      'Status:',
-      '  Lists remote canvas apps through Dataverse.',
-      '',
-      'Behavior:',
-      '  - Requires `--environment` to resolve the target environment alias.',
-      '  - When `--solution` is provided, filters the result to canvas apps that are solution components.',
-      '  - Returns remote app ids and any Maker open URIs currently available from Dataverse.',
-      '',
-      'Examples:',
-      '  pp canvas list --environment dev',
-      '  pp canvas list --environment dev --solution Core',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printCanvasImportHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
-      '',
-      'Status:',
-      '  Preview placeholder. Remote canvas import is not implemented yet.',
-      '',
-      'Choose this when:',
-      '  - You already have an `.msapp` artifact and want guidance for getting it into a remote environment.',
-      '',
-      'Choose a different path when:',
-      '  - You only need a packaged artifact from local source: use `pp canvas build`.',
-      '  - You need to inspect or export an existing remote app: use `pp canvas list`, `inspect`, or `download`.',
-      '',
-      'Options:',
-      '  --name DISPLAY_NAME        Expected remote display name for post-import verification guidance',
-      '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
-      '  --open                     Launch the resolved Maker handoff URL instead of only printing it',
-      '  --browser-profile NAME     Optional override for the browser profile used with --open',
-      '',
-      'What works today:',
-      '  - Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
-      '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps.',
-      '  - Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.',
-      '  - Use `--open --browser-profile <name>` to override that browser profile for a one-off handoff.',
-      '',
-      'Recommended flow today:',
-      '  1. Build or locate the `.msapp` artifact you intend to import.',
-      '  2. Use `--open` if you want pp to take you to the right Maker context for the target environment.',
-      '  3. Use Maker or solution tooling for the actual import step until `pp canvas import` exists.',
-      '',
-      'Next steps for remote import today:',
-      '  - Use Maker or solution tooling for the remote import step until `pp canvas import` exists.',
-      '',
-      'Known limitations:',
-      '  - Remote canvas coverage in pp is currently read-only.',
-      '  - pp does not yet return a remote canvas app id for create/import workflows.',
-      '',
-      'Preview options:',
-      '  --dry-run                     Resolve env/solution context and print a structured no-op preview',
-      '  --plan                        Resolve env/solution context and print a structured fallback plan',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printCanvasInspectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: canvas inspect <path|displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [options]',
-      '',
-      'Modes:',
-      '  - Without `--environment`, inspects a local canvas source tree.',
-      '  - With `--environment`, inspects a remote canvas app by display name, logical name, or id.',
-      '',
-      'Remote behavior:',
-      '  - Requires the positional identifier plus `--environment`.',
-      '  - Accepts optional `--solution` to scope remote lookup to a solution.',
-      '',
-      'Local behavior:',
-      '  - Accepts a local canvas path plus `--project`, repeated `--registry`, `--cache-dir`, and `--mode` options.',
-      '',
-      'Examples:',
-      '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
-      '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow <command> [options]',
-      '',
-      'Work with Power Automate flows in two modes:',
-      '  remote  inspect, export, promote, deploy, and diagnose flows in Dataverse',
-      '  local   unpack, pack, normalize, validate, graph, and patch flow artifacts',
-      '',
-      'Commands:',
-      '  list                        list remote flows',
-      '  inspect <name|id|...>       inspect a remote flow or a local artifact',
-      '  export <name|id|...>        export a remote flow artifact',
-      '  promote <name|id|...>       move a flow between environments',
-      '  deploy <path>               deploy a local flow artifact into an environment',
-      '  unpack <path>               unpack a flow artifact into a folder',
-      '  pack <path>                 pack a folder back into a flow artifact',
-      '  normalize <path>            rewrite a local artifact into normalized shape',
-      '  validate <path>             validate a local artifact',
-      '  graph <path>                emit a graph view of a local artifact',
-      '  patch <path> --file ...     apply a bounded patch to a local artifact',
-      '  runs <name|id|...>          inspect recent remote run history',
-      '  errors <name|id|...>        summarize remote runtime failures',
-      '  connrefs <name|id|...>      inspect connection references used by a flow',
-      '  doctor <name|id|...>        summarize remote runtime health and dependencies',
-      '',
-      'How to think about it:',
-      '  - Use remote commands when the flow already exists in an environment and you need lifecycle or runtime insight.',
-      '  - Use local commands when the artifact is on disk and you want deterministic analysis or edits.',
-      '  - `deploy` updates one target environment from a local artifact; `promote` copies a remote flow between environments.',
-      '',
-      'Examples:',
-      '  pp flow inspect ./flows/invoice/flow.json',
-      '  pp flow inspect InvoiceSync --environment dev --solution Core',
-      '  pp flow deploy ./flows/invoice/flow.json --environment dev --solution Core --dry-run --format json',
-      '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --solution-package --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowListHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow list --environment ALIAS [--solution UNIQUE_NAME] [options]',
-      '',
-      'Behavior:',
-      '  - Lists remote flows visible in the target environment.',
-      '  - Use `--solution` when you want the result scoped to one solution boundary.',
-      '',
-      'Examples:',
-      '  pp flow list --environment dev',
-      '  pp flow list --environment dev --solution Core --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowInspectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [options]',
-      '',
-      'Modes:',
-      '  - Without `--environment`, inspect a local flow artifact on disk.',
-      '  - With `--environment`, inspect a remote flow by name, id, or unique name.',
-      '',
-      'Choose this when:',
-      '  - You want to understand one flow before export, deploy, promote, or runtime diagnosis.',
-      '',
-      'Examples:',
-      '  pp flow inspect ./flows/invoice/flow.json',
-      '  pp flow inspect InvoiceSync --environment dev --solution Core --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowExportHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [options]',
-      '',
-      'Behavior:',
-      '  - Exports one remote flow artifact into a local file.',
-      '  - Use this when you want to move from a live environment into the local validation/editing pipeline.',
-      '',
-      'Examples:',
-      '  pp flow export InvoiceSync --environment dev --out ./artifacts/invoice-flow.json',
-      '  pp flow export InvoiceSync --environment dev --solution Core --out ./artifacts/invoice-flow.json --dry-run --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowPromoteHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [--solution-package] [--managed-solution-package] [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [options]',
-      '',
-      'Choose this when:',
-      '  - The source flow already exists remotely and you want to move it between environments.',
-      '',
-      'Choose `flow deploy` instead when:',
-      '  - Your source of truth is a local artifact on disk.',
-      '',
-      'Recommended flow:',
-      '  1. Inspect the source flow and target solution first.',
-      '  2. Decide whether this should stay direct or go through `--solution-package`.',
-      '  3. Use `--dry-run` or `--plan` first when you want a non-mutating preview.',
-      '',
-      'Examples:',
-      '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --format json',
-      '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --target-solution Core --solution-package --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowUnpackHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow unpack <path> --out <dir> [options]',
-      '',
-      'Behavior:',
-      '  - Unpacks a flow artifact into an editable local folder.',
-      '',
-      'Examples:',
-      '  pp flow unpack ./artifacts/invoice-flow.json --out ./flows/invoice',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowPackHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow pack <path> --out <file.json> [options]',
-      '',
-      'Behavior:',
-      '  - Packs an editable local flow folder back into a deployable artifact.',
-      '',
-      'Examples:',
-      '  pp flow pack ./flows/invoice --out ./artifacts/invoice-flow.json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowDeployHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [options]',
-      '',
-      'Choose this when:',
-      '  - Your source of truth is a local flow artifact on disk and you want to push it into one environment.',
-      '',
-      'Choose `flow promote` instead when:',
-      '  - The source flow already lives remotely and should be moved between environments.',
-      '',
-      'Examples:',
-      '  pp flow deploy ./flows/invoice/flow.json --environment dev --solution Core --dry-run --format json',
-      '  pp flow deploy ./flows/invoice/flow.json --environment dev --solution Core --create-if-missing --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowNormalizeHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow normalize <path> [--out PATH] [options]',
-      '',
-      'Behavior:',
-      '  - Rewrites a local flow artifact into pp’s normalized shape.',
-      '',
-      'Examples:',
-      '  pp flow normalize ./flows/invoice/flow.json',
-      '  pp flow normalize ./flows/invoice/flow.json --out ./artifacts/invoice-flow.normalized.json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowValidateHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow validate <path> [options]',
-      '',
-      'Behavior:',
-      '  - Validates a local flow artifact and returns structured diagnostics.',
-      '',
-      'Examples:',
-      '  pp flow validate ./flows/invoice/flow.json',
-      '  pp flow validate ./flows/invoice/flow.json --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowGraphHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow graph <path> [options]',
-      '',
-      'Behavior:',
-      '  - Emits a graph-oriented view of a local flow artifact.',
-      '',
-      'Examples:',
-      '  pp flow graph ./flows/invoice/flow.json --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowPatchHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow patch <path> --file PATCH.json [--out PATH] [options]',
-      '',
-      'Behavior:',
-      '  - Applies a bounded patch document to a local flow artifact.',
-      '',
-      'Examples:',
-      '  pp flow patch ./flows/invoice/flow.json --file ./patches/invoice.patch.json --out ./artifacts/invoice-flow.patched.json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowRunsHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [options]',
-      '',
-      'Behavior:',
-      '  - Lists recent remote runs for one flow.',
-      '',
-      'Examples:',
-      '  pp flow runs InvoiceSync --environment dev --since 7d --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowErrorsHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow errors <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [options]',
-      '',
-      'Behavior:',
-      '  - Summarizes recent remote flow failures and can group them by error or connection reference.',
-      '',
-      'Examples:',
-      '  pp flow errors InvoiceSync --environment dev --since 7d --group-by errorCode --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowConnrefsHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow connrefs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [options]',
-      '',
-      'Behavior:',
-      '  - Reports the connection references used by one remote flow.',
-      '',
-      'Examples:',
-      '  pp flow connrefs InvoiceSync --environment dev --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printFlowDoctorHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow doctor <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [options]',
-      '',
-      'Behavior:',
-      '  - Summarizes runtime health, failures, and connection-reference context for one remote flow.',
-      '',
-      'Examples:',
-      '  pp flow doctor InvoiceSync --environment dev --since 7d --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printSharePointHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: sharepoint <command> <action> [options]',
-      '',
-      'Commands:',
-      '  site inspect <site|binding>              inspect a SharePoint site by URL, site id, or project binding',
-      '  list inspect <list|binding> --site ...   inspect a SharePoint list by title, id, or project binding',
-      '  file inspect <file|binding> --site ...   inspect a drive item by path, id, or project binding',
-      '  permissions inspect --site ...           inspect site, list, or drive item permissions',
-      '',
-      'Binding notes:',
-      '  - SharePoint bindings support `sharepoint-site`, `sharepoint-list`, and `sharepoint-file` kinds.',
-      '  - `sharepoint-list` and `sharepoint-file` bindings should declare `metadata.site`; file bindings can also declare `metadata.drive`.',
-      '  - Bindings can declare `metadata.authProfile` so commands do not need `--profile`.',
-      '',
-      'Examples:',
-      '  pp sharepoint site inspect financeSite --project .',
-      '  pp sharepoint list inspect Campaigns --site financeSite --profile graph-user',
-      '  pp sharepoint file inspect financeBudget --project .',
-      '  pp sharepoint permissions inspect --site financeSite --file /Shared Documents/Budget.xlsx --drive Documents --profile graph-user',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printPowerBiHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: powerbi <command> <action> [options]',
-      '',
-      'Commands:',
-      '  workspace inspect <workspace|binding>                    inspect a Power BI workspace by name, id, or project binding',
-      '  dataset inspect <dataset|binding> --workspace ...        inspect a dataset plus datasource and refresh metadata',
-      '  report inspect <report|binding> --workspace ...          inspect a report and its workspace linkage',
-      '',
-      'Binding notes:',
-      '  - Power BI bindings support `powerbi` or `powerbi-workspace`, plus `powerbi-dataset` and `powerbi-report`.',
-      '  - Dataset and report bindings should declare `metadata.workspace` to point at a workspace binding or raw workspace name/id.',
-      '  - Bindings can declare `metadata.authProfile` so commands do not need `--profile`.',
-      '',
-      'Examples:',
-      '  pp powerbi workspace inspect financeWorkspace --project .',
-      '  pp powerbi dataset inspect financeDataset --project .',
-      '  pp powerbi report inspect "Executive Overview" --workspace Finance --profile powerbi-user',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAnalysisHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: analysis <command> [options]',
-      '',
-      'Capture project context and higher-level analysis views for agents, CI, and delivery workflows.',
-      '',
-      'Commands:',
-      '  report [path]               render a high-level project report',
-      '  context                     emit one structured analysis context payload',
-      '  portfolio [path ...]        aggregate multiple projects into one portfolio view',
-      '  drift [path ...]            focus the portfolio view on drift and mismatch signals',
-      '  usage [path ...]            focus the portfolio view on provider and asset usage',
-      '  policy [path ...]           focus the portfolio view on policy and operability signals',
-      '',
-      'How to think about it:',
-      '  - `context` is the most direct machine-readable entrypoint for an agent.',
-      '  - `report` is better for a human-oriented summary.',
-      '  - `portfolio`, `drift`, `usage`, and `policy` are multi-project views over the same underlying model.',
-      '',
-      'Examples:',
-      '  pp analysis context --project . --format json',
-      '  pp analysis report . --stage prod',
-      '  pp analysis drift . ../other-project --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAnalysisReportHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: analysis report [path] [--stage STAGE] [--param NAME=VALUE] [options]',
-      '',
-      'Behavior:',
-      '  - Discovers the project, resolves stage and parameter context, and renders a high-level summary.',
-      '  - Defaults to markdown for human-readable output; use `--format json` for a structured context pack.',
-      '',
-      'Choose this when:',
-      '  - You want a readable summary of what pp thinks the project is, how it resolves, and what matters next.',
-      '',
-      'Choose `analysis context` instead when:',
-      '  - An agent, script, or CI job needs one machine-readable payload to reason over.',
-      '',
-      'Examples:',
-      '  pp analysis report .',
-      '  pp analysis report . --stage prod --format markdown',
-      '  pp analysis report . --stage prod --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAnalysisPortfolioHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: analysis portfolio [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [options]',
-      '',
-      'Behavior:',
-      '  - Aggregates one or more projects into a shared analysis view.',
-      '  - Use repeated `--project` flags or positional paths to choose the portfolio scope.',
-      '',
-      'Examples:',
-      '  pp analysis portfolio . ../other-project --format json',
-      '  pp analysis portfolio --project . --project ../other-project --allow-provider-kind dataverse',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAnalysisPortfolioViewHelp(view: 'drift' | 'usage' | 'policy'): void {
-  process.stdout.write(
-    [
-      `Usage: analysis ${view} [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [options]`,
-      '',
-      'Behavior:',
-      `  - Runs the shared portfolio analysis pipeline and emphasizes the ${view} view in the output.`,
-      '  - Accepts the same project-selection and stage-resolution options as `analysis portfolio`.',
-      '',
-      'Examples:',
-      `  pp analysis ${view} . --format json`,
-      `  pp analysis ${view} . ../other-project --stage prod --format json`,
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDeployHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: deploy <command> [options]',
-      '',
-      'Plan and apply stage-aware deployment workflows from the local pp project model.',
-      '',
-      'Commands:',
-      '  plan                         resolve the deploy plan without mutating anything',
-      '  apply                        execute a deploy plan or preview it in dry-run/plan mode',
-      '  release                      plan or apply a multi-stage release manifest',
-      '',
-      'How to think about it:',
-      '  - `deploy plan` turns project topology into concrete operations.',
-      '  - `deploy apply` executes those operations for one stage, or previews them with `--dry-run` / `--plan`.',
-      '  - `deploy release` is the multi-stage orchestration layer over saved release manifests.',
-      '',
-      'Examples:',
-      '  pp deploy plan --project . --stage dev --format json',
-      '  pp deploy apply --project . --stage dev --dry-run --format json',
-      '  pp deploy release --help',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDeployPlanHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: deploy plan [--project path] [--stage STAGE] [--param NAME=VALUE] [options]',
-      '',
-      'Behavior:',
-      '  - Discovers the local project, resolves stage-aware topology, and produces a concrete deploy plan.',
-      '  - Does not mutate the target environment.',
-      '',
-      'Examples:',
-      '  pp deploy plan --project . --stage dev --format json',
-      '  pp deploy plan --stage prod --param releaseName=2026.03.11',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDeployApplyHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: deploy apply [--project path] [--stage STAGE] [--param NAME=VALUE] [--dry-run|--plan|--plan FILE] [--yes] [options]',
-      '',
-      'Behavior:',
-      '  - Applies the stage-aware deploy workflow for one project.',
-      '  - Use `--dry-run` or `--plan` to preview without side effects.',
-      '  - Use `--plan FILE` to apply a previously saved deploy plan without rediscovering the project.',
-      '',
-      'Examples:',
-      '  pp deploy apply --project . --stage dev --dry-run --format json',
-      '  pp deploy apply --project . --stage dev --yes --format json',
-      '  pp deploy apply --plan ./artifacts/deploy-plan.json --yes --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDeployReleaseHelp(): void {
-  process.stdout.write(
-    [
-      'Usage:',
-      '  deploy release plan --file MANIFEST.yml [--approve GATE] [--param NAME=VALUE] [options]',
-      '  deploy release apply --file MANIFEST.yml [--approve GATE] [--param NAME=VALUE] [--dry-run] [--yes] [options]',
-      '',
-      'Behavior:',
-      '  - Plans or applies a release manifest that spans multiple stages or gates.',
-      '  - Use `plan` first to understand the release graph before `apply`.',
-      '',
-      'Choose this when:',
-      '  - You are coordinating a release across more than one stage, gate, or approval point.',
-      '',
-      'Choose `deploy plan` / `deploy apply` instead when:',
-      '  - You only need to work one stage at a time from the current project topology.',
-      '',
-      'Recommended flow:',
-      '  1. Start with `deploy release plan --file ...` to inspect the resolved release graph.',
-      '  2. Add `--approve GATE` only when the manifest expects a specific gate approval.',
-      '  3. Use `deploy release apply --dry-run` before live apply if you want one last non-mutating pass.',
-      '',
-      'Examples:',
-      '  pp deploy release plan --file ./release.yml --format json',
-      '  pp deploy release apply --file ./release.yml --approve prod-ready --yes --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printProjectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: project <command> [options]',
-      '',
-      'Commands:',
-      '  init [path]                 scaffold a minimal local pp project layout',
-      '  doctor [path]               validate project config, assets, and required inputs',
-      '  feedback [path]             capture conceptual project feedback and derive follow-up tasks',
-      '  inspect [path]              inspect resolved project topology and asset roots',
-      '',
-      'Examples:',
-      '  pp project init ./demo --name Demo --environment dev --solution Core',
-      '  pp project doctor ./demo --stage prod --format json',
-      '  pp project feedback ./demo --stage prod --format markdown',
-      '  pp project inspect ./demo --stage prod --param releaseName=2026.03.10 --format json',
-      '',
-      'Notes:',
-      '  - Use `pp project init --plan` or `--dry-run` to preview scaffold changes without writing files.',
-      '  - `pp project doctor`, `pp project feedback`, and `pp project inspect` are read-only local-structure workflows.',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printProjectInitHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: project init [path] [--name NAME] [--environment ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [options]',
-      '',
-      'Status:',
-      '  Scaffolds a minimal local pp project layout.',
-      '',
-      'Behavior:',
-      '  - Writes `pp.config.yaml` unless a project config already exists and `--force` is not set.',
-      '  - Creates `apps/`, `flows/`, `solutions/`, `docs/`, and `artifacts/solutions/` when they do not already exist.',
-      '  - Seeds one default stage, one solution alias, and one primary Dataverse provider binding.',
-      '  - The scaffold is source-first: reserve `solutions/` for editable solution source and place packaged exports under `artifacts/solutions/<Solution>.zip` when the repo tracks both.',
-      '',
-      'Choose this when:',
-      '  - You are starting a new repo or want pp to establish the canonical project layout.',
-      '',
-      'Choose `project inspect` or `project doctor` instead when:',
-      '  - The repo already exists and you want to understand or validate it before writing files.',
-      '',
-      'Safety:',
-      '  - `--help` only prints this text and never inspects or mutates the target path.',
-      '  - Use `--plan` or `--dry-run` for a structured no-op preview before applying the scaffold.',
-      '',
-      'Options:',
-      '  --name NAME                Project name to store in `pp.config.yaml`',
-      '  --environment ALIAS        Default Dataverse environment alias',
-      '  --solution UNIQUE_NAME     Default solution alias and unique name seed',
-      '  --stage STAGE              Default topology stage name',
-      '  --force                    Replace an existing project config file',
-      '  --dry-run                  Render a mutation preview without side effects',
-      '  --plan                     Render a mutation plan without side effects',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printProjectDoctorHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: project doctor [path] [--stage STAGE] [--param NAME=VALUE] [options]',
-      '',
-      'Status:',
-      '  Validates a local pp project layout.',
-      '',
-      'Behavior:',
-      '  - Reports config presence, asset-path checks, provider bindings, topology, registries, and unresolved required parameters.',
-      '  - Machine-readable formats emit one payload on stdout, including diagnostics and suggested next actions.',
-      '  - Reads project context without mutating the filesystem.',
-      '',
-      'Choose this when:',
-      '  - You want pp to tell you what is broken, missing, or unresolved in the local project model.',
-      '',
-      'Choose `project inspect` instead when:',
-      '  - You mainly want the resolved shape, not a health-oriented checklist.',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printProjectFeedbackHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: project feedback [path] [--stage STAGE] [--param NAME=VALUE] [options]',
-      '',
-      'Status:',
-      '  Captures retrospective conceptual feedback for a local pp project.',
-      '',
-      'Behavior:',
-      '  - Reuses the discovered project model to summarize workflow wins, current frictions, and concrete follow-up tasks.',
-      '  - Renders the canonical bundle path and stage mappings so retrospectives can stay inside `pp`.',
-      '  - Reads project context without mutating the filesystem.',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printProjectInspectHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: project inspect [path] [--stage STAGE] [--param NAME=VALUE] [options]',
-      '',
-      'Status:',
-      '  Inspects resolved local project topology and asset roots.',
-      '',
-      'Behavior:',
-      '  - Returns project summary, the canonical local layout contract, resolved topology, parameters, provider bindings, asset inventory, registries, build metadata, and docs metadata.',
-      '  - Reads project context without mutating the filesystem.',
-      '  - Auto-selects the lone descendant `pp.config.*` under the inspected path and reports discovery details when the current path is not itself a pp project.',
-      '  - Calls out that editable sources belong under `apps/`, `flows/`, `solutions/`, and `docs/`, while generated solution zips belong under `artifacts/solutions/`.',
-      '  - Pair with `pp project doctor` for layout validation and `pp project init` to scaffold a canonical `apps/`, `flows/`, `solutions/`, and `docs/` workspace.',
-      '',
-      'Choose this when:',
-      '  - You want the resolved project model that an agent, analysis command, or deploy workflow will actually see.',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printAnalysisContextHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [options]',
-      '',
-      'Status:',
-      '  Captures analysis-ready project context for agent and automation workflows.',
-      '',
-      'Behavior:',
-      '  - Resolves the local project model and emits discovery, topology, provider binding, parameter, asset, and deploy-plan context in one payload.',
-      '  - Reports the inspected path, resolved project root, and any descendant auto-selection directly in the structured output.',
-      '  - Reads project context without mutating the filesystem.',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-function printCompletionHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: completion <bash|zsh|fish>',
-      '',
-      'Status:',
-      '  Emits a shell completion script for `pp`.',
-      '',
-      'Examples:',
-      '  pp completion zsh > ~/.zfunc/_pp',
-      '  autoload -U compinit && compinit',
-      '  pp completion fish > ~/.config/fish/completions/pp.fish',
-      '',
-      'Notes:',
-      '  - Completion covers top-level commands plus the next subcommand layer.',
-      '  - Redirect the output into your shell completion directory; `pp` does not edit shell startup files for you.',
-      '',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDiagnosticsHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: diagnostics <doctor|bundle> [path] [options]',
-      '',
-      'Commands:',
-      '  doctor [path]              summarize install, config, and project operability findings',
-      '  bundle [path]              emit a structured debug bundle for support or CI artifacts',
-      '',
-      'Examples:',
-      '  pp diagnostics doctor',
-      '  pp diagnostics doctor ./repo --format table',
-      '  pp diagnostics bundle ./repo --format json > pp-diagnostics.json',
-      '',
-      'Common options:',
-      '  --config-dir path',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-      '',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDiagnosticsDoctorHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: diagnostics doctor [path] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Status:',
-      '  Summarizes install, config, and local project operability findings for `pp` itself.',
-      '',
-      'Behavior:',
-      '  - Checks whether the diagnostics target exists.',
-      '  - Reports global config and MSAL cache paths plus whether they already exist.',
-      '  - Tries to discover a local `pp.config.*` project and surfaces unresolved project diagnostics when one is found.',
-      '',
-    ].join('\n') + '\n'
-  );
-}
-
-function printDiagnosticsBundleHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: diagnostics bundle [path] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Status:',
-      '  Emits a structured debug bundle for `pp` install, runtime, config, and project context.',
-      '',
-      'Behavior:',
-      '  - Includes CLI version, runtime metadata, config roots, and project-discovery state.',
-      '  - Intended for CI artifacts, support triage, or before/after troubleshooting snapshots.',
-      '',
-    ].join('\n') + '\n'
-  );
 }
 
 function isDirectExecution(metaUrl: string): boolean {
