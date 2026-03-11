@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
@@ -226,6 +226,8 @@ export interface CanvasCliResolution {
 export type CanvasAppSummary = DataverseCanvasAppSummary & {
   inSolution?: boolean;
 };
+
+const CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT_MS = 30_000;
 
 export interface CanvasRemoteDownloadResult {
   app: CanvasAppSummary;
@@ -628,8 +630,17 @@ export class CanvasService {
         return loaded as unknown as OperationResult<CanvasRemoteProofReport>;
       }
 
-      const expectations = options.expectations.map((expectation) => buildCanvasRemoteProofCheck(loaded.data, expectation));
+      const harvestedProofs = await loadHarvestedCanvasPropertyProofs(downloaded.data.extractedPath);
+
+      if (!harvestedProofs.success || !harvestedProofs.data) {
+        return harvestedProofs as unknown as OperationResult<CanvasRemoteProofReport>;
+      }
+
+      const expectations = options.expectations.map((expectation) =>
+        buildCanvasRemoteProofCheck(loaded.data, expectation, harvestedProofs.data.get(buildCanvasProofKey(expectation.controlPath, expectation.property)))
+      );
       const mismatchDiagnostics = buildCanvasRemoteProofDiagnostics(expectations);
+      const conflictDiagnostics = buildCanvasRemoteProofConflictDiagnostics(expectations);
 
       return ok(
         {
@@ -643,8 +654,8 @@ export class CanvasService {
         },
         {
           supportTier: 'preview',
-          diagnostics: [...downloaded.diagnostics, ...loaded.diagnostics, ...mismatchDiagnostics],
-          warnings: [...downloaded.warnings, ...loaded.warnings],
+          diagnostics: [...downloaded.diagnostics, ...loaded.diagnostics, ...mismatchDiagnostics, ...conflictDiagnostics],
+          warnings: [...downloaded.warnings, ...loaded.warnings, ...harvestedProofs.warnings],
           provenance: [
             {
               kind: 'official-api',
@@ -653,7 +664,7 @@ export class CanvasService {
             {
               kind: 'inferred',
               source: '@pp/canvas remote proof',
-              detail: 'Proof expectations were evaluated from the exported remote canvas source tree.',
+              detail: 'Proof expectations were evaluated from the exported remote canvas source tree, preferring harvested control rules when exported YAML and control metadata disagree.',
             },
           ],
         }
@@ -690,20 +701,30 @@ function defaultCanvasDownloadBaseName(app: CanvasAppSummary): string {
 
 function buildCanvasRemoteProofCheck(
   source: CanvasSourceModel,
-  expectation: CanvasRemoteProofExpectation
+  expectation: CanvasRemoteProofExpectation,
+  harvestedActualValueText?: string
 ): CanvasRemoteProofCheck {
   const control = findCanvasControlByPath(source, expectation.controlPath);
   const actualValue = control?.properties[expectation.property];
-  const actualValueText = actualValue === undefined ? undefined : formatCanvasProofValue(actualValue);
+  const sourceActualValueText = actualValue === undefined ? undefined : formatCanvasProofValue(actualValue);
+  const actualValueText = harvestedActualValueText ?? sourceActualValueText;
+  const conflict =
+    harvestedActualValueText !== undefined &&
+    sourceActualValueText !== undefined &&
+    harvestedActualValueText !== sourceActualValueText;
 
   return {
     controlPath: expectation.controlPath,
     property: expectation.property,
-    found: actualValue !== undefined,
+    found: actualValueText !== undefined,
     matched: actualValueText === expectation.expectedValue,
     expectedValue: expectation.expectedValue,
-    actualValue,
+    actualValue: harvestedActualValueText !== undefined ? harvestedActualValueText : actualValue,
     actualValueText,
+    sourceActualValueText,
+    harvestedActualValueText,
+    evidence: harvestedActualValueText !== undefined ? 'harvested' : sourceActualValueText !== undefined ? 'source' : undefined,
+    conflict,
   };
 }
 
@@ -736,8 +757,99 @@ function buildCanvasRemoteProofDiagnostics(expectations: CanvasRemoteProofCheck[
   ];
 }
 
+function buildCanvasRemoteProofConflictDiagnostics(expectations: CanvasRemoteProofCheck[]): Diagnostic[] {
+  return expectations
+    .filter((expectation) => expectation.conflict)
+    .map((expectation) =>
+      createDiagnostic(
+        'warning',
+        'CANVAS_REMOTE_PROOF_SOURCE_CONFLICT',
+        `Remote canvas proof found conflicting exported values for ${expectation.controlPath}.${expectation.property}.`,
+        {
+          source: '@pp/canvas remote proof',
+          detail: `Source YAML: ${expectation.sourceActualValueText ?? '<missing>'}\nHarvested Controls: ${expectation.harvestedActualValueText ?? '<missing>'}`,
+          hint: 'The proof result used harvested Controls/*.json rule metadata because it more directly reflects the exported runtime control binding.',
+        }
+      )
+    );
+}
+
 function formatCanvasProofValue(value: CanvasJsonValue): string {
   return typeof value === 'string' ? value : stableStringify(value as Parameters<typeof stableStringify>[0]);
+}
+
+function buildCanvasProofKey(controlPath: string, property: string): string {
+  return `${controlPath}::${property}`.toLowerCase();
+}
+
+async function loadHarvestedCanvasPropertyProofs(root: string): Promise<OperationResult<Map<string, string>>> {
+  const controlsDir = join(root, 'Controls');
+
+  try {
+    const directory = await stat(controlsDir);
+    if (!directory.isDirectory()) {
+      return ok(new Map(), {
+        supportTier: 'preview',
+      });
+    }
+  } catch {
+    return ok(new Map(), {
+      supportTier: 'preview',
+    });
+  }
+
+  const files = await readdir(controlsDir, { withFileTypes: true });
+  const proofs = new Map<string, string>();
+
+  for (const file of files) {
+    if (!file.isFile() || !file.name.endsWith('.json')) {
+      continue;
+    }
+
+    const document = await readJsonFile<unknown>(join(controlsDir, file.name));
+    collectHarvestedCanvasPropertyProofs(document, [], proofs);
+  }
+
+  return ok(proofs, {
+    supportTier: 'preview',
+  });
+}
+
+function collectHarvestedCanvasPropertyProofs(value: unknown, path: string[], proofs: Map<string, string>): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectHarvestedCanvasPropertyProofs(item, path, proofs);
+    }
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  const template = isRecord(value.Template) ? value.Template : undefined;
+  const controlName = readStringValue(value.Name);
+  const isControlInfo = readStringValue(value.Type) === 'ControlInfo' && template;
+  const nextPath = isControlInfo && controlName ? [...path, controlName] : path;
+
+  if (isControlInfo && nextPath.length > 0 && Array.isArray(value.Rules)) {
+    for (const rule of value.Rules) {
+      if (!isRecord(rule)) {
+        continue;
+      }
+
+      const property = readStringValue(rule.Property);
+      const invariantScript = readStringValue(rule.InvariantScript);
+
+      if (property && invariantScript !== undefined) {
+        proofs.set(buildCanvasProofKey(nextPath.join('/'), property), invariantScript);
+      }
+    }
+  }
+
+  for (const nested of Object.values(value)) {
+    collectHarvestedCanvasPropertyProofs(nested, nextPath, proofs);
+  }
 }
 
 function resolveCanvasMsappEntry(app: CanvasAppSummary, entries: string[]): string | undefined {
@@ -938,15 +1050,46 @@ async function extractZipArchive(packagePath: string, outPath: string): Promise<
 
 async function runCommand(command: string, args: string[]): Promise<OperationResult<Buffer>> {
   return new Promise((resolvePromise) => {
+    let settled = false;
     const child = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      child.kill('SIGKILL');
+      resolvePromise(
+        fail(
+          createDiagnostic(
+            'error',
+            'CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT',
+            `${command} timed out after ${CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT_MS}ms.`,
+            {
+              source: '@pp/canvas',
+              hint: `Command: ${command} ${args.join(' ')}`.trim(),
+            }
+          ),
+          {
+            supportTier: 'preview',
+          }
+        )
+      );
+    }, CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT_MS);
 
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-    child.on('error', (error) =>
+    child.on('error', (error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
       resolvePromise(
         fail(
           createDiagnostic('error', 'CANVAS_REMOTE_ZIP_TOOL_UNAVAILABLE', `Failed to execute ${command}.`, {
@@ -957,9 +1100,15 @@ async function runCommand(command: string, args: string[]): Promise<OperationRes
             supportTier: 'preview',
           }
         )
-      )
-    );
+      );
+    });
     child.on('close', (code) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
       if (code !== 0) {
         resolvePromise(
           fail(
@@ -982,6 +1131,14 @@ async function runCommand(command: string, args: string[]): Promise<OperationRes
       );
     });
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readStringValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 export async function loadCanvasTemplateRegistryBundle(

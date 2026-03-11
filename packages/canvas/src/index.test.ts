@@ -891,6 +891,151 @@ describe('remote canvas app workflows', () => {
       ])
     );
   });
+
+  it('prefers harvested control rules when exported YAML conflicts with harvested control metadata', async () => {
+    const dir = await createTempDir();
+    const msappRoot = join(dir, 'msapp-source-conflict');
+    await mkdir(join(msappRoot, 'Src'), { recursive: true });
+    await mkdir(join(msappRoot, 'References'), { recursive: true });
+    await mkdir(join(msappRoot, 'Controls'), { recursive: true });
+    await writeFile(join(msappRoot, 'Src', 'App.pa.yaml'), 'App:\n  Properties:\n    Theme: =PowerAppsTheme\n', 'utf8');
+    await writeFile(
+      join(msappRoot, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Gallery1:',
+        '          Control: Gallery@2.15.0',
+        '          Properties:',
+        '            Items: =Accounts',
+      ].join('\n') + '\n',
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'Controls', '4.json'),
+      JSON.stringify(
+        {
+          TopParent: {
+            Type: 'ControlInfo',
+            Name: 'Screen1',
+            Template: {
+              Name: 'screen',
+              Version: '1.0',
+            },
+            Children: [
+              {
+                Type: 'ControlInfo',
+                Name: 'Gallery1',
+                Parent: 'Screen1',
+                Template: {
+                  Name: 'Gallery',
+                  Version: '2.15.0',
+                },
+                Rules: [
+                  {
+                    Property: 'Items',
+                    InvariantScript: "='PP Harness Projects'",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'PP Harness Projects',
+              Type: 'Table',
+              DatasetName: 'default.cds',
+              EntityName: 'pph34135_projects',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const msappPath = join(dir, 'Harness Canvas conflict.msapp');
+    await createZip(msappRoot, msappPath);
+
+    const solutionRoot = join(dir, 'solution-conflict');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+
+    const solutionZip = join(dir, 'Core-conflict.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.proveRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      expectations: [
+        {
+          controlPath: 'Screen1/Gallery1',
+          property: 'Items',
+          expectedValue: "='PP Harness Projects'",
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.expectations).toMatchObject([
+      {
+        controlPath: 'Screen1/Gallery1',
+        property: 'Items',
+        found: true,
+        matched: true,
+        evidence: 'harvested',
+        sourceActualValueText: '=Accounts',
+        harvestedActualValueText: "='PP Harness Projects'",
+        actualValueText: "='PP Harness Projects'",
+        conflict: true,
+      },
+    ]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_REMOTE_PROOF_SOURCE_CONFLICT',
+        }),
+      ])
+    );
+  });
 });
 
 describe('canvas app workflows', () => {

@@ -2270,7 +2270,7 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(inspect.code).toBe(0);
-    expect(inspect.stderr).toContain('Proof expectations were evaluated from the exported remote canvas source tree.');
+    expect(inspect.stderr).toContain('Proof expectations were evaluated from the exported remote canvas source tree');
     expect(JSON.parse(inspect.stdout)).toMatchObject({
       id: 'canvas-1',
       displayName: 'Harness Canvas',
@@ -7616,6 +7616,67 @@ describe('cli fixture-backed workflows', () => {
           risk: 'high',
           recommendedAction: expect.stringContaining('Treat pac as a separately authenticated tool.'),
           reason: expect.stringContaining('browser profile fixture-browser'),
+        },
+      },
+    });
+  });
+
+  it('flags browser profiles that were not bootstrapped against the resolved maker environment', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://fixture.crm.dynamics.com',
+              loginHint: 'fixture.user@example.com',
+              browserProfile: 'fixture-browser',
+            },
+          },
+          browserProfiles: {
+            'fixture-browser': {
+              name: 'fixture-browser',
+              kind: 'edge',
+              lastBootstrapUrl: 'https://make.powerapps.com/',
+              lastBootstrappedAt: '2026-03-11T10:00:00.000Z',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+              makerEnvironmentId: 'env-123',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await runCli(['env', 'inspect', 'fixture', '--config-dir', configDir, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      alias: 'fixture',
+      makerEnvironmentId: 'env-123',
+      tooling: {
+        browser: {
+          status: 'needs-targeted-bootstrap',
+          name: 'fixture-browser',
+          lastBootstrapUrl: 'https://make.powerapps.com/',
+          targetsMakerEnvironment: false,
+          targetMakerEnvironmentId: 'env-123',
+          recommendedBootstrapUrl: 'https://make.powerapps.com/e/env-123/',
+          bootstrapCommand: "pp auth browser-profile bootstrap fixture-browser --url 'https://make.powerapps.com/e/env-123/'",
+          recommendedAction: expect.stringContaining('Bootstrap the browser profile against Maker environment env-123'),
         },
       },
     });

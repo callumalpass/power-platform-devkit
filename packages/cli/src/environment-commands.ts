@@ -462,17 +462,62 @@ function buildEnvironmentBrowserGuidance(
   }
 
   const summary = summarizeBrowserProfile(browserProfile);
-  const bootstrapUrl = browserProfile.lastBootstrapUrl ?? 'https://make.powerapps.com/';
+  const bootstrapUrl = deriveEnvironmentBrowserBootstrapUrl(environment, browserProfile);
   const command = `pp auth browser-profile bootstrap ${browserProfile.name} --url '${bootstrapUrl}'`;
+  const targetsMakerEnvironment =
+    environment.makerEnvironmentId !== undefined
+      ? browserProfileTargetsMakerEnvironment(browserProfile.lastBootstrapUrl, environment.makerEnvironmentId)
+      : undefined;
+
+  if (environment.makerEnvironmentId && targetsMakerEnvironment === false) {
+    return {
+      ...summary,
+      status: 'needs-targeted-bootstrap',
+      targetsMakerEnvironment,
+      targetMakerEnvironmentId: environment.makerEnvironmentId,
+      bootstrapCommand: command,
+      recommendedBootstrapUrl: bootstrapUrl,
+      recommendedAction: `Bootstrap the browser profile against Maker environment ${environment.makerEnvironmentId} before runtime validation or Maker fallback steps for ${environment.alias}.`,
+    };
+  }
 
   return {
     status: browserProfile.lastBootstrappedAt ? 'bootstrapped' : 'needs-bootstrap',
     ...summary,
+    ...(targetsMakerEnvironment !== undefined
+      ? {
+          targetsMakerEnvironment,
+          targetMakerEnvironmentId: environment.makerEnvironmentId,
+          recommendedBootstrapUrl: bootstrapUrl,
+        }
+      : {}),
     recommendedAction: browserProfile.lastBootstrappedAt
       ? `Refresh the browser profile before Maker-critical steps if the stored session is stale or sign-in prompts reappear for ${environment.alias}.`
       : `Bootstrap the browser profile once before Maker-critical steps for ${environment.alias}.`,
     bootstrapCommand: command,
   };
+}
+
+function deriveEnvironmentBrowserBootstrapUrl(environment: EnvironmentAlias, browserProfile: BrowserProfile): string {
+  if (environment.makerEnvironmentId) {
+    return `https://make.powerapps.com/e/${encodeURIComponent(environment.makerEnvironmentId)}/`;
+  }
+
+  return browserProfile.lastBootstrapUrl ?? 'https://make.powerapps.com/';
+}
+
+function browserProfileTargetsMakerEnvironment(url: string | undefined, makerEnvironmentId: string): boolean {
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/+$/, '');
+    return path.includes(`/e/${makerEnvironmentId}`) || path.includes(`/environments/${makerEnvironmentId}`);
+  } catch {
+    return false;
+  }
 }
 
 async function runEnvironmentCleanupLike(

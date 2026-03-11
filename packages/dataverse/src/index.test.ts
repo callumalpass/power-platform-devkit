@@ -3309,6 +3309,72 @@ describe('normalizeMetadataQueryOptions', () => {
     );
   });
 
+  it('retries model-driven app components through the app-specific navigation path when optional columns are unsupported', async () => {
+    const httpClient = new FakeHttpClient([
+      fail([
+        createDiagnostic(
+          'error',
+          'HTTP_REQUEST_FAILED',
+          "Could not find a property named 'appmoduleidunique' on type Microsoft.Dynamics.CRM.appmodulecomponent.",
+          {
+            source: '@pp/http',
+            detail:
+              "Could not find a property named '_appmoduleidunique_value' on type Microsoft.Dynamics.CRM.appmodulecomponent.",
+          }
+        ),
+      ]),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              appmodulecomponentid: 'amc-1',
+              componenttype: 1,
+              objectid: 'entity-1',
+            },
+            {
+              appmodulecomponentid: 'amc-2',
+              componenttype: 60,
+              objectid: 'form-1',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ModelDrivenAppService(client);
+
+    const result = await service.components('app-1');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      {
+        id: 'amc-1',
+        componentType: 1,
+        objectId: 'entity-1',
+        appId: 'app-1',
+      },
+      {
+        id: 'amc-2',
+        componentType: 60,
+        objectId: 'form-1',
+        appId: 'app-1',
+      },
+    ]);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_MODEL_APP_COMPONENT_OPTIONAL_COLUMNS_UNAVAILABLE',
+        }),
+      ])
+    );
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'appmodulecomponents?%24select=appmodulecomponentid%2Ccomponenttype%2Cobjectid%2C_appmoduleidunique_value%2Cappmoduleidunique',
+      'appmodules(app-1)/appmodule_appmodulecomponent?%24select=appmodulecomponentid%2Ccomponenttype%2Cobjectid',
+    ]);
+  });
+
   it('creates and attaches model-driven apps through typed services', async () => {
     const httpClient = new FakeHttpClient([
       ok({

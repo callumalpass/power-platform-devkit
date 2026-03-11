@@ -449,6 +449,10 @@ export interface CanvasRemoteProofCheck {
   expectedValue: string;
   actualValue?: CanvasJsonValue;
   actualValueText?: string;
+  sourceActualValueText?: string;
+  harvestedActualValueText?: string;
+  evidence?: 'source' | 'harvested';
+  conflict?: boolean;
 }
 
 export interface CanvasRemoteProofReport {

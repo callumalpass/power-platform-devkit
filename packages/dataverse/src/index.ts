@@ -3189,17 +3189,17 @@ export class ModelDrivenAppService {
   }
 
   async components(appId: string): Promise<OperationResult<ModelDrivenAppComponentSummary[]>> {
-    const components = await this.dataverseClient.queryAll<ModelDrivenAppComponentRecord>({
-      table: 'appmodulecomponents',
-      select: [...baseModelDrivenAppComponentSelect, '_appmoduleidunique_value', 'appmoduleidunique'],
-    });
+    const components = await queryModelDrivenAppComponentRecords(this.dataverseClient, appId);
 
     if (!components.success) {
       return components as unknown as OperationResult<ModelDrivenAppComponentSummary[]>;
     }
 
     const filtered = (components.data ?? [])
-      .filter((component) => [component._appmoduleidunique_value, component.appmoduleidunique].filter(Boolean).includes(appId))
+      .filter((component) => {
+        const appIds = [component._appmoduleidunique_value, component.appmoduleidunique].filter(Boolean);
+        return appIds.length === 0 || appIds.includes(appId);
+      })
       .map((component) => normalizeModelDrivenAppComponent(component, appId));
 
     return ok(
@@ -4178,6 +4178,7 @@ const optionalConnectionReferenceSelect = ['customconnectorid'] as const;
 const baseFlowRunSelect = ['flowrunid', 'name', 'workflowid', 'status', 'starttime', 'endtime', 'errorcode', 'errormessage'] as const;
 const optionalFlowRunSelect = ['workflowname', 'durationinms', 'retrycount'] as const;
 const baseModelDrivenAppComponentSelect = ['appmodulecomponentid', 'componenttype', 'objectid'] as const;
+const optionalModelDrivenAppComponentSelect = ['_appmoduleidunique_value', 'appmoduleidunique'] as const;
 
 async function queryConnectionReferenceRecords(
   dataverseClient: DataverseClient
@@ -4278,6 +4279,52 @@ async function queryFlowRunRecords(dataverseClient: DataverseClient): Promise<Op
   });
 }
 
+async function queryModelDrivenAppComponentRecords(
+  dataverseClient: DataverseClient,
+  appId: string
+): Promise<OperationResult<ModelDrivenAppComponentRecord[]>> {
+  const initial = await dataverseClient.queryAll<ModelDrivenAppComponentRecord>({
+    table: 'appmodulecomponents',
+    select: [...baseModelDrivenAppComponentSelect, ...optionalModelDrivenAppComponentSelect],
+  });
+
+  const unsupportedColumns = findUnsupportedModelDrivenAppComponentColumns(initial.diagnostics);
+  if (initial.success || unsupportedColumns.length === 0) {
+    return initial;
+  }
+
+  const retry = await dataverseClient.queryAll<ModelDrivenAppComponentRecord>({
+    table: `appmodules(${appId})/appmodule_appmodulecomponent`,
+    select: [...baseModelDrivenAppComponentSelect],
+  });
+
+  if (!retry.success) {
+    return retry;
+  }
+
+  return ok(retry.data ?? [], {
+    supportTier: retry.supportTier,
+    diagnostics: retry.diagnostics,
+    warnings: mergeDiagnosticLists(
+      retry.warnings,
+      [
+        createDiagnostic(
+          'warning',
+          'DATAVERSE_MODEL_APP_COMPONENT_OPTIONAL_COLUMNS_UNAVAILABLE',
+          `Model-driven app component query retried without unsupported column${unsupportedColumns.length === 1 ? '' : 's'} ${unsupportedColumns.join(', ')}.`,
+          {
+            source: '@pp/dataverse',
+            detail: initial.diagnostics
+              .map((diagnostic) => diagnostic.detail ?? diagnostic.message)
+              .filter((value) => value && value.length > 0)
+              .join('\n'),
+          }
+        ),
+      ]
+    ),
+  });
+}
+
 async function queryConnectionReferencesByIds(
   dataverseClient: DataverseClient,
   ids: string[]
@@ -4349,6 +4396,10 @@ function findUnsupportedConnectionReferenceColumns(diagnostics: Diagnostic[]): s
 
 function findUnsupportedFlowRunColumns(diagnostics: Diagnostic[]): string[] {
   return findUnsupportedColumns(diagnostics, optionalFlowRunSelect);
+}
+
+function findUnsupportedModelDrivenAppComponentColumns(diagnostics: Diagnostic[]): string[] {
+  return findUnsupportedColumns(diagnostics, optionalModelDrivenAppComponentSelect);
 }
 
 function findUnsupportedColumns(diagnostics: Diagnostic[], columns: readonly string[]): string[] {
