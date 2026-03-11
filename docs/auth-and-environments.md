@@ -266,6 +266,25 @@ staying inside `pp` when possible; if `pac` is unavoidable, treat it as a
 separately authenticated tool and verify it explicitly before relying on it in
 the middle of a scenario step.
 
+For canvas workflows in particular, do not assume `pac canvas list` or
+`pac canvas download` can reuse a working `pp` browser-backed alias. If
+`tooling.pac.sharesPpAuthContext` is `false`, finish the `pp` path first
+(`pp canvas download`, delegated Maker create, or a recorded fixture fallback)
+before you decide whether `pac` is still necessary.
+
+When `pac` is genuinely required, bootstrap it as its own setup step instead of
+discovering that requirement mid-run:
+
+```bash
+pac auth create --name test-pac --deviceCode --environment https://example.crm.dynamics.com
+pac auth select --name test-pac
+pac auth who
+```
+
+Use the Dataverse org URL from the target environment alias, not the fact that
+`pp dv whoami --env <alias>` succeeded, as the input contract for that
+bootstrap.
+
 For disposable bootstrap flows, `pp env cleanup-plan <alias> --prefix <runPrefix>`
 lists solutions whose unique name or friendly name starts with that prefix.
 `pp env reset <alias> --prefix <runPrefix>` then deletes those matches through
