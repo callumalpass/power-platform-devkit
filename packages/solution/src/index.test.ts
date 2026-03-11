@@ -133,6 +133,18 @@ function createStubClient(data: StubData): DataverseClient {
           return ok([] as T[], { supportTier: 'preview' });
       }
     },
+    getById: async <T>(table: string, id: string): Promise<OperationResult<T>> => {
+      if (table === 'publishers') {
+        const publisher = publishers.find((candidate) => candidate.publisherid === id);
+        return ok((publisher ?? {}) as T, {
+          supportTier: 'preview',
+        });
+      }
+
+      return ok({} as T, {
+        supportTier: 'preview',
+      });
+    },
     listTables: async (): Promise<OperationResult<EntityDefinition[]>> =>
       ok(data.tables ?? [], {
         supportTier: 'preview',
@@ -361,7 +373,7 @@ describe('SolutionService', () => {
     });
   });
 
-  it('falls back to querying the publisher table when the solution row only exposes the lookup id', async () => {
+  it('falls back to fetching publisher metadata when the solution row only exposes the lookup id', async () => {
     const service = new SolutionService(
       createStubClient({
         solution: {
@@ -397,6 +409,69 @@ describe('SolutionService', () => {
         uniquename: 'pp',
         customizationprefix: 'pp',
         customizationoptionvalueprefix: 12560,
+      },
+    });
+  });
+
+  it('uses a direct publisher lookup by id when inspect only has the solution lookup column', async () => {
+    const publisherLookups: string[] = [];
+    const baseClient = createStubClient({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+        friendlyname: 'Core Solution',
+        version: '1.0.1.0',
+        _publisherid_value: 'pub-1',
+      },
+      publishers: [
+        {
+          publisherid: 'pub-1',
+          uniquename: 'pp',
+          friendlyname: 'Power Platform Publisher',
+          customizationprefix: 'pp',
+          customizationoptionvalueprefix: 12560,
+        },
+      ],
+      components: [],
+      dependencies: [],
+    });
+    const service = new SolutionService(
+      {
+        ...baseClient,
+        query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+          if (options.table === 'publishers') {
+            return ok([] as T[], { supportTier: 'preview' });
+          }
+
+          return baseClient.query(options);
+        },
+        getById: async <T>(table: string, id: string): Promise<OperationResult<T>> => {
+          publisherLookups.push(`${table}:${id}`);
+          return ok(
+            {
+              publisherid: 'pub-1',
+              uniquename: 'pp',
+              friendlyname: 'Power Platform Publisher',
+              customizationprefix: 'pp',
+              customizationoptionvalueprefix: 12560,
+            } as T,
+            { supportTier: 'preview' }
+          );
+        },
+      } as DataverseClient
+    );
+
+    const inspect = await service.inspect('Core');
+
+    expect(inspect.success).toBe(true);
+    expect(publisherLookups).toEqual(['publishers:pub-1']);
+    expect(inspect.data).toMatchObject({
+      solutionid: 'sol-1',
+      uniquename: 'Core',
+      publisher: {
+        publisherid: 'pub-1',
+        uniquename: 'pp',
+        customizationprefix: 'pp',
       },
     });
   });

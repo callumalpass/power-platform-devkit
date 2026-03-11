@@ -1257,11 +1257,8 @@ export class SolutionService {
       };
     }
 
-    const publisher = await this.dataverseClient.query<SolutionPublisherSummary>({
-      table: 'publishers',
+    const publisher = await this.dataverseClient.getById<SolutionPublisherSummary>('publishers', publisherId, {
       select: ['publisherid', 'uniquename', 'friendlyname', 'customizationprefix', 'customizationoptionvalueprefix'],
-      filter: `publisherid eq ${publisherId}`,
-      top: 1,
     });
 
     return {
@@ -1270,7 +1267,7 @@ export class SolutionService {
       friendlyname: record.friendlyname,
       version: record.version,
       ismanaged: record.ismanaged,
-      publisher: normalizePublisherSummary(publisher.success ? publisher.data?.[0] : undefined) ?? { publisherid: publisherId },
+      publisher: normalizePublisherSummary(publisher.success ? publisher.data : undefined) ?? { publisherid: publisherId },
     };
   }
 

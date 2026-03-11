@@ -7403,30 +7403,51 @@ describe('cli fixture-backed workflows', () => {
   });
 
   it('surfaces publisher metadata in solution inspect output through the CLI entrypoint', async () => {
+    const sourceClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'HarnessShell',
+            friendlyname: 'Harness Shell',
+            version: '2026.3.10.34135',
+            ismanaged: false,
+            _publisherid_value: 'pub-1',
+          },
+        ],
+        publishers: [
+          {
+            publisherid: 'pub-1',
+            uniquename: 'pp',
+            friendlyname: 'pp',
+            customizationprefix: 'pp',
+            customizationoptionvalueprefix: 12560,
+          },
+        ],
+      },
+    });
     mockDataverseResolution({
-      source: createFixtureDataverseClient({
-        query: {
-          solutions: [
-            {
-              solutionid: 'sol-1',
-              uniquename: 'HarnessShell',
-              friendlyname: 'Harness Shell',
-              version: '2026.3.10.34135',
-              ismanaged: false,
-              _publisherid_value: 'pub-1',
-            },
-          ],
-          publishers: [
-            {
-              publisherid: 'pub-1',
-              uniquename: 'pp',
-              friendlyname: 'pp',
-              customizationprefix: 'pp',
-              customizationoptionvalueprefix: 12560,
-            },
-          ],
+      source: {
+        client: {
+          ...sourceClient,
+          getById: async <T>(table: string, id: string) => {
+            if (table === 'publishers' && id === 'pub-1') {
+              return ok(
+                {
+                  publisherid: 'pub-1',
+                  uniquename: 'pp',
+                  friendlyname: 'pp',
+                  customizationprefix: 'pp',
+                  customizationoptionvalueprefix: 12560,
+                } as T,
+                { supportTier: 'preview' }
+              );
+            }
+
+            return ok({} as T, { supportTier: 'preview' });
+          },
         },
-      }),
+      },
     });
 
     const inspect = await runCli(['solution', 'inspect', 'HarnessShell', '--env', 'source', '--format', 'json']);
