@@ -244,14 +244,25 @@ export interface DataverseMetadataApplyOperationResult {
   kind: MetadataApplyOperation['kind'];
   status: number;
   entity?: unknown;
+  entitySummary?: NormalizedMetadataWriteEntity;
   entityId?: string;
   location?: string;
   publishTargets?: string[];
   optionSetPublishTargets?: string[];
 }
 
+export interface DataverseMetadataApplySummary {
+  operationCount: number;
+  operationsByKind: Partial<Record<MetadataApplyOperation['kind'], number>>;
+  tables?: NormalizedEntityDefinition[];
+  columns?: NormalizedAttributeDefinition[];
+  optionSets?: NormalizedOptionSetDefinition[];
+  relationships?: NormalizedRelationshipDefinition[];
+}
+
 export interface DataverseMetadataApplyResult {
   operations: DataverseMetadataApplyOperationResult[];
+  summary?: DataverseMetadataApplySummary;
   published?: boolean;
   publishTargets?: string[];
   optionSetPublishTargets?: string[];
@@ -1795,6 +1806,7 @@ export class DataverseClient {
     return ok(
       compactObject({
         operations: operationResults,
+        summary: summarizeMetadataApplyOperations(operationResults),
         published: publishResponse ? publishResponse.success : undefined,
         publishTargets: publishResponse ? uniqueStrings(entityPublishTargets) : undefined,
         optionSetPublishTargets: publishResponse ? uniqueStrings(optionSetPublishTargets) : undefined,
@@ -4471,11 +4483,14 @@ function mapApplyOperationResult(
     return result as unknown as OperationResult<DataverseMetadataApplyOperationResult>;
   }
 
+  const entitySummary = result.data.entitySummary ?? normalizeMetadataApplyEntity(kind, result.data.entity);
+
   return ok(
     compactObject({
       kind,
       status: result.data.status,
       entity: result.data.entity,
+      entitySummary,
       entityId: result.data.entityId,
       location: result.data.location,
       publishTargets: publishTargets ? uniqueStrings(publishTargets) : undefined,
@@ -4491,6 +4506,83 @@ function mapApplyOperationResult(
 
 function escapeODataLiteral(value: string): string {
   return value.replaceAll("'", "''");
+}
+
+function normalizeMetadataApplyEntity(
+  kind: MetadataApplyOperation['kind'],
+  entity: unknown
+): NormalizedMetadataWriteEntity | undefined {
+  if (!isRecord(entity)) {
+    return undefined;
+  }
+
+  switch (kind) {
+    case 'create-table':
+    case 'update-table':
+      return normalizeEntityDefinition(entity as EntityDefinition);
+    case 'add-column':
+    case 'update-column':
+      return normalizeAttributeDefinition(entity as AttributeDefinition, 'detailed');
+    case 'create-option-set':
+    case 'update-option-set':
+      return normalizeGlobalOptionSetDefinition(entity as GlobalOptionSetDefinition);
+    case 'create-relationship':
+    case 'update-relationship':
+    case 'create-many-to-many':
+    case 'create-customer-relationship':
+      return normalizeRelationshipDefinition(entity as RelationshipDefinition);
+  }
+}
+
+function summarizeMetadataApplyOperations(operations: DataverseMetadataApplyOperationResult[]): DataverseMetadataApplySummary {
+  const summary: DataverseMetadataApplySummary = {
+    operationCount: operations.length,
+    operationsByKind: {},
+  };
+
+  const tables: NormalizedEntityDefinition[] = [];
+  const columns: NormalizedAttributeDefinition[] = [];
+  const optionSets: NormalizedOptionSetDefinition[] = [];
+  const relationships: NormalizedRelationshipDefinition[] = [];
+
+  for (const operation of operations) {
+    summary.operationsByKind[operation.kind] = (summary.operationsByKind[operation.kind] ?? 0) + 1;
+
+    const normalized = operation.entitySummary;
+    if (!normalized) {
+      continue;
+    }
+
+    switch (operation.kind) {
+      case 'create-table':
+      case 'update-table':
+        tables.push(normalized as NormalizedEntityDefinition);
+        break;
+      case 'add-column':
+      case 'update-column':
+        columns.push(normalized as NormalizedAttributeDefinition);
+        break;
+      case 'create-option-set':
+      case 'update-option-set':
+        optionSets.push(normalized as NormalizedOptionSetDefinition);
+        break;
+      case 'create-relationship':
+      case 'update-relationship':
+      case 'create-many-to-many':
+      case 'create-customer-relationship':
+        relationships.push(normalized as NormalizedRelationshipDefinition);
+        break;
+    }
+  }
+
+  return compactObject({
+    operationCount: summary.operationCount,
+    operationsByKind: summary.operationsByKind,
+    tables: tables.length > 0 ? tables : undefined,
+    columns: columns.length > 0 ? columns : undefined,
+    optionSets: optionSets.length > 0 ? optionSets : undefined,
+    relationships: relationships.length > 0 ? relationships : undefined,
+  }) as DataverseMetadataApplySummary;
 }
 
 function escapeXml(value: string): string {

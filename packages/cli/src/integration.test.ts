@@ -7078,6 +7078,113 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('prints a compact normalized summary for dataverse metadata apply results', async () => {
+    mockDataverseResolution({
+      source: {
+        client: {
+          applyMetadataPlan: async () =>
+            ok(
+              {
+                operations: [
+                  {
+                    kind: 'create-table',
+                    status: 200,
+                    entitySummary: {
+                      logicalName: 'pp_project',
+                      schemaName: 'pp_Project',
+                      displayName: 'Project',
+                    },
+                  },
+                  {
+                    kind: 'add-column',
+                    status: 200,
+                    entitySummary: {
+                      logicalName: 'pp_trackingcode',
+                      entityLogicalName: 'pp_project',
+                      displayName: 'Tracking Code',
+                    },
+                  },
+                  {
+                    kind: 'create-relationship',
+                    status: 200,
+                    entitySummary: {
+                      schemaName: 'pp_project_account',
+                      relationshipType: 'one-to-many',
+                      referencedEntity: 'account',
+                      referencingEntity: 'pp_project',
+                    },
+                  },
+                ],
+                summary: {
+                  operationCount: 3,
+                  operationsByKind: {
+                    'create-table': 1,
+                    'add-column': 1,
+                    'create-relationship': 1,
+                  },
+                  tables: [{ logicalName: 'pp_project', schemaName: 'pp_Project', displayName: 'Project' }],
+                  columns: [{ logicalName: 'pp_trackingcode', entityLogicalName: 'pp_project', displayName: 'Tracking Code' }],
+                  relationships: [
+                    {
+                      schemaName: 'pp_project_account',
+                      relationshipType: 'one-to-many',
+                      referencedEntity: 'account',
+                      referencingEntity: 'pp_project',
+                    },
+                  ],
+                },
+                published: true,
+                publishTargets: ['account', 'pp_project'],
+              },
+              {
+                supportTier: 'preview',
+              }
+            ),
+        } as unknown as DataverseClient,
+      },
+    });
+
+    const tempDir = await createTempDir();
+    const manifestPath = join(tempDir, 'schema.apply.yaml');
+    const tablePath = join(tempDir, 'project.table.yaml');
+
+    await writeFile(
+      manifestPath,
+      ['operations:', '  - kind: create-table', '    file: project.table.yaml'].join('\n')
+    );
+    await writeFile(
+      tablePath,
+      [
+        'schemaName: pp_Project',
+        'displayName: Project',
+        'pluralDisplayName: Projects',
+        'primaryName:',
+        '  schemaName: pp_Name',
+        '  displayName: Name',
+      ].join('\n')
+    );
+
+    const apply = await runCli(['dv', 'metadata', 'apply', '--env', 'source', '--file', manifestPath, '--format', 'json']);
+
+    expect(apply.code).toBe(0);
+    expect(apply.stderr).toBe('');
+    expect(JSON.parse(apply.stdout)).toMatchObject({
+      summary: {
+        operationCount: 3,
+        operationsByKind: {
+          'create-table': 1,
+          'add-column': 1,
+          'create-relationship': 1,
+        },
+        tables: [{ logicalName: 'pp_project', schemaName: 'pp_Project' }],
+        columns: [{ logicalName: 'pp_trackingcode', entityLogicalName: 'pp_project' }],
+        relationships: [{ schemaName: 'pp_project_account', referencedEntity: 'account', referencingEntity: 'pp_project' }],
+      },
+      published: true,
+      publishTargets: ['account', 'pp_project'],
+    });
+  });
+
   it('returns a stable not-found contract for missing environment variables', async () => {
     mockDataverseResolution({
       source: createFixtureDataverseClient({

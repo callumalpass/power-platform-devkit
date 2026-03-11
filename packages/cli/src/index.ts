@@ -9812,7 +9812,7 @@ function printDataverseMetadataHelp(): void {
       'Notes:',
       '  - Read commands accept `--environment ALIAS` plus `--select`, `--expand`, `--filter`, and view flags where supported.',
       '  - Write commands accept `--environment ALIAS`, `--file FILE`, optional `--solution UNIQUE_NAME`, and publish controls.',
-      '  - Write results include `entitySummary` so successful creates and updates are easier to confirm without a follow-up inspect call.',
+      '  - Write results include `entitySummary`; `dv metadata apply` also includes a grouped `summary` for touched tables, columns, relationships, and option sets.',
       '',
       'Examples:',
       '  pp dv metadata tables --environment dev --top 10 --format json',

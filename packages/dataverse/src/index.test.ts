@@ -1413,6 +1413,58 @@ OData-Version: 4.0\r
       'add-column',
       'create-relationship',
     ]);
+    expect(result.data?.operations[0]).toMatchObject({
+      kind: 'create-option-set',
+    });
+    expect(result.data?.operations[1]).toMatchObject({
+      kind: 'create-table',
+      entitySummary: {
+        logicalName: 'pp_project',
+        schemaName: 'pp_Project',
+      },
+    });
+    expect(result.data?.operations[2]).toMatchObject({
+      kind: 'add-column',
+      entitySummary: {
+        logicalName: 'pp_statusreason',
+      },
+    });
+    expect(result.data?.operations[3]).toMatchObject({
+      kind: 'create-relationship',
+      entitySummary: {
+        schemaName: 'pp_project_task',
+      },
+    });
+    expect(result.data?.summary).toEqual({
+      operationCount: 4,
+      operationsByKind: {
+        'create-option-set': 1,
+        'create-table': 1,
+        'add-column': 1,
+        'create-relationship': 1,
+      },
+      optionSets: [
+        expect.objectContaining({
+          name: 'pp_status',
+        }),
+      ],
+      tables: [
+        expect.objectContaining({
+          logicalName: 'pp_project',
+          schemaName: 'pp_Project',
+        }),
+      ],
+      columns: [
+        expect.objectContaining({
+          logicalName: 'pp_statusreason',
+        }),
+      ],
+      relationships: [
+        expect.objectContaining({
+          schemaName: 'pp_project_task',
+        }),
+      ],
+    });
     expect(httpClient.requests.map((request) => request.path)).toEqual([
       'GlobalOptionSetDefinitions',
       "GlobalOptionSetDefinitions(Name='pp_status')",
