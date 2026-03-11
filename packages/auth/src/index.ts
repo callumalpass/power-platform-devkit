@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { accessSync, constants as fsConstants } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   ConfidentialClientApplication,
@@ -54,11 +55,50 @@ export interface PublicClientLoginOptions {
   forcePrompt?: boolean;
   preferredFlow?: PublicClientFlow;
   allowInteractive?: boolean;
+  cacheLockTimeoutMs?: number;
+  cacheLockRetryDelayMs?: number;
+  cacheLockStaleAfterMs?: number;
 }
 
 interface InteractiveAuthLaunchContext {
   cachedAccountUsername?: string;
   silentFailure?: unknown;
+}
+
+interface TokenCacheLockOptions {
+  timeoutMs: number;
+  retryDelayMs: number;
+  staleAfterMs: number;
+}
+
+const DEFAULT_TOKEN_CACHE_LOCK_TIMEOUT_MS = 30_000;
+const DEFAULT_TOKEN_CACHE_LOCK_RETRY_DELAY_MS = 200;
+const DEFAULT_TOKEN_CACHE_LOCK_STALE_AFTER_MS = 5 * 60_000;
+
+class TokenCacheCorruptError extends Error {
+  readonly code = 'AUTH_TOKEN_CACHE_CORRUPT';
+  readonly hint: string;
+  readonly detail: string;
+
+  constructor(path: string, error: unknown) {
+    super(`Token cache ${path} is corrupt and could not be parsed.`);
+    this.name = 'TokenCacheCorruptError';
+    this.hint = `Remove or rename ${path} and retry authentication.`;
+    this.detail = error instanceof Error ? error.message : String(error);
+  }
+}
+
+class TokenCacheLockTimeoutError extends Error {
+  readonly code = 'AUTH_TOKEN_CACHE_LOCK_TIMEOUT';
+  readonly hint: string;
+  readonly detail: string;
+
+  constructor(lockPath: string, detail: string) {
+    super(`Timed out waiting for token cache lock ${lockPath}.`);
+    this.name = 'TokenCacheLockTimeoutError';
+    this.hint = `Wait for the other pp auth command to finish, or remove stale lock ${lockPath} if no auth process is active.`;
+    this.detail = detail;
+  }
 }
 
 class InteractiveAuthRequiredError extends Error {
@@ -123,6 +163,9 @@ export class ClientSecretTokenProvider implements TokenProvider {
 }
 
 export class UserTokenProvider implements TokenProvider {
+  private readonly cachedTokens = new Map<string, { accessToken: string; expiresAt?: number }>();
+  private readonly inFlight = new Map<string, Promise<string>>();
+
   constructor(
     private readonly profile: UserAuthProfile,
     private readonly options: ConfigStoreOptions = {},
@@ -130,12 +173,35 @@ export class UserTokenProvider implements TokenProvider {
   ) {}
 
   async getAccessToken(resource: string): Promise<string> {
-    const result = await acquireAndPersistPublicClientToken(this.profile, this.options, resource, {
+    const cached = this.cachedTokens.get(resource);
+
+    if (cached && !isTokenNearExpiry(cached.expiresAt)) {
+      return cached.accessToken;
+    }
+
+    const existing = this.inFlight.get(resource);
+
+    if (existing) {
+      return existing;
+    }
+
+    const request = acquireAndPersistPublicClientToken(this.profile, this.options, resource, {
       preferredFlow: this.profile.type === 'device-code' ? 'device-code' : 'interactive',
       ...this.loginOptions,
-    });
+    })
+      .then((result) => {
+        this.cachedTokens.set(resource, {
+          accessToken: result.accessToken,
+          expiresAt: readAccessTokenExpiry(result.accessToken),
+        });
+        return result.accessToken;
+      })
+      .finally(() => {
+        this.inFlight.delete(resource);
+      });
 
-    return result.accessToken;
+    this.inFlight.set(resource, request);
+    return request;
   }
 }
 
@@ -267,6 +333,32 @@ export class AuthService {
         }
       );
     } catch (error) {
+      if (isTokenCacheLockTimeoutError(error)) {
+        return fail(
+          createDiagnostic('error', error.code, error.message, {
+            source: '@pp/auth',
+            hint: error.hint,
+            detail: error.detail,
+          }),
+          {
+            supportTier: 'stable',
+          }
+        );
+      }
+
+      if (isTokenCacheCorruptError(error)) {
+        return fail(
+          createDiagnostic('error', error.code, error.message, {
+            source: '@pp/auth',
+            hint: error.hint,
+            detail: error.detail,
+          }),
+          {
+            supportTier: 'stable',
+          }
+        );
+      }
+
       if (isInteractiveAuthRequiredError(error)) {
         return fail(
           createDiagnostic('error', error.code, error.message, {
@@ -322,6 +414,32 @@ export class AuthService {
           }
         );
       } catch (error) {
+        if (isTokenCacheLockTimeoutError(error)) {
+          return fail(
+            createDiagnostic('error', error.code, error.message, {
+              source: '@pp/auth',
+              hint: error.hint,
+              detail: error.detail,
+            }),
+            {
+              supportTier: 'stable',
+            }
+          );
+        }
+
+        if (isTokenCacheCorruptError(error)) {
+          return fail(
+            createDiagnostic('error', error.code, error.message, {
+              source: '@pp/auth',
+              hint: error.hint,
+              detail: error.detail,
+            }),
+            {
+              supportTier: 'stable',
+            }
+          );
+        }
+
         if (isInteractiveAuthRequiredError(error)) {
           return fail(
             createDiagnostic('error', error.code, error.message, {
@@ -362,6 +480,32 @@ export class AuthService {
         }
       );
     } catch (error) {
+      if (isTokenCacheLockTimeoutError(error)) {
+        return fail(
+          createDiagnostic('error', error.code, error.message, {
+            source: '@pp/auth',
+            hint: error.hint,
+            detail: error.detail,
+          }),
+          {
+            supportTier: 'stable',
+          }
+        );
+      }
+
+      if (isTokenCacheCorruptError(error)) {
+        return fail(
+          createDiagnostic('error', error.code, error.message, {
+            source: '@pp/auth',
+            hint: error.hint,
+            detail: error.detail,
+          }),
+          {
+            supportTier: 'stable',
+          }
+        );
+      }
+
       if (isInteractiveAuthRequiredError(error)) {
         return fail(
           createDiagnostic('error', error.code, error.message, {
@@ -536,6 +680,27 @@ function ensureAccessToken(result: AuthenticationResult | null, profileName: str
   return result.accessToken;
 }
 
+function readAccessTokenExpiry(accessToken: string): number | undefined {
+  const encodedPayload = accessToken.split('.')[1];
+
+  if (!encodedPayload) {
+    return undefined;
+  }
+
+  try {
+    const normalized = encodedPayload.replace(/-/g, '+').replace(/_/g, '/');
+    const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+    const decoded = JSON.parse(Buffer.from(`${normalized}${padding}`, 'base64').toString('utf8')) as { exp?: unknown };
+    return typeof decoded.exp === 'number' && Number.isFinite(decoded.exp) ? decoded.exp * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isTokenNearExpiry(expiresAt: number | undefined): boolean {
+  return expiresAt !== undefined && expiresAt <= Date.now() + 60_000;
+}
+
 function formatAuthError(error: unknown): string {
   if (error instanceof Error) {
     const code = 'code' in error && typeof error.code === 'string' ? error.code : undefined;
@@ -578,89 +743,91 @@ async function acquirePublicClientToken(
   loginOptions: PublicClientLoginOptions = {}
 ): Promise<{ accessToken: string; profile: UserAuthProfile }> {
   const cachePath = resolveTokenCachePath(profile, options);
-  const app = new PublicClientApplication({
-    auth: {
-      clientId: profile.clientId ?? DEFAULT_PUBLIC_CLIENT_ID,
-      authority: authorityForTenant(resolveUserTenant(profile)),
-    },
-  });
+  return withTokenCacheLock(cachePath, loginOptions, async () => {
+    const app = new PublicClientApplication({
+      auth: {
+        clientId: profile.clientId ?? DEFAULT_PUBLIC_CLIENT_ID,
+        authority: authorityForTenant(resolveUserTenant(profile)),
+      },
+    });
 
-  await restoreTokenCache(app, cachePath);
-  const scopes = resolveScopes(profile, resource);
-  let interactiveLaunchContext: InteractiveAuthLaunchContext | undefined;
+    await restoreTokenCache(app, cachePath);
+    const scopes = resolveScopes(profile, resource);
+    let interactiveLaunchContext: InteractiveAuthLaunchContext | undefined;
 
-  if (!loginOptions.forcePrompt) {
-    const account = await resolveCachedAccount(app, profile);
+    if (!loginOptions.forcePrompt) {
+      const account = await resolveCachedAccount(app, profile);
 
-    if (account) {
-      interactiveLaunchContext = {
-        cachedAccountUsername: account.username,
-      };
-      try {
-        const silent = await app.acquireTokenSilent({
-          account,
-          scopes,
-        });
-
-        if (silent?.accessToken) {
-          await persistTokenCache(app, cachePath);
-          return {
-            accessToken: silent.accessToken,
-            profile: updateProfileAccount(profile, silent.account ?? account),
-          };
-        }
-      } catch (error) {
+      if (account) {
         interactiveLaunchContext = {
           cachedAccountUsername: account.username,
-          silentFailure: error,
         };
-        if (loginOptions.allowInteractive ?? true) {
-          process.stderr.write(
-            `Silent authentication failed for profile ${profile.name}: ${formatAuthError(error)}. Falling back to interactive authentication.\n`
-          );
+        try {
+          const silent = await app.acquireTokenSilent({
+            account,
+            scopes,
+          });
+
+          if (silent?.accessToken) {
+            await persistTokenCache(app, cachePath);
+            return {
+              accessToken: silent.accessToken,
+              profile: updateProfileAccount(profile, silent.account ?? account),
+            };
+          }
+        } catch (error) {
+          interactiveLaunchContext = {
+            cachedAccountUsername: account.username,
+            silentFailure: error,
+          };
+          if (loginOptions.allowInteractive ?? true) {
+            process.stderr.write(
+              `Silent authentication failed for profile ${profile.name}: ${formatAuthError(error)}. Falling back to interactive authentication.\n`
+            );
+          }
         }
+      } else {
+        interactiveLaunchContext = {};
       }
-    } else {
-      interactiveLaunchContext = {};
     }
-  }
 
-  const preferredFlow = loginOptions.preferredFlow ?? (profile.type === 'device-code' ? 'device-code' : 'interactive');
+    const preferredFlow = loginOptions.preferredFlow ?? (profile.type === 'device-code' ? 'device-code' : 'interactive');
 
-  if (preferredFlow === 'device-code') {
-    return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
-  }
+    if (preferredFlow === 'device-code') {
+      return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
+    }
 
-  if (loginOptions.allowInteractive === false) {
+    if (loginOptions.allowInteractive === false) {
+      const browserProfile =
+        profile.type === 'user' && profile.browserProfile
+          ? await loadNamedBrowserProfile(profile.browserProfile, options)
+          : undefined;
+      throw buildInteractiveAuthRequiredError(profile, browserProfile, interactiveLaunchContext);
+    }
+
+    if (!canAttemptInteractiveAuth()) {
+      process.stderr.write('Interactive authentication is unavailable in this shell because no graphical desktop session was detected. Falling back to device code.\n');
+      return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
+    }
+
     const browserProfile =
       profile.type === 'user' && profile.browserProfile
         ? await loadNamedBrowserProfile(profile.browserProfile, options)
         : undefined;
-    throw buildInteractiveAuthRequiredError(profile, browserProfile, interactiveLaunchContext);
-  }
 
-  if (!canAttemptInteractiveAuth()) {
-    process.stderr.write('Interactive authentication is unavailable in this shell because no graphical desktop session was detected. Falling back to device code.\n');
-    return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
-  }
+    try {
+      return await acquireTokenInteractively(app, profile, scopes, cachePath, browserProfile, options, interactiveLaunchContext);
+    } catch (error) {
+      if (profile.type === 'user' && profile.fallbackToDeviceCode === false) {
+        throw error;
+      }
 
-  const browserProfile =
-    profile.type === 'user' && profile.browserProfile
-      ? await loadNamedBrowserProfile(profile.browserProfile, options)
-      : undefined;
-
-  try {
-    return await acquireTokenInteractively(app, profile, scopes, cachePath, browserProfile, options, interactiveLaunchContext);
-  } catch (error) {
-    if (profile.type === 'user' && profile.fallbackToDeviceCode === false) {
-      throw error;
+      process.stderr.write(
+        `Interactive authentication failed for profile ${profile.name}: ${formatAuthError(error)}. Falling back to device code.\n`
+      );
+      return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
     }
-
-    process.stderr.write(
-      `Interactive authentication failed for profile ${profile.name}: ${formatAuthError(error)}. Falling back to device code.\n`
-    );
-    return acquireTokenByDeviceCode(app, profile, scopes, cachePath);
-  }
+  });
 }
 
 async function acquireTokenInteractively(
@@ -717,10 +884,12 @@ function buildInteractiveAuthLaunchMessage(
     lines.push(
       `Browser profile ${browserProfile.name} was last bootstrapped at ${browserProfile.lastBootstrappedAt}${browserProfile.lastBootstrapUrl ? ` for ${browserProfile.lastBootstrapUrl}` : ''}.`
     );
+    lines.push(buildBrowserBootstrapInstruction(browserProfile, 'refresh'));
   } else if (browserProfile) {
     lines.push(
       `Browser profile ${browserProfile.name} has no recorded bootstrap yet. If this stalls, complete an initial sign-in or consent flow in that profile first.`
     );
+    lines.push(buildBrowserBootstrapInstruction(browserProfile, 'bootstrap'));
   }
 
   lines.push('If no browser window appears, the browser handoff likely failed.');
@@ -750,10 +919,12 @@ function buildInteractiveAuthRequiredError(
     detailLines.push(
       `Browser profile ${browserProfile.name} was last bootstrapped at ${browserProfile.lastBootstrappedAt}${browserProfile.lastBootstrapUrl ? ` for ${browserProfile.lastBootstrapUrl}` : ''}.`
     );
+    detailLines.push(buildBrowserBootstrapInstruction(browserProfile, 'refresh'));
   } else if (browserProfile) {
     detailLines.push(
       `Browser profile ${browserProfile.name} has no recorded bootstrap yet. Complete an initial sign-in or consent flow in that profile first.`
     );
+    detailLines.push(buildBrowserBootstrapInstruction(browserProfile, 'bootstrap'));
   }
 
   return new InteractiveAuthRequiredError(
@@ -869,6 +1040,20 @@ function isInteractiveAuthRequiredError(error: unknown): error is InteractiveAut
   return error instanceof InteractiveAuthRequiredError;
 }
 
+function isTokenCacheCorruptError(error: unknown): error is TokenCacheCorruptError {
+  return error instanceof TokenCacheCorruptError;
+}
+
+function isTokenCacheLockTimeoutError(error: unknown): error is TokenCacheLockTimeoutError {
+  return error instanceof TokenCacheLockTimeoutError;
+}
+
+function buildBrowserBootstrapInstruction(browserProfile: BrowserProfile, action: 'bootstrap' | 'refresh'): string {
+  const url = browserProfile.lastBootstrapUrl ?? DEFAULT_BROWSER_BOOTSTRAP_URL;
+  const verb = action === 'refresh' ? 'Refresh' : 'Bootstrap';
+  return `${verb} it with: pp auth browser-profile bootstrap ${browserProfile.name} --url '${url}'.`;
+}
+
 export function resolveBrowserProfileDirectory(profile: BrowserProfile, options: ConfigStoreOptions = {}): string {
   const configured = profile.directory;
 
@@ -903,18 +1088,85 @@ function isPublicClientProfile(profile: AuthProfile): profile is UserAuthProfile
 }
 
 async function restoreTokenCache(app: PublicClientApplication, path: string): Promise<void> {
+  let serialized: string;
+
   try {
-    const serialized = await readFile(path, 'utf8');
+    serialized = await readFile(path, 'utf8');
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+
+  try {
+    JSON.parse(serialized);
     app.getTokenCache().deserialize(serialized);
-  } catch {
-    // Ignore missing or unreadable caches and continue with interactive flow.
+  } catch (error) {
+    throw new TokenCacheCorruptError(path, error);
   }
 }
 
 async function persistTokenCache(app: PublicClientApplication, path: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const serialized = app.getTokenCache().serialize();
-  await writeFile(path, serialized, 'utf8');
+  const tempPath = `${path}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+  await writeFile(tempPath, serialized, 'utf8');
+  await rename(tempPath, path);
+}
+
+async function withTokenCacheLock<T>(
+  cachePath: string,
+  loginOptions: PublicClientLoginOptions,
+  callback: () => Promise<T>
+): Promise<T> {
+  const lockPath = `${cachePath}.lock`;
+  const lockOptions = resolveTokenCacheLockOptions(loginOptions);
+  const startedAt = Date.now();
+  const ownerPath = join(lockPath, 'owner.json');
+  const ownerRecord = JSON.stringify(
+    {
+      pid: process.pid,
+      acquiredAt: new Date().toISOString(),
+      cachePath,
+    },
+    null,
+    2
+  );
+
+  await mkdir(dirname(lockPath), { recursive: true });
+
+  while (true) {
+    try {
+      await mkdir(lockPath);
+      await writeFile(ownerPath, `${ownerRecord}\n`, 'utf8').catch(() => undefined);
+      break;
+    } catch (error) {
+      if (!isAlreadyExistsError(error)) {
+        throw error;
+      }
+
+      const lockState = await readTokenCacheLockState(lockPath);
+
+      if (lockState.ageMs !== undefined && lockState.ageMs >= lockOptions.staleAfterMs) {
+        await rm(lockPath, { recursive: true, force: true }).catch(() => undefined);
+        continue;
+      }
+
+      if (Date.now() - startedAt >= lockOptions.timeoutMs) {
+        throw new TokenCacheLockTimeoutError(lockPath, buildTokenCacheLockTimeoutDetail(lockPath, lockState));
+      }
+
+      await sleep(lockOptions.retryDelayMs);
+    }
+  }
+
+  try {
+    return await callback();
+  } finally {
+    await rm(lockPath, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 async function removeTokenCache(profile: UserAuthProfile, options: ConfigStoreOptions): Promise<void> {
@@ -1042,6 +1294,95 @@ function commandExists(command: string): boolean {
   }
 
   return false;
+}
+
+function isMissingFileError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('code' in error)) {
+    return false;
+  }
+
+  return error.code === 'ENOENT';
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('code' in error)) {
+    return false;
+  }
+
+  return error.code === 'EEXIST';
+}
+
+function resolveTokenCacheLockOptions(loginOptions: PublicClientLoginOptions): TokenCacheLockOptions {
+  return {
+    timeoutMs: loginOptions.cacheLockTimeoutMs ?? DEFAULT_TOKEN_CACHE_LOCK_TIMEOUT_MS,
+    retryDelayMs: loginOptions.cacheLockRetryDelayMs ?? DEFAULT_TOKEN_CACHE_LOCK_RETRY_DELAY_MS,
+    staleAfterMs: loginOptions.cacheLockStaleAfterMs ?? DEFAULT_TOKEN_CACHE_LOCK_STALE_AFTER_MS,
+  };
+}
+
+async function readTokenCacheLockState(lockPath: string): Promise<{ ageMs?: number; ownerDescription?: string }> {
+  let ageMs: number | undefined;
+
+  try {
+    const current = await stat(lockPath);
+    ageMs = Math.max(0, Date.now() - current.mtimeMs);
+  } catch {
+    // Ignore races where the lock disappears while we're inspecting it.
+  }
+
+  try {
+    const owner = JSON.parse(await readFile(join(lockPath, 'owner.json'), 'utf8')) as {
+      pid?: unknown;
+      acquiredAt?: unknown;
+      cachePath?: unknown;
+    };
+    const parts: string[] = [];
+
+    if (typeof owner.pid === 'number') {
+      parts.push(`pid ${owner.pid}`);
+    }
+
+    if (typeof owner.acquiredAt === 'string') {
+      parts.push(`acquired ${owner.acquiredAt}`);
+    }
+
+    if (typeof owner.cachePath === 'string') {
+      parts.push(`cache ${owner.cachePath}`);
+    }
+
+    return {
+      ageMs,
+      ownerDescription: parts.length > 0 ? parts.join(', ') : undefined,
+    };
+  } catch {
+    return {
+      ageMs,
+    };
+  }
+}
+
+function buildTokenCacheLockTimeoutDetail(
+  lockPath: string,
+  state: {
+    ageMs?: number;
+    ownerDescription?: string;
+  }
+): string {
+  const parts = [`Waited for ${lockPath}`];
+
+  if (state.ageMs !== undefined) {
+    parts.push(`lock age ${state.ageMs}ms`);
+  }
+
+  if (state.ownerDescription) {
+    parts.push(state.ownerDescription);
+  }
+
+  return `${parts.join('; ')}.`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function buildBrowserArgs(

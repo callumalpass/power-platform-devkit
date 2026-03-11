@@ -786,9 +786,14 @@ OData-Version: 4.0\r
       schemaName: 'pp_Project',
       displayName: 'Project',
       pluralDisplayName: 'Projects',
+      ownership: 'userOwned',
+      hasActivities: false,
+      hasNotes: false,
+      isActivity: false,
       primaryName: {
         schemaName: 'pp_Name',
         displayName: 'Name',
+        maxLength: 100,
       },
     });
 
@@ -2600,6 +2605,65 @@ describe('normalizeMetadataQueryOptions', () => {
     });
   });
 
+  it('attaches canvas apps through typed services', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {},
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new CanvasAppService(client);
+
+    const attached = await service.attachToSolution('Harness Canvas', 'Core');
+
+    expect(attached.success).toBe(true);
+    expect(attached.data).toMatchObject({
+      attached: true,
+      solutionUniqueName: 'Core',
+      app: {
+        id: 'canvas-1',
+        name: 'crd_HarnessCanvas',
+      },
+      addRequiredComponents: true,
+    });
+    expect(httpClient.requests.map((request) => ({ path: request.path, method: request.method, body: request.body, headers: request.headers }))).toEqual([
+      {
+        path: 'canvasapps?%24select=canvasappid%2Cdisplayname%2Cname%2Cappopenuri%2Cappversion%2Ccreatedbyclientversion%2Clastpublishtime%2Cstatus%2Ctags',
+        method: 'GET',
+        body: undefined,
+        headers: {},
+      },
+      {
+        path: 'AddSolutionComponent',
+        method: 'POST',
+        body: {
+          ComponentId: 'canvas-1',
+          ComponentType: 300,
+          SolutionUniqueName: 'Core',
+          AddRequiredComponents: true,
+        },
+        headers: {
+          'MSCRM.SolutionUniqueName': 'Core',
+        },
+      },
+    ]);
+  });
+
   it('lists model-driven app assets through typed services', async () => {
     const httpClient = new FakeHttpClient([
       ok({
@@ -2753,7 +2817,7 @@ describe('normalizeMetadataQueryOptions', () => {
     });
   });
 
-  it('queries model-driven app components through the app navigation path', async () => {
+  it('queries model-driven app components through the appmodulecomponents table and filters by app id', async () => {
     const httpClient = new FakeHttpClient([
       ok({
         status: 200,
@@ -2764,11 +2828,19 @@ describe('normalizeMetadataQueryOptions', () => {
               appmodulecomponentid: 'amc-1',
               componenttype: 1,
               objectid: 'entity-1',
+              _appmoduleidunique_value: 'app-1',
             },
             {
               appmodulecomponentid: 'amc-2',
               componenttype: 60,
               objectid: 'form-1',
+              _appmoduleidunique_value: 'app-1',
+            },
+            {
+              appmodulecomponentid: 'amc-3',
+              componenttype: 26,
+              objectid: 'view-1',
+              _appmoduleidunique_value: 'app-2',
             },
           ],
         },
@@ -2795,7 +2867,7 @@ describe('normalizeMetadataQueryOptions', () => {
       },
     ]);
     expect(httpClient.requests.map((request) => request.path)).toEqual([
-      'appmodules(app-1)/appmodule_appmodulecomponent?%24select=appmodulecomponentid%2Ccomponenttype%2Cobjectid',
+      'appmodulecomponents?%24select=appmodulecomponentid%2Ccomponenttype%2Cobjectid%2C_appmoduleidunique_value',
     ]);
   });
 
@@ -2862,6 +2934,7 @@ describe('normalizeMetadataQueryOptions', () => {
         body: {
           uniquename: 'ServiceHub',
           name: 'Service Hub',
+          webresourceid: '953b9fac-1e5e-e611-80d6-00155ded156f',
         },
         headers: {
           prefer: 'return=representation',

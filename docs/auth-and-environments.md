@@ -182,6 +182,10 @@ pp auth browser-profile bootstrap tenant-a --url https://make.powerapps.com/
 pp auth browser-profile bootstrap tenant-a --url 'https://make.powerapps.com/e/<env>/canvas/?action=edit&app-id=/providers/Microsoft.PowerApps/apps/<app-id>'
 ```
 
+For model-driven designer or sitemap work, pass the exact `make.powerapps.com`
+designer URL with `--url` so the same managed browser profile is warmed for the
+surface you plan to automate or capture.
+
 Behavior:
 
 - opens the managed browser profile at the target URL

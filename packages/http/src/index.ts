@@ -83,10 +83,12 @@ export class HttpClient {
       return fail(
         createDiagnostic(
           'error',
-          'HTTP_UNHANDLED_ERROR',
+          readErrorCode(error) ?? 'HTTP_UNHANDLED_ERROR',
           error instanceof Error ? error.message : 'Unknown HTTP error',
           {
             source: '@pp/http',
+            hint: readErrorHint(error),
+            detail: readErrorDetail(error),
           }
         ),
         {
@@ -197,6 +199,27 @@ function applyQuery(searchParams: URLSearchParams, query: Record<string, HttpQue
 
     searchParams.set(key, String(value));
   }
+}
+
+function readErrorCode(error: unknown): string | undefined {
+  return readErrorStringField(error, 'code');
+}
+
+function readErrorHint(error: unknown): string | undefined {
+  return readErrorStringField(error, 'hint');
+}
+
+function readErrorDetail(error: unknown): string | undefined {
+  return readErrorStringField(error, 'detail');
+}
+
+function readErrorStringField(error: unknown, field: 'code' | 'hint' | 'detail'): string | undefined {
+  if (!error || typeof error !== 'object' || !(field in error)) {
+    return undefined;
+  }
+
+  const value = (error as Record<string, unknown>)[field];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function resolveRequestBody(request: HttpRequestOptions): SupportedRequestBody | undefined {

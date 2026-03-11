@@ -287,6 +287,10 @@ Remote mutation placeholders:
   exports the containing solution through Dataverse, extracts the matching
   `CanvasApps/*.msapp`, and writes a live `.msapp` artifact without leaving
   `pp`
+- `pp canvas download ... --extract-to-directory DIR` preserves both forms in
+  one invocation by expanding the downloaded `.msapp` into a normalized local
+  source tree; archive backslashes such as `Src\App.pa.yaml` are rewritten to
+  portable paths like `Src/App.pa.yaml`
 - `pp canvas create --env <alias> [--solution UNIQUE_NAME] [--name DISPLAY_NAME]`
   still returns a stable machine-readable diagnostic by default instead of
   performing server-side blank-app creation

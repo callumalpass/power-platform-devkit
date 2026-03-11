@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfidentialClientApplication, PublicClientApplication } from '@azure/msal-node';
@@ -8,6 +8,7 @@ import {
   DEFAULT_BROWSER_BOOTSTRAP_URL,
   DEFAULT_PUBLIC_CLIENT_ID,
   buildBrowserLaunchSpec,
+  createTokenProvider,
   resolveBrowserProfileDirectory,
   summarizeBrowserProfile,
   summarizeProfile,
@@ -206,6 +207,7 @@ describe('AuthService', () => {
       .mockImplementation(async (request) => {
         expect(request.scopes).toEqual(['https://example.crm.dynamics.com/user_impersonation']);
         request.deviceCodeCallback({
+          deviceCode: 'device-code-value',
           userCode: 'ABC-123',
           verificationUri: 'https://microsoft.com/devicelogin',
           expiresIn: 900,
@@ -240,6 +242,185 @@ describe('AuthService', () => {
     expect(result.data?.token).toBe('token-value');
     expect(deviceCodeSpy).toHaveBeenCalledOnce();
     expect(stderrSpy).toHaveBeenCalledWith('Please authenticate as: user@example.com\n');
+  });
+
+  it('returns a specific diagnostic when the token cache is corrupt', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
+    const auth = new AuthService({ configDir });
+    const cacheDir = join(configDir, 'msal');
+    const cachePath = join(cacheDir, 'user-profile.json');
+
+    await mkdir(cacheDir, { recursive: true });
+    await writeFile(cachePath, '{"Account":{}}:{}}', 'utf8');
+
+    const result = await auth.loginProfile(
+      {
+        name: 'user-profile',
+        type: 'user',
+        loginHint: 'user@example.com',
+      },
+      'https://example.crm.dynamics.com',
+      { forcePrompt: true }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toMatchObject([
+      {
+        code: 'AUTH_TOKEN_CACHE_CORRUPT',
+        message: `Token cache ${cachePath} is corrupt and could not be parsed.`,
+        hint: `Remove or rename ${cachePath} and retry authentication.`,
+      },
+    ]);
+    expect(result.diagnostics[0]?.detail).toContain('Unexpected non-whitespace character after JSON');
+  });
+
+  it('returns a specific diagnostic when a token cache lock times out', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
+    const auth = new AuthService({ configDir });
+    const lockPath = join(configDir, 'msal', 'user-profile.json.lock');
+
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(
+      join(lockPath, 'owner.json'),
+      JSON.stringify({
+        pid: 4242,
+        acquiredAt: '2026-03-11T00:00:00.000Z',
+        cachePath: join(configDir, 'msal', 'user-profile.json'),
+      }),
+      'utf8'
+    );
+
+    const result = await auth.loginProfile(
+      {
+        name: 'user-profile',
+        type: 'user',
+        loginHint: 'user@example.com',
+      },
+      'https://example.crm.dynamics.com',
+      {
+        forcePrompt: true,
+        cacheLockTimeoutMs: 25,
+        cacheLockRetryDelayMs: 5,
+        cacheLockStaleAfterMs: 60_000,
+      }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toMatchObject([
+      {
+        code: 'AUTH_TOKEN_CACHE_LOCK_TIMEOUT',
+        message: `Timed out waiting for token cache lock ${lockPath}.`,
+        hint: `Wait for the other pp auth command to finish, or remove stale lock ${lockPath} if no auth process is active.`,
+      },
+    ]);
+    expect(result.diagnostics[0]?.detail).toContain(`Waited for ${lockPath}`);
+    expect(result.diagnostics[0]?.detail).toContain('pid 4242');
+  });
+
+  it('removes stale token cache locks before continuing authentication', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
+    const auth = new AuthService({ configDir });
+    const lockPath = join(configDir, 'msal', 'user-profile.json.lock');
+    const originalWaylandDisplay = process.env.WAYLAND_DISPLAY;
+
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(join(lockPath, 'owner.json'), '{"pid":4242}\n', 'utf8');
+    await utimes(lockPath, new Date('2026-03-10T00:00:00.000Z'), new Date('2026-03-10T00:00:00.000Z'));
+
+    process.env.WAYLAND_DISPLAY = 'wayland-0';
+
+    const tokenCache = {
+      deserialize: vi.fn(),
+      serialize: vi.fn(() => '{"Account":{}}'),
+      getAllAccounts: vi.fn(async () => []),
+    };
+
+    vi.spyOn(PublicClientApplication.prototype, 'getTokenCache').mockReturnValue(tokenCache as never);
+    vi.spyOn(PublicClientApplication.prototype, 'acquireTokenInteractive').mockResolvedValue({
+      accessToken: 'token-value',
+      account: {
+        homeAccountId: 'home-account',
+        localAccountId: 'local-account',
+        username: 'user@example.com',
+        tenantId: 'tenant-id',
+        environment: 'login.microsoftonline.com',
+      },
+    } as never);
+
+    try {
+      const result = await auth.loginProfile(
+        {
+          name: 'user-profile',
+          type: 'user',
+          loginHint: 'user@example.com',
+        },
+        'https://example.crm.dynamics.com',
+        {
+          forcePrompt: true,
+          cacheLockStaleAfterMs: 1_000,
+          cacheLockRetryDelayMs: 5,
+        }
+      );
+
+      expect(result.success).toBe(true);
+      expect((await readdir(join(configDir, 'msal'))).filter((entry) => entry.endsWith('.lock'))).toEqual([]);
+    } finally {
+      if (originalWaylandDisplay === undefined) {
+        delete process.env.WAYLAND_DISPLAY;
+      } else {
+        process.env.WAYLAND_DISPLAY = originalWaylandDisplay;
+      }
+    }
+  });
+
+  it('writes token caches atomically without leaving temp files behind', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
+    const auth = new AuthService({ configDir });
+    const originalWaylandDisplay = process.env.WAYLAND_DISPLAY;
+
+    process.env.WAYLAND_DISPLAY = 'wayland-0';
+
+    const tokenCache = {
+      deserialize: vi.fn(),
+      serialize: vi.fn(() => '{"Account":{}}'),
+      getAllAccounts: vi.fn(async () => []),
+    };
+
+    vi.spyOn(PublicClientApplication.prototype, 'getTokenCache').mockReturnValue(tokenCache as never);
+    vi.spyOn(PublicClientApplication.prototype, 'acquireTokenInteractive').mockResolvedValue({
+      accessToken: 'token-value',
+      account: {
+        homeAccountId: 'home-account',
+        localAccountId: 'local-account',
+        username: 'user@example.com',
+        tenantId: 'tenant-id',
+        environment: 'login.microsoftonline.com',
+      },
+    } as never);
+
+    try {
+      const result = await auth.loginProfile(
+        {
+          name: 'user-profile',
+          type: 'user',
+          loginHint: 'user@example.com',
+        },
+        'https://example.crm.dynamics.com',
+        { forcePrompt: true }
+      );
+
+      expect(result.success).toBe(true);
+
+      const cachePath = join(configDir, 'msal', 'user-profile.json');
+      expect(await readFile(cachePath, 'utf8')).toBe('{"Account":{}}');
+      expect((await readdir(join(configDir, 'msal'))).filter((entry) => entry.endsWith('.tmp'))).toEqual([]);
+    } finally {
+      if (originalWaylandDisplay === undefined) {
+        delete process.env.WAYLAND_DISPLAY;
+      } else {
+        process.env.WAYLAND_DISPLAY = originalWaylandDisplay;
+      }
+    }
   });
 
   it('reports silent auth failure before falling back to interactive auth', async () => {
@@ -306,6 +487,65 @@ describe('AuthService', () => {
     }
   });
 
+  it('reuses one public-client token request per resource within a process', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
+    const tokenProvider = createTokenProvider(
+      {
+        name: 'user-profile',
+        type: 'user',
+        loginHint: 'user@example.com',
+      },
+      { configDir }
+    );
+
+    expect(tokenProvider.success).toBe(true);
+    expect(tokenProvider.data).toBeDefined();
+
+    const futureExp = Math.floor(Date.now() / 1000) + 3600;
+    const accessToken = `header.${Buffer.from(JSON.stringify({ exp: futureExp })).toString('base64url')}.signature`;
+    const tokenCache = {
+      deserialize: vi.fn(),
+      serialize: vi.fn(() => '{}'),
+      getAllAccounts: vi.fn(async () => [
+        {
+          homeAccountId: 'home-account',
+          localAccountId: 'local-account',
+          username: 'user@example.com',
+          tenantId: 'tenant-id',
+          environment: 'login.microsoftonline.com',
+        },
+      ]),
+    };
+
+    vi.spyOn(PublicClientApplication.prototype, 'getTokenCache').mockReturnValue(tokenCache as never);
+    const silentSpy = vi.spyOn(PublicClientApplication.prototype, 'acquireTokenSilent').mockResolvedValue({
+      accessToken,
+      account: {
+        homeAccountId: 'home-account',
+        localAccountId: 'local-account',
+        username: 'user@example.com',
+        tenantId: 'tenant-id',
+        environment: 'login.microsoftonline.com',
+      },
+    } as never);
+
+    const [first, second, third] = await Promise.all([
+      tokenProvider.data!.getAccessToken('https://example.crm.dynamics.com'),
+      tokenProvider.data!.getAccessToken('https://example.crm.dynamics.com'),
+      tokenProvider.data!.getAccessToken('https://example.crm.dynamics.com'),
+    ]);
+
+    expect(first).toBe(accessToken);
+    expect(second).toBe(accessToken);
+    expect(third).toBe(accessToken);
+    expect(silentSpy).toHaveBeenCalledOnce();
+
+    const fourth = await tokenProvider.data!.getAccessToken('https://example.crm.dynamics.com');
+
+    expect(fourth).toBe(accessToken);
+    expect(silentSpy).toHaveBeenCalledOnce();
+  });
+
   it('prints interactive auth diagnostics when no cached account or browser bootstrap exists', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
     const auth = new AuthService({ configDir });
@@ -358,6 +598,9 @@ describe('AuthService', () => {
       );
       expect(stderrSpy).toHaveBeenCalledWith(
         expect.stringContaining('Browser profile tenant-a has no recorded bootstrap yet. If this stalls, complete an initial sign-in or consent flow in that profile first.')
+      );
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Bootstrap it with: pp auth browser-profile bootstrap tenant-a --url 'https://make.powerapps.com/'.")
       );
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('If no browser window appears, the browser handoff likely failed.'));
     } finally {
@@ -426,6 +669,9 @@ describe('AuthService', () => {
     expect(result.diagnostics[0]?.detail).toContain('Cached account user@example.com could not be refreshed silently: refresh token expired errorCode=invalid_grant.');
     expect(result.diagnostics[0]?.detail).toContain(
       'Browser profile tenant-a was last bootstrapped at 2026-03-10T07:00:00.000Z for https://make.powerapps.com/.'
+    );
+    expect(result.diagnostics[0]?.detail).toContain(
+      "Refresh it with: pp auth browser-profile bootstrap tenant-a --url 'https://make.powerapps.com/'."
     );
     expect(stderrSpy).not.toHaveBeenCalled();
     expect(interactiveSpy).not.toHaveBeenCalled();

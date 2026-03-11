@@ -1,4 +1,3 @@
-import { resolve as resolvePath } from 'node:path';
 import {
   generateContextPack,
   generatePortfolioReport,
@@ -16,6 +15,7 @@ type DiscoveryOptions = { stage?: string; parameterOverrides?: Record<string, st
 interface AnalysisCommandDependencies {
   positionalArgs(args: string[]): string[];
   resolveDefaultInvocationPath(): string;
+  resolveInvocationPath(path?: string): string;
   outputFormat(args: string[], fallback: OutputFormat): OutputFormat;
   readProjectDiscoveryOptions(args: string[]): OperationResult<DiscoveryOptions>;
   printFailure(result: OperationResult<unknown>): number;
@@ -60,7 +60,7 @@ export async function runAnalysisReportCommand(args: string[], deps: AnalysisCom
 }
 
 export async function runAnalysisContextCommand(args: string[], deps: AnalysisCommandDependencies): Promise<number> {
-  const projectPath = deps.readFlag(args, '--project') ?? deps.resolveDefaultInvocationPath();
+  const projectPath = deps.resolveInvocationPath(deps.readFlag(args, '--project'));
   const asset = deps.readFlag(args, '--asset');
   const format = deps.outputFormat(args, 'json');
   const discoveryOptions = deps.readProjectDiscoveryOptions(args);
@@ -179,7 +179,7 @@ async function discoverAnalysisPortfolioProjects(
   const seen = new Set<string>();
 
   for (const projectPath of projectPaths) {
-    const resolvedPath = resolvePath(projectPath);
+    const resolvedPath = deps.resolveInvocationPath(projectPath);
 
     if (seen.has(resolvedPath)) {
       warnings.push(

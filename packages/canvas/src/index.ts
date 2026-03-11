@@ -1,9 +1,14 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
-import { CanvasAppService, type CanvasAppSummary as DataverseCanvasAppSummary, type DataverseClient } from '@pp/dataverse';
+import {
+  CanvasAppService,
+  type CanvasAppAttachResult,
+  type CanvasAppSummary as DataverseCanvasAppSummary,
+  type DataverseClient,
+} from '@pp/dataverse';
 import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type OperationResult, type ProvenanceClass } from '@pp/diagnostics';
 import { SolutionService } from '@pp/solution';
 import { buildCanvasMsappFromUnpackedSource } from './msapp-build';
@@ -222,7 +227,11 @@ export interface CanvasRemoteDownloadResult {
   outPath: string;
   exportedEntry: string;
   availableEntries: string[];
+  extractedPath?: string;
+  extractedEntries?: string[];
 }
+
+export type CanvasRemoteAttachResult = CanvasAppAttachResult;
 
 interface CanvasTemplateCandidate {
   template: CanvasTemplateRecord;
@@ -435,6 +444,7 @@ export class CanvasService {
     options: {
       solutionUniqueName: string;
       outPath?: string;
+      extractToDirectory?: string;
     }
   ): Promise<OperationResult<CanvasRemoteDownloadResult>> {
     if (!this.dataverseClient) {
@@ -545,6 +555,20 @@ export class CanvasService {
       await mkdir(dirname(outPath), { recursive: true });
       await writeFile(outPath, content.data);
 
+      let extractedPath: string | undefined;
+      let extractedEntries: string[] | undefined;
+
+      if (options.extractToDirectory) {
+        const extracted = await extractCanvasArchive(outPath, resolve(options.extractToDirectory));
+
+        if (!extracted.success || !extracted.data) {
+          return extracted as unknown as OperationResult<CanvasRemoteDownloadResult>;
+        }
+
+        extractedPath = extracted.data.outPath;
+        extractedEntries = extracted.data.entries;
+      }
+
       return ok(
         {
           app: app.data,
@@ -552,6 +576,8 @@ export class CanvasService {
           outPath,
           exportedEntry: matchedEntry,
           availableEntries,
+          extractedPath,
+          extractedEntries,
         },
         {
           supportTier: 'preview',
@@ -568,6 +594,26 @@ export class CanvasService {
     } finally {
       await rm(exportRoot, { recursive: true, force: true });
     }
+  }
+
+  async attachRemote(
+    identifier: string,
+    options: {
+      solutionUniqueName: string;
+      addRequiredComponents?: boolean;
+    }
+  ): Promise<OperationResult<CanvasRemoteAttachResult>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote canvas app attachment.', {
+          source: '@pp/canvas',
+        })
+      );
+    }
+
+    return new CanvasAppService(this.dataverseClient).attachToSolution(identifier, options.solutionUniqueName, {
+      addRequiredComponents: options.addRequiredComponents,
+    });
   }
 }
 
@@ -610,6 +656,111 @@ function normalizeCanvasArtifactToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
+async function extractCanvasArchive(
+  packagePath: string,
+  outPath: string
+): Promise<OperationResult<{ outPath: string; entries: string[] }>> {
+  const listedEntries = await listZipEntries(packagePath);
+
+  if (!listedEntries.success || !listedEntries.data) {
+    return listedEntries as unknown as OperationResult<{ outPath: string; entries: string[] }>;
+  }
+
+  const rawExtractRoot = await mkdtemp(join(tmpdir(), 'pp-canvas-extract-'));
+
+  try {
+    const extractedArchive = await extractZipArchive(packagePath, rawExtractRoot);
+
+    if (!extractedArchive.success) {
+      return extractedArchive as unknown as OperationResult<{ outPath: string; entries: string[] }>;
+    }
+
+    await mkdir(outPath, { recursive: true });
+
+    const normalizedEntries = new Map<string, string>();
+    const extractedEntries: string[] = [];
+
+    for (const entry of listedEntries.data) {
+      const normalizedEntry = normalizeCanvasArchiveEntryPath(entry);
+
+      if (!normalizedEntry.success || normalizedEntry.data === undefined) {
+        return normalizedEntry as unknown as OperationResult<{ outPath: string; entries: string[] }>;
+      }
+
+      if (!normalizedEntry.data) {
+        continue;
+      }
+
+      const existingEntry = normalizedEntries.get(normalizedEntry.data);
+
+      if (existingEntry) {
+        return fail(
+          createDiagnostic(
+            'error',
+            'CANVAS_ARCHIVE_EXTRACT_PATH_COLLISION',
+            `Canvas archive entries ${existingEntry} and ${entry} normalize to the same extracted path ${normalizedEntry.data}.`,
+            {
+              source: '@pp/canvas',
+              path: packagePath,
+            }
+          ),
+          {
+            supportTier: 'preview',
+          }
+        );
+      }
+
+      normalizedEntries.set(normalizedEntry.data, entry);
+
+      const sourcePath = join(rawExtractRoot, entry.replace(/^\/+/, ''));
+      const targetPath = join(outPath, ...normalizedEntry.data.split('/'));
+      await mkdir(dirname(targetPath), { recursive: true });
+      await writeFile(targetPath, await readFile(sourcePath));
+      extractedEntries.push(normalizedEntry.data);
+    }
+
+    return ok(
+      {
+        outPath,
+        entries: [...extractedEntries].sort((left, right) => left.localeCompare(right)),
+      },
+      {
+        supportTier: 'preview',
+      }
+    );
+  } finally {
+    await rm(rawExtractRoot, { recursive: true, force: true });
+  }
+}
+
+function normalizeCanvasArchiveEntryPath(entry: string): OperationResult<string> {
+  const normalized = entry.replaceAll('\\', '/').replace(/^\/+/, '').trim();
+
+  if (!normalized || normalized.endsWith('/')) {
+    return ok('', {
+      supportTier: 'preview',
+    });
+  }
+
+  const segments = normalized.split('/').filter((segment) => segment.length > 0);
+
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_ARCHIVE_ENTRY_PATH_INVALID', `Canvas archive entry ${entry} resolves outside the target directory.`, {
+        source: '@pp/canvas',
+        hint: 'Use an archive with portable relative entry names.',
+      }),
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  return ok(segments.join('/'), {
+    supportTier: 'preview',
+  });
+}
+
 async function listZipEntries(packagePath: string): Promise<OperationResult<string[]>> {
   const result = await runCommand('unzip', ['-Z1', packagePath]);
 
@@ -639,6 +790,20 @@ async function extractZipEntry(packagePath: string, entry: string): Promise<Oper
   }
 
   return ok(result.data, {
+    supportTier: 'preview',
+    diagnostics: result.diagnostics,
+    warnings: result.warnings,
+  });
+}
+
+async function extractZipArchive(packagePath: string, outPath: string): Promise<OperationResult<undefined>> {
+  const result = await runCommand('unzip', ['-qq', packagePath, '-d', outPath]);
+
+  if (!result.success) {
+    return result as unknown as OperationResult<undefined>;
+  }
+
+  return ok(undefined, {
     supportTier: 'preview',
     diagnostics: result.diagnostics,
     warnings: result.warnings,

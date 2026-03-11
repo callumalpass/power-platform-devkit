@@ -579,9 +579,10 @@ describe('cli fixture-backed workflows', () => {
     expect(downloadHelp.code).toBe(0);
     expect(downloadHelp.stderr).toBe('');
     expect(downloadHelp.stdout).toContain(
-      'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [options]'
+      'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [--extract-to-directory DIR] [options]'
     );
     expect(downloadHelp.stdout).toContain('Exports the containing solution through Dataverse and extracts the matching CanvasApps/*.msapp entry.');
+    expect(downloadHelp.stdout).toContain('converting archive backslashes into portable folder separators');
     expect(downloadHelp.stdout).toContain('pp canvas download "Harness Canvas" --environment dev --solution Core');
 
     expect(inspectHelp.code).toBe(0);
@@ -755,6 +756,7 @@ describe('cli fixture-backed workflows', () => {
     expect(doctorHelp.stdout).toContain('Usage: project doctor [path] [--stage STAGE] [--param NAME=VALUE] [options]');
     expect(doctorHelp.stdout).toContain('Reads project context without mutating the filesystem.');
     expect(doctorHelp.stdout).toContain('Machine-readable formats emit one payload on stdout');
+    expect(doctorHelp.stdout).toContain('canonical `artifacts/solutions/` bundle path');
 
     expect(feedbackHelp.code).toBe(0);
     expect(feedbackHelp.stderr).toBe('');
@@ -771,6 +773,27 @@ describe('cli fixture-backed workflows', () => {
     expect(inspectHelp.stdout).toContain('Pair with `pp project doctor` for layout validation and `pp project init`');
 
     expect(after).toEqual(before);
+  });
+
+  it('prints stable help for solution mutation commands without validating arguments', async () => {
+    const createHelp = await runCli(['solution', 'create', '--help']);
+    const setMetadataHelp = await runCli(['solution', 'set-metadata', '--help']);
+
+    expect(createHelp.code).toBe(0);
+    expect(createHelp.stderr).toBe('');
+    expect(createHelp.stdout).toContain(
+      'Usage: solution create <uniqueName> --environment ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)'
+    );
+    expect(createHelp.stdout).toContain('`--help` only prints this text and never validates the solution name or environment flags.');
+    expect(createHelp.stdout).not.toContain('SOLUTION_CREATE_ARGS_REQUIRED');
+
+    expect(setMetadataHelp.code).toBe(0);
+    expect(setMetadataHelp.stderr).toBe('');
+    expect(setMetadataHelp.stdout).toContain(
+      'Usage: solution set-metadata <uniqueName> --environment ALIAS [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]'
+    );
+    expect(setMetadataHelp.stdout).toContain('Requires at least one of `--version`, `--publisher-id`, or `--publisher-unique-name`.');
+    expect(setMetadataHelp.stdout).not.toContain('SOLUTION_SET_METADATA_ARGS_REQUIRED');
   });
 
   it('renders analysis report and context outputs from the fixture project', async () => {
@@ -1587,6 +1610,8 @@ describe('cli fixture-backed workflows', () => {
     expect(feedback.stdout).toContain('# Project Feedback');
     expect(feedback.stdout).toContain(`- Canonical project root: \`${fixtureRoot}\``);
     expect(feedback.stdout).toContain('- Bundle status: `not generated yet`');
+    expect(feedback.stdout).toContain('- Bundle placement: `inline-noncanonical`');
+    expect(feedback.stdout).toContain('- Bundle placement summary: Non-canonical bundle placement: solutions/Core.zip is generated artifact output inside editable source space.');
     expect(feedback.stdout).toContain(
       '- Deployment route: pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged.'
     );
@@ -1594,6 +1619,8 @@ describe('cli fixture-backed workflows', () => {
     expect(feedback.stdout).toContain(
       'The canonical bundle artifacts/solutions/core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/core.zip`'
     );
+    expect(feedback.stdout).toContain('## Deployment Route');
+    expect(feedback.stdout).toContain('1. pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged.');
     expect(feedback.stdout).toContain('## Workflow Wins');
     expect(feedback.stdout).toContain('## Frictions');
     expect(feedback.stdout).toContain('Stage-to-environment-to-solution mapping');
@@ -1665,8 +1692,12 @@ describe('cli fixture-backed workflows', () => {
     expect(doctor.stdout).toContain('# Project Doctor');
     expect(doctor.stdout).toContain(`- Canonical project root: \`${canonicalRoot}\``);
     expect(doctor.stdout).toContain('- Bundle status: `not generated yet`');
+    expect(doctor.stdout).toContain('- Bundle placement: `inline-noncanonical`');
+    expect(doctor.stdout).toContain('Bundle placement summary: Non-canonical bundle placement: solutions/Core.zip is generated artifact output inside editable source space.');
     expect(doctor.stdout).toContain('Environment alias provenance: Stage prod in pp.config.yaml selects environment alias prod.');
     expect(doctor.stdout).toContain('Bundle lifecycle: The canonical bundle path is artifacts/solutions/core.zip');
+    expect(doctor.stdout).toContain('## Deployment Route');
+    expect(doctor.stdout).toContain('1. pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged.');
     expect(doctor.stdout).toContain('Discovery: Treat fixtures/analysis/project as the canonical local project');
     expect(inspect.stdout).not.toContain('"summary"');
     expect(doctor.stdout).not.toContain('"canonicalProjectRoot"');
@@ -2043,6 +2074,105 @@ describe('cli fixture-backed workflows', () => {
       },
     });
     expect(await readFile(outPath, 'utf8')).toBe('cli-exported-msapp');
+  });
+
+  it('downloads and extracts a remote canvas app through the CLI entrypoint without pac', async () => {
+    const tempDir = await createTempDir();
+    const msappSourceDir = join(tempDir, 'msapp-source');
+    await mkdir(msappSourceDir, { recursive: true });
+    await writeFile(join(msappSourceDir, 'Header.json'), '{"schemaVersion":1}', 'utf8');
+    await writeFile(join(msappSourceDir, 'Src\\App.pa.yaml'), 'App:\n', 'utf8');
+    await writeFile(join(msappSourceDir, 'Controls\\1.json'), '{"Name":"App"}', 'utf8');
+
+    const msappPath = join(tempDir, 'Harness Canvas.msapp');
+    await createZipPackage(msappSourceDir, msappPath);
+
+    const sourceDir = join(tempDir, 'solution');
+    await mkdir(join(sourceDir, 'CanvasApps'), { recursive: true });
+    await writeFile(join(sourceDir, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    const solutionZip = join(tempDir, 'Core.zip');
+    await createZipPackage(sourceDir, solutionZip);
+
+    const client = {
+      ...createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+              friendlyname: 'Core',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'comp-1',
+              objectid: 'canvas-1',
+              componenttype: 300,
+            },
+          ],
+          canvasapps: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+              tags: 'harness;solution',
+            },
+          ],
+        },
+      }),
+      invokeAction: async <T>(name: string) =>
+        ok(
+          {
+            body: {
+              ExportSolutionFile: name === 'ExportSolution' ? (await readFile(solutionZip)).toString('base64') : undefined,
+            } as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        ),
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      fixture: {
+        client,
+      },
+    });
+
+    const outPath = join(tempDir, 'artifacts', 'HarnessCanvas.msapp');
+    const extractedPath = join(tempDir, 'artifacts', 'HarnessCanvas');
+    const result = await runCli([
+      'canvas',
+      'download',
+      'Harness Canvas',
+      '--env',
+      'fixture',
+      '--solution',
+      'Core',
+      '--out',
+      outPath,
+      '--extract-to-directory',
+      extractedPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      solutionUniqueName: 'Core',
+      outPath,
+      extractedPath,
+      extractedEntries: ['Controls/1.json', 'Header.json', 'Src/App.pa.yaml'],
+      app: {
+        id: 'canvas-1',
+        displayName: 'Harness Canvas',
+      },
+    });
+    expect(await readFile(join(extractedPath, 'Src', 'App.pa.yaml'), 'utf8')).toBe('App:\n');
   });
 
   it('returns explicit diagnostics for unsupported remote canvas mutations', async () => {
@@ -5928,6 +6058,14 @@ describe('cli fixture-backed workflows', () => {
               browserProfile: 'fixture-browser',
             },
           },
+          browserProfiles: {
+            'fixture-browser': {
+              name: 'fixture-browser',
+              kind: 'edge',
+              lastBootstrapUrl: 'https://make.powerapps.com/',
+              lastBootstrappedAt: '2026-03-11T10:00:00.000Z',
+            },
+          },
           environments: {
             fixture: {
               alias: 'fixture',
@@ -5981,6 +6119,14 @@ describe('cli fixture-backed workflows', () => {
               defaultResource: 'https://fixture.crm.dynamics.com',
               loginHint: 'fixture.user@example.com',
               browserProfile: 'fixture-browser',
+            },
+          },
+          browserProfiles: {
+            'fixture-browser': {
+              name: 'fixture-browser',
+              kind: 'edge',
+              lastBootstrapUrl: 'https://make.powerapps.com/',
+              lastBootstrappedAt: '2026-03-11T10:00:00.000Z',
             },
           },
           environments: {
@@ -6135,6 +6281,37 @@ describe('cli fixture-backed workflows', () => {
           autoSelectedProjectRoot: 'fixtures/analysis/project',
         },
       });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it('resolves analysis context --project relative paths from INIT_CWD when running from the package directory', async () => {
+    const originalCwd = process.cwd();
+    process.chdir(resolveRepoPath('packages/cli'));
+
+    try {
+      const context = await runCli(['analysis', 'context', '--project', '.', '--format', 'json'], {
+        env: {
+          INIT_CWD: repoRoot,
+        },
+      });
+
+      expect(context.code).toBe(0);
+      expect(JSON.parse(context.stderr)).toMatchObject({
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            code: 'PROJECT_PARAMETER_MISSING',
+          }),
+        ]),
+      });
+      expect(JSON.parse(context.stdout)).toMatchObject({
+        discovery: {
+          inspectedPath: repoRoot,
+          resolvedProjectRoot: resolveRepoPath('fixtures', 'analysis', 'project'),
+        },
+      });
+      expect(context.stdout).not.toContain('/packages/cli');
     } finally {
       process.chdir(originalCwd);
     }
@@ -6680,6 +6857,14 @@ describe('cli fixture-backed workflows', () => {
               browserProfile: 'fixture-browser',
             },
           },
+          browserProfiles: {
+            'fixture-browser': {
+              name: 'fixture-browser',
+              kind: 'edge',
+              lastBootstrapUrl: 'https://make.powerapps.com/',
+              lastBootstrappedAt: '2026-03-11T10:00:00.000Z',
+            },
+          },
           environments: {
             fixture: {
               alias: 'fixture',
@@ -6712,6 +6897,14 @@ describe('cli fixture-backed workflows', () => {
         pp: {
           authContextSource: 'pp-config',
           usesEnvironmentAuthProfile: true,
+        },
+        browser: {
+          status: 'bootstrapped',
+          name: 'fixture-browser',
+          lastBootstrapUrl: 'https://make.powerapps.com/',
+          lastBootstrappedAt: '2026-03-11T10:00:00.000Z',
+          bootstrapCommand: "pp auth browser-profile bootstrap fixture-browser --url 'https://make.powerapps.com/'",
+          recommendedAction: expect.stringContaining('Refresh the browser profile before Maker-critical steps'),
         },
         pac: {
           sharesPpAuthContext: false,
@@ -6798,7 +6991,7 @@ describe('cli fixture-backed workflows', () => {
     expect(authProfileHelp.stderr).toBe('');
     expect(authProfileHelp.stdout).toContain('Usage: auth profile <command> [options]');
     expect(authProfileHelp.stdout).toContain('Use `pp env add` separately to bind a Dataverse environment URL to a profile.');
-    expect(authProfileHelp.stdout).toContain('add-env              create a profile backed by a token environment variable');
+    expect(authProfileHelp.stdout).toContain('add-env              create a token-env auth profile, not a Dataverse environment alias');
     expect(authProfileHelp.stdout).not.toContain('pp solution');
 
     expect(authAddEnvHelp.code).toBe(0);
@@ -6831,6 +7024,7 @@ describe('cli fixture-backed workflows', () => {
     expect(help.stderr).toBe('');
     expect(help.stdout).toContain('Usage: analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [options]');
     expect(help.stdout).toContain('Reports the inspected path, resolved project root, and any descendant auto-selection directly in the structured output.');
+    expect(help.stdout).toContain('Relative `--project` paths resolve from the invocation root (`INIT_CWD` when wrapped by pnpm)');
     expect(help.stdout).not.toContain('"project"');
   });
 
@@ -7302,8 +7496,26 @@ describe('cli fixture-backed workflows', () => {
     const apply = await runCli(['dv', 'metadata', 'apply', '--env', 'source', '--file', manifestPath, '--format', 'json']);
 
     expect(apply.code).toBe(0);
-    expect(apply.stderr).toBe('');
+    expect(apply.stderr).toContain('Applying Dataverse metadata plan: 1 operations (create-table=1); publish enabled.');
+    expect(apply.stderr).toContain('Dataverse metadata apply completed: 3 operations; published 2 table target(s).');
     expect(JSON.parse(apply.stdout)).toMatchObject({
+      operations: [
+        {
+          kind: 'create-table',
+          status: 200,
+          entitySummary: { logicalName: 'pp_project', schemaName: 'pp_Project' },
+        },
+        {
+          kind: 'add-column',
+          status: 200,
+          entitySummary: { logicalName: 'pp_trackingcode', entityLogicalName: 'pp_project' },
+        },
+        {
+          kind: 'create-relationship',
+          status: 200,
+          entitySummary: { schemaName: 'pp_project_account', referencedEntity: 'account', referencingEntity: 'pp_project' },
+        },
+      ],
       summary: {
         operationCount: 3,
         operationsByKind: {
@@ -7317,6 +7529,37 @@ describe('cli fixture-backed workflows', () => {
       },
       published: true,
       publishTargets: ['account', 'pp_project'],
+    });
+    expect(JSON.parse(apply.stdout).operations.every((operation: Record<string, unknown>) => !('entity' in operation))).toBe(true);
+  });
+
+  it('attaches a remote canvas app through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        queryAll: {
+          canvasapps: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+            },
+          ],
+        },
+      }),
+    });
+
+    const attach = await runCli(['canvas', 'attach', 'Harness Canvas', '--env', 'source', '--solution', 'Core', '--format', 'json']);
+
+    expect(attach.code).toBe(0);
+    expect(attach.stderr).toBe('');
+    expect(JSON.parse(attach.stdout)).toMatchObject({
+      attached: true,
+      solutionUniqueName: 'Core',
+      app: {
+        id: 'canvas-1',
+        displayName: 'Harness Canvas',
+      },
+      addRequiredComponents: true,
     });
   });
 
@@ -7537,7 +7780,7 @@ describe('cli fixture-backed workflows', () => {
 
             return ok({} as T, { supportTier: 'preview' });
           },
-        },
+        } as unknown as DataverseClient,
       },
     });
 

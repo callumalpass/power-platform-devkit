@@ -265,6 +265,10 @@ describe('discoverProject', () => {
     expect(doctor.data?.summary.layoutProfile).toBe('source-first');
     expect(doctor.data?.summary.canonicalBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
     expect(doctor.data?.summary.canonicalBundlePresent).toBe(false);
+    expect(doctor.data?.summary.bundlePlacementStatus).toBe('absent');
+    expect(doctor.data?.summary.bundlePlacementSummary).toBe(
+      'No generated bundle is currently present. When you create one, write it to artifacts/solutions/CoreLifecycle.zip and keep solutions for unpacked source.'
+    );
     expect(doctor.data?.summary.activeTargetSummary).toBe(
       'Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)'
     );
@@ -274,6 +278,11 @@ describe('discoverProject', () => {
     expect(doctor.data?.summary.bundleLifecycleSummary).toBe(
       'The canonical bundle path is artifacts/solutions/CoreLifecycle.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/CoreLifecycle.zip or pp solution export CoreLifecycle --environment sandbox --out artifacts/solutions/CoreLifecycle.zip.'
     );
+    expect(doctor.data?.summary.deploymentRouteSteps).toEqual([
+      'pp.config.yaml maps stage dev to environment alias sandbox and solution CoreLifecycle.',
+      'The alias resolves later through the external pp environment registry and its auth context.',
+      'The canonical bundle artifacts/solutions/CoreLifecycle.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/CoreLifecycle.zip` or `pp solution export CoreLifecycle --environment sandbox --out artifacts/solutions/CoreLifecycle.zip`.',
+    ]);
     expect(doctor.data?.layout.normalizedAssets.solutionBundle).toBe('artifacts/solutions/CoreLifecycle.zip');
     expect(doctor.data?.contract.canonicalBundlePath).toBe('artifacts/solutions/CoreLifecycle.zip');
     expect(doctor.data?.topology).toEqual({
@@ -426,6 +435,10 @@ describe('discoverProject', () => {
     expect(report.success).toBe(true);
     expect(report.data?.summary.layoutProfile).toBe('source-first-inline-bundle');
     expect(report.data?.summary.canonicalBundlePresent).toBe(false);
+    expect(report.data?.summary.bundlePlacementStatus).toBe('inline-noncanonical');
+    expect(report.data?.summary.bundlePlacementSummary).toBe(
+      'Non-canonical bundle placement: solutions/Core.zip is generated artifact output inside editable source space. Treat inline zip files as generated or stale output, not authoritative source; keep unpacked source under solutions and write packaged bundles to artifacts/solutions/core.zip.'
+    );
     expect(report.data?.summary.environmentAliasProvenance).toBe(
       'Stage prod in pp.config.yaml selects environment alias prod. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.'
     );
@@ -434,6 +447,10 @@ describe('discoverProject', () => {
     );
     expect(report.data?.layout.generatedBundlePaths).toContain('solutions/Core.zip');
     expect(report.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE')).toBe(true);
+    expect(report.data?.checks.find((check) => check.code === 'PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE')).toMatchObject({
+      message: 'Non-canonical generated bundle detected in editable source space at solutions/Core.zip.',
+      hint: 'Treat inline zip files as generated artifact output, not authoritative source. Rebuild or move packaged zips to `artifacts/solutions/core.zip` and reserve `solutions/` for unpacked solution source.',
+    });
     expect(report.data?.contract).toMatchObject({
       solutionSourceRoot: 'solutions',
       canonicalBundlePath: 'artifacts/solutions/core.zip',

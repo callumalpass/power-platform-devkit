@@ -371,6 +371,9 @@ describe('metadata-create payloads', () => {
       {
         entity1Menu: {
           label: 'Projects',
+          behavior: 'useCollectionName',
+          group: 'details',
+          order: 10000,
         },
       },
       {

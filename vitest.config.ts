@@ -27,7 +27,7 @@ export default defineConfig({
     alias: Object.fromEntries(workspacePackages.map((name) => [`@pp/${name}`, resolve(__dirname, `packages/${name}/src/index.ts`)])),
   },
   test: {
-    include: ['packages/**/src/**/*.test.ts'],
+    include: ['packages/**/src/**/*.test.ts', '.ops/scripts/**/*.test.ts'],
     coverage: {
       enabled: false,
     },

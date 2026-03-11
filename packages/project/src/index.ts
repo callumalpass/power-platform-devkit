@@ -273,9 +273,12 @@ export interface ProjectDoctorSummary {
   layoutProfile: ProjectLayoutAssessment['profile'];
   canonicalBundlePath: string;
   canonicalBundlePresent: boolean;
+  bundlePlacementStatus: 'canonical' | 'inline-noncanonical' | 'bundle-only' | 'absent';
+  bundlePlacementSummary: string;
   activeTargetSummary: string;
   environmentAliasProvenance?: string;
   bundleLifecycleSummary: string;
+  deploymentRouteSteps: string[];
 }
 
 export interface ProjectLayoutAssessment {
@@ -319,10 +322,13 @@ export interface ProjectFeedbackSummary {
   editableAssetRoots: string[];
   canonicalBundlePath: string;
   canonicalBundlePresent: boolean;
+  bundlePlacementStatus: 'canonical' | 'inline-noncanonical' | 'bundle-only' | 'absent';
+  bundlePlacementSummary: string;
   activeTargetSummary: string;
   deploymentRouteSummary: string;
   environmentAliasProvenance?: string;
   bundleLifecycleSummary: string;
+  deploymentRouteSteps: string[];
   unresolvedRequiredParameters: string[];
 }
 
@@ -570,6 +576,8 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
     assets.some((asset) => asset.exists && asset.path === contract.canonicalBundlePath);
   const environmentAliasProvenance = describeProjectEnvironmentAliasProvenance(contract.activeTarget, project?.configPath);
   const bundleLifecycleSummary = describeProjectBundleLifecycle(contract, canonicalBundlePresent);
+  const bundlePlacement = describeProjectBundlePlacement(layout, contract);
+  const deploymentRouteSteps = describeProjectDeploymentRouteSteps(contract, project?.configPath, canonicalBundlePresent);
 
   for (const asset of assets) {
     checks.push({
@@ -644,11 +652,12 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
   });
 
   if (layout.profile === 'source-first-inline-bundle') {
+    const inlineBundlePaths = layout.generatedBundlePaths.filter((assetPath) => assetPath.startsWith('solutions/'));
     checks.push({
       status: 'warn',
       code: 'PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE',
-      message: 'Generated solution bundles currently live inside the editable solution area.',
-      hint: `Prefer \`${layout.normalizedAssets.solutionBundle}\` for packaged zips and reserve \`solutions/\` for unpacked solution source when the repo tracks both.`,
+      message: `Non-canonical generated bundle detected in editable source space${inlineBundlePaths.length > 0 ? ` at ${inlineBundlePaths.join(', ')}` : ''}.`,
+      hint: `Treat inline zip files as generated artifact output, not authoritative source. Rebuild or move packaged zips to \`${layout.normalizedAssets.solutionBundle}\` and reserve \`solutions/\` for unpacked solution source.`,
     });
   }
 
@@ -689,9 +698,12 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
         layoutProfile: layout.profile,
         canonicalBundlePath: contract.canonicalBundlePath,
         canonicalBundlePresent,
+        bundlePlacementStatus: bundlePlacement.status,
+        bundlePlacementSummary: bundlePlacement.summary,
         activeTargetSummary: topologySummary.activeTargetSummary,
         environmentAliasProvenance,
         bundleLifecycleSummary,
+        deploymentRouteSteps,
       },
       assets,
       layout,
@@ -744,11 +756,9 @@ export async function feedbackProject(
   });
   const environmentAliasProvenance = describeProjectEnvironmentAliasProvenance(contract.activeTarget, project.configPath);
   const bundleLifecycleSummary = describeProjectBundleLifecycle(contract, canonicalBundlePresent);
-  const deploymentRouteSummary = describeProjectFeedbackDeploymentRoute(
-    contract,
-    project.configPath,
-    canonicalBundlePresent
-  );
+  const bundlePlacement = describeProjectBundlePlacement(layout, contract);
+  const deploymentRouteSteps = describeProjectDeploymentRouteSteps(contract, project.configPath, canonicalBundlePresent);
+  const deploymentRouteSummary = deploymentRouteSteps.join(' ');
 
   const workflowWins: ProjectFeedbackObservation[] = [];
   const frictions: ProjectFeedbackObservation[] = [];
@@ -783,8 +793,8 @@ export async function feedbackProject(
   if (layout.profile === 'source-first-inline-bundle') {
     frictions.push({
       title: 'Recommended bundle placement is still not canonical everywhere',
-      detail: `This project still mixes packaged bundles into editable solution space. The preferred bundle output is ${contract.canonicalBundlePath}, but the current layout tolerates inline solution zips.`,
-      evidence: [contract.canonicalBundlePath],
+      detail: bundlePlacement.summary,
+      evidence: [...layout.generatedBundlePaths.filter((assetPath) => assetPath.startsWith('solutions/')), contract.canonicalBundlePath],
     });
     recommendedTasks.push({
       title: 'Tighten layout validation around canonical bundle output',
@@ -840,10 +850,13 @@ export async function feedbackProject(
         editableAssetRoots: contract.editableAssetRoots,
         canonicalBundlePath: contract.canonicalBundlePath,
         canonicalBundlePresent,
+        bundlePlacementStatus: bundlePlacement.status,
+        bundlePlacementSummary: bundlePlacement.summary,
         activeTargetSummary,
         deploymentRouteSummary,
         environmentAliasProvenance,
         bundleLifecycleSummary,
+        deploymentRouteSteps,
         unresolvedRequiredParameters,
       },
       workflowWins,
@@ -1051,12 +1064,13 @@ export function summarizeProjectContract(context: ProjectContext): ProjectInspec
   const canonicalBundlePresent =
     layout.generatedBundlePaths.includes(contract.canonicalBundlePath) ||
     context.assets.some((asset) => asset.exists && asset.path === contract.canonicalBundlePath);
+  const deploymentRouteSteps = describeProjectDeploymentRouteSteps(contract, context.configPath, canonicalBundlePresent);
 
   return {
     ...contract,
     environmentAliasProvenance: describeProjectEnvironmentAliasProvenance(contract.activeTarget, context.configPath),
     bundleLifecycleSummary: describeProjectBundleLifecycle(contract, canonicalBundlePresent),
-    deploymentRouteSummary: describeProjectFeedbackDeploymentRoute(contract, context.configPath, canonicalBundlePresent),
+    deploymentRouteSummary: deploymentRouteSteps.join(' '),
   };
 }
 
@@ -1813,11 +1827,11 @@ function describeProjectBundleLifecycle(contract: ProjectContractSummary, bundle
   return `The canonical bundle path is ${contract.canonicalBundlePath}, but that zip is a generated artifact and may be absent until you pack local source from ${contract.solutionSourceRoot} or export the solution from Dataverse. Typical creation paths are ${packCommand} or ${exportCommand}.`;
 }
 
-function describeProjectFeedbackDeploymentRoute(
+function describeProjectDeploymentRouteSteps(
   contract: ProjectContractSummary,
   configPath: string | undefined,
   bundlePresent: boolean
-): string {
+): string[] {
   const configLabel = configPath ? basename(configPath) : 'pp.config.*';
   const solutionIdentifier = contract.activeTarget.solutionUniqueName ?? contract.activeTarget.solutionAlias ?? '<solution>';
   const environmentAlias = contract.activeTarget.environmentAlias ?? '<alias>';
@@ -1831,7 +1845,41 @@ function describeProjectFeedbackDeploymentRoute(
     ? `The canonical bundle ${contract.canonicalBundlePath} is already present.`
     : `The canonical bundle ${contract.canonicalBundlePath} is not generated yet; create it with \`pp solution pack <solution-folder> --out ${contract.canonicalBundlePath}\` or \`pp solution export ${solutionIdentifier} --environment ${environmentAlias} --out ${contract.canonicalBundlePath}\`.`;
 
-  return `${stageLabel} ${targetLabel} ${registryLabel} ${bundleLabel}`;
+  return [`${stageLabel} ${targetLabel}`, registryLabel, bundleLabel];
+}
+
+function describeProjectBundlePlacement(
+  layout: ProjectLayoutAssessment,
+  contract: ProjectContractSummary
+): { status: 'canonical' | 'inline-noncanonical' | 'bundle-only' | 'absent'; summary: string } {
+  const inlineBundlePaths = layout.generatedBundlePaths.filter((assetPath) => assetPath.startsWith('solutions/'));
+
+  if (layout.profile === 'source-first-inline-bundle') {
+    const inlinePathLabel = inlineBundlePaths.length > 0 ? inlineBundlePaths.join(', ') : 'solutions/*.zip';
+    return {
+      status: 'inline-noncanonical',
+      summary: `Non-canonical bundle placement: ${inlinePathLabel} is generated artifact output inside editable source space. Treat inline zip files as generated or stale output, not authoritative source; keep unpacked source under ${contract.solutionSourceRoot} and write packaged bundles to ${contract.canonicalBundlePath}.`,
+    };
+  }
+
+  if (layout.profile === 'bundle-first') {
+    return {
+      status: 'bundle-only',
+      summary: `Bundle-only layout: packaged solution zips are present, but the repo does not currently expose separate editable source roots. Keep generated bundles under ${contract.canonicalBundlePath} if the repo later adopts a source-first layout.`,
+    };
+  }
+
+  if (layout.generatedBundlePaths.includes(contract.canonicalBundlePath)) {
+    return {
+      status: 'canonical',
+      summary: `Canonical bundle placement: packaged solution output lives at ${contract.canonicalBundlePath}, separate from editable source roots.`,
+    };
+  }
+
+  return {
+    status: 'absent',
+    summary: `No generated bundle is currently present. When you create one, write it to ${contract.canonicalBundlePath} and keep ${contract.solutionSourceRoot} for unpacked source.`,
+  };
 }
 
 function resolveContractTarget(

@@ -53,6 +53,7 @@ import {
   diffDataverseMetadataSnapshots,
   normalizeAttributeDefinition,
   normalizeAttributeDefinitions,
+  type DataverseMetadataApplyResult,
   normalizeGlobalOptionSetDefinition,
   normalizeRelationshipDefinition,
   resolveDataverseClient,
@@ -425,6 +426,7 @@ async function runEnvironmentVariable(command: string | undefined, args: string[
 
 async function runCanvas(command: string | undefined, args: string[]): Promise<number> {
   return runCanvasGroup(command, args, {
+    runCanvasAttach,
     runCanvasDownload,
     runCanvasUnsupportedRemoteMutation,
     runCanvasList,
@@ -1455,6 +1457,7 @@ async function runAnalysisReport(args: string[]): Promise<number> {
   return runAnalysisReportCommand(args, {
     positionalArgs,
     resolveDefaultInvocationPath,
+    resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
     printFailure,
@@ -1470,6 +1473,7 @@ async function runAnalysisContext(args: string[]): Promise<number> {
   return runAnalysisContextCommand(args, {
     positionalArgs,
     resolveDefaultInvocationPath,
+    resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
     printFailure,
@@ -1485,6 +1489,7 @@ async function runAnalysisPortfolio(args: string[]): Promise<number> {
   return runAnalysisPortfolioCommand(args, {
     positionalArgs,
     resolveDefaultInvocationPath,
+    resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
     printFailure,
@@ -1500,6 +1505,7 @@ async function runAnalysisDrift(args: string[]): Promise<number> {
   return runAnalysisDriftCommand(args, {
     positionalArgs,
     resolveDefaultInvocationPath,
+    resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
     printFailure,
@@ -1515,6 +1521,7 @@ async function runAnalysisUsage(args: string[]): Promise<number> {
   return runAnalysisUsageCommand(args, {
     positionalArgs,
     resolveDefaultInvocationPath,
+    resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
     printFailure,
@@ -1530,6 +1537,7 @@ async function runAnalysisPolicy(args: string[]): Promise<number> {
   return runAnalysisPolicyCommand(args, {
     positionalArgs,
     resolveDefaultInvocationPath,
+    resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
     printFailure,
@@ -2899,14 +2907,16 @@ async function runDataverseMetadataApply(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
+  process.stderr.write(buildMetadataApplyStartMessage(orderedPlan, writeOptions.data));
   const result = await resolution.data.client.applyMetadataPlan(orderedPlan, writeOptions.data);
 
   if (!result.success || !result.data) {
     return printFailure(result);
   }
 
+  process.stderr.write(buildMetadataApplyCompletionMessage(result.data));
   printWarnings(result);
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(normalizeMetadataApplyResultForOutput(result.data), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4061,6 +4071,58 @@ async function runCanvasList(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runCanvasAttach(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+  const solutionUniqueName = readFlag(args, '--solution');
+
+  if (!identifier || !solutionUniqueName) {
+    return printFailure(
+      argumentFailure(
+        'CANVAS_ATTACH_ARGS_REQUIRED',
+        'Usage: canvas attach <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const addRequiredComponents = hasFlag(args, '--no-add-required-components') ? false : true;
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'canvas.attach',
+    {
+      identifier,
+      environment: resolution.data.environment.alias,
+      solution: solutionUniqueName,
+    },
+    {
+      addRequiredComponents,
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new CanvasService(resolution.data.client).attachRemote(identifier, {
+    solutionUniqueName,
+    addRequiredComponents,
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runCanvasDownload(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
@@ -4068,7 +4130,7 @@ async function runCanvasDownload(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'CANVAS_DOWNLOAD_ARG_REQUIRED',
-        'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE]'
+        'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [--extract-to-directory DIR]'
       )
     );
   }
@@ -4088,6 +4150,7 @@ async function runCanvasDownload(args: string[]): Promise<number> {
   const result = await new CanvasService(resolution.data.client).downloadRemote(identifier, {
     solutionUniqueName,
     outPath: readFlag(args, '--out'),
+    extractToDirectory: readFlag(args, '--extract-to-directory'),
   });
 
   if (!result.success || !result.data) {
@@ -6903,6 +6966,56 @@ function readHeaderFlags(args: string[]): Record<string, string> | undefined {
     .filter((entry): entry is readonly [string, string] => Boolean(entry));
 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function normalizeMetadataApplyResultForOutput(result: DataverseMetadataApplyResult): DataverseMetadataApplyResult {
+  return {
+    operations: result.operations.map((operation) => ({
+      kind: operation.kind,
+      status: operation.status,
+      entityId: operation.entityId,
+      location: operation.location,
+      entitySummary: operation.entitySummary,
+      publishTargets: operation.publishTargets,
+      optionSetPublishTargets: operation.optionSetPublishTargets,
+    })),
+    summary: result.summary,
+    published: result.published,
+    publishTargets: result.publishTargets,
+    optionSetPublishTargets: result.optionSetPublishTargets,
+  };
+}
+
+function buildMetadataApplyStartMessage(plan: MetadataApplyPlan, options: { publish?: boolean; solutionUniqueName?: string }): string {
+  const counts = new Map<string, number>();
+
+  for (const operation of plan.operations) {
+    counts.set(operation.kind, (counts.get(operation.kind) ?? 0) + 1);
+  }
+
+  const breakdown = Array.from(counts.entries())
+    .map(([kind, count]) => `${kind}=${count}`)
+    .join(', ');
+  const publishMode = options.publish === false ? 'publish disabled' : 'publish enabled';
+  const solutionScope = options.solutionUniqueName ? ` in solution ${options.solutionUniqueName}` : '';
+
+  return `Applying Dataverse metadata plan${solutionScope}: ${plan.operations.length} operations (${breakdown}); ${publishMode}.\n`;
+}
+
+function buildMetadataApplyCompletionMessage(result: DataverseMetadataApplyResult): string {
+  const parts = [`Dataverse metadata apply completed: ${result.summary?.operationCount ?? result.operations.length} operations`];
+
+  if (result.published) {
+    parts.push(`published ${result.publishTargets?.length ?? 0} table target(s)`);
+  } else {
+    parts.push('no publish step ran');
+  }
+
+  if (result.optionSetPublishTargets?.length) {
+    parts.push(`published ${result.optionSetPublishTargets.length} option set(s)`);
+  }
+
+  return `${parts.join('; ')}.\n`;
 }
 
 function positionalArgs(args: string[]): string[] {

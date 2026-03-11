@@ -21,7 +21,7 @@ Supported `--format` values:
 Table semantics are intentionally simple and stable:
 
 - lists of objects render as row-oriented tables
-- singleton objects render as `field` / `value` tables
+- singleton objects render as `field` / `value` tables, flattening nested object fields into dotted keys such as `auth.profile`
 - scalar values render as a one-column table
 
 `ndjson` emits one JSON object per line. Arrays become one line per item; a

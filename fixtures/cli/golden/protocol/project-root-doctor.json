@@ -4,320 +4,200 @@
       "exists": true,
       "kind": "directory",
       "name": "apps",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/apps"
+      "path": "<REPO_ROOT>/apps"
     },
     {
       "exists": true,
       "kind": "directory",
       "name": "flows",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/flows"
+      "path": "<REPO_ROOT>/flows"
     },
     {
       "exists": true,
-      "kind": "file",
-      "name": "solutionBundle",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/solutions/Core.zip"
+      "kind": "directory",
+      "name": "solutions",
+      "path": "<REPO_ROOT>/solutions"
     },
     {
       "exists": true,
       "kind": "directory",
       "name": "docs",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/docs"
+      "path": "<REPO_ROOT>/docs"
     }
   ],
-  "canonicalProjectRoot": "<REPO_ROOT>/fixtures/analysis/project",
+  "canonicalProjectRoot": "<REPO_ROOT>",
   "checks": [
     {
       "code": "PROJECT_DOCTOR_CONFIG_PRESENT",
-      "message": "Project config found at <REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
-      "status": "pass"
-    },
-    {
-      "code": "PROJECT_DOCTOR_AUTO_SELECTED_PROJECT_ROOT",
-      "detail": "Treat fixtures/analysis/project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path. It defines its own config, 4 asset path(s), 2 stage(s), 2 provider binding(s), 1 docs path(s). Config: fixtures/analysis/project/pp.config.yaml. Assets: apps, docs, flows, solutionBundle. Stages: dev, prod. Provider bindings: financeSharePoint, primaryDataverse. Docs: docs.",
-      "hint": "This descendant root is already the canonical local project anchor for repo-root project commands.",
-      "message": "Auto-selected descendant pp project root at fixtures/analysis/project.",
-      "path": "<REPO_ROOT>/fixtures/analysis/project",
-      "status": "info"
-    },
-    {
-      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
-      "message": "Asset path fixtures/analysis/project/apps is present for apps",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/apps",
+      "message": "Project config found at <REPO_ROOT>/pp.config.yaml",
+      "path": "<REPO_ROOT>/pp.config.yaml",
       "status": "pass"
     },
     {
       "code": "PROJECT_DOCTOR_ASSET_PRESENT",
-      "message": "Asset path fixtures/analysis/project/flows is present for flows",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/flows",
+      "message": "Asset path apps is present for apps",
+      "path": "<REPO_ROOT>/apps",
       "status": "pass"
     },
     {
       "code": "PROJECT_DOCTOR_ASSET_PRESENT",
-      "message": "Asset path fixtures/analysis/project/solutions/Core.zip is present for solutionBundle",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/solutions/Core.zip",
+      "message": "Asset path flows is present for flows",
+      "path": "<REPO_ROOT>/flows",
       "status": "pass"
     },
     {
       "code": "PROJECT_DOCTOR_ASSET_PRESENT",
-      "message": "Asset path fixtures/analysis/project/docs is present for docs",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/docs",
+      "message": "Asset path solutions is present for solutions",
+      "path": "<REPO_ROOT>/solutions",
+      "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+      "message": "Asset path docs is present for docs",
+      "path": "<REPO_ROOT>/docs",
       "status": "pass"
     },
     {
       "code": "PROJECT_DOCTOR_PROVIDER_BINDINGS_PRESENT",
-      "message": "Project defines 2 provider binding(s).",
+      "message": "Project defines 1 provider binding(s).",
       "status": "pass"
     },
     {
       "code": "PROJECT_DOCTOR_TOPOLOGY_PRESENT",
-      "message": "Project topology defines 2 stage(s).",
+      "message": "Project topology defines 1 stage(s).",
       "status": "pass"
     },
     {
       "code": "PROJECT_DOCTOR_ACTIVE_TARGET",
-      "message": "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
+      "message": "Active target: stage dev -> environment dev -> solution Core (Core)",
       "status": "info"
     },
     {
       "code": "PROJECT_DOCTOR_STAGE_MAPPING",
-      "message": "dev -> environment dev -> solution core (CoreDev)",
-      "status": "info"
-    },
-    {
-      "code": "PROJECT_DOCTOR_STAGE_MAPPING",
-      "detail": "Parameter overrides: releaseName.",
-      "message": "prod (default stage, selected stage) -> environment prod -> solution core (CoreManaged)",
+      "message": "dev (default stage, selected stage) -> environment dev -> solution Core (Core)",
       "status": "info"
     },
     {
       "code": "PROJECT_DOCTOR_LAYOUT_PROFILE",
-      "hint": "Normalize the layout by keeping editable sources under `apps/`, `flows/`, `solutions/`, and `docs/`, then move packaged zips to `artifacts/solutions/core.zip`.",
-      "message": "Layout profile is source-first, but the generated solution bundle is stored inside the editable solution area.",
-      "status": "warn"
-    },
-    {
-      "code": "PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE",
-      "hint": "Prefer `artifacts/solutions/core.zip` for packaged zips and reserve `solutions/` for unpacked solution source when the repo tracks both.",
-      "message": "Generated solution bundles currently live inside the editable solution area.",
-      "status": "warn"
-    },
-    {
-      "code": "PROJECT_PARAMETER_MISSING",
-      "hint": "Set PP_TENANT_DOMAIN or provide an explicit value in the project config.",
-      "message": "Required project parameter tenantDomain is not resolved",
-      "status": "fail"
-    },
-    {
-      "code": "PROJECT_PARAMETER_SECRET_MISSING",
-      "hint": "Resolve secret ref app_token or provide an explicit value override.",
-      "message": "Required secret-backed project parameter apiToken is not resolved",
-      "status": "fail"
-    },
-    {
-      "code": "PROJECT_PARAMETER_MISSING",
-      "hint": "Set PP_SQL_ENDPOINT or provide an explicit value in the project config.",
-      "message": "Required project parameter sqlEndpoint is not resolved",
-      "status": "fail"
+      "hint": "Keep editable sources and generated outputs in separate roots so the project intent stays obvious.",
+      "message": "Layout profile is source-first: editable assets live in dedicated roots and generated bundles are already separate or absent.",
+      "status": "info"
     }
   ],
-  "configPath": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
+  "configPath": "<REPO_ROOT>/pp.config.yaml",
   "contract": {
     "activeTarget": {
-      "environmentAlias": "prod",
-      "solutionAlias": "core",
-      "solutionUniqueName": "CoreManaged",
-      "stage": "prod"
+      "environmentAlias": "dev",
+      "solutionAlias": "Core",
+      "solutionUniqueName": "Core",
+      "stage": "dev"
     },
-    "canonicalBundlePath": "artifacts/solutions/core.zip",
+    "canonicalBundlePath": "artifacts/solutions/Core.zip",
     "defaultTarget": {
-      "environmentAlias": "prod",
-      "solutionAlias": "core",
-      "solutionUniqueName": "CoreManaged",
-      "stage": "prod"
+      "environmentAlias": "dev",
+      "solutionAlias": "Core",
+      "solutionUniqueName": "Core",
+      "stage": "dev"
     },
     "editableAssetRoots": [
       "apps",
       "flows",
+      "solutions",
       "docs"
     ],
-    "layoutProfile": "source-first-inline-bundle",
+    "layoutProfile": "source-first",
     "solutionSourceRoot": "solutions",
     "stageMappings": [
       {
         "environmentAlias": "dev",
         "parameterOverrides": [],
-        "solutionAlias": "core",
+        "solutionAlias": "Core",
         "solutionMappings": [
           {
-            "alias": "core",
+            "alias": "Core",
             "environmentAlias": "dev",
             "source": "project",
-            "uniqueName": "CoreDev"
+            "uniqueName": "Core"
           }
         ],
-        "solutionUniqueName": "CoreDev",
+        "solutionUniqueName": "Core",
         "stage": "dev"
-      },
-      {
-        "environmentAlias": "prod",
-        "parameterOverrides": [
-          "releaseName"
-        ],
-        "solutionAlias": "core",
-        "solutionMappings": [
-          {
-            "alias": "core",
-            "environmentAlias": "prod",
-            "source": "stage",
-            "uniqueName": "CoreManaged"
-          }
-        ],
-        "solutionUniqueName": "CoreManaged",
-        "stage": "prod"
       }
     ]
   },
-  "diagnostics": [
-    {
-      "code": "PROJECT_PARAMETER_MISSING",
-      "hint": "Set PP_TENANT_DOMAIN or provide an explicit value in the project config.",
-      "level": "error",
-      "message": "Required project parameter tenantDomain is not resolved",
-      "source": "@pp/project"
-    },
-    {
-      "code": "PROJECT_PARAMETER_SECRET_MISSING",
-      "hint": "Resolve secret ref app_token or provide an explicit value override.",
-      "level": "error",
-      "message": "Required secret-backed project parameter apiToken is not resolved",
-      "source": "@pp/project"
-    },
-    {
-      "code": "PROJECT_PARAMETER_MISSING",
-      "hint": "Set PP_SQL_ENDPOINT or provide an explicit value in the project config.",
-      "level": "error",
-      "message": "Required project parameter sqlEndpoint is not resolved",
-      "source": "@pp/project"
-    }
-  ],
-  "discovery": {
-    "anchorEvidence": {
-      "assetKeys": [
-        "apps",
-        "docs",
-        "flows",
-        "solutionBundle"
-      ],
-      "configPath": "fixtures/analysis/project/pp.config.yaml",
-      "docsPaths": [
-        "docs"
-      ],
-      "providerBindingNames": [
-        "financeSharePoint",
-        "primaryDataverse"
-      ],
-      "stageNames": [
-        "dev",
-        "prod"
-      ]
-    },
-    "autoSelectedProjectRoot": "fixtures/analysis/project",
-    "autoSelectedReason": "only-descendant-project",
-    "canonicalAnchorReason": "Treat fixtures/analysis/project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path. It defines its own config, 4 asset path(s), 2 stage(s), 2 provider binding(s), 1 docs path(s).",
-    "configFound": true,
-    "descendantProjectConfigs": [],
-    "descendantProjectRoots": [],
-    "inspectedPath": "<REPO_ROOT>",
-    "resolvedRoot": "<REPO_ROOT>/fixtures/analysis/project",
-    "usedDefaultLayout": false
-  },
+  "diagnostics": [],
   "inspectedPath": "<REPO_ROOT>",
   "layout": {
     "editableAssetRoots": [
       "apps",
       "flows",
+      "solutions",
       "docs"
     ],
-    "generatedBundlePaths": [
-      "solutions/Core.zip"
-    ],
+    "generatedBundlePaths": [],
     "normalizedAssets": {
       "apps": "apps",
       "docs": "docs",
       "flows": "flows",
-      "solutionBundle": "artifacts/solutions/core.zip",
+      "solutionBundle": "artifacts/solutions/Core.zip",
       "solutions": "solutions"
     },
-    "profile": "source-first-inline-bundle",
-    "recommendations": [
-      "Normalize the layout by keeping editable sources under `apps/`, `flows/`, `solutions/`, and `docs/`, then move packaged zips to `artifacts/solutions/core.zip`."
-    ]
+    "profile": "source-first",
+    "recommendations": []
   },
   "root": "<REPO_ROOT>",
   "success": true,
   "suggestedNextActions": [
-    "Resolve required project parameters: tenantDomain, apiToken, sqlEndpoint.",
-    "Normalize the layout by keeping editable sources under `apps/`, `flows/`, `solutions/`, and `docs/`, then move packaged zips to `artifacts/solutions/core.zip`."
+    "Project layout looks coherent. Keep `pp.config.*` aligned with real environment aliases, solution names, and parameter sources as the repo evolves."
   ],
   "summary": {
-    "activeTargetSummary": "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
-    "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.",
-    "canonicalBundlePath": "artifacts/solutions/core.zip",
+    "activeTargetSummary": "Active target: stage dev -> environment dev -> solution Core (Core)",
+    "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/Core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/Core.zip or pp solution export Core --environment dev --out artifacts/solutions/Core.zip.",
+    "bundlePlacementStatus": "absent",
+    "bundlePlacementSummary": "No generated bundle is currently present. When you create one, write it to artifacts/solutions/Core.zip and keep solutions for unpacked source.",
+    "canonicalBundlePath": "artifacts/solutions/Core.zip",
     "canonicalBundlePresent": false,
     "configuredAssetCount": 4,
-    "environmentAliasProvenance": "Stage prod in pp.config.yaml selects environment alias prod. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
+    "deploymentRouteSteps": [
+      "pp.config.yaml maps stage dev to environment alias dev and solution Core.",
+      "The alias resolves later through the external pp environment registry and its auth context.",
+      "The canonical bundle artifacts/solutions/Core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/Core.zip` or `pp solution export Core --environment dev --out artifacts/solutions/Core.zip`."
+    ],
+    "environmentAliasProvenance": "Stage dev in pp.config.yaml selects environment alias dev. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
     "existingAssetCount": 4,
     "hasConfig": true,
     "hasProviderBindings": true,
-    "hasTemplateRegistries": true,
+    "hasTemplateRegistries": false,
     "hasTopology": true,
-    "layoutProfile": "source-first-inline-bundle",
+    "layoutProfile": "source-first",
     "missingAssetCount": 0,
-    "requiredParameterCount": 3,
-    "unresolvedRequiredParameterCount": 3
+    "requiredParameterCount": 0,
+    "unresolvedRequiredParameterCount": 0
   },
   "supportTier": "preview",
   "topology": {
-    "activeTargetSummary": "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
-    "defaultStage": "prod",
-    "defaultTargetSummary": "Default target: stage prod -> environment prod -> solution core (CoreManaged)",
+    "activeTargetSummary": "Active target: stage dev -> environment dev -> solution Core (Core)",
+    "defaultStage": "dev",
+    "defaultTargetSummary": "Default target: stage dev -> environment dev -> solution Core (Core)",
     "explanation": [
-      "Default target: stage prod -> environment prod -> solution core (CoreManaged)",
-      "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
-      "dev -> environment dev -> solution core (CoreDev)",
-      "prod (default stage, selected stage) -> environment prod -> solution core (CoreManaged); parameter overrides: releaseName."
+      "Default target: stage dev -> environment dev -> solution Core (Core)",
+      "Active target: stage dev -> environment dev -> solution Core (Core)",
+      "dev (default stage, selected stage) -> environment dev -> solution Core (Core)"
     ],
-    "selectedStage": "prod",
+    "selectedStage": "dev",
     "stageMappings": [
       {
         "environmentAlias": "dev",
-        "isDefault": false,
-        "isSelected": false,
-        "parameterOverrides": [],
-        "solutionAlias": "core",
-        "solutionMappings": [
-          "core -> dev / CoreDev"
-        ],
-        "solutionUniqueName": "CoreDev",
-        "stage": "dev",
-        "summary": "dev -> environment dev -> solution core (CoreDev)"
-      },
-      {
-        "environmentAlias": "prod",
         "isDefault": true,
         "isSelected": true,
-        "parameterOverrides": [
-          "releaseName"
-        ],
-        "solutionAlias": "core",
+        "parameterOverrides": [],
+        "solutionAlias": "Core",
         "solutionMappings": [
-          "core -> prod / CoreManaged (stage override)"
+          "Core -> dev / Core"
         ],
-        "solutionUniqueName": "CoreManaged",
-        "stage": "prod",
-        "summary": "prod (default stage, selected stage) -> environment prod -> solution core (CoreManaged)"
+        "solutionUniqueName": "Core",
+        "stage": "dev",
+        "summary": "dev (default stage, selected stage) -> environment dev -> solution Core (Core)"
       }
     ]
   },

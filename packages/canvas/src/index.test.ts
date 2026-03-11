@@ -173,6 +173,17 @@ function createRemoteCanvasStubDataverseClient(): DataverseClient {
           });
       }
     },
+    invokeAction: async (): Promise<OperationResult<{ status: number; headers: Record<string, string>; body?: unknown; entityId?: string }>> =>
+      ok(
+        {
+          status: 200,
+          headers: {},
+          body: {},
+        },
+        {
+          supportTier: 'preview',
+        }
+      ),
   } as unknown as DataverseClient;
 }
 
@@ -524,6 +535,89 @@ describe('remote canvas app workflows', () => {
       availableEntries: ['CanvasApps/crd_HarnessCanvas.msapp'],
     });
     expect(await readFile(outPath, 'utf8')).toBe('fixture-msapp');
+  });
+
+  it('downloads and extracts a remote canvas app with normalized archive paths', async () => {
+    const dir = await createTempDir();
+    const msappRoot = join(dir, 'msapp');
+    await mkdir(msappRoot, { recursive: true });
+    await writeFile(join(msappRoot, 'Header.json'), '{"schemaVersion":1}', 'utf8');
+    await writeFile(join(msappRoot, 'Src\\App.pa.yaml'), 'App:\n', 'utf8');
+    await writeFile(join(msappRoot, 'Controls\\1.json'), '{"Name":"App"}', 'utf8');
+
+    const msappPath = join(dir, 'Harness Canvas.msapp');
+    await createZip(msappRoot, msappPath);
+
+    const solutionRoot = join(dir, 'solution');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+
+    const solutionZip = join(dir, 'Core.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const outPath = join(dir, 'downloaded', 'Harness Canvas.msapp');
+    const extractedPath = join(dir, 'downloaded', 'Harness Canvas');
+    const result = await service.downloadRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      outPath,
+      extractToDirectory: extractedPath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      solutionUniqueName: 'Core',
+      outPath,
+      extractedPath,
+      extractedEntries: ['Controls/1.json', 'Header.json', 'Src/App.pa.yaml'],
+    });
+    expect(await readFile(join(extractedPath, 'Src', 'App.pa.yaml'), 'utf8')).toBe('App:\n');
+    expect(await readFile(join(extractedPath, 'Controls', '1.json'), 'utf8')).toBe('{"Name":"App"}');
+  });
+
+  it('attaches a remote canvas app to a solution through the typed canvas service', async () => {
+    const service = new CanvasService(createRemoteCanvasStubDataverseClient());
+
+    const result = await service.attachRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      attached: true,
+      solutionUniqueName: 'Core',
+      app: {
+        id: 'canvas-1',
+        name: 'crd_HarnessCanvas',
+      },
+      addRequiredComponents: true,
+    });
   });
 });
 

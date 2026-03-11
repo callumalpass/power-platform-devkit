@@ -83,4 +83,37 @@ describe('HttpClient', () => {
       detail: '{"error":{"code":"0x80040203","message":"Invalid option set metadata."}}',
     });
   });
+
+  it('preserves structured token acquisition diagnostics', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    class InteractiveAuthRequiredError extends Error {
+      readonly code = 'AUTH_INTERACTIVE_LOGIN_REQUIRED';
+      readonly hint = 'Run `pp auth login --name test-user --resource https://example.crm.dynamics.com` to refresh the cached session.';
+      readonly detail = 'Browser profile test-user was last bootstrapped for https://make.powerapps.com/.';
+    }
+
+    const client = new HttpClient({
+      baseUrl: 'https://example.com/api/',
+      tokenProvider: {
+        getAccessToken: async () => {
+          throw new InteractiveAuthRequiredError('Interactive browser authentication is required for profile test-user.');
+        },
+      },
+    });
+
+    const response = await client.requestJson<{ ok: boolean }>({
+      path: 'accounts',
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.success).toBe(false);
+    expect(response.diagnostics[0]).toMatchObject({
+      code: 'AUTH_INTERACTIVE_LOGIN_REQUIRED',
+      message: 'Interactive browser authentication is required for profile test-user.',
+      hint: 'Run `pp auth login --name test-user --resource https://example.crm.dynamics.com` to refresh the cached session.',
+      detail: 'Browser profile test-user was last bootstrapped for https://make.powerapps.com/.',
+    });
+  });
 });

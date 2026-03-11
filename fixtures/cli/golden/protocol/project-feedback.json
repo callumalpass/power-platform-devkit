@@ -59,8 +59,9 @@
   },
   "frictions": [
     {
-      "detail": "This project still mixes packaged bundles into editable solution space. The preferred bundle output is artifacts/solutions/core.zip, but the current layout tolerates inline solution zips.",
+      "detail": "Non-canonical bundle placement: solutions/Core.zip is generated artifact output inside editable source space. Treat inline zip files as generated or stale output, not authoritative source; keep unpacked source under solutions and write packaged bundles to artifacts/solutions/core.zip.",
       "evidence": [
+        "solutions/Core.zip",
         "artifacts/solutions/core.zip"
       ],
       "title": "Recommended bundle placement is still not canonical everywhere"
@@ -99,8 +100,15 @@
     "activeSolution": "CoreManaged",
     "activeTargetSummary": "stage prod -> environment prod -> solution CoreManaged",
     "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.",
+    "bundlePlacementStatus": "inline-noncanonical",
+    "bundlePlacementSummary": "Non-canonical bundle placement: solutions/Core.zip is generated artifact output inside editable source space. Treat inline zip files as generated or stale output, not authoritative source; keep unpacked source under solutions and write packaged bundles to artifacts/solutions/core.zip.",
     "canonicalBundlePath": "artifacts/solutions/core.zip",
     "canonicalBundlePresent": false,
+    "deploymentRouteSteps": [
+      "pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged.",
+      "The alias resolves later through the external pp environment registry and its auth context.",
+      "The canonical bundle artifacts/solutions/core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/core.zip` or `pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip`."
+    ],
     "deploymentRouteSummary": "pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged. The alias resolves later through the external pp environment registry and its auth context. The canonical bundle artifacts/solutions/core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/core.zip` or `pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip`.",
     "editableAssetRoots": [
       "apps",

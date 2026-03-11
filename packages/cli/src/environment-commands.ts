@@ -1,4 +1,5 @@
-import { AuthService, summarizeProfile, type AuthProfile } from '@pp/auth';
+import { AuthService, summarizeBrowserProfile, summarizeProfile, type AuthProfile } from '@pp/auth';
+import type { BrowserProfile } from '@pp/config';
 import {
   getEnvironmentAlias,
   listEnvironments,
@@ -107,9 +108,17 @@ export async function runEnvironmentInspectCommand(
 
   const auth = new AuthService(configOptions);
   const profile = await auth.getProfile(environment.data.authProfile);
+  const browserProfile =
+    profile.success && profile.data?.type === 'user' && profile.data.browserProfile
+      ? await auth.getBrowserProfile(profile.data.browserProfile)
+      : undefined;
 
   deps.printByFormat(
-    buildEnvironmentInspectView(environment.data, profile.success ? profile.data ?? undefined : undefined),
+    buildEnvironmentInspectView(
+      environment.data,
+      profile.success ? profile.data ?? undefined : undefined,
+      browserProfile?.success ? browserProfile.data ?? undefined : undefined
+    ),
     deps.outputFormat(args, 'json')
   );
   return 0;
@@ -311,7 +320,11 @@ export async function runEnvironmentResetCommand(
   });
 }
 
-function buildEnvironmentInspectView(environment: EnvironmentAlias, profile: AuthProfile | undefined): Record<string, unknown> {
+function buildEnvironmentInspectView(
+  environment: EnvironmentAlias,
+  profile: AuthProfile | undefined,
+  browserProfile: BrowserProfile | undefined
+): Record<string, unknown> {
   return {
     ...environment,
     auth: buildEnvironmentAuthSummary(environment, profile),
@@ -320,6 +333,7 @@ function buildEnvironmentInspectView(environment: EnvironmentAlias, profile: Aut
         authContextSource: 'pp-config',
         usesEnvironmentAuthProfile: true,
       },
+      browser: buildEnvironmentBrowserGuidance(profile, browserProfile, environment),
       pac: buildPacEnvironmentGuidance(profile),
     },
   };
@@ -388,6 +402,41 @@ function buildPacEnvironmentGuidance(profile: AuthProfile | undefined): Record<s
         reason: 'This alias uses a pp static token, but pac still cannot consume pp config directly.',
       };
   }
+}
+
+function buildEnvironmentBrowserGuidance(
+  profile: AuthProfile | undefined,
+  browserProfile: BrowserProfile | undefined,
+  environment: EnvironmentAlias
+): Record<string, unknown> {
+  if (!profile || profile.type !== 'user' || !profile.browserProfile) {
+    return {
+      status: 'not-configured',
+      recommendedAction: 'No persisted browser profile is bound through the environment auth profile.',
+    };
+  }
+
+  if (!browserProfile) {
+    return {
+      status: 'missing',
+      name: profile.browserProfile,
+      recommendedAction:
+        'Add or restore the named browser profile before relying on Maker handoff or browser-backed evidence from this environment alias.',
+    };
+  }
+
+  const summary = summarizeBrowserProfile(browserProfile);
+  const bootstrapUrl = browserProfile.lastBootstrapUrl ?? 'https://make.powerapps.com/';
+  const command = `pp auth browser-profile bootstrap ${browserProfile.name} --url '${bootstrapUrl}'`;
+
+  return {
+    status: browserProfile.lastBootstrappedAt ? 'bootstrapped' : 'needs-bootstrap',
+    ...summary,
+    recommendedAction: browserProfile.lastBootstrappedAt
+      ? `Refresh the browser profile before Maker-critical steps if the stored session is stale or sign-in prompts reappear for ${environment.alias}.`
+      : `Bootstrap the browser profile once before Maker-critical steps for ${environment.alias}.`,
+    bootstrapCommand: command,
+  };
 }
 
 async function runEnvironmentCleanupLike(

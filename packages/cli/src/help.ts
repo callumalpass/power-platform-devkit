@@ -95,7 +95,7 @@ export function printAuthProfileHelp(): void {
       '  inspect <name>       inspect one profile, or resolve the profile behind an environment alias',
       '  add-user             create a profile that uses interactive user login',
       '  add-static           create a profile backed by a literal token value',
-      '  add-env              create a profile backed by a token environment variable',
+      '  add-env              create a token-env auth profile, not a Dataverse environment alias',
       '  add-client-secret    create an app-based profile using client credentials',
       '  add-device-code      create a profile that signs in with the device code flow',
       '  remove <name>        remove one profile',
@@ -138,6 +138,7 @@ export function printAuthProfileInspectHelp(): void {
       'Behavior:',
       '  - Inspects one auth profile directly by name.',
       '  - Or resolves the auth profile attached to a Dataverse environment alias.',
+      '  - Environment-scoped output includes the resolved alias URL, target resource, and whether the profile default resource still matches that alias.',
       '',
       'Examples:',
       '  pp auth profile inspect work',
@@ -398,6 +399,7 @@ export function printCanvasHelp(): void {
       '',
       'Remote canvas commands:',
       '  list                         list remote canvas apps through Dataverse',
+      '  attach <displayName|name|id> attach an existing remote canvas app to a solution through AddSolutionComponent',
       '  download <displayName|name|id> export a solution-scoped remote canvas app into an .msapp',
       '  inspect <displayName|name|id> inspect a remote canvas app when used with --environment',
       '  create                       preview handoff today; `--delegate` can drive the Maker blank-app flow through a browser profile',
@@ -428,6 +430,7 @@ export function printCanvasHelp(): void {
       '',
       'Examples:',
       '  pp canvas list --environment dev --solution Core',
+      '  pp canvas attach "Harness Canvas" --environment dev --solution Core',
       '  pp canvas download "Harness Canvas" --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp',
       '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
@@ -441,6 +444,29 @@ export function printCanvasHelp(): void {
       '  - Use --environment to switch canvas inspect from local-path mode to remote lookup mode.',
       '  - Use --workspace to resolve a workspace app name plus shared registry catalogs.',
       '  - Canvas patching currently targets the supported json-manifest source slice only.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printCanvasAttachHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: canvas attach <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [options]',
+      '',
+      'Status:',
+      '  Attaches an existing remote canvas app to a solution through Dataverse AddSolutionComponent.',
+      '',
+      'Behavior:',
+      '  - Requires `--environment` and `--solution` to resolve the target environment alias and solution.',
+      '  - Uses the existing pp Dataverse auth context; it does not shell out to pac.',
+      '  - Includes required solution components by default; pass `--no-add-required-components` to opt out.',
+      '',
+      'Examples:',
+      '  pp canvas attach "Harness Canvas" --environment dev --solution Core',
+      '  pp canvas attach crd_HarnessCanvas --environment dev --solution Core --no-add-required-components',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -671,6 +697,52 @@ export function printSolutionListHelp(): void {
   );
 }
 
+export function printSolutionCreateHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution create <uniqueName> --environment ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)',
+      '',
+      'Behavior:',
+      '  - Creates one unmanaged solution shell in the target environment.',
+      '  - Requires either a publisher id or publisher unique name so the new solution has an explicit publisher binding.',
+      '  - `--help` only prints this text and never validates the solution name or environment flags.',
+      '',
+      'Choose this when:',
+      '  - You need a new ALM boundary in Dataverse before attaching apps, env vars, connection references, or solution-scoped metadata.',
+      '',
+      'Examples:',
+      '  pp solution create Core --environment dev --publisher-unique-name pp',
+      '  pp solution create Core --environment dev --friendly-name "Core" --version 1.0.0.0 --publisher-id 00000000-0000-0000-0000-000000000000',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSolutionSetMetadataHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution set-metadata <uniqueName> --environment ALIAS [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]',
+      '',
+      'Behavior:',
+      '  - Updates publisher binding and/or version metadata for one existing solution.',
+      '  - Requires at least one of `--version`, `--publisher-id`, or `--publisher-unique-name`.',
+      '  - `--help` only prints this text and never validates the solution name or environment flags.',
+      '',
+      'Choose this when:',
+      '  - The solution already exists and you need to align versioning or publisher ownership before export, deploy, or app attachment.',
+      '',
+      'Examples:',
+      '  pp solution set-metadata Core --environment dev --version 2026.3.11.51035',
+      '  pp solution set-metadata Core --environment dev --publisher-unique-name pp',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
 export function printSolutionComponentsHelp(): void {
   process.stdout.write(
     [
@@ -822,6 +894,7 @@ export function printEnvironmentInspectHelp(): void {
       '',
       'Behavior:',
       '  - Inspects one Dataverse environment alias and its bound auth profile state.',
+      '  - When the auth profile uses a browser profile, includes its last bootstrap metadata and refresh command for Maker workflows.',
       '  - Includes tooling advisories such as whether pac is likely to share the pp auth context.',
       '',
       'Examples:',
@@ -1173,7 +1246,7 @@ export function printCanvasCreateHelp(): void {
 export function printCanvasDownloadHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [options]',
+      'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [--extract-to-directory DIR] [options]',
       '',
       'Status:',
       '  Exports the containing solution through Dataverse and extracts the matching CanvasApps/*.msapp entry.',
@@ -1182,10 +1255,12 @@ export function printCanvasDownloadHelp(): void {
       '  - Requires `--environment` and `--solution` so pp can export the correct solution package.',
       '  - Uses the existing pp Dataverse auth context; it does not shell out to pac for canvas download.',
       '  - When `--out` is omitted, writes `<displayName|name|id>.msapp` in the current working directory.',
+      '  - `--extract-to-directory` also expands the downloaded `.msapp` into a normalized source tree, converting archive backslashes into portable folder separators.',
       '',
       'Examples:',
       '  pp canvas download "Harness Canvas" --environment dev --solution Core',
       '  pp canvas download crd_HarnessCanvas --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp',
+      '  pp canvas download "Harness Canvas" --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp --extract-to-directory ./artifacts/HarnessCanvas',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1940,6 +2015,7 @@ export function printProjectDoctorHelp(): void {
       '  - Reports config presence, asset-path checks, provider bindings, topology, registries, and unresolved required parameters.',
       '  - Machine-readable formats emit one payload on stdout, including diagnostics and suggested next actions.',
       '  - Reads project context without mutating the filesystem.',
+      '  - Calls out when packaged solution zips live inline under `solutions/` instead of the canonical `artifacts/solutions/` bundle path.',
       '',
       'Choose this when:',
       '  - You want pp to tell you what is broken, missing, or unresolved in the local project model.',
@@ -2008,6 +2084,7 @@ export function printAnalysisContextHelp(): void {
       '  - Resolves the local project model and emits discovery, topology, provider binding, parameter, asset, and deploy-plan context in one payload.',
       '  - Reports the inspected path, resolved project root, and any descendant auto-selection directly in the structured output.',
       '  - Reads project context without mutating the filesystem.',
+      '  - Relative `--project` paths resolve from the invocation root (`INIT_CWD` when wrapped by pnpm), not from `packages/cli`.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

@@ -253,7 +253,7 @@ function normalizeTableRows(value: unknown): { headers: string[]; records: strin
   if (isPlainObject(value)) {
     return {
       headers: ['field', 'value'],
-      records: Object.entries(value).map(([field, cellValue]) => [field, stringifyCell(cellValue)]),
+      records: flattenTableObject(value),
     };
   }
 
@@ -275,6 +275,27 @@ function collectHeaders(records: Array<Record<string, unknown>>): string[] {
   }
 
   return headers;
+}
+
+function flattenTableObject(value: Record<string, unknown>, prefix?: string): string[][] {
+  const records: string[][] = [];
+
+  for (const [field, cellValue] of Object.entries(value)) {
+    const key = prefix ? `${prefix}.${field}` : field;
+
+    if (isPlainObject(cellValue)) {
+      const nested = flattenTableObject(cellValue, key);
+
+      if (nested.length > 0) {
+        records.push(...nested);
+        continue;
+      }
+    }
+
+    records.push([key, stringifyCell(cellValue)]);
+  }
+
+  return records;
 }
 
 function stringifyCell(value: unknown): string {

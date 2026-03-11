@@ -592,10 +592,18 @@ export async function runSolutionGroup(
 
   switch (command) {
     case 'create':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionCreateHelp();
+        return 0;
+      }
       return handlers.runSolutionCreate(args);
     case 'delete':
       return handlers.runSolutionDelete(args);
     case 'set-metadata':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionSetMetadataHelp();
+        return 0;
+      }
       return handlers.runSolutionSetMetadata(args);
     case 'list':
       if (args.includes('--help') || args.includes('help')) {
@@ -729,6 +737,7 @@ export async function runEnvironmentVariableGroup(
 }
 
 export interface CanvasGroupHandlers {
+  runCanvasAttach(args: string[]): Promise<number>;
   runCanvasDownload(args: string[]): Promise<number>;
   runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number>;
   runCanvasList(args: string[]): Promise<number>;
@@ -753,6 +762,12 @@ export async function runCanvasGroup(
   }
 
   switch (command) {
+    case 'attach':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printCanvasAttachHelp();
+        return 0;
+      }
+      return handlers.runCanvasAttach(args);
     case 'download':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printCanvasDownloadHelp();

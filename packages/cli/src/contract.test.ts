@@ -31,6 +31,34 @@ describe('cli contract', () => {
     );
   });
 
+  it('flattens nested singleton objects in table output', () => {
+    expect(
+      renderOutput(
+        {
+          name: 'fixture',
+          auth: {
+            profile: 'test-user',
+            target: 'https://fixture.crm.dynamics.com',
+          },
+          tooling: {
+            pacInstalled: false,
+          },
+        },
+        'table'
+      )
+    ).toBe(
+      [
+        'field                 value',
+        '--------------------  --------------------------------',
+        'name                  fixture',
+        'auth.profile          test-user',
+        'auth.target           https://fixture.crm.dynamics.com',
+        'tooling.pacInstalled  false',
+        '',
+      ].join('\n')
+    );
+  });
+
   it('captures failure and warning rendering across protocol formats', async () => {
     const failure = fail(
       createDiagnostic('error', 'TEST_FAILURE', 'Something went wrong', {

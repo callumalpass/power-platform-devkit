@@ -294,7 +294,7 @@ export async function collectOperabilityDoctorReport(
   const bundle = await collectOperabilityBundle(startPath, configOptions);
 
   if (!bundle.data) {
-    return bundle as OperationResult<OperabilityDoctorReport>;
+    return bundle as unknown as OperationResult<OperabilityDoctorReport>;
   }
 
   const findings = [...bundle.diagnostics, ...bundle.warnings].map((item) => ({

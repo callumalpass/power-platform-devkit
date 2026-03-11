@@ -532,6 +532,13 @@ export interface CanvasAppSummary {
   tags: string[];
 }
 
+export interface CanvasAppAttachResult {
+  attached: boolean;
+  solutionUniqueName: string;
+  app: CanvasAppSummary;
+  addRequiredComponents: boolean;
+}
+
 export interface ModelDrivenAppRecord {
   appmoduleid: string;
   uniquename?: string;
@@ -554,6 +561,8 @@ export interface ModelDrivenAppCreateOptions {
   name?: string;
   solutionUniqueName?: string;
 }
+
+const DEFAULT_MODEL_DRIVEN_APP_ICON_WEB_RESOURCE_ID = '953b9fac-1e5e-e611-80d6-00155ded156f';
 
 export interface ModelDrivenAppAttachOptions {
   addRequiredComponents?: boolean;
@@ -2599,6 +2608,75 @@ export class CanvasAppService {
       warnings: apps.warnings,
     });
   }
+
+  async attachToSolution(
+    identifier: string,
+    solutionUniqueName: string,
+    options: { addRequiredComponents?: boolean } = {}
+  ): Promise<OperationResult<CanvasAppAttachResult>> {
+    const app = await this.inspect(identifier);
+
+    if (!app.success) {
+      return app as unknown as OperationResult<CanvasAppAttachResult>;
+    }
+
+    if (!app.data) {
+      return fail(
+        [
+          ...app.diagnostics,
+          createDiagnostic('error', 'DATAVERSE_CANVAS_APP_NOT_FOUND', `Canvas app ${identifier} was not found.`, {
+            source: '@pp/dataverse',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: app.warnings,
+        }
+      );
+    }
+
+    const normalizedSolutionUniqueName = solutionUniqueName.trim();
+
+    if (!normalizedSolutionUniqueName) {
+      return fail(
+        createDiagnostic('error', 'DATAVERSE_SOLUTION_UNIQUENAME_REQUIRED', 'Solution unique name is required to attach a canvas app.', {
+          source: '@pp/dataverse',
+        })
+      );
+    }
+
+    const addRequiredComponents = options.addRequiredComponents ?? true;
+    const actionResult = await this.dataverseClient.invokeAction(
+      'AddSolutionComponent',
+      {
+        ComponentId: app.data.id,
+        ComponentType: 300,
+        SolutionUniqueName: normalizedSolutionUniqueName,
+        AddRequiredComponents: addRequiredComponents,
+      },
+      {
+        solutionUniqueName: normalizedSolutionUniqueName,
+      }
+    );
+
+    if (!actionResult.success) {
+      return actionResult as unknown as OperationResult<CanvasAppAttachResult>;
+    }
+
+    return ok(
+      {
+        attached: true,
+        solutionUniqueName: normalizedSolutionUniqueName,
+        app: app.data,
+        addRequiredComponents,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(app.diagnostics, actionResult.diagnostics),
+        warnings: mergeDiagnosticLists(app.warnings, actionResult.warnings),
+      }
+    );
+  }
 }
 
 export class CloudFlowService {
@@ -2730,6 +2808,7 @@ export class ModelDrivenAppService {
       {
         uniquename: normalizedUniqueName,
         name: options.name?.trim() || normalizedUniqueName,
+        webresourceid: DEFAULT_MODEL_DRIVEN_APP_ICON_WEB_RESOURCE_ID,
       },
       {
         returnRepresentation: true,
@@ -2832,19 +2911,24 @@ export class ModelDrivenAppService {
 
   async components(appId: string): Promise<OperationResult<ModelDrivenAppComponentSummary[]>> {
     const components = await this.dataverseClient.queryAll<ModelDrivenAppComponentRecord>({
-      table: `appmodules(${appId})/appmodule_appmodulecomponent`,
-      select: [...baseModelDrivenAppComponentSelect],
+      table: 'appmodulecomponents',
+      select: [...baseModelDrivenAppComponentSelect, '_appmoduleidunique_value'],
     });
 
     if (!components.success) {
       return components as unknown as OperationResult<ModelDrivenAppComponentSummary[]>;
     }
 
-    return ok((components.data ?? []).map((component) => normalizeModelDrivenAppComponent(component, appId)), {
-      supportTier: 'preview',
-      diagnostics: components.diagnostics,
-      warnings: components.warnings,
-    });
+    return ok(
+      (components.data ?? [])
+        .filter((component) => component._appmoduleidunique_value === appId)
+        .map((component) => normalizeModelDrivenAppComponent(component, appId)),
+      {
+        supportTier: 'preview',
+        diagnostics: components.diagnostics,
+        warnings: components.warnings,
+      }
+    );
   }
 
   async forms(): Promise<OperationResult<ModelDrivenAppFormSummary[]>> {
