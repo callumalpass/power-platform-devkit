@@ -24,7 +24,7 @@ async function main(): Promise<void> {
     throw new Error('No smoke-test target could be resolved. Set PP_SMOKE_ENV or configure a test-like environment alias.');
   }
 
-  process.stdout.write(`Smoke target: env=${target.alias} profile=${target.authProfile}\n`);
+  logPhase(`target env=${target.alias} profile=${target.authProfile}`);
 
   const profile = runCli<Record<string, unknown>>('auth profile inspect', ['auth', 'profile', 'inspect', target.authProfile], configDir);
   assertValue(typeof profile.data.name === 'string', 'Auth profile inspect did not return a profile name.');
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   process.stdout.write(`Solutions OK: count=${solutions.data.length}\n`);
   process.stdout.write(`Metadata tables OK: first=${String(tables.data[0]?.LogicalName ?? '<unknown>')}\n`);
   process.stdout.write(`Metadata columns OK: first=${String(columns.data[0]?.logicalName ?? columns.data[0]?.LogicalName ?? '<unknown>')}\n`);
-  process.stdout.write('Smoke test completed successfully.\n');
+  logPhase('completed');
 }
 
 function selectSmokeTarget(
@@ -121,12 +121,13 @@ function selectSmokeTarget(
 }
 
 function runCli<T>(label: string, args: string[], configDir: string | undefined): SmokeCommandResult<T> {
-  const fullArgs = ['packages/cli/dist/index.js', ...args, '--format', 'json'];
+  const fullArgs = ['scripts/run-pp-dev.mjs', ...args, '--format', 'json'];
 
   if (configDir) {
     fullArgs.push('--config-dir', configDir);
   }
 
+  logPhase(`start ${label}`);
   const result = spawnSync('node', fullArgs, {
     cwd: repoRoot,
     encoding: 'utf8',
@@ -134,11 +135,12 @@ function runCli<T>(label: string, args: string[], configDir: string | undefined)
 
   if (result.status !== 0) {
     throw new Error(
-      `${label} failed with exit code ${result.status ?? 1}\n${(result.stderr || result.stdout).trim() || '<no output>'}`
+      `${label} failed with exit code ${result.status ?? 1}\n${formatCommandOutput(result.stdout, result.stderr)}`
     );
   }
 
   try {
+    logPhase(`ok ${label}`);
     return {
       label,
       data: JSON.parse(result.stdout) as T,
@@ -148,6 +150,19 @@ function runCli<T>(label: string, args: string[], configDir: string | undefined)
       `${label} did not return valid JSON: ${error instanceof Error ? error.message : String(error)}\n${result.stdout.trim()}`
     );
   }
+}
+
+function logPhase(message: string): void {
+  process.stdout.write(`[smoke] ${message}\n`);
+}
+
+function formatCommandOutput(stdout: string, stderr: string): string {
+  const rendered = [
+    stdout.trim() ? `stdout:\n${stdout.trim()}` : undefined,
+    stderr.trim() ? `stderr:\n${stderr.trim()}` : undefined,
+  ].filter((value): value is string => Boolean(value));
+
+  return rendered.join('\n\n') || '<no output>';
 }
 
 function assertValue(condition: unknown, message: string): asserts condition {

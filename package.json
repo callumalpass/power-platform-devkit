@@ -12,7 +12,7 @@
     "pack:cli": "pnpm --filter @pp/cli build && pnpm --dir packages/cli pack",
     "fetch:canvas-catalog": "tsx scripts/fetch-canvas-control-catalog.ts",
     "harvest:canvas": "tsx scripts/canvas-harvest.ts",
-    "smoke:live": "pnpm build && tsx scripts/smoke-live.ts",
+    "smoke:live": "tsx scripts/smoke-live.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r --if-present typecheck"
