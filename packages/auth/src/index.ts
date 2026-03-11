@@ -508,6 +508,11 @@ function resolveScopes(profile: AuthProfile, resource: string): string[] {
   }
 
   const normalizedResource = normalizeResourceForScopes(effectiveResource);
+
+  if (profile.type === 'user' || profile.type === 'device-code') {
+    return [`${normalizedResource}/user_impersonation`];
+  }
+
   return [`${normalizedResource}/.default`];
 }
 

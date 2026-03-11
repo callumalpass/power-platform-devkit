@@ -160,6 +160,7 @@ describe('AuthService', () => {
       .mockImplementation(async (request) => {
         expect(request.redirectUri).toBeUndefined();
         expect(request.loginHint).toBe('user@example.com');
+        expect(request.scopes).toEqual(['https://example.crm.dynamics.com/user_impersonation']);
         return {
           accessToken: 'token-value',
           account: {
@@ -193,6 +194,52 @@ describe('AuthService', () => {
         process.env.WAYLAND_DISPLAY = originalWaylandDisplay;
       }
     }
+  });
+
+  it('requests user_impersonation scopes for device-code profiles derived from a resource url', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
+    const auth = new AuthService({ configDir });
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    const deviceCodeSpy = vi
+      .spyOn(PublicClientApplication.prototype, 'acquireTokenByDeviceCode')
+      .mockImplementation(async (request) => {
+        expect(request.scopes).toEqual(['https://example.crm.dynamics.com/user_impersonation']);
+        request.deviceCodeCallback({
+          userCode: 'ABC-123',
+          verificationUri: 'https://microsoft.com/devicelogin',
+          expiresIn: 900,
+          interval: 5,
+          message: 'Authenticate',
+        });
+        return {
+          accessToken: 'token-value',
+          account: {
+            homeAccountId: 'home-account',
+            localAccountId: 'local-account',
+            username: 'user@example.com',
+            tenantId: 'tenant-id',
+            environment: 'login.microsoftonline.com',
+          },
+        } as never;
+      });
+
+    const result = await auth.loginProfile(
+      {
+        name: 'device-profile',
+        type: 'device-code',
+        loginHint: 'user@example.com',
+      },
+      'https://example.crm.dynamics.com',
+      {
+        preferredFlow: 'device-code',
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.token).toBe('token-value');
+    expect(deviceCodeSpy).toHaveBeenCalledOnce();
+    expect(stderrSpy).toHaveBeenCalledWith('Please authenticate as: user@example.com\n');
   });
 
   it('reports silent auth failure before falling back to interactive auth', async () => {

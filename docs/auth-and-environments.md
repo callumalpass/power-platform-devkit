@@ -35,6 +35,7 @@ Notes:
 
 - uses Microsoft’s public client by default
 - defaults to tenant `common` unless `--tenant-id` is supplied
+- derives the delegated Dataverse scope as `<resource>/user_impersonation` unless explicit `--scope` values are stored on the profile
 - stores a separate MSAL cache per profile name unless `--cache-key` is supplied
 - can target a named browser profile for isolated interactive sessions
 - reuses cached tokens silently before prompting again
@@ -66,6 +67,8 @@ pp auth profile add-device-code --name build-user --resource https://example.crm
 pp auth login --name build-user --resource https://example.crm.dynamics.com --device-code
 ```
 
+Like `user` profiles, device-code profiles derive `<resource>/user_impersonation` unless you store explicit scopes.
+
 ### `environment-token`
 
 Read a bearer token from an environment variable:
@@ -87,6 +90,8 @@ pp auth profile add-client-secret \
   --secret-env PP_CLIENT_SECRET \
   --resource https://example.crm.dynamics.com
 ```
+
+Client-secret profiles derive the application scope as `<resource>/.default` unless explicit `--scope` values are stored.
 
 ### `static-token`
 
