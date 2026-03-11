@@ -179,6 +179,29 @@
       }
     ]
   },
+  "diagnostics": [
+    {
+      "code": "PROJECT_PARAMETER_MISSING",
+      "hint": "Set PP_TENANT_DOMAIN or provide an explicit value in the project config.",
+      "level": "error",
+      "message": "Required project parameter tenantDomain is not resolved",
+      "source": "@pp/project"
+    },
+    {
+      "code": "PROJECT_PARAMETER_SECRET_MISSING",
+      "hint": "Resolve secret ref app_token or provide an explicit value override.",
+      "level": "error",
+      "message": "Required secret-backed project parameter apiToken is not resolved",
+      "source": "@pp/project"
+    },
+    {
+      "code": "PROJECT_PARAMETER_MISSING",
+      "hint": "Set PP_SQL_ENDPOINT or provide an explicit value in the project config.",
+      "level": "error",
+      "message": "Required project parameter sqlEndpoint is not resolved",
+      "source": "@pp/project"
+    }
+  ],
   "discovery": {
     "anchorEvidence": {
       "assetKeys": [
@@ -233,6 +256,11 @@
     ]
   },
   "root": "<REPO_ROOT>",
+  "success": true,
+  "suggestedNextActions": [
+    "Resolve required project parameters: tenantDomain, apiToken, sqlEndpoint.",
+    "Normalize the layout by keeping editable sources under `apps/`, `flows/`, `solutions/`, and `docs/`, then move packaged zips to `artifacts/solutions/core.zip`."
+  ],
   "summary": {
     "activeTargetSummary": "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
     "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.",
@@ -250,6 +278,7 @@
     "requiredParameterCount": 3,
     "unresolvedRequiredParameterCount": 3
   },
+  "supportTier": "preview",
   "topology": {
     "activeTargetSummary": "Active target: stage prod -> environment prod -> solution core (CoreManaged)",
     "defaultStage": "prod",
@@ -291,5 +320,6 @@
         "summary": "prod (default stage, selected stage) -> environment prod -> solution core (CoreManaged)"
       }
     ]
-  }
+  },
+  "warnings": []
 }

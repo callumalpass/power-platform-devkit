@@ -30,6 +30,65 @@
       "mode": "seeded"
     }
   },
+  "contract": {
+    "activeTarget": {
+      "environmentAlias": "prod",
+      "solutionAlias": "core",
+      "solutionUniqueName": "CoreManaged",
+      "stage": "prod"
+    },
+    "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/core.zip or pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip.",
+    "canonicalBundlePath": "artifacts/solutions/core.zip",
+    "defaultTarget": {
+      "environmentAlias": "prod",
+      "solutionAlias": "core",
+      "solutionUniqueName": "CoreManaged",
+      "stage": "prod"
+    },
+    "deploymentRouteSummary": "pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged. The alias resolves later through the external pp environment registry and its auth context. The canonical bundle artifacts/solutions/core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/core.zip` or `pp solution export CoreManaged --environment prod --out artifacts/solutions/core.zip`.",
+    "editableAssetRoots": [
+      "apps",
+      "flows",
+      "docs"
+    ],
+    "environmentAliasProvenance": "Stage prod in pp.config.yaml selects environment alias prod. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
+    "layoutProfile": "source-first-inline-bundle",
+    "solutionSourceRoot": "solutions",
+    "stageMappings": [
+      {
+        "environmentAlias": "dev",
+        "parameterOverrides": [],
+        "solutionAlias": "core",
+        "solutionMappings": [
+          {
+            "alias": "core",
+            "environmentAlias": "dev",
+            "source": "project",
+            "uniqueName": "CoreDev"
+          }
+        ],
+        "solutionUniqueName": "CoreDev",
+        "stage": "dev"
+      },
+      {
+        "environmentAlias": "prod",
+        "parameterOverrides": [
+          "releaseName"
+        ],
+        "solutionAlias": "core",
+        "solutionMappings": [
+          {
+            "alias": "core",
+            "environmentAlias": "prod",
+            "source": "stage",
+            "uniqueName": "CoreManaged"
+          }
+        ],
+        "solutionUniqueName": "CoreManaged",
+        "stage": "prod"
+      }
+    ]
+  },
   "diagnostics": [
     {
       "code": "PROJECT_PARAMETER_MISSING",

@@ -436,7 +436,7 @@ async function runCli(
 }
 
 describe('cli fixture-backed workflows', () => {
-  it('lists canvas remote mutation placeholders in root help', async () => {
+  it('prints concise top-level help with concepts and next discovery steps', async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
@@ -455,24 +455,18 @@ describe('cli fixture-backed workflows', () => {
 
     expect(code).toBe(0);
     expect(stderr.join('')).toBe('');
-    expect(stdout.join('')).toContain(
-      'dv whoami --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
-    );
-    expect(stdout.join('')).toContain(
-      'solution list --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
-    );
-    expect(stdout.join('')).toContain(
-      'model list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]'
-    );
-    expect(stdout.join('')).toContain(
-      'Remote Dataverse-backed commands accept [--no-interactive-auth] to fail fast with structured diagnostics instead of opening browser auth.'
-    );
-    expect(stdout.join('')).toContain('canvas create --environment ALIAS');
-    expect(stdout.join('')).toContain('canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE]');
-    expect(stdout.join('')).toContain('canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME]');
-    expect(stdout.join('')).toContain('[preview: returns not-implemented diagnostics]');
-    expect(stdout.join('')).toContain('completion <bash|zsh|fish>');
-    expect(stdout.join('')).toContain('diagnostics <doctor|bundle> [path]');
+    expect(stdout.join('')).toContain('Power Platform CLI for local project work, Dataverse environments, solutions, and deployment workflows.');
+    expect(stdout.join('')).toContain('auth profile        how pp gets credentials');
+    expect(stdout.join('')).toContain('environment alias   named Dataverse target that points to a URL and auth profile');
+    expect(stdout.join('')).toContain('Top-level areas:');
+    expect(stdout.join('')).toContain('  auth          manage auth profiles, browser profiles, login, and tokens');
+    expect(stdout.join('')).toContain('  env           manage Dataverse environment aliases');
+    expect(stdout.join('')).toContain('  solution      inspect and mutate solutions');
+    expect(stdout.join('')).toContain('  diagnostics   install/config/project diagnostics');
+    expect(stdout.join('')).toContain('pp auth profile add-user --name work');
+    expect(stdout.join('')).toContain('pp env add --name dev --url https://contoso.crm.dynamics.com --profile work');
+    expect(stdout.join('')).toContain('pp auth profile --help');
+    expect(stdout.join('')).not.toContain('canvas import <file.msapp>');
   });
 
   it('prints version, completion, and diagnostics help as first-class product commands', async () => {
@@ -755,6 +749,7 @@ describe('cli fixture-backed workflows', () => {
     expect(doctorHelp.stderr).toBe('');
     expect(doctorHelp.stdout).toContain('Usage: project doctor [path] [--stage STAGE] [--param NAME=VALUE] [options]');
     expect(doctorHelp.stdout).toContain('Reads project context without mutating the filesystem.');
+    expect(doctorHelp.stdout).toContain('Machine-readable formats emit one payload on stdout');
 
     expect(feedbackHelp.code).toBe(0);
     expect(feedbackHelp.stderr).toBe('');
@@ -767,6 +762,7 @@ describe('cli fixture-backed workflows', () => {
     expect(inspectHelp.stdout).toContain('Usage: project inspect [path] [--stage STAGE] [--param NAME=VALUE] [options]');
     expect(inspectHelp.stdout).toContain('Reads project context without mutating the filesystem.');
     expect(inspectHelp.stdout).toContain('Auto-selects the lone descendant `pp.config.*` under the inspected path');
+    expect(inspectHelp.stdout).toContain('generated solution zips belong under `artifacts/solutions/`');
     expect(inspectHelp.stdout).toContain('Pair with `pp project doctor` for layout validation and `pp project init`');
 
     expect(after).toEqual(before);
@@ -1614,6 +1610,7 @@ describe('cli fixture-backed workflows', () => {
     expect(doctor.code).toBe(0);
     expect(context.code).toBe(0);
     expect(inspect.stderr).toBe('');
+    expect(doctor.stderr).toBe('');
 
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/project-root-inspect.json', {
       normalize: (value) => normalizeCliSnapshot(value),
@@ -1652,6 +1649,13 @@ describe('cli fixture-backed workflows', () => {
     expect(doctor.code).toBe(0);
     expect(inspect.stdout).toContain('# Project Inspect');
     expect(inspect.stdout).toContain(`- Canonical project root: \`${canonicalRoot}\``);
+    expect(inspect.stdout).toContain('- Editable roots: `apps`, `flows`, `docs`');
+    expect(inspect.stdout).toContain('- Solution source root: `solutions`');
+    expect(inspect.stdout).toContain('- Canonical bundle path: `artifacts/solutions/core.zip`');
+    expect(inspect.stdout).toContain(
+      'Layout contract: editable assets belong under apps, flows, docs; keep unpacked solution source in solutions; write generated solution zips to artifacts/solutions/core.zip.'
+    );
+    expect(inspect.stdout).toContain('Deployment route: pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged.');
     expect(inspect.stdout).toContain('Discovery: Treat fixtures/analysis/project as the canonical local project');
     expect(doctor.stdout).toContain('# Project Doctor');
     expect(doctor.stdout).toContain(`- Canonical project root: \`${canonicalRoot}\``);
@@ -6098,12 +6102,14 @@ describe('cli fixture-backed workflows', () => {
       expect(inspect.code).toBe(0);
       expect(doctor.code).toBe(0);
       expect(inspect.stderr).toBe('');
-      expect(JSON.parse(doctor.stderr)).toMatchObject({
+      expect(doctor.stderr).toBe('');
+      expect(JSON.parse(doctor.stdout)).toMatchObject({
         diagnostics: expect.arrayContaining([
           expect.objectContaining({
             code: 'PROJECT_PARAMETER_MISSING',
           }),
         ]),
+        canonicalProjectRoot: resolveRepoPath('fixtures', 'analysis', 'project'),
       });
       expect(JSON.parse(inspect.stdout)).toMatchObject({
         summary: {
@@ -6768,6 +6774,51 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.stdout).not.toContain('AUTH_PROFILE_NAME_REQUIRED');
   });
 
+  it('scopes auth and env help to their own command trees with disambiguating guidance', async () => {
+    const authHelp = await runCli(['auth', '--help']);
+    const authProfileHelp = await runCli(['auth', 'profile', '--help']);
+    const authAddEnvHelp = await runCli(['auth', 'profile', 'add-env', '--help']);
+    const envHelp = await runCli(['env', '--help']);
+    const envAddHelp = await runCli(['env', 'add', '--help']);
+
+    expect(authHelp.code).toBe(0);
+    expect(authHelp.stderr).toBe('');
+    expect(authHelp.stdout).toContain('Usage: auth <command> [options]');
+    expect(authHelp.stdout).toContain('Manage how pp authenticates to remote services.');
+    expect(authHelp.stdout).toContain('profile         create, inspect, and remove auth profiles');
+    expect(authHelp.stdout).toContain('Use `pp env add` to bind a Dataverse environment URL to an existing auth profile.');
+    expect(authHelp.stdout).not.toContain('dv whoami');
+
+    expect(authProfileHelp.code).toBe(0);
+    expect(authProfileHelp.stderr).toBe('');
+    expect(authProfileHelp.stdout).toContain('Usage: auth profile <command> [options]');
+    expect(authProfileHelp.stdout).toContain('Use `pp env add` separately to bind a Dataverse environment URL to a profile.');
+    expect(authProfileHelp.stdout).toContain('add-env              create a profile backed by a token environment variable');
+    expect(authProfileHelp.stdout).not.toContain('pp solution');
+
+    expect(authAddEnvHelp.code).toBe(0);
+    expect(authAddEnvHelp.stderr).toBe('');
+    expect(authAddEnvHelp.stdout).toContain('Usage: auth profile add-env --name NAME --env-var ENV_VAR [--resource URL]');
+    expect(authAddEnvHelp.stdout).toContain('This does not add a Dataverse environment alias.');
+    expect(authAddEnvHelp.stdout).toContain('If you want to add a new Dataverse environment to pp, use `pp env add` instead.');
+
+    expect(envHelp.code).toBe(0);
+    expect(envHelp.stderr).toBe('');
+    expect(envHelp.stdout).toContain('Usage: env <command> [options]');
+    expect(envHelp.stdout).toContain('An environment alias is a named Dataverse target that points to a URL and an existing auth profile.');
+    expect(envHelp.stdout).toContain('`pp env add` adds a Dataverse environment alias.');
+    expect(envHelp.stdout).toContain('`pp auth profile add-env` adds an auth profile backed by a token environment variable.');
+    expect(envHelp.stdout).not.toContain('dv whoami');
+
+    expect(envAddHelp.code).toBe(0);
+    expect(envAddHelp.stderr).toBe('');
+    expect(envAddHelp.stdout).toContain(
+      'Usage: env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]'
+    );
+    expect(envAddHelp.stdout).toContain('Adds one Dataverse environment alias that points to an existing auth profile.');
+    expect(envAddHelp.stdout).toContain('`--profile` must name an existing auth profile.');
+  });
+
   it('prints help for analysis context --help without executing the command', async () => {
     const help = await runCli(['analysis', 'context', '--help']);
 
@@ -6858,15 +6909,11 @@ describe('cli fixture-backed workflows', () => {
 
     expect(rootHelp.code).toBe(0);
     expect(rootHelp.stderr).toBe('');
-    expect(rootHelp.stdout).toContain(
-      'model inspect <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]'
-    );
-    expect(rootHelp.stdout).toContain(
-      'connref list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]'
-    );
-    expect(rootHelp.stdout).toContain(
-      'envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]'
-    );
+    expect(rootHelp.stdout).toContain('Top-level areas:');
+    expect(rootHelp.stdout).toContain('  model         inspect model-driven apps');
+    expect(rootHelp.stdout).toContain('  connref       inspect and validate connection references');
+    expect(rootHelp.stdout).toContain('  envvar        inspect and mutate environment variables');
+    expect(rootHelp.stdout).toContain('pp solution list --help');
 
     expect(connrefHelp.code).toBe(0);
     expect(connrefHelp.stderr).toBe('');
@@ -6982,12 +7029,9 @@ describe('cli fixture-backed workflows', () => {
 
     expect(authHelp.code).toBe(0);
     expect(authHelp.stderr).toBe('');
-    expect(authHelp.stdout).toContain(
-      'auth profile inspect <name> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
-    );
-    expect(authHelp.stdout).toContain(
-      'auth profile inspect --environment ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]'
-    );
+    expect(authHelp.stdout).toContain('Usage:');
+    expect(authHelp.stdout).toContain('auth profile inspect <name> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]');
+    expect(authHelp.stdout).toContain('auth profile inspect --environment ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]');
     expect(authInspect.code).toBe(0);
     expect(authInspect.stderr).toBe('');
     expect(JSON.parse(authInspect.stdout)).toMatchObject({

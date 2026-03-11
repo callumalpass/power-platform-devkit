@@ -125,6 +125,7 @@
       }
     ]
   },
+  "diagnostics": [],
   "inspectedPath": "<TMP_DIR>",
   "layout": {
     "editableAssetRoots": [
@@ -145,6 +146,10 @@
     "recommendations": []
   },
   "root": "<TMP_DIR>",
+  "success": true,
+  "suggestedNextActions": [
+    "Project layout looks coherent. Keep `pp.config.*` aligned with real environment aliases, solution names, and parameter sources as the repo evolves."
+  ],
   "summary": {
     "activeTargetSummary": "Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)",
     "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/CoreLifecycle.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/CoreLifecycle.zip or pp solution export CoreLifecycle --environment sandbox --out artifacts/solutions/CoreLifecycle.zip.",
@@ -162,6 +167,7 @@
     "requiredParameterCount": 0,
     "unresolvedRequiredParameterCount": 0
   },
+  "supportTier": "preview",
   "topology": {
     "activeTargetSummary": "Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)",
     "defaultStage": "dev",
@@ -187,5 +193,6 @@
         "summary": "dev (default stage, selected stage) -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)"
       }
     ]
-  }
+  },
+  "warnings": []
 }

@@ -88,6 +88,7 @@ import {
   resolvePowerBiTarget,
   resolveSharePointTarget,
   summarizeProject,
+  summarizeProjectContract,
   summarizeResolvedParameter,
   type ProjectDoctorReport,
   type ProjectFeedbackReport,
@@ -452,37 +453,69 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
   const auth = new AuthService(configOptions);
 
   if (!command || command === 'help' || command === '--help') {
-    printHelp();
+    printAuthHelp();
     return 0;
   }
 
   if (command === 'profile') {
     const [action, ...rest] = args;
 
-    if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
-      printHelp();
+    if (!action || action === 'help' || action === '--help') {
+      printAuthProfileHelp();
       return 0;
     }
 
     switch (action) {
       case 'list':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthProfileListHelp();
+          return 0;
+        }
         return runAuthProfileList(auth, rest);
       case 'inspect':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthProfileInspectHelp();
+          return 0;
+        }
         return runAuthProfileInspect(auth, configOptions, rest);
       case 'add-user':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthProfileAddUserHelp();
+          return 0;
+        }
         return runAuthProfileSave(auth, rest, 'user');
       case 'add-static':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthProfileAddStaticHelp();
+          return 0;
+        }
         return runAuthProfileSave(auth, rest, 'static-token');
       case 'add-env':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthProfileAddEnvHelp();
+          return 0;
+        }
         return runAuthProfileSave(auth, rest, 'environment-token');
       case 'add-client-secret':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthProfileAddClientSecretHelp();
+          return 0;
+        }
         return runAuthProfileSave(auth, rest, 'client-secret');
       case 'add-device-code':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthProfileAddDeviceCodeHelp();
+          return 0;
+        }
         return runAuthProfileSave(auth, rest, 'device-code');
       case 'remove':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthProfileRemoveHelp();
+          return 0;
+        }
         return runAuthProfileRemove(auth, rest);
       default:
-        printHelp();
+        printAuthProfileHelp();
         return 1;
     }
   }
@@ -490,31 +523,51 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
   if (command === 'browser-profile') {
     const [action, ...rest] = args;
 
-    if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
-      printHelp();
+    if (!action || action === 'help' || action === '--help') {
+      printAuthBrowserProfileHelp();
       return 0;
     }
 
     switch (action) {
       case 'list':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthBrowserProfileListHelp();
+          return 0;
+        }
         return runAuthBrowserProfileList(auth, rest);
       case 'inspect':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthBrowserProfileInspectHelp();
+          return 0;
+        }
         return runAuthBrowserProfileInspect(auth, rest);
       case 'add':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthBrowserProfileAddHelp();
+          return 0;
+        }
         return runAuthBrowserProfileSave(auth, rest);
       case 'bootstrap':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthBrowserProfileBootstrapHelp();
+          return 0;
+        }
         return runAuthBrowserProfileBootstrap(auth, rest);
       case 'remove':
+        if (rest.includes('--help') || rest.includes('help')) {
+          printAuthBrowserProfileRemoveHelp();
+          return 0;
+        }
         return runAuthBrowserProfileRemove(auth, rest);
       default:
-        printHelp();
+        printAuthBrowserProfileHelp();
         return 1;
     }
   }
 
   if (command === 'login') {
     if (args.includes('--help') || args.includes('help')) {
-      printHelp();
+      printAuthLoginHelp();
       return 0;
     }
     return runAuthLogin(auth, args);
@@ -522,13 +575,13 @@ async function runAuth(command: string | undefined, args: string[]): Promise<num
 
   if (command === 'token') {
     if (args.includes('--help') || args.includes('help')) {
-      printHelp();
+      printAuthTokenHelp();
       return 0;
     }
     return runAuthToken(auth, args);
   }
 
-  printHelp();
+  printAuthHelp();
   return 1;
 }
 
@@ -542,12 +595,28 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
 
   switch (command) {
     case 'list':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentListHelp();
+        return 0;
+      }
       return runEnvironmentList(configOptions, args);
     case 'add':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentAddHelp();
+        return 0;
+      }
       return runEnvironmentAdd(configOptions, args);
     case 'inspect':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentInspectHelp();
+        return 0;
+      }
       return runEnvironmentInspect(configOptions, args);
     case 'resolve-maker-id':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentResolveMakerIdHelp();
+        return 0;
+      }
       return runEnvironmentResolveMakerId(configOptions, args);
     case 'cleanup-plan':
       if (args.includes('--help') || args.includes('help')) {
@@ -1815,6 +1884,7 @@ async function runProjectInspect(args: string[]): Promise<number> {
   const payload = {
     success: true,
     summary: summarizeProject(project.data),
+    contract: summarizeProjectContract(project.data),
     discovery:
       project.data.discovery.usedDefaultLayout || project.data.discovery.autoSelectedProjectRoot ? project.data.discovery : undefined,
     topology: project.data.topology,
@@ -1906,9 +1976,23 @@ async function runProjectDoctor(args: string[]): Promise<number> {
   if (format === 'table' || format === 'markdown') {
     process.stdout.write(renderProjectDoctorOutput(result.data, format));
   } else {
-    printByFormat(result.data, format);
+    printByFormat(
+      {
+        success: true,
+        ...result.data,
+        diagnostics: result.diagnostics,
+        warnings: result.warnings,
+        suggestedNextActions: result.suggestedNextActions ?? [],
+        supportTier: result.supportTier,
+        provenance: result.provenance,
+        knownLimitations: result.knownLimitations,
+      },
+      format
+    );
   }
-  printResultDiagnostics(result, format);
+  if (!isMachineReadableOutputFormat(format)) {
+    printResultDiagnostics(result, format);
+  }
   return 0;
 }
 
@@ -7754,6 +7838,7 @@ function renderProjectInitOutput(
 
 function renderProjectInspectOutput(project: ProjectContext, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
   const summary = summarizeProject(project);
+  const contract = summarizeProjectContract(project);
   const discoveryNote = summarizeProjectDiscoveryNote(project.discovery);
   const parameterRows = Object.values(project.parameters).map((parameter) => ({
     name: parameter.name,
@@ -7779,6 +7864,9 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
     { field: 'selected stage', value: summary.selectedStage ?? '<unset>' },
     { field: 'active environment', value: summary.activeEnvironment ?? '<unset>' },
     { field: 'active solution', value: summary.activeSolution ?? '<unset>' },
+    { field: 'editable roots', value: contract.editableAssetRoots.join(', ') || '<none>' },
+    { field: 'solution source root', value: contract.solutionSourceRoot },
+    { field: 'canonical bundle path', value: contract.canonicalBundlePath },
   ];
 
   if (format === 'table') {
@@ -7786,6 +7874,9 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
       renderOutput(summaryRows, 'table').trimEnd(),
       discoveryNote ? '' : undefined,
       discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
+      '',
+      `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
+      `Deployment route: ${contract.deploymentRouteSummary}`,
       '',
       'Assets',
       renderOutput(assetRows, 'table').trimEnd(),
@@ -7808,7 +7899,13 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
     `- Selected stage: \`${summary.selectedStage ?? '<unset>'}\``,
     `- Active environment: \`${summary.activeEnvironment ?? '<unset>'}\``,
     `- Active solution: \`${summary.activeSolution ?? '<unset>'}\``,
+    `- Editable roots: \`${contract.editableAssetRoots.join('`, `') || '<none>'}\``,
+    `- Solution source root: \`${contract.solutionSourceRoot}\``,
+    `- Canonical bundle path: \`${contract.canonicalBundlePath}\``,
     ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
+    '',
+    `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
+    `Deployment route: ${contract.deploymentRouteSummary}`,
     '',
     '## Assets',
     ...assetRows.map((row) => `- \`${row.asset}\` (${row.kind}, exists=${row.exists}): \`${row.path}\``),
@@ -9422,164 +9519,351 @@ function printHelp(): void {
     [
       'pp',
       '',
-      'Product commands:',
-      '  version',
-      '  completion <bash|zsh|fish>',
-      '  diagnostics <doctor|bundle> [path] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      'Power Platform CLI for local project work, Dataverse environments, solutions, and deployment workflows.',
       '',
-      'Commands:',
-      '  auth profile list [--config-dir path]',
-      '  auth profile inspect <name> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  auth profile inspect --environment ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]  # --env also works',
-      '  auth profile add-user --name NAME [--resource URL] [--login-hint user@contoso.com] [--browser-profile NAME] [--config-dir path]',
-      '  auth profile add-static --name NAME --token TOKEN [--resource URL]',
-      '  auth profile add-env --name NAME --env-var ENV_VAR [--resource URL]',
-      '  auth profile add-client-secret --name NAME --tenant-id TENANT --client-id CLIENT --secret-env ENV_VAR [--resource URL] [--scope s1,s2]',
-      '  auth profile add-device-code --name NAME [--resource URL] [--login-hint user@contoso.com] [--config-dir path]',
-      '  auth profile remove <name> [--config-dir path]',
-      '  auth browser-profile list [--config-dir path]',
-      '  auth browser-profile inspect <name> [--config-dir path]',
-      '  auth browser-profile add --name NAME [--kind edge|chrome|chromium|custom] [--command PATH] [--arg ARG] [--directory PATH] [--config-dir path]',
-      '  auth browser-profile bootstrap <name> [--url URL] [--no-wait] [--config-dir path]',
-      '  auth browser-profile remove <name> [--config-dir path]',
-      '  auth login --name NAME --resource URL [--login-hint user@contoso.com] [--browser-profile NAME] [--force-prompt] [--device-code] [--config-dir path]',
-      '  auth token --profile NAME [--resource URL] [--format raw|json]',
-      '  Remote Dataverse-backed commands accept [--no-interactive-auth] to fail fast with structured diagnostics instead of opening browser auth.',
+      'Concepts:',
+      '  auth profile        how pp gets credentials',
+      '  environment alias   named Dataverse target that points to a URL and auth profile',
+      '  stage               project topology selector for deploy and analysis workflows',
       '',
-      '  env list [--config-dir path]',
-      '  env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]',
-      '  env inspect <alias> [--config-dir path]',
-      '  env resolve-maker-id <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  env remove <alias> [--config-dir path]',
+      'Top-level areas:',
+      '  auth          manage auth profiles, browser profiles, login, and tokens',
+      '  env           manage Dataverse environment aliases',
+      '  dv            Dataverse requests, rows, and metadata workflows',
+      '  solution      inspect and mutate solutions',
+      '  connref       inspect and validate connection references',
+      '  envvar        inspect and mutate environment variables',
+      '  canvas        inspect and package canvas apps',
+      '  flow          inspect and package flows',
+      '  model         inspect model-driven apps',
+      '  project       manage local pp project layout and topology',
+      '  analysis      project analysis and context capture',
+      '  deploy        deployment planning and apply workflows',
+      '  sharepoint    inspect SharePoint bindings and assets',
+      '  powerbi       inspect Power BI bindings and assets',
+      '  diagnostics   install/config/project diagnostics',
+      '  completion    shell completion script generation',
+      '  version       print the CLI version',
       '',
-      '  dv whoami --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  dv request --environment ALIAS --path PATH [--method GET] [--body JSON|--body-file FILE] [--response-type json|text|void] [--header "Name: value"] [--config-dir path]',
-      '  dv action <name> --environment ALIAS [--body JSON|--body-file FILE] [--bound-path PATH] [--response-type json|text|void] [--solution UNIQUE_NAME] [--header "Name: value"] [--config-dir path]',
-      '  dv function <name> --environment ALIAS [--param key=value] [--param-json key=JSON] [--bound-path PATH] [--response-type json|text|void] [--header "Name: value"] [--config-dir path]',
-      '  dv batch --environment ALIAS --file FILE [--continue-on-error] [--solution UNIQUE_NAME] [--config-dir path]',
-      '  dv rows export <table> --environment ALIAS [--select a,b] [--expand x,y] [--orderby expr] [--top N] [--filter expr] [--count] [--all] [--out FILE] [--config-dir path]',
-      '  dv rows apply --environment ALIAS --file FILE [--continue-on-error] [--solution UNIQUE_NAME] [--config-dir path]',
-      '  dv query <table> --environment ALIAS [--select a,b] [--expand x,y] [--orderby expr] [--top N] [--filter expr] [--count] [--all|--page-info] [--config-dir path]',
-      '  dv get <table> <id> --environment ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv create <table> --environment ALIAS --body JSON|--body-file FILE [--return-representation] [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv update <table> <id> --environment ALIAS --body JSON|--body-file FILE [--return-representation] [--if-match etag] [--config-dir path]',
-      '  dv delete <table> <id> --environment ALIAS [--if-match etag] [--config-dir path]',
-      '  dv metadata tables --environment ALIAS [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
-      '  dv metadata table <logicalName> --environment ALIAS [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv metadata columns <tableLogicalName> --environment ALIAS [--view common|raw] [--select a,b] [--filter expr] [--top N] [--all] [--config-dir path]',
-      '  dv metadata column <tableLogicalName> <columnLogicalName> --environment ALIAS [--view common|detailed|raw] [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv metadata option-set <name> --environment ALIAS [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv metadata relationship <schemaName> --environment ALIAS [--kind auto|one-to-many|many-to-many] [--view normalized|raw] [--select a,b] [--expand x,y] [--config-dir path]',
-      '  dv metadata snapshot <table|columns|option-set|relationship> ... --environment ALIAS [--kind auto|one-to-many|many-to-many] [--out FILE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  dv metadata diff --left FILE --right FILE [--format table|json|yaml|ndjson|markdown|raw]',
-      '  dv metadata apply --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata create-table --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata update-table <tableLogicalName> --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata add-column <tableLogicalName> --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata update-column <tableLogicalName> <columnLogicalName> --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata create-option-set --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata update-option-set --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata create-relationship --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata update-relationship <schemaName> --environment ALIAS --kind one-to-many|many-to-many --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata create-many-to-many --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
-      '  dv metadata create-customer-relationship --environment ALIAS --file FILE [--solution UNIQUE_NAME] [--language-code 1033] [--no-publish] [--config-dir path]',
+      'Getting started:',
+      '  pp auth profile add-user --name work',
+      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
+      '  pp dv whoami --environment dev',
       '',
-      '  solution create <uniqueName> --environment ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)',
-      '  solution delete <uniqueName> --environment ALIAS [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution set-metadata <uniqueName> --environment ALIAS [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]',
-      '  solution list --environment ALIAS [--no-interactive-auth] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution inspect <uniqueName> --environment ALIAS [--config-dir path]',
-      '  solution components <uniqueName> --environment ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution dependencies <uniqueName> --environment ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution analyze <uniqueName> --environment ALIAS [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution compare [uniqueName] (--source-env ALIAS|--source-zip FILE.zip|--source-folder DIR) (--target-env ALIAS|--target-zip FILE.zip|--target-folder DIR) [--pac PATH] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution export <uniqueName> --environment ALIAS [--out PATH] [--managed] [--manifest FILE] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution import <path.zip> --environment ALIAS [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution pack <folder> --out FILE.zip [--package-type managed|unmanaged|both] [--map FILE] [--pac PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  solution unpack <path.zip> --out DIR [--package-type managed|unmanaged|both] [--allow-delete] [--map FILE] [--pac PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  connref list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  connref inspect <logicalName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  connref validate --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar create <schemaName> --environment ALIAS [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret] [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [--delegate] [preview handoff or delegated Maker automation]',
-      '  canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [preview: returns not-implemented diagnostics]',
-      '  canvas validate <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas lint <path> [--project path] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas inspect <path|workspaceApp|displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [--project path] [--workspace FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas build <path|workspaceApp> [--project path] [--workspace FILE] [--out FILE] [--mode strict|seeded|registry] [--registry FILE] [--cache-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas diff <leftPath> <rightPath> [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas workspace inspect <workspacePath> [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas templates import <sourcePath> [--out FILE] [--kind official-api|official-artifact|harvested|inferred] [--source LABEL] [--acquired-at ISO] [--source-artifact PATH] [--source-app-id ID] [--platform-version VERSION] [--app-version VERSION] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas templates inspect <registryPath> [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas templates diff <leftRegistry> <rightRegistry> [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas templates pin <registryPath> --out FILE [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas templates refresh <sourcePath> [--current FILE] [--out FILE] [--kind official-api|official-artifact|harvested|inferred] [--source LABEL] [--acquired-at ISO] [--source-artifact PATH] [--source-app-id ID] [--platform-version VERSION] [--app-version VERSION] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas templates audit <registryPath> [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas patch plan <path|workspaceApp> --file PATCH.json [--workspace FILE] [--project path] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  canvas patch apply <path|workspaceApp> --file PATCH.json [--workspace FILE] [--project path] [--out PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [--solution-package] [--managed-solution-package] [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow unpack <path> --out DIR [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow pack <path> --out FILE.json [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow normalize <path> [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow validate <path> [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow graph <path> [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow patch <path> --file PATCH.json [--out PATH] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow runs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow errors <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow connrefs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  flow doctor <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model create <uniqueName> --environment ALIAS [--name DISPLAY_NAME] [--solution UNIQUE_NAME] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model attach <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-add-required-components] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model inspect <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model composition <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model impact <name|id|uniqueName> --environment ALIAS --kind app|form|view|sitemap --target <name|id> [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model sitemap <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model forms <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model views <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model dependencies <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  model patch plan <name|id|uniqueName> --environment ALIAS --kind app|form|view|sitemap --target <name|id> --rename <newName> [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  sharepoint site inspect <site|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  sharepoint list inspect <list|binding> --site <site|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  sharepoint file inspect <file|binding> --site <site|binding> [--drive name] [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  sharepoint permissions inspect --site <site|binding> [--list name|binding] [--file path|binding] [--drive name] [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  powerbi workspace inspect <workspace|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  powerbi dataset inspect <dataset|binding> --workspace <workspace|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  powerbi report inspect <report|binding> --workspace <workspace|binding> [--project path] [--profile NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      'Examples:',
+      '  pp auth --help',
+      '  pp auth profile --help',
+      '  pp env add --help',
+      '  pp solution list --help',
       '',
-      '  project init [path] [--name NAME] [--environment ALIAS] [--solution UNIQUE_NAME] [--stage STAGE] [--force] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  project doctor [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  project feedback [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  project inspect [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  analysis report [path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  analysis portfolio [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  analysis drift [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  analysis usage [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  analysis policy [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  deploy plan [--project path] [--stage STAGE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  deploy apply [--project path] [--stage STAGE] [--param NAME=VALUE] [--dry-run|--plan|--plan FILE] [--yes] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  deploy release plan --file MANIFEST.yml [--approve GATE] [--param NAME=VALUE] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  deploy release apply --file MANIFEST.yml [--approve GATE] [--param NAME=VALUE] [--dry-run] [--yes] [--format table|json|yaml|ndjson|markdown|raw]',
-      '',
-      'Common output options:',
+      'Common output option:',
       '  --format table|json|yaml|ndjson|markdown|raw',
       '',
       'Mutation command options:',
       '  --dry-run  render a mutation preview without side effects',
       '  --plan     render a mutation plan without side effects',
       '  --yes      record non-interactive confirmation for guarded workflows',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth <command> [options]',
+      '',
+      'Manage how pp authenticates to remote services.',
+      '',
+      'Commands:',
+      '  profile         create, inspect, and remove auth profiles',
+      '  browser-profile manage browser launch profiles used by interactive auth or Maker handoff flows',
+      '  login           acquire a token for one profile and resource',
+      '  token           print a token for one profile and resource',
+      '',
+      'Concepts:',
+      '  auth profile      stores how pp gets credentials',
+      '  browser profile   stores how pp launches a browser session when a flow needs one',
+      '',
+      'Examples:',
+      '  pp auth profile add-user --name work',
+      '  pp auth profile add-env --name ci --env-var PP_ACCESS_TOKEN',
+      '  pp auth browser-profile add --name edge-work --kind edge',
+      '  pp auth login --name work --resource https://contoso.crm.dynamics.com',
+      '',
+      'See also:',
+      '  - Use `pp env add` to bind a Dataverse environment URL to an existing auth profile.',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthProfileHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth profile <command> [options]',
+      '',
+      'Manage authentication profiles used by pp.',
+      '',
+      'A profile defines how pp gets credentials.',
+      'Use `pp env add` separately to bind a Dataverse environment URL to a profile.',
+      '',
+      'Commands:',
+      '  list                 list auth profiles',
+      '  inspect <name>       inspect one profile, or resolve the profile behind an environment alias',
+      '  add-user             create a profile that uses interactive user login',
+      '  add-static           create a profile backed by a literal token value',
+      '  add-env              create a profile backed by a token environment variable',
+      '  add-client-secret    create an app-based profile using client credentials',
+      '  add-device-code      create a profile that signs in with the device code flow',
+      '  remove <name>        remove one profile',
+      '',
+      'Examples:',
+      '  pp auth profile add-user --name work',
+      '  pp auth profile add-env --name ci --env-var PP_ACCESS_TOKEN',
+      '  pp auth profile inspect work',
+      '  pp auth profile inspect --environment dev',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthProfileListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth profile list [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Lists auth profiles known to pp.',
+      '  - Returns the profile name, type, default resource, and browser-profile association when present.',
+      '',
+      'Examples:',
+      '  pp auth profile list',
+      '  pp auth profile list --format json',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthProfileInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage:',
+      '  auth profile inspect <name> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  auth profile inspect --environment ALIAS [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Inspects one auth profile directly by name.',
+      '  - Or resolves the auth profile attached to a Dataverse environment alias.',
+      '',
+      'Examples:',
+      '  pp auth profile inspect work',
+      '  pp auth profile inspect --environment dev',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthProfileAddUserHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth profile add-user --name NAME [--resource URL] [--login-hint user@contoso.com] [--browser-profile NAME] [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Creates an auth profile that can sign in as a user through the browser flow.',
+      '  - Optionally records a browser profile for later interactive auth or Maker handoff use.',
+      '',
+      'Examples:',
+      '  pp auth profile add-user --name work',
+      '  pp auth profile add-user --name work --login-hint user@contoso.com --browser-profile edge-work',
+      '',
+      'See also:',
+      '  - Use `pp env add --name dev --url https://contoso.crm.dynamics.com --profile work` after the profile exists.',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthProfileAddStaticHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth profile add-static --name NAME --token TOKEN [--resource URL]',
+      '',
+      'Behavior:',
+      '  - Creates an auth profile backed by a literal access token value.',
+      '  - Best suited to short-lived testing or controlled automation, not long-lived local setup.',
+      '',
+      'Examples:',
+      '  pp auth profile add-static --name fixture --token eyJ...',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthProfileAddEnvHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth profile add-env --name NAME --env-var ENV_VAR [--resource URL]',
+      '',
+      'Behavior:',
+      '  - Creates an auth profile that reads its token from an environment variable.',
+      '  - This does not add a Dataverse environment alias.',
+      '',
+      'When to use this:',
+      '  - CI or automation already provides an access token in an env var.',
+      '',
+      'Common confusion:',
+      '  - If you want to add a new Dataverse environment to pp, use `pp env add` instead.',
+      '',
+      'Examples:',
+      '  pp auth profile add-env --name ci --env-var PP_ACCESS_TOKEN',
+      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile ci',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthProfileAddClientSecretHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth profile add-client-secret --name NAME --tenant-id TENANT --client-id CLIENT --secret-env ENV_VAR [--resource URL] [--scope s1,s2]',
+      '',
+      'Behavior:',
+      '  - Creates an app-based auth profile using client credentials.',
+      '  - The client secret is read from the named environment variable at runtime.',
+      '',
+      'Examples:',
+      '  pp auth profile add-client-secret --name ci-app --tenant-id <tenant> --client-id <app-id> --secret-env PP_CLIENT_SECRET',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthProfileAddDeviceCodeHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth profile add-device-code --name NAME [--resource URL] [--login-hint user@contoso.com] [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Creates an auth profile that signs in with the device code flow.',
+      '  - Useful when a browser is unavailable or you want a more explicit interactive flow.',
+      '',
+      'Examples:',
+      '  pp auth profile add-device-code --name work-device',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthProfileRemoveHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth profile remove <name> [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Removes one auth profile from pp config.',
+      '  - Environment aliases that point to this profile will need to be updated separately.',
+      '',
+      'Examples:',
+      '  pp auth profile remove work',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthBrowserProfileHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth browser-profile <command> [options]',
+      '',
+      'Manage browser launch profiles used by interactive auth and Maker handoff workflows.',
+      '',
+      'Commands:',
+      '  list            list browser profiles',
+      '  inspect <name>  inspect one browser profile',
+      '  add             create a browser profile',
+      '  bootstrap <name> open a browser profile against a target URL',
+      '  remove <name>   remove a browser profile',
+      '',
+      'Examples:',
+      '  pp auth browser-profile add --name edge-work --kind edge',
+      '  pp auth browser-profile bootstrap edge-work',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthBrowserProfileListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth browser-profile list [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Lists configured browser profiles and their launch configuration.',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthBrowserProfileInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth browser-profile inspect <name> [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Inspects one browser profile, including its launcher kind and directory when configured.',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthBrowserProfileAddHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth browser-profile add --name NAME [--kind edge|chrome|chromium|custom] [--command PATH] [--arg ARG] [--directory PATH] [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Creates a named browser launch profile for interactive auth or Maker handoff flows.',
+      '',
+      'Examples:',
+      '  pp auth browser-profile add --name edge-work --kind edge',
+      '  pp auth browser-profile add --name custom-chrome --kind custom --command /path/to/chrome --directory ~/.config/pp-chrome',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthBrowserProfileBootstrapHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth browser-profile bootstrap <name> [--url URL] [--no-wait] [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Launches the named browser profile against a bootstrap URL.',
+      '  - Useful for warming a session before interactive auth or Maker automation.',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthBrowserProfileRemoveHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth browser-profile remove <name> [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Removes one browser profile from pp config.',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthLoginHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth login --name NAME --resource URL [--login-hint user@contoso.com] [--browser-profile NAME] [--force-prompt] [--device-code] [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Performs an interactive sign-in for the named auth profile and target resource.',
+      '  - Use `--device-code` to force the device code flow.',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAuthTokenHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: auth token --profile NAME [--resource URL] [--format raw|json]',
+      '',
+      'Behavior:',
+      '  - Prints an access token resolved through the named auth profile.',
+      '  - Useful for debugging profile setup or wiring pp auth into adjacent tooling.',
     ].join('\n') + '\n'
   );
 }
@@ -9949,9 +10233,13 @@ function printEnvironmentHelp(): void {
     [
       'Usage: env <command> [options]',
       '',
+      'Manage Dataverse environment aliases used by pp.',
+      '',
+      'An environment alias is a named Dataverse target that points to a URL and an existing auth profile.',
+      '',
       'Commands:',
       '  list                         list saved environment aliases',
-      '  add --name ALIAS             add or update one environment alias',
+      '  add                          add or update one environment alias',
       '  inspect <alias>              inspect one saved alias',
       '  resolve-maker-id <alias>     discover and persist the Maker environment id for an alias',
       '  cleanup-plan <alias>         list disposable solutions matching a run prefix before bootstrap reset',
@@ -9960,14 +10248,89 @@ function printEnvironmentHelp(): void {
       '  remove <alias>               remove one saved alias from local config',
       '',
       'Examples:',
+      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
       '  pp env list',
       '  pp env inspect dev',
       '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json',
       '  pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json',
       '  pp env cleanup test --prefix ppHarness20260310T013401820Z --dry-run --format json',
       '',
+      'Common confusion:',
+      '  - `pp env add` adds a Dataverse environment alias.',
+      '  - `pp auth profile add-env` adds an auth profile backed by a token environment variable.',
+      '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env list [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Lists Dataverse environment aliases known to pp.',
+      '  - Shows the bound URL, auth profile, default solution, and Maker environment id when available.',
+      '',
+      'Examples:',
+      '  pp env list',
+      '  pp env list --format json',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentAddHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]',
+      '',
+      'Behavior:',
+      '  - Adds one Dataverse environment alias that points to an existing auth profile.',
+      '  - The alias becomes the value you pass later with `--environment ALIAS`.',
+      '',
+      'Requirements:',
+      '  - `--profile` must name an existing auth profile.',
+      '',
+      'Examples:',
+      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
+      '  pp env add --name uat --url https://contoso-uat.crm.dynamics.com --profile work --default-solution Core',
+      '',
+      'See also:',
+      '  - If you still need credentials, create the profile first with `pp auth profile add-user` or another `auth profile add-*` command.',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env inspect <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Inspects one Dataverse environment alias and its bound auth profile state.',
+      '  - Includes tooling advisories such as whether pac is likely to share the pp auth context.',
+      '',
+      'Examples:',
+      '  pp env inspect dev',
+      '  pp env inspect dev --format json',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentResolveMakerIdHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env resolve-maker-id <alias> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Resolves the Maker environment id for the alias through the Power Platform environments API.',
+      '  - Persists the resolved id so later Maker handoff commands do not need an explicit override.',
+      '',
+      'Examples:',
+      '  pp env resolve-maker-id dev',
+      '  pp env resolve-maker-id dev --format json',
     ].join('\n') + '\n'
   );
 }
@@ -10515,6 +10878,7 @@ function printProjectDoctorHelp(): void {
       '',
       'Behavior:',
       '  - Reports config presence, asset-path checks, provider bindings, topology, registries, and unresolved required parameters.',
+      '  - Machine-readable formats emit one payload on stdout, including diagnostics and suggested next actions.',
       '  - Reads project context without mutating the filesystem.',
       '',
       'Common output options:',
@@ -10551,9 +10915,10 @@ function printProjectInspectHelp(): void {
       '  Inspects resolved local project topology and asset roots.',
       '',
       'Behavior:',
-      '  - Returns project summary, resolved topology, parameters, provider bindings, asset inventory, registries, build metadata, and docs metadata.',
+      '  - Returns project summary, the canonical local layout contract, resolved topology, parameters, provider bindings, asset inventory, registries, build metadata, and docs metadata.',
       '  - Reads project context without mutating the filesystem.',
       '  - Auto-selects the lone descendant `pp.config.*` under the inspected path and reports discovery details when the current path is not itself a pp project.',
+      '  - Calls out that editable sources belong under `apps/`, `flows/`, `solutions/`, and `docs/`, while generated solution zips belong under `artifacts/solutions/`.',
       '  - Pair with `pp project doctor` for layout validation and `pp project init` to scaffold a canonical `apps/`, `flows/`, `solutions/`, and `docs/` workspace.',
       '',
       'Common output options:',

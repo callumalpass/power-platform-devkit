@@ -134,6 +134,19 @@ export interface ProjectSummary {
   missingRequiredParameters: string[];
 }
 
+export interface ProjectInspectContractSummary {
+  layoutProfile: ProjectLayoutAssessment['profile'];
+  editableAssetRoots: string[];
+  solutionSourceRoot: string;
+  canonicalBundlePath: string;
+  defaultTarget: ProjectContractTarget;
+  activeTarget: ProjectContractTarget;
+  stageMappings: ProjectContractStageMapping[];
+  environmentAliasProvenance?: string;
+  bundleLifecycleSummary: string;
+  deploymentRouteSummary: string;
+}
+
 export interface ProjectInitOptions {
   name?: string;
   environment?: string;
@@ -1029,6 +1042,21 @@ export function summarizeProject(context: ProjectContext): ProjectSummary {
     providerBindingCount: Object.keys(context.providerBindings).length,
     parameterCount: Object.keys(context.parameters).length,
     missingRequiredParameters,
+  };
+}
+
+export function summarizeProjectContract(context: ProjectContext): ProjectInspectContractSummary {
+  const layout = assessProjectLayout(context.root, context.assets, context.config);
+  const contract = buildProjectContractSummary(context.config, context.topology, layout);
+  const canonicalBundlePresent =
+    layout.generatedBundlePaths.includes(contract.canonicalBundlePath) ||
+    context.assets.some((asset) => asset.exists && asset.path === contract.canonicalBundlePath);
+
+  return {
+    ...contract,
+    environmentAliasProvenance: describeProjectEnvironmentAliasProvenance(contract.activeTarget, context.configPath),
+    bundleLifecycleSummary: describeProjectBundleLifecycle(contract, canonicalBundlePresent),
+    deploymentRouteSummary: describeProjectFeedbackDeploymentRoute(contract, context.configPath, canonicalBundlePresent),
   };
 }
 
