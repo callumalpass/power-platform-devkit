@@ -158,6 +158,7 @@ export interface EnvironmentGroupHandlers<TConfigOptions> {
   runEnvironmentList(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentAdd(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentInspect(configOptions: TConfigOptions, args: string[]): Promise<number>;
+  runEnvironmentBaseline(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentResolveMakerId(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentCleanupPlan(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentReset(configOptions: TConfigOptions, args: string[]): Promise<number>;
@@ -195,6 +196,12 @@ export async function runEnvironmentGroup<TConfigOptions>(
         return 0;
       }
       return handlers.runEnvironmentInspect(configOptions, args);
+    case 'baseline':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printEnvironmentBaselineHelp();
+        return 0;
+      }
+      return handlers.runEnvironmentBaseline(configOptions, args);
     case 'resolve-maker-id':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printEnvironmentResolveMakerIdHelp();
@@ -234,6 +241,14 @@ export interface ProjectGroupHandlers {
   runProjectInspect(args: string[]): Promise<number>;
 }
 
+export interface InitGroupHandlers {
+  runInitStart(args: string[]): Promise<number>;
+  runInitStatus(args: string[]): Promise<number>;
+  runInitResume(args: string[]): Promise<number>;
+  runInitAnswer(args: string[]): Promise<number>;
+  runInitCancel(args: string[]): Promise<number>;
+}
+
 export async function runProjectGroup(
   command: string | undefined,
   args: string[],
@@ -271,6 +286,53 @@ export async function runProjectGroup(
       return handlers.runProjectInspect(args);
     default:
       cliHelp.printHelp();
+      return 1;
+  }
+}
+
+export async function runInitGroup(command: string | undefined, args: string[], handlers: InitGroupHandlers): Promise<number> {
+  const knownSubcommands = new Set(['start', 'status', 'resume', 'answer', 'cancel', 'help', '--help']);
+
+  if (!command || !knownSubcommands.has(command) || command === 'start') {
+    const startArgs = !command || command === 'start' ? args : [command, ...args];
+    if (startArgs.includes('--help') || startArgs.includes('help')) {
+      cliHelp.printInitHelp();
+      return 0;
+    }
+    return handlers.runInitStart(startArgs);
+  }
+
+  switch (command) {
+    case 'help':
+    case '--help':
+      cliHelp.printInitHelp();
+      return 0;
+    case 'status':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printInitStatusHelp();
+        return 0;
+      }
+      return handlers.runInitStatus(args);
+    case 'resume':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printInitResumeHelp();
+        return 0;
+      }
+      return handlers.runInitResume(args);
+    case 'answer':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printInitAnswerHelp();
+        return 0;
+      }
+      return handlers.runInitAnswer(args);
+    case 'cancel':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printInitCancelHelp();
+        return 0;
+      }
+      return handlers.runInitCancel(args);
+    default:
+      cliHelp.printInitHelp();
       return 1;
   }
 }

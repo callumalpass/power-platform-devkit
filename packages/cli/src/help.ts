@@ -29,12 +29,14 @@ export function printHelp(): void {
       '  sharepoint    inspect SharePoint bindings and assets',
       '  powerbi       inspect Power BI bindings and assets',
       '  diagnostics   install/config/project diagnostics',
+      '  init          guided, resumable first-run setup for auth, environments, browser bootstrap, and project scaffold',
       '  completion    shell completion script generation',
       '  version       print the CLI version',
       '',
       'Getting started:',
       '  pp auth profile add-user --name work',
       '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
+      '  pp init',
       '  pp dv whoami --environment dev',
       '',
       'Examples:',
@@ -83,6 +85,94 @@ export function printAuthHelp(): void {
       '',
       'See also:',
       '  - Use `pp env add` to bind a Dataverse environment URL to an existing auth profile.',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitHelp(): void {
+  process.stdout.write(
+    [
+      'Usage:',
+      '  init [root] [options]',
+      '  init status <session-id> [options]',
+      '  init resume <session-id> [options]',
+      '  init answer <session-id> --set field=value [--set field=value ...] [options]',
+      '  init cancel <session-id> [options]',
+      '',
+      'Guided setup for first-run pp use. The init workflow is resumable so CLI and agent surfaces can pause for user input or browser work and continue later.',
+      '',
+      'Common options:',
+      '  --goal dataverse|maker|project|full',
+      '  --auth-mode user|device-code|environment-token|client-secret|static-token',
+      '  --profile NAME',
+      '  --env ALIAS',
+      '  --url https://contoso.crm.dynamics.com',
+      '  --browser-profile NAME',
+      '  --name PROJECT_NAME',
+      '  --solution UNIQUE_NAME',
+      '  --stage NAME',
+      '  --config-dir path',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+      '',
+      'Behavior:',
+      '  - Creates or reuses auth profiles and environment aliases.',
+      '  - Blocks on external actions such as browser login or browser-profile bootstrap, then resumes cleanly.',
+      '  - Optionally scaffolds a local project and verifies it with `project doctor`.',
+      '',
+      'Examples:',
+      '  pp init',
+      '  pp init --goal dataverse --auth-mode environment-token --profile ci --token-env PP_TOKEN --env dev --url https://contoso.crm.dynamics.com',
+      '  pp init status <session-id>',
+      '  pp init answer <session-id> --set solutionName=Core --set projectName=demo',
+      '  pp init resume <session-id>',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitStatusHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: init status <session-id> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Print the persisted state of one init session, including any blocked prompt or external action.',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitResumeHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: init resume <session-id> [options]',
+      '',
+      'Resume a setup session after you have answered a question, completed browser auth, or completed browser-profile bootstrap.',
+      '',
+      'Useful options:',
+      '  --set field=value is not supported here; use `pp init answer` for explicit field updates.',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitAnswerHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: init answer <session-id> --set field=value [--set field=value ...] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Apply one or more answers to a persisted init session and then re-evaluate the next blocked step.',
+      '',
+      'Examples:',
+      '  pp init answer <session-id> --set goal=full',
+      '  pp init answer <session-id> --set environmentUrl=https://contoso.crm.dynamics.com --set environmentAlias=dev',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitCancelHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: init cancel <session-id> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Mark a persisted init session as cancelled without deleting the underlying config artifacts it may already have created.',
     ].join('\n') + '\n'
   );
 }
@@ -908,6 +998,7 @@ export function printEnvironmentHelp(): void {
       '  list                         list saved environment aliases',
       '  add                          add or update one environment alias',
       '  inspect <alias>              inspect one saved alias',
+      '  baseline <alias>             inspect one alias plus bootstrap-reset baseline checks',
       '  resolve-maker-id <alias>     discover and persist the Maker environment id for an alias',
       '  cleanup-plan <alias>         list disposable solutions matching a run prefix before bootstrap reset',
       '  reset <alias>                delete disposable solutions matching a run prefix for bootstrap reset',
@@ -918,6 +1009,7 @@ export function printEnvironmentHelp(): void {
       '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
       '  pp env list',
       '  pp env inspect dev',
+      '  pp env baseline test --prefix ppHarness20260310T013401820Z --format json',
       '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json',
       '  pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json',
       '  pp env cleanup test --prefix ppHarness20260310T013401820Z --dry-run --format json',
@@ -984,6 +1076,27 @@ export function printEnvironmentInspectHelp(): void {
       'Examples:',
       '  pp env inspect dev',
       '  pp env inspect dev --format json',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printEnvironmentBaselineHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env baseline <alias> --prefix PREFIX [--expect-absent-solution NAME ...] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Combines `env inspect` with prefix-scoped reset checks into one non-mutating bootstrap baseline report.',
+      '  - Lists disposable solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
+      '  - Optionally verifies that specific prior solutions are absent before the next harness run begins.',
+      '  - Returns a `readyForBootstrap` signal plus next-step guidance for `pp env reset` or targeted `pp solution delete` cleanup.',
+      '',
+      'Examples:',
+      '  pp env baseline test --prefix ppHarness20260310T013401820Z --format json',
+      '  pp env baseline test --prefix ppHarness20260310T013401820Z --expect-absent-solution ppHarness20260309T215614036ZShell --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
     ].join('\n') + '\n'
   );
 }
@@ -1388,6 +1501,7 @@ export function printCanvasDownloadHelp(): void {
       '  - Uses the existing pp Dataverse auth context; it does not shell out to pac for canvas download.',
       '  - When `--out` is omitted, writes `<displayName|name|id>.msapp` in the current working directory.',
       '  - `--extract-to-directory` also expands the downloaded `.msapp` into a normalized source tree, converting archive backslashes into portable folder separators.',
+      '  - Extracted downloads also emit round-trip handoff details for rebuild/repack and Dataverse table metadata lookup.',
       '',
       'Examples:',
       '  pp canvas download "Harness Canvas" --environment dev --solution Core',
@@ -1484,6 +1598,7 @@ export function printCanvasInspectHelp(): void {
       'Remote behavior:',
       '  - Requires the positional identifier plus `--environment`.',
       '  - Accepts optional `--solution` to scope remote lookup to a solution.',
+      '  - Remote inspect includes portal provenance with the Dataverse app open URI and a canonical Maker studio edit URL when pp can derive one.',
       '  - Use repeated `--expect-control-property <controlPath>::<property>::<expectedValue>` to export the remote app package and return a pass/fail proof summary for deployed control bindings.',
       '',
       'Local behavior:',

@@ -99,6 +99,11 @@ describe('@pp/mcp', () => {
         'pp.environment-variable.inspect',
         'pp.model-app.inspect',
         'pp.project.inspect',
+        'pp.init.start',
+        'pp.init.status',
+        'pp.init.answer',
+        'pp.init.resume',
+        'pp.init.cancel',
         'pp.analysis.context',
         'pp.analysis.portfolio',
         'pp.analysis.drift',
@@ -183,10 +188,76 @@ describe('@pp/mcp', () => {
         expect.objectContaining({
           name: 'project',
           mutationToolsAvailable: true,
-          mutationTools: expect.arrayContaining(['pp.deploy.plan', 'pp.deploy.apply']),
+          mutationTools: expect.arrayContaining(['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.deploy.plan', 'pp.deploy.apply']),
         }),
       ])
     );
+  });
+
+  it('exposes init setup sessions through MCP tools', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-init-config-'));
+    await writeFixtureConfig(configDir);
+    const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-init-project-'));
+
+    const client = await createClient({
+      configDir,
+      projectPath: projectRoot,
+      env: {
+        PP_INIT_MCP_TOKEN: 'fixture-token',
+      },
+    });
+
+    const started = await client.callTool({
+      name: 'pp.init.start',
+      arguments: {
+        projectPath: projectRoot,
+        goal: 'project',
+        authMode: 'environment-token',
+        authProfileName: 'ci',
+        tokenEnvVar: 'PP_INIT_MCP_TOKEN',
+        environmentAlias: 'dev2',
+        environmentUrl: 'https://example.crm.dynamics.com',
+        projectName: 'demo',
+        solutionName: 'Core',
+        stageName: 'dev',
+      },
+    });
+
+    expect(started.isError).toBeFalsy();
+    expect(started.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.init.start',
+        mutationPolicy: {
+          mode: 'controlled',
+          approvalRequired: false,
+          sessionRequired: false,
+        },
+      },
+      data: {
+        status: 'completed',
+      },
+    });
+
+    const sessionId = (started.structuredContent as { data: { id: string } }).data.id;
+    const status = await client.callTool({
+      name: 'pp.init.status',
+      arguments: {
+        sessionId,
+      },
+    });
+
+    expect(status.isError).toBeFalsy();
+    expect(status.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.init.status',
+      },
+      data: {
+        id: sessionId,
+        status: 'completed',
+      },
+    });
   });
 
   it('supports deploy plan-then-apply with explicit approval gating', async () => {

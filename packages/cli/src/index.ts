@@ -15,9 +15,10 @@ import {
   summarizeProfile,
   type AuthProfile,
 } from '@pp/auth';
-import { CanvasService, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
+import { CanvasService, deriveCanvasStudioEditUrl, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
 import {
   createMutationPreview,
+  createSuccessPayload,
   readMutationFlags,
   resolveOutputFormat,
   renderFailure,
@@ -103,6 +104,7 @@ import {
 import YAML from 'yaml';
 import * as cliHelp from './help';
 import {
+  runInitGroup,
   runAuthGroup,
   runAnalysisGroup,
   runCanvasGroup,
@@ -119,6 +121,13 @@ import {
   runSharePointGroup,
   runSolutionGroup,
 } from './command-groups';
+import {
+  runInitAnswerCommand,
+  runInitCancelCommand,
+  runInitResumeCommand,
+  runInitStartCommand,
+  runInitStatusCommand,
+} from './init-commands';
 import {
   runProjectDoctorCommand,
   runProjectFeedbackCommand,
@@ -167,6 +176,7 @@ import {
 } from './auth-commands';
 import {
   runEnvironmentAddCommand,
+  runEnvironmentBaselineCommand,
   runEnvironmentCleanupCommand,
   runEnvironmentCleanupPlanCommand,
   runEnvironmentInspectCommand,
@@ -219,6 +229,7 @@ export async function main(argv: string[]): Promise<number> {
     runVersion,
     runCompletion,
     runDiagnostics,
+    runInit,
     runAuth,
     runEnvironment,
     runDataverse,
@@ -241,6 +252,16 @@ async function runProject(command: string | undefined, args: string[]): Promise<
   return runProjectGroup(command, args, { runProjectInit, runProjectDoctor, runProjectFeedback, runProjectInspect });
 }
 
+async function runInit(command: string | undefined, args: string[]): Promise<number> {
+  return runInitGroup(command, args, {
+    runInitStart,
+    runInitStatus,
+    runInitResume,
+    runInitAnswer,
+    runInitCancel,
+  });
+}
+
 async function runAnalysis(command: string | undefined, args: string[]): Promise<number> {
   return runAnalysisGroup(command, args, {
     runAnalysisReport,
@@ -249,6 +270,91 @@ async function runAnalysis(command: string | undefined, args: string[]): Promise
     runAnalysisDrift,
     runAnalysisUsage,
     runAnalysisPolicy,
+  });
+}
+
+async function runInitStart(args: string[]): Promise<number> {
+  return runInitStartCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
+  });
+}
+
+async function runInitStatus(args: string[]): Promise<number> {
+  return runInitStatusCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
+  });
+}
+
+async function runInitResume(args: string[]): Promise<number> {
+  return runInitResumeCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
+  });
+}
+
+async function runInitAnswer(args: string[]): Promise<number> {
+  return runInitAnswerCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
+  });
+}
+
+async function runInitCancel(args: string[]): Promise<number> {
+  return runInitCancelCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
   });
 }
 
@@ -368,6 +474,7 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
     runEnvironmentList,
     runEnvironmentAdd,
     runEnvironmentInspect,
+    runEnvironmentBaseline,
     runEnvironmentResolveMakerId,
     runEnvironmentCleanupPlan,
     runEnvironmentReset,
@@ -1813,6 +1920,7 @@ async function runAuthToken(auth: AuthService, args: string[]): Promise<number> 
 async function runEnvironmentList(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentListCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1826,6 +1934,7 @@ async function runEnvironmentList(configOptions: ConfigStoreOptions, args: strin
 async function runEnvironmentAdd(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentAddCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1839,6 +1948,21 @@ async function runEnvironmentAdd(configOptions: ConfigStoreOptions, args: string
 async function runEnvironmentInspect(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentInspectCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
+  });
+}
+
+async function runEnvironmentBaseline(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
+  return runEnvironmentBaselineCommand(configOptions, args, {
+    positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1852,6 +1976,7 @@ async function runEnvironmentInspect(configOptions: ConfigStoreOptions, args: st
 async function runEnvironmentResolveMakerId(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentResolveMakerIdCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1865,6 +1990,7 @@ async function runEnvironmentResolveMakerId(configOptions: ConfigStoreOptions, a
 async function runEnvironmentRemove(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentRemoveCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1878,6 +2004,7 @@ async function runEnvironmentRemove(configOptions: ConfigStoreOptions, args: str
 async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentCleanupPlanCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1891,6 +2018,7 @@ async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args
 async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentCleanupCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1904,6 +2032,7 @@ async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: st
 async function runEnvironmentReset(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentResetCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -2129,7 +2258,7 @@ async function runDataverseBatch(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
@@ -2200,7 +2329,7 @@ async function runDataverseRowsExport(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2300,7 +2429,7 @@ async function runDataverseQuery(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2329,7 +2458,7 @@ async function runDataverseGet(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2580,7 +2709,7 @@ async function runDataverseMetadataTables(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2608,7 +2737,7 @@ async function runDataverseMetadataTable(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -3761,7 +3890,7 @@ async function runConnectionReferenceList(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
@@ -3817,7 +3946,7 @@ async function runConnectionReferenceCreate(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4184,8 +4313,9 @@ async function runCanvasInspect(args: string[]): Promise<number> {
       return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', '--solution UNIQUE_NAME is required when using --expect-control-property.'));
     }
 
+    const solutionUniqueName = readFlag(args, '--solution');
     const result = await new CanvasService(resolution.data.client).inspectRemote(identifier, {
-      solutionUniqueName: readFlag(args, '--solution'),
+      solutionUniqueName,
     });
 
     if (!result.success) {
@@ -4207,17 +4337,38 @@ async function runCanvasInspect(args: string[]): Promise<number> {
       }
 
       printByFormat(
-        {
-          ...result.data,
+        buildCanvasRemoteInspectPayload({
+          app: result.data,
+          envAlias: resolution.data.environment.alias,
+          solutionUniqueName,
+          makerEnvironmentId: await resolveCanvasMakerEnvironmentId(
+            undefined,
+            resolution.data.environment,
+            resolution.data.authProfile,
+            readConfigOptions(args)
+          ),
           proof: proof.data,
-        },
+        }),
         outputFormat(args, 'json')
       );
       printResultDiagnostics(proof, outputFormat(args, 'json'));
       return proof.data.valid ? 0 : 1;
     }
 
-    printByFormat(result.data, outputFormat(args, 'json'));
+    printByFormat(
+      buildCanvasRemoteInspectPayload({
+        app: result.data,
+        envAlias: resolution.data.environment.alias,
+        solutionUniqueName,
+        makerEnvironmentId: await resolveCanvasMakerEnvironmentId(
+          undefined,
+          resolution.data.environment,
+          resolution.data.authProfile,
+          readConfigOptions(args)
+        ),
+      }),
+      outputFormat(args, 'json')
+    );
     return 0;
   }
 
@@ -4372,8 +4523,170 @@ async function runCanvasDownload(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(
+    await buildCanvasRemoteDownloadPayload(result.data, {
+      envAlias: resolution.data.environment.alias,
+      solutionUniqueName,
+    }),
+    outputFormat(args, 'json')
+  );
   return 0;
+}
+
+function buildCanvasRemoteInspectPayload(input: {
+  app: Awaited<ReturnType<CanvasService['inspectRemote']>> extends OperationResult<infer T> ? NonNullable<T> : never;
+  envAlias: string;
+  solutionUniqueName?: string;
+  makerEnvironmentId?: string;
+  proof?: unknown;
+}) {
+  const portalProvenance = buildCanvasPortalProvenance({
+    appId: input.app.id,
+    appOpenUri: input.app.openUri,
+    makerEnvironmentId: input.makerEnvironmentId,
+  });
+
+  return compactObject({
+    ...input.app,
+    portalProvenance,
+    handoff: {
+      makerStudio: compactObject({
+        recommendedUrl: portalProvenance?.makerStudioUrl,
+        inspectCommand: `pp canvas inspect ${formatCliArg(input.app.displayName ?? input.app.name ?? input.app.id)} --environment ${formatCliArg(input.envAlias)}${input.solutionUniqueName ? ` --solution ${formatCliArg(input.solutionUniqueName)}` : ''}`,
+      }),
+      dataverse: {
+        accessCommand: `pp canvas access ${formatCliArg(input.app.displayName ?? input.app.name ?? input.app.id)} --environment ${formatCliArg(input.envAlias)} --format json`,
+      },
+    },
+    ...(input.proof ? { proof: input.proof } : {}),
+  });
+}
+
+async function buildCanvasRemoteDownloadPayload(
+  result: Awaited<ReturnType<CanvasService['downloadRemote']>> extends OperationResult<infer T> ? NonNullable<T> : never,
+  context: {
+    envAlias: string;
+    solutionUniqueName: string;
+  }
+) {
+  const dataSources = result.extractedPath ? await inspectExtractedCanvasDataSources(result.extractedPath) : [];
+
+  return compactObject({
+    ...result,
+    handoff: {
+      roundTrip: compactObject({
+        extractedPath: result.extractedPath,
+        buildCommand: result.extractedPath
+          ? `pp canvas build ${formatCliArg(result.extractedPath)} --out <rebuilt-msapp>`
+          : undefined,
+        replaceTargetHint: `Replace ${result.exportedEntry} inside an unpacked solution tree before running \`pp solution pack <unpacked-solution-dir> --out <solution.zip>\`.`,
+        extractSuggestion: result.extractedPath
+          ? undefined
+          : 'Use `--extract-to-directory <dir>` on download or `pp solution unpack <solution.zip> --extract-canvas-apps` to get editable source before rebuilding.',
+        packCommand: 'pp solution pack <unpacked-solution-dir> --out <solution.zip>',
+      }),
+      dataSources:
+        dataSources.length > 0
+          ? dataSources.map((source) =>
+              compactObject({
+                name: source.name,
+                datasetName: source.datasetName,
+                entityName: source.entityName,
+                metadataCommand: source.entityName
+                  ? `pp dv metadata table ${formatCliArg(source.entityName)} --environment ${formatCliArg(context.envAlias)} --format json`
+                  : undefined,
+              })
+            )
+          : undefined,
+    },
+  });
+}
+
+async function inspectExtractedCanvasDataSources(extractedPath: string) {
+  const path = resolvePath(extractedPath, 'References', 'DataSources.json');
+  const document = await readJsonFile<Record<string, unknown>>(path).catch(() => undefined);
+  const entries = Array.isArray(document?.DataSources) ? document.DataSources : [];
+
+  return entries
+    .map((entry) => (entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : undefined))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) =>
+      compactObject({
+        name: typeof entry.Name === 'string' ? entry.Name : '<unknown>',
+        datasetName: typeof entry.DatasetName === 'string' ? entry.DatasetName : undefined,
+        entityName: typeof entry.EntityName === 'string' ? entry.EntityName : undefined,
+      })
+    );
+}
+
+function buildCanvasPortalProvenance(input: {
+  appId: string;
+  appOpenUri?: string;
+  makerEnvironmentId?: string;
+}) {
+  const canonicalOpenUri = input.appOpenUri;
+  const derivedStudioUrl = canonicalOpenUri ? deriveCanvasStudioEditUrl(canonicalOpenUri) : undefined;
+  const normalizedStudioUrl = normalizeExistingMakerCanvasUrl(canonicalOpenUri, input.appId);
+  const makerStudioUrl = derivedStudioUrl ?? normalizedStudioUrl ?? synthesizeCanvasStudioUrl(input.appId, input.makerEnvironmentId);
+
+  const makerStudioSource = derivedStudioUrl
+    ? 'derived-from-app-open-uri'
+    : normalizedStudioUrl
+      ? 'normalized-from-app-open-uri'
+      : makerStudioUrl
+        ? 'synthesized-from-maker-environment-id'
+        : undefined;
+
+  return compactObject({
+    appOpenUri: canonicalOpenUri,
+    makerEnvironmentId: input.makerEnvironmentId,
+    makerStudioUrl,
+    sources: compactObject({
+      appOpenUri: canonicalOpenUri ? 'dataverse.canvasapps.appopenuri' : undefined,
+      makerStudioUrl: makerStudioSource,
+    }),
+  });
+}
+
+function normalizeExistingMakerCanvasUrl(appOpenUri: string | undefined, appId: string): string | undefined {
+  if (!appOpenUri) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(appOpenUri);
+
+    if (url.hostname !== 'make.powerapps.com' || !url.pathname.includes('/canvas/')) {
+      return undefined;
+    }
+
+    if (!url.searchParams.get('action')) {
+      url.searchParams.set('action', 'edit');
+    }
+
+    if (!url.searchParams.get('app-id')) {
+      url.searchParams.set('app-id', `/providers/Microsoft.PowerApps/apps/${appId}`);
+    }
+
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function synthesizeCanvasStudioUrl(appId: string, makerEnvironmentId: string | undefined): string | undefined {
+  if (!makerEnvironmentId) {
+    return undefined;
+  }
+
+  const url = new URL(`https://make.powerapps.com/e/${encodeURIComponent(makerEnvironmentId)}/canvas/`);
+  url.searchParams.set('action', 'edit');
+  url.searchParams.set('app-id', `/providers/Microsoft.PowerApps/apps/${appId}`);
+  return url.toString();
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
 }
 
 async function runCanvasBuild(args: string[]): Promise<number> {
@@ -5092,7 +5405,7 @@ async function runFlowRuns(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -5191,7 +5504,7 @@ async function runFlowDoctor(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -6350,6 +6663,15 @@ async function promptForEnter(message: string): Promise<void> {
   }
 }
 
+async function promptForInput(message: string): Promise<string> {
+  const rl = createInterface({ input, output });
+  try {
+    return await rl.question(message);
+  } finally {
+    rl.close();
+  }
+}
+
 function readRepeatedFlags(args: string[], name: string): string[] {
   const values: string[] = [];
   const aliases = new Set(flagAliases(name));
@@ -7382,6 +7704,7 @@ const BOOLEAN_FLAGS = new Set([
   '--holding-solution',
   '--managed',
   '--no-device-code-fallback',
+  '--no-interactive',
   '--no-publish',
   '--no-publish-workflows',
   '--overwrite-unmanaged-customizations',

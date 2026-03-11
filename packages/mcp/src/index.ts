@@ -14,7 +14,15 @@ import {
 import { executeDeploy, executeDeployPlan, type DeployExecutionMode, type DeployPlan } from '@pp/deploy';
 import { createDiagnostic, fail, type Diagnostic, type OperationResult, type ProvenanceRecord, type SupportTier, ok } from '@pp/diagnostics';
 import { ModelService, type ModelAppSummary, type ModelInspectResult } from '@pp/model';
-import { discoverProject, type ProjectContext } from '@pp/project';
+import {
+  cancelInitSession,
+  discoverProject,
+  getInitSession,
+  resumeInitSession,
+  startInitSession,
+  type InitSessionAnswers,
+  type ProjectContext,
+} from '@pp/project';
 import { SolutionService, type SolutionAnalysis, type SolutionSummary } from '@pp/solution';
 import { z } from 'zod';
 
@@ -158,6 +166,26 @@ const deployScopeSchema = z.object({
   stage: z.string().min(1).optional(),
 });
 
+const initAnswerSchema = z.object({
+  goal: z.enum(['dataverse', 'maker', 'project', 'full']).optional(),
+  authMode: z.enum(['user', 'device-code', 'environment-token', 'client-secret', 'static-token']).optional(),
+  authProfileName: z.string().min(1).optional(),
+  loginHint: z.string().optional(),
+  tokenEnvVar: z.string().min(1).optional(),
+  tenantId: z.string().min(1).optional(),
+  clientId: z.string().min(1).optional(),
+  clientSecretEnv: z.string().min(1).optional(),
+  staticToken: z.string().min(1).optional(),
+  environmentAlias: z.string().min(1).optional(),
+  environmentUrl: z.string().url().optional(),
+  browserProfileName: z.string().min(1).optional(),
+  browserProfileKind: z.enum(['chrome', 'edge', 'chromium', 'custom']).optional(),
+  browserBootstrapUrl: z.string().url().optional(),
+  projectName: z.string().min(1).optional(),
+  solutionName: z.string().min(1).optional(),
+  stageName: z.string().min(1).optional(),
+});
+
 const deployApplySchema = z.object({
   sessionId: z.string().uuid(),
   mode: z.enum(['apply', 'dry-run']).optional(),
@@ -213,6 +241,31 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'Inspect the local pp project context resolved from the working tree.',
   },
   {
+    name: 'pp.init.start',
+    title: 'Start Init Session',
+    description: 'Start a guided, resumable pp init session for local setup.',
+  },
+  {
+    name: 'pp.init.status',
+    title: 'Inspect Init Session',
+    description: 'Inspect the state of a persisted pp init session.',
+  },
+  {
+    name: 'pp.init.answer',
+    title: 'Answer Init Session',
+    description: 'Apply one or more user answers to a persisted pp init session.',
+  },
+  {
+    name: 'pp.init.resume',
+    title: 'Resume Init Session',
+    description: 'Resume a persisted pp init session after an external step completes.',
+  },
+  {
+    name: 'pp.init.cancel',
+    title: 'Cancel Init Session',
+    description: 'Cancel a persisted pp init session.',
+  },
+  {
     name: 'pp.analysis.context',
     title: 'Generate Analysis Context',
     description: 'Generate a structured project and deploy context pack for agent workflows.',
@@ -259,10 +312,10 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     name: 'project',
     kind: 'local-context',
     supportTier: 'preview',
-    readTools: ['pp.project.inspect', 'pp.analysis.context', 'pp.analysis.portfolio', 'pp.analysis.drift', 'pp.analysis.usage', 'pp.analysis.policy'],
+    readTools: ['pp.project.inspect', 'pp.init.status', 'pp.analysis.context', 'pp.analysis.portfolio', 'pp.analysis.drift', 'pp.analysis.usage', 'pp.analysis.policy'],
     mutationToolsAvailable: true,
-    mutationTools: ['pp.deploy.plan', 'pp.deploy.apply'],
-    notes: 'Reads local project topology and can drive bounded deploy plan-then-apply workflows against the resolved workspace.',
+    mutationTools: ['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.deploy.plan', 'pp.deploy.apply'],
+    notes: 'Reads local project topology and can drive guided init sessions plus bounded deploy plan-then-apply workflows against the resolved workspace.',
   },
   {
     name: 'dataverse',
@@ -296,7 +349,7 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       .filter((tool) => tool.name !== 'pp.deploy.plan' && tool.name !== 'pp.deploy.apply')
       .map((tool) => tool.name),
     mutationToolsAvailable: true,
-    mutationTools: ['pp.deploy.plan', 'pp.deploy.apply'],
+    mutationTools: ['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.deploy.plan', 'pp.deploy.apply'],
     notes: 'Mutation tools are exposed through stored plan sessions plus explicit approval for live apply.',
   },
 ];
@@ -530,6 +583,97 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       });
       return toToolResult('pp.project.inspect', result, readOnlyPolicy());
     }
+  );
+
+  server.registerTool(
+    'pp.init.start',
+    {
+      title: 'Start Init Session',
+      description: 'Start a guided, resumable pp init session rooted at the selected project path.',
+      inputSchema: initAnswerSchema.extend({
+        projectPath: z.string().min(1).optional(),
+        configDir: z.string().min(1).optional(),
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Start Init Session'),
+    },
+    async ({ projectPath, configDir, ...answers }) =>
+      toToolResult(
+        'pp.init.start',
+        await startInitSession(
+          {
+            root: resolveProjectPath(projectPath, defaults),
+            ...(answers as Partial<InitSessionAnswers>),
+          },
+          readConfigOptions(configDir, defaults)
+        ),
+        localMutationPolicy()
+      )
+  );
+
+  server.registerTool(
+    'pp.init.status',
+    {
+      title: 'Inspect Init Session',
+      description: 'Inspect the current state of a persisted pp init session.',
+      inputSchema: z.object({
+        sessionId: z.string().uuid(),
+        configDir: z.string().min(1).optional(),
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Init Session'),
+    },
+    async ({ sessionId, configDir }) =>
+      toToolResult('pp.init.status', await getInitSession(sessionId, readConfigOptions(configDir, defaults)), readOnlyPolicy())
+  );
+
+  server.registerTool(
+    'pp.init.answer',
+    {
+      title: 'Answer Init Session',
+      description: 'Apply one or more user answers to a persisted pp init session.',
+      inputSchema: z.object({
+        sessionId: z.string().uuid(),
+        configDir: z.string().min(1).optional(),
+        answers: initAnswerSchema,
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Answer Init Session'),
+    },
+    async ({ sessionId, configDir, answers }) =>
+      toToolResult('pp.init.answer', await resumeInitSession(sessionId, { answers }, readConfigOptions(configDir, defaults)), localMutationPolicy())
+  );
+
+  server.registerTool(
+    'pp.init.resume',
+    {
+      title: 'Resume Init Session',
+      description: 'Resume a persisted pp init session after an external step completes.',
+      inputSchema: z.object({
+        sessionId: z.string().uuid(),
+        configDir: z.string().min(1).optional(),
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Resume Init Session'),
+    },
+    async ({ sessionId, configDir }) =>
+      toToolResult('pp.init.resume', await resumeInitSession(sessionId, {}, readConfigOptions(configDir, defaults)), localMutationPolicy())
+  );
+
+  server.registerTool(
+    'pp.init.cancel',
+    {
+      title: 'Cancel Init Session',
+      description: 'Cancel a persisted pp init session.',
+      inputSchema: z.object({
+        sessionId: z.string().uuid(),
+        configDir: z.string().min(1).optional(),
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Cancel Init Session'),
+    },
+    async ({ sessionId, configDir }) =>
+      toToolResult('pp.init.cancel', await cancelInitSession(sessionId, readConfigOptions(configDir, defaults)), localMutationPolicy())
   );
 
   server.registerTool(
@@ -984,6 +1128,17 @@ function controlledMutationPolicy(approvalRequired: boolean): ToolMutationPolicy
     approvalStrategy: 'Plan first, then execute a stored MCP deploy session. Live apply requires explicit approval bound to the exact session id.',
     supportedExecutionModes: ['plan', 'dry-run', 'apply'],
     sessionRequired: true,
+  };
+}
+
+function localMutationPolicy(): ToolMutationPolicyControlled {
+  return {
+    mode: 'controlled',
+    mutationsExposed: true,
+    approvalRequired: false,
+    approvalStrategy: 'This tool mutates only local pp config or workspace files and returns the resulting session state for inspection.',
+    supportedExecutionModes: ['apply'],
+    sessionRequired: false,
   };
 }
 

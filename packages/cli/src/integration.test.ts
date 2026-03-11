@@ -584,12 +584,14 @@ describe('cli fixture-backed workflows', () => {
     );
     expect(downloadHelp.stdout).toContain('Exports the containing solution through Dataverse and extracts the matching CanvasApps/*.msapp entry.');
     expect(downloadHelp.stdout).toContain('converting archive backslashes into portable folder separators');
+    expect(downloadHelp.stdout).toContain('round-trip handoff details for rebuild/repack and Dataverse table metadata lookup');
     expect(downloadHelp.stdout).toContain('pp canvas download "Harness Canvas" --environment dev --solution Core');
 
     expect(inspectHelp.code).toBe(0);
     expect(inspectHelp.stderr).toBe('');
     expect(inspectHelp.stdout).toContain('Usage: canvas inspect <path|displayName|name|id> [--environment ALIAS] [--solution UNIQUE_NAME] [options]');
     expect(inspectHelp.stdout).toContain('With `--environment`, inspects a remote canvas app by display name, logical name, or id.');
+    expect(inspectHelp.stdout).toContain('portal provenance with the Dataverse app open URI and a canonical Maker studio edit URL');
     expect(inspectHelp.stdout).toContain('pp canvas inspect "Harness Canvas" --environment dev --solution Core');
   });
 
@@ -774,6 +776,70 @@ describe('cli fixture-backed workflows', () => {
     expect(inspectHelp.stdout).toContain('Pair with `pp project doctor` for layout validation and `pp project init`');
 
     expect(after).toEqual(before);
+  });
+
+  it('guides init setup with resumable sessions and machine-readable status', async () => {
+    const root = await createTempDir();
+    const configDir = await createTempDir();
+    const start = await runCli(
+      [
+        'init',
+        root,
+        '--goal',
+        'project',
+        '--auth-mode',
+        'environment-token',
+        '--profile',
+        'ci',
+        '--token-env',
+        'PP_INIT_CLI_TOKEN',
+        '--env',
+        'dev',
+        '--url',
+        'https://example.crm.dynamics.com',
+        '--name',
+        'demo',
+        '--solution',
+        'Core',
+        '--stage',
+        'dev',
+        '--config-dir',
+        configDir,
+        '--format',
+        'json',
+      ],
+      {
+        env: {
+          PP_INIT_CLI_TOKEN: 'fixture-token',
+        },
+      }
+    );
+
+    expect(start.code).toBe(0);
+    expect(start.stderr).toBe('');
+    expect(JSON.parse(start.stdout)).toMatchObject({
+      status: 'completed',
+      verification: {
+        auth: 'verified',
+        project: 'verified',
+      },
+      artifacts: {
+        authProfile: {
+          name: 'ci',
+        },
+      },
+    });
+  });
+
+  it('prints help for the init workflow and subcommands', async () => {
+    const help = await runCli(['init', '--help']);
+    const answerHelp = await runCli(['init', 'answer', '--help']);
+
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain('Guided setup for first-run pp use.');
+    expect(help.stdout).toContain('pp init');
+    expect(answerHelp.code).toBe(0);
+    expect(answerHelp.stdout).toContain('Usage: init answer <session-id> --set field=value');
   });
 
   it('prints stable help for solution mutation commands without validating arguments', async () => {
@@ -1991,46 +2057,113 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenText(flowList.stdout, 'fixtures/cli/golden/protocol/flow-list.ndjson');
   });
 
+  it('keeps deploy plan metadata in the success payload instead of only stderr diagnostics', async () => {
+    const plan = await runCli(['deploy', 'plan', '--project', resolveRepoPath('fixtures', 'analysis', 'project'), '--format', 'json'], {
+      env: {
+        PP_TENANT_DOMAIN: undefined,
+        PP_SQL_ENDPOINT: undefined,
+        PP_SECRET_app_token: undefined,
+      },
+    });
+
+    expect(plan.code).toBe(0);
+    expect(JSON.parse(plan.stdout)).toMatchObject({
+      success: true,
+      supportTier: 'preview',
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DEPLOY_TARGET_ENVIRONMENT_UNRESOLVED',
+        }),
+      ]),
+      suggestedNextActions: expect.arrayContaining([expect.stringContaining('pp env inspect prod --format json')]),
+    });
+  });
+
+  it('preserves runtime metadata in flow runs and doctor JSON success payloads', async () => {
+    const flowRuntimeFixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'flow', 'runtime', 'invoice-sync-runtime.json')
+    )) as FlowRuntimeFixture;
+
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient(flowRuntimeFixture),
+    });
+
+    const runs = await runCli(['flow', 'runs', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--format', 'json']);
+    const doctor = await runCli(['flow', 'doctor', 'Invoice Sync', '--env', 'fixture', '--solution', 'Core', '--format', 'json']);
+
+    expect(runs.code).toBe(0);
+    expect(doctor.code).toBe(0);
+    expect(runs.stderr).toBe('');
+    expect(doctor.stderr).toBe('');
+    expect(JSON.parse(runs.stdout)).toMatchObject({
+      success: true,
+      supportTier: 'experimental',
+      runs: expect.any(Array),
+      knownLimitations: expect.arrayContaining([expect.stringContaining('FlowRun data may be delayed or incomplete')]),
+      provenance: expect.arrayContaining([
+        expect.objectContaining({
+          source: 'Dataverse FlowRun history',
+        }),
+      ]),
+    });
+    expect(JSON.parse(doctor.stdout)).toMatchObject({
+      success: true,
+      supportTier: 'experimental',
+      findings: expect.any(Array),
+      suggestedNextActions: expect.arrayContaining([expect.stringContaining('pp flow inspect Invoice Sync --environment <alias>')]),
+      provenance: expect.arrayContaining([
+        expect.objectContaining({
+          source: '@pp/flow source correlation',
+        }),
+      ]),
+    });
+  });
+
   it('covers remote canvas list and inspect through the CLI entrypoint', async () => {
     mockDataverseResolution({
-      fixture: createFixtureDataverseClient({
-        query: {
-          solutions: [
-            {
-              solutionid: 'sol-1',
-              uniquename: 'Core',
-            },
-          ],
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'sol-1',
+                uniquename: 'Core',
+              },
+            ],
+          },
+          queryAll: {
+            solutioncomponents: [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'canvas-1',
+                componenttype: 300,
+              },
+            ],
+            canvasapps: [
+              {
+                canvasappid: 'canvas-2',
+                displayname: 'Other Canvas',
+                name: 'crd_OtherCanvas',
+                tags: 'other',
+              },
+              {
+                canvasappid: 'canvas-1',
+                displayname: 'Harness Canvas',
+                name: 'crd_HarnessCanvas',
+                appopenuri: 'https://apps.powerapps.com/play/e/env-123/a/canvas-1?tenantId=tenant-1&hint=user-1',
+                appversion: '1.2.3.4',
+                createdbyclientversion: '3.25000.1',
+                lastpublishtime: '2026-03-10T04:50:00.000Z',
+                status: 'Published',
+                tags: 'harness;solution',
+              },
+            ],
+          },
+        }),
+        environment: {
+          makerEnvironmentId: 'env-123',
         },
-        queryAll: {
-          solutioncomponents: [
-            {
-              solutioncomponentid: 'comp-1',
-              objectid: 'canvas-1',
-              componenttype: 300,
-            },
-          ],
-          canvasapps: [
-            {
-              canvasappid: 'canvas-2',
-              displayname: 'Other Canvas',
-              name: 'crd_OtherCanvas',
-              tags: 'other',
-            },
-            {
-              canvasappid: 'canvas-1',
-              displayname: 'Harness Canvas',
-              name: 'crd_HarnessCanvas',
-              appopenuri: 'https://make.powerapps.com/e/test/canvas/?app-id=canvas-1',
-              appversion: '1.2.3.4',
-              createdbyclientversion: '3.25000.1',
-              lastpublishtime: '2026-03-10T04:50:00.000Z',
-              status: 'Published',
-              tags: 'harness;solution',
-            },
-          ],
-        },
-      }),
+      },
     });
 
     const list = await runCli(['canvas', 'list', '--env', 'fixture', '--solution', 'Core', '--format', 'json']);
@@ -2041,6 +2174,20 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
     await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/cli/golden/protocol/canvas-remote-list.json');
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      portalProvenance: {
+        appOpenUri: 'https://apps.powerapps.com/play/e/env-123/a/canvas-1?tenantId=tenant-1&hint=user-1',
+        makerEnvironmentId: 'env-123',
+        makerStudioUrl:
+          'https://make.powerapps.com/e/env-123/canvas/?action=edit&app-id=%2Fproviders%2FMicrosoft.PowerApps%2Fapps%2Fcanvas-1&tenantId=tenant-1&hint=user-1',
+      },
+      handoff: {
+        makerStudio: {
+          recommendedUrl:
+            'https://make.powerapps.com/e/env-123/canvas/?action=edit&app-id=%2Fproviders%2FMicrosoft.PowerApps%2Fapps%2Fcanvas-1&tenantId=tenant-1&hint=user-1',
+        },
+      },
+    });
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/canvas-remote-inspect.json');
   });
 
@@ -2384,6 +2531,24 @@ describe('cli fixture-backed workflows', () => {
     await writeFile(join(msappSourceDir, 'Header.json'), '{"schemaVersion":1}', 'utf8');
     await writeFile(join(msappSourceDir, 'Src\\App.pa.yaml'), 'App:\n', 'utf8');
     await writeFile(join(msappSourceDir, 'Controls\\1.json'), '{"Name":"App"}', 'utf8');
+    await writeFile(
+      join(msappSourceDir, 'References\\DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'Harness Projects',
+              Type: 'Table',
+              DatasetName: 'default.cds',
+              EntityName: 'pp_project',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
 
     const msappPath = join(tempDir, 'Harness Canvas.msapp');
     await createZipPackage(msappSourceDir, msappPath);
@@ -2467,10 +2632,25 @@ describe('cli fixture-backed workflows', () => {
       solutionUniqueName: 'Core',
       outPath,
       extractedPath,
-      extractedEntries: ['Controls/1.json', 'Header.json', 'Src/App.pa.yaml'],
+      extractedEntries: ['Controls/1.json', 'Header.json', 'References/DataSources.json', 'Src/App.pa.yaml'],
       app: {
         id: 'canvas-1',
         displayName: 'Harness Canvas',
+      },
+      handoff: {
+        roundTrip: {
+          extractedPath,
+          buildCommand: `pp canvas build ${extractedPath} --out <rebuilt-msapp>`,
+          packCommand: 'pp solution pack <unpacked-solution-dir> --out <solution.zip>',
+        },
+        dataSources: [
+          {
+            name: 'Harness Projects',
+            datasetName: 'default.cds',
+            entityName: 'pp_project',
+            metadataCommand: 'pp dv metadata table pp_project --environment fixture --format json',
+          },
+        ],
       },
     });
     expect(await readFile(join(extractedPath, 'Src', 'App.pa.yaml'), 'utf8')).toBe('App:\n');
@@ -7272,11 +7452,159 @@ describe('cli fixture-backed workflows', () => {
       ],
       suggestedNextActions: [
         'Review the matching solutions before deleting anything remotely.',
-        'Run `pp env reset fixture --prefix ppHarness20260310T073008100Z` to delete the listed disposable solutions through pp.',
+        'Run `pp env cleanup fixture --prefix ppHarness20260310T073008100Z` to delete the listed disposable solutions through pp.',
         'Re-run `pp env cleanup-plan fixture --prefix ppHarness20260310T073008100Z` to confirm the environment is clean before bootstrap.',
       ],
       knownLimitations: [],
     });
+  });
+
+  it('builds a bootstrap baseline report for a run-scoped prefix', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://fixture.crm.dynamics.com',
+              loginHint: 'fixture.user@example.com',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://fixture.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    const baseClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'ppHarness20260310T073008100ZShell',
+            friendlyname: 'ppHarness20260310T073008100Z Shell',
+            version: '1.0.0.0',
+          },
+          {
+            solutionid: 'sol-2',
+            uniquename: 'LegacyHarnessShell',
+            friendlyname: 'Legacy Harness Shell',
+            version: '5.0.0.0',
+            ismanaged: false,
+          },
+        ],
+      },
+    });
+
+    const client = {
+      ...baseClient,
+      query: async <T>(options: { table: string; filter?: string }) => {
+        const result = await baseClient.query<T>(options);
+        if (options.table !== 'solutions' || !result.success || !result.data) {
+          return result;
+        }
+
+        const match = options.filter?.match(/uniquename eq '([^']+)'/);
+        if (!match) {
+          return result;
+        }
+
+        return ok(
+          result.data.filter((record) => (record as { uniquename?: string }).uniquename === match[1]),
+          {
+            supportTier: 'preview',
+            diagnostics: result.diagnostics,
+            warnings: result.warnings,
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      fixture: {
+        client,
+        environment: {
+          url: 'https://fixture.crm.dynamics.com',
+          authProfile: 'fixture-user',
+        },
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+        },
+      },
+    });
+
+    const baseline = await runCli([
+      'env',
+      'baseline',
+      'fixture',
+      '--prefix',
+      'ppHarness20260310T073008100Z',
+      '--expect-absent-solution',
+      'LegacyHarnessShell',
+      '--expect-absent-solution',
+      'AlreadyGoneShell',
+      '--config-dir',
+      configDir,
+      '--format',
+      'json',
+    ]);
+
+    expect(baseline.code).toBe(0);
+    expect(baseline.stderr).toBe('');
+    expect(JSON.parse(baseline.stdout)).toMatchObject({
+      environment: {
+        alias: 'fixture',
+        authProfile: 'fixture-user',
+        auth: {
+          status: 'configured',
+        },
+      },
+      baseline: {
+        prefix: 'ppHarness20260310T073008100Z',
+        remoteResetSupported: true,
+        readyForBootstrap: false,
+        candidateCount: 1,
+        cleanupCandidates: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'ppHarness20260310T073008100ZShell',
+          },
+        ],
+        absenceChecks: [
+          {
+            uniqueName: 'LegacyHarnessShell',
+            status: 'present',
+            solution: {
+              solutionid: 'sol-2',
+              uniquename: 'LegacyHarnessShell',
+            },
+          },
+          {
+            uniqueName: 'AlreadyGoneShell',
+            status: 'absent',
+          },
+        ],
+      },
+    });
+    const parsed = JSON.parse(baseline.stdout) as { baseline: { suggestedNextActions: string[] } };
+    expect(parsed.baseline.suggestedNextActions).toContain(
+      'Run `pp env cleanup fixture --prefix ppHarness20260310T073008100Z` to delete the listed disposable solutions through pp.'
+    );
+    expect(parsed.baseline.suggestedNextActions).toContain(
+      'Delete LegacyHarnessShell with `pp solution delete LegacyHarnessShell --environment fixture` or clear it through the broader reset workflow before bootstrap.'
+    );
   });
 
   it('prints help for env cleanup-plan', async () => {
@@ -7288,6 +7616,16 @@ describe('cli fixture-backed workflows', () => {
     expect(help.stdout).toContain('env reset <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]');
     expect(help.stdout).toContain('env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]');
     expect(help.stdout).toContain('stale disposable harness assets');
+  });
+
+  it('prints help for env baseline', async () => {
+    const help = await runCli(['env', 'baseline', '--help']);
+
+    expect(help.code).toBe(0);
+    expect(help.stderr).toBe('');
+    expect(help.stdout).toContain('Usage: env baseline <alias> --prefix PREFIX');
+    expect(help.stdout).toContain('readyForBootstrap');
+    expect(help.stdout).toContain('--expect-absent-solution NAME');
   });
 
   it('prints help for env reset', async () => {
@@ -7316,8 +7654,10 @@ describe('cli fixture-backed workflows', () => {
     expect(help.stderr).toBe('');
     expect(help.stdout).toContain('Usage: env <command> [options]');
     expect(help.stdout).toContain('cleanup-plan <alias>');
+    expect(help.stdout).toContain('baseline <alias>');
     expect(help.stdout).toContain('reset <alias>');
     expect(help.stdout).toContain('cleanup <alias>');
+    expect(help.stdout).toContain('pp env baseline test --prefix ppHarness20260310T013401820Z --format json');
     expect(help.stdout).toContain('pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json');
   });
 
@@ -7590,6 +7930,8 @@ describe('cli fixture-backed workflows', () => {
     expect(JSON.parse(inspect.stdout)).toMatchObject({
       alias: 'fixture',
       url: 'https://fixture.crm.dynamics.com',
+      success: true,
+      supportTier: 'preview',
       authProfile: 'fixture-user',
       auth: {
         name: 'fixture-user',
@@ -7618,6 +7960,13 @@ describe('cli fixture-backed workflows', () => {
           reason: expect.stringContaining('browser profile fixture-browser'),
         },
       },
+      suggestedNextActions: expect.arrayContaining([
+        'Run `pp auth profile inspect fixture-user --format json` to confirm the auth profile bound to environment alias fixture.',
+        'Run `pp dv whoami --environment fixture --format json` to confirm live Dataverse access for this alias.',
+      ]),
+      knownLimitations: expect.arrayContaining([
+        'Environment inspect summarizes local pp config and cached browser bootstrap state; it does not prove live Dataverse access on its own.',
+      ]),
     });
   });
 
@@ -7710,6 +8059,8 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.stderr).toBe('');
     expect(JSON.parse(inspect.stdout)).toMatchObject({
       alias: 'fixture',
+      success: true,
+      supportTier: 'preview',
       authProfile: 'missing-profile',
       auth: {
         name: 'missing-profile',
@@ -7722,6 +8073,9 @@ describe('cli fixture-backed workflows', () => {
           risk: 'unknown',
         },
       },
+      suggestedNextActions: expect.arrayContaining([
+        'Repair the missing auth profile binding for environment alias fixture before using remote Dataverse commands.',
+      ]),
     });
   });
 
@@ -8588,6 +8942,8 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
     expect(JSON.parse(inspect.stdout)).toMatchObject({
+      success: true,
+      supportTier: 'preview',
       solutionid: 'sol-1',
       uniquename: 'HarnessShell',
       friendlyname: 'Harness Shell',
