@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { stableStringify } from '@pp/artifacts';
@@ -11,6 +11,7 @@ import {
   EnvironmentVariableService,
   type ConnectionReferenceValidationResult,
   type DataverseClient,
+  type EntityDefinition,
   type EnvironmentVariableSummary,
 } from '@pp/dataverse';
 
@@ -103,17 +104,30 @@ export interface SolutionDependencySummary {
   requiredComponentObjectId?: string;
   requiredComponentType?: number;
   requiredComponentTypeLabel: string;
+  requiredComponentName?: string;
+  requiredComponentLogicalName?: string;
+  requiredComponentTable?: string;
   dependentComponentObjectId?: string;
   dependentComponentType?: number;
   dependentComponentTypeLabel: string;
+  dependentComponentName?: string;
+  dependentComponentLogicalName?: string;
+  dependentComponentTable?: string;
   missingRequiredComponent: boolean;
+}
+
+interface SolutionDependencyComponentResolution {
+  name?: string;
+  logicalName?: string;
+  table?: string;
 }
 
 export interface SolutionModelDrivenAppAnalysis {
   appId: string;
   uniqueName?: string;
   name?: string;
-  composition: ModelCompositionResult;
+  composition?: ModelCompositionResult;
+  compositionSkippedReason?: string;
 }
 
 export interface SolutionModelDrivenAnalysis {
@@ -260,6 +274,30 @@ export interface SolutionImportResult {
   imported: boolean;
   options: Required<Omit<SolutionImportOptions, 'importJobId'>> & { importJobId?: string };
   manifest?: SolutionReleaseManifest;
+}
+
+export interface SolutionPublishOptions {
+  waitForExport?: boolean;
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+  exportOptions?: SolutionExportOptions;
+}
+
+export interface SolutionPublishResult {
+  solution: SolutionSummary;
+  published: true;
+  action: {
+    name: 'PublishAllXml';
+    accepted: boolean;
+  };
+  waitForExport: boolean;
+  export?: SolutionExportResult;
+  synchronization?: {
+    kind: 'none' | 'solution-export';
+    confirmed: boolean;
+    attempts?: number;
+    elapsedMs?: number;
+  };
 }
 
 export interface SolutionPackOptions {
@@ -715,11 +753,190 @@ export class SolutionService {
     const relevant = (dependencies.data ?? [])
       .filter((dependency) => dependency.dependentcomponentobjectid && componentIds.has(dependency.dependentcomponentobjectid))
       .map((dependency) => normalizeSolutionDependency(dependency, componentIds));
+    const resolutions = await this.resolveDependencyComponentNames(relevant);
 
-    return ok(relevant, {
+    if (!resolutions.success) {
+      return resolutions as unknown as OperationResult<SolutionDependencySummary[]>;
+    }
+
+    return ok(applyDependencyComponentResolutions(relevant, resolutions.data ?? new Map()), {
       supportTier: 'preview',
-      diagnostics: mergeDiagnosticLists(components.diagnostics, dependencies.diagnostics),
-      warnings: mergeDiagnosticLists(components.warnings, dependencies.warnings),
+      diagnostics: mergeDiagnosticLists(components.diagnostics, dependencies.diagnostics, resolutions.diagnostics),
+      warnings: mergeDiagnosticLists(components.warnings, dependencies.warnings, resolutions.warnings),
+    });
+  }
+
+  private async resolveDependencyComponentNames(
+    dependencies: SolutionDependencySummary[]
+  ): Promise<OperationResult<Map<string, SolutionDependencyComponentResolution>>> {
+    const requested = collectDependencyResolutionRequests(dependencies);
+
+    const [
+      tables,
+      appModules,
+      canvasApps,
+      workflows,
+      webResources,
+      sitemaps,
+      forms,
+      views,
+      connectionReferences,
+      environmentVariables,
+    ] = await Promise.all([
+      requested.entityIds.size > 0
+        ? this.dataverseClient.listTables({
+            select: ['MetadataId', 'LogicalName', 'SchemaName', 'DisplayName'],
+            all: true,
+          })
+        : ok([] as EntityDefinition[], { supportTier: 'preview' }),
+      queryAllOrEmpty<{ appmoduleid: string; uniquename?: string; name?: string }>(
+        this.dataverseClient,
+        requested.appModuleIds,
+        'appmodules',
+        'appmoduleid',
+        ['appmoduleid', 'uniquename', 'name']
+      ),
+      queryAllOrEmpty<{ canvasappid: string; displayname?: string; name?: string }>(
+        this.dataverseClient,
+        requested.canvasAppIds,
+        'canvasapps',
+        'canvasappid',
+        ['canvasappid', 'displayname', 'name']
+      ),
+      queryAllOrEmpty<{ workflowid: string; name?: string; uniquename?: string }>(
+        this.dataverseClient,
+        requested.workflowIds,
+        'workflows',
+        'workflowid',
+        ['workflowid', 'name', 'uniquename']
+      ),
+      queryAllOrEmpty<{ webresourceid: string; name?: string; displayname?: string }>(
+        this.dataverseClient,
+        requested.webResourceIds,
+        'webresourceset',
+        'webresourceid',
+        ['webresourceid', 'name', 'displayname']
+      ),
+      queryAllOrEmpty<{ sitemapid: string; sitemapname?: string }>(
+        this.dataverseClient,
+        requested.sitemapIds,
+        'sitemaps',
+        'sitemapid',
+        ['sitemapid', 'sitemapname']
+      ),
+      queryAllOrEmpty<{ formid: string; name?: string; objecttypecode?: string }>(
+        this.dataverseClient,
+        requested.formIds,
+        'systemforms',
+        'formid',
+        ['formid', 'name', 'objecttypecode']
+      ),
+      queryAllOrEmpty<{ savedqueryid: string; name?: string; returnedtypecode?: string }>(
+        this.dataverseClient,
+        requested.viewIds,
+        'savedqueries',
+        'savedqueryid',
+        ['savedqueryid', 'name', 'returnedtypecode']
+      ),
+      queryAllOrEmpty<{
+        connectionreferenceid: string;
+        connectionreferencelogicalname?: string;
+        connectionreferencedisplayname?: string;
+        displayname?: string;
+      }>(
+        this.dataverseClient,
+        requested.connectionReferenceIds,
+        'connectionreferences',
+        'connectionreferenceid',
+        ['connectionreferenceid', 'connectionreferencelogicalname', 'connectionreferencedisplayname', 'displayname']
+      ),
+      queryAllOrEmpty<{ environmentvariabledefinitionid: string; schemaname?: string; displayname?: string }>(
+        this.dataverseClient,
+        requested.environmentVariableDefinitionIds,
+        'environmentvariabledefinitions',
+        'environmentvariabledefinitionid',
+        ['environmentvariabledefinitionid', 'schemaname', 'displayname']
+      ),
+    ]);
+
+    const map = new Map<string, SolutionDependencyComponentResolution>();
+    addComponentResolutions(map, 1, tables.data ?? [], (record) => typeof record.MetadataId === 'string' ? record.MetadataId : undefined, (record) => ({
+      name: extractDisplayName(record.DisplayName) ?? readString(record.LogicalName),
+      logicalName: readString(record.LogicalName),
+      table: readString(record.LogicalName),
+    }));
+    addComponentResolutions(map, 80, appModules.data ?? [], (record) => record.appmoduleid, (record) => ({
+      name: record.name ?? record.uniquename,
+      logicalName: record.uniquename,
+    }));
+    addComponentResolutions(map, 300, canvasApps.data ?? [], (record) => record.canvasappid, (record) => ({
+      name: record.displayname ?? record.name,
+      logicalName: record.name,
+    }));
+    addComponentResolutions(map, 29, workflows.data ?? [], (record) => record.workflowid, (record) => ({
+      name: record.name ?? record.uniquename,
+      logicalName: record.uniquename,
+    }));
+    addComponentResolutions(map, 61, webResources.data ?? [], (record) => record.webresourceid, (record) => ({
+      name: record.displayname ?? record.name,
+      logicalName: record.name,
+    }));
+    addComponentResolutions(map, 62, sitemaps.data ?? [], (record) => record.sitemapid, (record) => ({
+      name: record.sitemapname,
+    }));
+    addComponentResolutions(map, 24, forms.data ?? [], (record) => record.formid, (record) => ({
+      name: record.name,
+      table: record.objecttypecode,
+    }));
+    addComponentResolutions(map, 60, forms.data ?? [], (record) => record.formid, (record) => ({
+      name: record.name,
+      table: record.objecttypecode,
+    }));
+    addComponentResolutions(map, 26, views.data ?? [], (record) => record.savedqueryid, (record) => ({
+      name: record.name,
+      table: record.returnedtypecode,
+    }));
+    addComponentResolutions(map, 371, connectionReferences.data ?? [], (record) => record.connectionreferenceid, (record) => ({
+      name: record.connectionreferencedisplayname ?? record.displayname ?? record.connectionreferencelogicalname,
+      logicalName: record.connectionreferencelogicalname,
+    }));
+    addComponentResolutions(
+      map,
+      380,
+      environmentVariables.data ?? [],
+      (record) => record.environmentvariabledefinitionid,
+      (record) => ({
+        name: record.displayname ?? record.schemaname,
+        logicalName: record.schemaname,
+      })
+    );
+
+    return ok(map, {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(
+        tables.diagnostics,
+        appModules.diagnostics,
+        canvasApps.diagnostics,
+        workflows.diagnostics,
+        webResources.diagnostics,
+        sitemaps.diagnostics,
+        forms.diagnostics,
+        views.diagnostics,
+        connectionReferences.diagnostics,
+        environmentVariables.diagnostics
+      ),
+      warnings: mergeDiagnosticLists(
+        tables.warnings,
+        appModules.warnings,
+        canvasApps.warnings,
+        workflows.warnings,
+        webResources.warnings,
+        sitemaps.warnings,
+        forms.warnings,
+        views.warnings,
+        connectionReferences.warnings,
+        environmentVariables.warnings
+      ),
     });
   }
 
@@ -770,8 +987,37 @@ export class SolutionService {
     const modelDrivenApps: SolutionModelDrivenAppAnalysis[] = [];
     let modelDiagnostics = [...modelApps.diagnostics];
     let modelWarnings = [...modelApps.warnings];
+    const unresolvedModelAppIds = new Set(
+      (dependencies.data ?? [])
+        .filter((dependency) => dependency.missingRequiredComponent && dependency.dependentComponentType === 80)
+        .map((dependency) => dependency.dependentComponentObjectId)
+        .filter((value): value is string => Boolean(value))
+    );
 
     for (const app of modelApps.data ?? []) {
+      if (unresolvedModelAppIds.has(app.id)) {
+        const compositionSkippedReason = 'Skipped model composition because the app still has unresolved solution dependencies.';
+        modelDrivenApps.push({
+          appId: app.id,
+          uniqueName: app.uniqueName,
+          name: app.name,
+          compositionSkippedReason,
+        });
+        modelWarnings = [
+          ...modelWarnings,
+          createDiagnostic(
+            'warning',
+            'SOLUTION_MODEL_ANALYZE_SKIPPED_UNRESOLVED_DEPENDENCIES',
+            `Skipped model composition for app ${app.name ?? app.uniqueName ?? app.id} because the solution still has unresolved required components.`,
+            {
+              source: '@pp/solution',
+              hint: `Re-run \`pp solution analyze ${uniqueName} --environment <alias>\` after the missing model-driven dependencies are added to the solution.`,
+            }
+          ),
+        ];
+        continue;
+      }
+
       const composition = await modelService.composition(app.id, { solutionUniqueName: uniqueName });
 
       if (!composition.success || !composition.data) {
@@ -799,8 +1045,8 @@ export class SolutionService {
         apps: modelDrivenApps,
         summary: {
           appCount: modelDrivenApps.length,
-          artifactCount: modelDrivenApps.reduce((count, app) => count + app.composition.summary.totalArtifacts, 0),
-          missingArtifactCount: modelDrivenApps.reduce((count, app) => count + app.composition.summary.missingArtifacts, 0),
+          artifactCount: modelDrivenApps.reduce((count, app) => count + (app.composition?.summary.totalArtifacts ?? 0), 0),
+          missingArtifactCount: modelDrivenApps.reduce((count, app) => count + (app.composition?.summary.missingArtifacts ?? 0), 0),
         },
       },
       origin: {
@@ -1004,6 +1250,173 @@ export class SolutionService {
     );
   }
 
+  async publish(uniqueName: string, options: SolutionPublishOptions = {}): Promise<OperationResult<SolutionPublishResult>> {
+    const solution = await this.inspect(uniqueName);
+    if (!solution.success) {
+      return solution as unknown as OperationResult<SolutionPublishResult>;
+    }
+
+    if (!solution.data) {
+      return fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`), {
+        supportTier: 'preview',
+      });
+    }
+
+    const publishResult = await this.dataverseClient.invokeAction<void>(
+      'PublishAllXml',
+      {},
+      {
+        responseType: 'void',
+      }
+    );
+
+    if (!publishResult.success) {
+      return fail(publishResult.diagnostics, {
+        supportTier: 'preview',
+        warnings: publishResult.warnings,
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse PublishAllXml',
+          },
+        ],
+      });
+    }
+
+    if (!options.waitForExport) {
+      return ok(
+        {
+          solution: solution.data,
+          published: true,
+          action: {
+            name: 'PublishAllXml',
+            accepted: true,
+          },
+          waitForExport: false,
+          synchronization: {
+            kind: 'none',
+            confirmed: false,
+          },
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: mergeDiagnosticLists(solution.diagnostics, publishResult.diagnostics),
+          warnings: mergeDiagnosticLists(
+            solution.warnings,
+            publishResult.warnings,
+            [
+              createDiagnostic(
+                'warning',
+                'SOLUTION_PUBLISH_SYNC_NOT_CONFIRMED',
+                `Publish for solution ${uniqueName} was accepted, but downstream Dataverse reads may still lag immediately after the action returns.`,
+                {
+                  source: '@pp/solution',
+                  hint: `Re-run \`pp solution publish ${uniqueName} --environment <alias> --wait-for-export\` when you need an export-backed synchronization checkpoint.`,
+                }
+              ),
+            ]
+          ),
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse PublishAllXml',
+            },
+          ],
+        }
+      );
+    }
+
+    const pollIntervalMs = Math.max(1_000, options.pollIntervalMs ?? 5_000);
+    const timeoutMs = Math.max(pollIntervalMs, options.timeoutMs ?? 120_000);
+    const startedAt = Date.now();
+    let attempts = 0;
+    let lastExportResult: OperationResult<SolutionExportResult> | undefined;
+
+    while (Date.now() - startedAt <= timeoutMs) {
+      attempts += 1;
+      lastExportResult = await this.exportSolution(uniqueName, options.exportOptions);
+
+      if (lastExportResult.success && lastExportResult.data) {
+        return ok(
+          {
+            solution: solution.data,
+            published: true,
+            action: {
+              name: 'PublishAllXml',
+              accepted: true,
+            },
+            waitForExport: true,
+            export: lastExportResult.data,
+            synchronization: {
+              kind: 'solution-export',
+              confirmed: true,
+              attempts,
+              elapsedMs: Date.now() - startedAt,
+            },
+          },
+          {
+            supportTier: 'preview',
+            diagnostics: mergeDiagnosticLists(solution.diagnostics, publishResult.diagnostics, lastExportResult.diagnostics),
+            warnings: mergeDiagnosticLists(solution.warnings, publishResult.warnings, lastExportResult.warnings),
+            provenance: [
+              {
+                kind: 'official-api',
+                source: 'Dataverse PublishAllXml',
+              },
+              {
+                kind: 'official-api',
+                source: 'Dataverse ExportSolution',
+              },
+            ],
+          }
+        );
+      }
+
+      if (Date.now() - startedAt >= timeoutMs) {
+        break;
+      }
+
+      await sleep(pollIntervalMs);
+    }
+
+    return fail(
+      mergeDiagnosticLists(
+        [
+          createDiagnostic(
+            'error',
+            'SOLUTION_PUBLISH_EXPORT_TIMEOUT',
+            `Publish for solution ${uniqueName} was accepted, but no solution export checkpoint succeeded within ${timeoutMs}ms.`,
+            {
+              source: '@pp/solution',
+              hint: 'Retry with a longer timeout, or inspect the latest export diagnostics to see why packaging never stabilized.',
+            }
+          ),
+        ],
+        solution.diagnostics,
+        publishResult.diagnostics,
+        lastExportResult?.diagnostics
+      ),
+      {
+        supportTier: 'preview',
+        warnings: mergeDiagnosticLists(solution.warnings, publishResult.warnings, lastExportResult?.warnings),
+        suggestedNextActions: [
+          `Retry with \`pp solution publish ${uniqueName} --environment <alias> --wait-for-export --timeout-ms ${timeoutMs * 2}\`.`,
+          `Run \`pp solution export ${uniqueName} --environment <alias> --format json\` to inspect the current packaging failure directly.`,
+        ],
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse PublishAllXml',
+          },
+          {
+            kind: 'official-api',
+            source: 'Dataverse ExportSolution',
+          },
+        ],
+      }
+    );
+  }
+
   async importSolution(packagePath: string, options: SolutionImportOptions = {}): Promise<OperationResult<SolutionImportResult>> {
     const resolvedPackagePath = resolve(packagePath);
     const packageBytes = await readFile(resolvedPackagePath);
@@ -1014,7 +1427,7 @@ export class SolutionService {
       overwriteUnmanagedCustomizations: options.overwriteUnmanagedCustomizations ?? false,
       holdingSolution: options.holdingSolution ?? false,
       skipProductUpdateDependencies: options.skipProductUpdateDependencies ?? false,
-      importJobId: options.importJobId,
+      importJobId: options.importJobId ?? randomUUID(),
     };
 
     const importResult = await this.dataverseClient.invokeAction<void>('ImportSolution', {
@@ -1023,7 +1436,7 @@ export class SolutionService {
       OverwriteUnmanagedCustomizations: normalizedOptions.overwriteUnmanagedCustomizations,
       HoldingSolution: normalizedOptions.holdingSolution,
       SkipProductUpdateDependencies: normalizedOptions.skipProductUpdateDependencies,
-      ...(normalizedOptions.importJobId ? { ImportJobId: normalizedOptions.importJobId } : {}),
+      ImportJobId: normalizedOptions.importJobId,
     }, {
       responseType: 'void',
     });
@@ -1392,6 +1805,170 @@ function normalizeSolutionDependency(
   };
 }
 
+function applyDependencyComponentResolutions(
+  dependencies: SolutionDependencySummary[],
+  resolutions: Map<string, SolutionDependencyComponentResolution>
+): SolutionDependencySummary[] {
+  return dependencies.map((dependency) => {
+    const required = getDependencyComponentResolution(resolutions, dependency.requiredComponentType, dependency.requiredComponentObjectId);
+    const dependent = getDependencyComponentResolution(
+      resolutions,
+      dependency.dependentComponentType,
+      dependency.dependentComponentObjectId
+    );
+
+    return {
+      ...dependency,
+      requiredComponentName: required?.name,
+      requiredComponentLogicalName: required?.logicalName,
+      requiredComponentTable: required?.table,
+      dependentComponentName: dependent?.name,
+      dependentComponentLogicalName: dependent?.logicalName,
+      dependentComponentTable: dependent?.table,
+    };
+  });
+}
+
+function getDependencyComponentResolution(
+  resolutions: Map<string, SolutionDependencyComponentResolution>,
+  componentType: number | undefined,
+  objectId: string | undefined
+): SolutionDependencyComponentResolution | undefined {
+  if (componentType === undefined || !objectId) {
+    return undefined;
+  }
+
+  return resolutions.get(buildDependencyResolutionKey(componentType, objectId));
+}
+
+function collectDependencyResolutionRequests(dependencies: SolutionDependencySummary[]): {
+  entityIds: Set<string>;
+  appModuleIds: Set<string>;
+  canvasAppIds: Set<string>;
+  workflowIds: Set<string>;
+  webResourceIds: Set<string>;
+  sitemapIds: Set<string>;
+  formIds: Set<string>;
+  viewIds: Set<string>;
+  connectionReferenceIds: Set<string>;
+  environmentVariableDefinitionIds: Set<string>;
+} {
+  const requests = {
+    entityIds: new Set<string>(),
+    appModuleIds: new Set<string>(),
+    canvasAppIds: new Set<string>(),
+    workflowIds: new Set<string>(),
+    webResourceIds: new Set<string>(),
+    sitemapIds: new Set<string>(),
+    formIds: new Set<string>(),
+    viewIds: new Set<string>(),
+    connectionReferenceIds: new Set<string>(),
+    environmentVariableDefinitionIds: new Set<string>(),
+  };
+
+  for (const dependency of dependencies) {
+    collectDependencyResolutionRequest(requests, dependency.requiredComponentType, dependency.requiredComponentObjectId);
+    collectDependencyResolutionRequest(requests, dependency.dependentComponentType, dependency.dependentComponentObjectId);
+  }
+
+  return requests;
+}
+
+function collectDependencyResolutionRequest(
+  requests: ReturnType<typeof collectDependencyResolutionRequests>,
+  componentType: number | undefined,
+  objectId: string | undefined
+): void {
+  if (componentType === undefined || !objectId) {
+    return;
+  }
+
+  switch (componentType) {
+    case 1:
+      requests.entityIds.add(objectId.toLowerCase());
+      break;
+    case 24:
+    case 60:
+      requests.formIds.add(objectId.toLowerCase());
+      break;
+    case 26:
+      requests.viewIds.add(objectId.toLowerCase());
+      break;
+    case 29:
+      requests.workflowIds.add(objectId.toLowerCase());
+      break;
+    case 61:
+      requests.webResourceIds.add(objectId.toLowerCase());
+      break;
+    case 62:
+      requests.sitemapIds.add(objectId.toLowerCase());
+      break;
+    case 80:
+      requests.appModuleIds.add(objectId.toLowerCase());
+      break;
+    case 300:
+      requests.canvasAppIds.add(objectId.toLowerCase());
+      break;
+    case 371:
+      requests.connectionReferenceIds.add(objectId.toLowerCase());
+      break;
+    case 380:
+      requests.environmentVariableDefinitionIds.add(objectId.toLowerCase());
+      break;
+    default:
+      break;
+  }
+}
+
+async function queryAllOrEmpty<T extends Record<string, unknown>>(
+  dataverseClient: DataverseClient,
+  ids: Set<string>,
+  table: string,
+  idColumn: string,
+  select: string[]
+): Promise<OperationResult<T[]>> {
+  if (ids.size === 0) {
+    return ok([] as T[], { supportTier: 'preview' });
+  }
+
+  return dataverseClient.queryAll<T>({
+    table,
+    select,
+    filter: buildGuidOrFilter(idColumn, ids),
+  });
+}
+
+function buildGuidOrFilter(column: string, ids: Set<string>): string | undefined {
+  const clauses = Array.from(ids)
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .map((id) => `${column} eq ${id}`);
+
+  return clauses.length > 0 ? clauses.join(' or ') : undefined;
+}
+
+function addComponentResolutions<T>(
+  resolutions: Map<string, SolutionDependencyComponentResolution>,
+  componentType: number,
+  records: T[],
+  readId: (record: T) => string | undefined,
+  normalize: (record: T) => SolutionDependencyComponentResolution
+): void {
+  for (const record of records) {
+    const id = readId(record);
+
+    if (!id) {
+      continue;
+    }
+
+    resolutions.set(buildDependencyResolutionKey(componentType, id), normalize(record));
+  }
+}
+
+function buildDependencyResolutionKey(componentType: number, objectId: string): string {
+  return `${componentType}:${objectId.toLowerCase()}`;
+}
+
 function describeComponentType(componentType: number | undefined): string {
   const labels: Record<number, string> = {
     1: 'entity',
@@ -1404,6 +1981,7 @@ function describeComponentType(componentType: number | undefined): string {
     61: 'web-resource',
     62: 'site-map',
     80: 'app-module',
+    300: 'canvas-app',
     371: 'connection-reference',
     380: 'environment-variable-definition',
   };
@@ -1413,6 +1991,20 @@ function describeComponentType(componentType: number | undefined): string {
 
 function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagnostic[] {
   return lists.flatMap((list) => list ?? []);
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function extractDisplayName(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const userLabel = (value as { UserLocalizedLabel?: { Label?: unknown } }).UserLocalizedLabel?.Label;
+  const label = (value as { Label?: unknown }).Label;
+  return readString(userLabel) ?? readString(label);
 }
 
 function buildCompareResult(
@@ -1467,7 +2059,7 @@ function buildCompareResult(
   for (const [key, sourceApp] of sourceModelApps.entries()) {
     const targetApp = targetModelApps.get(key);
 
-    if (!targetApp) {
+    if (!targetApp || !sourceApp.composition || !targetApp.composition) {
       continue;
     }
 
@@ -1840,4 +2432,8 @@ function explainImportFailure(diagnostics: Diagnostic[], manifest?: SolutionRele
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

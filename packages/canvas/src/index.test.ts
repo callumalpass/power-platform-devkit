@@ -654,6 +654,127 @@ describe('remote canvas app workflows', () => {
     expect(await readFile(join(extractedPath, 'Controls', '1.json'), 'utf8')).toBe('{"Name":"App"}');
   });
 
+  it('proves remote canvas bindings from the exported app source', async () => {
+    const dir = await createTempDir();
+    const msappRoot = join(dir, 'msapp');
+    await mkdir(join(msappRoot, 'Src'), { recursive: true });
+    await mkdir(join(msappRoot, 'References'), { recursive: true });
+    await writeFile(join(msappRoot, 'Src', 'App.pa.yaml'), 'App:\n  Properties:\n    Theme: =PowerAppsTheme\n', 'utf8');
+    await writeFile(
+      join(msappRoot, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Gallery1:',
+        "          Control: Gallery@2.15.0",
+        '          Properties:',
+        "            Items: ='PP Harness Projects'",
+        '      - Title1:',
+        '          Control: Label@2.5.1',
+        '          Properties:',
+        '            Text: =ThisItem.Name',
+      ].join('\n') + '\n',
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'PP Harness Projects',
+              Type: 'Table',
+              DatasetName: 'default.cds',
+              EntityName: 'pph34135_projects',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const msappPath = join(dir, 'Harness Canvas.msapp');
+    await createZip(msappRoot, msappPath);
+
+    const solutionRoot = join(dir, 'solution');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+
+    const solutionZip = join(dir, 'Core.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.proveRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      expectations: [
+        {
+          controlPath: 'Screen1/Gallery1',
+          property: 'Items',
+          expectedValue: "='PP Harness Projects'",
+        },
+        {
+          controlPath: 'Screen1/Title1',
+          property: 'Text',
+          expectedValue: '=ThisItem.Name',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      valid: true,
+      appId: 'canvas-1',
+      screenCount: 1,
+      controlCount: 2,
+      dataSources: ['PP Harness Projects'],
+      expectations: [
+        {
+          controlPath: 'Screen1/Gallery1',
+          property: 'Items',
+          found: true,
+          matched: true,
+          actualValueText: "='PP Harness Projects'",
+        },
+        {
+          controlPath: 'Screen1/Title1',
+          property: 'Text',
+          found: true,
+          matched: true,
+          actualValueText: '=ThisItem.Name',
+        },
+      ],
+    });
+  });
+
   it('attaches a remote canvas app to a solution through the typed canvas service', async () => {
     const service = new CanvasService(createRemoteCanvasStubDataverseClient());
 
@@ -841,6 +962,95 @@ describe('canvas app workflows', () => {
         valid: false,
       },
     ]);
+  });
+
+  it('reports unresolved data-source references during validation', async () => {
+    const dir = await createTempDir();
+    const registryPath = join(dir, 'controls.json');
+
+    await writeFile(
+      registryPath,
+      JSON.stringify(
+        {
+          templates: [
+            {
+              templateName: 'Gallery',
+              templateVersion: '1.0.0',
+              provenance: {
+                source: 'catalog',
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Gallery',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const appPath = await writeCanvasApp(dir, {
+      name: 'BrokenBindingsCanvas',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'Gallery1',
+              templateName: 'Gallery',
+              templateVersion: '1.0.0',
+              properties: {
+                Items: '=MissingHarnessSource',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await mkdir(join(appPath, 'References'), { recursive: true });
+    await writeFile(
+      join(appPath, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'Accounts',
+              EntityName: 'account',
+              Type: 'Table',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateCanvasApp(appPath, {
+      root: dir,
+      registries: ['./controls.json'],
+      mode: 'strict',
+    });
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_DATA_SOURCE_REFERENCE_UNRESOLVED',
+          message: 'Formula property Items on Home/Gallery1 references unresolved data source MissingHarnessSource.',
+        }),
+      ])
+    );
   });
 
   it('builds a deterministic package and diffs canvas source trees', async () => {

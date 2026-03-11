@@ -5,6 +5,7 @@ import {
   executeDeploy,
   executeDeployPlan,
   executeReleaseManifest,
+  inspectDeployTargetResolution,
   type DeployPlan,
   type ReleaseManifest,
 } from '@pp/deploy';
@@ -48,6 +49,7 @@ export async function runDeployPlanCommand(args: string[], deps: DeployCommandDe
   }
 
   const plan = buildDeployPlan(project.data);
+  const targetInspection = plan.success && plan.data ? await inspectDeployTargetResolution(plan.data.target) : ok(undefined);
 
   if (!plan.success || !plan.data) {
     return deps.printFailure(plan);
@@ -56,6 +58,7 @@ export async function runDeployPlanCommand(args: string[], deps: DeployCommandDe
   deps.printByFormat(plan.data, format);
   deps.printResultDiagnostics(project, format);
   deps.printResultDiagnostics(plan, format);
+  deps.printResultDiagnostics(targetInspection, format);
   return 0;
 }
 

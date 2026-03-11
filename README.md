@@ -166,6 +166,7 @@ pp dv metadata create-customer-relationship --env dev --file ./specs/project-cus
 pp solution create Core --env dev --friendly-name "Core" --publisher-unique-name DefaultPublisher
 pp solution list --env dev
 pp solution inspect Core --env dev
+pp solution publish Core --env dev --wait-for-export --out ./artifacts/solutions/Core.zip
 pp solution export Core --env dev --out ./artifacts/solutions/Core.zip --plan
 pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-name DefaultPublisher
 ```
@@ -173,7 +174,8 @@ pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-nam
 Metadata create commands consume JSON or YAML spec files rather than raw Dataverse metadata JSON. Publish is on by default; use `--no-publish` when you want to stage changes without publishing.
 `pp dv rows export` packages a query slice into a stable row-set artifact, and `pp dv rows apply` consumes a typed manifest for bounded create/update/upsert/delete batches without hand-authoring raw `$batch` payloads.
 The solution lifecycle surface now also covers create/delete, source-vs-target
-compare, pack/unpack, export/import, and solution-scoped component analysis.
+compare, publish with an optional export-backed synchronization checkpoint,
+pack/unpack, export/import, and solution-scoped component analysis.
 
 ### 5. Add a local project config
 

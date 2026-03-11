@@ -352,7 +352,7 @@ function buildEnvironmentInspectView(
         usesEnvironmentAuthProfile: true,
       },
       browser: buildEnvironmentBrowserGuidance(profile, browserProfile, environment),
-      pac: buildPacEnvironmentGuidance(profile),
+      pac: buildPacEnvironmentGuidance(profile, environment),
     },
   };
 }
@@ -371,9 +371,11 @@ function buildEnvironmentAuthSummary(environment: EnvironmentAlias, profile: Aut
   };
 }
 
-function buildPacEnvironmentGuidance(profile: AuthProfile | undefined): Record<string, unknown> {
+function buildPacEnvironmentGuidance(profile: AuthProfile | undefined, environment: EnvironmentAlias): Record<string, unknown> {
+  const organizationUrl = derivePacOrganizationUrl(environment.url);
   const base = {
     sharesPpAuthContext: false,
+    organizationUrl,
     recommendedAction:
       'Treat pac as a separately authenticated tool. Do not assume a successful `pp dv whoami` means pac can reuse that environment or session.',
   };
@@ -419,6 +421,22 @@ function buildPacEnvironmentGuidance(profile: AuthProfile | undefined): Record<s
         risk: 'low',
         reason: 'This alias uses a pp static token, but pac still cannot consume pp config directly.',
       };
+  }
+}
+
+function derivePacOrganizationUrl(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('.api.')) {
+      parsed.hostname = parsed.hostname.replace('.api.', '.');
+    }
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return undefined;
   }
 }
 

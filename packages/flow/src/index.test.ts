@@ -298,6 +298,98 @@ describe('FlowService', () => {
     });
   });
 
+  it('exports a remote flow when the live definition is nested under clientData.properties.definition', async () => {
+    const tempDir = await createTempDir();
+    const outPath = join(tempDir, 'remote-flow-nested');
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-nested-1',
+                name: 'Nested Invoice Sync',
+                uniquename: 'crd_NestedInvoiceSync',
+                category: 5,
+                type: 1,
+                mode: 0,
+                ondemand: false,
+                primaryentity: 'none',
+                statecode: 0,
+                statuscode: 1,
+                clientdata: JSON.stringify({
+                  properties: {
+                    definition: {
+                      actions: {
+                        SendMail: {
+                          inputs: {
+                            subject: 'nested',
+                          },
+                        },
+                      },
+                    },
+                    connectionReferences: {
+                      shared_commondataserviceforapps: {
+                        connection: {
+                          connectionReferenceLogicalName: 'msdyn_Dataverse',
+                        },
+                      },
+                    },
+                  },
+                }),
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'flow-nested-1',
+                componenttype: 29,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+    } as unknown as DataverseClient;
+    const service = new FlowService(client);
+
+    const result = await service.exportArtifact('Nested Invoice Sync', outPath, {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    const exported = JSON.parse(await readFile(join(outPath, 'flow.json'), 'utf8')) as Record<string, unknown>;
+    expect(exported).toMatchObject({
+      metadata: {
+        name: 'Nested Invoice Sync',
+        uniqueName: 'crd_NestedInvoiceSync',
+      },
+      definition: {
+        actions: {
+          SendMail: {
+            inputs: {
+              subject: 'nested',
+            },
+          },
+        },
+      },
+    });
+  });
+
   it('deploys a validated local flow artifact into an existing remote workflow', async () => {
     const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
     const baseClient = createStubDataverseClient();
@@ -595,6 +687,12 @@ describe('FlowService', () => {
       mode: 0,
       ondemand: false,
       primaryentity: 'none',
+    });
+    expect(JSON.parse(String(creates[0]?.clientdata))).toMatchObject({
+      definition: expect.any(Object),
+      properties: {
+        definition: expect.any(Object),
+      },
     });
   });
 
@@ -2856,6 +2954,116 @@ describe('FlowService', () => {
     expect(doctor.data?.missingEnvironmentVariables).toHaveLength(1);
     expect(doctor.data?.findings).toContain('1 of 2 recent runs failed (50.0%).');
     expect(doctor.data?.findings).toContain('Environment variable pp_ApiUrl does not have an effective value.');
+  });
+
+  it('reports connection references even when flowrun rows omit workflowname', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
+
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'flowruns') {
+          return ok(
+            [
+              {
+                flowrunid: 'run-1',
+                workflowid: 'flow-1',
+                status: 'Failed',
+                starttime: '2026-03-09T09:00:00.000Z',
+                errorcode: 'ConnectorAuthFailed',
+                errormessage: 'shared_office365 connection is not authorized',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+    } as unknown as DataverseClient;
+
+    const connrefs = await new FlowService(client).connrefs('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
+
+    expect(connrefs.success).toBe(true);
+    expect(connrefs.data?.connectionReferences[0]).toMatchObject({
+      name: 'shared_office365',
+      recentFailures: 1,
+    });
+  });
+
+  it('validates connector actions that use host.connectionName and host.operationId from remote inspect output', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Remote Inspect Shape Flow',
+            connectionReferences: [
+              {
+                name: 'shared_office365',
+                connectionReferenceLogicalName: 'shared_office365',
+                apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+              },
+            ],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            parameters: {
+              '$connections': {
+                value: {
+                  shared_office365: {
+                    connectionReferenceLogicalName: 'shared_office365',
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connectionId: '/connections/office365',
+                  },
+                },
+              },
+            },
+            actions: {
+              SendMail: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connectionName: 'shared_office365',
+                    operationId: 'SendEmailV2',
+                  },
+                  parameters: {
+                    'emailMessage/To': 'agent@example.test',
+                    'emailMessage/Subject': 'Subject',
+                    'emailMessage/Body': 'Body',
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(true);
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('FLOW_CONNECTOR_CONNECTION_REFERENCE_MISSING');
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('FLOW_CONNECTOR_CONNECTION_REFERENCE_UNSUPPORTED');
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('FLOW_CONNECTOR_OPERATION_ID_MISSING');
   });
 
   it('validates supported semantic references and reliability settings locally', async () => {

@@ -1,4 +1,4 @@
-import { cp, mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -79,30 +79,33 @@ export async function buildCanvasMsappFromUnpackedSource(
     );
   }
 
-  if (!source.unpackedArtifacts?.headerPath || !source.unpackedArtifacts?.propertiesPath || !source.unpackedArtifacts?.appControlPath) {
-    return fail(
-      createDiagnostic(
-        'error',
-        'CANVAS_NATIVE_BUILD_BASELINE_REQUIRED',
-        `Canvas source ${source.root} is missing the baseline unpacked app artifacts required for native .msapp build.`,
-        {
-          source: '@pp/canvas',
-          hint: 'Build from an unpacked app root that still contains Header.json, Properties.json, and Controls/1.json.',
-        }
-      )
-    );
-  }
-
   const tempRoot = await mkdtemp(join(tmpdir(), 'pp-canvas-build-'));
 
   try {
     await cp(source.root, tempRoot, { recursive: true });
     await mkdir(dirname(outPath), { recursive: true });
 
+    await ensureNativeBuildBaseline(tempRoot, source);
+
     const controlsDir = join(tempRoot, 'Controls');
     const templatesPath = join(tempRoot, 'References', 'Templates.json');
     const editorStatePath = join(tempRoot, 'Src', '_EditorState.pa.yaml');
     const headerPath = join(tempRoot, 'Header.json');
+
+    if (!(await pathExists(headerPath)) || !(await pathExists(join(tempRoot, 'Properties.json'))) || !(await pathExists(join(controlsDir, '1.json')))) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'CANVAS_NATIVE_BUILD_BASELINE_REQUIRED',
+          `Canvas source ${source.root} is missing the baseline unpacked app artifacts required for native .msapp build.`,
+          {
+            source: '@pp/canvas',
+            hint: 'Build from an unpacked app root that still contains Header.json, Properties.json, and Controls/1.json, or from an App.fx.yaml unpack that still carries CanvasManifest.json.',
+          }
+        )
+      );
+    }
+
     const screenControlFiles = await resolveScreenControlFileNames(source.root, source.screens.map((screen) => screen.name));
     const generatedScreens = generateScreenControlFiles(source, requirements, screenControlFiles);
 
@@ -150,6 +153,70 @@ export async function buildCanvasMsappFromUnpackedSource(
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
+  }
+}
+
+async function ensureNativeBuildBaseline(tempRoot: string, source: CanvasSourceModel): Promise<void> {
+  await mkdir(join(tempRoot, 'Controls'), { recursive: true });
+  await mkdir(join(tempRoot, 'References'), { recursive: true });
+  await mkdir(join(tempRoot, 'Src'), { recursive: true });
+
+  const canvasManifestPath = join(source.root, 'CanvasManifest.json');
+  const headerPath = join(tempRoot, 'Header.json');
+  const propertiesPath = join(tempRoot, 'Properties.json');
+  const appControlPath = join(tempRoot, 'Controls', '1.json');
+
+  if ((!(await pathExists(headerPath)) || !(await pathExists(propertiesPath))) && (await pathExists(canvasManifestPath))) {
+    const canvasManifest = JSON.parse(await readFile(canvasManifestPath, 'utf8')) as Record<string, unknown>;
+    const header = asRecord(canvasManifest.Header);
+    const properties = asRecord(canvasManifest.Properties);
+
+    if (!(await pathExists(headerPath)) && header) {
+      await writeFile(
+        headerPath,
+        `${JSON.stringify(
+          {
+            DocVersion: header.DocVersion,
+            MinVersionToLoad: header.MinVersionToLoad,
+            MSAppStructureVersion: header.MSAppStructureVersion,
+            LastSavedDateTimeUTC: '03/10/2026 00:00:00',
+          },
+          null,
+          2
+        )}\n`,
+        'utf8'
+      );
+    }
+
+    if (!(await pathExists(propertiesPath))) {
+      await writeFile(
+        propertiesPath,
+        `${JSON.stringify(properties ?? { AppVersion: source.manifest.version ?? '1.0.0' }, null, 2)}\n`,
+        'utf8'
+      );
+    }
+  }
+
+  if (!(await pathExists(appControlPath))) {
+    await writeFile(
+      appControlPath,
+      `${JSON.stringify(
+        {
+          TopParent: {
+            Name: 'App',
+          },
+        },
+        null,
+        2
+      )}\n`,
+      'utf8'
+    );
+  }
+
+  await writeFile(join(tempRoot, 'Src', 'App.pa.yaml'), await readFile(source.manifestPath, 'utf8'), 'utf8');
+
+  for (const screen of source.screens) {
+    await writeFile(join(tempRoot, 'Src', basename(screen.file)), await readFile(resolve(source.root, screen.file), 'utf8'), 'utf8');
   }
 }
 
@@ -428,6 +495,15 @@ async function readControlFile(path: string): Promise<Record<string, unknown> | 
     return JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
   } catch {
     return undefined;
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
   }
 }
 

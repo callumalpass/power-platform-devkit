@@ -539,6 +539,46 @@ export interface CanvasAppAttachResult {
   addRequiredComponents: boolean;
 }
 
+export interface AssetAccessLookup {
+  id?: string;
+  name?: string;
+  entityType?: string;
+}
+
+export interface AssetExplicitShare {
+  id?: string;
+  principal: AssetAccessLookup;
+  principalTypeCode?: number;
+  accessRightsMask?: number;
+  inheritedAccessRightsMask?: number;
+  changedOn?: string;
+}
+
+export interface AssetAccessOwnership {
+  scope: 'principal' | 'organization' | 'unknown';
+  owner: AssetAccessLookup | null;
+  createdBy: AssetAccessLookup | null;
+}
+
+export interface AssetAccessTarget {
+  table: 'canvasapps' | 'workflows' | 'appmodules';
+  id: string;
+  name?: string;
+  uniqueName?: string;
+  displayName?: string;
+}
+
+export interface AssetAccessReport {
+  kind: 'canvas' | 'flow' | 'model';
+  target: AssetAccessTarget;
+  ownership: AssetAccessOwnership;
+  sharing: {
+    hasExplicitShares: boolean;
+    explicitShareCount: number;
+    explicitShares: AssetExplicitShare[];
+  };
+}
+
 export interface ModelDrivenAppRecord {
   appmoduleid: string;
   uniquename?: string;
@@ -705,6 +745,24 @@ export interface CloudFlowRunListOptions {
   workflowUniqueName?: string;
   status?: string;
   since?: string;
+}
+
+interface AssetAccessRecord {
+  [key: string]: unknown;
+  _ownerid_value?: string;
+  _createdby_value?: string;
+}
+
+interface PrincipalObjectAccessRecord {
+  principalobjectaccessid?: string;
+  objectid?: string;
+  objecttypecode?: number;
+  _principalid_value?: string;
+  principaltypecode?: number;
+  accessrightsmask?: number;
+  inheritedaccessrightsmask?: number;
+  changedon?: string;
+  [key: string]: unknown;
 }
 
 interface SolutionComponentMembershipRecord {
@@ -2184,16 +2242,9 @@ export class ConnectionReferenceService {
   constructor(private readonly dataverseClient: DataverseClient) {}
 
   async list(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<ConnectionReferenceSummary[]>> {
-    const recordResult = await queryConnectionReferenceRecords(this.dataverseClient);
-    const [records, solutionId] = await Promise.all([
-      Promise.resolve(recordResult),
-      options.solutionUniqueName ? resolveSolutionId(this.dataverseClient, options.solutionUniqueName) : Promise.resolve(ok(undefined, { supportTier: 'preview' })),
-    ]);
-
-    if (!records.success) {
-      return records as unknown as OperationResult<ConnectionReferenceSummary[]>;
-    }
-
+    const solutionId = options.solutionUniqueName
+      ? await resolveSolutionId(this.dataverseClient, options.solutionUniqueName)
+      : ok<string | undefined>(undefined, { supportTier: 'preview' });
     if (!solutionId.success) {
       return solutionId as unknown as OperationResult<ConnectionReferenceSummary[]>;
     }
@@ -2206,13 +2257,40 @@ export class ConnectionReferenceService {
       return solutionMembers as unknown as OperationResult<ConnectionReferenceSummary[]>;
     }
 
+    const recordResult = await queryConnectionReferenceRecords(this.dataverseClient);
+    const records =
+      recordResult.success || !solutionMembers.data
+        ? recordResult
+        : await queryConnectionReferencesByIds(this.dataverseClient, Array.from(solutionMembers.data.values()));
+
+    if (!records.success) {
+      return records as unknown as OperationResult<ConnectionReferenceSummary[]>;
+    }
+
     const summaries = (records.data ?? [])
       .filter((record) => !solutionMembers.data || solutionMembers.data.has(record.connectionreferenceid))
       .map((record) => normalizeConnectionReference(record, solutionId.data && solutionMembers.data?.has(record.connectionreferenceid) ? solutionId.data : undefined));
 
     return ok(summaries, {
       supportTier: 'preview',
-      diagnostics: mergeDiagnosticLists(records.diagnostics, solutionId.diagnostics, solutionMembers.diagnostics),
+      diagnostics: mergeDiagnosticLists(
+        records.diagnostics,
+        solutionId.diagnostics,
+        solutionMembers.diagnostics,
+        [
+          createDiagnostic(
+            summaries.length === 0 ? 'warning' : 'info',
+            summaries.length === 0 ? 'DATAVERSE_CONNREF_SCOPE_EMPTY' : 'DATAVERSE_CONNREF_LIST_SUMMARY',
+            buildConnectionReferenceScopeMessage(
+              summaries.length === 0 ? 'No connection references were found' : `Listed ${summaries.length} connection reference${summaries.length === 1 ? '' : 's'}`,
+              options.solutionUniqueName
+            ),
+            {
+              source: '@pp/dataverse',
+            }
+          ),
+        ]
+      ),
       warnings: mergeDiagnosticLists(records.warnings, solutionId.warnings, solutionMembers.warnings),
     });
   }
@@ -2241,8 +2319,7 @@ export class ConnectionReferenceService {
       return references as unknown as OperationResult<ConnectionReferenceValidationResult[]>;
     }
 
-    return ok(
-      (references.data ?? []).map((reference) => {
+    const validation = (references.data ?? []).map((reference) => {
         const diagnostics: Diagnostic[] = [];
         const suggestedNextActions: string[] = [];
 
@@ -2270,10 +2347,40 @@ export class ConnectionReferenceService {
           diagnostics,
           suggestedNextActions,
         };
-      }),
+      });
+
+    const invalidCount = validation.filter((entry) => !entry.valid).length;
+    const validCount = validation.length - invalidCount;
+
+    return ok(
+      validation,
       {
         supportTier: 'preview',
-        diagnostics: references.diagnostics,
+        diagnostics: mergeDiagnosticLists(
+          references.diagnostics,
+          [
+            createDiagnostic(
+              validation.length === 0 ? 'warning' : invalidCount > 0 ? 'warning' : 'info',
+              validation.length === 0
+                ? 'DATAVERSE_CONNREF_VALIDATE_EMPTY'
+                : invalidCount > 0
+                  ? 'DATAVERSE_CONNREF_VALIDATE_SUMMARY'
+                  : 'DATAVERSE_CONNREF_VALIDATE_OK',
+              validation.length === 0
+                ? buildConnectionReferenceScopeMessage(
+                    'Validated 0 connection references; no references were found',
+                    options.solutionUniqueName
+                  )
+                : buildConnectionReferenceScopeMessage(
+                    `Validated ${validation.length} connection reference${validation.length === 1 ? '' : 's'}: ${validCount} valid, ${invalidCount} invalid`,
+                    options.solutionUniqueName
+                  ),
+              {
+                source: '@pp/dataverse',
+              }
+            ),
+          ]
+        ),
         warnings: references.warnings,
       }
     );
@@ -2615,6 +2722,41 @@ export class CanvasAppService {
     });
   }
 
+  async access(identifier: string): Promise<OperationResult<AssetAccessReport | undefined>> {
+    const app = await this.inspect(identifier);
+
+    if (!app.success) {
+      return app as unknown as OperationResult<AssetAccessReport | undefined>;
+    }
+
+    if (!app.data) {
+      return ok(undefined, {
+        supportTier: 'preview',
+        diagnostics: app.diagnostics,
+        warnings: app.warnings,
+      });
+    }
+
+    const access = await buildAssetAccessReport(this.dataverseClient, {
+      kind: 'canvas',
+      table: 'canvasapps',
+      idField: 'canvasappid',
+      summary: app.data,
+      baseSelect: ['canvasappid', 'displayname', 'name'],
+      optionalSelect: ['_ownerid_value', '_createdby_value'],
+    });
+
+    if (!access.success) {
+      return access as unknown as OperationResult<AssetAccessReport | undefined>;
+    }
+
+    return ok(access.data, {
+      supportTier: access.supportTier,
+      diagnostics: mergeDiagnosticLists(app.diagnostics, access.diagnostics),
+      warnings: mergeDiagnosticLists(app.warnings, access.warnings),
+    });
+  }
+
   async attachToSolution(
     identifier: string,
     solutionUniqueName: string,
@@ -2736,11 +2878,43 @@ export class CloudFlowService {
     });
   }
 
-  async runs(options: CloudFlowRunListOptions = {}): Promise<OperationResult<CloudFlowRunSummary[]>> {
-    const runs = await this.dataverseClient.queryAll<CloudFlowRunRecord>({
-      table: 'flowruns',
-      select: ['flowrunid', 'name', 'workflowid', 'workflowname', 'status', 'starttime', 'endtime', 'durationinms', 'retrycount', 'errorcode', 'errormessage'],
+  async access(identifier: string): Promise<OperationResult<AssetAccessReport | undefined>> {
+    const flow = await this.inspect(identifier);
+
+    if (!flow.success) {
+      return flow as unknown as OperationResult<AssetAccessReport | undefined>;
+    }
+
+    if (!flow.data) {
+      return ok(undefined, {
+        supportTier: 'preview',
+        diagnostics: flow.diagnostics,
+        warnings: flow.warnings,
+      });
+    }
+
+    const access = await buildAssetAccessReport(this.dataverseClient, {
+      kind: 'flow',
+      table: 'workflows',
+      idField: 'workflowid',
+      summary: flow.data,
+      baseSelect: ['workflowid', 'name', 'uniquename'],
+      optionalSelect: ['_ownerid_value', '_createdby_value'],
     });
+
+    if (!access.success) {
+      return access as unknown as OperationResult<AssetAccessReport | undefined>;
+    }
+
+    return ok(access.data, {
+      supportTier: access.supportTier,
+      diagnostics: mergeDiagnosticLists(flow.diagnostics, access.diagnostics),
+      warnings: mergeDiagnosticLists(flow.warnings, access.warnings),
+    });
+  }
+
+  async runs(options: CloudFlowRunListOptions = {}): Promise<OperationResult<CloudFlowRunSummary[]>> {
+    const runs = await queryFlowRunRecords(this.dataverseClient);
 
     if (!runs.success) {
       return runs as unknown as OperationResult<CloudFlowRunSummary[]>;
@@ -2798,6 +2972,41 @@ export class ModelDrivenAppService {
     });
   }
 
+  async access(identifier: string): Promise<OperationResult<AssetAccessReport | undefined>> {
+    const app = await this.inspect(identifier);
+
+    if (!app.success) {
+      return app as unknown as OperationResult<AssetAccessReport | undefined>;
+    }
+
+    if (!app.data) {
+      return ok(undefined, {
+        supportTier: 'preview',
+        diagnostics: app.diagnostics,
+        warnings: app.warnings,
+      });
+    }
+
+    const access = await buildAssetAccessReport(this.dataverseClient, {
+      kind: 'model',
+      table: 'appmodules',
+      idField: 'appmoduleid',
+      summary: app.data,
+      baseSelect: ['appmoduleid', 'name', 'uniquename'],
+      optionalSelect: [],
+    });
+
+    if (!access.success) {
+      return access as unknown as OperationResult<AssetAccessReport | undefined>;
+    }
+
+    return ok(access.data, {
+      supportTier: access.supportTier,
+      diagnostics: mergeDiagnosticLists(app.diagnostics, access.diagnostics),
+      warnings: mergeDiagnosticLists(app.warnings, access.warnings),
+    });
+  }
+
   async create(uniqueName: string, options: ModelDrivenAppCreateOptions = {}): Promise<OperationResult<ModelDrivenAppSummary>> {
     const normalizedUniqueName = uniqueName.trim();
 
@@ -2818,7 +3027,6 @@ export class ModelDrivenAppService {
       },
       {
         returnRepresentation: true,
-        solutionUniqueName: options.solutionUniqueName,
       }
     );
 
@@ -2828,22 +3036,53 @@ export class ModelDrivenAppService {
 
     const created = createResult.data?.entity;
     const requestedName = options.name?.trim() || normalizedUniqueName;
+    const createdSummary = normalizeModelDrivenApp({
+      appmoduleid: created?.appmoduleid ?? createResult.data?.entityId ?? '',
+      uniquename: created?.uniquename ?? normalizedUniqueName,
+      name: created?.name ?? requestedName,
+      appmoduleversion: created?.appmoduleversion,
+      statecode: created?.statecode,
+      publishedon: created?.publishedon,
+    });
 
-    return ok(
-      normalizeModelDrivenApp({
-        appmoduleid: created?.appmoduleid ?? createResult.data?.entityId ?? '',
-        uniquename: created?.uniquename ?? normalizedUniqueName,
-        name: created?.name ?? requestedName,
-        appmoduleversion: created?.appmoduleversion,
-        statecode: created?.statecode,
-        publishedon: created?.publishedon,
-      }),
-      {
-        supportTier: 'preview',
-        diagnostics: createResult.diagnostics,
-        warnings: createResult.warnings,
+    if (options.solutionUniqueName?.trim()) {
+      const attachResult = await this.attachAppIdToSolution(createdSummary.id, options.solutionUniqueName, {
+        addRequiredComponents: true,
+      });
+
+      if (!attachResult.success) {
+        return fail(
+          [
+            ...mergeDiagnosticLists(createResult.diagnostics, attachResult.diagnostics),
+            createDiagnostic(
+              'error',
+              'DATAVERSE_MODEL_APP_ATTACH_AFTER_CREATE_FAILED',
+              `Model-driven app ${createdSummary.uniqueName ?? createdSummary.id} was created but could not be attached to solution ${options.solutionUniqueName}.`,
+              {
+                source: '@pp/dataverse',
+                detail: `Created app id: ${createdSummary.id}.`,
+              }
+            ),
+          ],
+          {
+            supportTier: 'preview',
+            warnings: mergeDiagnosticLists(createResult.warnings, attachResult.warnings),
+          }
+        );
       }
-    );
+
+      return ok(createdSummary, {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(createResult.diagnostics, attachResult.diagnostics),
+        warnings: mergeDiagnosticLists(createResult.warnings, attachResult.warnings),
+      });
+    }
+
+    return ok(createdSummary, {
+      supportTier: 'preview',
+      diagnostics: createResult.diagnostics,
+      warnings: createResult.warnings,
+    });
   }
 
   async attachToSolution(
@@ -2883,18 +3122,9 @@ export class ModelDrivenAppService {
     }
 
     const addRequiredComponents = options.addRequiredComponents ?? true;
-    const actionResult = await this.dataverseClient.invokeAction(
-      'AddSolutionComponent',
-      {
-        ComponentId: app.data.id,
-        ComponentType: 80,
-        SolutionUniqueName: normalizedSolutionUniqueName,
-        AddRequiredComponents: addRequiredComponents,
-      },
-      {
-        solutionUniqueName: normalizedSolutionUniqueName,
-      }
-    );
+    const actionResult = await this.attachAppIdToSolution(app.data.id, normalizedSolutionUniqueName, {
+      addRequiredComponents,
+    });
 
     if (!actionResult.success) {
       return actionResult as unknown as OperationResult<ModelDrivenAppAttachResult>;
@@ -2915,24 +3145,75 @@ export class ModelDrivenAppService {
     );
   }
 
+  private async attachAppIdToSolution(
+    appId: string,
+    solutionUniqueName: string,
+    options: { addRequiredComponents?: boolean } = {}
+  ): Promise<OperationResult<{ attached: true }>> {
+    const normalizedSolutionUniqueName = solutionUniqueName.trim();
+    const addRequiredComponents = options.addRequiredComponents ?? true;
+    const actionResult = await this.dataverseClient.invokeAction(
+      'AddSolutionComponent',
+      {
+        ComponentId: appId,
+        ComponentType: 80,
+        SolutionUniqueName: normalizedSolutionUniqueName,
+        AddRequiredComponents: addRequiredComponents,
+      },
+      {
+        solutionUniqueName: normalizedSolutionUniqueName,
+      }
+    );
+
+    if (!actionResult.success) {
+      return actionResult as unknown as OperationResult<{ attached: true }>;
+    }
+
+    return ok(
+      { attached: true },
+      {
+        supportTier: 'preview',
+        diagnostics: actionResult.diagnostics,
+        warnings: actionResult.warnings,
+      }
+    );
+  }
+
   async components(appId: string): Promise<OperationResult<ModelDrivenAppComponentSummary[]>> {
     const components = await this.dataverseClient.queryAll<ModelDrivenAppComponentRecord>({
       table: 'appmodulecomponents',
-      select: [...baseModelDrivenAppComponentSelect, '_appmoduleidunique_value'],
+      select: [...baseModelDrivenAppComponentSelect, '_appmoduleidunique_value', 'appmoduleidunique'],
     });
 
     if (!components.success) {
       return components as unknown as OperationResult<ModelDrivenAppComponentSummary[]>;
     }
 
+    const filtered = (components.data ?? [])
+      .filter((component) => [component._appmoduleidunique_value, component.appmoduleidunique].filter(Boolean).includes(appId))
+      .map((component) => normalizeModelDrivenAppComponent(component, appId));
+
     return ok(
-      (components.data ?? [])
-        .filter((component) => component._appmoduleidunique_value === appId)
-        .map((component) => normalizeModelDrivenAppComponent(component, appId)),
+      filtered,
       {
         supportTier: 'preview',
         diagnostics: components.diagnostics,
-        warnings: components.warnings,
+        warnings:
+          filtered.length === 0
+            ? [
+                ...components.warnings,
+                createDiagnostic(
+                  'warning',
+                  'DATAVERSE_MODEL_APP_COMPONENTS_EMPTY',
+                  `No appmodulecomponents rows were returned for model-driven app ${appId}.`,
+                  {
+                    source: '@pp/dataverse',
+                    detail:
+                      'This can mean the app currently exposes no inspectable component rows, or that Dataverse did not return system-owned composition through the current appmodulecomponents query.',
+                  }
+                ),
+              ]
+            : components.warnings,
       }
     );
   }
@@ -3885,6 +4166,8 @@ const baseConnectionReferenceSelect = [
 ] as const;
 
 const optionalConnectionReferenceSelect = ['customconnectorid'] as const;
+const baseFlowRunSelect = ['flowrunid', 'name', 'workflowid', 'status', 'starttime', 'endtime', 'errorcode', 'errormessage'] as const;
+const optionalFlowRunSelect = ['workflowname', 'durationinms', 'retrycount'] as const;
 const baseModelDrivenAppComponentSelect = ['appmodulecomponentid', 'componenttype', 'objectid'] as const;
 
 async function queryConnectionReferenceRecords(
@@ -3932,8 +4215,131 @@ async function queryConnectionReferenceRecords(
   });
 }
 
+async function queryFlowRunRecords(dataverseClient: DataverseClient): Promise<OperationResult<CloudFlowRunRecord[]>> {
+  let remainingOptionalColumns = [...optionalFlowRunSelect];
+  let result = await dataverseClient.queryAll<CloudFlowRunRecord>({
+    table: 'flowruns',
+    select: [...baseFlowRunSelect, ...remainingOptionalColumns],
+  });
+  const strippedColumns = new Set<string>();
+  const attemptDetails: string[] = [];
+
+  while (!result.success) {
+    const unsupportedColumns = findUnsupportedFlowRunColumns(result.diagnostics).filter((column) =>
+      remainingOptionalColumns.some((candidate) => candidate === column)
+    );
+
+    if (unsupportedColumns.length === 0) {
+      return result;
+    }
+
+    unsupportedColumns.forEach((column) => strippedColumns.add(column));
+    attemptDetails.push(
+      result.diagnostics
+        .map((diagnostic) => diagnostic.detail ?? diagnostic.message)
+        .filter((value) => value && value.length > 0)
+        .join('\n')
+    );
+    remainingOptionalColumns = remainingOptionalColumns.filter((column) => !unsupportedColumns.includes(column));
+    result = await dataverseClient.queryAll<CloudFlowRunRecord>({
+      table: 'flowruns',
+      select: [...baseFlowRunSelect, ...remainingOptionalColumns],
+    });
+  }
+
+  return ok(result.data ?? [], {
+    supportTier: result.supportTier,
+    diagnostics: result.diagnostics,
+    warnings: mergeDiagnosticLists(
+      result.warnings,
+      strippedColumns.size > 0
+        ? [
+            createDiagnostic(
+              'warning',
+              'DATAVERSE_FLOWRUN_OPTIONAL_COLUMNS_UNAVAILABLE',
+              `Flow run query retried without unsupported column${strippedColumns.size === 1 ? '' : 's'} ${Array.from(strippedColumns).join(', ')}.`,
+              {
+                source: '@pp/dataverse',
+                detail: attemptDetails.filter((value) => value.length > 0).join('\n'),
+              }
+            ),
+          ]
+        : []
+    ),
+  });
+}
+
+async function queryConnectionReferencesByIds(
+  dataverseClient: DataverseClient,
+  ids: string[]
+): Promise<OperationResult<ConnectionReferenceRecord[]>> {
+  if (ids.length === 0) {
+    return ok([], {
+      supportTier: 'preview',
+      warnings: [
+        createDiagnostic('warning', 'DATAVERSE_CONNREF_SCOPE_EMPTY', 'No connection references were found in the requested solution scope.', {
+          source: '@pp/dataverse',
+        }),
+      ],
+    });
+  }
+
+  const results = await Promise.all(
+    ids.map((id) =>
+      dataverseClient.getById<ConnectionReferenceRecord>('connectionreferences', id, {
+        select: [...baseConnectionReferenceSelect, ...optionalConnectionReferenceSelect],
+      })
+    )
+  );
+
+  const failures = results.filter((result) => !result.success);
+  if (failures.length > 0) {
+    return fail(mergeDiagnosticLists(...failures.map((result) => result.diagnostics)), {
+      supportTier: 'preview',
+      warnings: mergeDiagnosticLists(
+        ...failures.map((result) => result.warnings),
+        [
+          createDiagnostic(
+            'warning',
+            'DATAVERSE_CONNREF_ID_FALLBACK_FAILED',
+            `Failed to inspect ${failures.length} connection reference${failures.length === 1 ? '' : 's'} through the solution-member fallback.`,
+            {
+              source: '@pp/dataverse',
+            }
+          ),
+        ]
+      ),
+    });
+  }
+
+  return ok(
+    results.map((result) => result.data).filter((record): record is ConnectionReferenceRecord => Boolean(record)),
+    {
+      supportTier: 'preview',
+      warnings: [
+        createDiagnostic(
+          'warning',
+          'DATAVERSE_CONNREF_QUERY_FALLBACK',
+          `Connection reference listing fell back to per-record inspection for ${ids.length} solution member${ids.length === 1 ? '' : 's'}.`,
+          {
+            source: '@pp/dataverse',
+          }
+        ),
+      ],
+    }
+  );
+}
+
+function buildConnectionReferenceScopeMessage(message: string, solutionUniqueName?: string): string {
+  return solutionUniqueName ? `${message} in solution ${solutionUniqueName}.` : `${message} in the current environment scope.`;
+}
+
 function findUnsupportedConnectionReferenceColumns(diagnostics: Diagnostic[]): string[] {
   return findUnsupportedColumns(diagnostics, optionalConnectionReferenceSelect);
+}
+
+function findUnsupportedFlowRunColumns(diagnostics: Diagnostic[]): string[] {
+  return findUnsupportedColumns(diagnostics, optionalFlowRunSelect);
 }
 
 function findUnsupportedColumns(diagnostics: Diagnostic[], columns: readonly string[]): string[] {
@@ -3950,6 +4356,193 @@ function findUnsupportedColumns(diagnostics: Diagnostic[], columns: readonly str
   }
 
   return Array.from(unsupported);
+}
+
+function readLookupValue(record: Record<string, unknown>, field: string): string | undefined {
+  const raw = record[`_${field}_value`] ?? record[field];
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
+function readLookupAnnotation(record: Record<string, unknown>, field: string, annotation: string): string | undefined {
+  const raw = record[`_${field}_value@${annotation}`] ?? record[`${field}@${annotation}`];
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
+function readLookup(record: Record<string, unknown>, field: string): AssetAccessLookup | null {
+  const id = readLookupValue(record, field);
+  const name = readLookupAnnotation(record, field, 'OData.Community.Display.V1.FormattedValue');
+  const entityType = readLookupAnnotation(record, field, 'Microsoft.Dynamics.CRM.lookuplogicalname');
+
+  if (!id && !name && !entityType) {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    entityType,
+  };
+}
+
+function inferOwnershipScope(kind: AssetAccessReport['kind'], owner: AssetAccessLookup | null): AssetAccessOwnership['scope'] {
+  if (owner?.id) {
+    return 'principal';
+  }
+
+  if (kind === 'model') {
+    return 'organization';
+  }
+
+  return 'unknown';
+}
+
+function normalizeExplicitShare(record: PrincipalObjectAccessRecord): AssetExplicitShare {
+  return {
+    id: record.principalobjectaccessid,
+    principal: readLookup(record as Record<string, unknown>, 'principalid') ?? {},
+    principalTypeCode: record.principaltypecode,
+    accessRightsMask: record.accessrightsmask,
+    inheritedAccessRightsMask: record.inheritedaccessrightsmask,
+    changedOn: record.changedon,
+  };
+}
+
+async function queryPrincipalObjectAccessRecords(
+  dataverseClient: DataverseClient,
+  objectId: string
+): Promise<OperationResult<PrincipalObjectAccessRecord[]>> {
+  const shares = await dataverseClient.queryAll<PrincipalObjectAccessRecord>({
+    table: 'principalobjectaccessset',
+    select: [
+      'principalobjectaccessid',
+      'objectid',
+      'objecttypecode',
+      'principalid',
+      'principaltypecode',
+      'accessrightsmask',
+      'inheritedaccessrightsmask',
+      'changedon',
+    ],
+    filter: `objectid eq ${objectId}`,
+    includeAnnotations: ['OData.Community.Display.V1.FormattedValue', 'Microsoft.Dynamics.CRM.lookuplogicalname'],
+  });
+
+  if (!shares.success) {
+    return shares;
+  }
+
+  return ok(
+    (shares.data ?? []).filter((record) => !record.objectid || record.objectid === objectId),
+    {
+      supportTier: shares.supportTier,
+      diagnostics: shares.diagnostics,
+      warnings: shares.warnings,
+    }
+  );
+}
+
+async function buildAssetAccessReport<TSummary extends { id: string; name?: string; uniqueName?: string; displayName?: string }>(
+  dataverseClient: DataverseClient,
+  config: {
+    kind: AssetAccessReport['kind'];
+    table: AssetAccessTarget['table'];
+    idField: string;
+    summary: TSummary;
+    baseSelect: string[];
+    optionalSelect: string[];
+  }
+): Promise<OperationResult<AssetAccessReport>> {
+  const queryRecords = async (select: string[]) =>
+    dataverseClient.queryAll<AssetAccessRecord>({
+      table: config.table,
+      select,
+      filter: `${config.idField} eq ${config.summary.id}`,
+      includeAnnotations: ['OData.Community.Display.V1.FormattedValue', 'Microsoft.Dynamics.CRM.lookuplogicalname'],
+    });
+
+  let remainingOptionalColumns = [...config.optionalSelect];
+  let records = await queryRecords([...config.baseSelect, ...remainingOptionalColumns]);
+  const unsupportedColumns = new Set<string>();
+  const attemptDetails: string[] = [];
+
+  while (!records.success) {
+    const unsupportedThisAttempt = findUnsupportedColumns(records.diagnostics, remainingOptionalColumns);
+
+    if (unsupportedThisAttempt.length === 0) {
+      break;
+    }
+
+    unsupportedThisAttempt.forEach((column) => unsupportedColumns.add(column));
+    attemptDetails.push(
+      records.diagnostics
+        .map((diagnostic) => diagnostic.detail ?? diagnostic.message)
+        .filter((value) => value && value.length > 0)
+        .join('\n')
+    );
+    remainingOptionalColumns = remainingOptionalColumns.filter((column) => !unsupportedThisAttempt.includes(column));
+    records = await queryRecords([...config.baseSelect, ...remainingOptionalColumns]);
+  }
+  const shares = await queryPrincipalObjectAccessRecords(dataverseClient, config.summary.id);
+
+  if (!records.success) {
+    return records as unknown as OperationResult<AssetAccessReport>;
+  }
+
+  if (!shares.success) {
+    return shares as unknown as OperationResult<AssetAccessReport>;
+  }
+
+  const record = (records.data ?? []).find((candidate) => {
+    const value = candidate[config.idField];
+    return typeof value === 'string' && value === config.summary.id;
+  });
+  const owner = record ? readLookup(record as Record<string, unknown>, 'ownerid') : null;
+  const createdBy = record ? readLookup(record as Record<string, unknown>, 'createdby') : null;
+  const explicitShares = (shares.data ?? []).map(normalizeExplicitShare);
+
+  return ok(
+    {
+      kind: config.kind,
+      target: {
+        table: config.table,
+        id: config.summary.id,
+        name: config.summary.name,
+        uniqueName: config.summary.uniqueName,
+        displayName: config.summary.displayName,
+      },
+      ownership: {
+        scope: inferOwnershipScope(config.kind, owner),
+        owner,
+        createdBy,
+      },
+      sharing: {
+        hasExplicitShares: explicitShares.length > 0,
+        explicitShareCount: explicitShares.length,
+        explicitShares,
+      },
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(records.diagnostics, shares.diagnostics),
+      warnings: mergeDiagnosticLists(
+        records.warnings,
+        shares.warnings,
+        unsupportedColumns.size > 0
+          ? [
+              createDiagnostic(
+                'warning',
+                'DATAVERSE_ASSET_ACCESS_OPTIONAL_COLUMNS_UNAVAILABLE',
+                `Access inspection for ${config.table} retried without unsupported column${unsupportedColumns.size === 1 ? '' : 's'} ${Array.from(unsupportedColumns).join(', ')}.`,
+                {
+                  source: '@pp/dataverse',
+                  detail: attemptDetails.filter((value) => value.length > 0).join('\n'),
+                }
+              ),
+            ]
+          : []
+      ),
+    }
+  );
 }
 
 function normalizeEnvironmentVariable(

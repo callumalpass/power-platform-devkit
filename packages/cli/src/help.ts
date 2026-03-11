@@ -372,6 +372,7 @@ export function printModelHelp(): void {
       '  attach <name|id|uniqueName> attach an existing model-driven app to a solution through AddSolutionComponent',
       '  list                        list model-driven apps',
       '  inspect <name|id|uniqueName> inspect one model-driven app',
+      '  access <name|id|uniqueName> inspect ownership and explicit share state',
       '  composition <name|id|uniqueName> emit a normalized composition graph',
       '  impact <name|id|uniqueName> preview artifact impact within one model-driven app',
       '  sitemap <name|id|uniqueName> list sitemap artifacts',
@@ -384,6 +385,7 @@ export function printModelHelp(): void {
       '  pp model create SalesHub --environment dev --name "Sales Hub" --solution Core',
       '  pp model attach SalesHub --environment dev --solution Core',
       '  pp model inspect SalesHub --environment dev --solution Core',
+      '  pp model access SalesHub --environment dev --format json',
       '',
       'Notes:',
       '  - `model create` uses solution-scoped Dataverse creation when `--solution` or the environment alias defaultSolution is available.',
@@ -411,6 +413,7 @@ export function printCanvasHelp(): void {
       '  attach <displayName|name|id> attach an existing remote canvas app to a solution through AddSolutionComponent',
       '  download <displayName|name|id> export a solution-scoped remote canvas app into an .msapp',
       '  inspect <displayName|name|id> inspect a remote canvas app when used with --environment',
+      '  access <displayName|name|id> inspect ownership and explicit share state for a remote canvas app',
       '  create                       preview handoff today; `--delegate` can drive the Maker blank-app flow through a browser profile',
       '  import <file.msapp>          reserved for future remote import; currently returns diagnostics',
       '',
@@ -442,6 +445,7 @@ export function printCanvasHelp(): void {
       '  pp canvas attach "Harness Canvas" --environment dev --solution Core',
       '  pp canvas download "Harness Canvas" --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp',
       '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
+      '  pp canvas access "Harness Canvas" --environment dev --format json',
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
       '  pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp',
       '',
@@ -653,6 +657,8 @@ export function printSolutionHelp(): void {
       '  create <uniqueName>         create a solution shell in an environment',
       '  delete <uniqueName>         delete one solution from an environment',
       '  set-metadata <uniqueName>   update solution publisher or version metadata',
+      '  publish <uniqueName>        publish customizations and optionally wait for an export checkpoint',
+      '  checkpoint <uniqueName>     capture a rollback-ready export plus live solution inventory',
       '  list                        list solutions in an environment',
       '  inspect <uniqueName>        inspect one solution',
       '  components <uniqueName>     list solution components',
@@ -669,6 +675,7 @@ export function printSolutionHelp(): void {
       'How to think about it:',
       '  - Use remote commands when the solution already lives in Dataverse and you need inventory, metadata, or lifecycle operations.',
       '  - Use pack/unpack when you are moving between editable local source and packaged zip artifacts.',
+      '  - `pp solution unpack ... --extract-canvas-apps` also expands each CanvasApps/*.msapp into normalized editable source inside the unpacked solution tree.',
       '  - A solution is the ALM boundary that groups canvas apps, flows, model-driven apps, env vars, and connection references.',
       '',
       'Examples:',
@@ -751,6 +758,66 @@ export function printSolutionSetMetadataHelp(): void {
       'Examples:',
       '  pp solution set-metadata Core --environment dev --version 2026.3.11.51035',
       '  pp solution set-metadata Core --environment dev --publisher-unique-name pp',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSolutionPublishHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution publish <uniqueName> --environment ALIAS [--wait-for-export] [--timeout-ms N] [--poll-interval-ms N] [--managed] [--out PATH] [--manifest FILE]',
+      '',
+      'Behavior:',
+      '  - Triggers Dataverse `PublishAllXml` through a first-class solution workflow instead of requiring a generic `pp dv action` call.',
+      '  - Without `--wait-for-export`, returns as soon as Dataverse accepts the publish request and warns that read-back may still lag.',
+      '  - With `--wait-for-export`, polls `pp` solution export until one export succeeds, giving a concrete post-publish synchronization checkpoint.',
+      '',
+      'Choose this when:',
+      '  - You need to publish remote changes and want `pp` to own both the publish action and the readiness checkpoint.',
+      '',
+      'Examples:',
+      '  pp solution publish Core --environment dev --format json',
+      '  pp solution publish Core --environment dev --wait-for-export --out ./artifacts/solutions/Core.zip --format json',
+      '',
+      'Options:',
+      '  --wait-for-export         Poll solution export until one export succeeds after publish',
+      '  --timeout-ms N            Maximum time to wait for an export checkpoint when --wait-for-export is set',
+      '  --poll-interval-ms N      Delay between export retries when --wait-for-export is set',
+      '  --managed                 Export a managed package while waiting for the checkpoint',
+      '  --out PATH                Write the export checkpoint artifact to PATH or a directory',
+      '  --manifest FILE           Write the export checkpoint manifest to FILE',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSolutionCheckpointHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution checkpoint <uniqueName> --environment ALIAS [--out PATH] [--managed] [--manifest FILE] [--checkpoint FILE]',
+      '',
+      'Behavior:',
+      '  - Captures a rollback-oriented solution checkpoint in one command by exporting the package, preserving the release manifest, and snapshotting the current solution component inventory.',
+      '  - Writes a checkpoint document adjacent to the exported package by default, or to `--checkpoint FILE` when provided.',
+      '  - Includes a PAC-friendly organization URL hint so any downstream fallback does not need to infer it from the Dataverse API host.',
+      '',
+      'Choose this when:',
+      '  - You are about to import, promote, or patch a solution and want one durable pre-change checkpoint that is easy to compare or re-import.',
+      '',
+      'Examples:',
+      '  pp solution checkpoint Core --environment dev --out ./artifacts/checkpoints/Core-pre-import.zip --format json',
+      '  pp solution checkpoint Core --environment dev --out ./artifacts/checkpoints/ --checkpoint ./artifacts/checkpoints/Core.pp-checkpoint.json',
+      '',
+      'Options:',
+      '  --out PATH                Write the exported package to PATH or a directory',
+      '  --managed                 Export a managed package instead of the default unmanaged checkpoint',
+      '  --manifest FILE           Write the release manifest to FILE',
+      '  --checkpoint FILE         Write the composite checkpoint document to FILE',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1417,13 +1484,32 @@ export function printCanvasInspectHelp(): void {
       'Remote behavior:',
       '  - Requires the positional identifier plus `--environment`.',
       '  - Accepts optional `--solution` to scope remote lookup to a solution.',
+      '  - Use repeated `--expect-control-property <controlPath>::<property>::<expectedValue>` to export the remote app package and return a pass/fail proof summary for deployed control bindings.',
       '',
       'Local behavior:',
       '  - Accepts a local canvas path plus `--project`, repeated `--registry`, `--cache-dir`, and `--mode` options.',
       '',
       'Examples:',
       '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
+      "  pp canvas inspect \"Harness Canvas\" --environment dev --solution Core --expect-control-property \"Screen1/Gallery1::Items::='PP Harness Projects'\"",
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printCanvasAccessHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: canvas access <displayName|name|id> --environment ALIAS [options]',
+      '',
+      'Behavior:',
+      '  - Reports owner/creator lookups plus explicit principalobjectaccess shares for one remote canvas app.',
+      '',
+      'Examples:',
+      '  pp canvas access "Harness Canvas" --environment dev --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1456,6 +1542,7 @@ export function printFlowHelp(): void {
       '  errors <name|id|...>        summarize remote runtime failures',
       '  connrefs <name|id|...>      inspect connection references used by a flow',
       '  doctor <name|id|...>        summarize remote runtime health and dependencies',
+      '  access <name|id|...>        inspect ownership and explicit share state',
       '',
       'How to think about it:',
       '  - Use remote commands when the flow already exists in an environment and you need lifecycle or runtime insight.',
@@ -1465,6 +1552,7 @@ export function printFlowHelp(): void {
       'Examples:',
       '  pp flow inspect ./flows/invoice/flow.json',
       '  pp flow inspect InvoiceSync --environment dev --solution Core',
+      '  pp flow access InvoiceSync --environment dev --format json',
       '  pp flow deploy ./flows/invoice/flow.json --environment dev --solution Core --dry-run --format json',
       '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --solution-package --format json',
       '',
@@ -1746,6 +1834,40 @@ export function printFlowDoctorHelp(): void {
       '',
       'Examples:',
       '  pp flow doctor InvoiceSync --environment dev --since 7d --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printFlowAccessHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow access <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Behavior:',
+      '  - Reports owner/creator lookups plus explicit principalobjectaccess shares for one remote flow.',
+      '',
+      'Examples:',
+      '  pp flow access InvoiceSync --environment dev --solution Core --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printModelAccessHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: model access <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Behavior:',
+      '  - Reports owner/creator lookups plus explicit principalobjectaccess shares for one model-driven app.',
+      '',
+      'Examples:',
+      '  pp model access SalesHub --environment dev --solution Core --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

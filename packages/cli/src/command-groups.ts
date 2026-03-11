@@ -568,6 +568,8 @@ export interface SolutionGroupHandlers {
   runSolutionCreate(args: string[]): Promise<number>;
   runSolutionDelete(args: string[]): Promise<number>;
   runSolutionSetMetadata(args: string[]): Promise<number>;
+  runSolutionPublish(args: string[]): Promise<number>;
+  runSolutionCheckpoint(args: string[]): Promise<number>;
   runSolutionList(args: string[]): Promise<number>;
   runSolutionInspect(args: string[]): Promise<number>;
   runSolutionComponents(args: string[]): Promise<number>;
@@ -605,6 +607,18 @@ export async function runSolutionGroup(
         return 0;
       }
       return handlers.runSolutionSetMetadata(args);
+    case 'publish':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionPublishHelp();
+        return 0;
+      }
+      return handlers.runSolutionPublish(args);
+    case 'checkpoint':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionCheckpointHelp();
+        return 0;
+      }
+      return handlers.runSolutionCheckpoint(args);
     case 'list':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printSolutionListHelp();
@@ -755,6 +769,7 @@ export interface CanvasGroupHandlers {
   runCanvasDownload(args: string[]): Promise<number>;
   runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number>;
   runCanvasList(args: string[]): Promise<number>;
+  runCanvasAccess(args: string[]): Promise<number>;
   runCanvasTemplates(args: string[]): Promise<number>;
   runCanvasWorkspace(args: string[]): Promise<number>;
   runCanvasPatch(args: string[]): Promise<number>;
@@ -806,6 +821,12 @@ export async function runCanvasGroup(
         return 0;
       }
       return handlers.runCanvasList(args);
+    case 'access':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printCanvasAccessHelp();
+        return 0;
+      }
+      return handlers.runCanvasAccess(args);
     case 'templates':
       return handlers.runCanvasTemplates(args);
     case 'workspace':
@@ -848,6 +869,7 @@ export interface FlowGroupHandlers {
   runFlowErrors(args: string[]): Promise<number>;
   runFlowConnrefs(args: string[]): Promise<number>;
   runFlowDoctor(args: string[]): Promise<number>;
+  runFlowAccess(args: string[]): Promise<number>;
 }
 
 export async function runFlowGroup(
@@ -951,6 +973,12 @@ export async function runFlowGroup(
         return 0;
       }
       return handlers.runFlowDoctor(args);
+    case 'access':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printFlowAccessHelp();
+        return 0;
+      }
+      return handlers.runFlowAccess(args);
     default:
       cliHelp.printFlowHelp();
       return 1;
@@ -962,6 +990,7 @@ export interface ModelGroupHandlers {
   runModelAttach(args: string[]): Promise<number>;
   runModelList(args: string[]): Promise<number>;
   runModelInspect(args: string[]): Promise<number>;
+  runModelAccess(args: string[]): Promise<number>;
   runModelComposition(args: string[]): Promise<number>;
   runModelImpact(args: string[]): Promise<number>;
   runModelSitemap(args: string[]): Promise<number>;
@@ -990,6 +1019,12 @@ export async function runModelGroup(
       return handlers.runModelList(args);
     case 'inspect':
       return handlers.runModelInspect(args);
+    case 'access':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printModelAccessHelp();
+        return 0;
+      }
+      return handlers.runModelAccess(args);
     case 'composition':
       return handlers.runModelComposition(args);
     case 'impact':

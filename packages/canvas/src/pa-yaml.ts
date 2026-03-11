@@ -36,29 +36,66 @@ interface LoadedYamlFile {
   contents: string;
 }
 
-export async function resolveCanvasPaYamlRoot(path: string): Promise<string | undefined> {
+interface CanvasPaYamlLayout {
+  root: string;
+  srcDir: string;
+  compatibilitySource?: 'fx-unpack-other-src';
+}
+
+async function resolveCanvasPaYamlLayout(path: string): Promise<CanvasPaYamlLayout | undefined> {
   const absolutePath = resolve(path);
   const directStats = await safeStat(absolutePath);
 
+  if (directStats?.isFile() && basename(absolutePath).toLowerCase() === 'app.pa.yaml' && basename(dirname(absolutePath)) === 'Src' && basename(dirname(dirname(absolutePath))) === 'Other') {
+    const root = dirname(dirname(dirname(absolutePath)));
+    return {
+      root,
+      srcDir: dirname(absolutePath),
+      compatibilitySource: 'fx-unpack-other-src',
+    };
+  }
+
   if (directStats?.isFile() && basename(absolutePath).toLowerCase() === 'app.pa.yaml' && basename(dirname(absolutePath)) === 'Src') {
-    return dirname(dirname(absolutePath));
+    const srcDir = dirname(absolutePath);
+    return {
+      root: dirname(srcDir),
+      srcDir,
+    };
   }
 
   if (directStats?.isDirectory() && basename(absolutePath) === 'Src' && (await fileExists(join(absolutePath, 'App.pa.yaml')))) {
-    return dirname(absolutePath);
+    return {
+      root: dirname(absolutePath),
+      srcDir: absolutePath,
+    };
   }
 
   if (directStats?.isDirectory() && (await fileExists(join(absolutePath, 'Src', 'App.pa.yaml')))) {
-    return absolutePath;
+    return {
+      root: absolutePath,
+      srcDir: join(absolutePath, 'Src'),
+    };
+  }
+
+  if (directStats?.isDirectory() && (await fileExists(join(absolutePath, 'Other', 'Src', 'App.pa.yaml')))) {
+    return {
+      root: absolutePath,
+      srcDir: join(absolutePath, 'Other', 'Src'),
+      compatibilitySource: 'fx-unpack-other-src',
+    };
   }
 
   return undefined;
 }
 
-export async function loadCanvasPaYamlSource(path: string, options: CanvasSourceReadOptions = {}): Promise<OperationResult<CanvasSourceModel>> {
-  const root = await resolveCanvasPaYamlRoot(path);
+export async function resolveCanvasPaYamlRoot(path: string): Promise<string | undefined> {
+  return (await resolveCanvasPaYamlLayout(path))?.root;
+}
 
-  if (!root) {
+export async function loadCanvasPaYamlSource(path: string, options: CanvasSourceReadOptions = {}): Promise<OperationResult<CanvasSourceModel>> {
+  const layout = await resolveCanvasPaYamlLayout(path);
+
+  if (!layout) {
     return fail(
       createDiagnostic('error', 'CANVAS_PA_YAML_SOURCE_NOT_FOUND', `No unpacked canvas app source was found at ${path}.`, {
         source: '@pp/canvas',
@@ -67,7 +104,7 @@ export async function loadCanvasPaYamlSource(path: string, options: CanvasSource
     );
   }
 
-  const srcDir = join(root, 'Src');
+  const { root, srcDir } = layout;
   const appPath = join(srcDir, 'App.pa.yaml');
   const editorStatePath = join(srcDir, '_EditorState.pa.yaml');
   const appDocument = await loadYamlFile(appPath, options);
@@ -223,7 +260,11 @@ export async function loadCanvasPaYamlSource(path: string, options: CanvasSource
       sourceHash,
       seedRegistryPath: (await fileExists(join(root, 'seed.templates.json'))) ? join(root, 'seed.templates.json') : undefined,
       embeddedRegistryPaths: (
-        await Promise.all([join(root, 'controls.json'), join(root, 'References', 'Templates.json')].map(async (path) => ((await fileExists(path)) ? path : undefined)))
+        await Promise.all(
+          [join(root, 'controls.json'), join(root, 'References', 'Templates.json'), join(root, 'ControlTemplates.json')].map(async (path) =>
+            (await fileExists(path)) ? path : undefined
+          )
+        )
       ).filter((path): path is string => Boolean(path)),
       dataSources,
       metadataCatalog,
@@ -242,6 +283,20 @@ export async function loadCanvasPaYamlSource(path: string, options: CanvasSource
     },
     {
       supportTier: 'preview',
+      warnings:
+        layout.compatibilitySource === 'fx-unpack-other-src'
+          ? [
+              createDiagnostic(
+                'warning',
+                'CANVAS_PA_YAML_COMPATIBILITY_SLICE_USED',
+                `Canvas source ${root} was loaded from the embedded Other/Src .pa.yaml compatibility slice.`,
+                {
+                  source: '@pp/canvas',
+                  hint: 'pp automatically reused the embedded legacy slice from this App.fx.yaml unpack so local inspect, validate, build, and diff can proceed.',
+                }
+              ),
+            ]
+          : [],
     }
   );
 }

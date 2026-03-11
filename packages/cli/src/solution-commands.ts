@@ -1,3 +1,8 @@
+import type { Dirent } from 'node:fs';
+import { readdir, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, join, resolve } from 'node:path';
+import { stableStringify } from '@pp/artifacts';
+import { extractCanvasMsappArchive } from '@pp/canvas';
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
 import { SolutionService, type SolutionAnalysis } from '@pp/solution';
 import type { CliOutputFormat } from './contract';
@@ -13,8 +18,38 @@ interface SolutionCompareInput {
 interface ResolutionData {
   environment: {
     alias: string;
+    url?: string;
   };
   client: unknown;
+}
+
+interface SolutionUnpackCanvasExtraction {
+  msappPath: string;
+  extractedPath: string;
+  extractedEntries: string[];
+}
+
+interface SolutionCheckpointDocument {
+  schemaVersion: 1;
+  kind: 'pp-solution-checkpoint';
+  generatedAt: string;
+  environment: {
+    alias: string;
+    url?: string;
+    pacOrganizationUrl?: string;
+  };
+  solution: {
+    uniqueName: string;
+    packageType: 'managed' | 'unmanaged';
+    export: unknown;
+    manifestPath?: string;
+    rollbackCandidateVersion?: string;
+  };
+  inspection: {
+    solution: unknown;
+    components: unknown[];
+    componentCount: number;
+  };
 }
 
 interface SolutionCommandDependencies {
@@ -202,6 +237,70 @@ export async function runSolutionSetMetadataCommand(args: string[], deps: Soluti
   return 0;
 }
 
+export async function runSolutionPublishCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
+  const uniqueName = deps.positionalArgs(args)[0];
+  if (!uniqueName) {
+    return deps.printFailure(
+      deps.argumentFailure(
+        'SOLUTION_PUBLISH_ARGS_REQUIRED',
+        'Usage: solution publish <uniqueName> --environment <alias> [--wait-for-export] [--timeout-ms N] [--poll-interval-ms N] [--managed] [--out PATH] [--manifest FILE]'
+      )
+    );
+  }
+
+  const waitForExport = args.includes('--wait-for-export');
+  const timeoutMs = readOptionalPositiveIntegerFlag(args, '--timeout-ms', deps);
+  if (!timeoutMs.success) {
+    return deps.printFailure(timeoutMs);
+  }
+  const pollIntervalMs = readOptionalPositiveIntegerFlag(args, '--poll-interval-ms', deps);
+  if (!pollIntervalMs.success) {
+    return deps.printFailure(pollIntervalMs);
+  }
+
+  const resolution = await deps.resolveDataverseClientForCli(args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+
+  const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));
+  const preview = deps.maybeHandleMutationPreview(args, 'json', 'solution.publish', {
+    environment: resolution.data.environment.alias,
+    uniqueName,
+    waitForExport,
+    ...(timeoutMs.data !== undefined ? { timeoutMs: timeoutMs.data } : {}),
+    ...(pollIntervalMs.data !== undefined ? { pollIntervalMs: pollIntervalMs.data } : {}),
+    managed: args.includes('--managed'),
+    ...(outputTarget.outPath ? { outPath: outputTarget.outPath } : {}),
+    ...(outputTarget.outDir ? { outDir: outputTarget.outDir } : {}),
+  });
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new SolutionService(resolution.data.client as never).publish(uniqueName, {
+    waitForExport,
+    timeoutMs: timeoutMs.data,
+    pollIntervalMs: pollIntervalMs.data,
+    exportOptions: waitForExport
+      ? {
+          managed: args.includes('--managed'),
+          outPath: outputTarget.outPath,
+          outDir: outputTarget.outDir,
+          manifestPath: deps.readFlag(args, '--manifest'),
+        }
+      : undefined,
+  });
+
+  if (!result.success) {
+    return deps.printFailure(result);
+  }
+
+  deps.printWarnings(result);
+  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  return 0;
+}
+
 export async function runSolutionComponentsCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
   const uniqueName = deps.positionalArgs(args)[0];
   if (!uniqueName) {
@@ -343,6 +442,89 @@ export async function runSolutionExportCommand(args: string[], deps: SolutionCom
   return 0;
 }
 
+export async function runSolutionCheckpointCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
+  const uniqueName = deps.positionalArgs(args)[0];
+  if (!uniqueName) {
+    return deps.printFailure(
+      deps.argumentFailure(
+        'SOLUTION_CHECKPOINT_ARGS_REQUIRED',
+        'Usage: solution checkpoint <uniqueName> --environment <alias> [--out PATH] [--managed] [--manifest FILE] [--checkpoint FILE]'
+      )
+    );
+  }
+
+  const resolution = await deps.resolveDataverseClientForCli(args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+
+  const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));
+  const packageType = args.includes('--managed') ? 'managed' : 'unmanaged';
+  const preview = deps.maybeHandleMutationPreview(args, 'json', 'solution.checkpoint', {
+    environment: resolution.data.environment.alias,
+    uniqueName,
+    packageType,
+    ...(outputTarget.outPath ? { outPath: outputTarget.outPath } : {}),
+    ...(outputTarget.outDir ? { outDir: outputTarget.outDir } : {}),
+  });
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = new SolutionService(resolution.data.client as never);
+  const exported = await service.exportSolution(uniqueName, {
+    managed: args.includes('--managed'),
+    outPath: outputTarget.outPath,
+    outDir: outputTarget.outDir,
+    manifestPath: deps.readFlag(args, '--manifest'),
+  });
+  if (!exported.success || !exported.data) {
+    return deps.printFailure(exported);
+  }
+
+  const components = await service.components(uniqueName);
+  if (!components.success || !components.data) {
+    return deps.printFailure(components);
+  }
+
+  const checkpointDocument: SolutionCheckpointDocument = {
+    schemaVersion: 1,
+    kind: 'pp-solution-checkpoint',
+    generatedAt: new Date().toISOString(),
+    environment: {
+      alias: resolution.data.environment.alias,
+      url: resolution.data.environment.url,
+      pacOrganizationUrl: derivePacOrganizationUrl(resolution.data.environment.url),
+    },
+    solution: {
+      uniqueName,
+      packageType,
+      export: exported.data,
+      manifestPath: exported.data.manifestPath,
+      rollbackCandidateVersion: exported.data.manifest?.recovery?.rollbackCandidateVersion ?? exported.data.solution.version,
+    },
+    inspection: {
+      solution: exported.data.solution,
+      components: components.data,
+      componentCount: components.data.length,
+    },
+  };
+
+  const checkpointPath = resolveSolutionCheckpointPath(exported.data.artifact.path, deps.readFlag(args, '--checkpoint'));
+  await writeFile(checkpointPath, stableStringify(checkpointDocument as unknown as Parameters<typeof stableStringify>[0]) + '\n', 'utf8');
+
+  deps.printWarnings(exported);
+  deps.printWarnings(components);
+  deps.printByFormat(
+    {
+      ...checkpointDocument,
+      checkpointPath,
+    },
+    deps.outputFormat(args, 'json')
+  );
+  return 0;
+}
+
 export async function runSolutionImportCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
   const packagePath = deps.positionalArgs(args)[0];
   if (!packagePath) {
@@ -410,13 +592,31 @@ export async function runSolutionPackCommand(args: string[], deps: SolutionComma
   return 0;
 }
 
+function readOptionalPositiveIntegerFlag(
+  args: string[],
+  flagName: string,
+  deps: Pick<SolutionCommandDependencies, 'readFlag' | 'argumentFailure'>
+): OperationResult<number | undefined> {
+  const raw = deps.readFlag(args, flagName);
+  if (raw === undefined) {
+    return ok(undefined);
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return deps.argumentFailure('SOLUTION_PUBLISH_FLAG_INVALID', `${flagName} must be a positive integer.`);
+  }
+
+  return ok(parsed);
+}
+
 export async function runSolutionUnpackCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
   const packagePath = deps.positionalArgs(args)[0];
   if (!packagePath) {
     return deps.printFailure(
       deps.argumentFailure(
         'SOLUTION_UNPACK_ARGS_REQUIRED',
-        'Usage: solution unpack <path.zip> --out <dir> [--package-type managed|unmanaged|both] [--allow-delete] [--pac PATH]'
+        'Usage: solution unpack <path.zip> --out <dir> [--package-type managed|unmanaged|both] [--allow-delete] [--extract-canvas-apps] [--pac PATH]'
       )
     );
   }
@@ -442,9 +642,97 @@ export async function runSolutionUnpackCommand(args: string[], deps: SolutionCom
   if (!result.success) {
     return deps.printFailure(result);
   }
+  const extractedCanvasApps = args.includes('--extract-canvas-apps')
+    ? await extractCanvasAppsFromUnpackedSolution(resolve(outDir))
+    : undefined;
+
+  if (extractedCanvasApps && !extractedCanvasApps.success) {
+    return deps.printFailure(extractedCanvasApps);
+  }
+
   deps.printWarnings(result);
-  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  deps.printByFormat(
+    extractedCanvasApps?.data ? { ...result.data, extractedCanvasApps: extractedCanvasApps.data } : result.data,
+    deps.outputFormat(args, 'json')
+  );
   return 0;
+}
+
+async function extractCanvasAppsFromUnpackedSolution(unpackedRoot: string): Promise<OperationResult<SolutionUnpackCanvasExtraction[]>> {
+  const canvasAppsDir = join(unpackedRoot, 'CanvasApps');
+  let entries: Dirent[];
+
+  try {
+    entries = await readdir(canvasAppsDir, { encoding: 'utf8', withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return ok([], {
+        supportTier: 'preview',
+      });
+    }
+
+    return fail(
+      createDiagnostic('error', 'SOLUTION_UNPACK_CANVAS_SCAN_FAILED', `Failed to enumerate canvas apps under ${canvasAppsDir}.`, {
+        source: '@pp/cli',
+        hint: error instanceof Error ? error.message : undefined,
+      }),
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  const msappPaths = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.msapp'))
+    .map((entry) => join(canvasAppsDir, entry.name))
+    .sort((left, right) => left.localeCompare(right));
+
+  const extracted: SolutionUnpackCanvasExtraction[] = [];
+
+  for (const msappPath of msappPaths) {
+    const extractedPath = join(canvasAppsDir, basename(msappPath, extname(msappPath)));
+    const result = await extractCanvasMsappArchive(msappPath, extractedPath);
+
+    if (!result.success || !result.data) {
+      return result as unknown as OperationResult<SolutionUnpackCanvasExtraction[]>;
+    }
+
+    extracted.push({
+      msappPath,
+      extractedPath: result.data.outPath,
+      extractedEntries: result.data.entries,
+    });
+  }
+
+  return ok(extracted, {
+    supportTier: 'preview',
+  });
+}
+
+function resolveSolutionCheckpointPath(packagePath: string, explicitPath: string | undefined): string {
+  if (explicitPath) {
+    return resolve(explicitPath);
+  }
+
+  const extension = extname(packagePath);
+  const base = extension ? packagePath.slice(0, -extension.length) : packagePath;
+  return resolve(dirname(packagePath), `${basename(base)}.pp-checkpoint.json`);
+}
+
+function derivePacOrganizationUrl(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('.api.')) {
+      parsed.hostname = parsed.hostname.replace('.api.', '.');
+    }
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return undefined;
+  }
 }
 
 function readSolutionCompareInput(

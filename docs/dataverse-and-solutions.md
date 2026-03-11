@@ -686,6 +686,13 @@ Inspect a solution by unique name:
 pp solution inspect Core --env dev
 ```
 
+Publish a solution and optionally wait until export succeeds as the post-publish checkpoint:
+
+```bash
+pp solution publish Core --env dev
+pp solution publish Core --env dev --wait-for-export --out ./artifacts/Core.zip
+```
+
 Inspect solution inventory and preflight facts:
 
 ```bash
@@ -754,6 +761,7 @@ Most current commands default to JSON output. Some project and analysis commands
 Implemented today:
 
 - solution create for unmanaged shells
+- solution publish through the Dataverse `PublishAllXml` action, with an optional export-backed synchronization checkpoint
 - solution export through the Dataverse `ExportSolution` action with `pp` release manifests
 - solution import through the Dataverse `ImportSolution` action with structured retry guidance
 - typed Dataverse action, function, and `$batch` invocation helpers plus CLI commands

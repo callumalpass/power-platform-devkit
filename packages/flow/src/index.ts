@@ -2561,12 +2561,19 @@ function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspe
   };
 }
 
+function extractRemoteFlowDefinition(clientData: Record<string, FlowJsonValue> | undefined): Record<string, FlowJsonValue> | undefined {
+  return asRecord(clientData?.definition) ?? asRecord(asRecord(clientData?.properties)?.definition);
+}
+
 function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResult<FlowArtifact> {
-  const definition = asRecord(flow.clientData?.definition);
+  const definition = extractRemoteFlowDefinition(flow.clientData);
   const workflowState = resolveSupportedFlowWorkflowState(flow.stateCode, flow.statusCode);
   const workflowMetadata = buildRawFlowWorkflowShellFields(flow.workflowMetadata);
 
   if (!definition) {
+    const clientDataKeys = Object.keys(asRecord(flow.clientData) ?? {});
+    const propertiesKeys = Object.keys(asRecord(asRecord(flow.clientData)?.properties) ?? {});
+
     return fail(
       createDiagnostic(
         'error',
@@ -2574,7 +2581,10 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
         `Flow ${flow.uniqueName ?? flow.name ?? flow.id} does not expose a supported definition payload in workflows.clientdata.`,
         {
           source: '@pp/flow',
-          hint: 'Remote export currently requires workflows.clientdata.definition to be present and JSON-shaped.',
+          hint:
+            clientDataKeys.length > 0 || propertiesKeys.length > 0
+              ? `Remote export checked workflows.clientdata.definition and workflows.clientdata.properties.definition. Top-level keys: ${clientDataKeys.join(', ') || '(none)'}; properties keys: ${propertiesKeys.join(', ') || '(none)'}.`
+              : 'Remote export currently requires workflows.clientdata.definition or workflows.clientdata.properties.definition to be present and JSON-shaped.',
         }
       )
     );
@@ -3340,9 +3350,16 @@ function buildDataverseFlowWorkflowShellFields(
 }
 
 function buildFlowDeployClientData(artifact: FlowArtifact): string {
+  const existingClientData = artifact.clientData ? cloneJsonValue(artifact.clientData) : {};
+  const existingProperties = asRecord(asRecord(existingClientData).properties);
+
   return stableStringify({
-    ...(artifact.clientData ? cloneJsonValue(artifact.clientData) : {}),
+    ...existingClientData,
     definition: cloneJsonValue(artifact.definition),
+    properties: {
+      ...(existingProperties ? cloneJsonValue(existingProperties) : {}),
+      definition: cloneJsonValue(artifact.definition),
+    },
   });
 }
 
@@ -4740,13 +4757,18 @@ function readConnectorActionContract(value: unknown, nodePath: string): FlowConn
   const inputs = asRecord(record?.inputs);
   const host = asRecord(inputs?.host);
   const connection = asRecord(host?.connection);
-  const connectionName = readString(connection?.name);
+  const connectionName = readString(connection?.name) ?? readString(host?.connectionName);
+  const connectionPath = readString(connection?.name)
+    ? `definition.${nodePath}.inputs.host.connection.name`
+    : readString(host?.connectionName)
+      ? `definition.${nodePath}.inputs.host.connectionName`
+      : undefined;
 
   return {
     apiId: readString(host?.apiId) ?? readString(asRecord(host?.api)?.id),
-    operationId: readString(inputs?.operationId) ?? readString(record?.operationId),
+    operationId: readString(inputs?.operationId) ?? readString(host?.operationId) ?? readString(record?.operationId),
     connectionReferenceName: extractConnectionReferenceName(connectionName),
-    connectionPath: connectionName ? `definition.${nodePath}.inputs.host.connection.name` : undefined,
+    connectionPath,
     connectionReferenceSupported: Boolean(extractConnectionReferenceName(connectionName)),
   };
 }
@@ -4761,7 +4783,11 @@ function extractConnectionReferenceName(value: string | undefined): string | und
     /^parameters\(\s*['"]\$connections['"]\s*\)\s*\[\s*['"]([^'"]+)['"]\s*\]\s*\[\s*['"]connectionId['"]\s*\]$/i
   );
 
-  return match?.[1];
+  if (match?.[1]) {
+    return match[1];
+  }
+
+  return /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(expression) ? expression : undefined;
 }
 
 function resolveSupportedConnectorOperation(

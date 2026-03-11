@@ -36,6 +36,9 @@ import type {
   CanvasRegistryBundle,
   CanvasRegistryImportRequest,
   CanvasRegistryLoadOptions,
+  CanvasRemoteProofCheck,
+  CanvasRemoteProofExpectation,
+  CanvasRemoteProofReport,
   CanvasRegistrySourceSummary,
   CanvasRelationshipMetadata,
   CanvasScreenDefinition,
@@ -70,7 +73,7 @@ import type {
 } from './canvas-types';
 import { type CanvasDataSourceSummary, loadCanvasPaYamlSource, resolveCanvasPaYamlRoot, type CanvasSourceReadOptions } from './pa-yaml';
 import { parsePowerFxExpression } from './power-fx';
-import { buildCanvasSemanticModel, collectCanvasFormulaChecks } from './semantic-model';
+import { buildCanvasSemanticModel, collectCanvasFormulaChecks, type CanvasFormulaSemantic } from './semantic-model';
 import { buildCanvasTemplateSurface } from './template-surface';
 export type {
   CanvasBuildMode,
@@ -96,6 +99,9 @@ export type {
   CanvasRegistryBundle,
   CanvasRegistryImportRequest,
   CanvasRegistryLoadOptions,
+  CanvasRemoteProofCheck,
+  CanvasRemoteProofExpectation,
+  CanvasRemoteProofReport,
   CanvasRegistrySourceSummary,
   CanvasRelationshipMetadata,
   CanvasScreenDefinition,
@@ -596,6 +602,66 @@ export class CanvasService {
     }
   }
 
+  async proveRemote(
+    identifier: string,
+    options: {
+      solutionUniqueName: string;
+      expectations: CanvasRemoteProofExpectation[];
+    }
+  ): Promise<OperationResult<CanvasRemoteProofReport>> {
+    const proofRoot = await mkdtemp(join(tmpdir(), 'pp-canvas-remote-proof-'));
+
+    try {
+      const downloaded = await this.downloadRemote(identifier, {
+        solutionUniqueName: options.solutionUniqueName,
+        outPath: join(proofRoot, 'remote.msapp'),
+        extractToDirectory: join(proofRoot, 'source'),
+      });
+
+      if (!downloaded.success || !downloaded.data?.extractedPath) {
+        return downloaded as unknown as OperationResult<CanvasRemoteProofReport>;
+      }
+
+      const loaded = await loadCanvasSource(downloaded.data.extractedPath);
+
+      if (!loaded.success || !loaded.data) {
+        return loaded as unknown as OperationResult<CanvasRemoteProofReport>;
+      }
+
+      const expectations = options.expectations.map((expectation) => buildCanvasRemoteProofCheck(loaded.data, expectation));
+
+      return ok(
+        {
+          valid: expectations.every((expectation) => expectation.matched),
+          appId: downloaded.data.app.id,
+          sourceHash: loaded.data.sourceHash,
+          screenCount: loaded.data.screens.length,
+          controlCount: loaded.data.controls.length,
+          dataSources: uniqueSorted((loaded.data.dataSources ?? []).map((source) => source.name)),
+          expectations,
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: [...downloaded.diagnostics, ...loaded.diagnostics],
+          warnings: [...downloaded.warnings, ...loaded.warnings],
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse ExportSolution',
+            },
+            {
+              kind: 'inferred',
+              source: '@pp/canvas remote proof',
+              detail: 'Proof expectations were evaluated from the exported remote canvas source tree.',
+            },
+          ],
+        }
+      );
+    } finally {
+      await rm(proofRoot, { recursive: true, force: true });
+    }
+  }
+
   async attachRemote(
     identifier: string,
     options: {
@@ -619,6 +685,29 @@ export class CanvasService {
 
 function defaultCanvasDownloadBaseName(app: CanvasAppSummary): string {
   return sanitizeCanvasArtifactName(app.displayName ?? app.name ?? app.id);
+}
+
+function buildCanvasRemoteProofCheck(
+  source: CanvasSourceModel,
+  expectation: CanvasRemoteProofExpectation
+): CanvasRemoteProofCheck {
+  const control = findCanvasControlByPath(source, expectation.controlPath);
+  const actualValue = control?.properties[expectation.property];
+  const actualValueText = actualValue === undefined ? undefined : formatCanvasProofValue(actualValue);
+
+  return {
+    controlPath: expectation.controlPath,
+    property: expectation.property,
+    found: actualValue !== undefined,
+    matched: actualValueText === expectation.expectedValue,
+    expectedValue: expectation.expectedValue,
+    actualValue,
+    actualValueText,
+  };
+}
+
+function formatCanvasProofValue(value: CanvasJsonValue): string {
+  return typeof value === 'string' ? value : stableStringify(value as Parameters<typeof stableStringify>[0]);
 }
 
 function resolveCanvasMsappEntry(app: CanvasAppSummary, entries: string[]): string | undefined {
@@ -731,6 +820,13 @@ async function extractCanvasArchive(
   } finally {
     await rm(rawExtractRoot, { recursive: true, force: true });
   }
+}
+
+export async function extractCanvasMsappArchive(
+  packagePath: string,
+  outPath: string
+): Promise<OperationResult<{ outPath: string; entries: string[] }>> {
+  return extractCanvasArchive(packagePath, outPath);
 }
 
 function normalizeCanvasArchiveEntryPath(entry: string): OperationResult<string> {
@@ -2525,6 +2621,7 @@ async function prepareCanvasValidation(
           }
         )
       ),
+    ...collectUnresolvedDataSourceDiagnostics(semanticModel.formulas),
     ...invalidPropertyChecks
       .map((property) =>
         createDiagnostic(
@@ -2607,6 +2704,41 @@ async function prepareCanvasValidation(
   );
 }
 
+function collectUnresolvedDataSourceDiagnostics(formulas: CanvasFormulaSemantic[]): Diagnostic[] {
+  const dataSourceProperties = new Set(['items', 'datasource']);
+
+  return formulas.flatMap((formula) => {
+    if (!dataSourceProperties.has(formula.property.toLowerCase())) {
+      return [];
+    }
+
+    const hasResolvedDataSource = formula.bindings.some((binding) => binding.kind === 'dataSource' && binding.resolved);
+    if (hasResolvedDataSource) {
+      return [];
+    }
+
+    const unresolvedNames = Array.from(
+      new Set(
+        formula.bindings
+          .filter((binding) => binding.kind === 'unresolved' && binding.name.trim().length > 0)
+          .map((binding) => binding.name)
+      )
+    );
+
+    return unresolvedNames.map((name) =>
+      createDiagnostic(
+        'error',
+        'CANVAS_DATA_SOURCE_REFERENCE_UNRESOLVED',
+        `Formula property ${formula.property} on ${formula.controlPath} references unresolved data source ${name}.`,
+        {
+          source: '@pp/canvas',
+          hint: 'Add the data source to References/DataSources.json or update the formula to use an existing source.',
+        }
+      )
+    );
+  });
+}
+
 async function loadCanvasTemplateRegistryDocument(path: string): Promise<OperationResult<LoadedRegistryDocument>> {
   try {
     await stat(path);
@@ -2622,6 +2754,25 @@ async function loadCanvasTemplateRegistryDocument(path: string): Promise<Operati
 
   if (!document.success || document.data === undefined) {
     return document as unknown as OperationResult<LoadedRegistryDocument>;
+  }
+
+  if (basename(path).toLowerCase() === 'controltemplates.json') {
+    const controlTemplates = await normalizeCanvasControlTemplatesCatalog(document.data, path);
+
+    if (controlTemplates.success && controlTemplates.data) {
+      return ok(
+        {
+          path,
+          hash: sha256Hex(stringifyCanvasJson(controlTemplates.data)),
+          document: controlTemplates.data,
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: controlTemplates.diagnostics,
+          warnings: controlTemplates.warnings,
+        }
+      );
+    }
   }
 
   const normalized = normalizeCanvasTemplateRegistry(document.data, path);
@@ -2642,6 +2793,142 @@ async function loadCanvasTemplateRegistryDocument(path: string): Promise<Operati
       warnings: normalized.warnings,
     }
   );
+}
+
+async function normalizeCanvasControlTemplatesCatalog(
+  value: unknown,
+  sourcePath: string
+): Promise<OperationResult<CanvasTemplateRegistryDocument>> {
+  const objectValue = asRecord(value);
+
+  if (!objectValue) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_TEMPLATE_REGISTRY_INVALID', `Canvas template registry ${sourcePath} must be a JSON object.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const templates: CanvasTemplateRecord[] = [];
+  const supportMatrix: CanvasSupportMatrixEntry[] = [];
+  const warnings: Diagnostic[] = [];
+  const pkgsDir = join(dirname(sourcePath), 'pkgs');
+
+  for (const [entryName, rawTemplate] of Object.entries(objectValue).sort(([left], [right]) => left.localeCompare(right))) {
+    const template = asRecord(rawTemplate);
+    const templateVersion = readString(template?.Version) ?? readString(template?.version);
+
+    if (!template || !templateVersion) {
+      continue;
+    }
+
+    const canonicalName = canonicalizeControlTemplateName(entryName, template);
+    const xmlBaseName = (readString(template.Name) ?? entryName).replaceAll('/', '_');
+    const xmlPath = join(pkgsDir, `${xmlBaseName}_${templateVersion}.xml`);
+    const templateXml = (await fileExists(xmlPath)) ? await readFile(xmlPath, 'utf8') : undefined;
+
+    if (!templateXml) {
+      warnings.push(
+        createDiagnostic(
+          'warning',
+          'CANVAS_CONTROL_TEMPLATE_XML_MISSING',
+          `Canvas control template ${canonicalName}@${templateVersion} did not include sibling pkgs XML at ${xmlPath}.`,
+          {
+            source: '@pp/canvas',
+            hint: 'Build and strict property validation will stay limited until the unpack includes the matching pkgs/*.xml template payload.',
+          }
+        )
+      );
+    }
+
+    const aliases = buildControlTemplateAliases(entryName, canonicalName);
+    const normalized = normalizeTemplateRecord(
+      {
+        templateName: canonicalName,
+        templateVersion,
+        aliases,
+        files: {
+          'Controls/EmbeddedTemplate.json': template,
+          ...(templateXml
+            ? {
+                'References/Templates.json': {
+                  name: canonicalName,
+                  version: templateVersion,
+                  templateXml,
+                },
+              }
+            : {}),
+        },
+        provenance: {
+          kind: 'official-artifact',
+          source: 'UnpackedControlTemplates',
+          importedFrom: sourcePath,
+          sourceArtifact: basename(sourcePath),
+        },
+      },
+      sourcePath
+    );
+
+    if (!normalized.success || !normalized.data) {
+      return normalized as OperationResult<CanvasTemplateRegistryDocument>;
+    }
+
+    templates.push(normalized.data);
+    supportMatrix.push({
+      templateName: canonicalName,
+      version: templateVersion,
+      status: 'supported',
+      modes: ['strict', 'registry'],
+      notes: ['Imported from an unpacked ControlTemplates.json catalog and sibling pkgs/*.xml template payloads.'],
+    });
+  }
+
+  if (templates.length === 0) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_TEMPLATE_REGISTRY_EMPTY', `Canvas template registry ${sourcePath} did not contain any templates.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  return ok(
+    {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      templates: templates.sort(compareTemplates),
+      supportMatrix,
+    },
+    {
+      supportTier: 'preview',
+      warnings,
+    }
+  );
+}
+
+function canonicalizeControlTemplateName(entryName: string, template: Record<string, unknown>): string {
+  const rawName = readString(template.Name) ?? entryName;
+  const id = readString(template.Id)?.toLowerCase() ?? '';
+
+  if (id.includes('/icon') || rawName.toLowerCase() === 'icon') {
+    return 'icon';
+  }
+
+  return rawName;
+}
+
+function buildControlTemplateAliases(entryName: string, canonicalName: string): CanvasTemplateAliases {
+  const yamlNames = uniqueSorted([entryName, canonicalName]);
+  const constructors = uniqueSorted(inferRawTemplateConstructors(canonicalName));
+
+  if (normalizeName(canonicalName) === normalizeName('icon') && !constructors.includes('Classic/Icon')) {
+    constructors.push('Classic/Icon');
+    constructors.sort((left, right) => left.localeCompare(right));
+  }
+
+  return {
+    yamlNames,
+    constructors,
+  };
 }
 
 async function resolveCanvasManifestPath(path: string): Promise<OperationResult<string>> {

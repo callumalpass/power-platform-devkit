@@ -779,6 +779,7 @@ describe('cli fixture-backed workflows', () => {
   it('prints stable help for solution mutation commands without validating arguments', async () => {
     const createHelp = await runCli(['solution', 'create', '--help']);
     const setMetadataHelp = await runCli(['solution', 'set-metadata', '--help']);
+    const checkpointHelp = await runCli(['solution', 'checkpoint', '--help']);
 
     expect(createHelp.code).toBe(0);
     expect(createHelp.stderr).toBe('');
@@ -795,6 +796,14 @@ describe('cli fixture-backed workflows', () => {
     );
     expect(setMetadataHelp.stdout).toContain('Requires at least one of `--version`, `--publisher-id`, or `--publisher-unique-name`.');
     expect(setMetadataHelp.stdout).not.toContain('SOLUTION_SET_METADATA_ARGS_REQUIRED');
+
+    expect(checkpointHelp.code).toBe(0);
+    expect(checkpointHelp.stderr).toBe('');
+    expect(checkpointHelp.stdout).toContain(
+      'Usage: solution checkpoint <uniqueName> --environment ALIAS [--out PATH] [--managed] [--manifest FILE] [--checkpoint FILE]'
+    );
+    expect(checkpointHelp.stdout).toContain('Captures a rollback-oriented solution checkpoint in one command');
+    expect(checkpointHelp.stdout).not.toContain('SOLUTION_CHECKPOINT_ARGS_REQUIRED');
   });
 
   it('renders analysis report and context outputs from the fixture project', async () => {
@@ -2033,6 +2042,252 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.stderr).toBe('');
     await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/cli/golden/protocol/canvas-remote-list.json');
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/canvas-remote-inspect.json');
+  });
+
+  it('covers remote access inspection for canvas apps, flows, and model-driven apps', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        queryAll: {
+          canvasapps: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+              _ownerid_value: 'user-1',
+              '_ownerid_value@OData.Community.Display.V1.FormattedValue': 'Callum Alpass',
+              '_ownerid_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'systemuser',
+              _createdby_value: 'user-1',
+              '_createdby_value@OData.Community.Display.V1.FormattedValue': 'Callum Alpass',
+              '_createdby_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'systemuser',
+            },
+          ],
+          workflows: [
+            {
+              workflowid: 'flow-1',
+              name: 'Invoice Sync',
+              uniquename: 'crd_InvoiceSync',
+              category: 5,
+              _ownerid_value: 'system-user',
+              '_ownerid_value@OData.Community.Display.V1.FormattedValue': 'SYSTEM',
+              '_ownerid_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'systemuser',
+              _createdby_value: 'maker-1',
+              '_createdby_value@OData.Community.Display.V1.FormattedValue': 'Maker User',
+              '_createdby_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'systemuser',
+            },
+          ],
+          appmodules: [
+            {
+              appmoduleid: 'model-1',
+              name: 'Solution Health Hub',
+              uniquename: 'msdyn_SolutionHealthHub',
+            },
+          ],
+          principalobjectaccessset: [
+            {
+              principalobjectaccessid: 'poa-1',
+              objectid: 'flow-1',
+              _principalid_value: 'team-1',
+              '_principalid_value@OData.Community.Display.V1.FormattedValue': 'Automation Owners',
+              '_principalid_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'team',
+              principaltypecode: 9,
+              accessrightsmask: 1,
+              inheritedaccessrightsmask: 0,
+              changedon: '2026-03-10T05:00:00.000Z',
+            },
+          ],
+        },
+      }),
+    });
+
+    const canvas = await runCli(['canvas', 'access', 'Harness Canvas', '--env', 'fixture', '--format', 'json']);
+    const flow = await runCli(['flow', 'access', 'Invoice Sync', '--env', 'fixture', '--format', 'json']);
+    const model = await runCli(['model', 'access', 'Solution Health Hub', '--env', 'fixture', '--format', 'json']);
+
+    expect(canvas.code).toBe(0);
+    expect(canvas.stderr).toBe('');
+    expect(JSON.parse(canvas.stdout)).toMatchObject({
+      kind: 'canvas',
+      ownership: {
+        scope: 'principal',
+        owner: {
+          id: 'user-1',
+          name: 'Callum Alpass',
+        },
+      },
+      sharing: {
+        explicitShareCount: 0,
+      },
+    });
+
+    expect(flow.code).toBe(0);
+    expect(flow.stderr).toBe('');
+    expect(JSON.parse(flow.stdout)).toMatchObject({
+      kind: 'flow',
+      ownership: {
+        owner: {
+          id: 'system-user',
+          name: 'SYSTEM',
+        },
+        createdBy: {
+          id: 'maker-1',
+          name: 'Maker User',
+        },
+      },
+      sharing: {
+        explicitShareCount: 1,
+        explicitShares: [
+          {
+            principal: {
+              id: 'team-1',
+              name: 'Automation Owners',
+              entityType: 'team',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(model.code).toBe(0);
+    expect(model.stderr).toBe('');
+    expect(JSON.parse(model.stdout)).toMatchObject({
+      kind: 'model',
+      ownership: {
+        scope: 'organization',
+        owner: null,
+      },
+      sharing: {
+        explicitShareCount: 0,
+      },
+    });
+  });
+
+  it('returns remote canvas proof results for expected deployed bindings', async () => {
+    const tempDir = await createTempDir();
+    const msappSourceDir = join(tempDir, 'msapp-source');
+    await mkdir(join(msappSourceDir, 'Src'), { recursive: true });
+    await mkdir(join(msappSourceDir, 'References'), { recursive: true });
+    await writeFile(join(msappSourceDir, 'Src', 'App.pa.yaml'), 'App:\n  Properties:\n    Theme: =PowerAppsTheme\n', 'utf8');
+    await writeFile(
+      join(msappSourceDir, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Gallery1:',
+        '          Control: Gallery@2.15.0',
+        '          Properties:',
+        "            Items: ='PP Harness Projects'",
+      ].join('\n') + '\n',
+      'utf8'
+    );
+    await writeFile(
+      join(msappSourceDir, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'PP Harness Projects',
+              Type: 'Table',
+              DatasetName: 'default.cds',
+              EntityName: 'pph34135_projects',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const msappPath = join(tempDir, 'Harness Canvas.msapp');
+    await createZipPackage(msappSourceDir, msappPath);
+
+    const solutionDir = join(tempDir, 'solution');
+    await mkdir(join(solutionDir, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionDir, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    const solutionZip = join(tempDir, 'Core.zip');
+    await createZipPackage(solutionDir, solutionZip);
+
+    const client = {
+      ...createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'comp-1',
+              objectid: 'canvas-1',
+              componenttype: 300,
+            },
+          ],
+          canvasapps: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+              tags: 'harness;solution',
+            },
+          ],
+        },
+      }),
+      invokeAction: async <T>(name: string) =>
+        ok(
+          {
+            body: {
+              ExportSolutionFile: name === 'ExportSolution' ? (await readFile(solutionZip)).toString('base64') : undefined,
+            } as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        ),
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      fixture: {
+        client,
+      },
+    });
+
+    const inspect = await runCli([
+      'canvas',
+      'inspect',
+      'Harness Canvas',
+      '--env',
+      'fixture',
+      '--solution',
+      'Core',
+      '--expect-control-property',
+      "Screen1/Gallery1::Items::='PP Harness Projects'",
+      '--format',
+      'json',
+    ]);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toContain('Proof expectations were evaluated from the exported remote canvas source tree.');
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      id: 'canvas-1',
+      displayName: 'Harness Canvas',
+      proof: {
+        valid: true,
+        dataSources: ['PP Harness Projects'],
+        expectations: [
+          {
+            controlPath: 'Screen1/Gallery1',
+            property: 'Items',
+            found: true,
+            matched: true,
+            actualValueText: "='PP Harness Projects'",
+          },
+        ],
+      },
+    });
   });
 
   it('downloads a remote canvas app through the CLI entrypoint without pac', async () => {
@@ -4861,7 +5116,8 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(promote.code).toBe(0);
-    expect(promote.stderr).toBe('');
+    expect(promote.stderr).toContain('DATAVERSE_CONNREF_SCOPE_EMPTY');
+    expect(promote.stderr).toContain('DATAVERSE_CONNREF_VALIDATE_EMPTY');
     expect(JSON.parse(promote.stdout)).toMatchObject({
       identifier: 'Invoice Sync',
       operation: 'imported-solution',
@@ -6187,7 +6443,180 @@ describe('cli fixture-backed workflows', () => {
       OverwriteUnmanagedCustomizations: false,
       HoldingSolution: false,
       SkipProductUpdateDependencies: false,
+      ImportJobId: expect.any(String),
       CustomizationFile: Buffer.from('cli-export').toString('base64'),
+    });
+  });
+
+  it('captures a rollback checkpoint through the CLI entrypoint', async () => {
+    const tempDir = await createTempDir();
+    const requests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+    const client = {
+      query: async <T>(options: { table: string }) =>
+        ok(
+          options.table === 'solutions'
+            ? ([{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0' }] as T[])
+            : ([] as T[]),
+          { supportTier: 'preview' }
+        ),
+      queryAll: async <T>(options?: { table?: string }) =>
+        ok(
+          options?.table === 'solutioncomponents'
+            ? ([{ solutioncomponentid: 'comp-1', objectid: 'canvas-1', componenttype: 300, ismetadata: false, rootcomponentbehavior: 0 }] as T[])
+            : ([] as T[]),
+          { supportTier: 'preview' }
+        ),
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>) => {
+        requests.push({ path: name, body: parameters });
+
+        return ok(
+          {
+            status: 200,
+            headers: {},
+            body:
+              name === 'ExportSolution'
+                ? ({
+                    ExportSolutionFile: Buffer.from('cli-checkpoint-export').toString('base64'),
+                  } as T)
+                : ({} as T),
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        environment: {
+          alias: 'source',
+          url: 'https://fixture.api.crm.dynamics.com',
+        },
+        client,
+      },
+    });
+
+    const exportPath = join(tempDir, 'Core-pre-import.zip');
+    const checkpointResult = await runCli([
+      'solution',
+      'checkpoint',
+      'Core',
+      '--env',
+      'source',
+      '--out',
+      exportPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(checkpointResult.code).toBe(0);
+    expect(checkpointResult.stderr).toBe('');
+    expect(await readFile(exportPath, 'utf8')).toBe('cli-checkpoint-export');
+    expect(requests[0]).toEqual({
+      path: 'ExportSolution',
+      body: {
+        SolutionName: 'Core',
+        Managed: false,
+      },
+    });
+
+    const parsed = JSON.parse(checkpointResult.stdout);
+    expect(parsed).toMatchObject({
+      kind: 'pp-solution-checkpoint',
+      environment: {
+        alias: 'source',
+        url: 'https://fixture.api.crm.dynamics.com',
+        pacOrganizationUrl: 'https://fixture.crm.dynamics.com',
+      },
+      solution: {
+        uniqueName: 'Core',
+        packageType: 'unmanaged',
+        rollbackCandidateVersion: '1.0.0.0',
+      },
+      inspection: {
+        componentCount: 1,
+        components: [
+          {
+            id: 'comp-1',
+            objectId: 'canvas-1',
+            componentType: 300,
+          },
+        ],
+      },
+    });
+    expect(JSON.parse(await readFile(parsed.checkpointPath, 'utf8'))).toMatchObject({
+      kind: 'pp-solution-checkpoint',
+      solution: {
+        uniqueName: 'Core',
+      },
+    });
+  });
+
+  it('publishes a solution through the CLI entrypoint and can wait for an export checkpoint', async () => {
+    const tempDir = await createTempDir();
+    const requests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+    const client = {
+      query: async <T>(options: { table: string }) =>
+        ok(
+          options.table === 'solutions'
+            ? ([{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0' }] as T[])
+            : ([] as T[]),
+          { supportTier: 'preview' }
+        ),
+      queryAll: async <T>() => ok([] as T[], { supportTier: 'preview' }),
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>) => {
+        requests.push({ path: name, body: parameters });
+
+        return ok(
+          {
+            status: name === 'ExportSolution' ? 200 : 204,
+            headers: {},
+            body:
+              name === 'ExportSolution'
+                ? ({
+                    ExportSolutionFile: Buffer.from('cli-publish-export').toString('base64'),
+                  } as T)
+                : undefined,
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        client,
+      },
+    });
+
+    const exportPath = join(tempDir, 'Core.zip');
+    const publishResult = await runCli([
+      'solution',
+      'publish',
+      'Core',
+      '--env',
+      'source',
+      '--wait-for-export',
+      '--out',
+      exportPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(publishResult.code).toBe(0);
+    expect(publishResult.stderr).toBe('');
+    expect(await readFile(exportPath, 'utf8')).toBe('cli-publish-export');
+    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml', 'ExportSolution']);
+    expect(JSON.parse(publishResult.stdout)).toMatchObject({
+      published: true,
+      waitForExport: true,
+      synchronization: {
+        kind: 'solution-export',
+        confirmed: true,
+        attempts: 1,
+      },
+      export: {
+        packageType: 'unmanaged',
+      },
     });
   });
 
@@ -6258,6 +6687,67 @@ describe('cli fixture-backed workflows', () => {
       unpackedRoot: {
         path: unpackDir,
       },
+    });
+  });
+
+  it('unpacks solution canvas apps into editable source trees when requested', async () => {
+    const tempDir = await createTempDir();
+    const pacPath = join(tempDir, 'fake-pac.js');
+    const packedPath = join(tempDir, 'Harness.zip');
+    const unpackDir = join(tempDir, 'unpacked');
+    const msappSourceDir = join(tempDir, 'msapp-source');
+    const msappPath = join(tempDir, 'Harness Canvas.msapp');
+
+    await mkdir(msappSourceDir, { recursive: true });
+    await writeFile(join(msappSourceDir, 'Header.json'), '{"schemaVersion":1}', 'utf8');
+    await writeFile(join(msappSourceDir, 'Src\\App.pa.yaml'), 'App:\n', 'utf8');
+    await writeFile(join(msappSourceDir, 'Controls\\1.json'), '{"Name":"App"}', 'utf8');
+    await createZipPackage(msappSourceDir, msappPath);
+
+    await writeFile(
+      pacPath,
+      [
+        '#!/usr/bin/env node',
+        "const { mkdirSync, writeFileSync, copyFileSync } = require('node:fs');",
+        'const args = process.argv.slice(2);',
+        "const zipfile = args[args.indexOf('--zipfile') + 1];",
+        "const folder = args[args.indexOf('--folder') + 1];",
+        `const msappPath = ${JSON.stringify(msappPath)};`,
+        "if (args[1] === 'pack') writeFileSync(zipfile, 'cli-packed');",
+        "if (args[1] === 'unpack') { mkdirSync(`${folder}/CanvasApps`, { recursive: true }); writeFileSync(`${folder}/Other.xml`, '<ImportExportXml />'); copyFileSync(msappPath, `${folder}/CanvasApps/crd_HarnessCanvas.msapp`); }",
+      ].join('\n'),
+      'utf8'
+    );
+    await chmod(pacPath, 0o755);
+    await writeFile(packedPath, 'placeholder-solution-zip', 'utf8');
+
+    const unpackResult = await runCli([
+      'solution',
+      'unpack',
+      packedPath,
+      '--out',
+      unpackDir,
+      '--extract-canvas-apps',
+      '--pac',
+      pacPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(unpackResult.code).toBe(0);
+    expect(unpackResult.stderr).toBe('');
+    expect(await readFile(join(unpackDir, 'CanvasApps', 'crd_HarnessCanvas', 'Src', 'App.pa.yaml'), 'utf8')).toBe('App:\n');
+    expect(JSON.parse(unpackResult.stdout)).toMatchObject({
+      unpackedRoot: {
+        path: unpackDir,
+      },
+      extractedCanvasApps: [
+        {
+          msappPath: join(unpackDir, 'CanvasApps', 'crd_HarnessCanvas.msapp'),
+          extractedPath: join(unpackDir, 'CanvasApps', 'crd_HarnessCanvas'),
+          extractedEntries: ['Controls/1.json', 'Header.json', 'Src/App.pa.yaml'],
+        },
+      ],
     });
   });
 
@@ -7122,6 +7612,7 @@ describe('cli fixture-backed workflows', () => {
         },
         pac: {
           sharesPpAuthContext: false,
+          organizationUrl: 'https://fixture.crm.dynamics.com',
           risk: 'high',
           recommendedAction: expect.stringContaining('Treat pac as a separately authenticated tool.'),
           reason: expect.stringContaining('browser profile fixture-browser'),
@@ -7166,6 +7657,7 @@ describe('cli fixture-backed workflows', () => {
       tooling: {
         pac: {
           sharesPpAuthContext: false,
+          organizationUrl: 'https://fixture.crm.dynamics.com',
           risk: 'unknown',
         },
       },
@@ -7337,6 +7829,7 @@ describe('cli fixture-backed workflows', () => {
     const solutionInspectHelp = await runCli(['solution', 'inspect', '--help']);
     const solutionComponentsHelp = await runCli(['solution', 'components', '--help']);
     const solutionDependenciesHelp = await runCli(['solution', 'dependencies', '--help']);
+    const solutionPublishHelp = await runCli(['solution', 'publish', '--help']);
     const rootHelp = await runCli(['--help']);
     const connrefHelp = await runCli(['connref', '--help']);
     const connrefCreateHelp = await runCli(['connref', 'create', '--help']);
@@ -7411,6 +7904,15 @@ describe('cli fixture-backed workflows', () => {
     expect(solutionDependenciesHelp.stdout).toContain('pp solution dependencies Core --environment dev --format json');
     expect(solutionDependenciesHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
     expect(solutionDependenciesHelp.stdout).not.toContain('SOLUTION_UNIQUE_NAME_REQUIRED');
+
+    expect(solutionPublishHelp.code).toBe(0);
+    expect(solutionPublishHelp.stderr).toBe('');
+    expect(solutionPublishHelp.stdout).toContain(
+      'Usage: solution publish <uniqueName> --environment ALIAS [--wait-for-export] [--timeout-ms N] [--poll-interval-ms N] [--managed] [--out PATH] [--manifest FILE]'
+    );
+    expect(solutionPublishHelp.stdout).toContain('pp solution publish Core --environment dev --format json');
+    expect(solutionPublishHelp.stdout).toContain('--wait-for-export');
+    expect(solutionPublishHelp.stdout).not.toContain('SOLUTION_PUBLISH_ARGS_REQUIRED');
 
     expect(rootHelp.code).toBe(0);
     expect(rootHelp.stderr).toBe('');
@@ -8077,7 +8579,17 @@ describe('cli fixture-backed workflows', () => {
     const validate = await runCli(['connref', 'validate', '--env', 'source', '--solution', 'HarnessShell', '--format', 'json']);
 
     expect(validate.code).toBe(0);
-    expect(validate.stderr).toBe('');
+    expect(JSON.parse(validate.stderr)).toMatchObject({
+      success: true,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_LIST_SUMMARY',
+        }),
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_VALIDATE_OK',
+        }),
+      ]),
+    });
     expect(JSON.parse(validate.stdout)).toEqual([
       {
         reference: {
@@ -8095,6 +8607,32 @@ describe('cli fixture-backed workflows', () => {
         suggestedNextActions: [],
       },
     ]);
+  });
+
+  it('reports empty connection-reference validation scope through stderr diagnostics', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        queryAll: {
+          connectionreferences: [],
+        },
+      }),
+    });
+
+    const validate = await runCli(['connref', 'validate', '--env', 'source', '--format', 'json']);
+
+    expect(validate.code).toBe(0);
+    expect(JSON.parse(validate.stdout)).toEqual([]);
+    expect(JSON.parse(validate.stderr)).toMatchObject({
+      success: true,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_SCOPE_EMPTY',
+        }),
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_VALIDATE_EMPTY',
+        }),
+      ]),
+    });
   });
 
   it('creates and rebinds connection references through the CLI entrypoint', async () => {

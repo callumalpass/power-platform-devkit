@@ -1656,6 +1656,16 @@ describe('ALM services', () => {
       ok({
         status: 200,
         headers: {},
+        data: {},
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {},
+      }),
+      ok({
+        status: 200,
+        headers: {},
         data: {
           value: [
             {
@@ -1692,6 +1702,93 @@ describe('ALM services', () => {
     expect(validated.data?.find((item) => item.reference.id === 'ref-2')).toMatchObject({
       valid: false,
     });
+    expect(listed.diagnostics.map((diagnostic) => diagnostic.code)).toContain('DATAVERSE_CONNREF_LIST_SUMMARY');
+    expect(validated.diagnostics.map((diagnostic) => diagnostic.code)).toContain('DATAVERSE_CONNREF_VALIDATE_SUMMARY');
+  });
+
+  it('falls back to per-record inspection for solution-scoped connection references when the bulk query fails', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'solution-1',
+              uniquename: 'HarnessShell',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              objectid: 'ref-1',
+            },
+          ],
+        },
+      }),
+      fail(createDiagnostic('error', 'HTTP_UNHANDLED_ERROR', 'fetch failed', { source: '@pp/http' }), {
+        supportTier: 'preview',
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          connectionreferenceid: 'ref-1',
+          connectionreferencelogicalname: 'pp_shared',
+          connectionreferencedisplayname: 'Shared Connector',
+          connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+          connectionid: 'conn-1',
+          statecode: 0,
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.list({ solutionUniqueName: 'HarnessShell' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toHaveLength(1);
+    expect(result.data?.[0]).toMatchObject({
+      id: 'ref-1',
+      logicalName: 'pp_shared',
+      displayName: 'Shared Connector',
+    });
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_CONNREF_QUERY_FALLBACK');
+  });
+
+  it('reports empty validation scope explicitly', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.validate();
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_SCOPE_EMPTY',
+        }),
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_VALIDATE_EMPTY',
+        }),
+      ])
+    );
   });
 
   it('queries connection references with the live display-name column', async () => {
@@ -1792,6 +1889,29 @@ describe('ALM services', () => {
         data: {
           value: [
             {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              objectid: 'ref-1',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
               connectionreferenceid: 'ref-1',
               connectionreferencelogicalname: 'pp_shared',
               connectionreferencedisplayname: 'Shared Connector',
@@ -1806,29 +1926,6 @@ describe('ALM services', () => {
               connectorid: '/providers/Microsoft.PowerApps/apis/shared_office365',
               connectionid: 'conn-2',
               statecode: 0,
-            },
-          ],
-        },
-      }),
-      ok({
-        status: 200,
-        headers: {},
-        data: {
-          value: [
-            {
-              solutionid: 'sol-1',
-              uniquename: 'Core',
-            },
-          ],
-        },
-      }),
-      ok({
-        status: 200,
-        headers: {},
-        data: {
-          value: [
-            {
-              objectid: 'ref-1',
             },
           ],
         },
@@ -1848,7 +1945,7 @@ describe('ALM services', () => {
       solutionId: 'sol-1',
       connected: true,
     });
-    expect(httpClient.requests[2]?.path).toBe(
+    expect(httpClient.requests[1]?.path).toBe(
       'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+371'
     );
   });
@@ -2610,6 +2707,73 @@ describe('normalizeMetadataQueryOptions', () => {
         errorMessage: 'shared_office365 connection is not authorized',
       },
     ]);
+    expect(httpClient.requests[2]?.path).toContain('flowruns?');
+    expect(httpClient.requests[2]?.path).not.toContain('workflowname');
+  });
+
+  it('retries flow-run queries without unsupported optional columns', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic(
+          'error',
+          'HTTP_REQUEST_FAILED',
+          'GET flowruns returned 400',
+          {
+            source: '@pp/http',
+            detail:
+              '{"error":{"code":"0x80060888","message":"Could not find a property named \'durationinms\' on type \'Microsoft.Dynamics.CRM.flowrun\'."}}',
+          }
+        )
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              flowrunid: 'run-1',
+              workflowid: 'flow-1',
+              status: 'Failed',
+              starttime: '2026-03-10T04:50:00.000Z',
+              errorcode: 'ConnectorAuthFailed',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new CloudFlowService(client);
+
+    const runs = await service.runs({
+      workflowId: 'flow-1',
+      status: 'Failed',
+    });
+
+    expect(runs.success).toBe(true);
+    expect(runs.data).toEqual([
+      {
+        id: 'run-1',
+        workflowId: 'flow-1',
+        workflowName: undefined,
+        status: 'Failed',
+        startTime: '2026-03-10T04:50:00.000Z',
+        endTime: undefined,
+        durationMs: undefined,
+        retryCount: undefined,
+        errorCode: 'ConnectorAuthFailed',
+        errorMessage: undefined,
+      },
+    ]);
+    expect(runs.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_FLOWRUN_OPTIONAL_COLUMNS_UNAVAILABLE',
+        }),
+      ])
+    );
+    expect(httpClient.requests[0]?.path).toContain('durationinms');
+    expect(httpClient.requests[1]?.path).not.toContain('durationinms');
+    expect(httpClient.requests[1]?.path).toContain('retrycount');
   });
 
   it('lists and inspects canvas apps through a typed service', async () => {
@@ -2685,6 +2849,76 @@ describe('normalizeMetadataQueryOptions', () => {
     });
   });
 
+  it('reports canvas app access state through a typed service', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+              _ownerid_value: 'user-1',
+              '_ownerid_value@OData.Community.Display.V1.FormattedValue': 'Callum Alpass',
+              '_ownerid_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'systemuser',
+              _createdby_value: 'user-1',
+              '_createdby_value@OData.Community.Display.V1.FormattedValue': 'Callum Alpass',
+              '_createdby_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'systemuser',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new CanvasAppService(client);
+
+    const access = await service.access('Harness Canvas');
+
+    expect(access.success).toBe(true);
+    expect(access.data).toMatchObject({
+      kind: 'canvas',
+      target: {
+        table: 'canvasapps',
+        id: 'canvas-1',
+        displayName: 'Harness Canvas',
+      },
+      ownership: {
+        scope: 'principal',
+        owner: {
+          id: 'user-1',
+          name: 'Callum Alpass',
+          entityType: 'systemuser',
+        },
+      },
+      sharing: {
+        hasExplicitShares: false,
+        explicitShareCount: 0,
+      },
+    });
+  });
+
   it('attaches canvas apps through typed services', async () => {
     const httpClient = new FakeHttpClient([
       ok({
@@ -2699,6 +2933,11 @@ describe('normalizeMetadataQueryOptions', () => {
             },
           ],
         },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {},
       }),
       ok({
         status: 200,
@@ -2920,7 +3159,7 @@ describe('normalizeMetadataQueryOptions', () => {
               appmodulecomponentid: 'amc-3',
               componenttype: 26,
               objectid: 'view-1',
-              _appmoduleidunique_value: 'app-2',
+              appmoduleidunique: 'app-2',
             },
           ],
         },
@@ -2947,8 +3186,34 @@ describe('normalizeMetadataQueryOptions', () => {
       },
     ]);
     expect(httpClient.requests.map((request) => request.path)).toEqual([
-      'appmodulecomponents?%24select=appmodulecomponentid%2Ccomponenttype%2Cobjectid%2C_appmoduleidunique_value',
+      'appmodulecomponents?%24select=appmodulecomponentid%2Ccomponenttype%2Cobjectid%2C_appmoduleidunique_value%2Cappmoduleidunique',
     ]);
+  });
+
+  it('warns explicitly when model-driven app composition rows are empty', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ModelDrivenAppService(client);
+
+    const result = await service.components('missing-app');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_MODEL_APP_COMPONENTS_EMPTY',
+        }),
+      ])
+    );
   });
 
   it('creates and attaches model-driven apps through typed services', async () => {
@@ -2962,6 +3227,11 @@ describe('normalizeMetadataQueryOptions', () => {
           name: 'Service Hub',
           appmoduleversion: '1.0.0.0',
         },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {},
       }),
       ok({
         status: 200,
@@ -3018,6 +3288,18 @@ describe('normalizeMetadataQueryOptions', () => {
         },
         headers: {
           prefer: 'return=representation',
+        },
+      },
+      {
+        path: 'AddSolutionComponent',
+        method: 'POST',
+        body: {
+          ComponentId: 'app-3',
+          ComponentType: 80,
+          SolutionUniqueName: 'Core',
+          AddRequiredComponents: true,
+        },
+        headers: {
           'MSCRM.SolutionUniqueName': 'Core',
         },
       },

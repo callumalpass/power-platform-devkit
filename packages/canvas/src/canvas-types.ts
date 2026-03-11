@@ -435,6 +435,32 @@ export interface CanvasInspectReport extends CanvasValidationReport {
   controls: CanvasControlSummary[];
 }
 
+export interface CanvasRemoteProofExpectation {
+  controlPath: string;
+  property: string;
+  expectedValue: string;
+}
+
+export interface CanvasRemoteProofCheck {
+  controlPath: string;
+  property: string;
+  found: boolean;
+  matched: boolean;
+  expectedValue: string;
+  actualValue?: CanvasJsonValue;
+  actualValueText?: string;
+}
+
+export interface CanvasRemoteProofReport {
+  valid: boolean;
+  appId: string;
+  sourceHash: string;
+  screenCount: number;
+  controlCount: number;
+  dataSources: string[];
+  expectations: CanvasRemoteProofCheck[];
+}
+
 export interface CanvasBuildResult {
   outPath: string;
   mode: CanvasBuildMode;

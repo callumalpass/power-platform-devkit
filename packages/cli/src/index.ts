@@ -34,6 +34,8 @@ import {
   type EnvironmentAlias,
 } from '@pp/config';
 import {
+  CanvasAppService,
+  CloudFlowService,
   parseColumnCreateSpec,
   parseColumnUpdateSpec,
   ConnectionReferenceService,
@@ -51,6 +53,7 @@ import {
   parseTableCreateSpec,
   parseTableUpdateSpec,
   diffDataverseMetadataSnapshots,
+  ModelDrivenAppService,
   normalizeAttributeDefinition,
   normalizeAttributeDefinitions,
   type DataverseMetadataApplyResult,
@@ -134,6 +137,7 @@ import {
   runSolutionAnalyzeCommand,
   runSolutionComponentsCommand,
   runSolutionCompareCommand,
+  runSolutionCheckpointCommand,
   runSolutionCreateCommand,
   runSolutionDeleteCommand,
   runSolutionDependenciesCommand,
@@ -142,6 +146,7 @@ import {
   runSolutionInspectCommand,
   runSolutionListCommand,
   runSolutionPackCommand,
+  runSolutionPublishCommand,
   runSolutionSetMetadataCommand,
   runSolutionUnpackCommand,
   createLocalSolutionService,
@@ -394,6 +399,8 @@ async function runSolution(command: string | undefined, args: string[]): Promise
     runSolutionCreate,
     runSolutionDelete,
     runSolutionSetMetadata,
+    runSolutionPublish,
+    runSolutionCheckpoint,
     runSolutionList,
     runSolutionInspect,
     runSolutionComponents,
@@ -432,6 +439,7 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
     runCanvasDownload,
     runCanvasUnsupportedRemoteMutation,
     runCanvasList,
+    runCanvasAccess,
     runCanvasTemplates,
     runCanvasWorkspace,
     runCanvasPatch,
@@ -1372,6 +1380,7 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
     runFlowErrors,
     runFlowConnrefs,
     runFlowDoctor,
+    runFlowAccess,
   });
 }
 
@@ -1381,6 +1390,7 @@ async function runModel(command: string | undefined, args: string[]): Promise<nu
     runModelAttach,
     runModelList,
     runModelInspect,
+    runModelAccess,
     runModelComposition,
     runModelImpact,
     runModelSitemap,
@@ -2029,6 +2039,7 @@ async function runDataverseAction(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2119,6 +2130,7 @@ async function runDataverseBatch(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -3510,6 +3522,24 @@ async function runSolutionCreate(args: string[]): Promise<number> {
   });
 }
 
+async function runSolutionCheckpoint(args: string[]): Promise<number> {
+  return runSolutionCheckpointCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    resolveDataverseClientByFlag,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
+}
+
 async function runSolutionDelete(args: string[]): Promise<number> {
   return runSolutionDeleteCommand(args, {
     positionalArgs,
@@ -3546,6 +3576,23 @@ async function runSolutionInspect(args: string[]): Promise<number> {
 
 async function runSolutionSetMetadata(args: string[]): Promise<number> {
   return runSolutionSetMetadataCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
+}
+
+async function runSolutionPublish(args: string[]): Promise<number> {
+  return runSolutionPublishCommand(args, {
     positionalArgs,
     readFlag,
     outputFormat,
@@ -3715,6 +3762,7 @@ async function runConnectionReferenceList(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -3866,6 +3914,7 @@ async function runConnectionReferenceValidate(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -3886,6 +3935,7 @@ async function runEnvironmentVariableList(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4124,6 +4174,16 @@ async function runCanvasInspect(args: string[]): Promise<number> {
       return printFailure(resolution);
     }
 
+    const expectations = readCanvasRemoteProofExpectations(args);
+
+    if (!expectations.success) {
+      return printFailure(expectations);
+    }
+
+    if (expectations.data.length > 0 && !readFlag(args, '--solution')) {
+      return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', '--solution UNIQUE_NAME is required when using --expect-control-property.'));
+    }
+
     const result = await new CanvasService(resolution.data.client).inspectRemote(identifier, {
       solutionUniqueName: readFlag(args, '--solution'),
     });
@@ -4134,6 +4194,27 @@ async function runCanvasInspect(args: string[]): Promise<number> {
 
     if (!result.data) {
       return printFailure(fail(createDiagnostic('error', 'CANVAS_REMOTE_NOT_FOUND', `Canvas app ${identifier} was not found.`)));
+    }
+
+    if (expectations.data.length > 0) {
+      const proof = await new CanvasService(resolution.data.client).proveRemote(identifier, {
+        solutionUniqueName: readFlag(args, '--solution') as string,
+        expectations: expectations.data,
+      });
+
+      if (!proof.success || !proof.data) {
+        return printFailure(proof);
+      }
+
+      printByFormat(
+        {
+          ...result.data,
+          proof: proof.data,
+        },
+        outputFormat(args, 'json')
+      );
+      printResultDiagnostics(proof, outputFormat(args, 'json'));
+      return proof.data.valid ? 0 : 1;
     }
 
     printByFormat(result.data, outputFormat(args, 'json'));
@@ -4173,6 +4254,35 @@ async function runCanvasList(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasAccess(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('CANVAS_IDENTIFIER_REQUIRED', 'Usage: canvas access <displayName|name|id> --environment ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new CanvasAppService(resolution.data.client).access(identifier);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'CANVAS_NOT_FOUND', `Canvas app ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4254,8 +4364,8 @@ async function runCanvasDownload(args: string[]): Promise<number> {
 
   const result = await new CanvasService(resolution.data.client).downloadRemote(identifier, {
     solutionUniqueName,
-    outPath: resolveInvocationPath(readFlag(args, '--out')),
-    extractToDirectory: resolveInvocationPath(readFlag(args, '--extract-to-directory')),
+    outPath: resolveOptionalInvocationPath(readFlag(args, '--out')),
+    extractToDirectory: resolveOptionalInvocationPath(readFlag(args, '--extract-to-directory')),
   });
 
   if (!result.success || !result.data) {
@@ -4279,7 +4389,7 @@ async function runCanvasBuild(args: string[]): Promise<number> {
     return printFailure(context);
   }
 
-  const outPath = resolveInvocationPath(readFlag(args, '--out'));
+  const outPath = resolveOptionalInvocationPath(readFlag(args, '--out'));
   const preview = maybeHandleMutationPreview(
     args,
     'json',
@@ -4560,6 +4670,7 @@ async function runFlowList(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4600,6 +4711,34 @@ async function runFlowInspect(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowAccess(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow access <name|id|uniqueName> --environment ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new CloudFlowService(resolution.data.client).access(identifier);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'FLOW_NOT_FOUND', `Flow ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -5203,6 +5342,34 @@ async function runModelInspect(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runModelAccess(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model access <name|id|uniqueName> --environment ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelDrivenAppService(resolution.data.client).access(identifier);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -6132,6 +6299,10 @@ function resolveInvocationPath(path?: string): string {
   return resolvePath(resolveDefaultInvocationPath(), path);
 }
 
+function resolveOptionalInvocationPath(path?: string): string | undefined {
+  return path ? resolveInvocationPath(path) : undefined;
+}
+
 function resolveDefaultInvocationPath(): string {
   return process.env.INIT_CWD ?? process.cwd();
 }
@@ -6191,6 +6362,59 @@ function readRepeatedFlags(args: string[], name: string): string[] {
   }
 
   return values;
+}
+
+function readCanvasRemoteProofExpectations(args: string[]): OperationResult<Array<{ controlPath: string; property: string; expectedValue: string }>> {
+  const specs = readRepeatedFlags(args, '--expect-control-property');
+  const expectations: Array<{ controlPath: string; property: string; expectedValue: string }> = [];
+
+  for (const spec of specs) {
+    const parsed = parseCanvasRemoteProofExpectation(spec);
+
+    if (!parsed.success || !parsed.data) {
+      return parsed as OperationResult<Array<{ controlPath: string; property: string; expectedValue: string }>>;
+    }
+
+    expectations.push(parsed.data);
+  }
+
+  return ok(expectations, {
+    supportTier: 'preview',
+  });
+}
+
+function parseCanvasRemoteProofExpectation(spec: string): OperationResult<{ controlPath: string; property: string; expectedValue: string }> {
+  const separator = '::';
+  const first = spec.indexOf(separator);
+  const second = first === -1 ? -1 : spec.indexOf(separator, first + separator.length);
+
+  if (first <= 0 || second <= first + separator.length || second + separator.length >= spec.length) {
+    return fail(
+      createDiagnostic(
+        'error',
+        'CANVAS_REMOTE_PROOF_EXPECTATION_INVALID',
+        `Invalid --expect-control-property value ${spec}.`,
+        {
+          source: '@pp/cli',
+          hint: "Use <controlPath>::<property>::<expectedValue>, for example Screen1/Gallery1::Items::='PP Harness Projects'.",
+        }
+      ),
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  return ok(
+    {
+      controlPath: spec.slice(0, first),
+      property: spec.slice(first + separator.length, second),
+      expectedValue: spec.slice(second + separator.length),
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
 }
 
 function readAnalysisPortfolioProjectPaths(args: string[]): string[] {

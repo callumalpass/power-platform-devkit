@@ -35,6 +35,10 @@ interface StubData {
   connectionReferences?: Array<Record<string, unknown>>;
   environmentVariableDefinitions?: Array<Record<string, unknown>>;
   environmentVariableValues?: Array<Record<string, unknown>>;
+  canvasApps?: Array<Record<string, unknown>>;
+  workflows?: Array<Record<string, unknown>>;
+  webResources?: Array<Record<string, unknown>>;
+  sitemaps?: Array<Record<string, unknown>>;
   modelApps?: Array<Record<string, unknown>>;
   modelComponents?: Array<Record<string, unknown>>;
   modelForms?: Array<Record<string, unknown>>;
@@ -119,6 +123,14 @@ function createStubClient(data: StubData): DataverseClient {
           return ok((data.environmentVariableDefinitions ?? []) as T[], { supportTier: 'preview' });
         case 'environmentvariablevalues':
           return ok((data.environmentVariableValues ?? []) as T[], { supportTier: 'preview' });
+        case 'canvasapps':
+          return ok((data.canvasApps ?? []) as T[], { supportTier: 'preview' });
+        case 'workflows':
+          return ok((data.workflows ?? []) as T[], { supportTier: 'preview' });
+        case 'webresourceset':
+          return ok((data.webResources ?? []) as T[], { supportTier: 'preview' });
+        case 'sitemaps':
+          return ok((data.sitemaps ?? data.modelSitemaps ?? []) as T[], { supportTier: 'preview' });
         case 'appmodules':
           return ok((data.modelApps ?? []) as T[], { supportTier: 'preview' });
         case 'appmodulecomponents':
@@ -127,8 +139,6 @@ function createStubClient(data: StubData): DataverseClient {
           return ok((data.modelForms ?? []) as T[], { supportTier: 'preview' });
         case 'savedqueries':
           return ok((data.modelViews ?? []) as T[], { supportTier: 'preview' });
-        case 'sitemaps':
-          return ok((data.modelSitemaps ?? []) as T[], { supportTier: 'preview' });
         default:
           return ok([] as T[], { supportTier: 'preview' });
       }
@@ -492,8 +502,8 @@ describe('SolutionService', () => {
           },
           {
             solutioncomponentid: 'comp-2',
-            objectid: 'ref-1',
-            componenttype: 371,
+            objectid: 'canvas-1',
+            componenttype: 300,
           },
           {
             solutioncomponentid: 'comp-3',
@@ -506,25 +516,94 @@ describe('SolutionService', () => {
             dependencyid: 'dep-1',
             dependentcomponentobjectid: 'obj-1',
             dependentcomponenttype: 80,
-            requiredcomponentobjectid: 'obj-missing',
-            requiredcomponenttype: 24,
+            requiredcomponentobjectid: 'entity-1',
+            requiredcomponenttype: 1,
+          },
+          {
+            dependencyid: 'dep-2',
+            dependentcomponentobjectid: 'obj-1',
+            dependentcomponenttype: 80,
+            requiredcomponentobjectid: 'webres-1',
+            requiredcomponenttype: 61,
+          },
+          {
+            dependencyid: 'dep-3',
+            dependentcomponentobjectid: 'canvas-1',
+            dependentcomponenttype: 300,
+            requiredcomponentobjectid: 'site-1',
+            requiredcomponenttype: 62,
+          },
+        ],
+        canvasApps: [
+          {
+            canvasappid: 'canvas-1',
+            displayname: 'Shell App',
+            name: 'ShellApp',
+          },
+        ],
+        modelApps: [
+          {
+            appmoduleid: 'obj-1',
+            uniquename: 'Core',
+            name: 'Core',
+          },
+        ],
+        webResources: [
+          {
+            webresourceid: 'webres-1',
+            name: 'pp_/icons/nav.svg',
+            displayname: 'Navigation Icon',
+          },
+        ],
+        sitemaps: [
+          {
+            sitemapid: 'site-1',
+            sitemapname: 'Sales Hub sitemap',
+          },
+        ],
+        tables: [
+          {
+            MetadataId: 'entity-1',
+            LogicalName: 'account',
+            SchemaName: 'Account',
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
           },
         ],
       })
     );
 
-    const components = await service.components('Core');
     const dependencies = await service.dependencies('Core');
 
-    expect(components.success).toBe(true);
-    expect(components.data?.[0]).toMatchObject({
-      componentTypeLabel: 'app-module',
-    });
     expect(dependencies.success).toBe(true);
-    expect(dependencies.data?.[0]).toMatchObject({
-      missingRequiredComponent: true,
-      requiredComponentTypeLabel: 'form',
-    });
+    expect(dependencies.data).toEqual([
+      expect.objectContaining({
+        missingRequiredComponent: true,
+        requiredComponentTypeLabel: 'entity',
+        requiredComponentName: 'Account',
+        requiredComponentLogicalName: 'account',
+        requiredComponentTable: 'account',
+        dependentComponentTypeLabel: 'app-module',
+      }),
+      expect.objectContaining({
+        missingRequiredComponent: true,
+        requiredComponentTypeLabel: 'web-resource',
+        requiredComponentName: 'Navigation Icon',
+        requiredComponentLogicalName: 'pp_/icons/nav.svg',
+        dependentComponentName: 'Core',
+      }),
+      expect.objectContaining({
+        missingRequiredComponent: true,
+        requiredComponentTypeLabel: 'site-map',
+        requiredComponentName: 'Sales Hub sitemap',
+        dependentComponentTypeLabel: 'canvas-app',
+        dependentComponentName: 'Shell App',
+        dependentComponentLogicalName: 'ShellApp',
+      }),
+    ]);
   });
 
   it('lists all solution pages and can narrow results by prefix or unique name', async () => {
@@ -790,6 +869,88 @@ describe('SolutionService', () => {
       artifactCount: 3,
       missingArtifactCount: 0,
     });
+  });
+
+  it('skips model composition during analyze when the app still has unresolved solution dependencies', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        components: [
+          {
+            solutioncomponentid: 'comp-1',
+            objectid: 'app-1',
+            componenttype: 80,
+          },
+        ],
+        dependencies: [
+          {
+            dependencyid: 'dep-1',
+            dependentcomponentobjectid: 'app-1',
+            dependentcomponenttype: 80,
+            requiredcomponentobjectid: 'missing-site-map',
+            requiredcomponenttype: 62,
+          },
+        ],
+        connectionReferences: [],
+        environmentVariableDefinitions: [],
+        environmentVariableValues: [],
+        modelApps: [
+          {
+            appmoduleid: 'app-1',
+            uniquename: 'SalesHub',
+            name: 'Sales Hub',
+          },
+        ],
+        modelComponents: [
+          {
+            appmodulecomponentid: 'model-comp-app-table',
+            componenttype: 1,
+            objectid: 'entity-1',
+            _appmoduleidunique_value: 'app-1',
+          },
+        ],
+        tables: [
+          {
+            MetadataId: 'entity-1',
+            LogicalName: 'account',
+            SchemaName: 'Account',
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
+          },
+        ],
+      })
+    );
+
+    const result = await service.analyze('Core');
+
+    expect(result.success).toBe(true);
+    expect(result.data?.modelDriven.apps).toEqual([
+      {
+        appId: 'app-1',
+        uniqueName: 'SalesHub',
+        name: 'Sales Hub',
+        compositionSkippedReason: 'Skipped model composition because the app still has unresolved solution dependencies.',
+      },
+    ]);
+    expect(result.data?.modelDriven.summary).toMatchObject({
+      appCount: 1,
+      artifactCount: 0,
+      missingArtifactCount: 0,
+    });
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_MODEL_ANALYZE_SKIPPED_UNRESOLVED_DEPENDENCIES',
+        }),
+      ])
+    );
   });
 
   it('compares the same solution across environments', async () => {
@@ -1224,10 +1385,84 @@ describe('SolutionService', () => {
       PublishWorkflows: true,
       HoldingSolution: false,
       SkipProductUpdateDependencies: false,
+      ImportJobId: expect.any(String),
       CustomizationFile: Buffer.from('managed-content').toString('base64'),
     });
     expect(result.data?.packageType).toBe('managed');
     expect(result.data?.manifest?.solution.uniqueName).toBe('Core');
+    expect(result.data?.options.importJobId).toEqual(expect.any(String));
+  });
+
+  it('publishes a solution through PublishAllXml and warns when no sync checkpoint is requested', async () => {
+    const requests: Array<{ path: string; body: Record<string, unknown> | undefined }> = [];
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+        },
+        components: [],
+        dependencies: [],
+        requestRecorder: requests,
+      })
+    );
+
+    const result = await service.publish('Core');
+
+    expect(result.success).toBe(true);
+    expect(requests[0]?.path).toBe('PublishAllXml');
+    expect(requests[0]?.body).toEqual({});
+    expect(result.data).toMatchObject({
+      published: true,
+      waitForExport: false,
+      synchronization: {
+        kind: 'none',
+        confirmed: false,
+      },
+    });
+    expect(result.warnings.some((warning) => warning.code === 'SOLUTION_PUBLISH_SYNC_NOT_CONFIRMED')).toBe(true);
+  });
+
+  it('publishes a solution and waits for an export checkpoint when requested', async () => {
+    const tempDir = await createTempDir();
+    const requests: Array<{ path: string; body: Record<string, unknown> | undefined }> = [];
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+          version: '1.0.0.0',
+        },
+        components: [],
+        dependencies: [],
+        requestRecorder: requests,
+      })
+    );
+
+    const result = await service.publish('Core', {
+      waitForExport: true,
+      timeoutMs: 5_000,
+      pollIntervalMs: 1_000,
+      exportOptions: {
+        outPath: join(tempDir, 'Core.zip'),
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml', 'ExportSolution']);
+    expect(result.data).toMatchObject({
+      published: true,
+      waitForExport: true,
+      synchronization: {
+        kind: 'solution-export',
+        confirmed: true,
+        attempts: 1,
+      },
+      export: {
+        packageType: 'unmanaged',
+      },
+    });
   });
 
   it('packs and unpacks solution artifacts through the command runner seam', async () => {
