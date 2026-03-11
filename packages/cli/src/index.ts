@@ -1040,16 +1040,25 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
     });
 
     if (!delegated.success || !delegated.data) {
+      const delegatedFailure = normalizeDelegatedCanvasCreateFailure(delegated, {
+        appName: displayName,
+        envAlias,
+        solutionUniqueName,
+        browserProfileName,
+        artifactsDir: delegatedArtifactsDir ?? resolvePath('.tmp', 'canvas-create', slugifyCanvasDelegatedArtifacts(displayName)),
+      });
+
       return printFailure({
-        ...delegated,
+        ...delegatedFailure,
         details: {
           handoff: fallbackDetails,
-          automation: delegated.details ?? delegated.data,
+          automation: delegatedFailure.details ?? delegatedFailure.data,
         },
         suggestedNextActions: [
-          ...(delegated.suggestedNextActions ?? []),
+          ...(delegatedFailure.suggestedNextActions ?? []),
           `Inspect ${formatCliArg(
-            ((delegated.details as { artifacts?: { sessionPath?: string } } | undefined)?.artifacts?.sessionPath ?? '<session-path>')
+            ((delegatedFailure.details as { artifacts?: { sessionPath?: string } } | undefined)?.artifacts?.sessionPath ??
+              '<session-path>')
           )} and the paired screenshot before retrying.`,
           'Retry with `--debug` to keep the delegated browser session visible if Studio readiness is timing-sensitive.',
           ...suggestedNextActions,
@@ -1197,6 +1206,53 @@ async function runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', 
       }
     )
   );
+}
+
+function normalizeDelegatedCanvasCreateFailure(
+  result: OperationResult<unknown>,
+  context: {
+    appName: string;
+    envAlias: string;
+    solutionUniqueName: string;
+    browserProfileName: string;
+    artifactsDir: string;
+  }
+): OperationResult<unknown> {
+  const diagnostics =
+    result.diagnostics.length > 0
+      ? result.diagnostics
+      : [
+          createDiagnostic(
+            'error',
+            'CANVAS_CREATE_DELEGATE_EMPTY_FAILURE',
+            `Delegated canvas create for ${context.appName} failed without diagnostics.`,
+            {
+              source: '@pp/cli',
+              hint: `Inspect artifacts under ${context.artifactsDir} and retry with --debug if the Maker session did not finish loading.`,
+            }
+          ),
+        ];
+
+  const details =
+    result.details && typeof result.details === 'object'
+      ? result.details
+      : {
+          appName: context.appName,
+          envAlias: context.envAlias,
+          solutionUniqueName: context.solutionUniqueName,
+          browserProfile: context.browserProfileName,
+          artifacts: {
+            artifactsDir: context.artifactsDir,
+            screenshotPath: resolvePath(context.artifactsDir, `${slugifyCanvasDelegatedArtifacts(context.appName)}.png`),
+            sessionPath: resolvePath(context.artifactsDir, `${slugifyCanvasDelegatedArtifacts(context.appName)}.session.json`),
+          },
+        };
+
+  return {
+    ...result,
+    diagnostics,
+    details,
+  };
 }
 
 async function resolveCanvasMakerEnvironmentId(

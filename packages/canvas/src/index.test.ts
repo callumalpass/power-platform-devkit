@@ -442,6 +442,13 @@ describe('canvas template registries', () => {
 });
 
 describe('remote canvas app workflows', () => {
+  it('keeps the built package surface aligned for remote download support', async () => {
+    const builtPackage = await import('../dist/index.js');
+
+    expect(typeof builtPackage.CanvasService).toBe('function');
+    expect(typeof builtPackage.CanvasService.prototype.downloadRemote).toBe('function');
+  });
+
   it('lists and inspects remote canvas apps with solution filtering', async () => {
     const service = new CanvasService(createRemoteCanvasStubDataverseClient());
 

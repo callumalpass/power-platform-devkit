@@ -3015,6 +3015,147 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('normalizes delegated canvas create failures that return an empty envelope', async () => {
+    const artifactsDir = await createTempDir();
+    vi.spyOn(AuthService.prototype, 'getBrowserProfile').mockResolvedValue(
+      ok({
+        name: 'maker-fixture',
+        kind: 'edge',
+      })
+    );
+    vi.spyOn(canvasCreateDelegate, 'runDelegatedCanvasCreate').mockResolvedValue({
+      success: false,
+      diagnostics: [],
+      warnings: [],
+      supportTier: 'preview',
+    });
+
+    mockDataverseResolution({
+      fixture: {
+        client: createFixtureDataverseClient({
+          query: {
+            solutions: [
+              {
+                solutionid: 'solution-1',
+                uniquename: 'HarnessSolution',
+                friendlyname: 'Harness Solution',
+                version: '1.0.0.0',
+              },
+            ],
+          },
+        }),
+        environment: {
+          makerEnvironmentId: 'env-123',
+        },
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+          defaultResource: 'https://fixture.crm.dynamics.com',
+          browserProfile: 'maker-fixture',
+        },
+      },
+    });
+
+    const create = await runCli([
+      'canvas',
+      'create',
+      '--env',
+      'fixture',
+      '--solution',
+      'HarnessSolution',
+      '--name',
+      'Harness Canvas',
+      '--delegate',
+      '--artifacts-dir',
+      artifactsDir,
+      '--format',
+      'json',
+    ]);
+
+    expect(create.code).toBe(1);
+    expect(create.stdout).toBe('');
+
+    expect(normalizeCliSnapshot(JSON.parse(create.stderr), artifactsDir)).toEqual({
+      success: false,
+      diagnostics: [
+        {
+          code: 'CANVAS_CREATE_DELEGATE_EMPTY_FAILURE',
+          hint:
+            'Inspect artifacts under <TMP_DIR> and retry with --debug if the Maker session did not finish loading.',
+          level: 'error',
+          message: 'Delegated canvas create for Harness Canvas failed without diagnostics.',
+          source: '@pp/cli',
+        },
+      ],
+      warnings: [],
+      details: {
+        handoff: {
+          handoff: {
+            displayName: 'Harness Canvas',
+            kind: 'maker-blank-app',
+            makerUrls: {
+              blankAppUrl:
+                'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+              solutionAppsUrl: 'https://make.powerapps.com/environments/env-123/solutions/solution-1/apps',
+              solutionsUrl: 'https://make.powerapps.com/environments/env-123/solutions',
+            },
+            recommendedUrl:
+              'https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1',
+          },
+          verification: {
+            inspectCommand: 'pp canvas inspect "Harness Canvas" --environment fixture --solution HarnessSolution',
+            listCommand: 'pp canvas list --environment fixture --solution HarnessSolution',
+            solutionComponentsCommand: 'pp solution components HarnessSolution --environment fixture --format json',
+          },
+        },
+        automation: {
+          appName: 'Harness Canvas',
+          envAlias: 'fixture',
+          solutionUniqueName: 'HarnessSolution',
+          browserProfile: 'maker-fixture',
+          artifacts: {
+            artifactsDir: '<TMP_DIR>',
+            screenshotPath: '<TMP_DIR>/harness-canvas.png',
+            sessionPath: '<TMP_DIR>/harness-canvas.session.json',
+          },
+        },
+      },
+      supportTier: 'preview',
+      suggestedNextActions: [
+        'Inspect <TMP_DIR>/harness-canvas.session.json and the paired screenshot before retrying.',
+        'Retry with `--debug` to keep the delegated browser session visible if Studio readiness is timing-sensitive.',
+        'Use `pp canvas create --environment fixture --solution HarnessSolution --name "Harness Canvas" --delegate --browser-profile maker-fixture` to let pp drive the Maker blank-app flow and wait for the created app id.',
+        'Use Maker blank-app creation for now when you need a new remote canvas app.',
+        'Open https://make.powerapps.com/e/env-123/canvas/?action=new-blank&form-factor=tablet&name=Harness+Canvas&solution-id=solution-1 to start the solution-scoped blank canvas app flow in Maker.',
+        'After saving in Maker, run `pp canvas inspect "Harness Canvas" --environment fixture --solution HarnessSolution` to confirm the remote app id.',
+        'After the Maker step, run `pp canvas list --environment fixture --solution HarnessSolution` to confirm the new app is visible in Dataverse.',
+        'Run `pp solution components HarnessSolution --environment fixture --format json` to verify that the app was added to the solution.',
+      ],
+      provenance: [
+        {
+          detail: 'Environment alias fixture was resolved through configured Dataverse metadata and solution HarnessSolution.',
+          kind: 'official-api',
+          source: '@pp/cli canvas remote mutation resolution',
+        },
+        {
+          detail: 'Maker handoff URLs and verification commands were synthesized from the resolved environment (env-123) and command inputs.',
+          kind: 'inferred',
+          source: '@pp/cli canvas Maker fallback guidance',
+        },
+        {
+          detail:
+            'pp attempted the solution-scoped blank-app flow through persisted browser profile maker-fixture.',
+          kind: 'inferred',
+          source: '@pp/cli delegated Maker browser automation',
+        },
+      ],
+      knownLimitations: [
+        'Remote canvas creation still depends on delegated Maker browser automation.',
+        'Studio readiness and publish timing can still vary by tenant and browser session.',
+      ],
+    });
+  });
+
   it('reuses the environment auth profile browser profile when opening a Maker handoff', async () => {
     const configDir = await createTempDir();
     const launchBrowserProfile = vi.spyOn(AuthService.prototype, 'launchBrowserProfile').mockResolvedValue({
