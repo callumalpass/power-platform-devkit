@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { copyFile, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { chromium, type BrowserContext, type Frame, type Page } from 'playwright-core';
 import type { BrowserProfile } from '@pp/auth';
 import { type CanvasAppSummary, CanvasService } from '@pp/canvas';
@@ -41,6 +41,18 @@ export interface DelegatedCanvasCreateSuccess {
   sessionPath: string;
 }
 
+export interface DelegatedBrowserLaunchDetails {
+  profileName: string;
+  requestedUserDataDir: string;
+  effectiveUserDataDir: string;
+  fallbackClone?: {
+    sourceUserDataDir: string;
+    clonedUserDataDir: string;
+    omittedEntries: string[];
+    trigger: string;
+  };
+}
+
 interface SessionArtifacts {
   screenshotPath: string;
   sessionPath: string;
@@ -48,6 +60,7 @@ interface SessionArtifacts {
 
 const SAVE_TIMEOUT_MS = 8_000;
 const PUBLISH_TIMEOUT_MS = 12_000;
+const PROFILE_LOCK_OMIT_ENTRIES = ['SingletonCookie', 'SingletonLock', 'SingletonSocket'];
 
 export async function runDelegatedCanvasCreate(
   options: DelegatedCanvasCreateOptions
@@ -69,9 +82,8 @@ export async function runDelegatedCanvasCreate(
   }
 
   const beforeIds = new Set(beforeApps.data.map((app) => app.id));
-  const context = await launchBrowserContext(options.browserProfileDir, options.browserProfile, options);
-  const page = context.pages()[0] ?? (await context.newPage());
   const sessionArtifacts = buildSessionArtifacts(options.outDir, options.appName);
+  const launched = await launchDelegatedBrowserContext(options.browserProfileDir, options.browserProfile, options);
 
   let finalPayload: Record<string, unknown> = {
     appName: options.appName,
@@ -80,7 +92,11 @@ export async function runDelegatedCanvasCreate(
     targetUrl,
     browserProfile: options.browserProfileName,
     baselineMatches: beforeApps.data,
+    browserLaunch: launched,
   };
+
+  const context = launched.context;
+  const page = context.pages()[0] ?? (await context.newPage());
 
   try {
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: options.timeoutMs });
@@ -211,11 +227,11 @@ export function isBlankAppTargetUrl(targetUrl: string): boolean {
   }
 }
 
-async function launchBrowserContext(
+export async function launchDelegatedBrowserContext(
   userDataDir: string,
   browserProfile: BrowserProfile,
   options: DelegatedCanvasCreateOptions
-): Promise<BrowserContext> {
+): Promise<DelegatedBrowserLaunchDetails & { context: BrowserContext }> {
   const launchOptions = {
     headless: options.headless,
     viewport: { width: 1600, height: 1200 },
@@ -225,7 +241,86 @@ async function launchBrowserContext(
     executablePath: browserProfile.kind === 'custom' ? browserProfile.command : undefined,
   };
 
-  return chromium.launchPersistentContext(userDataDir, launchOptions);
+  try {
+    return {
+      context: await chromium.launchPersistentContext(userDataDir, launchOptions),
+      profileName: options.browserProfileName,
+      requestedUserDataDir: userDataDir,
+      effectiveUserDataDir: userDataDir,
+    };
+  } catch (error) {
+    if (!isBrowserProfileAlreadyInUseError(error)) {
+      throw error;
+    }
+
+    const fallbackDir = buildLockedProfileCloneDir(options.outDir, options.browserProfileName);
+    await copyBrowserProfileDirectory(userDataDir, fallbackDir);
+
+    return {
+      context: await chromium.launchPersistentContext(fallbackDir, launchOptions),
+      profileName: options.browserProfileName,
+      requestedUserDataDir: userDataDir,
+      effectiveUserDataDir: fallbackDir,
+      fallbackClone: {
+        sourceUserDataDir: userDataDir,
+        clonedUserDataDir: fallbackDir,
+        omittedEntries: PROFILE_LOCK_OMIT_ENTRIES,
+        trigger: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+}
+
+export function isBrowserProfileAlreadyInUseError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /user data directory is already in use/i.test(message) ||
+    /processsingleton/i.test(message) ||
+    /singleton(lock|cookie|socket)/i.test(message) ||
+    /profile appears to be in use/i.test(message)
+  );
+}
+
+function buildLockedProfileCloneDir(outDir: string, profileName: string): string {
+  return join(outDir, '.browser-profile-clones', `${slugify(profileName)}-locked-retry`);
+}
+
+async function copyBrowserProfileDirectory(sourceDir: string, targetDir: string): Promise<void> {
+  await rm(targetDir, { recursive: true, force: true });
+  await mkdir(targetDir, { recursive: true });
+  const entries = await readdir(sourceDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (PROFILE_LOCK_OMIT_ENTRIES.includes(entry.name)) {
+      continue;
+    }
+
+    const sourcePath = join(sourceDir, entry.name);
+    const targetPath = join(targetDir, entry.name);
+
+    if (entry.isDirectory()) {
+      await copyBrowserProfileDirectory(sourcePath, targetPath);
+      continue;
+    }
+
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
+
+    if (entry.isFile()) {
+      await mkdir(dirname(targetPath), { recursive: true });
+      await copyFile(sourcePath, targetPath);
+      continue;
+    }
+
+    const sourceStat = await stat(sourcePath);
+    if (sourceStat.isDirectory()) {
+      await copyBrowserProfileDirectory(sourcePath, targetPath);
+    } else if (sourceStat.isFile()) {
+      await mkdir(dirname(targetPath), { recursive: true });
+      await copyFile(sourcePath, targetPath);
+    }
+  }
 }
 
 function resolveBrowserChannel(browserProfile: BrowserProfile): 'chrome' | 'msedge' | undefined {
