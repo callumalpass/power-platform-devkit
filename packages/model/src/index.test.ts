@@ -143,6 +143,49 @@ function createStubClient(): DataverseClient {
           });
       }
     },
+    create: async <TRecord extends Record<string, unknown>, TResult = TRecord>(
+      table: string,
+      entity: TRecord
+    ): Promise<OperationResult<{ status: number; headers: Record<string, string>; entity?: TResult; entityId?: string }>> => {
+      if (table !== 'appmodules') {
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      }
+
+      return ok(
+        {
+          status: 204,
+          headers: {},
+          entityId: 'app-3',
+          entity: {
+            appmoduleid: 'app-3',
+            uniquename: entity.uniquename,
+            name: entity.name,
+          } as TResult,
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    },
+    invokeAction: async (): Promise<OperationResult<{ status: number; headers: Record<string, string>; body?: unknown; entityId?: string }>> =>
+      ok(
+        {
+          status: 200,
+          headers: {},
+          body: {},
+        },
+        {
+          supportTier: 'preview',
+        }
+      ),
     listTables: async (): Promise<OperationResult<EntityDefinition[]>> =>
       ok(
         [
@@ -178,6 +221,36 @@ describe('ModelService', () => {
       id: 'app-1',
       uniqueName: 'SalesHub',
       name: 'Sales Hub',
+    });
+  });
+
+  it('creates and attaches model-driven apps through the domain service', async () => {
+    const service = new ModelService(createStubClient());
+
+    const created = await service.create('ServiceHub', {
+      name: 'Service Hub',
+      solutionUniqueName: 'Core',
+    });
+    const attached = await service.attach('SalesHub', {
+      solutionUniqueName: 'Core',
+      addRequiredComponents: false,
+    });
+
+    expect(created.success).toBe(true);
+    expect(created.data).toMatchObject({
+      id: 'app-3',
+      uniqueName: 'ServiceHub',
+      name: 'Service Hub',
+    });
+    expect(attached.success).toBe(true);
+    expect(attached.data).toMatchObject({
+      attached: true,
+      solutionUniqueName: 'Core',
+      app: {
+        id: 'app-1',
+        uniqueName: 'SalesHub',
+      },
+      addRequiredComponents: false,
     });
   });
 

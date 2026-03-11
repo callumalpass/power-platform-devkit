@@ -96,6 +96,9 @@ importers:
       '@pp/artifacts':
         specifier: workspace:*
         version: link:../artifacts
+      '@pp/config':
+        specifier: workspace:*
+        version: link:../config
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
@@ -132,12 +135,21 @@ importers:
       '@pp/flow':
         specifier: workspace:*
         version: link:../flow
+      '@pp/http':
+        specifier: workspace:*
+        version: link:../http
       '@pp/model':
         specifier: workspace:*
         version: link:../model
+      '@pp/powerbi':
+        specifier: workspace:*
+        version: link:../powerbi
       '@pp/project':
         specifier: workspace:*
         version: link:../project
+      '@pp/sharepoint':
+        specifier: workspace:*
+        version: link:../sharepoint
       '@pp/solution':
         specifier: workspace:*
         version: link:../solution
@@ -180,6 +192,9 @@ importers:
 
   packages/deploy:
     dependencies:
+      '@pp/auth':
+        specifier: workspace:*
+        version: link:../auth
       '@pp/dataverse':
         specifier: workspace:*
         version: link:../dataverse
@@ -189,14 +204,29 @@ importers:
       '@pp/flow':
         specifier: workspace:*
         version: link:../flow
+      '@pp/http':
+        specifier: workspace:*
+        version: link:../http
+      '@pp/powerbi':
+        specifier: workspace:*
+        version: link:../powerbi
       '@pp/project':
         specifier: workspace:*
         version: link:../project
+      '@pp/sharepoint':
+        specifier: workspace:*
+        version: link:../sharepoint
       '@pp/solution':
         specifier: workspace:*
         version: link:../solution
 
   packages/diagnostics: {}
+
+  packages/extensions:
+    dependencies:
+      '@pp/diagnostics':
+        specifier: workspace:*
+        version: link:../diagnostics
 
   packages/flow:
     dependencies:
@@ -236,6 +266,9 @@ importers:
       '@pp/dataverse':
         specifier: workspace:*
         version: link:../dataverse
+      '@pp/deploy':
+        specifier: workspace:*
+        version: link:../deploy
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
@@ -260,12 +293,12 @@ importers:
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
-      '@pp/solution':
-        specifier: workspace:*
-        version: link:../solution
 
   packages/powerbi:
     dependencies:
+      '@pp/diagnostics':
+        specifier: workspace:*
+        version: link:../diagnostics
       '@pp/http':
         specifier: workspace:*
         version: link:../http
@@ -281,6 +314,9 @@ importers:
 
   packages/sharepoint:
     dependencies:
+      '@pp/diagnostics':
+        specifier: workspace:*
+        version: link:../diagnostics
       '@pp/http':
         specifier: workspace:*
         version: link:../http
@@ -296,6 +332,9 @@ importers:
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
+      '@pp/model':
+        specifier: workspace:*
+        version: link:../model
 
 packages:
 

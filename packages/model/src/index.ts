@@ -2,15 +2,18 @@ import {
   ModelDrivenAppService,
   type DataverseClient,
   type EntityDefinition,
+  type ModelDrivenAppAttachResult,
+  type ModelDrivenAppCreateOptions,
   type ModelDrivenAppComponentSummary,
   type ModelDrivenAppFormSummary,
   type ModelDrivenAppSitemapSummary,
   type ModelDrivenAppSummary,
   type ModelDrivenAppViewSummary,
 } from '@pp/dataverse';
-import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 
 export type ModelAppSummary = ModelDrivenAppSummary;
+export type ModelAppAttachResult = ModelDrivenAppAttachResult;
 
 export interface ModelTableSummary {
   id?: string;
@@ -140,6 +143,27 @@ interface ModelInspectContext {
 
 export class ModelService {
   constructor(private readonly dataverseClient: DataverseClient) {}
+
+  async create(uniqueName: string, options: ModelDrivenAppCreateOptions = {}): Promise<OperationResult<ModelAppSummary>> {
+    return new ModelDrivenAppService(this.dataverseClient).create(uniqueName, options);
+  }
+
+  async attach(
+    identifier: string,
+    options: { solutionUniqueName?: string; addRequiredComponents?: boolean } = {}
+  ): Promise<OperationResult<ModelAppAttachResult>> {
+    if (!options.solutionUniqueName?.trim()) {
+      return fail(
+        createDiagnostic('error', 'MODEL_SOLUTION_REQUIRED', 'Solution unique name is required when attaching a model-driven app.', {
+          source: '@pp/model',
+        })
+      );
+    }
+
+    return new ModelDrivenAppService(this.dataverseClient).attachToSolution(identifier, options.solutionUniqueName, {
+      addRequiredComponents: options.addRequiredComponents,
+    });
+  }
 
   async list(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<ModelAppSummary[]>> {
     const appService = new ModelDrivenAppService(this.dataverseClient);

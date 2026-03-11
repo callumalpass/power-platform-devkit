@@ -7,6 +7,8 @@ objects.
 ## Commands
 
 ```bash
+pp model create SalesHub --env dev --name "Sales Hub" --solution Core
+pp model attach SalesHub --env dev --solution Core
 pp model list --env dev
 pp model inspect SalesHub --env dev
 pp model sitemap SalesHub --env dev
@@ -55,11 +57,18 @@ table names into normal use.
 
 ## Current boundary
 
-This tranche is inspection-only. It does not yet claim write support for:
+This tranche now includes a bounded authoring slice for model-driven app
+records themselves:
+
+- solution-aware app creation through `model create`
+- supported solution attachment through `model attach`
+
+It still does not yet claim write support for:
 
 - sitemap mutation
 - form or view authoring
 - model-driven packaging or deploy orchestration
 
-The goal here is composition visibility and dependency tracing, not metadata
-editing.
+The goal remains composition visibility and dependency tracing first, with a
+small supported create/attach workflow so callers do not have to drop to raw
+Dataverse appmodule writes.

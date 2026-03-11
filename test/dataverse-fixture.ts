@@ -71,6 +71,41 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
         }
       );
     },
+    invokeAction: async (
+      name: string,
+      parameters: Record<string, unknown> = {}
+    ): Promise<OperationResult<{ status: number; headers: Record<string, string>; body?: unknown; entityId?: string }>> => {
+      if (name === 'AddSolutionComponent') {
+        const solutionUniqueName = typeof parameters.SolutionUniqueName === 'string' ? parameters.SolutionUniqueName : undefined;
+        const componentId = typeof parameters.ComponentId === 'string' ? parameters.ComponentId : undefined;
+        const componentType = typeof parameters.ComponentType === 'number' ? parameters.ComponentType : undefined;
+        const solutions =
+          (((queryState.get('solutions') ?? queryAllState.get('solutions')) as Array<Record<string, unknown>> | undefined) ?? []);
+        const solutionId = solutions.find((record) => record.uniquename === solutionUniqueName)?.solutionid;
+        const records = (queryAllState.get('solutioncomponents') ?? []) as Array<Record<string, unknown>>;
+
+        queryAllState.set('solutioncomponents', [
+          ...records,
+          {
+            solutioncomponentid: `fixture-solutioncomponent-${records.length + 1}`,
+            objectid: componentId,
+            componenttype: componentType,
+            _solutionid_value: solutionId,
+          },
+        ]);
+      }
+
+      return ok(
+        {
+          status: 200,
+          headers: {},
+          body: {},
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    },
     update: async <TRecord extends Record<string, unknown>, TResult = TRecord>(
       table: string,
       id: string,
@@ -221,6 +256,8 @@ function inferPreferredIdKey(table: string): string | undefined {
       return 'environmentvariabledefinitionid';
     case 'environmentvariablevalues':
       return 'environmentvariablevalueid';
+    case 'appmodules':
+      return 'appmoduleid';
     default:
       return undefined;
   }

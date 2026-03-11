@@ -28,7 +28,7 @@ These areas are implemented and documented, but still intentionally bounded:
 - canvas offline inspection, validation, lint, build, diff, workspace inspection, template registry management, and LSP support
 - flow local artifact workflows: unpack, normalize, validate, graph, patch, pack, deploy
 - flow remote discovery, inspect, export, promote, runs, errors, connrefs, and doctor
-- model-driven app composition inspection
+- model-driven app composition inspection plus bounded create/solution-attach authoring
 - SharePoint and Power BI targeted inspection commands
 - CI adapter wrappers and runner scripts
 - extension registry and contribution contract

@@ -2799,6 +2799,97 @@ describe('normalizeMetadataQueryOptions', () => {
     ]);
   });
 
+  it('creates and attaches model-driven apps through typed services', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          appmoduleid: 'app-3',
+          uniquename: 'ServiceHub',
+          name: 'Service Hub',
+          appmoduleversion: '1.0.0.0',
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              appmoduleid: 'app-3',
+              uniquename: 'ServiceHub',
+              name: 'Service Hub',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {},
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ModelDrivenAppService(client);
+
+    const created = await service.create('ServiceHub', {
+      name: 'Service Hub',
+      solutionUniqueName: 'Core',
+    });
+    const attached = await service.attachToSolution('ServiceHub', 'Core');
+
+    expect(created.success).toBe(true);
+    expect(created.data).toMatchObject({
+      id: 'app-3',
+      uniqueName: 'ServiceHub',
+      name: 'Service Hub',
+    });
+    expect(attached.success).toBe(true);
+    expect(attached.data).toMatchObject({
+      attached: true,
+      solutionUniqueName: 'Core',
+      app: {
+        id: 'app-3',
+        uniqueName: 'ServiceHub',
+      },
+      addRequiredComponents: true,
+    });
+    expect(httpClient.requests.map((request) => ({ path: request.path, method: request.method, body: request.body, headers: request.headers }))).toEqual([
+      {
+        path: 'appmodules',
+        method: 'POST',
+        body: {
+          uniquename: 'ServiceHub',
+          name: 'Service Hub',
+        },
+        headers: {
+          prefer: 'return=representation',
+          'MSCRM.SolutionUniqueName': 'Core',
+        },
+      },
+      {
+        path: 'appmodules?%24select=appmoduleid%2Cuniquename%2Cname%2Cappmoduleversion%2Cstatecode%2Cpublishedon',
+        method: 'GET',
+        body: undefined,
+        headers: {},
+      },
+      {
+        path: 'AddSolutionComponent',
+        method: 'POST',
+        body: {
+          ComponentId: 'app-3',
+          ComponentType: 80,
+          SolutionUniqueName: 'Core',
+          AddRequiredComponents: true,
+        },
+        headers: {
+          'MSCRM.SolutionUniqueName': 'Core',
+        },
+      },
+    ]);
+  });
+
   it('rejects unsupported metadata count requests', () => {
     const result = normalizeMetadataQueryOptions('EntityDefinitions', {
       count: true,
