@@ -688,12 +688,29 @@ async function runSolution(command: string | undefined, args: string[]): Promise
 }
 
 async function runConnectionReference(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printConnectionReferenceHelp();
+    return 0;
+  }
+
   switch (command) {
     case 'list':
+      if (args.includes('--help') || args.includes('help')) {
+        printConnectionReferenceListHelp();
+        return 0;
+      }
       return runConnectionReferenceList(args);
     case 'inspect':
+      if (args.includes('--help') || args.includes('help')) {
+        printConnectionReferenceInspectHelp();
+        return 0;
+      }
       return runConnectionReferenceInspect(args);
     case 'validate':
+      if (args.includes('--help') || args.includes('help')) {
+        printConnectionReferenceValidateHelp();
+        return 0;
+      }
       return runConnectionReferenceValidate(args);
     default:
       printHelp();
@@ -709,8 +726,16 @@ async function runEnvironmentVariable(command: string | undefined, args: string[
 
   switch (command) {
     case 'create':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentVariableCreateHelp();
+        return 0;
+      }
       return runEnvironmentVariableCreate(args);
     case 'list':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentVariableListHelp();
+        return 0;
+      }
       return runEnvironmentVariableList(args);
     case 'inspect':
       if (args.includes('--help') || args.includes('help')) {
@@ -719,6 +744,10 @@ async function runEnvironmentVariable(command: string | undefined, args: string[
       }
       return runEnvironmentVariableInspect(args);
     case 'set':
+      if (args.includes('--help') || args.includes('help')) {
+        printEnvironmentVariableSetHelp();
+        return 0;
+      }
       return runEnvironmentVariableSet(args);
     default:
       printHelp();
@@ -9470,13 +9499,13 @@ function printHelp(): void {
       '  solution import <path.zip> --environment ALIAS [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution pack <folder> --out FILE.zip [--package-type managed|unmanaged|both] [--map FILE] [--pac PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '  solution unpack <path.zip> --out DIR [--package-type managed|unmanaged|both] [--allow-delete] [--map FILE] [--pac PATH] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  connref list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  connref inspect <logicalName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  connref validate --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar create <schemaName> --environment ALIAS [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret] [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
-      '  envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  connref list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  connref inspect <logicalName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  connref validate --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar create <schemaName> --environment ALIAS [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret] [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
+      '  envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas list --environment ALIAS [--solution UNIQUE_NAME] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [--format table|json|yaml|ndjson|markdown|raw]',
       '  canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [--delegate] [preview handoff or delegated Maker automation]',
@@ -10018,8 +10047,144 @@ function printEnvironmentVariableHelp(): void {
       '  set <identifier>            set the current value for one environment variable',
       '',
       'Examples:',
-      '  pp envvar list --environment dev --solution Core --format json',
-      '  pp envvar inspect pp_ApiUrl --environment dev',
+      '  pp envvar list --environment dev --solution Core --no-interactive-auth --format json',
+      '  pp envvar inspect pp_ApiUrl --environment dev --no-interactive-auth',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printConnectionReferenceHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: connref <command> [options]',
+      '',
+      'Commands:',
+      '  list                        list connection references',
+      '  inspect <identifier>        inspect one connection reference by logical name, display name, or id',
+      '  validate                    validate connection reference bindings and health',
+      '',
+      'Examples:',
+      '  pp connref list --environment dev --solution Core --no-interactive-auth --format json',
+      '  pp connref validate --environment dev --solution Core --no-interactive-auth',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printConnectionReferenceListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: connref list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Lists connection references visible in the target environment or solution scope.',
+      '  - Returns stable structured rows with logical names, connector metadata, and bound connection ids when available.',
+      '',
+      'Examples:',
+      '  pp connref list --environment dev',
+      '  pp connref list --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printConnectionReferenceInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: connref inspect <logicalName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Resolves one connection reference in the target environment or solution scope.',
+      '  - Returns a stable CONNREF_NOT_FOUND diagnostic when the identifier does not match a connection reference in scope.',
+      '',
+      'Examples:',
+      '  pp connref inspect shared_office365 --environment dev',
+      '  pp connref inspect shared_office365 --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printConnectionReferenceValidateHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: connref validate --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Validates connection references visible in the target environment or solution scope.',
+      '  - Returns stable structured rows for missing bindings, connector mismatches, or other validation findings.',
+      '',
+      'Examples:',
+      '  pp connref validate --environment dev',
+      '  pp connref validate --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentVariableCreateHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: envvar create <schemaName> --environment ALIAS [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Creates one environment variable definition in the target environment.',
+      '  - Uses the schema name as the display name when `--display-name` is omitted.',
+      '',
+      'Examples:',
+      '  pp envvar create pp_ApiUrl --environment dev --solution Core --type string',
+      '  pp envvar create pp_ApiUrl --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentVariableListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: envvar list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Lists environment variable definitions and current values visible in the target environment or solution scope.',
+      '  - Returns stable structured rows including schema names, types, default values, and current values when present.',
+      '',
+      'Examples:',
+      '  pp envvar list --environment dev',
+      '  pp envvar list --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -10030,7 +10195,7 @@ function printEnvironmentVariableHelp(): void {
 function printEnvironmentVariableInspectHelp(): void {
   process.stdout.write(
     [
-      'Usage: envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      'Usage: envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
       '',
       'Behavior:',
       '  - Resolves one environment variable definition and its current value when present.',
@@ -10038,7 +10203,32 @@ function printEnvironmentVariableInspectHelp(): void {
       '',
       'Examples:',
       '  pp envvar inspect pp_ApiUrl --environment dev',
-      '  pp envvar inspect pp_ApiUrl --environment dev --solution Core --format json',
+      '  pp envvar inspect pp_ApiUrl --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printEnvironmentVariableSetHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Sets the current value for one environment variable in the target environment or solution scope.',
+      '  - Returns the updated definition and current value after the write succeeds.',
+      '',
+      'Examples:',
+      '  pp envvar set pp_ApiUrl --environment dev --value https://next.example.test',
+      '  pp envvar set pp_ApiUrl --environment dev --solution Core --value https://next.example.test --no-interactive-auth --format json',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

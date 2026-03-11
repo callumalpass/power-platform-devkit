@@ -6788,8 +6788,14 @@ describe('cli fixture-backed workflows', () => {
     const solutionComponentsHelp = await runCli(['solution', 'components', '--help']);
     const solutionDependenciesHelp = await runCli(['solution', 'dependencies', '--help']);
     const rootHelp = await runCli(['--help']);
+    const connrefHelp = await runCli(['connref', '--help']);
+    const connrefListHelp = await runCli(['connref', 'list', '--help']);
+    const connrefValidateHelp = await runCli(['connref', 'validate', '--help']);
     const envvarHelp = await runCli(['envvar', '--help']);
+    const envvarCreateHelp = await runCli(['envvar', 'create', '--help']);
+    const envvarListHelp = await runCli(['envvar', 'list', '--help']);
     const envvarInspectHelp = await runCli(['envvar', 'inspect', '--help']);
+    const envvarSetHelp = await runCli(['envvar', 'set', '--help']);
 
     expect(dvHelp.code).toBe(0);
     expect(dvHelp.stderr).toBe('');
@@ -6855,20 +6861,68 @@ describe('cli fixture-backed workflows', () => {
     expect(rootHelp.stdout).toContain(
       'model inspect <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]'
     );
+    expect(rootHelp.stdout).toContain(
+      'connref list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]'
+    );
+    expect(rootHelp.stdout).toContain(
+      'envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--no-interactive-auth] [--format table|json|yaml|ndjson|markdown|raw]'
+    );
+
+    expect(connrefHelp.code).toBe(0);
+    expect(connrefHelp.stderr).toBe('');
+    expect(connrefHelp.stdout).toContain('Usage: connref <command> [options]');
+    expect(connrefHelp.stdout).toContain('--no-interactive-auth');
+
+    expect(connrefListHelp.code).toBe(0);
+    expect(connrefListHelp.stderr).toBe('');
+    expect(connrefListHelp.stdout).toContain(
+      'Usage: connref list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+    );
+    expect(connrefListHelp.stdout).toContain('Fail fast with structured diagnostics instead of opening browser auth');
+    expect(connrefListHelp.stdout).not.toContain('DV_ENV_REQUIRED');
+
+    expect(connrefValidateHelp.code).toBe(0);
+    expect(connrefValidateHelp.stderr).toBe('');
+    expect(connrefValidateHelp.stdout).toContain(
+      'Usage: connref validate --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+    );
+    expect(connrefValidateHelp.stdout).not.toContain('DV_ENV_REQUIRED');
 
     expect(envvarHelp.code).toBe(0);
     expect(envvarHelp.stderr).toBe('');
     expect(envvarHelp.stdout).toContain('Usage: envvar <command> [options]');
     expect(envvarHelp.stdout).toContain('inspect <identifier>');
+    expect(envvarHelp.stdout).toContain('--no-interactive-auth');
     expect(envvarHelp.stdout).toContain('--format table|json|yaml|ndjson|markdown|raw');
+
+    expect(envvarCreateHelp.code).toBe(0);
+    expect(envvarCreateHelp.stderr).toBe('');
+    expect(envvarCreateHelp.stdout).toContain(
+      'Usage: envvar create <schemaName> --environment ALIAS [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+    );
+    expect(envvarCreateHelp.stdout).not.toContain('ENVVAR_SCHEMA_REQUIRED');
+
+    expect(envvarListHelp.code).toBe(0);
+    expect(envvarListHelp.stderr).toBe('');
+    expect(envvarListHelp.stdout).toContain(
+      'Usage: envvar list --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+    );
+    expect(envvarListHelp.stdout).not.toContain('DV_ENV_REQUIRED');
 
     expect(envvarInspectHelp.code).toBe(0);
     expect(envvarInspectHelp.stderr).toBe('');
     expect(envvarInspectHelp.stdout).toContain(
-      'Usage: envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [options]'
+      'Usage: envvar inspect <schemaName|displayName|id> --environment ALIAS [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
     );
     expect(envvarInspectHelp.stdout).toContain('stable ENVVAR_NOT_FOUND diagnostic');
     expect(envvarInspectHelp.stdout).not.toContain('ENVVAR_IDENTIFIER_REQUIRED');
+
+    expect(envvarSetHelp.code).toBe(0);
+    expect(envvarSetHelp.stderr).toBe('');
+    expect(envvarSetHelp.stdout).toContain(
+      'Usage: envvar set <schemaName|displayName|id> --environment ALIAS --value VALUE [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+    );
+    expect(envvarSetHelp.stdout).not.toContain('ENVVAR_SET_ARGS_REQUIRED');
   });
 
   it('keeps help-discoverable format support aligned with runtime on harness-reported commands', async () => {
