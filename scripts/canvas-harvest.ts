@@ -8,14 +8,20 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { chromium, type BrowserContext, type Frame, type Locator, type Page } from 'playwright-core';
-import { writeJsonFile } from '../packages/artifacts/src/index';
-import { AuthService, resolveBrowserProfileDirectory, type AuthProfile, type BrowserProfile, type UserAuthProfile } from '../packages/auth/src/index';
-import { fetchCanvasControlCatalogDocument, type CanvasControlCatalogDocument } from '../packages/canvas/src/control-catalog';
-import type { CanvasControlInsertReportDocument } from '../packages/canvas/src/harvest-fixture';
-import { analyzeHarvestedCanvasApp, deriveCanvasStudioEditUrl } from '../packages/canvas/src/harvest';
-import type { CanvasSupportMatrixEntry, CanvasTemplateRecord, CanvasTemplateRegistryDocument } from '../packages/canvas/src/index';
-import { type EnvironmentAlias } from '../packages/config/src/index';
-import { resolveDataverseClient, type DataverseClient } from '../packages/dataverse/src/index';
+import { writeJsonFile } from '@pp/artifacts';
+import { AuthService, resolveBrowserProfileDirectory, type AuthProfile, type BrowserProfile, type UserAuthProfile } from '@pp/auth';
+import {
+  analyzeHarvestedCanvasApp,
+  deriveCanvasStudioEditUrl,
+  fetchCanvasControlCatalogDocument,
+  type CanvasControlCatalogDocument,
+  type CanvasControlInsertReportDocument,
+  type CanvasSupportMatrixEntry,
+  type CanvasTemplateRecord,
+  type CanvasTemplateRegistryDocument,
+} from '@pp/canvas';
+import { type EnvironmentAlias } from '@pp/config';
+import { resolveDataverseClient, type DataverseClient } from '@pp/dataverse';
 
 interface CliOptions {
   fixtureManifestPath?: string;

@@ -1,14 +1,14 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { readJsonFile, writeJsonFile } from '../packages/artifacts/src/index';
+import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
   buildCanvasHarvestFixturePrototypeValidationBacklogDocument,
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
   DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BACKLOG_PATH,
   type CanvasHarvestFixturePlan,
   type CanvasHarvestFixturePrototypeDocument,
-} from '../packages/canvas/src/harvest-fixture';
-import type { CanvasTemplateRegistryDocument } from '../packages/canvas/src/index';
+  type CanvasTemplateRegistryDocument,
+} from '@pp/canvas';
 
 async function main(): Promise<void> {
   const planPath = resolve(readArg('--plan') ?? DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH);

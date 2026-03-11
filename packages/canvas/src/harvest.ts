@@ -8,7 +8,7 @@ import type {
   CanvasTemplateProvenance,
   CanvasTemplateRecord,
   CanvasTemplateRegistryDocument,
-} from './index';
+} from './canvas-types';
 
 interface CanvasUsedTemplatesDocument {
   UsedTemplates?: CanvasUsedTemplateEntry[];

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { readJsonFile, writeJsonFile } from '../packages/artifacts/src/index';
+import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
   DEFAULT_CANVAS_HARVEST_FIXTURE_PLAN_PATH,
   DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BACKLOG_PATH,
@@ -13,8 +13,8 @@ import {
   type CanvasHarvestFixturePrototypeDraftDocument,
   type CanvasHarvestFixturePlan,
   type CanvasHarvestFixturePrototypeValidationStatus,
-} from '../packages/canvas/src/harvest-fixture';
-import type { CanvasTemplateRegistryDocument } from '../packages/canvas/src/index';
+  type CanvasTemplateRegistryDocument,
+} from '@pp/canvas';
 
 const DEFAULT_CANVAS_HARVEST_PROTOTYPE_DRAFT_PATH = 'fixtures/canvas-harvest/generated/prototype-drafts.json';
 const DEFAULT_CANVAS_HARVEST_PROTOTYPE_PATH = 'fixtures/canvas-harvest/prototypes.json';

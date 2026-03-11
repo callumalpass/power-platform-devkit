@@ -11,7 +11,7 @@ import {
   type CanvasControlCatalogEntry,
   type CanvasControlCatalogSource,
 } from './control-catalog';
-import type { CanvasJsonValue, CanvasTemplateMatchType, CanvasTemplateRecord, CanvasTemplateRegistryDocument } from './index';
+import type { CanvasJsonValue, CanvasTemplateMatchType, CanvasTemplateRecord, CanvasTemplateRegistryDocument } from './canvas-types';
 
 export type {
   CanvasControlCatalogCounts,

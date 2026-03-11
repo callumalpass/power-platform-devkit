@@ -1,13 +1,13 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { readJsonFile, writeJsonFile } from '../packages/artifacts/src/index';
+import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
   buildCanvasHarvestFixturePrototypePromotionBatchDocument,
   mergeCanvasHarvestFixturePrototypePromotionBatchDocument,
   resolveCanvasHarvestFixturePrototypeDraftPromotion,
   type CanvasHarvestFixturePrototypePromotionBatchDocument,
   type CanvasHarvestFixturePrototypeDraftDocument,
-} from '../packages/canvas/src/harvest-fixture';
+} from '@pp/canvas';
 
 const DEFAULT_CANVAS_HARVEST_PROTOTYPE_DRAFT_PATH = 'fixtures/canvas-harvest/generated/prototype-drafts.json';
 const DEFAULT_CANVAS_HARVEST_PROTOTYPE_PROMOTION_BATCH_PATH =

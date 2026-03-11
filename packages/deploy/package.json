@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@pp/auth": "workspace:*",
+    "@pp/config": "workspace:*",
     "@pp/dataverse": "workspace:*",
     "@pp/diagnostics": "workspace:*",
     "@pp/flow": "workspace:*",

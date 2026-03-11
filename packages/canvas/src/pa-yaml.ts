@@ -14,7 +14,7 @@ import type {
   CanvasSourceModel,
   CanvasSourcePosition,
   CanvasSourceSpan,
-} from './index';
+} from './canvas-types';
 
 export interface CanvasSourceReadOptions {
   sourceFiles?: Record<string, string>;

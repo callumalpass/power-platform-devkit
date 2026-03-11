@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { readJsonFile, writeJsonFile } from '../packages/artifacts/src/index';
+import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
   DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_BATCH_PATH,
   DEFAULT_CANVAS_HARVEST_PROTOTYPE_VALIDATION_FIXTURE_SELECTION_PATH,
@@ -10,7 +10,7 @@ import {
   type CanvasHarvestFixturePrototypeValidationBatchDocument,
   type CanvasHarvestFixtureRecordedPrototypeValidationStatus,
   type CanvasHarvestPrototypeValidationFixtureDocument,
-} from '../packages/canvas/src/harvest-fixture';
+} from '@pp/canvas';
 
 async function main(): Promise<void> {
   const selectionPath = resolve(

@@ -1,4 +1,4 @@
-import type { CanvasJsonValue, CanvasTemplateRecord } from './index';
+import type { CanvasJsonValue, CanvasTemplateRecord } from './canvas-types';
 
 export interface CanvasTemplateSurface {
   templateName: string;

@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { sha256Hex } from '@pp/artifacts';
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
-import type { CanvasBuildResult, CanvasControlDefinition, CanvasSourceModel, CanvasTemplateRequirementResolution } from './index';
+import type { CanvasBuildResult, CanvasControlDefinition, CanvasSourceModel, CanvasTemplateRequirementResolution } from './canvas-types';
 import { buildCanvasTemplateSurface } from './template-surface';
 
 interface GeneratedControlInfoFile {

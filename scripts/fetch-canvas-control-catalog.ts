@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { writeJsonFile } from '../packages/artifacts/src/index';
-import { fetchCanvasControlCatalogDocument } from '../packages/canvas/src/control-catalog';
+import { writeJsonFile } from '@pp/artifacts';
+import { fetchCanvasControlCatalogDocument } from '@pp/canvas';
 
 async function main(): Promise<void> {
   const outPath = resolve(readArg('--out') ?? 'registries/canvas-control-catalog.json');

@@ -10,7 +10,7 @@ import type {
   CanvasSourceSpan,
   CanvasTemplateRecord,
   CanvasTemplateRequirementResolution,
-} from './index';
+} from './canvas-types';
 
 export type CanvasSemanticSymbolKind =
   | 'screen'

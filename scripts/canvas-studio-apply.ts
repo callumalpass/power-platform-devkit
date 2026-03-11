@@ -4,21 +4,17 @@ import { pathToFileURL } from 'node:url';
 import { chromium, type Frame, type Page } from 'playwright-core';
 import {
   buildCanvasControlCatalogSelectionCheckpoint,
+  resolveCanvasControlCatalogStudioInsertPlan,
+  resolveCanvasControlInsertReportResumeSelection,
   selectCanvasControlCatalogEntries,
   summarizeCanvasControlCatalogDocument,
+  type CanvasControlInsertReportAttempt as InsertAttempt,
+  type CanvasControlInsertReportDocument as InsertReport,
+  type CanvasControlInsertReportEntry as InsertReportEntry,
   type CanvasControlCatalogDocument,
   type CanvasControlCatalogEntry,
-} from '../packages/canvas/src/control-catalog';
-import type {
-  CanvasControlInsertReportAttempt as InsertAttempt,
-  CanvasControlInsertReportDocument as InsertReport,
-  CanvasControlInsertReportEntry as InsertReportEntry,
-} from '../packages/canvas/src/harvest-fixture';
-import { resolveCanvasControlInsertReportResumeSelection } from '../packages/canvas/src/harvest-fixture';
-import {
-  resolveCanvasControlCatalogStudioInsertPlan,
   type CanvasStudioInsertPlan,
-} from '../packages/canvas/src/harvest-studio-plan';
+} from '@pp/canvas';
 
 interface Options {
   studioUrl: string;

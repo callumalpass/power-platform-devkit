@@ -34,7 +34,9 @@
   "dependencies": {
     "@pp/artifacts": "workspace:*",
     "@pp/config": "workspace:*",
+    "@pp/dataverse": "workspace:*",
     "@pp/diagnostics": "workspace:*",
+    "@pp/solution": "workspace:*",
     "yaml": "^2.7.1"
   }
 }

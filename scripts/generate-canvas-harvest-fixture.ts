@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { readJsonFile, writeJsonFile } from '../packages/artifacts/src/index';
+import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
   assertCanvasHarvestFixtureCatalogCanWriteOutputs,
   buildCanvasHarvestFixturePlan,
@@ -10,8 +10,8 @@ import {
   type CanvasControlCatalogDocument,
   type CanvasControlInsertReportDocument,
   type CanvasHarvestFixturePrototypeDocument,
-} from '../packages/canvas/src/harvest-fixture';
-import type { CanvasTemplateRegistryDocument } from '../packages/canvas/src/index';
+  type CanvasTemplateRegistryDocument,
+} from '@pp/canvas';
 
 async function main(): Promise<void> {
   const catalogPath = resolve(readArg('--catalog') ?? 'registries/canvas-control-catalog.json');
