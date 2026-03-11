@@ -84,6 +84,26 @@
       "target": "dev"
     }
   },
+  "relationships": {
+    "activeAuthProfileStatus": "unresolved",
+    "activeEnvironmentAlias": "dev",
+    "activeRelationshipSummary": "stage dev -> environment dev -> auth profile <missing> -> solution Core (Core)",
+    "authProfileNames": [],
+    "authProfileUsageSummary": "No auth profile could be resolved from the current project stage mappings.",
+    "projectRoot": "<REPO_ROOT>",
+    "selectedStage": "dev",
+    "stageRelationships": [
+      {
+        "authProfileStatus": "unresolved",
+        "environmentAlias": "dev",
+        "environmentStatus": "missing",
+        "solutionAlias": "Core",
+        "solutionUniqueName": "Core",
+        "stage": "dev",
+        "summary": "stage dev -> environment dev -> auth profile <missing> -> solution Core (Core)"
+      }
+    ]
+  },
   "success": true,
   "suggestedNextActions": [],
   "summary": {

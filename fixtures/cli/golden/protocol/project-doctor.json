@@ -82,6 +82,22 @@
       "hint": "Keep editable sources and generated outputs in separate roots so the project intent stays obvious.",
       "message": "Layout profile is source-first: editable assets live in dedicated roots and generated bundles are already separate or absent.",
       "status": "info"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED",
+      "hint": "Add the alias with `pp env add --name sandbox --url <dataverse-url> --profile <auth-profile>`.",
+      "message": "Stage dev points to environment alias sandbox, but that alias is not configured in the active pp environment registry.",
+      "status": "warn"
+    },
+    {
+      "code": "PROJECT_DOCTOR_RELATIONSHIP_CHAIN",
+      "message": "stage dev -> environment sandbox -> auth profile <missing> -> solution CoreLifecycle (CoreLifecycle)",
+      "status": "info"
+    },
+    {
+      "code": "PROJECT_DOCTOR_AUTH_PROFILE_USAGE",
+      "message": "No auth profile could be resolved from the current project stage mappings.",
+      "status": "info"
     }
   ],
   "configPath": "<TMP_DIR>/pp.config.yaml",
@@ -144,6 +160,26 @@
     },
     "profile": "source-first",
     "recommendations": []
+  },
+  "relationships": {
+    "activeAuthProfileStatus": "unresolved",
+    "activeEnvironmentAlias": "sandbox",
+    "activeRelationshipSummary": "stage dev -> environment sandbox -> auth profile <missing> -> solution CoreLifecycle (CoreLifecycle)",
+    "authProfileNames": [],
+    "authProfileUsageSummary": "No auth profile could be resolved from the current project stage mappings.",
+    "projectRoot": "<TMP_DIR>",
+    "selectedStage": "dev",
+    "stageRelationships": [
+      {
+        "authProfileStatus": "unresolved",
+        "environmentAlias": "sandbox",
+        "environmentStatus": "missing",
+        "solutionAlias": "CoreLifecycle",
+        "solutionUniqueName": "CoreLifecycle",
+        "stage": "dev",
+        "summary": "stage dev -> environment sandbox -> auth profile <missing> -> solution CoreLifecycle (CoreLifecycle)"
+      }
+    ]
   },
   "root": "<TMP_DIR>",
   "success": true,
