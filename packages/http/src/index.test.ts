@@ -116,4 +116,31 @@ describe('HttpClient', () => {
       detail: 'Browser profile test-user was last bootstrapped for https://make.powerapps.com/.',
     });
   });
+
+  it('aborts requests that exceed the configured timeout', async () => {
+    const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      await new Promise((_, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+      });
+      return new Response(null, { status: 204 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new HttpClient({
+      baseUrl: 'https://example.com/api/',
+    });
+
+    const response = await client.requestJson<{ ok: boolean }>({
+      path: 'ExportSolution',
+      method: 'POST',
+      timeoutMs: 10,
+    });
+
+    expect(response.success).toBe(false);
+    expect(response.diagnostics[0]).toMatchObject({
+      code: 'HTTP_REQUEST_TIMEOUT',
+      message: 'POST ExportSolution timed out after 10ms',
+    });
+  });
 });

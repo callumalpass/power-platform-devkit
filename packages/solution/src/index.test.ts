@@ -1465,6 +1465,95 @@ describe('SolutionService', () => {
     });
   });
 
+  it('caps each export checkpoint attempt to the remaining publish timeout budget', async () => {
+    const tempDir = await createTempDir();
+    const actionOptions: Array<Record<string, unknown> | undefined> = [];
+    const baseClient = createStubClient({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+        friendlyname: 'Core',
+        version: '1.0.0.0',
+      },
+      components: [],
+      dependencies: [],
+    });
+    const service = new SolutionService({
+      ...baseClient,
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>, options?: { timeoutMs?: number }) => {
+        actionOptions.push(name === 'ExportSolution' ? options : undefined);
+
+        return baseClient.invokeAction<T>(name, parameters, options);
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.publish('Core', {
+      waitForExport: true,
+      timeoutMs: 5_000,
+      pollIntervalMs: 1_000,
+      exportOptions: {
+        outPath: join(tempDir, 'Core.zip'),
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(actionOptions).toContainEqual(expect.objectContaining({ timeoutMs: expect.any(Number) }));
+    expect((actionOptions.find((entry) => entry?.timeoutMs !== undefined)?.timeoutMs as number)).toBeLessThanOrEqual(5_000);
+  });
+
+  it('adds workflow packaging context when ExportSolution fails for a solution with workflow components', async () => {
+    const service = new SolutionService({
+      ...createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+        },
+        components: [
+          {
+            solutioncomponentid: 'comp-workflow',
+            objectid: 'flow-1',
+            componenttype: 29,
+          },
+        ],
+        dependencies: [],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+            category: 5,
+            statecode: 0,
+            statuscode: 1,
+          },
+        ],
+      }),
+      invokeAction: async () =>
+        ({
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'POST ExportSolution returned 405',
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        }) as OperationResult<never>,
+    } as unknown as DataverseClient);
+
+    const result = await service.exportSolution('Core');
+
+    expect(result.success).toBe(false);
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_EXPORT_WORKFLOW_CONTEXT',
+        detail: expect.stringContaining('Harness Flow [id=flow-1; category=5; state=draft]'),
+      })
+    );
+  });
+
   it('packs and unpacks solution artifacts through the command runner seam', async () => {
     const tempDir = await createTempDir();
     const sourceFolder = join(tempDir, 'src');

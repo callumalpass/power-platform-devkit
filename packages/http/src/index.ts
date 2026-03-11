@@ -23,6 +23,7 @@ export interface HttpRequestOptions {
   headers?: Record<string, string>;
   authenticated?: boolean;
   responseType?: HttpResponseType;
+  timeoutMs?: number;
 }
 
 export interface HttpError extends Error {
@@ -158,11 +159,40 @@ export class HttpClient {
     }
 
     for (let attempt = 0; attempt <= this.retries; attempt += 1) {
-      const response = await fetch(url, {
-        method: request.method ?? 'GET',
-        headers,
-        body,
-      });
+      let timedOut = false;
+      const controller = request.timeoutMs && request.timeoutMs > 0 ? new AbortController() : undefined;
+      const timeoutHandle =
+        controller && request.timeoutMs
+          ? setTimeout(() => {
+              timedOut = true;
+              controller.abort();
+            }, request.timeoutMs)
+          : undefined;
+
+      let response: Response;
+
+      try {
+        response = await fetch(url, {
+          method: request.method ?? 'GET',
+          headers,
+          body,
+          ...(controller ? { signal: controller.signal } : {}),
+        });
+      } catch (error) {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+
+        if (timedOut) {
+          throw createRequestTimeoutError(request, request.timeoutMs ?? 0);
+        }
+
+        throw error;
+      }
+
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
 
       if (!shouldRetry(response.status) || attempt === this.retries) {
         return response;
@@ -220,6 +250,17 @@ function readErrorStringField(error: unknown, field: 'code' | 'hint' | 'detail')
 
   const value = (error as Record<string, unknown>)[field];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function createRequestTimeoutError(request: HttpRequestOptions, timeoutMs: number): Error & { code: string; hint: string; detail: string } {
+  const method = request.method ?? 'GET';
+  const message = `${method} ${request.path} timed out after ${timeoutMs}ms`;
+
+  return Object.assign(new Error(message), {
+    code: 'HTTP_REQUEST_TIMEOUT',
+    hint: 'Increase the request timeout when the remote action is expected to run for longer, or retry to confirm whether the endpoint is stalled.',
+    detail: `The request exceeded the configured ${timeoutMs}ms timeout before the server returned a response.`,
+  });
 }
 
 function resolveRequestBody(request: HttpRequestOptions): SupportedRequestBody | undefined {

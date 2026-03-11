@@ -59,7 +59,7 @@ export interface EntityReadOptions extends Pick<ODataQueryOptions, 'select' | 'e
 }
 
 export interface DataverseRequestOptions
-  extends Pick<HttpRequestOptions, 'method' | 'body' | 'rawBody' | 'headers' | 'responseType' | 'authenticated'> {
+  extends Pick<HttpRequestOptions, 'method' | 'body' | 'rawBody' | 'headers' | 'responseType' | 'authenticated' | 'timeoutMs'> {
   path: string;
   query?: Record<string, HttpQueryValue>;
   prefer?: string[];
@@ -138,12 +138,12 @@ export interface DataverseOperationResult<T = unknown> {
 }
 
 export interface DataverseActionOptions
-  extends Pick<DataverseRequestOptions, 'headers' | 'responseType' | 'includeAnnotations' | 'solutionUniqueName'> {
+  extends Pick<DataverseRequestOptions, 'headers' | 'responseType' | 'includeAnnotations' | 'solutionUniqueName' | 'timeoutMs'> {
   boundPath?: string;
 }
 
 export interface DataverseFunctionOptions
-  extends Pick<DataverseRequestOptions, 'headers' | 'responseType' | 'includeAnnotations'> {
+  extends Pick<DataverseRequestOptions, 'headers' | 'responseType' | 'includeAnnotations' | 'timeoutMs'> {
   boundPath?: string;
 }
 
@@ -800,6 +800,7 @@ export class DataverseClient {
       headers: buildDataverseHeaders(options),
       authenticated: options.authenticated,
       responseType: options.responseType,
+      timeoutMs: options.timeoutMs,
     });
   }
 
@@ -813,6 +814,7 @@ export class DataverseClient {
       headers: buildDataverseHeaders(options),
       authenticated: options.authenticated,
       responseType: options.responseType ?? 'json',
+      timeoutMs: options.timeoutMs,
     });
   }
 
@@ -829,6 +831,7 @@ export class DataverseClient {
       headers: options.headers,
       includeAnnotations: options.includeAnnotations,
       solutionUniqueName: options.solutionUniqueName,
+      timeoutMs: options.timeoutMs,
     });
 
     if (!response.success) {
@@ -868,6 +871,7 @@ export class DataverseClient {
       responseType: options.responseType ?? 'json',
       headers: options.headers,
       includeAnnotations: options.includeAnnotations,
+      timeoutMs: options.timeoutMs,
     });
 
     if (!response.success) {

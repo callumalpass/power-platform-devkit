@@ -249,6 +249,7 @@ export interface SolutionExportOptions {
   outDir?: string;
   outPath?: string;
   manifestPath?: string;
+  requestTimeoutMs?: number;
 }
 
 export interface SolutionExportResult {
@@ -1195,10 +1196,28 @@ export class SolutionService {
     const exportResult = await this.dataverseClient.invokeAction<{ ExportSolutionFile?: string }>('ExportSolution', {
       SolutionName: uniqueName,
       Managed: packageType === 'managed',
+    }, {
+      timeoutMs: options.requestTimeoutMs,
     });
 
     if (!exportResult.success) {
-      return exportResult as unknown as OperationResult<SolutionExportResult>;
+      const workflowExportContext = await this.describeWorkflowExportContext(uniqueName);
+
+      return fail(
+        mergeDiagnosticLists(solution.diagnostics, analysis.diagnostics, exportResult.diagnostics, workflowExportContext?.diagnostics),
+        {
+          supportTier: 'preview',
+          warnings: mergeDiagnosticLists(solution.warnings, analysis.warnings, exportResult.warnings, workflowExportContext?.warnings),
+          suggestedNextActions: workflowExportContext?.suggestedNextActions,
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse ExportSolution',
+            },
+            ...(workflowExportContext?.provenance ?? []),
+          ],
+        }
+      );
     }
 
     const exportFile = exportResult.data?.body?.ExportSolutionFile;
@@ -1334,7 +1353,11 @@ export class SolutionService {
 
     while (Date.now() - startedAt <= timeoutMs) {
       attempts += 1;
-      lastExportResult = await this.exportSolution(uniqueName, options.exportOptions);
+      const remainingMs = Math.max(1, timeoutMs - (Date.now() - startedAt));
+      lastExportResult = await this.exportSolution(uniqueName, {
+        ...options.exportOptions,
+        requestTimeoutMs: remainingMs,
+      });
 
       if (lastExportResult.success && lastExportResult.data) {
         return ok(
@@ -1415,6 +1438,79 @@ export class SolutionService {
         ],
       }
     );
+  }
+
+  private async describeWorkflowExportContext(uniqueName: string): Promise<{
+    diagnostics?: Diagnostic[];
+    warnings?: Diagnostic[];
+    suggestedNextActions?: string[];
+    provenance?: Array<{ kind: 'official-api'; source: string }>;
+  } | undefined> {
+    const components = await this.components(uniqueName);
+
+    if (!components.success) {
+      return undefined;
+    }
+
+    const workflowIds = new Set(
+      (components.data ?? [])
+        .filter((component) => component.componentType === 29 && component.objectId)
+        .map((component) => component.objectId!.toLowerCase())
+    );
+
+    if (workflowIds.size === 0) {
+      return undefined;
+    }
+
+    const workflows = await queryAllOrEmpty<{
+      workflowid: string;
+      name?: string;
+      uniquename?: string;
+      category?: number;
+      statecode?: number;
+      statuscode?: number;
+    }>(this.dataverseClient, workflowIds, 'workflows', 'workflowid', ['workflowid', 'name', 'uniquename', 'category', 'statecode', 'statuscode']);
+
+    if (!workflows.success) {
+      return undefined;
+    }
+
+    const workflowSummaries = (workflows.data ?? [])
+      .map((workflow) => {
+        const label = workflow.name ?? workflow.uniquename ?? workflow.workflowid;
+        const workflowState = describeWorkflowState(workflow.statecode, workflow.statuscode);
+        return `${label} [id=${workflow.workflowid}; category=${workflow.category ?? 'unknown'}; state=${workflowState}]`;
+      })
+      .sort((left, right) => left.localeCompare(right));
+
+    if (workflowSummaries.length === 0) {
+      return undefined;
+    }
+
+    return {
+      warnings: [
+        createDiagnostic(
+          'warning',
+          'SOLUTION_EXPORT_WORKFLOW_CONTEXT',
+          `Solution ${uniqueName} includes ${workflowSummaries.length} workflow component(s), which can block ExportSolution when a flow remains draft or otherwise fails Dataverse workflow packaging.`,
+          {
+            source: '@pp/solution',
+            detail: workflowSummaries.join('; '),
+            hint: 'Inspect the listed workflow with `pp flow inspect <name|id|uniqueName> --environment <alias>` before retrying export.',
+          }
+        ),
+      ],
+      suggestedNextActions: [
+        `Run \`pp solution components ${uniqueName} --environment <alias> --format json\` to confirm which workflow components are packaged.`,
+        'Inspect any draft or unexpected workflow state before retrying export.',
+      ],
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse workflows',
+        },
+      ],
+    };
   }
 
   async importSolution(packagePath: string, options: SolutionImportOptions = {}): Promise<OperationResult<SolutionImportResult>> {
@@ -1987,6 +2083,26 @@ function describeComponentType(componentType: number | undefined): string {
   };
 
   return componentType !== undefined ? labels[componentType] ?? `component-${componentType}` : 'unknown';
+}
+
+function describeWorkflowState(stateCode: number | undefined, statusCode: number | undefined): string {
+  if (stateCode === 0) {
+    return 'draft';
+  }
+
+  if (stateCode === 1) {
+    return 'activated';
+  }
+
+  if (stateCode === 2) {
+    return 'suspended';
+  }
+
+  if (stateCode !== undefined || statusCode !== undefined) {
+    return `statecode=${stateCode ?? 'unknown'}, statuscode=${statusCode ?? 'unknown'}`;
+  }
+
+  return 'unknown';
 }
 
 function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagnostic[] {
