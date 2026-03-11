@@ -311,6 +311,43 @@ export interface SolutionCommandRunner {
   run(invocation: SolutionCommandInvocation): Promise<OperationResult<SolutionCommandResult>>;
 }
 
+function escapeODataString(value: string): string {
+  return value.replaceAll("'", "''");
+}
+
+function buildSolutionListFilter(options: { uniqueName?: string; prefix?: string }): string | undefined {
+  const clauses: string[] = [];
+
+  if (options.uniqueName) {
+    clauses.push(`uniquename eq '${escapeODataString(options.uniqueName)}'`);
+  }
+
+  if (options.prefix) {
+    const escapedPrefix = escapeODataString(options.prefix);
+    clauses.push(`(startswith(uniquename,'${escapedPrefix}') or startswith(friendlyname,'${escapedPrefix}'))`);
+  }
+
+  return clauses.length > 0 ? clauses.join(' and ') : undefined;
+}
+
+function filterSolutions(solutions: SolutionSummary[], options: { uniqueName?: string; prefix?: string }): SolutionSummary[] {
+  const normalizedPrefix = options.prefix?.toLowerCase();
+
+  return solutions.filter((solution) => {
+    if (options.uniqueName && solution.uniquename !== options.uniqueName) {
+      return false;
+    }
+
+    if (!normalizedPrefix) {
+      return true;
+    }
+
+    const uniqueName = solution.uniquename.toLowerCase();
+    const friendlyName = solution.friendlyname?.toLowerCase() ?? '';
+    return uniqueName.startsWith(normalizedPrefix) || friendlyName.startsWith(normalizedPrefix);
+  });
+}
+
 export class SolutionService {
   private readonly commandRunner: SolutionCommandRunner;
 
@@ -542,35 +579,51 @@ export class SolutionService {
   }
 
   async list(options: SolutionListOptions = {}): Promise<OperationResult<SolutionSummary[]>> {
+    const normalizedUniqueName = options.uniqueName?.trim();
+    const normalizedPrefix = options.prefix?.trim();
+    const filteredQuery = buildSolutionListFilter({
+      uniqueName: normalizedUniqueName,
+      prefix: normalizedPrefix,
+    });
     const result = await this.dataverseClient.queryAll<SolutionSummary>({
       table: 'solutions',
       select: ['solutionid', 'uniquename', 'friendlyname', 'version'],
+      filter: filteredQuery,
     });
 
     if (!result.success) {
       return result;
     }
 
-    const normalizedUniqueName = options.uniqueName?.trim();
-    const normalizedPrefix = options.prefix?.trim().toLowerCase();
-    const filtered = (result.data ?? []).filter((solution) => {
-      if (normalizedUniqueName && solution.uniquename !== normalizedUniqueName) {
-        return false;
-      }
-
-      if (!normalizedPrefix) {
-        return true;
-      }
-
-      const uniqueName = solution.uniquename.toLowerCase();
-      const friendlyName = solution.friendlyname?.toLowerCase() ?? '';
-      return uniqueName.startsWith(normalizedPrefix) || friendlyName.startsWith(normalizedPrefix);
+    const filtered = filterSolutions(result.data ?? [], {
+      uniqueName: normalizedUniqueName,
+      prefix: normalizedPrefix,
     });
 
-    return ok(filtered, {
+    if (filtered.length > 0 || !filteredQuery) {
+      return ok(filtered, {
+        supportTier: 'preview',
+        diagnostics: result.diagnostics,
+        warnings: result.warnings,
+      });
+    }
+
+    const fallback = await this.dataverseClient.queryAll<SolutionSummary>({
+      table: 'solutions',
+      select: ['solutionid', 'uniquename', 'friendlyname', 'version'],
+    });
+
+    if (!fallback.success) {
+      return fallback;
+    }
+
+    return ok(filterSolutions(fallback.data ?? [], {
+      uniqueName: normalizedUniqueName,
+      prefix: normalizedPrefix,
+    }), {
       supportTier: 'preview',
-      diagnostics: result.diagnostics,
-      warnings: result.warnings,
+      diagnostics: mergeDiagnosticLists(result.diagnostics, fallback.diagnostics),
+      warnings: mergeDiagnosticLists(result.warnings, fallback.warnings),
     });
   }
 
@@ -1359,10 +1412,6 @@ function describeComponentType(componentType: number | undefined): string {
   };
 
   return componentType !== undefined ? labels[componentType] ?? `component-${componentType}` : 'unknown';
-}
-
-function escapeODataString(value: string): string {
-  return value.replaceAll("'", "''");
 }
 
 function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagnostic[] {

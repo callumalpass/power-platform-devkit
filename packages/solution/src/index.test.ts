@@ -505,6 +505,86 @@ describe('SolutionService', () => {
     ]);
   });
 
+  it('pushes solution list prefix filters down to the Dataverse query', async () => {
+    const queryAllCalls: Array<{ table: string; filter?: string }> = [];
+    const service = new SolutionService({
+      query: async <T>(): Promise<OperationResult<T[]>> => ok([] as T[], { supportTier: 'preview' }),
+      queryAll: async <T>(options: { table: string; filter?: string }): Promise<OperationResult<T[]>> => {
+        queryAllCalls.push(options);
+        return ok(
+          [
+            {
+              solutionid: 'sol-harness',
+              uniquename: 'ppHarness20260310T233219225Z',
+              friendlyname: 'PP Harness 20260310T233219225Z',
+              version: '1.0.0.0',
+            },
+          ] as T[],
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.list({ prefix: 'ppHarness20260310T233219225Z' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        uniquename: 'ppHarness20260310T233219225Z',
+      }),
+    ]);
+    expect(queryAllCalls).toEqual([
+      expect.objectContaining({
+        table: 'solutions',
+        filter: "(startswith(uniquename,'ppHarness20260310T233219225Z') or startswith(friendlyname,'ppHarness20260310T233219225Z'))",
+      }),
+    ]);
+  });
+
+  it('falls back to a full scan when the filtered Dataverse query misses a case-insensitive prefix match', async () => {
+    const queryAllCalls: Array<{ table: string; filter?: string }> = [];
+    const service = new SolutionService({
+      query: async <T>(): Promise<OperationResult<T[]>> => ok([] as T[], { supportTier: 'preview' }),
+      queryAll: async <T>(options: { table: string; filter?: string }): Promise<OperationResult<T[]>> => {
+        queryAllCalls.push(options);
+
+        if (options.filter) {
+          return ok([] as T[], { supportTier: 'preview' });
+        }
+
+        return ok(
+          [
+            {
+              solutionid: 'sol-harness',
+              uniquename: 'ppHarness20260310T233219225Z',
+              friendlyname: 'PP Harness 20260310T233219225Z',
+              version: '1.0.0.0',
+            },
+          ] as T[],
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.list({ prefix: 'ppharness20260310t233219225z' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        uniquename: 'ppHarness20260310T233219225Z',
+      }),
+    ]);
+    expect(queryAllCalls).toEqual([
+      expect.objectContaining({
+        table: 'solutions',
+        filter: "(startswith(uniquename,'ppharness20260310t233219225z') or startswith(friendlyname,'ppharness20260310t233219225z'))",
+      }),
+      expect.objectContaining({
+        table: 'solutions',
+      }),
+    ]);
+  });
+
   it('fails components when the target solution does not exist', async () => {
     const service = new SolutionService({
       query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
