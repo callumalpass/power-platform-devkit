@@ -123,8 +123,25 @@ describe('AuthService', () => {
 
     expect(summary).toMatchObject({
       name: 'tenant-a',
+      status: 'bootstrapped',
       lastBootstrapUrl: DEFAULT_BROWSER_BOOTSTRAP_URL,
       lastBootstrappedAt: '2026-03-09T09:00:00.000Z',
+      bootstrapCommand: "pp auth browser-profile bootstrap tenant-a --url 'https://make.powerapps.com/'",
+      recommendedAction: 'Refresh the browser profile if sign-in prompts reappear before browser-backed validation.',
+    });
+  });
+
+  it('marks unbootstrapped browser profiles as needing bootstrap', () => {
+    const summary = summarizeBrowserProfile({
+      name: 'tenant-b',
+      kind: 'edge',
+    });
+
+    expect(summary).toMatchObject({
+      name: 'tenant-b',
+      status: 'needs-bootstrap',
+      bootstrapCommand: "pp auth browser-profile bootstrap tenant-b --url 'https://make.powerapps.com/'",
+      recommendedAction: 'Bootstrap the browser profile once before relying on browser-backed validation.',
     });
   });
 

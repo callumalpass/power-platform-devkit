@@ -1656,16 +1656,6 @@ describe('ALM services', () => {
       ok({
         status: 200,
         headers: {},
-        data: {},
-      }),
-      ok({
-        status: 200,
-        headers: {},
-        data: {},
-      }),
-      ok({
-        status: 200,
-        headers: {},
         data: {
           value: [
             {
@@ -1786,6 +1776,87 @@ describe('ALM services', () => {
         }),
         expect.objectContaining({
           code: 'DATAVERSE_CONNREF_VALIDATE_EMPTY',
+        }),
+      ])
+    );
+  });
+
+  it('surfaces embedded flow connection references when solution-scoped connrefs are empty', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              objectid: 'flow-1',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              workflowid: 'flow-1',
+              name: 'Integrated Search API trigger flow',
+              category: 5,
+              clientdata: JSON.stringify({
+                properties: {
+                  connectionReferences: {
+                    shared_commondataserviceforapps: {
+                      connection: {
+                        connectionReferenceLogicalName: 'msdyn_Dataverse',
+                      },
+                    },
+                  },
+                },
+              }),
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.validate({ solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_INFERRED_FROM_FLOWS',
+          message: expect.stringContaining('msdyn_Dataverse'),
         }),
       ])
     );
@@ -1952,6 +2023,25 @@ describe('ALM services', () => {
 
   it('validates an empty solution after retrying without unsupported optional columns', async () => {
     const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Harness',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
       {
         success: false,
         diagnostics: [
@@ -1988,12 +2078,14 @@ describe('ALM services', () => {
         status: 200,
         headers: {},
         data: {
-          value: [
-            {
-              solutionid: 'sol-1',
-              uniquename: 'Harness',
-            },
-          ],
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
         },
       }),
       ok({
@@ -2013,10 +2105,11 @@ describe('ALM services', () => {
     expect(result.data).toEqual([]);
     expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE');
     expect(httpClient.requests.map((request) => request.path)).toEqual([
-      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode%2Ccustomconnectorid',
-      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode',
       'solutions?%24select=solutionid%2Cuniquename&%24top=1&%24filter=uniquename+eq+%27Harness%27',
       'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+371',
+      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode%2Ccustomconnectorid',
+      'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode',
+      'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+29',
     ]);
   });
 

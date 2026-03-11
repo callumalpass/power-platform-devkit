@@ -793,6 +793,104 @@ describe('remote canvas app workflows', () => {
       addRequiredComponents: true,
     });
   });
+
+  it('emits a guided mismatch diagnostic for failed remote proof expectations', async () => {
+    const dir = await createTempDir();
+    const msappRoot = join(dir, 'msapp-source-mismatch');
+    await mkdir(join(msappRoot, 'Src'), { recursive: true });
+    await mkdir(join(msappRoot, 'References'), { recursive: true });
+    await writeFile(join(msappRoot, 'Src', 'App.pa.yaml'), 'App:\n  Properties:\n    Theme: =PowerAppsTheme\n', 'utf8');
+    await writeFile(
+      join(msappRoot, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Gallery1:',
+        '          Control: Gallery@2.15.0',
+        '          Properties:',
+        "            Items: ='PP Harness Projects'",
+      ].join('\n') + '\n',
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'PP Harness Projects',
+              Type: 'Table',
+              DatasetName: 'default.cds',
+              EntityName: 'pph34135_projects',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const msappPath = join(dir, 'Harness Canvas mismatch.msapp');
+    await createZip(msappRoot, msappPath);
+
+    const solutionRoot = join(dir, 'solution-mismatch');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+
+    const solutionZip = join(dir, 'Core-mismatch.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.proveRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      expectations: [
+        {
+          controlPath: 'Screen1/Gallery1',
+          property: 'Items',
+          expectedValue: '=Accounts',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.valid).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_REMOTE_PROOF_MISMATCH',
+          detail: expect.stringContaining("Screen1/Gallery1.Items: expected =Accounts, actual ='PP Harness Projects'"),
+        }),
+      ])
+    );
+  });
 });
 
 describe('canvas app workflows', () => {

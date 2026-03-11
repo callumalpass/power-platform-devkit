@@ -2270,6 +2270,14 @@ export class ConnectionReferenceService {
     const summaries = (records.data ?? [])
       .filter((record) => !solutionMembers.data || solutionMembers.data.has(record.connectionreferenceid))
       .map((record) => normalizeConnectionReference(record, solutionId.data && solutionMembers.data?.has(record.connectionreferenceid) ? solutionId.data : undefined));
+    const inferredReferences =
+      summaries.length === 0 && solutionId.data && options.solutionUniqueName
+        ? await inferFlowEmbeddedConnectionReferences(this.dataverseClient, solutionId.data, options.solutionUniqueName)
+        : ok<string[]>([], { supportTier: 'preview' });
+
+    if (!inferredReferences.success) {
+      return inferredReferences as unknown as OperationResult<ConnectionReferenceSummary[]>;
+    }
 
     return ok(summaries, {
       supportTier: 'preview',
@@ -2277,6 +2285,7 @@ export class ConnectionReferenceService {
         records.diagnostics,
         solutionId.diagnostics,
         solutionMembers.diagnostics,
+        inferredReferences.diagnostics,
         [
           createDiagnostic(
             summaries.length === 0 ? 'warning' : 'info',
@@ -2291,7 +2300,7 @@ export class ConnectionReferenceService {
           ),
         ]
       ),
-      warnings: mergeDiagnosticLists(records.warnings, solutionId.warnings, solutionMembers.warnings),
+      warnings: mergeDiagnosticLists(records.warnings, solutionId.warnings, solutionMembers.warnings, inferredReferences.warnings),
     });
   }
 
@@ -4865,6 +4874,7 @@ function normalizeCloudFlowConnectionReferences(value: unknown): CloudFlowConnec
     }
 
     const api = readRecord(record.api);
+    const connection = readRecord(record.connection);
     const name = readString(record.name);
 
     if (!name) {
@@ -4876,7 +4886,9 @@ function normalizeCloudFlowConnectionReferences(value: unknown): CloudFlowConnec
       connectionReferenceLogicalName:
         readString(record.connectionReferenceLogicalName) ??
         readString(record.connectionreferencelogicalname) ??
-        readString(record.logicalName),
+        readString(record.logicalName) ??
+        readString(connection?.connectionReferenceLogicalName) ??
+        readString(connection?.connectionreferencelogicalname),
       connectionId: readString(record.connectionId) ?? readString(record.id) ?? readString(record.connectionid),
       apiId: readString(record.apiId) ?? readString(api?.id) ?? readString(record.connectorId),
     });
@@ -5003,6 +5015,94 @@ async function listSolutionComponentObjectIds(
     supportTier: 'preview',
     diagnostics: records.diagnostics,
     warnings: records.warnings,
+  });
+}
+
+async function inferFlowEmbeddedConnectionReferences(
+  client: DataverseClient,
+  solutionId: string,
+  solutionUniqueName: string
+): Promise<OperationResult<string[]>> {
+  const workflowIds = await listSolutionComponentObjectIds(client, solutionId, 29);
+
+  if (!workflowIds.success) {
+    return workflowIds as unknown as OperationResult<string[]>;
+  }
+
+  if ((workflowIds.data?.size ?? 0) === 0) {
+    return ok([], {
+      supportTier: 'preview',
+      diagnostics: workflowIds.diagnostics,
+      warnings: workflowIds.warnings,
+    });
+  }
+
+  const flows = await new CloudFlowService(client).list();
+
+  if (!flows.success) {
+    return ok([], {
+      supportTier: 'preview',
+      diagnostics: workflowIds.diagnostics,
+      warnings: mergeDiagnosticLists(
+        workflowIds.warnings,
+        flows.warnings,
+        [
+          createDiagnostic(
+            'warning',
+            'DATAVERSE_CONNREF_FLOW_INFERENCE_UNAVAILABLE',
+            `Connection-reference flow inference was unavailable while inspecting solution ${solutionUniqueName}.`,
+            {
+              source: '@pp/dataverse',
+              detail: flows.diagnostics.map((diagnostic) => diagnostic.message).join('\n') || undefined,
+            }
+          ),
+        ]
+      ),
+    });
+  }
+
+  const matches = (flows.data ?? [])
+    .filter((flow) => workflowIds.data?.has(flow.id))
+    .flatMap((flow) =>
+      flow.connectionReferences
+        .map((reference) => reference.connectionReferenceLogicalName ?? reference.name)
+        .filter((value): value is string => Boolean(value))
+        .map((logicalName) => ({ flowName: flow.name ?? flow.uniqueName ?? flow.id, logicalName }))
+    );
+
+  if (matches.length === 0) {
+    return ok([], {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(workflowIds.diagnostics, flows.diagnostics),
+      warnings: mergeDiagnosticLists(workflowIds.warnings, flows.warnings),
+    });
+  }
+
+  const uniqueLogicalNames = Array.from(new Set(matches.map((match) => match.logicalName))).sort();
+  const detail = matches
+    .map((match) => `${match.flowName}: ${match.logicalName}`)
+    .sort((left, right) => left.localeCompare(right))
+    .join('\n');
+
+  return ok(uniqueLogicalNames, {
+    supportTier: 'preview',
+    diagnostics: mergeDiagnosticLists(
+      workflowIds.diagnostics,
+      flows.diagnostics,
+      [
+        createDiagnostic(
+          'warning',
+          'DATAVERSE_CONNREF_INFERRED_FROM_FLOWS',
+          `No Dataverse connection reference rows were returned in solution ${solutionUniqueName}, but embedded flow metadata still references ${uniqueLogicalNames.join(', ')}.`,
+          {
+            source: '@pp/dataverse',
+            detail,
+            hint: 'Use `pp flow inspect <flow> --environment <alias> --solution <solution>` to confirm the embedded logical names while Dataverse connection-reference rows remain unavailable.',
+          }
+        ),
+      ]
+    ),
+    warnings: mergeDiagnosticLists(workflowIds.warnings, flows.warnings),
   });
 }
 

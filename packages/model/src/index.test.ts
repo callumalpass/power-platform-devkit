@@ -207,6 +207,31 @@ function createStubClient(): DataverseClient {
   } as unknown as DataverseClient;
 }
 
+function createComponentFailureClient(): DataverseClient {
+  return {
+    ...createStubClient(),
+    queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+      if (options.table === 'appmodulecomponents') {
+        return {
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'appmodulecomponents query failed',
+              source: '@pp/http',
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        };
+      }
+
+      return createStubClient().queryAll<T>(options);
+    },
+  } as DataverseClient;
+}
+
 describe('ModelService', () => {
   it('lists model-driven apps with optional solution filtering', async () => {
     const service = new ModelService(createStubClient());
@@ -292,6 +317,36 @@ describe('ModelService', () => {
         status: 'missing',
       },
     ]);
+  });
+
+  it('returns a partial inspect payload when appmodulecomponents are unavailable', async () => {
+    const service = new ModelService(createComponentFailureClient());
+
+    const result = await service.inspect('Sales Hub', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      app: {
+        id: 'app-1',
+        uniqueName: 'SalesHub',
+        name: 'Sales Hub',
+      },
+      tables: [],
+      forms: [],
+      views: [],
+      sitemaps: [],
+      dependencies: [],
+      missingComponents: [],
+    });
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'MODEL_COMPONENTS_UNAVAILABLE',
+        }),
+      ])
+    );
   });
 
   it('returns dependency-focused projections', async () => {

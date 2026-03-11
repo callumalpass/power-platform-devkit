@@ -629,6 +629,7 @@ export class CanvasService {
       }
 
       const expectations = options.expectations.map((expectation) => buildCanvasRemoteProofCheck(loaded.data, expectation));
+      const mismatchDiagnostics = buildCanvasRemoteProofDiagnostics(expectations);
 
       return ok(
         {
@@ -642,7 +643,7 @@ export class CanvasService {
         },
         {
           supportTier: 'preview',
-          diagnostics: [...downloaded.diagnostics, ...loaded.diagnostics],
+          diagnostics: [...downloaded.diagnostics, ...loaded.diagnostics, ...mismatchDiagnostics],
           warnings: [...downloaded.warnings, ...loaded.warnings],
           provenance: [
             {
@@ -704,6 +705,35 @@ function buildCanvasRemoteProofCheck(
     actualValue,
     actualValueText,
   };
+}
+
+function buildCanvasRemoteProofDiagnostics(expectations: CanvasRemoteProofCheck[]): Diagnostic[] {
+  const mismatches = expectations.filter((expectation) => !expectation.matched);
+
+  if (mismatches.length === 0) {
+    return [];
+  }
+
+  const detail = mismatches
+    .map((expectation) =>
+      expectation.found
+        ? `${expectation.controlPath}.${expectation.property}: expected ${expectation.expectedValue}, actual ${expectation.actualValueText ?? '<missing>'}`
+        : `${expectation.controlPath}.${expectation.property}: control property was not found; expected ${expectation.expectedValue}`
+    )
+    .join('\n');
+
+  return [
+    createDiagnostic(
+      'warning',
+      'CANVAS_REMOTE_PROOF_MISMATCH',
+      `Remote canvas proof found ${mismatches.length} unmatched expectation${mismatches.length === 1 ? '' : 's'}.`,
+      {
+        source: '@pp/canvas remote proof',
+        detail,
+        hint: 'Re-run with the returned proof payload to compare actualValueText against the expected control path and property.',
+      }
+    ),
+  ];
 }
 
 function formatCanvasProofValue(value: CanvasJsonValue): string {
