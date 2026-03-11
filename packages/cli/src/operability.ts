@@ -15,7 +15,7 @@ export const COMMAND_TREE = {
   env: ['list', 'add', 'inspect', 'resolve-maker-id', 'cleanup-plan', 'reset', 'cleanup', 'remove'],
   dv: ['whoami', 'request', 'action', 'function', 'batch', 'rows', 'query', 'get', 'create', 'update', 'delete', 'metadata'],
   solution: ['create', 'delete', 'set-metadata', 'list', 'inspect', 'components', 'compare'],
-  connref: ['list', 'inspect', 'validate'],
+  connref: ['create', 'list', 'inspect', 'set', 'validate'],
   envvar: ['list', 'inspect', 'set'],
   canvas: ['list', 'inspect', 'create', 'import', 'validate', 'lint', 'build', 'diff', 'templates', 'workspace', 'patch'],
   flow: ['list', 'inspect', 'unpack', 'normalize', 'validate', 'patch', 'doctor'],

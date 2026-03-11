@@ -409,8 +409,10 @@ async function runSolution(command: string | undefined, args: string[]): Promise
 
 async function runConnectionReference(command: string | undefined, args: string[]): Promise<number> {
   return runConnectionReferenceGroup(command, args, {
+    runConnectionReferenceCreate,
     runConnectionReferenceList,
     runConnectionReferenceInspect,
+    runConnectionReferenceSet,
     runConnectionReferenceValidate,
   });
 }
@@ -1395,6 +1397,7 @@ async function runProjectInspect(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     isMachineReadableOutputFormat,
@@ -1411,6 +1414,7 @@ async function runProjectInit(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     isMachineReadableOutputFormat,
@@ -1427,6 +1431,7 @@ async function runProjectDoctor(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     isMachineReadableOutputFormat,
@@ -1443,6 +1448,7 @@ async function runProjectFeedback(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     isMachineReadableOutputFormat,
@@ -3712,6 +3718,61 @@ async function runConnectionReferenceList(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runConnectionReferenceCreate(args: string[]): Promise<number> {
+  const logicalName = positionalArgs(args)[0];
+  const connectionId = readFlag(args, '--connection-id');
+
+  if (!logicalName || !connectionId) {
+    return printFailure(
+      argumentFailure(
+        'CONNREF_CREATE_ARGS_REQUIRED',
+        'Usage: connref create <logicalName> --environment <alias> --connection-id CONNECTION_ID [--display-name NAME] [--connector-id CONNECTOR_ID] [--custom-connector-id CONNECTOR_ID]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const displayName = readFlag(args, '--display-name');
+  const connectorId = readFlag(args, '--connector-id');
+  const customConnectorId = readFlag(args, '--custom-connector-id');
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'connref.create',
+    { logicalName, solution: readFlag(args, '--solution') },
+    {
+      connectionId,
+      ...(displayName !== undefined ? { displayName } : {}),
+      ...(connectorId !== undefined ? { connectorId } : {}),
+      ...(customConnectorId !== undefined ? { customConnectorId } : {}),
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = new ConnectionReferenceService(resolution.data.client);
+  const result = await service.create(logicalName, connectionId, {
+    displayName,
+    connectorId,
+    customConnectorId,
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runConnectionReferenceInspect(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
@@ -3738,6 +3799,50 @@ async function runConnectionReferenceInspect(args: string[]): Promise<number> {
 
   if (!result.data) {
     return printFailure(fail(createDiagnostic('error', 'CONNREF_NOT_FOUND', `Connection reference ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runConnectionReferenceSet(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+  const connectionId = readFlag(args, '--connection-id');
+
+  if (!identifier || !connectionId) {
+    return printFailure(
+      argumentFailure(
+        'CONNREF_SET_ARGS_REQUIRED',
+        'Usage: connref set <logicalName|displayName|id> --environment <alias> --connection-id CONNECTION_ID'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'connref.set',
+    { identifier, solution: readFlag(args, '--solution') },
+    { connectionId }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = new ConnectionReferenceService(resolution.data.client);
+  const result = await service.setConnectionId(identifier, connectionId, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
@@ -4149,8 +4254,8 @@ async function runCanvasDownload(args: string[]): Promise<number> {
 
   const result = await new CanvasService(resolution.data.client).downloadRemote(identifier, {
     solutionUniqueName,
-    outPath: readFlag(args, '--out'),
-    extractToDirectory: readFlag(args, '--extract-to-directory'),
+    outPath: resolveInvocationPath(readFlag(args, '--out')),
+    extractToDirectory: resolveInvocationPath(readFlag(args, '--extract-to-directory')),
   });
 
   if (!result.success || !result.data) {
@@ -4174,7 +4279,7 @@ async function runCanvasBuild(args: string[]): Promise<number> {
     return printFailure(context);
   }
 
-  const outPath = readFlag(args, '--out');
+  const outPath = resolveInvocationPath(readFlag(args, '--out'));
   const preview = maybeHandleMutationPreview(
     args,
     'json',

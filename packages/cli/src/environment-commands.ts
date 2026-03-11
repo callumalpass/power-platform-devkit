@@ -12,6 +12,7 @@ import { resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { SolutionService } from '@pp/solution';
 import { createMutationPreview, readMutationFlags, type CliOutputFormat } from './contract';
+import { buildEnvironmentProjectUsageSummary } from './relationship-context';
 
 type OutputFormat = CliOutputFormat;
 
@@ -112,12 +113,14 @@ export async function runEnvironmentInspectCommand(
     profile.success && profile.data?.type === 'user' && profile.data.browserProfile
       ? await auth.getBrowserProfile(profile.data.browserProfile)
       : undefined;
+  const projectUsage = await buildEnvironmentProjectUsageSummary(environment.data.alias, configOptions);
 
   deps.printByFormat(
     buildEnvironmentInspectView(
       environment.data,
       profile.success ? profile.data ?? undefined : undefined,
-      browserProfile?.success ? browserProfile.data ?? undefined : undefined
+      browserProfile?.success ? browserProfile.data ?? undefined : undefined,
+      projectUsage
     ),
     deps.outputFormat(args, 'json')
   );
@@ -323,11 +326,26 @@ export async function runEnvironmentResetCommand(
 function buildEnvironmentInspectView(
   environment: EnvironmentAlias,
   profile: AuthProfile | undefined,
-  browserProfile: BrowserProfile | undefined
+  browserProfile: BrowserProfile | undefined,
+  projectUsage:
+    | {
+        projectRoot: string;
+        selectedStage?: string;
+        stages: string[];
+        activeForSelectedStage: boolean;
+      }
+    | undefined
 ): Record<string, unknown> {
   return {
     ...environment,
     auth: buildEnvironmentAuthSummary(environment, profile),
+    relationships: {
+      currentProject: projectUsage,
+      authBinding: {
+        alias: environment.alias,
+        authProfile: environment.authProfile,
+      },
+    },
     tooling: {
       pp: {
         authContextSource: 'pp-config',

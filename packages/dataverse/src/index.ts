@@ -2461,6 +2461,7 @@ export class EnvironmentVariableService {
       this.dataverseClient.queryAll<EnvironmentVariableValueRecord>({
         table: 'environmentvariablevalues',
         select: ['environmentvariablevalueid', 'value', '_environmentvariabledefinitionid_value', 'statecode'],
+        filter: 'statecode eq 0',
       }),
       options.solutionUniqueName ? resolveSolutionId(this.dataverseClient, options.solutionUniqueName) : Promise.resolve(ok(undefined, { supportTier: 'preview' })),
     ]);
@@ -2488,7 +2489,12 @@ export class EnvironmentVariableService {
     const valueMap = new Map<string, EnvironmentVariableValueRecord>();
 
     for (const value of values.data ?? []) {
-      if (value._environmentvariabledefinitionid_value && !valueMap.has(value._environmentvariabledefinitionid_value)) {
+      if (!value._environmentvariabledefinitionid_value) {
+        continue;
+      }
+
+      const existing = valueMap.get(value._environmentvariabledefinitionid_value);
+      if (!existing || (existing.value === undefined && value.value !== undefined)) {
         valueMap.set(value._environmentvariabledefinitionid_value, value);
       }
     }

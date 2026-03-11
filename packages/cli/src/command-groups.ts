@@ -648,8 +648,10 @@ export async function runSolutionGroup(
 }
 
 export interface ConnectionReferenceGroupHandlers {
+  runConnectionReferenceCreate(args: string[]): Promise<number>;
   runConnectionReferenceList(args: string[]): Promise<number>;
   runConnectionReferenceInspect(args: string[]): Promise<number>;
+  runConnectionReferenceSet(args: string[]): Promise<number>;
   runConnectionReferenceValidate(args: string[]): Promise<number>;
 }
 
@@ -664,6 +666,12 @@ export async function runConnectionReferenceGroup(
   }
 
   switch (command) {
+    case 'create':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printConnectionReferenceCreateHelp();
+        return 0;
+      }
+      return handlers.runConnectionReferenceCreate(args);
     case 'list':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printConnectionReferenceListHelp();
@@ -676,6 +684,12 @@ export async function runConnectionReferenceGroup(
         return 0;
       }
       return handlers.runConnectionReferenceInspect(args);
+    case 'set':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printConnectionReferenceSetHelp();
+        return 0;
+      }
+      return handlers.runConnectionReferenceSet(args);
     case 'validate':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printConnectionReferenceValidateHelp();

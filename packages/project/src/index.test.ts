@@ -117,6 +117,42 @@ describe('discoverProject', () => {
     expect(result.data?.parameters.apiToken?.hasValue).toBe(true);
   });
 
+  it('reports the derived secret environment variable when a required secret is missing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-project-secret-miss-'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'parameters:',
+        '  apiToken:',
+        '    secretRef: app_token',
+        '    required: true',
+        'secrets:',
+        '  defaultProvider: pipeline',
+        '  providers:',
+        '    pipeline:',
+        '      kind: env',
+        '      prefix: PP_SECRET_',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const result = await discoverProject(root, {
+      environment: {
+        PP_SECRET_app_token: undefined,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'PROJECT_PARAMETER_SECRET_MISSING',
+          hint: 'Resolve secret ref app_token (expected env var PP_SECRET_app_token) or provide an explicit value override.',
+        }),
+      ])
+    );
+  });
+
   it('scaffolds a minimal project config and default asset directories', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pp-project-init-'));
     const plan = planProjectInit(root, {

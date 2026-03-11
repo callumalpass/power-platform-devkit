@@ -32,13 +32,15 @@ For development, the quickest direct entrypoints are:
 
 ```bash
 pnpm pp -- project inspect
+node scripts/run-pp-dev.mjs project inspect
 node packages/cli/dist/index.cjs project inspect
 ```
 
-Prefer `pnpm pp -- ...` at the repo root for source-backed workflows. The
-wrapper preserves the original invocation directory for local project discovery,
-so `project inspect` and `project doctor` do not silently re-root to
-`packages/cli`.
+Prefer `pnpm pp -- ...` at the repo root for interactive source-backed
+workflows, or `node scripts/run-pp-dev.mjs ...` when an agent or CI job needs
+clean machine-readable stdout. Both preserve the original invocation directory
+for local project discovery, so `project inspect` and `project doctor` do not
+silently re-root to `packages/cli`.
 
 ## Command discovery
 

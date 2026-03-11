@@ -350,6 +350,7 @@ interface SecretResolution {
   value?: string;
   provider?: string;
   reference: string;
+  variableName?: string;
   diagnostics: Diagnostic[];
 }
 
@@ -948,6 +949,7 @@ export function resolveProjectParameters(
     let source: ResolvedProjectParameter['source'] = 'missing';
     let value: ResolvedProjectParameter['value'];
     let resolvedBy: string | undefined;
+    let secretResolution: SecretResolution | undefined;
     const sensitive = definition.secretRef !== undefined;
 
     if (definition.value !== undefined) {
@@ -961,13 +963,13 @@ export function resolveProjectParameters(
         value = coerceValue(rawValue, type);
       }
     } else if (definition.secretRef) {
-      const secret = secretResolver(definition.secretRef);
-      diagnostics.push(...secret.diagnostics);
+      secretResolution = secretResolver(definition.secretRef);
+      diagnostics.push(...secretResolution.diagnostics);
 
-      if (secret.found && secret.value !== undefined) {
+      if (secretResolution.found && secretResolution.value !== undefined) {
         source = 'secret';
-        value = coerceValue(secret.value, type);
-        resolvedBy = secret.provider;
+        value = coerceValue(secretResolution.value, type);
+        resolvedBy = secretResolution.provider;
       }
     }
 
@@ -982,7 +984,7 @@ export function resolveProjectParameters(
           {
             source: '@pp/project',
             hint: definition.secretRef
-              ? `Resolve secret ref ${definition.secretRef} or provide an explicit value override.`
+              ? buildMissingSecretHint(definition.secretRef, secretResolution?.variableName)
               : definition.fromEnv
                 ? `Set ${definition.fromEnv} or provide an explicit value in the project config.`
                 : 'Provide a value in the project config or a supported mapping.',
@@ -1472,6 +1474,7 @@ function resolveEnvironmentSecret(
     value,
     provider,
     reference,
+    variableName,
     diagnostics: value === undefined
       ? [
           createDiagnostic('info', 'PROJECT_SECRET_LOOKUP_MISS', `Secret ref ${reference} did not resolve from ${provider}`, {
@@ -1480,6 +1483,14 @@ function resolveEnvironmentSecret(
         ]
       : [],
   };
+}
+
+function buildMissingSecretHint(reference: string, variableName?: string): string {
+  if (variableName) {
+    return `Resolve secret ref ${reference} (expected env var ${variableName}) or provide an explicit value override.`;
+  }
+
+  return `Resolve secret ref ${reference} or provide an explicit value override.`;
 }
 
 async function inspectAssets(root: string, configuredAssets: Record<string, string>): Promise<ProjectAsset[]> {

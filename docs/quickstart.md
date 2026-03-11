@@ -14,6 +14,7 @@ For local development, run commands through the CLI package:
 
 ```bash
 pnpm pp -- project doctor
+node scripts/run-pp-dev.mjs project doctor
 ```
 
 Once built, you can also call the CLI directly:
@@ -34,9 +35,10 @@ pp diagnostics doctor
 
 The examples below use `pp` for brevity.
 
-When you run from source, prefer `pnpm pp -- ...` from the repo root. It keeps
-project discovery anchored to the directory you invoked from instead of the
-`packages/cli` workspace.
+When you run from source, use either `pnpm pp -- ...` for interactive work or
+`node scripts/run-pp-dev.mjs ...` when you need machine-readable stdout. Both
+keep project discovery anchored to the directory you invoked from instead of
+the `packages/cli` workspace.
 
 If you are new to the repo, read [architecture.md](architecture.md) after this
 quickstart and [supported-surfaces.md](supported-surfaces.md) before adopting a

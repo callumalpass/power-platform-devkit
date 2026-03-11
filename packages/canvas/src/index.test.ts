@@ -356,6 +356,59 @@ describe('canvas template registries', () => {
     expect(written.templates[0]?.contentHash).toMatch(/[a-f0-9]{64}/);
   });
 
+  it('imports exported References/Templates.json payloads as strict-capable registries', async () => {
+    const dir = await createTempDir();
+    const sourcePath = join(dir, 'Templates.json');
+
+    await writeFile(
+      sourcePath,
+      JSON.stringify(
+        {
+          UsedTemplates: [
+            {
+              Name: 'Button',
+              Version: '2.2.0',
+              Template:
+                '<widget xmlns="http://openajax.org/metadata" xmlns:appMagic="http://schemas.microsoft.com/appMagic" id="http://microsoft.com/appmagic/button" name="button" version="2.2.0"><properties><property name="Text" datatype="String" defaultValue="&quot;Button&quot;" isExpr="true"><appMagic:category>data</appMagic:category></property></properties><appMagic:includeProperties><appMagic:includeProperty name="X" defaultValue="0" /><appMagic:includeProperty name="Y" defaultValue="0" /></appMagic:includeProperties></widget>',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const imported = await importCanvasTemplateRegistry({
+      sourcePath,
+    });
+
+    expect(imported.success).toBe(true);
+    expect(imported.data?.templates[0]).toMatchObject({
+      templateName: 'Button',
+      templateVersion: '2.2.0',
+      aliases: {
+        constructors: ['Classic/Button'],
+        yamlNames: ['Button'],
+      },
+      files: {
+        'References/Templates.json': {
+          name: 'Button',
+          version: '2.2.0',
+        },
+      },
+    });
+    expect(imported.data?.supportMatrix).toEqual([
+      {
+        templateName: 'Button',
+        version: '2.2.0',
+        status: 'supported',
+        modes: ['strict', 'registry'],
+        notes: ['Imported from an exported References/Templates.json payload.'],
+      },
+    ]);
+  });
+
   it('enforces deterministic build-mode resolution across seeded and registry bundles', () => {
     const seededBundle: CanvasRegistryBundle = {
       sources: [],

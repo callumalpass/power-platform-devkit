@@ -1578,6 +1578,27 @@ describe('cli fixture-backed workflows', () => {
     }
   });
 
+  it('runs through the repo wrapper without nested pnpm banners in stdout', async () => {
+    const result = spawnSync(process.execPath, ['scripts/run-pp-dev.mjs', 'env', 'inspect', 'test', '--format', 'json'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        INIT_CWD: repoRoot,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout.startsWith('{')).toBe(true);
+    expect(result.stdout).not.toContain('ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL');
+    expect(result.stdout).not.toContain('@pp/cli@0.1.0 dev');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      alias: 'test',
+      authProfile: 'test-user',
+    });
+  });
+
   it('derives conceptual feedback for the fixture project through the CLI entrypoint', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const feedback = await runCli(['project', 'feedback', fixtureRoot, '--format', 'json'], {
@@ -1675,30 +1696,26 @@ describe('cli fixture-backed workflows', () => {
   it('surfaces canonical project root directly in project inspect and doctor markdown at repo root', async () => {
     const inspect = await runCli(['project', 'inspect', repoRoot, '--format', 'markdown']);
     const doctor = await runCli(['project', 'doctor', repoRoot, '--format', 'markdown']);
-    const canonicalRoot = resolveRepoPath('fixtures', 'analysis', 'project');
-
     expect(inspect.code).toBe(0);
     expect(doctor.code).toBe(0);
     expect(inspect.stdout).toContain('# Project Inspect');
-    expect(inspect.stdout).toContain(`- Canonical project root: \`${canonicalRoot}\``);
-    expect(inspect.stdout).toContain('- Editable roots: `apps`, `flows`, `docs`');
+    expect(inspect.stdout).toContain(`- Canonical project root: \`${repoRoot}\``);
+    expect(inspect.stdout).toContain('- Editable roots: `apps`, `flows`, `solutions`, `docs`');
     expect(inspect.stdout).toContain('- Solution source root: `solutions`');
-    expect(inspect.stdout).toContain('- Canonical bundle path: `artifacts/solutions/core.zip`');
+    expect(inspect.stdout).toContain('- Canonical bundle path: `artifacts/solutions/Core.zip`');
     expect(inspect.stdout).toContain(
-      'Layout contract: editable assets belong under apps, flows, docs; keep unpacked solution source in solutions; write generated solution zips to artifacts/solutions/core.zip.'
+      'Layout contract: editable assets belong under apps, flows, solutions, docs; keep unpacked solution source in solutions; write generated solution zips to artifacts/solutions/Core.zip.'
     );
-    expect(inspect.stdout).toContain('Deployment route: pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged.');
-    expect(inspect.stdout).toContain('Discovery: Treat fixtures/analysis/project as the canonical local project');
+    expect(inspect.stdout).toContain('Deployment route: pp.config.yaml maps stage dev to environment alias dev and solution Core.');
     expect(doctor.stdout).toContain('# Project Doctor');
-    expect(doctor.stdout).toContain(`- Canonical project root: \`${canonicalRoot}\``);
+    expect(doctor.stdout).toContain(`- Canonical project root: \`${repoRoot}\``);
     expect(doctor.stdout).toContain('- Bundle status: `not generated yet`');
-    expect(doctor.stdout).toContain('- Bundle placement: `inline-noncanonical`');
-    expect(doctor.stdout).toContain('Bundle placement summary: Non-canonical bundle placement: solutions/Core.zip is generated artifact output inside editable source space.');
-    expect(doctor.stdout).toContain('Environment alias provenance: Stage prod in pp.config.yaml selects environment alias prod.');
-    expect(doctor.stdout).toContain('Bundle lifecycle: The canonical bundle path is artifacts/solutions/core.zip');
+    expect(doctor.stdout).toContain('- Bundle placement: `absent`');
+    expect(doctor.stdout).toContain('Bundle placement summary: No generated bundle is currently present.');
+    expect(doctor.stdout).toContain('Environment alias provenance: Stage dev in pp.config.yaml selects environment alias dev.');
+    expect(doctor.stdout).toContain('Bundle lifecycle: The canonical bundle path is artifacts/solutions/Core.zip');
     expect(doctor.stdout).toContain('## Deployment Route');
-    expect(doctor.stdout).toContain('1. pp.config.yaml maps stage prod to environment alias prod and solution CoreManaged.');
-    expect(doctor.stdout).toContain('Discovery: Treat fixtures/analysis/project as the canonical local project');
+    expect(doctor.stdout).toContain('1. pp.config.yaml maps stage dev to environment alias dev and solution Core.');
     expect(inspect.stdout).not.toContain('"summary"');
     expect(doctor.stdout).not.toContain('"canonicalProjectRoot"');
   });
@@ -2173,6 +2190,90 @@ describe('cli fixture-backed workflows', () => {
       },
     });
     expect(await readFile(join(extractedPath, 'Src', 'App.pa.yaml'), 'utf8')).toBe('App:\n');
+  });
+
+  it('resolves relative canvas download output paths from INIT_CWD', async () => {
+    const tempDir = await createTempDir();
+    const invocationRoot = join(tempDir, 'invocation-root');
+    const msappSourceDir = join(tempDir, 'msapp-source');
+    await mkdir(invocationRoot, { recursive: true });
+    await mkdir(msappSourceDir, { recursive: true });
+    await writeFile(join(msappSourceDir, 'Header.json'), '{"schemaVersion":1}', 'utf8');
+
+    const msappPath = join(tempDir, 'Harness Canvas.msapp');
+    await createZipPackage(msappSourceDir, msappPath);
+
+    const sourceDir = join(tempDir, 'solution');
+    await mkdir(join(sourceDir, 'CanvasApps'), { recursive: true });
+    await writeFile(join(sourceDir, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    const solutionZip = join(tempDir, 'Core.zip');
+    await createZipPackage(sourceDir, solutionZip);
+
+    const client = {
+      ...createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+              friendlyname: 'Core',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'comp-1',
+              objectid: 'canvas-1',
+              componenttype: 300,
+            },
+          ],
+          canvasapps: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+              tags: 'harness;solution',
+            },
+          ],
+        },
+      }),
+      invokeAction: async <T>(name: string) =>
+        ok(
+          {
+            body: {
+              ExportSolutionFile: name === 'ExportSolution' ? (await readFile(solutionZip)).toString('base64') : undefined,
+            } as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        ),
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      fixture: {
+        client,
+      },
+    });
+
+    const result = await runCli(
+      ['canvas', 'download', 'Harness Canvas', '--env', 'fixture', '--solution', 'Core', '--out', './artifacts/HarnessCanvas.msapp', '--format', 'json'],
+      {
+        env: {
+          INIT_CWD: invocationRoot,
+        },
+      }
+    );
+
+    const expectedOutPath = join(invocationRoot, 'artifacts', 'HarnessCanvas.msapp');
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      outPath: expectedOutPath,
+    });
+    await expect(access(expectedOutPath)).resolves.toBeUndefined();
   });
 
   it('returns explicit diagnostics for unsupported remote canvas mutations', async () => {
@@ -3609,6 +3710,95 @@ describe('cli fixture-backed workflows', () => {
         added: [],
         removed: [],
       },
+    });
+  });
+
+  it('auto-loads exported References/Templates.json payloads for unpacked live-style apps', async () => {
+    const tempDir = await createTempDir();
+    const appPath = await writeUnpackedCanvasFixture(tempDir, {
+      name: 'live-export-app',
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Live"',
+        '            OnSelect: =Notify("Done")',
+        '            X: =90',
+        '            Y: =120',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+    const outPath = join(tempDir, 'LiveCanvas.msapp');
+    const templateXml = ((createClassicButtonRegistry().templates as Array<Record<string, any>>)[0]?.files?.['References/Templates.json'] as Record<
+      string,
+      unknown
+    >)?.templateXml as string;
+
+    await rm(join(appPath, 'controls.json'));
+    await writeFile(
+      join(appPath, 'References', 'Templates.json'),
+      JSON.stringify(
+        {
+          UsedTemplates: [
+            {
+              Name: 'Button',
+              Version: '2.2.0',
+              Template: templateXml,
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await runCli(['canvas', 'inspect', appPath, '--mode', 'strict', '--format', 'json']);
+    const validate = await runCli(['canvas', 'validate', appPath, '--mode', 'strict', '--format', 'json']);
+    const build = await runCli(['canvas', 'build', appPath, '--mode', 'strict', '--out', outPath, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(inspect.stdout).registries).toEqual([
+      expect.objectContaining({
+        path: join(appPath, 'References', 'Templates.json'),
+      }),
+    ]);
+
+    expect(validate.code).toBe(0);
+    expect(validate.stderr).toBe('');
+    expect(JSON.parse(validate.stdout)).toMatchObject({
+      valid: true,
+    });
+
+    expect(build.code).toBe(0);
+    expect(build.stderr).toBe('');
+    expect(JSON.parse(build.stdout)).toMatchObject({
+      outPath,
+    });
+  });
+
+  it('resolves relative canvas build output paths from INIT_CWD', async () => {
+    const tempDir = await createTempDir();
+    const invocationRoot = join(tempDir, 'invocation-root');
+    const appPath = resolveRepoPath('fixtures', 'canvas', 'apps', 'native-app');
+    await mkdir(join(invocationRoot, 'dist'), { recursive: true });
+
+    const build = await runCli(['canvas', 'build', appPath, '--mode', 'strict', '--out', './dist/NativeCanvas.msapp', '--format', 'json'], {
+      env: {
+        INIT_CWD: invocationRoot,
+      },
+    });
+
+    const expectedOutPath = join(invocationRoot, 'dist', 'NativeCanvas.msapp');
+    expect(build.code).toBe(0);
+    expect(build.stderr).toBe('');
+    expect(JSON.parse(build.stdout)).toMatchObject({
+      outPath: expectedOutPath,
     });
   });
 
@@ -6298,17 +6488,11 @@ describe('cli fixture-backed workflows', () => {
       });
 
       expect(context.code).toBe(0);
-      expect(JSON.parse(context.stderr)).toMatchObject({
-        diagnostics: expect.arrayContaining([
-          expect.objectContaining({
-            code: 'PROJECT_PARAMETER_MISSING',
-          }),
-        ]),
-      });
+      expect(context.stderr).toBe('');
       expect(JSON.parse(context.stdout)).toMatchObject({
         discovery: {
           inspectedPath: repoRoot,
-          resolvedProjectRoot: resolveRepoPath('fixtures', 'analysis', 'project'),
+          resolvedProjectRoot: repoRoot,
         },
       });
       expect(context.stdout).not.toContain('/packages/cli');
@@ -7125,7 +7309,9 @@ describe('cli fixture-backed workflows', () => {
     const solutionDependenciesHelp = await runCli(['solution', 'dependencies', '--help']);
     const rootHelp = await runCli(['--help']);
     const connrefHelp = await runCli(['connref', '--help']);
+    const connrefCreateHelp = await runCli(['connref', 'create', '--help']);
     const connrefListHelp = await runCli(['connref', 'list', '--help']);
+    const connrefSetHelp = await runCli(['connref', 'set', '--help']);
     const connrefValidateHelp = await runCli(['connref', 'validate', '--help']);
     const envvarHelp = await runCli(['envvar', '--help']);
     const envvarCreateHelp = await runCli(['envvar', 'create', '--help']);
@@ -7148,8 +7334,10 @@ describe('cli fixture-backed workflows', () => {
 
     expect(whoAmIHelp.code).toBe(0);
     expect(whoAmIHelp.stderr).toBe('');
-    expect(whoAmIHelp.stdout).toContain('Usage: dv whoami --environment ALIAS [options]');
+    expect(whoAmIHelp.stdout).toContain('Usage: dv whoami --environment ALIAS [--no-interactive-auth] [options]');
     expect(whoAmIHelp.stdout).toContain('pp dv whoami --environment dev --format json');
+    expect(whoAmIHelp.stdout).toContain('pp dv whoami --environment dev --no-interactive-auth --format json');
+    expect(whoAmIHelp.stdout).toContain('--no-interactive-auth');
     expect(whoAmIHelp.stdout).not.toContain('DV_ENV_REQUIRED');
 
     expect(solutionHelp.code).toBe(0);
@@ -7161,10 +7349,12 @@ describe('cli fixture-backed workflows', () => {
 
     expect(solutionListHelp.code).toBe(0);
     expect(solutionListHelp.stderr).toBe('');
-    expect(solutionListHelp.stdout).toContain('Usage: solution list --environment ALIAS [options]');
+    expect(solutionListHelp.stdout).toContain('Usage: solution list --environment ALIAS [--no-interactive-auth] [options]');
     expect(solutionListHelp.stdout).toContain('pp solution list --environment dev --format json');
+    expect(solutionListHelp.stdout).toContain('pp solution list --environment dev --no-interactive-auth --format json');
     expect(solutionListHelp.stdout).toContain('--prefix PREFIX');
     expect(solutionListHelp.stdout).toContain('--unique-name NAME');
+    expect(solutionListHelp.stdout).toContain('--no-interactive-auth');
     expect(solutionListHelp.stdout).not.toContain('DV_ENV_REQUIRED');
 
     expect(solutionInspectHelp.code).toBe(0);
@@ -7196,14 +7386,23 @@ describe('cli fixture-backed workflows', () => {
     expect(rootHelp.stderr).toBe('');
     expect(rootHelp.stdout).toContain('Top-level areas:');
     expect(rootHelp.stdout).toContain('  model         inspect model-driven apps');
-    expect(rootHelp.stdout).toContain('  connref       inspect and validate connection references');
+    expect(rootHelp.stdout).toContain('  connref       inspect, validate, and mutate connection references');
     expect(rootHelp.stdout).toContain('  envvar        inspect and mutate environment variables');
     expect(rootHelp.stdout).toContain('pp solution list --help');
 
     expect(connrefHelp.code).toBe(0);
     expect(connrefHelp.stderr).toBe('');
     expect(connrefHelp.stdout).toContain('Usage: connref <command> [options]');
+    expect(connrefHelp.stdout).toContain('create <logicalName>');
+    expect(connrefHelp.stdout).toContain('set <identifier>');
     expect(connrefHelp.stdout).toContain('--no-interactive-auth');
+
+    expect(connrefCreateHelp.code).toBe(0);
+    expect(connrefCreateHelp.stderr).toBe('');
+    expect(connrefCreateHelp.stdout).toContain(
+      'Usage: connref create <logicalName> --environment ALIAS --connection-id CONNECTION_ID [--display-name NAME] [--connector-id CONNECTOR_ID] [--custom-connector-id CONNECTOR_ID] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+    );
+    expect(connrefCreateHelp.stdout).not.toContain('CONNREF_CREATE_ARGS_REQUIRED');
 
     expect(connrefListHelp.code).toBe(0);
     expect(connrefListHelp.stderr).toBe('');
@@ -7212,6 +7411,13 @@ describe('cli fixture-backed workflows', () => {
     );
     expect(connrefListHelp.stdout).toContain('Fail fast with structured diagnostics instead of opening browser auth');
     expect(connrefListHelp.stdout).not.toContain('DV_ENV_REQUIRED');
+
+    expect(connrefSetHelp.code).toBe(0);
+    expect(connrefSetHelp.stderr).toBe('');
+    expect(connrefSetHelp.stdout).toContain(
+      'Usage: connref set <logicalName|displayName|id> --environment ALIAS --connection-id CONNECTION_ID [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+    );
+    expect(connrefSetHelp.stdout).not.toContain('CONNREF_SET_ARGS_REQUIRED');
 
     expect(connrefValidateHelp.code).toBe(0);
     expect(connrefValidateHelp.stderr).toBe('');
@@ -7859,6 +8065,92 @@ describe('cli fixture-backed workflows', () => {
         suggestedNextActions: [],
       },
     ]);
+  });
+
+  it('creates and rebinds connection references through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-1',
+              uniquename: 'HarnessShell',
+              friendlyname: 'Harness Shell',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          connectionreferences: [
+            {
+              connectionreferenceid: 'connref-1',
+              connectionreferencelogicalname: 'pp_shared_sql',
+              connectionreferencedisplayname: 'Shared SQL',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_sql',
+              connectionid: '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-123',
+              _solutionid_value: 'solution-1',
+              statecode: 0,
+            },
+          ],
+          solutioncomponents: [
+            {
+              objectid: 'connref-1',
+            },
+          ],
+        },
+      }),
+    });
+
+    const created = await runCli([
+      'connref',
+      'create',
+      'pp_shared_office365',
+      '--env',
+      'source',
+      '--solution',
+      'HarnessShell',
+      '--display-name',
+      'Shared Office 365',
+      '--connector-id',
+      '/providers/Microsoft.PowerApps/apis/shared_office365',
+      '--connection-id',
+      '/providers/Microsoft.PowerApps/apis/shared_office365/connections/shared-office365-123',
+      '--format',
+      'json',
+    ]);
+    const rebound = await runCli([
+      'connref',
+      'set',
+      'pp_shared_sql',
+      '--env',
+      'source',
+      '--solution',
+      'HarnessShell',
+      '--connection-id',
+      '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456',
+      '--format',
+      'json',
+    ]);
+
+    expect(created.code).toBe(0);
+    expect(created.stderr).toBe('');
+    expect(JSON.parse(created.stdout)).toMatchObject({
+      logicalName: 'pp_shared_office365',
+      displayName: 'Shared Office 365',
+      connectorId: '/providers/Microsoft.PowerApps/apis/shared_office365',
+      connectionId: '/providers/Microsoft.PowerApps/apis/shared_office365/connections/shared-office365-123',
+      connected: true,
+    });
+
+    expect(rebound.code).toBe(0);
+    expect(rebound.stderr).toBe('');
+    expect(JSON.parse(rebound.stdout)).toMatchObject({
+      logicalName: 'pp_shared_sql',
+      displayName: 'Shared SQL',
+      connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+      connectionId: '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456',
+      connected: true,
+    });
   });
 
   it('covers model-driven app inspection workflows through the CLI entrypoint', async () => {

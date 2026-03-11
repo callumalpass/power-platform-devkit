@@ -2192,6 +2192,86 @@ describe('ALM services', () => {
     );
   });
 
+  it('prefers active populated current values when multiple value rows exist for one definition', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariabledefinitionid: 'def-1',
+              schemaname: 'pp_ApiUrl',
+              displayname: 'API URL',
+              defaultvalue: 'https://default.example.test',
+              type: 'String',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariablevalueid: 'val-empty',
+              _environmentvariabledefinitionid_value: 'def-1',
+              statecode: 0,
+            },
+            {
+              environmentvariablevalueid: 'val-current',
+              value: 'https://current.example.test',
+              _environmentvariabledefinitionid_value: 'def-1',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              objectid: 'def-1',
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.list({ solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        definitionId: 'def-1',
+        currentValue: 'https://current.example.test',
+        effectiveValue: 'https://current.example.test',
+        hasCurrentValue: true,
+        valueId: 'val-current',
+      }),
+    ]);
+    expect(httpClient.requests[1]?.path).toBe(
+      'environmentvariablevalues?%24select=environmentvariablevalueid%2Cvalue%2C_environmentvariabledefinitionid_value%2Cstatecode&%24filter=statecode+eq+0'
+    );
+  });
+
   it('updates an existing environment variable value within a solution without querying _solutionid_value on definitions', async () => {
     const httpClient = new FakeHttpClient([
       ok({

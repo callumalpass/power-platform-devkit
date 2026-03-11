@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 const args = process.argv.slice(2);
 const forwardedArgs = args[0] === '--' ? args.slice(1) : args;
 
-const child = spawn('pnpm', ['--filter', '@pp/cli', 'dev', '--', ...forwardedArgs], {
+const child = spawn(process.execPath, ['--import', 'tsx', 'packages/cli/src/index.ts', ...forwardedArgs], {
   cwd: process.cwd(),
   env: {
     ...process.env,

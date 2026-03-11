@@ -14,7 +14,9 @@ import {
   type ProjectInitResult,
 } from '@pp/project';
 import type { OperationResult } from '@pp/diagnostics';
+import type { ConfigStoreOptions } from '@pp/config';
 import { createMutationPreview, readMutationFlags, renderOutput, type CliOutputFormat } from './contract';
+import { buildProjectRelationshipSummary } from './relationship-context';
 
 type OutputFormat = CliOutputFormat;
 
@@ -28,6 +30,7 @@ interface ProjectCommandDependencies {
   resolveInvocationPath(path?: string): string;
   outputFormat(args: string[], fallback: OutputFormat): OutputFormat;
   readProjectDiscoveryOptions(args: string[]): OperationResult<ProjectDiscoveryInput>;
+  readConfigOptions(args: string[]): ConfigStoreOptions;
   printFailure(result: OperationResult<unknown>): number;
   printByFormat(value: unknown, format: OutputFormat): void;
   isMachineReadableOutputFormat(format: OutputFormat): boolean;
@@ -52,11 +55,13 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
     return deps.printFailure(project);
   }
 
+  const relationships = await buildProjectRelationshipSummary(project.data, deps.readConfigOptions(args));
   const payload = {
     success: true,
     canonicalProjectRoot: project.data.root,
     summary: summarizeProject(project.data),
     contract: summarizeProjectContract(project.data),
+    relationships,
     discovery:
       project.data.discovery.usedDefaultLayout || project.data.discovery.autoSelectedProjectRoot ? project.data.discovery : undefined,
     topology: project.data.topology,
@@ -77,7 +82,7 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
   };
 
   if (format === 'table' || format === 'markdown') {
-    process.stdout.write(renderProjectInspectOutput(project.data, format));
+    process.stdout.write(renderProjectInspectOutput(project.data, relationships, format));
   } else {
     deps.printByFormat(payload, format);
   }
@@ -144,14 +149,18 @@ export async function runProjectDoctorCommand(args: string[], deps: ProjectComma
   if (!result.success || !result.data) {
     return deps.printFailure(result);
   }
+  const project = await discoverProject(root, discoveryOptions.data);
+  const relationships =
+    project.success && project.data ? await buildProjectRelationshipSummary(project.data, deps.readConfigOptions(args)) : undefined;
+  const enrichedReport = enrichProjectDoctorReport(result.data, relationships);
 
   if (format === 'table' || format === 'markdown') {
-    process.stdout.write(renderProjectDoctorOutput(result.data, format));
+    process.stdout.write(renderProjectDoctorOutput(enrichedReport, format));
   } else {
     deps.printByFormat(
       {
         success: true,
-        ...result.data,
+        ...enrichedReport,
         diagnostics: result.diagnostics,
         warnings: result.warnings,
         suggestedNextActions: result.suggestedNextActions ?? [],
@@ -281,7 +290,11 @@ function renderProjectInitOutput(
   ].join('\n');
 }
 
-function renderProjectInspectOutput(project: ProjectContext, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
+function renderProjectInspectOutput(
+  project: ProjectContext,
+  relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>,
+  format: Extract<OutputFormat, 'table' | 'markdown'>
+): string {
   const summary = summarizeProject(project);
   const contract = summarizeProjectContract(project);
   const discoveryNote = summarizeProjectDiscoveryNote(project.discovery);
@@ -322,6 +335,8 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
       '',
       `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
       `Deployment route: ${contract.deploymentRouteSummary}`,
+      `Resolved relationship: ${relationships.activeRelationshipSummary}`,
+      `Project auth usage: ${relationships.authProfileUsageSummary}`,
       '',
       'Assets',
       renderOutput(assetRows, 'table').trimEnd(),
@@ -351,6 +366,8 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
     '',
     `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
     `Deployment route: ${contract.deploymentRouteSummary}`,
+    `Resolved relationship: ${relationships.activeRelationshipSummary}`,
+    `Project auth usage: ${relationships.authProfileUsageSummary}`,
     '',
     '## Assets',
     ...assetRows.map((row) => `- \`${row.asset}\` (${row.kind}, exists=${row.exists}): \`${row.path}\``),
@@ -366,7 +383,12 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
   ].join('\n');
 }
 
-function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
+function renderProjectDoctorOutput(
+  report: ProjectDoctorReport & {
+    relationships?: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>;
+  },
+  format: Extract<OutputFormat, 'table' | 'markdown'>
+): string {
   const summaryRows = [
     { field: 'inspected path', value: report.inspectedPath },
     { field: 'canonical project root', value: report.canonicalProjectRoot },
@@ -393,6 +415,8 @@ function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<
       discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
       report.summary.environmentAliasProvenance ? '' : undefined,
       report.summary.environmentAliasProvenance ? `Environment alias provenance: ${report.summary.environmentAliasProvenance}` : undefined,
+      report.relationships ? `Resolved relationship: ${report.relationships.activeRelationshipSummary}` : undefined,
+      report.relationships ? `Project auth usage: ${report.relationships.authProfileUsageSummary}` : undefined,
       '',
       'Deployment route',
       ...report.summary.deploymentRouteSteps.map((step, index) => `${index + 1}. ${step}`),
@@ -421,6 +445,8 @@ function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<
     `- Selected stage: \`${report.topology.selectedStage ?? '<unset>'}\``,
     `- Active target: ${report.summary.activeTargetSummary}`,
     ...(report.summary.environmentAliasProvenance ? [`- Environment alias provenance: ${report.summary.environmentAliasProvenance}`] : []),
+    ...(report.relationships ? [`- Resolved relationship: ${report.relationships.activeRelationshipSummary}`] : []),
+    ...(report.relationships ? [`- Project auth usage: ${report.relationships.authProfileUsageSummary}`] : []),
     `- Bundle lifecycle: ${report.summary.bundleLifecycleSummary}`,
     ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
     '',
@@ -431,6 +457,55 @@ function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<
     ...report.checks.map((check) => `- \`${check.status}\` \`${check.code}\`: ${check.message}`),
     '',
   ].join('\n');
+}
+
+function enrichProjectDoctorReport(
+  report: ProjectDoctorReport,
+  relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>> | undefined
+): ProjectDoctorReport & { relationships?: Awaited<ReturnType<typeof buildProjectRelationshipSummary>> } {
+  const relationshipChecks = (relationships?.stageRelationships ?? []).flatMap((stage) => {
+    const checks = [];
+
+    if (stage.environmentStatus === 'missing') {
+      checks.push({
+        status: 'warn' as const,
+        code: 'PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED',
+        message: `Stage ${stage.stage} points to environment alias ${stage.environmentAlias}, but that alias is not configured in the active pp environment registry.`,
+        hint: `Add the alias with \`pp env add --name ${stage.environmentAlias} --url <dataverse-url> --profile <auth-profile>\`.`,
+      });
+    }
+
+    if (stage.authProfileStatus === 'missing') {
+      checks.push({
+        status: 'warn' as const,
+        code: 'PROJECT_DOCTOR_AUTH_PROFILE_UNRESOLVED',
+        message: `Stage ${stage.stage} resolves environment alias ${stage.environmentAlias}, but its auth profile ${stage.authProfile} is missing from the active pp auth registry.`,
+        hint: `Create or restore auth profile ${stage.authProfile} before relying on that stage target.`,
+      });
+    }
+
+    checks.push({
+      status: 'info' as const,
+      code: 'PROJECT_DOCTOR_RELATIONSHIP_CHAIN',
+      message: stage.summary,
+    });
+
+    return checks;
+  });
+
+  const authUsageCheck = relationships
+    ? {
+        status: relationships.authProfileNames.length <= 1 ? ('info' as const) : ('warn' as const),
+        code: 'PROJECT_DOCTOR_AUTH_PROFILE_USAGE',
+        message: relationships.authProfileUsageSummary,
+      }
+    : undefined;
+
+  return {
+    ...report,
+    checks: [...report.checks, ...relationshipChecks, ...(authUsageCheck ? [authUsageCheck] : [])],
+    relationships,
+  };
 }
 
 function renderProjectFeedbackOutput(report: ProjectFeedbackReport, format: Extract<OutputFormat, 'table' | 'markdown'>): string {

@@ -3279,14 +3279,15 @@ function normalizeCanvasTemplateRegistry(
     );
   }
 
-  const templatesValue = objectValue.templates ?? objectValue.controlTemplates ?? objectValue.entries ?? value;
+  const rawUsedTemplates = normalizeRawUsedTemplatesCatalog(objectValue, sourcePath);
+  const templatesValue = rawUsedTemplates?.templates ?? objectValue.templates ?? objectValue.controlTemplates ?? objectValue.entries ?? value;
   const templates = normalizeTemplateList(templatesValue, sourcePath, provenanceOverride);
 
   if (!templates.success || !templates.data) {
     return templates as unknown as OperationResult<CanvasTemplateRegistryDocument>;
   }
 
-  const supportMatrixValue = objectValue.supportMatrix ?? objectValue.support ?? [];
+  const supportMatrixValue = objectValue.supportMatrix ?? objectValue.support ?? rawUsedTemplates?.supportMatrix ?? [];
   const supportMatrix = normalizeSupportMatrix(supportMatrixValue);
 
   if (!supportMatrix.success || !supportMatrix.data) {
@@ -3308,6 +3309,76 @@ function normalizeCanvasTemplateRegistry(
       warnings: [],
     }
   );
+}
+
+function normalizeRawUsedTemplatesCatalog(
+  value: Record<string, unknown>,
+  sourcePath: string
+): { templates: unknown[]; supportMatrix: unknown[] } | undefined {
+  const usedTemplates = Array.isArray(value.UsedTemplates) ? value.UsedTemplates : undefined;
+
+  if (!usedTemplates || usedTemplates.length === 0) {
+    return undefined;
+  }
+
+  return {
+    templates: usedTemplates.map((entry) => {
+      const template = asRecord(entry) ?? {};
+      const templateName = readString(template.Name) ?? readString(template.name);
+      const templateVersion = readString(template.Version) ?? readString(template.version);
+      const templateXml = readString(template.Template) ?? readString(template.template);
+
+      return {
+        templateName,
+        templateVersion,
+        aliases: {
+          yamlNames: templateName ? [templateName] : [],
+          constructors: inferRawTemplateConstructors(templateName),
+        },
+        files: {
+          'References/Templates.json': {
+            name: templateName,
+            version: templateVersion,
+            templateXml,
+          },
+        },
+        provenance: {
+          sourceArtifact: basename(sourcePath),
+        },
+      };
+    }),
+    supportMatrix: usedTemplates.map((entry) => {
+      const template = asRecord(entry) ?? {};
+      const templateName = readString(template.Name) ?? readString(template.name);
+      const templateVersion = readString(template.Version) ?? readString(template.version);
+
+      return {
+        templateName,
+        version: templateVersion,
+        supported: true,
+        modes: ['strict', 'registry'],
+        notes: ['Imported from an exported References/Templates.json payload.'],
+      };
+    }),
+  };
+}
+
+function inferRawTemplateConstructors(templateName: string | undefined): string[] {
+  if (!templateName) {
+    return [];
+  }
+
+  if (templateName.includes('/')) {
+    return [templateName];
+  }
+
+  const normalized = templateName
+    .split(/[^A-Za-z0-9]+/g)
+    .filter((segment) => segment.length > 0)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join('');
+
+  return normalized.length > 0 ? [`Classic/${normalized}`] : [];
 }
 
 function normalizeTemplateList(

@@ -74,6 +74,7 @@ There are three practical ways to run commands:
 
 ```bash
 pnpm pp -- project inspect
+node scripts/run-pp-dev.mjs project inspect
 ```
 
 2. From the built workspace:
@@ -93,7 +94,7 @@ pp project inspect
 ```
 
 The examples below use `pp` for brevity. When working directly from the repo,
-replace `pp` with either `pnpm pp --` or
+replace `pp` with either `pnpm pp --` for interactive use, `node scripts/run-pp-dev.mjs` for clean source-backed stdout, or
 `node packages/cli/dist/index.js`.
 
 For packaging and operator workflows:
