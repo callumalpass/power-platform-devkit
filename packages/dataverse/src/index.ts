@@ -550,6 +550,22 @@ export interface ModelDrivenAppSummary {
   publishedOn?: string;
 }
 
+export interface ModelDrivenAppCreateOptions {
+  name?: string;
+  solutionUniqueName?: string;
+}
+
+export interface ModelDrivenAppAttachOptions {
+  addRequiredComponents?: boolean;
+}
+
+export interface ModelDrivenAppAttachResult {
+  attached: boolean;
+  solutionUniqueName: string;
+  app: ModelDrivenAppSummary;
+  addRequiredComponents: boolean;
+}
+
 export interface ModelDrivenAppComponentRecord {
   appmodulecomponentid: string;
   componenttype?: number;
@@ -926,7 +942,7 @@ export class DataverseClient {
 
     return ok(
       response.data.map((entry, index) => {
-        const operation = normalizedOperations[index];
+        const operation = normalizedOperations[index]!;
         return {
           index,
           kind: operation.kind,
@@ -2698,6 +2714,122 @@ export class ModelDrivenAppService {
     });
   }
 
+  async create(uniqueName: string, options: ModelDrivenAppCreateOptions = {}): Promise<OperationResult<ModelDrivenAppSummary>> {
+    const normalizedUniqueName = uniqueName.trim();
+
+    if (!normalizedUniqueName) {
+      return fail(
+        createDiagnostic('error', 'DATAVERSE_MODEL_APP_UNIQUENAME_REQUIRED', 'Model-driven app unique name is required.', {
+          source: '@pp/dataverse',
+        })
+      );
+    }
+
+    const createResult = await this.dataverseClient.create<Record<string, unknown>, ModelDrivenAppRecord>(
+      'appmodules',
+      {
+        uniquename: normalizedUniqueName,
+        name: options.name?.trim() || normalizedUniqueName,
+      },
+      {
+        returnRepresentation: true,
+        solutionUniqueName: options.solutionUniqueName,
+      }
+    );
+
+    if (!createResult.success) {
+      return createResult as unknown as OperationResult<ModelDrivenAppSummary>;
+    }
+
+    const created = createResult.data?.entity;
+    const requestedName = options.name?.trim() || normalizedUniqueName;
+
+    return ok(
+      normalizeModelDrivenApp({
+        appmoduleid: created?.appmoduleid ?? createResult.data?.entityId ?? '',
+        uniquename: created?.uniquename ?? normalizedUniqueName,
+        name: created?.name ?? requestedName,
+        appmoduleversion: created?.appmoduleversion,
+        statecode: created?.statecode,
+        publishedon: created?.publishedon,
+      }),
+      {
+        supportTier: 'preview',
+        diagnostics: createResult.diagnostics,
+        warnings: createResult.warnings,
+      }
+    );
+  }
+
+  async attachToSolution(
+    identifier: string,
+    solutionUniqueName: string,
+    options: ModelDrivenAppAttachOptions = {}
+  ): Promise<OperationResult<ModelDrivenAppAttachResult>> {
+    const app = await this.inspect(identifier);
+
+    if (!app.success) {
+      return app as unknown as OperationResult<ModelDrivenAppAttachResult>;
+    }
+
+    if (!app.data) {
+      return fail(
+        [
+          ...app.diagnostics,
+          createDiagnostic('error', 'DATAVERSE_MODEL_APP_NOT_FOUND', `Model-driven app ${identifier} was not found.`, {
+            source: '@pp/dataverse',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: app.warnings,
+        }
+      );
+    }
+
+    const normalizedSolutionUniqueName = solutionUniqueName.trim();
+
+    if (!normalizedSolutionUniqueName) {
+      return fail(
+        createDiagnostic('error', 'DATAVERSE_SOLUTION_UNIQUENAME_REQUIRED', 'Solution unique name is required to attach a model-driven app.', {
+          source: '@pp/dataverse',
+        })
+      );
+    }
+
+    const addRequiredComponents = options.addRequiredComponents ?? true;
+    const actionResult = await this.dataverseClient.invokeAction(
+      'AddSolutionComponent',
+      {
+        ComponentId: app.data.id,
+        ComponentType: 80,
+        SolutionUniqueName: normalizedSolutionUniqueName,
+        AddRequiredComponents: addRequiredComponents,
+      },
+      {
+        solutionUniqueName: normalizedSolutionUniqueName,
+      }
+    );
+
+    if (!actionResult.success) {
+      return actionResult as unknown as OperationResult<ModelDrivenAppAttachResult>;
+    }
+
+    return ok(
+      {
+        attached: true,
+        solutionUniqueName: normalizedSolutionUniqueName,
+        app: app.data,
+        addRequiredComponents,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(app.diagnostics, actionResult.diagnostics),
+        warnings: mergeDiagnosticLists(app.warnings, actionResult.warnings),
+      }
+    );
+  }
+
   async components(appId: string): Promise<OperationResult<ModelDrivenAppComponentSummary[]>> {
     const components = await this.dataverseClient.queryAll<ModelDrivenAppComponentRecord>({
       table: `appmodules(${appId})/appmodule_appmodulecomponent`,
@@ -4340,12 +4472,12 @@ function normalizeMetadataWriteEntity(entity: unknown): NormalizedMetadataWriteE
     return normalizeRelationshipDefinition(entity as RelationshipDefinition);
   }
 
-  if ('LogicalName' in entity && ('AttributeType' in entity || 'AttributeTypeName' in entity || 'EntityLogicalName' in entity)) {
-    return normalizeAttributeDefinition(entity as AttributeDefinition, 'detailed');
+  if ('Name' in entity && ('OptionSetType' in entity || 'Options' in entity || 'IsGlobal' in entity)) {
+    return normalizeGlobalOptionSetDefinition(entity as GlobalOptionSetDefinition);
   }
 
-  if ('Name' in entity && ('Options' in entity || 'OptionSetType' in entity || 'IsGlobal' in entity)) {
-    return normalizeGlobalOptionSetDefinition(entity as GlobalOptionSetDefinition);
+  if ('LogicalName' in entity && ('AttributeType' in entity || 'AttributeTypeName' in entity || 'EntityLogicalName' in entity)) {
+    return normalizeAttributeDefinition(entity as AttributeDefinition, 'detailed');
   }
 
   if ('LogicalName' in entity && ('EntitySetName' in entity || 'OwnershipType' in entity || 'PrimaryIdAttribute' in entity)) {

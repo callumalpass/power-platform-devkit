@@ -527,6 +527,9 @@ describe('cli fixture-backed workflows', () => {
     expect(createHelp.stderr).toBe('');
     expect(createHelp.stdout).toContain('Usage: canvas create --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
     expect(createHelp.stdout).toContain('Preview handoff by default. `--delegate` can drive the Maker blank-app flow through a persisted browser profile.');
+    expect(createHelp.stdout).toContain('Choose this when:');
+    expect(createHelp.stdout).toContain('Choose a different path when:');
+    expect(createHelp.stdout).toContain('Recommended flow:');
     expect(createHelp.stdout).toContain('--maker-env-id ID');
     expect(createHelp.stdout).toContain('--delegate');
     expect(createHelp.stdout).toContain('--open');
@@ -548,6 +551,8 @@ describe('cli fixture-backed workflows', () => {
     expect(importHelp.stderr).toBe('');
     expect(importHelp.stdout).toContain('Usage: canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]');
     expect(importHelp.stdout).toContain('Preview placeholder. Remote canvas import is not implemented yet.');
+    expect(importHelp.stdout).toContain('Choose this when:');
+    expect(importHelp.stdout).toContain('Recommended flow today:');
     expect(importHelp.stdout).toContain('--name DISPLAY_NAME');
     expect(importHelp.stdout).toContain('--maker-env-id ID');
     expect(importHelp.stdout).toContain('--open');
@@ -6827,6 +6832,92 @@ describe('cli fixture-backed workflows', () => {
     expect(help.stdout).toContain('Usage: analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [options]');
     expect(help.stdout).toContain('Reports the inspected path, resolved project root, and any descendant auto-selection directly in the structured output.');
     expect(help.stdout).not.toContain('"project"');
+  });
+
+  it('scopes analysis and deploy help with guidance instead of falling back to root help', async () => {
+    const analysisHelp = await runCli(['analysis', '--help']);
+    const analysisReportHelp = await runCli(['analysis', 'report', '--help']);
+    const deployHelp = await runCli(['deploy', '--help']);
+    const deployApplyHelp = await runCli(['deploy', 'apply', '--help']);
+    const deployReleaseHelp = await runCli(['deploy', 'release', '--help']);
+
+    expect(analysisHelp.code).toBe(0);
+    expect(analysisHelp.stderr).toBe('');
+    expect(analysisHelp.stdout).toContain('Usage: analysis <command> [options]');
+    expect(analysisHelp.stdout).toContain('`context` is the most direct machine-readable entrypoint for an agent.');
+    expect(analysisHelp.stdout).toContain('pp analysis context --project . --format json');
+    expect(analysisHelp.stdout).not.toContain('pp auth profile add-user');
+
+    expect(analysisReportHelp.code).toBe(0);
+    expect(analysisReportHelp.stderr).toBe('');
+    expect(analysisReportHelp.stdout).toContain('Usage: analysis report [path] [--stage STAGE] [--param NAME=VALUE] [options]');
+    expect(analysisReportHelp.stdout).toContain('Defaults to markdown for human-readable output; use `--format json` for a structured context pack.');
+    expect(analysisReportHelp.stdout).toContain('Choose `analysis context` instead when:');
+
+    expect(deployHelp.code).toBe(0);
+    expect(deployHelp.stderr).toBe('');
+    expect(deployHelp.stdout).toContain('Usage: deploy <command> [options]');
+    expect(deployHelp.stdout).toContain('`deploy plan` turns project topology into concrete operations.');
+    expect(deployHelp.stdout).toContain('pp deploy apply --project . --stage dev --dry-run --format json');
+    expect(deployHelp.stdout).not.toContain('pp auth profile add-user');
+
+    expect(deployApplyHelp.code).toBe(0);
+    expect(deployApplyHelp.stderr).toBe('');
+    expect(deployApplyHelp.stdout).toContain(
+      'Usage: deploy apply [--project path] [--stage STAGE] [--param NAME=VALUE] [--dry-run|--plan|--plan FILE] [--yes] [options]'
+    );
+    expect(deployApplyHelp.stdout).toContain('Use `--plan FILE` to apply a previously saved deploy plan without rediscovering the project.');
+
+    expect(deployReleaseHelp.code).toBe(0);
+    expect(deployReleaseHelp.stderr).toBe('');
+    expect(deployReleaseHelp.stdout).toContain('deploy release plan --file MANIFEST.yml');
+    expect(deployReleaseHelp.stdout).toContain('deploy release apply --file MANIFEST.yml');
+    expect(deployReleaseHelp.stdout).toContain('Choose `deploy plan` / `deploy apply` instead when:');
+    expect(deployReleaseHelp.stdout).toContain('Recommended flow:');
+  });
+
+  it('scopes flow help and keeps local-vs-remote guidance discoverable', async () => {
+    const flowHelp = await runCli(['flow', '--help']);
+    const flowInspectHelp = await runCli(['flow', 'inspect', '--help']);
+    const flowDeployHelp = await runCli(['flow', 'deploy', '--help']);
+    const flowPromoteHelp = await runCli(['flow', 'promote', '--help']);
+
+    expect(flowHelp.code).toBe(0);
+    expect(flowHelp.stderr).toBe('');
+    expect(flowHelp.stdout).toContain('Usage: flow <command> [options]');
+    expect(flowHelp.stdout).toContain('Work with Power Automate flows in two modes:');
+    expect(flowHelp.stdout).toContain('`deploy` updates one target environment from a local artifact; `promote` copies a remote flow between environments.');
+    expect(flowHelp.stdout).not.toContain('pp auth profile add-user');
+
+    expect(flowInspectHelp.code).toBe(0);
+    expect(flowInspectHelp.stderr).toBe('');
+    expect(flowInspectHelp.stdout).toContain('Without `--environment`, inspect a local flow artifact on disk.');
+    expect(flowInspectHelp.stdout).toContain('With `--environment`, inspect a remote flow by name, id, or unique name.');
+
+    expect(flowDeployHelp.code).toBe(0);
+    expect(flowDeployHelp.stderr).toBe('');
+    expect(flowDeployHelp.stdout).toContain('Choose `flow promote` instead when:');
+    expect(flowDeployHelp.stdout).toContain('Your source of truth is a local flow artifact on disk and you want to push it into one environment.');
+
+    expect(flowPromoteHelp.code).toBe(0);
+    expect(flowPromoteHelp.stderr).toBe('');
+    expect(flowPromoteHelp.stdout).toContain('Choose `flow deploy` instead when:');
+    expect(flowPromoteHelp.stdout).toContain('Recommended flow:');
+  });
+
+  it('adds decision guidance to solution and project help pages', async () => {
+    const solutionListHelp = await runCli(['solution', 'list', '--help']);
+    const solutionInspectHelp = await runCli(['solution', 'inspect', '--help']);
+    const projectInitHelp = await runCli(['project', 'init', '--help']);
+    const projectDoctorHelp = await runCli(['project', 'doctor', '--help']);
+    const projectInspectHelp = await runCli(['project', 'inspect', '--help']);
+
+    expect(solutionListHelp.stdout).toContain('Choose this when:');
+    expect(solutionInspectHelp.stdout).toContain('metadata rather than the full inventory');
+
+    expect(projectInitHelp.stdout).toContain('Choose `project inspect` or `project doctor` instead when:');
+    expect(projectDoctorHelp.stdout).toContain('Choose `project inspect` instead when:');
+    expect(projectInspectHelp.stdout).toContain('the resolved project model that an agent, analysis command, or deploy workflow will actually see');
   });
 
   it('prints group and subcommand help for remote discovery commands with the shared output contract', async () => {

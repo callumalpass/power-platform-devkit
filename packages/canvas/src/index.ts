@@ -1134,13 +1134,15 @@ export async function inspectCanvasWorkspace(path: string): Promise<OperationRes
     return loaded as unknown as OperationResult<CanvasWorkspaceInspectReport>;
   }
 
+  const workspace = loaded.data;
+
   return ok(
     {
-      path: loaded.data.path,
-      workspace: loaded.data.document,
-      apps: loaded.data.document.apps.map((app) => resolveWorkspaceAppEntry(loaded.data.document, app, loaded.data.root)),
-      registries: loaded.data.document.registries ?? [],
-      catalogs: loaded.data.document.catalogs ?? [],
+      path: workspace.path,
+      workspace: workspace.document,
+      apps: workspace.document.apps.map((app) => resolveWorkspaceAppEntry(workspace.document, app, workspace.root)),
+      registries: workspace.document.registries ?? [],
+      catalogs: workspace.document.catalogs ?? [],
     },
     {
       supportTier: 'preview',
@@ -1163,15 +1165,17 @@ export async function resolveCanvasWorkspaceTarget(
     return loaded as unknown as OperationResult<CanvasCliResolution>;
   }
 
+  const workspace = loaded.data;
+
   const matched =
-    loaded.data.document.apps.find((app) => app.name.toLowerCase() === target.toLowerCase()) ??
-    loaded.data.document.apps.find((app) => resolve(loaded.data.root, app.path) === resolve(target));
+    workspace.document.apps.find((app) => app.name.toLowerCase() === target.toLowerCase()) ??
+    workspace.document.apps.find((app) => resolve(workspace.root, app.path) === resolve(target));
 
   if (!matched) {
     return fail(
       [
         ...loaded.diagnostics,
-        createDiagnostic('error', 'CANVAS_WORKSPACE_APP_NOT_FOUND', `Canvas workspace ${loaded.data.document.name} does not define app ${target}.`, {
+        createDiagnostic('error', 'CANVAS_WORKSPACE_APP_NOT_FOUND', `Canvas workspace ${workspace.document.name} does not define app ${target}.`, {
           source: '@pp/canvas',
         }),
       ],
@@ -1182,7 +1186,7 @@ export async function resolveCanvasWorkspaceTarget(
     );
   }
 
-  const resolved = resolveWorkspaceAppEntry(loaded.data.document, matched, loaded.data.root);
+  const resolved = resolveWorkspaceAppEntry(workspace.document, matched, workspace.root);
   const registries = options.registries && options.registries.length > 0 ? options.registries : resolved.registries;
 
   return ok(
@@ -1370,9 +1374,11 @@ export async function planCanvasPatch(
     return source as unknown as OperationResult<CanvasPatchPlanResult>;
   }
 
-  if (source.data.kind !== 'json-manifest') {
+  const sourceModel = source.data;
+
+  if (sourceModel.kind !== 'json-manifest') {
     return fail(
-      createDiagnostic('error', 'CANVAS_PATCH_KIND_UNSUPPORTED', `Canvas patch currently supports json-manifest sources only; received ${source.data.kind ?? 'unknown'}.`, {
+      createDiagnostic('error', 'CANVAS_PATCH_KIND_UNSUPPORTED', `Canvas patch currently supports json-manifest sources only; received ${sourceModel.kind ?? 'unknown'}.`, {
         source: '@pp/canvas',
       })
     );
@@ -1384,12 +1390,12 @@ export async function planCanvasPatch(
     return validation as unknown as OperationResult<CanvasPatchPlanResult>;
   }
 
-  const operations = validation.data.operations.map((operation, index) => planCanvasPatchOperation(source.data, operation, index));
+  const operations = validation.data.operations.map((operation, index) => planCanvasPatchOperation(sourceModel, operation, index));
 
   return ok(
     {
       path: resolve(path),
-      sourceKind: source.data.kind,
+      sourceKind: sourceModel.kind,
       valid: operations.every((operation) => operation.status === 'ready'),
       operations,
     },
@@ -1825,7 +1831,7 @@ function diffCanvasControlProperties(
   const changes: string[] = [];
 
   for (const key of Array.from(keys).sort()) {
-    if (stableStringify(before[key]) !== stableStringify(after[key])) {
+    if (stringifyCanvasJson(before[key]) !== stringifyCanvasJson(after[key])) {
       changes.push(`properties.${key}`);
     }
   }
@@ -2095,8 +2101,8 @@ function diffLoadedCanvasRegistries(
     }
   }
 
-  const leftRules = new Set(left.document.supportMatrix.map((rule) => stableStringify(rule)));
-  const rightRules = new Set(right.document.supportMatrix.map((rule) => stableStringify(rule)));
+  const leftRules = new Set(left.document.supportMatrix.map((rule) => stringifyCanvasJson(rule)));
+  const rightRules = new Set(right.document.supportMatrix.map((rule) => stringifyCanvasJson(rule)));
 
   return {
     left: summarizeRegistry(left),

@@ -230,25 +230,15 @@ export async function main(argv: string[]): Promise<number> {
     return runPowerBi(command, rest);
   }
 
+  if (group === 'analysis') {
+    return runAnalysis(command, rest);
+  }
+
+  if (group === 'deploy') {
+    return runDeploy(command, rest);
+  }
+
   switch (`${group} ${command ?? ''}`.trim()) {
-    case 'analysis report':
-      return runAnalysisReport(rest);
-    case 'analysis context':
-      return runAnalysisContext(rest);
-    case 'analysis portfolio':
-      return runAnalysisPortfolio(rest);
-    case 'analysis drift':
-      return runAnalysisDrift(rest);
-    case 'analysis usage':
-      return runAnalysisUsage(rest);
-    case 'analysis policy':
-      return runAnalysisPolicy(rest);
-    case 'deploy plan':
-      return runDeployPlan(rest);
-    case 'deploy apply':
-      return runDeployApply(rest);
-    case 'deploy release':
-      return runDeployRelease(rest);
     default:
       printHelp();
       return 1;
@@ -296,6 +286,86 @@ async function runProject(command: string | undefined, args: string[]): Promise<
       return runProjectInspect(args);
     default:
       printHelp();
+      return 1;
+  }
+}
+
+async function runAnalysis(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printAnalysisHelp();
+    return 0;
+  }
+
+  switch (command) {
+    case 'report':
+      if (args.includes('--help') || args.includes('help')) {
+        printAnalysisReportHelp();
+        return 0;
+      }
+      return runAnalysisReport(args);
+    case 'context':
+      if (args.includes('--help') || args.includes('help')) {
+        printAnalysisContextHelp();
+        return 0;
+      }
+      return runAnalysisContext(args);
+    case 'portfolio':
+      if (args.includes('--help') || args.includes('help')) {
+        printAnalysisPortfolioHelp();
+        return 0;
+      }
+      return runAnalysisPortfolio(args);
+    case 'drift':
+      if (args.includes('--help') || args.includes('help')) {
+        printAnalysisPortfolioViewHelp('drift');
+        return 0;
+      }
+      return runAnalysisDrift(args);
+    case 'usage':
+      if (args.includes('--help') || args.includes('help')) {
+        printAnalysisPortfolioViewHelp('usage');
+        return 0;
+      }
+      return runAnalysisUsage(args);
+    case 'policy':
+      if (args.includes('--help') || args.includes('help')) {
+        printAnalysisPortfolioViewHelp('policy');
+        return 0;
+      }
+      return runAnalysisPolicy(args);
+    default:
+      printAnalysisHelp();
+      return 1;
+  }
+}
+
+async function runDeploy(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printDeployHelp();
+    return 0;
+  }
+
+  switch (command) {
+    case 'plan':
+      if (args.includes('--help') || args.includes('help')) {
+        printDeployPlanHelp();
+        return 0;
+      }
+      return runDeployPlan(args);
+    case 'apply':
+      if (args.includes('--help') || args.includes('help')) {
+        printDeployApplyHelp();
+        return 0;
+      }
+      return runDeployApply(args);
+    case 'release':
+      if (args.includes('--help') || args.includes('help')) {
+        printDeployReleaseHelp();
+        return 0;
+      }
+      return runDeployRelease(args);
+    default:
+      printDeployHelp();
       return 1;
   }
 }
@@ -1794,39 +1864,104 @@ async function runCanvasPatch(args: string[]): Promise<number> {
 }
 
 async function runFlow(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    printFlowHelp();
+    return 0;
+  }
+
   switch (command) {
     case 'list':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowListHelp();
+        return 0;
+      }
       return runFlowList(args);
     case 'inspect':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowInspectHelp();
+        return 0;
+      }
       return runFlowInspect(args);
     case 'export':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowExportHelp();
+        return 0;
+      }
       return runFlowExport(args);
     case 'promote':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowPromoteHelp();
+        return 0;
+      }
       return runFlowPromote(args);
     case 'unpack':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowUnpackHelp();
+        return 0;
+      }
       return runFlowUnpack(args);
     case 'pack':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowPackHelp();
+        return 0;
+      }
       return runFlowPack(args);
     case 'deploy':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowDeployHelp();
+        return 0;
+      }
       return runFlowDeploy(args);
     case 'normalize':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowNormalizeHelp();
+        return 0;
+      }
       return runFlowNormalize(args);
     case 'validate':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowValidateHelp();
+        return 0;
+      }
       return runFlowValidate(args);
     case 'graph':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowGraphHelp();
+        return 0;
+      }
       return runFlowGraph(args);
     case 'patch':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowPatchHelp();
+        return 0;
+      }
       return runFlowPatch(args);
     case 'runs':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowRunsHelp();
+        return 0;
+      }
       return runFlowRuns(args);
     case 'errors':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowErrorsHelp();
+        return 0;
+      }
       return runFlowErrors(args);
     case 'connrefs':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowConnrefsHelp();
+        return 0;
+      }
       return runFlowConnrefs(args);
     case 'doctor':
+      if (args.includes('--help') || args.includes('help')) {
+        printFlowDoctorHelp();
+        return 0;
+      }
       return runFlowDoctor(args);
     default:
-      printHelp();
+      printFlowHelp();
       return 1;
   }
 }
@@ -9908,6 +10043,10 @@ function printCanvasHelp(): void {
     [
       'Usage: canvas <command> [options]',
       '',
+      'Work with canvas apps in two modes:',
+      '  remote  inspect or download apps already in Dataverse',
+      '  local   validate, inspect, patch, diff, and build source trees in the repo',
+      '',
       'Remote canvas commands:',
       '  list                         list remote canvas apps through Dataverse',
       '  download <displayName|name|id> export a solution-scoped remote canvas app into an .msapp',
@@ -9932,6 +10071,11 @@ function printCanvasHelp(): void {
       '  templates pin <registry> --out FILE normalize and write a pinned registry file',
       '  templates refresh <source>   re-import a source catalog and optionally diff against --current',
       '  templates audit <registry>   summarize provenance coverage and version metadata',
+      '',
+      'How to think about it:',
+      '  - Use remote commands when the app already exists in an environment and you need discovery or export.',
+      '  - Use local commands once the artifact is in source form and you want deterministic validation or packaging.',
+      '  - Create/import still rely on preview handoff flows because Microsoft does not expose a fully supported server-side path here.',
       '',
       'Examples:',
       '  pp canvas list --environment dev --solution Core',
@@ -10115,6 +10259,8 @@ function printSolutionHelp(): void {
     [
       'Usage: solution <command> [options]',
       '',
+      'Manage the remote application boundary inside a Dataverse environment.',
+      '',
       'Remote commands:',
       '  create <uniqueName>         create a solution shell in an environment',
       '  delete <uniqueName>         delete one solution from an environment',
@@ -10131,6 +10277,11 @@ function printSolutionHelp(): void {
       'Local package commands:',
       '  pack <folder>               pack a local solution folder into a zip',
       '  unpack <path.zip>           unpack a solution zip into a folder',
+      '',
+      'How to think about it:',
+      '  - Use remote commands when the solution already lives in Dataverse and you need inventory, metadata, or lifecycle operations.',
+      '  - Use pack/unpack when you are moving between editable local source and packaged zip artifacts.',
+      '  - A solution is the ALM boundary that groups canvas apps, flows, model-driven apps, env vars, and connection references.',
       '',
       'Examples:',
       '  pp solution list --environment dev --format json',
@@ -10152,6 +10303,9 @@ function printSolutionListHelp(): void {
       '  - Lists installed solutions in the target environment across all Dataverse pages.',
       '  - Returns structured records with solution ids, unique names, friendly names, versions, and managed state.',
       '  - Use --prefix to narrow by unique/friendly name prefix or --unique-name for one exact solution.',
+      '',
+      'Choose this when:',
+      '  - You know the environment but not yet the exact solution boundary you need.',
       '',
       'Examples:',
       '  pp solution list --environment dev',
@@ -10178,6 +10332,9 @@ function printSolutionComponentsHelp(): void {
       '  - Returns stable structured rows including the component type, display name, object id, and solution metadata when available.',
       '  - `--help` only prints this text and never validates the solution name or environment flags.',
       '',
+      'Choose this when:',
+      '  - You need to verify what a solution contains before export, deploy, or troubleshooting.',
+      '',
       'Examples:',
       '  pp solution components Core --environment dev',
       '  pp solution components Core --environment dev --format json',
@@ -10198,6 +10355,9 @@ function printSolutionInspectHelp(): void {
       '  - Returns one structured record with the solution id, unique name, friendly name, version, publisher metadata, and managed state when available.',
       '  - `--help` only prints this text and never validates the solution name or environment flags.',
       '',
+      'Choose this when:',
+      '  - You already know the solution unique name and want metadata rather than the full inventory.',
+      '',
       'Examples:',
       '  pp solution inspect Core --environment dev',
       '  pp solution inspect Core --environment dev --format json',
@@ -10217,6 +10377,9 @@ function printSolutionDependenciesHelp(): void {
       '  - Lists solution dependency rows for one solution in the target environment.',
       '  - Returns stable structured rows that identify the required and dependent components when Dataverse exposes them.',
       '  - `--help` only prints this text and never validates the solution name or environment flags.',
+      '',
+      'Choose this when:',
+      '  - You suspect missing prerequisites, ALM drift, or packaging/import problems.',
       '',
       'Examples:',
       '  pp solution dependencies Core --environment dev',
@@ -10607,6 +10770,14 @@ function printCanvasCreateHelp(): void {
       'Status:',
       '  Preview handoff by default. `--delegate` can drive the Maker blank-app flow through a persisted browser profile.',
       '',
+      'Choose this when:',
+      '  - You need a brand-new remote canvas app in a Dataverse environment.',
+      '  - You are willing to use a Maker handoff or delegated browser automation because there is no first-class server-side create API.',
+      '',
+      'Choose a different path when:',
+      '  - The app already exists remotely and you only need to inspect or export it: use `pp canvas list`, `inspect`, or `download`.',
+      '  - You already have local source and need a package artifact: use `pp canvas build`.',
+      '',
       'Options:',
       '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
       '  --delegate                 Drive the solution-scoped Maker blank-app flow and wait for the created app id',
@@ -10625,6 +10796,11 @@ function printCanvasCreateHelp(): void {
       '  - Use `--delegate --browser-profile <name> --solution <solution> --name <display-name>` to let pp drive the Maker blank-app flow and return the created app id when Studio save/publish succeeds.',
       '  - Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.',
       '  - Use `--open --browser-profile <name>` to override that browser profile for a one-off handoff.',
+      '',
+      'Recommended flow:',
+      '  1. Confirm the target environment and solution with `pp env inspect <alias>` and `pp solution inspect <uniqueName> --environment <alias>`.',
+      '  2. Start with `--delegate` if you want pp to wait for the resulting app id.',
+      '  3. Fall back to `--open` if you only want pp to construct the Maker handoff URL and launch context.',
       '',
       'Next steps for new apps today:',
       '  - Prefer `--delegate` when you want pp to wait for the created app id through Dataverse.',
@@ -10699,6 +10875,13 @@ function printCanvasImportHelp(): void {
       'Status:',
       '  Preview placeholder. Remote canvas import is not implemented yet.',
       '',
+      'Choose this when:',
+      '  - You already have an `.msapp` artifact and want guidance for getting it into a remote environment.',
+      '',
+      'Choose a different path when:',
+      '  - You only need a packaged artifact from local source: use `pp canvas build`.',
+      '  - You need to inspect or export an existing remote app: use `pp canvas list`, `inspect`, or `download`.',
+      '',
       'Options:',
       '  --name DISPLAY_NAME        Expected remote display name for post-import verification guidance',
       '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
@@ -10710,6 +10893,11 @@ function printCanvasImportHelp(): void {
       '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps.',
       '  - Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.',
       '  - Use `--open --browser-profile <name>` to override that browser profile for a one-off handoff.',
+      '',
+      'Recommended flow today:',
+      '  1. Build or locate the `.msapp` artifact you intend to import.',
+      '  2. Use `--open` if you want pp to take you to the right Maker context for the target environment.',
+      '  3. Use Maker or solution tooling for the actual import step until `pp canvas import` exists.',
       '',
       'Next steps for remote import today:',
       '  - Use Maker or solution tooling for the remote import step until `pp canvas import` exists.',
@@ -10747,6 +10935,328 @@ function printCanvasInspectHelp(): void {
       'Examples:',
       '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow <command> [options]',
+      '',
+      'Work with Power Automate flows in two modes:',
+      '  remote  inspect, export, promote, deploy, and diagnose flows in Dataverse',
+      '  local   unpack, pack, normalize, validate, graph, and patch flow artifacts',
+      '',
+      'Commands:',
+      '  list                        list remote flows',
+      '  inspect <name|id|...>       inspect a remote flow or a local artifact',
+      '  export <name|id|...>        export a remote flow artifact',
+      '  promote <name|id|...>       move a flow between environments',
+      '  deploy <path>               deploy a local flow artifact into an environment',
+      '  unpack <path>               unpack a flow artifact into a folder',
+      '  pack <path>                 pack a folder back into a flow artifact',
+      '  normalize <path>            rewrite a local artifact into normalized shape',
+      '  validate <path>             validate a local artifact',
+      '  graph <path>                emit a graph view of a local artifact',
+      '  patch <path> --file ...     apply a bounded patch to a local artifact',
+      '  runs <name|id|...>          inspect recent remote run history',
+      '  errors <name|id|...>        summarize remote runtime failures',
+      '  connrefs <name|id|...>      inspect connection references used by a flow',
+      '  doctor <name|id|...>        summarize remote runtime health and dependencies',
+      '',
+      'How to think about it:',
+      '  - Use remote commands when the flow already exists in an environment and you need lifecycle or runtime insight.',
+      '  - Use local commands when the artifact is on disk and you want deterministic analysis or edits.',
+      '  - `deploy` updates one target environment from a local artifact; `promote` copies a remote flow between environments.',
+      '',
+      'Examples:',
+      '  pp flow inspect ./flows/invoice/flow.json',
+      '  pp flow inspect InvoiceSync --environment dev --solution Core',
+      '  pp flow deploy ./flows/invoice/flow.json --environment dev --solution Core --dry-run --format json',
+      '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --solution-package --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow list --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Behavior:',
+      '  - Lists remote flows visible in the target environment.',
+      '  - Use `--solution` when you want the result scoped to one solution boundary.',
+      '',
+      'Examples:',
+      '  pp flow list --environment dev',
+      '  pp flow list --environment dev --solution Core --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [options]',
+      '',
+      'Modes:',
+      '  - Without `--environment`, inspect a local flow artifact on disk.',
+      '  - With `--environment`, inspect a remote flow by name, id, or unique name.',
+      '',
+      'Choose this when:',
+      '  - You want to understand one flow before export, deploy, promote, or runtime diagnosis.',
+      '',
+      'Examples:',
+      '  pp flow inspect ./flows/invoice/flow.json',
+      '  pp flow inspect InvoiceSync --environment dev --solution Core --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowExportHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [options]',
+      '',
+      'Behavior:',
+      '  - Exports one remote flow artifact into a local file.',
+      '  - Use this when you want to move from a live environment into the local validation/editing pipeline.',
+      '',
+      'Examples:',
+      '  pp flow export InvoiceSync --environment dev --out ./artifacts/invoice-flow.json',
+      '  pp flow export InvoiceSync --environment dev --solution Core --out ./artifacts/invoice-flow.json --dry-run --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowPromoteHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [--solution-package] [--managed-solution-package] [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [options]',
+      '',
+      'Choose this when:',
+      '  - The source flow already exists remotely and you want to move it between environments.',
+      '',
+      'Choose `flow deploy` instead when:',
+      '  - Your source of truth is a local artifact on disk.',
+      '',
+      'Recommended flow:',
+      '  1. Inspect the source flow and target solution first.',
+      '  2. Decide whether this should stay direct or go through `--solution-package`.',
+      '  3. Use `--dry-run` or `--plan` first when you want a non-mutating preview.',
+      '',
+      'Examples:',
+      '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --format json',
+      '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --target-solution Core --solution-package --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowUnpackHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow unpack <path> --out <dir> [options]',
+      '',
+      'Behavior:',
+      '  - Unpacks a flow artifact into an editable local folder.',
+      '',
+      'Examples:',
+      '  pp flow unpack ./artifacts/invoice-flow.json --out ./flows/invoice',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowPackHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow pack <path> --out <file.json> [options]',
+      '',
+      'Behavior:',
+      '  - Packs an editable local flow folder back into a deployable artifact.',
+      '',
+      'Examples:',
+      '  pp flow pack ./flows/invoice --out ./artifacts/invoice-flow.json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowDeployHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [options]',
+      '',
+      'Choose this when:',
+      '  - Your source of truth is a local flow artifact on disk and you want to push it into one environment.',
+      '',
+      'Choose `flow promote` instead when:',
+      '  - The source flow already lives remotely and should be moved between environments.',
+      '',
+      'Examples:',
+      '  pp flow deploy ./flows/invoice/flow.json --environment dev --solution Core --dry-run --format json',
+      '  pp flow deploy ./flows/invoice/flow.json --environment dev --solution Core --create-if-missing --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowNormalizeHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow normalize <path> [--out PATH] [options]',
+      '',
+      'Behavior:',
+      '  - Rewrites a local flow artifact into pp’s normalized shape.',
+      '',
+      'Examples:',
+      '  pp flow normalize ./flows/invoice/flow.json',
+      '  pp flow normalize ./flows/invoice/flow.json --out ./artifacts/invoice-flow.normalized.json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowValidateHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow validate <path> [options]',
+      '',
+      'Behavior:',
+      '  - Validates a local flow artifact and returns structured diagnostics.',
+      '',
+      'Examples:',
+      '  pp flow validate ./flows/invoice/flow.json',
+      '  pp flow validate ./flows/invoice/flow.json --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowGraphHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow graph <path> [options]',
+      '',
+      'Behavior:',
+      '  - Emits a graph-oriented view of a local flow artifact.',
+      '',
+      'Examples:',
+      '  pp flow graph ./flows/invoice/flow.json --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowPatchHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow patch <path> --file PATCH.json [--out PATH] [options]',
+      '',
+      'Behavior:',
+      '  - Applies a bounded patch document to a local flow artifact.',
+      '',
+      'Examples:',
+      '  pp flow patch ./flows/invoice/flow.json --file ./patches/invoice.patch.json --out ./artifacts/invoice-flow.patched.json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowRunsHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [options]',
+      '',
+      'Behavior:',
+      '  - Lists recent remote runs for one flow.',
+      '',
+      'Examples:',
+      '  pp flow runs InvoiceSync --environment dev --since 7d --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowErrorsHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow errors <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [options]',
+      '',
+      'Behavior:',
+      '  - Summarizes recent remote flow failures and can group them by error or connection reference.',
+      '',
+      'Examples:',
+      '  pp flow errors InvoiceSync --environment dev --since 7d --group-by errorCode --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowConnrefsHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow connrefs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [options]',
+      '',
+      'Behavior:',
+      '  - Reports the connection references used by one remote flow.',
+      '',
+      'Examples:',
+      '  pp flow connrefs InvoiceSync --environment dev --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printFlowDoctorHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow doctor <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [options]',
+      '',
+      'Behavior:',
+      '  - Summarizes runtime health, failures, and connection-reference context for one remote flow.',
+      '',
+      'Examples:',
+      '  pp flow doctor InvoiceSync --environment dev --since 7d --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -10808,6 +11318,201 @@ function printPowerBiHelp(): void {
   );
 }
 
+function printAnalysisHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: analysis <command> [options]',
+      '',
+      'Capture project context and higher-level analysis views for agents, CI, and delivery workflows.',
+      '',
+      'Commands:',
+      '  report [path]               render a high-level project report',
+      '  context                     emit one structured analysis context payload',
+      '  portfolio [path ...]        aggregate multiple projects into one portfolio view',
+      '  drift [path ...]            focus the portfolio view on drift and mismatch signals',
+      '  usage [path ...]            focus the portfolio view on provider and asset usage',
+      '  policy [path ...]           focus the portfolio view on policy and operability signals',
+      '',
+      'How to think about it:',
+      '  - `context` is the most direct machine-readable entrypoint for an agent.',
+      '  - `report` is better for a human-oriented summary.',
+      '  - `portfolio`, `drift`, `usage`, and `policy` are multi-project views over the same underlying model.',
+      '',
+      'Examples:',
+      '  pp analysis context --project . --format json',
+      '  pp analysis report . --stage prod',
+      '  pp analysis drift . ../other-project --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAnalysisReportHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: analysis report [path] [--stage STAGE] [--param NAME=VALUE] [options]',
+      '',
+      'Behavior:',
+      '  - Discovers the project, resolves stage and parameter context, and renders a high-level summary.',
+      '  - Defaults to markdown for human-readable output; use `--format json` for a structured context pack.',
+      '',
+      'Choose this when:',
+      '  - You want a readable summary of what pp thinks the project is, how it resolves, and what matters next.',
+      '',
+      'Choose `analysis context` instead when:',
+      '  - An agent, script, or CI job needs one machine-readable payload to reason over.',
+      '',
+      'Examples:',
+      '  pp analysis report .',
+      '  pp analysis report . --stage prod --format markdown',
+      '  pp analysis report . --stage prod --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAnalysisPortfolioHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: analysis portfolio [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [options]',
+      '',
+      'Behavior:',
+      '  - Aggregates one or more projects into a shared analysis view.',
+      '  - Use repeated `--project` flags or positional paths to choose the portfolio scope.',
+      '',
+      'Examples:',
+      '  pp analysis portfolio . ../other-project --format json',
+      '  pp analysis portfolio --project . --project ../other-project --allow-provider-kind dataverse',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printAnalysisPortfolioViewHelp(view: 'drift' | 'usage' | 'policy'): void {
+  process.stdout.write(
+    [
+      `Usage: analysis ${view} [path ...] [--project path] [--allow-provider-kind KIND] [--stage STAGE] [--param NAME=VALUE] [options]`,
+      '',
+      'Behavior:',
+      `  - Runs the shared portfolio analysis pipeline and emphasizes the ${view} view in the output.`,
+      '  - Accepts the same project-selection and stage-resolution options as `analysis portfolio`.',
+      '',
+      'Examples:',
+      `  pp analysis ${view} . --format json`,
+      `  pp analysis ${view} . ../other-project --stage prod --format json`,
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDeployHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: deploy <command> [options]',
+      '',
+      'Plan and apply stage-aware deployment workflows from the local pp project model.',
+      '',
+      'Commands:',
+      '  plan                         resolve the deploy plan without mutating anything',
+      '  apply                        execute a deploy plan or preview it in dry-run/plan mode',
+      '  release                      plan or apply a multi-stage release manifest',
+      '',
+      'How to think about it:',
+      '  - `deploy plan` turns project topology into concrete operations.',
+      '  - `deploy apply` executes those operations for one stage, or previews them with `--dry-run` / `--plan`.',
+      '  - `deploy release` is the multi-stage orchestration layer over saved release manifests.',
+      '',
+      'Examples:',
+      '  pp deploy plan --project . --stage dev --format json',
+      '  pp deploy apply --project . --stage dev --dry-run --format json',
+      '  pp deploy release --help',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDeployPlanHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: deploy plan [--project path] [--stage STAGE] [--param NAME=VALUE] [options]',
+      '',
+      'Behavior:',
+      '  - Discovers the local project, resolves stage-aware topology, and produces a concrete deploy plan.',
+      '  - Does not mutate the target environment.',
+      '',
+      'Examples:',
+      '  pp deploy plan --project . --stage dev --format json',
+      '  pp deploy plan --stage prod --param releaseName=2026.03.11',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDeployApplyHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: deploy apply [--project path] [--stage STAGE] [--param NAME=VALUE] [--dry-run|--plan|--plan FILE] [--yes] [options]',
+      '',
+      'Behavior:',
+      '  - Applies the stage-aware deploy workflow for one project.',
+      '  - Use `--dry-run` or `--plan` to preview without side effects.',
+      '  - Use `--plan FILE` to apply a previously saved deploy plan without rediscovering the project.',
+      '',
+      'Examples:',
+      '  pp deploy apply --project . --stage dev --dry-run --format json',
+      '  pp deploy apply --project . --stage dev --yes --format json',
+      '  pp deploy apply --plan ./artifacts/deploy-plan.json --yes --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+function printDeployReleaseHelp(): void {
+  process.stdout.write(
+    [
+      'Usage:',
+      '  deploy release plan --file MANIFEST.yml [--approve GATE] [--param NAME=VALUE] [options]',
+      '  deploy release apply --file MANIFEST.yml [--approve GATE] [--param NAME=VALUE] [--dry-run] [--yes] [options]',
+      '',
+      'Behavior:',
+      '  - Plans or applies a release manifest that spans multiple stages or gates.',
+      '  - Use `plan` first to understand the release graph before `apply`.',
+      '',
+      'Choose this when:',
+      '  - You are coordinating a release across more than one stage, gate, or approval point.',
+      '',
+      'Choose `deploy plan` / `deploy apply` instead when:',
+      '  - You only need to work one stage at a time from the current project topology.',
+      '',
+      'Recommended flow:',
+      '  1. Start with `deploy release plan --file ...` to inspect the resolved release graph.',
+      '  2. Add `--approve GATE` only when the manifest expects a specific gate approval.',
+      '  3. Use `deploy release apply --dry-run` before live apply if you want one last non-mutating pass.',
+      '',
+      'Examples:',
+      '  pp deploy release plan --file ./release.yml --format json',
+      '  pp deploy release apply --file ./release.yml --approve prod-ready --yes --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
 function printProjectHelp(): void {
   process.stdout.write(
     [
@@ -10849,6 +11554,12 @@ function printProjectInitHelp(): void {
       '  - Seeds one default stage, one solution alias, and one primary Dataverse provider binding.',
       '  - The scaffold is source-first: reserve `solutions/` for editable solution source and place packaged exports under `artifacts/solutions/<Solution>.zip` when the repo tracks both.',
       '',
+      'Choose this when:',
+      '  - You are starting a new repo or want pp to establish the canonical project layout.',
+      '',
+      'Choose `project inspect` or `project doctor` instead when:',
+      '  - The repo already exists and you want to understand or validate it before writing files.',
+      '',
       'Safety:',
       '  - `--help` only prints this text and never inspects or mutates the target path.',
       '  - Use `--plan` or `--dry-run` for a structured no-op preview before applying the scaffold.',
@@ -10880,6 +11591,12 @@ function printProjectDoctorHelp(): void {
       '  - Reports config presence, asset-path checks, provider bindings, topology, registries, and unresolved required parameters.',
       '  - Machine-readable formats emit one payload on stdout, including diagnostics and suggested next actions.',
       '  - Reads project context without mutating the filesystem.',
+      '',
+      'Choose this when:',
+      '  - You want pp to tell you what is broken, missing, or unresolved in the local project model.',
+      '',
+      'Choose `project inspect` instead when:',
+      '  - You mainly want the resolved shape, not a health-oriented checklist.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -10920,6 +11637,9 @@ function printProjectInspectHelp(): void {
       '  - Auto-selects the lone descendant `pp.config.*` under the inspected path and reports discovery details when the current path is not itself a pp project.',
       '  - Calls out that editable sources belong under `apps/`, `flows/`, `solutions/`, and `docs/`, while generated solution zips belong under `artifacts/solutions/`.',
       '  - Pair with `pp project doctor` for layout validation and `pp project init` to scaffold a canonical `apps/`, `flows/`, `solutions/`, and `docs/` workspace.',
+      '',
+      'Choose this when:',
+      '  - You want the resolved project model that an agent, analysis command, or deploy workflow will actually see.',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
