@@ -1542,6 +1542,7 @@ async function runProjectInit(args: string[]): Promise<number> {
     readProjectDiscoveryOptions,
     readConfigOptions,
     printFailure,
+    printFailureWithMachinePayload,
     printByFormat,
     isMachineReadableOutputFormat,
     printResultDiagnostics,
@@ -1559,6 +1560,7 @@ async function runProjectDoctor(args: string[]): Promise<number> {
     readProjectDiscoveryOptions,
     readConfigOptions,
     printFailure,
+    printFailureWithMachinePayload,
     printByFormat,
     isMachineReadableOutputFormat,
     printResultDiagnostics,
@@ -1576,6 +1578,7 @@ async function runProjectFeedback(args: string[]): Promise<number> {
     readProjectDiscoveryOptions,
     readConfigOptions,
     printFailure,
+    printFailureWithMachinePayload,
     printByFormat,
     isMachineReadableOutputFormat,
     printResultDiagnostics,
@@ -4386,7 +4389,9 @@ async function runCanvasInspect(args: string[]): Promise<number> {
       return printFailure(downloadPlan);
     }
 
-    if (expectations.data.length > 0) {
+    const proofExpectations = expectations.data ?? [];
+
+    if (proofExpectations.length > 0) {
       const proofSolutionUniqueName = downloadPlan.data?.resolution.resolvedSolutionUniqueName;
 
       if (!proofSolutionUniqueName) {
@@ -4400,7 +4405,7 @@ async function runCanvasInspect(args: string[]): Promise<number> {
 
       const proof = await service.proveRemote(identifier, {
         solutionUniqueName: proofSolutionUniqueName,
-        expectations: expectations.data,
+        expectations: proofExpectations,
       });
 
       if (!proof.success || !proof.data) {
@@ -6205,7 +6210,8 @@ async function runModelSitemap(args: string[]): Promise<number> {
     return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
   }
 
-  printByFormat(buildModelArtifactProjectionReport(result, result.data, 'sitemap'), outputFormat(args, 'json'));
+  const modelResult: OperationResult<ModelInspectResult> = { ...result, data: result.data };
+  printByFormat(buildModelArtifactProjectionReport(modelResult, result.data, 'sitemap'), outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
@@ -6235,7 +6241,8 @@ async function runModelForms(args: string[]): Promise<number> {
     return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
   }
 
-  printByFormat(buildModelArtifactProjectionReport(result, result.data, 'form'), outputFormat(args, 'json'));
+  const modelResult: OperationResult<ModelInspectResult> = { ...result, data: result.data };
+  printByFormat(buildModelArtifactProjectionReport(modelResult, result.data, 'form'), outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
@@ -6265,7 +6272,8 @@ async function runModelViews(args: string[]): Promise<number> {
     return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
   }
 
-  printByFormat(buildModelArtifactProjectionReport(result, result.data, 'view'), outputFormat(args, 'json'));
+  const modelResult: OperationResult<ModelInspectResult> = { ...result, data: result.data };
+  printByFormat(buildModelArtifactProjectionReport(modelResult, result.data, 'view'), outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
@@ -6295,7 +6303,8 @@ async function runModelDependencies(args: string[]): Promise<number> {
     return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
   }
 
-  printByFormat(buildModelArtifactProjectionReport(result, result.data, 'dependency'), outputFormat(args, 'json'));
+  const modelResult: OperationResult<ModelInspectResult> = { ...result, data: result.data };
+  printByFormat(buildModelArtifactProjectionReport(modelResult, result.data, 'dependency'), outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
@@ -7224,7 +7233,7 @@ function readCanvasRemoteProofExpectations(args: string[]): OperationResult<Arra
     const parsed = parseCanvasRemoteProofExpectation(spec);
 
     if (!parsed.success || !parsed.data) {
-      return parsed as OperationResult<Array<{ controlPath: string; property: string; expectedValue: string }>>;
+      return parsed as unknown as OperationResult<Array<{ controlPath: string; property: string; expectedValue: string }>>;
     }
 
     expectations.push(parsed.data);

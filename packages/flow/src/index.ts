@@ -1258,9 +1258,11 @@ export class FlowService {
         warnings: doctor.warnings,
         suggestedNextActions: dedupeStrings([
           ...(doctor.suggestedNextActions ?? []),
-          doctor.data.recentRuns.total === 0
-            ? `Re-run \`pp flow monitor ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --since ${options.since ?? '1h'} --format json\` after the next expected trigger window to confirm whether runtime telemetry stays quiet.`
-            : undefined,
+          ...(doctor.data.recentRuns?.total === 0
+            ? [
+                `Re-run \`pp flow monitor ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --since ${options.since ?? '1h'} --format json\` after the next expected trigger window to confirm whether runtime telemetry stays quiet.`,
+              ]
+            : []),
         ]),
         knownLimitations: dedupeStrings([
           ...(doctor.knownLimitations ?? []),
@@ -2801,8 +2803,8 @@ function validateFlowClientDataDefinitionConsistency(artifact: FlowArtifact, pat
     return [];
   }
 
-  const topLevelDefinition = asRecord(clientData.definition);
-  const nestedDefinition = asRecord(asRecord(clientData.properties)?.definition);
+  const topLevelDefinition = asFlowJsonRecord(clientData.definition);
+  const nestedDefinition = asFlowJsonRecord(asRecord(clientData.properties)?.definition);
   const diagnostics: Diagnostic[] = [];
 
   if (topLevelDefinition && !flowJsonValuesEqual(topLevelDefinition, artifact.definition)) {
@@ -2876,12 +2878,12 @@ function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspe
     connectionReferences: record.connectionReferences,
     parameters: record.parameters,
     environmentVariables: record.environmentVariables,
-    clientData: record.clientData as Record<string, FlowJsonValue> | undefined,
+    clientData: asFlowJsonRecord(record.clientData),
   };
 }
 
 function extractRemoteFlowDefinition(clientData: Record<string, FlowJsonValue> | undefined): Record<string, FlowJsonValue> | undefined {
-  return asRecord(clientData?.definition) ?? asRecord(asRecord(clientData?.properties)?.definition);
+  return asFlowJsonRecord(clientData?.definition) ?? asFlowJsonRecord(asRecord(clientData?.properties)?.definition);
 }
 
 function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResult<FlowArtifact> {
@@ -3735,12 +3737,15 @@ function buildDataverseFlowWorkflowShellFields(
 }
 
 function buildFlowDeployClientData(artifact: FlowArtifact): string {
-  const existingClientData = artifact.clientData ? cloneJsonValue(artifact.clientData) : {};
-  const existingProperties = asRecord(asRecord(existingClientData).properties);
+  const existingClientData = artifact.clientData
+    ? ((cloneJsonValue(artifact.clientData) as Record<string, FlowJsonValue>) ?? {})
+    : {};
+  const existingClientDataRecord = asFlowJsonRecord(existingClientData) ?? {};
+  const existingProperties = asFlowJsonRecord(existingClientDataRecord.properties);
 
   return stableStringify({
-    ...existingClientData,
-    schemaVersion: readNumber(asRecord(existingClientData).schemaVersion) ?? 1,
+    ...existingClientDataRecord,
+    schemaVersion: readNumber(existingClientDataRecord.schemaVersion) ?? 1,
     definition: cloneJsonValue(artifact.definition),
     properties: {
       ...(existingProperties ? cloneJsonValue(existingProperties) : {}),
@@ -6214,6 +6219,10 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function asFlowJsonRecord(value: unknown): Record<string, FlowJsonValue> | undefined {
+  return asRecord(value) as Record<string, FlowJsonValue> | undefined;
 }
 
 async function fileExists(path: string): Promise<boolean> {

@@ -277,6 +277,13 @@ export interface CanvasTemplateRegistryRefreshResult {
 
 export interface CanvasTemplateRequirementResolution {
   mode: CanvasBuildMode;
+  resolutions: CanvasTemplateResolution[];
+  missing: CanvasTemplateLookup[];
+  supported: boolean;
+}
+
+export interface CanvasTemplateRequirementReport {
+  mode: CanvasBuildMode;
   resolutions: CanvasTemplateReportResolution[];
   missing: CanvasTemplateLookup[];
   supported: boolean;
@@ -395,7 +402,7 @@ export interface CanvasValidationReport {
     seedRegistryPath?: string;
   };
   dataSources?: CanvasDataSourceSummary[];
-  templateRequirements: CanvasTemplateRequirementResolution;
+  templateRequirements: CanvasTemplateRequirementReport;
   unresolvedTemplates: CanvasTemplateUsageIssue[];
   unsupportedTemplates: CanvasTemplateUsageIssue[];
   formulas: CanvasFormulaCheck[];

@@ -54,6 +54,7 @@ import type {
   CanvasTemplateLookup,
   CanvasTemplateMatchType,
   CanvasTemplateProvenance,
+  CanvasTemplateRequirementReport,
   CanvasTemplateReportRecord,
   CanvasTemplateReportResolution,
   CanvasTemplateRecord,
@@ -119,6 +120,7 @@ export type {
   CanvasTemplateLookup,
   CanvasTemplateMatchType,
   CanvasTemplateProvenance,
+  CanvasTemplateRequirementReport,
   CanvasTemplateReportRecord,
   CanvasTemplateReportResolution,
   CanvasTemplateRecord,
@@ -307,6 +309,7 @@ interface CanvasComparable {
 
 interface PreparedCanvasValidation {
   source: CanvasSourceModel;
+  templateRequirements: CanvasTemplateRequirementResolution;
   semanticModel: ReturnType<typeof buildCanvasSemanticModel>;
   invalidPropertyChecks: CanvasPropertyCheck[];
   unresolvedTemplates: CanvasTemplateUsageIssue[];
@@ -845,8 +848,14 @@ export class CanvasService {
         return harvestedProofs as unknown as OperationResult<CanvasRemoteProofReport>;
       }
 
+      const loadedSource = loaded.data;
+      const harvestedProofMap = harvestedProofs.data;
       const expectations = options.expectations.map((expectation) =>
-        buildCanvasRemoteProofCheck(loaded.data, expectation, harvestedProofs.data.get(buildCanvasProofKey(expectation.controlPath, expectation.property)))
+        buildCanvasRemoteProofCheck(
+          loadedSource,
+          expectation,
+          harvestedProofMap.get(buildCanvasProofKey(expectation.controlPath, expectation.property))
+        )
       );
       const mismatchDiagnostics = buildCanvasRemoteProofDiagnostics(expectations);
       const conflictDiagnostics = buildCanvasRemoteProofConflictDiagnostics(expectations);
@@ -1119,7 +1128,19 @@ export class CanvasService {
   }
 
   private async listContainingSolutions(appId: string): Promise<OperationResult<CanvasRemoteDownloadCandidateSolution[]>> {
-    const membership = await this.dataverseClient.queryAll<{ _solutionid_value?: string; solutionid?: string }>({
+    const client = this.dataverseClient;
+    if (!client) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_REMOTE_DATAVERSE_UNAVAILABLE', 'Dataverse client is not configured for solution lookup.', {
+          source: '@pp/canvas',
+        }),
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+
+    const membership = await client.queryAll<{ _solutionid_value?: string; solutionid?: string }>({
       table: 'solutioncomponents',
       select: ['_solutionid_value', 'solutionid'],
       filter: `objectid eq ${appId} and componenttype eq 300`,
@@ -1144,7 +1165,7 @@ export class CanvasService {
     }
 
     const solutionFilter = solutionIds.map((solutionId) => `solutionid eq ${solutionId}`).join(' or ');
-    const solutions = await this.dataverseClient.queryAll<{
+    const solutions = await client.queryAll<{
       solutionid: string;
       uniquename?: string;
       friendlyname?: string;
@@ -2262,11 +2283,12 @@ export async function buildCanvasApp(
   } = {}
 ): Promise<OperationResult<CanvasBuildResult>> {
   const prepared = await prepareCanvasValidation(path, options);
-  const outPath = options.outPath ?? (prepared.success && prepared.data ? resolve(prepared.data.source.root, 'dist', `${prepared.data.source.manifest.name}.msapp`) : undefined);
 
   if (!prepared.success || !prepared.data) {
     return prepared as unknown as OperationResult<CanvasBuildResult>;
   }
+
+  const outPath = options.outPath ?? resolve(prepared.data.source.root, 'dist', `${prepared.data.source.manifest.name}.msapp`);
 
   if (!prepared.data.report.valid) {
     return fail(
@@ -2287,7 +2309,7 @@ export async function buildCanvasApp(
     );
   }
 
-  const resolvedTemplates = prepared.data.report.templateRequirements.resolutions
+  const resolvedTemplates = prepared.data.templateRequirements.resolutions
     .filter((resolution): resolution is CanvasTemplateResolution & { template: CanvasTemplateRecord } => Boolean(resolution.template))
     .map((resolution) => ({
       requested: resolution.requested,
@@ -2299,7 +2321,7 @@ export async function buildCanvasApp(
   if (prepared.data.source.kind === 'pa-yaml-unpacked') {
     const nativeBuild = await buildCanvasMsappFromUnpackedSource(
       prepared.data.source,
-      prepared.data.report.templateRequirements,
+      prepared.data.templateRequirements,
       outPath
     );
 
@@ -3258,7 +3280,7 @@ function summarizeCanvasTemplateRequirementResolution(
 
 function buildCanvasTemplateRequirementReport(
   templateRequirements: CanvasTemplateRequirementResolution
-): CanvasTemplateRequirementResolution {
+): CanvasTemplateRequirementReport {
   return {
     ...templateRequirements,
     resolutions: templateRequirements.resolutions.map(summarizeCanvasTemplateRequirementResolution),
@@ -3413,6 +3435,7 @@ async function prepareCanvasValidation(
   return ok(
     {
       source: source.data,
+      templateRequirements,
       semanticModel,
       invalidPropertyChecks,
       unresolvedTemplates,
@@ -3616,7 +3639,7 @@ async function normalizeCanvasControlTemplatesCatalog(
     );
 
     if (!normalized.success || !normalized.data) {
-      return normalized as OperationResult<CanvasTemplateRegistryDocument>;
+      return normalized as unknown as OperationResult<CanvasTemplateRegistryDocument>;
     }
 
     templates.push(normalized.data);

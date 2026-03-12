@@ -1087,9 +1087,9 @@ export class DataverseClient {
         ? await this.buildEmptyFilteredQueryWarnings(options)
         : [];
 
-    return ok(
+    return ok<DataverseQueryPage<T>>(
       {
-        records: normalizedPage.records,
+        records: normalizedPage.records as T[],
         count: payload['@odata.count'],
         nextLink: payload['@odata.nextLink'],
       },
@@ -1240,9 +1240,9 @@ export class DataverseClient {
     const payload = retry.data?.data ?? {};
     const normalizedPage = normalizeQueryRecordsForSelectedLookups(payload.value ?? [], options.select);
 
-    return ok(
+    return ok<DataverseQueryPage<T>>(
       {
-        records: normalizedPage.records,
+        records: normalizedPage.records as T[],
         count: payload['@odata.count'],
         nextLink: payload['@odata.nextLink'],
       },
@@ -1250,7 +1250,8 @@ export class DataverseClient {
         supportTier: 'preview',
         diagnostics: retry.diagnostics,
         warnings: mergeDiagnosticLists(
-          createDiagnostic(
+          [
+            createDiagnostic(
             'warning',
             'DATAVERSE_QUERY_ENTITY_SET_ALIAS_APPLIED',
             `Resolved Dataverse table reference \`${options.table}\` to entity set \`${entitySetName}\` for this query.`,
@@ -1259,7 +1260,8 @@ export class DataverseClient {
               detail: `Logical table name ${options.table} maps to entity set ${entitySetName}.`,
               hint: `Use \`${entitySetName}\` explicitly when you want the raw OData collection path, or keep \`${options.table}\` when you want pp to resolve the logical name for you.`,
             }
-          ),
+            ),
+          ],
           normalizedPage.warnings,
           retry.warnings
         ),
@@ -5641,12 +5643,13 @@ async function validateSolutionScopedTable(
 
   if (!solutionId.data) {
     return fail(
-      createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${solutionUniqueName} was not found.`, {
-        source: '@pp/dataverse',
-      }),
+      mergeDiagnosticLists(solutionId.diagnostics, [
+        createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${solutionUniqueName} was not found.`, {
+          source: '@pp/dataverse',
+        }),
+      ]),
       {
         supportTier: 'preview',
-        diagnostics: solutionId.diagnostics,
         warnings: solutionId.warnings,
       }
     );
@@ -5670,7 +5673,14 @@ async function validateSolutionScopedTable(
     });
   }
 
-  const metadataId = tableDefinition.data.MetadataId.toLowerCase();
+  const metadataId = readString(tableDefinition.data.MetadataId)?.toLowerCase();
+  if (!metadataId) {
+    return ok(undefined, {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(solutionId.diagnostics, solutionMembers.diagnostics, tableDefinition.diagnostics),
+      warnings: mergeDiagnosticLists(solutionId.warnings, solutionMembers.warnings, tableDefinition.warnings),
+    });
+  }
   const inSolution = Array.from(solutionMembers.data ?? []).some((value) => value.toLowerCase() === metadataId);
   if (inSolution) {
     return ok(undefined, {
@@ -5705,7 +5715,6 @@ async function validateSolutionScopedTable(
     ),
     {
       supportTier: 'preview',
-      diagnostics: mergeDiagnosticLists(solutionId.diagnostics, solutionMembers.diagnostics, tableDefinition.diagnostics, availableTables.diagnostics),
       warnings: mergeDiagnosticLists(solutionId.warnings, solutionMembers.warnings, tableDefinition.warnings, availableTables.warnings),
       suggestedNextActions: availableTableNames.length > 0
         ? [
