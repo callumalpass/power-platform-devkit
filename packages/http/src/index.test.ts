@@ -143,4 +143,34 @@ describe('HttpClient', () => {
       message: 'POST ExportSolution timed out after 10ms',
     });
   });
+
+  it('adds request context and retry guidance for unhandled fetch failures', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new HttpClient({
+      baseUrl: 'https://example.com/api/',
+      retries: 1,
+    });
+
+    const response = await client.requestJson<{ ok: boolean }>({
+      path: 'workflows',
+      query: {
+        '$top': 1,
+      },
+    });
+
+    expect(response.success).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.diagnostics[0]).toMatchObject({
+      code: 'HTTP_UNHANDLED_ERROR',
+      message: 'fetch failed',
+      hint: expect.stringContaining('Retry once'),
+      detail: expect.stringContaining('GET https://example.com/api/workflows?%24top=1'),
+    });
+    expect(response.diagnostics[0]?.detail).toContain('Attempted up to 2 request time(s) including retries.');
+  });
 });

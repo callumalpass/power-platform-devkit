@@ -52,6 +52,8 @@ export interface QueryOptions extends ODataQueryOptions {
   table: string;
   maxPageSize?: number;
   includeAnnotations?: string[];
+  solutionUniqueName?: string;
+  diagnoseEmptyFilter?: boolean;
 }
 
 export interface EntityReadOptions extends Pick<ODataQueryOptions, 'select' | 'expand'> {
@@ -442,6 +444,7 @@ export interface ConnectionReferenceRecord {
 
 export interface ConnectionReferenceSummary {
   id: string;
+  kind?: 'row' | 'inferred';
   logicalName?: string;
   displayName?: string;
   connectorId?: string;
@@ -1051,30 +1054,215 @@ export class DataverseClient {
   }
 
   async queryPage<T>(options: QueryOptions, continuationPath?: string): Promise<OperationResult<DataverseQueryPage<T>>> {
+    if (!continuationPath && options.solutionUniqueName) {
+      const validation = await validateSolutionScopedTable(this, options.table, options.solutionUniqueName);
+      if (!validation.success) {
+        return validation as unknown as OperationResult<DataverseQueryPage<T>>;
+      }
+    }
+
     const response = await this.request<DataverseCollectionResponse<T>>({
       path: continuationPath ?? buildQueryPath(options),
       method: 'GET',
       responseType: 'json',
       prefer: options.maxPageSize ? [`odata.maxpagesize=${options.maxPageSize}`] : undefined,
       includeAnnotations: options.includeAnnotations,
+      solutionUniqueName: options.solutionUniqueName,
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseQueryPage<T>>;
+      if (!continuationPath) {
+        const aliased = await this.retryQueryWithResolvedEntitySet<T>(options, response);
+        if (aliased) {
+          return aliased;
+        }
+      }
+      return (await this.enrichQueryFailure<T>(options, response)) as unknown as OperationResult<DataverseQueryPage<T>>;
     }
 
     const payload = response.data?.data ?? {};
+    const normalizedPage = normalizeQueryRecordsForSelectedLookups(payload.value ?? [], options.select);
+    const emptyFilterWarnings =
+      !continuationPath && options.diagnoseEmptyFilter && options.filter && (payload.value?.length ?? 0) === 0
+        ? await this.buildEmptyFilteredQueryWarnings(options)
+        : [];
 
     return ok(
       {
-        records: payload.value ?? [],
+        records: normalizedPage.records,
         count: payload['@odata.count'],
         nextLink: payload['@odata.nextLink'],
       },
       {
         supportTier: 'preview',
         diagnostics: response.diagnostics,
-        warnings: response.warnings,
+        warnings: mergeDiagnosticLists(response.warnings, normalizedPage.warnings, emptyFilterWarnings),
+      }
+    );
+  }
+
+  private async buildEmptyFilteredQueryWarnings(options: QueryOptions): Promise<Diagnostic[]> {
+    const referencedColumns = extractFilterColumnReferences(options.filter);
+    if (referencedColumns.length === 0) {
+      return [];
+    }
+
+    const table = await resolveQueryTableDefinition(this, options.table);
+    const logicalName = readString(table.data?.LogicalName);
+    if (!table.success || !logicalName) {
+      return [];
+    }
+
+    const columns = await this.listColumns(logicalName, {
+      select: ['LogicalName', 'SchemaName', 'IsFilterable'],
+      all: true,
+    });
+    if (!columns.success) {
+      return [];
+    }
+
+    const knownColumns = (columns.data ?? []).map((entry) => ({
+      logicalName: readString(entry.LogicalName),
+      schemaName: readString(entry.SchemaName),
+      filterable: readBoolean(entry.IsFilterable),
+    }));
+    const availableColumns = uniqueStrings(knownColumns.flatMap((entry) => [entry.logicalName ?? '', entry.schemaName ?? '']));
+    const unresolved: string[] = [];
+    const notFilterable: string[] = [];
+    const validated = new Set<string>();
+
+    for (const reference of referencedColumns) {
+      const match = knownColumns.find((entry) => {
+        const names = [entry.logicalName, entry.schemaName].filter((value): value is string => Boolean(value));
+        return names.some((value) => normalizeColumnToken(value) === normalizeColumnToken(reference));
+      });
+
+      if (!match) {
+        unresolved.push(reference);
+        continue;
+      }
+
+      const preferredName = match.logicalName ?? match.schemaName ?? reference;
+      validated.add(preferredName);
+      if (match.filterable === false) {
+        notFilterable.push(preferredName);
+      }
+    }
+
+    if (unresolved.length > 0) {
+      const suggestions = unresolved
+        .map((reference) => {
+          const nearby = suggestNearbyColumnNames(reference, availableColumns).slice(0, 3);
+          return nearby.length > 0 ? `${reference}: ${nearby.join(', ')}` : undefined;
+        })
+        .filter((value): value is string => Boolean(value));
+
+      return [
+        createDiagnostic(
+          'warning',
+          'DATAVERSE_QUERY_FILTER_COLUMNS_UNRESOLVED',
+          `Dataverse returned no rows and the filter references column names that were not found on table ${logicalName}: ${unresolved.join(', ')}.`,
+          {
+            source: '@pp/dataverse',
+            detail:
+              suggestions.length > 0
+                ? `Nearby Dataverse column names: ${suggestions.join('; ')}.`
+                : `Run \`pp dv metadata columns ${logicalName} --environment <alias>\` to inspect the available logical and schema names.`,
+            hint: `Check the filter clause spelling/casing before assuming the row is missing.`,
+          }
+        ),
+      ];
+    }
+
+    if (notFilterable.length > 0) {
+      return [
+        createDiagnostic(
+          'warning',
+          'DATAVERSE_QUERY_FILTER_COLUMNS_NOT_FILTERABLE',
+          `Dataverse returned no rows and the filter references columns that are not marked filterable on table ${logicalName}: ${uniqueStrings(notFilterable).join(', ')}.`,
+          {
+            source: '@pp/dataverse',
+            hint: `Retry with a filterable column, or inspect \`pp dv metadata columns ${logicalName} --environment <alias>\` before assuming the row is missing.`,
+          }
+        ),
+      ];
+    }
+
+    const validatedList = Array.from(validated).sort((left, right) => left.localeCompare(right));
+    return [
+      createDiagnostic(
+        'warning',
+        'DATAVERSE_QUERY_EMPTY_FILTER_VALIDATED',
+        `Dataverse accepted the filter and the referenced columns exist on table ${logicalName}, but the query still returned no rows.`,
+        {
+          source: '@pp/dataverse',
+          detail: `Validated filter columns: ${validatedList.join(', ')}.`,
+          hint: `If this query followed a fresh create or update, verify the row by id or with an ordered unfiltered query before assuming the write failed. The empty result is more likely due to value mismatch or transient visibility lag than an unknown column name.`,
+        }
+      ),
+    ];
+  }
+
+  private async retryQueryWithResolvedEntitySet<T>(
+    options: QueryOptions,
+    result: OperationResult<unknown>
+  ): Promise<OperationResult<DataverseQueryPage<T>> | undefined> {
+    if (!options.table || !queryFailureLooksLikeMissingCollection(result)) {
+      return undefined;
+    }
+
+    const table = await this.getTable(options.table);
+    if (!table.success || !table.data) {
+      return undefined;
+    }
+
+    const entitySetName = readString(table.data.EntitySetName);
+    if (!entitySetName || entitySetName === options.table) {
+      return undefined;
+    }
+
+    const retry = await this.request<DataverseCollectionResponse<T>>({
+      path: buildQueryPath({
+        ...options,
+        table: entitySetName,
+      }),
+      method: 'GET',
+      responseType: 'json',
+      prefer: options.maxPageSize ? [`odata.maxpagesize=${options.maxPageSize}`] : undefined,
+      includeAnnotations: options.includeAnnotations,
+      solutionUniqueName: options.solutionUniqueName,
+    });
+
+    if (!retry.success) {
+      return undefined;
+    }
+
+    const payload = retry.data?.data ?? {};
+    const normalizedPage = normalizeQueryRecordsForSelectedLookups(payload.value ?? [], options.select);
+
+    return ok(
+      {
+        records: normalizedPage.records,
+        count: payload['@odata.count'],
+        nextLink: payload['@odata.nextLink'],
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: retry.diagnostics,
+        warnings: mergeDiagnosticLists(
+          createDiagnostic(
+            'warning',
+            'DATAVERSE_QUERY_ENTITY_SET_ALIAS_APPLIED',
+            `Resolved Dataverse table reference \`${options.table}\` to entity set \`${entitySetName}\` for this query.`,
+            {
+              source: '@pp/dataverse',
+              detail: `Logical table name ${options.table} maps to entity set ${entitySetName}.`,
+              hint: `Use \`${entitySetName}\` explicitly when you want the raw OData collection path, or keep \`${options.table}\` when you want pp to resolve the logical name for you.`,
+            }
+          ),
+          normalizedPage.warnings,
+          retry.warnings
+        ),
       }
     );
   }
@@ -1126,7 +1314,7 @@ export class DataverseClient {
     entity: TRecord,
     options: DataverseWriteOptions = {}
   ): Promise<OperationResult<DataverseWriteResult<TResult>>> {
-    return this.write<TResult>('POST', buildCollectionPath(table, options), entity, options);
+    return this.write<TResult>('POST', buildCollectionPath(table, options), entity, options, table);
   }
 
   async update<TRecord extends Record<string, unknown>, TResult = TRecord>(
@@ -1135,7 +1323,7 @@ export class DataverseClient {
     entity: TRecord,
     options: DataverseWriteOptions = {}
   ): Promise<OperationResult<DataverseWriteResult<TResult>>> {
-    return this.write<TResult>('PATCH', buildEntityPath(table, id, options), entity, options);
+    return this.write<TResult>('PATCH', buildEntityPath(table, id, options), entity, options, table);
   }
 
   async upsert<TRecord extends Record<string, unknown>, TResult = TRecord>(
@@ -2206,7 +2394,8 @@ export class DataverseClient {
     method: 'POST' | 'PATCH',
     path: string,
     entity: Record<string, unknown>,
-    options: DataverseWriteOptions
+    options: DataverseWriteOptions,
+    tableName?: string
   ): Promise<OperationResult<DataverseWriteResult<TResult>>> {
     const returnRepresentation = shouldReturnRepresentation(options);
     const response = await this.request<TResult | undefined>({
@@ -2222,7 +2411,7 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseWriteResult<TResult>>;
+      return (await this.enrichWriteFailure<TResult>(tableName, entity, response)) as OperationResult<DataverseWriteResult<TResult>>;
     }
 
     return ok(
@@ -2239,6 +2428,197 @@ export class DataverseClient {
         warnings: response.warnings,
       }
     );
+  }
+
+  private async enrichQueryFailure<T>(
+    options: QueryOptions,
+    result: OperationResult<unknown>
+  ): Promise<OperationResult<T[] | DataverseQueryPage<T>>> {
+    const entitySetSuggestion = options.table ? await this.buildEntitySetSuggestion(options.table, result) : undefined;
+    const missingProperty = extractMissingPropertyDiagnostic(result.diagnostics);
+    if (!missingProperty || !options.table) {
+      if (!entitySetSuggestion) {
+        return result as OperationResult<T[] | DataverseQueryPage<T>>;
+      }
+
+      return fail(result.diagnostics, {
+        supportTier: result.supportTier,
+        warnings: [...result.warnings, entitySetSuggestion.warning],
+        suggestedNextActions: uniqueStrings([
+          ...(result.suggestedNextActions ?? []),
+          entitySetSuggestion.nextAction,
+        ]),
+      }) as OperationResult<T[] | DataverseQueryPage<T>>;
+    }
+
+    if (!entitySetSuggestion) {
+      return this.enrichMissingPropertyFailure(options, result, missingProperty);
+    }
+
+    const columnSuggestion = await this.enrichMissingPropertyFailure(options, result, missingProperty);
+    return fail(result.diagnostics, {
+      supportTier: result.supportTier,
+      warnings: [...columnSuggestion.warnings, entitySetSuggestion.warning],
+      suggestedNextActions: uniqueStrings([
+        ...(columnSuggestion.suggestedNextActions ?? []),
+        entitySetSuggestion.nextAction,
+      ]),
+    }) as OperationResult<T[] | DataverseQueryPage<T>>;
+  }
+
+  private async enrichWriteFailure<TResult>(
+    tableName: string | undefined,
+    entity: Record<string, unknown>,
+    result: OperationResult<unknown>
+  ): Promise<OperationResult<DataverseWriteResult<TResult>>> {
+    const missingProperty = extractMissingPropertyDiagnostic(result.diagnostics);
+    if (!tableName || !missingProperty?.property) {
+      return result as OperationResult<DataverseWriteResult<TResult>>;
+    }
+
+    const payloadKey = missingProperty.property.endsWith('@odata.bind')
+      ? missingProperty.property
+      : `${missingProperty.property}@odata.bind`;
+    if (!(payloadKey in entity)) {
+      return result as OperationResult<DataverseWriteResult<TResult>>;
+    }
+    const bindingProperty = payloadKey.slice(0, -'@odata.bind'.length);
+
+    const column = await this.getColumn(tableName, bindingProperty, {
+      select: ['LogicalName', 'SchemaName', 'AttributeType'],
+    });
+    if (!column.success || !column.data) {
+      return fail(result.diagnostics, {
+        supportTier: result.supportTier,
+        warnings: [...result.warnings, ...demoteDiagnostics(column.diagnostics), ...column.warnings],
+        suggestedNextActions: uniqueStrings([
+          ...(result.suggestedNextActions ?? []),
+          `Run \`pp dv metadata columns ${tableName} --environment <alias>\` to confirm the lookup schema name before retrying this write.`,
+        ]),
+      });
+    }
+
+    const schemaName = readString(column.data.SchemaName);
+    if (!schemaName || schemaName === bindingProperty) {
+      return fail(result.diagnostics, {
+        supportTier: result.supportTier,
+        warnings: column.warnings,
+        suggestedNextActions: uniqueStrings([
+          ...(result.suggestedNextActions ?? []),
+          `Run \`pp dv metadata columns ${tableName} --environment <alias>\` to confirm the navigation-property name for ${bindingProperty} before retrying this write.`,
+        ]),
+      });
+    }
+
+    return fail(result.diagnostics, {
+      supportTier: result.supportTier,
+      warnings: [
+        ...result.warnings,
+        createDiagnostic(
+          'warning',
+          'DATAVERSE_WRITE_LOOKUP_BINDING_SUGGESTED',
+          `Lookup column \`${bindingProperty}\` binds through navigation property \`${schemaName}\` on Dataverse table \`${tableName}\`.`,
+          {
+            source: '@pp/dataverse',
+            detail: `Replace payload key \`${payloadKey}\` with \`${schemaName}@odata.bind\`.`,
+          }
+        ),
+        ...column.warnings,
+      ],
+      suggestedNextActions: uniqueStrings([
+        ...(result.suggestedNextActions ?? []),
+        `Retry the write with \`${schemaName}@odata.bind\` instead of \`${payloadKey}\`.`,
+        `Run \`pp dv metadata columns ${tableName} --environment <alias>\` if you need to inspect the lookup metadata directly.`,
+      ]),
+    });
+  }
+
+  private async enrichMissingPropertyFailure<T>(
+    options: QueryOptions,
+    result: OperationResult<unknown>,
+    missingProperty: { property: string; typeName?: string }
+  ): Promise<OperationResult<T[] | DataverseQueryPage<T>>> {
+    if (!options.table) {
+      return result as OperationResult<T[] | DataverseQueryPage<T>>;
+    }
+
+    const metadata = await this.listColumns(options.table, {
+      select: ['LogicalName'],
+      all: true,
+    });
+
+    if (!metadata.success || !metadata.data) {
+      return fail(result.diagnostics, {
+        supportTier: result.supportTier,
+        warnings: [...result.warnings, ...demoteDiagnostics(metadata.diagnostics), ...metadata.warnings],
+        suggestedNextActions: uniqueStrings([
+          ...(result.suggestedNextActions ?? []),
+          `Run \`pp dv metadata columns ${options.table} --environment <alias>\` to confirm the logical column names before retrying this query.`,
+        ]),
+      }) as OperationResult<T[] | DataverseQueryPage<T>>;
+    }
+
+    const availableColumns = uniqueStrings(metadata.data.map((entry) => readMetadataLogicalName(entry)).filter((value): value is string => Boolean(value)));
+    const suggestedColumns = suggestNearbyColumnNames(missingProperty.property, availableColumns).slice(0, 5);
+    const suggestionMessage =
+      suggestedColumns.length > 0
+        ? `Column \`${missingProperty.property}\` is not available on Dataverse table \`${options.table}\`. Nearby logical names: ${suggestedColumns.join(', ')}.`
+        : `Column \`${missingProperty.property}\` is not available on Dataverse table \`${options.table}\`.`;
+
+    return fail(result.diagnostics, {
+      supportTier: result.supportTier,
+      warnings: [
+        ...result.warnings,
+        createDiagnostic('warning', 'DATAVERSE_QUERY_COLUMNS_SUGGESTED', suggestionMessage, {
+          source: '@pp/dataverse',
+          detail:
+            suggestedColumns.length > 0
+              ? `Suggested logical names from metadata: ${suggestedColumns.join(', ')}`
+              : `No close logical-name match was found in metadata. Example columns: ${availableColumns.slice(0, 10).join(', ')}`,
+        }),
+        ...metadata.warnings,
+      ],
+      suggestedNextActions: uniqueStrings([
+        ...(result.suggestedNextActions ?? []),
+        suggestedColumns.length > 0
+          ? `Retry the query against ${options.table} with one of the discovered logical names: ${suggestedColumns.join(', ')}.`
+          : `Inspect the ${options.table} column metadata before retrying the query.`,
+        `Run \`pp dv metadata columns ${options.table} --environment <alias>\` to confirm the logical column names before retrying this query.`,
+      ]),
+    }) as OperationResult<T[] | DataverseQueryPage<T>>;
+  }
+
+  private async buildEntitySetSuggestion(
+    tableName: string,
+    result: OperationResult<unknown>
+  ): Promise<{ warning: Diagnostic; nextAction: string } | undefined> {
+    if (!queryFailureLooksLikeMissingCollection(result)) {
+      return undefined;
+    }
+
+    const table = await this.getTable(tableName);
+    if (!table.success || !table.data) {
+      return undefined;
+    }
+
+    const entitySetName = readString(table.data.EntitySetName);
+    if (!entitySetName || entitySetName === tableName) {
+      return undefined;
+    }
+
+    return {
+      warning: createDiagnostic(
+        'warning',
+        'DATAVERSE_QUERY_ENTITY_SET_HINT',
+        `Dataverse table \`${tableName}\` resolves to entity set \`${entitySetName}\`.`,
+        {
+          source: '@pp/dataverse',
+          detail: `The raw OData collection path for logical table ${tableName} is ${entitySetName}.`,
+          hint: `Retry the query with \`${entitySetName}\`, or let pp resolve the logical name automatically when the caller supports it.`,
+        }
+      ),
+      nextAction: `Retry the query against \`${entitySetName}\` or use the logical table name \`${tableName}\` through a pp surface that resolves entity sets automatically.`,
+    };
   }
 }
 
@@ -2283,7 +2663,16 @@ export class ConnectionReferenceService {
       return inferredReferences as unknown as OperationResult<ConnectionReferenceSummary[]>;
     }
 
-    return ok(summaries, {
+    const combinedSummaries =
+      summaries.length === 0 && (inferredReferences.data?.length ?? 0) > 0
+        ? inferredReferences.data!.map((logicalName) => buildInferredConnectionReferenceSummary(logicalName, solutionId.data))
+        : summaries;
+
+    const warnings = mergeDiagnosticLists(records.warnings, solutionId.warnings, solutionMembers.warnings, inferredReferences.warnings).filter(
+      (warning) => !(summaries.length === 0 && warning.code === 'DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE')
+    );
+
+    return ok(combinedSummaries, {
       supportTier: 'preview',
       diagnostics: mergeDiagnosticLists(
         records.diagnostics,
@@ -2292,10 +2681,12 @@ export class ConnectionReferenceService {
         inferredReferences.diagnostics,
         [
           createDiagnostic(
-            summaries.length === 0 ? 'warning' : 'info',
-            summaries.length === 0 ? 'DATAVERSE_CONNREF_SCOPE_EMPTY' : 'DATAVERSE_CONNREF_LIST_SUMMARY',
+            combinedSummaries.length === 0 ? 'warning' : 'info',
+            combinedSummaries.length === 0 ? 'DATAVERSE_CONNREF_SCOPE_EMPTY' : 'DATAVERSE_CONNREF_LIST_SUMMARY',
             buildConnectionReferenceScopeMessage(
-              summaries.length === 0 ? 'No connection references were found' : `Listed ${summaries.length} connection reference${summaries.length === 1 ? '' : 's'}`,
+              combinedSummaries.length === 0
+                ? 'No connection references were found'
+                : `Listed ${combinedSummaries.length} connection reference${combinedSummaries.length === 1 ? '' : 's'}`,
               options.solutionUniqueName
             ),
             {
@@ -2304,7 +2695,7 @@ export class ConnectionReferenceService {
           ),
         ]
       ),
-      warnings: mergeDiagnosticLists(records.warnings, solutionId.warnings, solutionMembers.warnings, inferredReferences.warnings),
+      warnings,
     });
   }
 
@@ -2336,6 +2727,21 @@ export class ConnectionReferenceService {
         const diagnostics: Diagnostic[] = [];
         const suggestedNextActions: string[] = [];
 
+        if (reference.kind === 'inferred') {
+          diagnostics.push(
+            createDiagnostic(
+              'warning',
+              'DATAVERSE_CONNREF_ROW_INFERRED',
+              `Connection reference ${reference.logicalName ?? reference.id} was inferred from embedded flow metadata because no Dataverse connection reference row was visible in scope.`,
+              {
+                source: '@pp/dataverse',
+                hint: 'Use `pp flow inspect <flow> --environment <alias> --solution <solution>` for the embedded reference evidence, or inspect the environment directly if you need the backing Dataverse row.',
+              }
+            )
+          );
+          suggestedNextActions.push('Inspect the flow metadata or environment directly when you need proof of the backing Dataverse connection reference row.');
+        }
+
         if (!reference.connectorId && !reference.customConnectorId) {
           diagnostics.push(
             createDiagnostic('error', 'DATAVERSE_CONNREF_CONNECTOR_MISSING', `Connection reference ${reference.displayName ?? reference.logicalName ?? reference.id} does not declare a connector id.`, {
@@ -2356,7 +2762,7 @@ export class ConnectionReferenceService {
 
         return {
           reference,
-          valid: diagnostics.every((diagnostic) => diagnostic.level !== 'error'),
+          valid: diagnostics.length === 0,
           diagnostics,
           suggestedNextActions,
         };
@@ -2547,7 +2953,73 @@ export class EnvironmentVariableService {
     );
 
     if (!createResult.success) {
-      return createResult as unknown as OperationResult<EnvironmentVariableSummary>;
+      const existing = await this.inspect(schemaName);
+
+      if (!existing.success || !existing.data) {
+        return createResult as unknown as OperationResult<EnvironmentVariableSummary>;
+      }
+
+      let scopeDetail: string | undefined;
+      let scopeDiagnostics: Diagnostic[] = [];
+      let scopeWarnings: Diagnostic[] = [];
+
+      if (options.solutionUniqueName) {
+        const solutionId = await resolveSolutionId(this.dataverseClient, options.solutionUniqueName);
+
+        if (solutionId.success) {
+          const solutionMembers = solutionId.data
+            ? await listSolutionComponentObjectIds(this.dataverseClient, solutionId.data, 380)
+            : ok<Set<string> | undefined>(undefined, { supportTier: 'preview' });
+
+          if (solutionMembers.success) {
+            scopeDetail = solutionMembers.data?.has(existing.data.definitionId)
+              ? `The existing definition is already visible in requested solution ${options.solutionUniqueName}.`
+              : `The existing definition is not currently visible in requested solution ${options.solutionUniqueName}.`;
+            scopeDiagnostics = mergeDiagnosticLists(solutionId.diagnostics, solutionMembers.diagnostics);
+            scopeWarnings = mergeDiagnosticLists(solutionId.warnings, solutionMembers.warnings);
+          } else {
+            scopeDiagnostics = solutionId.diagnostics;
+            scopeWarnings = mergeDiagnosticLists(solutionId.warnings, solutionMembers.warnings);
+          }
+        }
+      }
+
+      return fail(
+        mergeDiagnosticLists(
+          createResult.diagnostics,
+          existing.diagnostics,
+          scopeDiagnostics,
+          [
+            createDiagnostic(
+              'error',
+              'DATAVERSE_ENVVAR_SCHEMA_EXISTS',
+              `Environment variable ${schemaName} already exists in the target environment.`,
+              {
+                source: '@pp/dataverse',
+                detail: [
+                  `Existing definition: ${existing.data.displayName ?? existing.data.schemaName} [id=${existing.data.definitionId}]`,
+                  scopeDetail,
+                ]
+                  .filter((value): value is string => Boolean(value))
+                  .join('\n'),
+                hint:
+                  'Inspect the existing definition, reuse it with envvar set if a shared variable is acceptable, or choose a new run-scoped schema name.',
+              }
+            ),
+          ]
+        ),
+        {
+          supportTier: createResult.supportTier,
+          warnings: mergeDiagnosticLists(createResult.warnings, existing.warnings, scopeWarnings),
+          suggestedNextActions: [
+            `Run \`pp envvar inspect ${schemaName} --environment <alias> --format json\` to inspect the existing definition and current value.`,
+            options.solutionUniqueName
+              ? `Reuse the existing definition with \`pp envvar set ${schemaName} --environment <alias> --solution ${options.solutionUniqueName} --value VALUE\` if a shared definition is acceptable.`
+              : `Reuse the existing definition with \`pp envvar set ${schemaName} --environment <alias> --value VALUE\` if a shared definition is acceptable.`,
+            `Choose a run-scoped schema name such as \`${schemaName}_<timestamp>\` when you need a disposable definition.`,
+          ],
+        }
+      );
     }
 
     const created = createResult.data?.entity;
@@ -2756,7 +3228,7 @@ export class CanvasAppService {
       idField: 'canvasappid',
       summary: app.data,
       baseSelect: ['canvasappid', 'displayname', 'name'],
-      optionalSelect: ['_ownerid_value', '_createdby_value'],
+      optionalSelect: ['_ownerid_value'],
     });
 
     if (!access.success) {
@@ -3064,6 +3536,9 @@ export class ModelDrivenAppService {
       });
 
       if (!attachResult.success) {
+        const persisted = await this.inspect(createdSummary.id);
+        const appStillExists = persisted.success && Boolean(persisted.data);
+
         return fail(
           [
             ...mergeDiagnosticLists(createResult.diagnostics, attachResult.diagnostics),
@@ -3073,13 +3548,27 @@ export class ModelDrivenAppService {
               `Model-driven app ${createdSummary.uniqueName ?? createdSummary.id} was created but could not be attached to solution ${options.solutionUniqueName}.`,
               {
                 source: '@pp/dataverse',
-                detail: `Created app id: ${createdSummary.id}.`,
+                detail: appStillExists
+                  ? `Created app id: ${createdSummary.id}. A follow-up inspect still found the app row, so retrying attach is plausible.`
+                  : `Created app id: ${createdSummary.id}. A follow-up inspect did not find the app row, so Dataverse likely rolled it back after the failed attach.`,
+                hint: appStillExists
+                  ? `Retry attaching the created app id ${createdSummary.id} to solution ${options.solutionUniqueName}.`
+                  : `Treat this as a failed create and fall back to attaching an existing model-driven app while the attach-after-create path is investigated.`,
               }
             ),
           ],
           {
             supportTier: 'preview',
             warnings: mergeDiagnosticLists(createResult.warnings, attachResult.warnings),
+            suggestedNextActions: appStillExists
+              ? [
+                  `Retry the solution attach for app id ${createdSummary.id}.`,
+                  `Inspect the created app id ${createdSummary.id} before retrying so you can confirm Dataverse still returns the row.`,
+                ]
+              : [
+                  `Treat the create as rolled back and retry with a different unique name only after confirming the tenant no longer returns app id ${createdSummary.id}.`,
+                  `Use an existing app attach flow for the current solution if you need to keep the authoring step moving.`,
+                ],
           }
         );
       }
@@ -4158,6 +4647,7 @@ function compareMetadataFilterValues(
 function normalizeConnectionReference(record: ConnectionReferenceRecord, inferredSolutionId?: string): ConnectionReferenceSummary {
   return {
     id: record.connectionreferenceid,
+    kind: 'row',
     logicalName: record.connectionreferencelogicalname,
     displayName: record.connectionreferencedisplayname ?? record.displayname,
     connectorId: record.connectorid,
@@ -4166,6 +4656,17 @@ function normalizeConnectionReference(record: ConnectionReferenceRecord, inferre
     solutionId: inferredSolutionId ?? record._solutionid_value,
     stateCode: record.statecode,
     connected: Boolean(record.connectionid),
+  };
+}
+
+function buildInferredConnectionReferenceSummary(logicalName: string, solutionId?: string): ConnectionReferenceSummary {
+  return {
+    id: `inferred:${logicalName}`,
+    kind: 'inferred',
+    logicalName,
+    displayName: logicalName,
+    solutionId,
+    connected: false,
   };
 }
 
@@ -4206,25 +4707,29 @@ async function queryConnectionReferenceRecords(
     return retry;
   }
 
+  const shouldWarnAboutOptionalColumns = (retry.data ?? []).length > 0;
+
   return ok(retry.data ?? [], {
     supportTier: retry.supportTier,
     diagnostics: retry.diagnostics,
     warnings: mergeDiagnosticLists(
       retry.warnings,
-      [
-        createDiagnostic(
-          'warning',
-          'DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE',
-          `Connection reference query retried without unsupported column${unsupportedColumns.length === 1 ? '' : 's'} ${unsupportedColumns.join(', ')}.`,
-          {
-            source: '@pp/dataverse',
-            detail: initial.diagnostics
-              .map((diagnostic) => diagnostic.detail ?? diagnostic.message)
-              .filter((value) => value && value.length > 0)
-              .join('\n'),
-          }
-        ),
-      ]
+      shouldWarnAboutOptionalColumns
+        ? [
+            createDiagnostic(
+              'warning',
+              'DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE',
+              `Connection reference query retried without unsupported column${unsupportedColumns.length === 1 ? '' : 's'} ${unsupportedColumns.join(', ')}.`,
+              {
+                source: '@pp/dataverse',
+                detail: initial.diagnostics
+                  .map((diagnostic) => diagnostic.detail ?? diagnostic.message)
+                  .filter((value) => value && value.length > 0)
+                  .join('\n'),
+              }
+            ),
+          ]
+        : []
     ),
   });
 }
@@ -4425,6 +4930,57 @@ function findUnsupportedColumns(diagnostics: Diagnostic[], columns: readonly str
 function readLookupValue(record: Record<string, unknown>, field: string): string | undefined {
   const raw = record[`_${field}_value`] ?? record[field];
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
+function normalizeQueryRecordsForSelectedLookups(
+  records: unknown[],
+  select: string[] | undefined
+): { records: unknown[]; warnings: Diagnostic[] } {
+  if (!select?.length) {
+    return { records, warnings: [] };
+  }
+
+  const aliasedFields = new Set<string>();
+  const normalizedRecords = records.map((record) => {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      return record;
+    }
+
+    const normalized = { ...(record as Record<string, unknown>) };
+    for (const field of select) {
+      const lookupValue = readLookupValue(normalized, field);
+      if (field in normalized || !lookupValue) {
+        continue;
+      }
+      normalized[field] = lookupValue;
+      aliasedFields.add(field);
+    }
+    return normalized;
+  });
+
+  if (aliasedFields.size === 0) {
+    return { records: normalizedRecords, warnings: [] };
+  }
+
+  return {
+    records: normalizedRecords,
+    warnings: [
+      createDiagnostic(
+        'warning',
+        'DATAVERSE_QUERY_LOOKUP_VALUE_ALIAS_APPLIED',
+        `Mirrored Dataverse lookup ids onto the requested select fields: ${Array.from(aliasedFields)
+          .sort()
+          .map((field) => `\`${field}\``)
+          .join(', ')}.`,
+        {
+          source: '@pp/dataverse',
+          detail:
+            'Dataverse returned one or more requested lookup ids only as _<field>_value columns, so pp copied those ids onto the logical select field names in the query result.',
+          hint: 'Use includeAnnotations when you also need lookup display names or logical-name annotations alongside the id values.',
+        }
+      ),
+    ],
+  };
 }
 
 function readLookupAnnotation(record: Record<string, unknown>, field: string, annotation: string): string | undefined {
@@ -5073,6 +5629,167 @@ async function listSolutionComponentObjectIds(
   });
 }
 
+async function validateSolutionScopedTable(
+  client: DataverseClient,
+  tableName: string,
+  solutionUniqueName: string
+): Promise<OperationResult<void>> {
+  const solutionId = await resolveSolutionId(client, solutionUniqueName);
+  if (!solutionId.success) {
+    return solutionId as unknown as OperationResult<void>;
+  }
+
+  if (!solutionId.data) {
+    return fail(
+      createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${solutionUniqueName} was not found.`, {
+        source: '@pp/dataverse',
+      }),
+      {
+        supportTier: 'preview',
+        diagnostics: solutionId.diagnostics,
+        warnings: solutionId.warnings,
+      }
+    );
+  }
+
+  const solutionMembers = await listSolutionComponentObjectIds(client, solutionId.data, 1);
+  if (!solutionMembers.success) {
+    return solutionMembers as unknown as OperationResult<void>;
+  }
+
+  const tableDefinition = await resolveSolutionScopedTableDefinition(client, tableName);
+  if (!tableDefinition.success) {
+    return tableDefinition as unknown as OperationResult<void>;
+  }
+
+  if (!tableDefinition.data?.MetadataId) {
+    return ok(undefined, {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(solutionId.diagnostics, solutionMembers.diagnostics, tableDefinition.diagnostics),
+      warnings: mergeDiagnosticLists(solutionId.warnings, solutionMembers.warnings, tableDefinition.warnings),
+    });
+  }
+
+  const metadataId = tableDefinition.data.MetadataId.toLowerCase();
+  const inSolution = Array.from(solutionMembers.data ?? []).some((value) => value.toLowerCase() === metadataId);
+  if (inSolution) {
+    return ok(undefined, {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(solutionId.diagnostics, solutionMembers.diagnostics, tableDefinition.diagnostics),
+      warnings: mergeDiagnosticLists(solutionId.warnings, solutionMembers.warnings, tableDefinition.warnings),
+    });
+  }
+
+  const availableTables = await listSolutionScopedTables(client, solutionMembers.data ?? new Set<string>());
+  const availableTableNames = (availableTables.data ?? [])
+    .map((entry) => entry.LogicalName ?? entry.EntitySetName)
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => left.localeCompare(right));
+
+  return fail(
+    createDiagnostic(
+      'error',
+      'DATAVERSE_QUERY_TABLE_NOT_IN_SOLUTION',
+      `Dataverse table ${tableName} is not part of solution ${solutionUniqueName}.`,
+      {
+        source: '@pp/dataverse',
+        detail:
+          availableTableNames.length > 0
+            ? `Tables currently discoverable in ${solutionUniqueName}: ${availableTableNames.join(', ')}.`
+            : `No table components were discoverable in solution ${solutionUniqueName}.`,
+        hint:
+          availableTableNames.length > 0
+            ? `Retry with one of the solution-scoped tables listed above, or omit --solution when you intend an environment-wide read.`
+            : `Confirm the table is added to the solution before retrying, or omit --solution when you intend an environment-wide read.`,
+      }
+    ),
+    {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(solutionId.diagnostics, solutionMembers.diagnostics, tableDefinition.diagnostics, availableTables.diagnostics),
+      warnings: mergeDiagnosticLists(solutionId.warnings, solutionMembers.warnings, tableDefinition.warnings, availableTables.warnings),
+      suggestedNextActions: availableTableNames.length > 0
+        ? [
+            `Retry \`pp dv query <table> --environment <alias> --solution ${solutionUniqueName}\` with one of these tables: ${availableTableNames.join(', ')}.`,
+            `Omit \`--solution ${solutionUniqueName}\` if you want to query rows outside that solution boundary.`,
+          ]
+        : [
+            `Run \`pp solution components ${solutionUniqueName} --environment <alias> --format json\` to confirm which table components are present.`,
+            `Omit \`--solution ${solutionUniqueName}\` if you want to query rows outside that solution boundary.`,
+          ],
+    }
+  );
+}
+
+async function resolveSolutionScopedTableDefinition(
+  client: DataverseClient,
+  tableName: string
+): Promise<OperationResult<EntityDefinition | undefined>> {
+  return resolveQueryTableDefinition(client, tableName);
+}
+
+async function resolveQueryTableDefinition(
+  client: DataverseClient,
+  tableName: string
+): Promise<OperationResult<EntityDefinition | undefined>> {
+  const direct = await client.getTable(tableName);
+  if (direct.success && direct.data) {
+    return direct;
+  }
+
+  const tables = await client.listTables({
+    select: ['MetadataId', 'LogicalName', 'SchemaName', 'DisplayName', 'EntitySetName'],
+    all: true,
+  });
+  if (!tables.success) {
+    return tables as unknown as OperationResult<EntityDefinition | undefined>;
+  }
+
+  const normalizedTarget = tableName.trim().toLowerCase();
+  const match = (tables.data ?? []).find((entry) => {
+    const logicalName = readString(entry.LogicalName)?.toLowerCase();
+    const entitySetName = readString(entry.EntitySetName)?.toLowerCase();
+    return logicalName === normalizedTarget || entitySetName === normalizedTarget;
+  });
+
+  return ok(match, {
+    supportTier: 'preview',
+    diagnostics: mergeDiagnosticLists(direct.diagnostics, tables.diagnostics),
+    warnings: mergeDiagnosticLists(direct.warnings, tables.warnings),
+  });
+}
+
+async function listSolutionScopedTables(
+  client: DataverseClient,
+  metadataIds: Set<string>
+): Promise<OperationResult<EntityDefinition[]>> {
+  if (metadataIds.size === 0) {
+    return ok([], {
+      supportTier: 'preview',
+    });
+  }
+
+  const tables = await client.listTables({
+    select: ['MetadataId', 'LogicalName', 'SchemaName', 'DisplayName', 'EntitySetName'],
+    all: true,
+  });
+  if (!tables.success) {
+    return tables;
+  }
+
+  const members = new Set(Array.from(metadataIds).map((value) => value.toLowerCase()));
+  return ok(
+    (tables.data ?? []).filter((entry) => {
+      const metadataId = readString(entry.MetadataId)?.toLowerCase();
+      return Boolean(metadataId && members.has(metadataId));
+    }),
+    {
+      supportTier: 'preview',
+      diagnostics: tables.diagnostics,
+      warnings: tables.warnings,
+    }
+  );
+}
+
 async function inferFlowEmbeddedConnectionReferences(
   client: DataverseClient,
   solutionId: string,
@@ -5422,6 +6139,18 @@ function extractHttpStatusCode(message: string): number | undefined {
   return statusMatch ? Number(statusMatch[1]) : undefined;
 }
 
+function queryFailureLooksLikeMissingCollection(result: OperationResult<unknown>): boolean {
+  return result.diagnostics.some((diagnostic) => {
+    if (diagnostic.code !== 'HTTP_REQUEST_FAILED' || extractHttpStatusCode(diagnostic.message) !== 404) {
+      return false;
+    }
+
+    const parsed = parseDataverseErrorDetail(diagnostic.detail);
+    const message = `${diagnostic.message} ${parsed?.message ?? ''}`.toLowerCase();
+    return message.includes('resource not found') || message.includes('no http resource was found');
+  });
+}
+
 function parseDataverseErrorDetail(detail: string | undefined): { code?: string; message?: string } | undefined {
   if (!detail) {
     return undefined;
@@ -5441,6 +6170,123 @@ function parseDataverseErrorDetail(detail: string | undefined): { code?: string;
   } catch {
     return undefined;
   }
+}
+
+function extractMissingPropertyDiagnostic(diagnostics: Diagnostic[]): { property: string; typeName?: string } | undefined {
+  for (const diagnostic of diagnostics) {
+    const parsed = parseDataverseErrorDetail(diagnostic.detail);
+    const message = parsed?.message ?? diagnostic.message;
+    const match = message.match(/Could not find a property named '([^']+)' on type '?([^'.]+(?:\.[^']+)*)'?/i);
+    if (match) {
+      return {
+        property: match[1] ?? '',
+        typeName: match[2] || undefined,
+      };
+    }
+
+    const undeclaredMatch = message.match(/An undeclared property '([^']+)'/i);
+    if (undeclaredMatch) {
+      return {
+        property: undeclaredMatch[1] ?? '',
+      };
+    }
+  }
+
+  return undefined;
+}
+
+function readMetadataLogicalName(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const logicalName = record.LogicalName;
+  return typeof logicalName === 'string' && logicalName.trim() ? logicalName : undefined;
+}
+
+function suggestNearbyColumnNames(target: string, availableColumns: string[]): string[] {
+  const normalizedTarget = normalizeColumnToken(target);
+  return availableColumns
+    .map((column) => ({ column, score: scoreColumnSuggestion(normalizedTarget, normalizeColumnToken(column)) }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || left.column.localeCompare(right.column))
+    .map((entry) => entry.column);
+}
+
+function scoreColumnSuggestion(target: string, candidate: string): number {
+  if (!target || !candidate) {
+    return 0;
+  }
+  if (target === candidate) {
+    return 100;
+  }
+  if (candidate.includes(target)) {
+    return 80;
+  }
+  if (target.includes(candidate) && candidate.length >= 3) {
+    return 60;
+  }
+
+  let score = 0;
+  const sharedPrefixLength = commonPrefixLength(target, candidate);
+  if (sharedPrefixLength >= 4) {
+    score = Math.max(score, 40 + sharedPrefixLength);
+  }
+  const sharedSuffixLength = commonSuffixLength(target, candidate);
+  if (sharedSuffixLength >= 4) {
+    score = Math.max(score, 35 + sharedSuffixLength);
+  }
+
+  return score;
+}
+
+function normalizeColumnToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function extractFilterColumnReferences(filter: string | undefined): string[] {
+  if (!filter) {
+    return [];
+  }
+
+  const references = new Set<string>();
+  const patterns = [
+    /(?:^|[\s(])([A-Za-z_][A-Za-z0-9_]*)\s+(?:eq|ne|gt|ge|lt|le)\b/g,
+    /\b(?:contains|startswith|endswith)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,/g,
+  ];
+
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(filter)) !== null) {
+      const reference = match[1]?.trim();
+      if (reference) {
+        references.add(reference);
+      }
+    }
+  }
+
+  return Array.from(references);
+}
+
+function commonPrefixLength(left: string, right: string): number {
+  let index = 0;
+  while (index < left.length && index < right.length && left[index] === right[index]) {
+    index += 1;
+  }
+  return index;
+}
+
+function commonSuffixLength(left: string, right: string): number {
+  let index = 0;
+  while (
+    index < left.length &&
+    index < right.length &&
+    left[left.length - 1 - index] === right[right.length - 1 - index]
+  ) {
+    index += 1;
+  }
+  return index;
 }
 
 function mapApplyOperationResult(

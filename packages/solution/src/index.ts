@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { stableStringify } from '@pp/artifacts';
-import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult, type ProvenanceRecord } from '@pp/diagnostics';
 import { ModelService, type ModelCompositionResult } from '@pp/model';
 import {
   ConnectionReferenceService,
@@ -85,6 +85,10 @@ export interface SolutionComponentSummary {
   objectId?: string;
   componentType?: number;
   componentTypeLabel: string;
+  name?: string;
+  logicalName?: string;
+  table?: string;
+  entitySetName?: string;
   isMetadata?: boolean;
   rootComponentBehavior?: number;
 }
@@ -104,12 +108,14 @@ export interface SolutionDependencySummary {
   requiredComponentObjectId?: string;
   requiredComponentType?: number;
   requiredComponentTypeLabel: string;
+  requiredComponentTypeHint?: string;
   requiredComponentName?: string;
   requiredComponentLogicalName?: string;
   requiredComponentTable?: string;
   dependentComponentObjectId?: string;
   dependentComponentType?: number;
   dependentComponentTypeLabel: string;
+  dependentComponentTypeHint?: string;
   dependentComponentName?: string;
   dependentComponentLogicalName?: string;
   dependentComponentTable?: string;
@@ -120,6 +126,20 @@ interface SolutionDependencyComponentResolution {
   name?: string;
   logicalName?: string;
   table?: string;
+  entitySetName?: string;
+}
+
+interface ComponentResolutionRequests {
+  entityIds: Set<string>;
+  appModuleIds: Set<string>;
+  canvasAppIds: Set<string>;
+  workflowIds: Set<string>;
+  webResourceIds: Set<string>;
+  sitemapIds: Set<string>;
+  formIds: Set<string>;
+  viewIds: Set<string>;
+  connectionReferenceIds: Set<string>;
+  environmentVariableDefinitionIds: Set<string>;
 }
 
 export interface SolutionModelDrivenAppAnalysis {
@@ -152,6 +172,10 @@ export interface SolutionAnalysis {
     path?: string;
   };
   artifacts: SolutionArtifactInventoryEntry[];
+}
+
+export interface SolutionAnalyzeOptions {
+  includeModelComposition?: boolean;
 }
 
 export interface SolutionModelDrivenAppDrift {
@@ -282,6 +306,86 @@ export interface SolutionPublishOptions {
   pollIntervalMs?: number;
   timeoutMs?: number;
   exportOptions?: SolutionExportOptions;
+  onProgress?: (event: SolutionPublishProgressEvent) => void;
+}
+
+export interface SolutionPublishProgressEvent {
+  stage: 'accepted' | 'polling' | 'confirmed';
+  attempt?: number;
+  elapsedMs?: number;
+  remainingMs?: number;
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+  latestExportDiagnostic?: Pick<Diagnostic, 'code' | 'message'>;
+  readBack?: SolutionPublishReadback;
+}
+
+export interface SolutionPublishCanvasReadback {
+  id: string;
+  name?: string;
+  logicalName?: string;
+  lastPublishTime?: string;
+}
+
+export interface SolutionPublishWorkflowReadback {
+  id: string;
+  name?: string;
+  logicalName?: string;
+  category?: number;
+  workflowState?: string;
+}
+
+export interface SolutionPublishReadbackSummary {
+  componentCount: number;
+  componentTypeCounts: Record<string, number>;
+  canvasAppCount: number;
+  workflowCount: number;
+  modelDrivenAppCount: number;
+}
+
+export interface SolutionPublishReadback {
+  summary: SolutionPublishReadbackSummary;
+  canvasApps: SolutionPublishCanvasReadback[];
+  workflows: SolutionPublishWorkflowReadback[];
+  modelDrivenApps: SolutionPublishModelDrivenAppReadback[];
+}
+
+export interface SolutionPublishModelDrivenAppReadback {
+  id: string;
+  name?: string;
+  uniqueName?: string;
+  stateCode?: number;
+  publishedOn?: string;
+}
+
+export interface SolutionSyncStatusExportCheckFailure {
+  diagnostics: Diagnostic[];
+  warnings: Diagnostic[];
+  suggestedNextActions?: string[];
+}
+
+export interface SolutionSyncStatusExportCheck {
+  attempted: boolean;
+  confirmed: boolean;
+  packageType: Exclude<SolutionPackageType, 'both'>;
+  artifact?: SolutionArtifactFile;
+  manifest?: SolutionReleaseManifest;
+  manifestPath?: string;
+  failure?: SolutionSyncStatusExportCheckFailure;
+}
+
+export interface SolutionSyncStatusOptions extends SolutionExportOptions {
+  includeExportCheck?: boolean;
+}
+
+export interface SolutionSyncStatusResult {
+  solution: SolutionSummary;
+  synchronization: {
+    kind: 'solution-export';
+    confirmed: boolean;
+  };
+  readBack: SolutionPublishReadback;
+  exportCheck: SolutionSyncStatusExportCheck;
 }
 
 export interface SolutionPublishResult {
@@ -299,6 +403,7 @@ export interface SolutionPublishResult {
     attempts?: number;
     elapsedMs?: number;
   };
+  readBack?: SolutionPublishReadback;
 }
 
 export interface SolutionPackOptions {
@@ -401,7 +506,7 @@ export class SolutionService {
 
   async create(uniqueName: string, options: SolutionCreateOptions = {}): Promise<OperationResult<SolutionSummary>> {
     const availablePublishers =
-      options.publisherId || options.publisherUniqueName ? undefined : await this.listPublishers();
+      options.publisherId || options.publisherUniqueName ? undefined : await this.loadPublisherSummaries();
     const publisherId = options.publisherId ?? (await this.resolvePublisherId(options.publisherUniqueName));
 
     if (!publisherId) {
@@ -626,7 +731,7 @@ export class SolutionService {
     });
     const result = await this.dataverseClient.queryAll<SolutionSummary>({
       table: 'solutions',
-      select: ['solutionid', 'uniquename', 'friendlyname', 'version'],
+      select: ['solutionid', 'uniquename', 'friendlyname', 'version', 'ismanaged'],
       filter: filteredQuery,
     });
 
@@ -649,7 +754,7 @@ export class SolutionService {
 
     const fallback = await this.dataverseClient.queryAll<SolutionSummary>({
       table: 'solutions',
-      select: ['solutionid', 'uniquename', 'friendlyname', 'version'],
+      select: ['solutionid', 'uniquename', 'friendlyname', 'version', 'ismanaged'],
     });
 
     if (!fallback.success) {
@@ -720,10 +825,17 @@ export class SolutionService {
       return components as unknown as OperationResult<SolutionComponentSummary[]>;
     }
 
-    return ok((components.data ?? []).map(normalizeSolutionComponent), {
+    const normalizedComponents = (components.data ?? []).map(normalizeSolutionComponent);
+    const resolutions = await this.resolveComponentNames(normalizedComponents);
+
+    if (!resolutions.success) {
+      return resolutions as unknown as OperationResult<SolutionComponentSummary[]>;
+    }
+
+    return ok(applyComponentResolutions(normalizedComponents, resolutions.data ?? new Map()), {
       supportTier: 'preview',
-      diagnostics: mergeDiagnosticLists(solution.diagnostics, components.diagnostics),
-      warnings: mergeDiagnosticLists(solution.warnings, components.warnings),
+      diagnostics: mergeDiagnosticLists(solution.diagnostics, components.diagnostics, resolutions.diagnostics),
+      warnings: mergeDiagnosticLists(solution.warnings, components.warnings, resolutions.warnings),
     });
   }
 
@@ -771,7 +883,19 @@ export class SolutionService {
     dependencies: SolutionDependencySummary[]
   ): Promise<OperationResult<Map<string, SolutionDependencyComponentResolution>>> {
     const requested = collectDependencyResolutionRequests(dependencies);
+    return this.resolveComponentNamesByRequest(requested);
+  }
 
+  private async resolveComponentNames(
+    components: SolutionComponentSummary[]
+  ): Promise<OperationResult<Map<string, SolutionDependencyComponentResolution>>> {
+    const requested = collectComponentResolutionRequests(components);
+    return this.resolveComponentNamesByRequest(requested);
+  }
+
+  private async resolveComponentNamesByRequest(
+    requested: ComponentResolutionRequests
+  ): Promise<OperationResult<Map<string, SolutionDependencyComponentResolution>>> {
     const [
       tables,
       appModules,
@@ -786,7 +910,7 @@ export class SolutionService {
     ] = await Promise.all([
       requested.entityIds.size > 0
         ? this.dataverseClient.listTables({
-            select: ['MetadataId', 'LogicalName', 'SchemaName', 'DisplayName'],
+            select: ['MetadataId', 'LogicalName', 'SchemaName', 'DisplayName', 'EntitySetName'],
             all: true,
           })
         : ok([] as EntityDefinition[], { supportTier: 'preview' }),
@@ -865,6 +989,7 @@ export class SolutionService {
       name: extractDisplayName(record.DisplayName) ?? readString(record.LogicalName),
       logicalName: readString(record.LogicalName),
       table: readString(record.LogicalName),
+      entitySetName: readString(record.EntitySetName),
     }));
     addComponentResolutions(map, 80, appModules.data ?? [], (record) => record.appmoduleid, (record) => ({
       name: record.name ?? record.uniquename,
@@ -941,7 +1066,7 @@ export class SolutionService {
     });
   }
 
-  async analyze(uniqueName: string): Promise<OperationResult<SolutionAnalysis | undefined>> {
+  async analyze(uniqueName: string, options: SolutionAnalyzeOptions = {}): Promise<OperationResult<SolutionAnalysis | undefined>> {
     const solution = await this.inspect(uniqueName);
 
     if (!solution.success) {
@@ -985,6 +1110,7 @@ export class SolutionService {
       return modelApps as unknown as OperationResult<SolutionAnalysis | undefined>;
     }
 
+    const includeModelComposition = options.includeModelComposition ?? true;
     const modelDrivenApps: SolutionModelDrivenAppAnalysis[] = [];
     let modelDiagnostics = [...modelApps.diagnostics];
     let modelWarnings = [...modelApps.warnings];
@@ -1016,6 +1142,17 @@ export class SolutionService {
             }
           ),
         ];
+        continue;
+      }
+
+      if (!includeModelComposition) {
+        modelDrivenApps.push({
+          appId: app.id,
+          uniqueName: app.uniqueName,
+          name: app.name,
+          compositionSkippedReason:
+            'Skipped model composition during solution compare; rerun with --include-model-composition for app-level artifact drift.',
+        });
         continue;
       }
 
@@ -1242,6 +1379,24 @@ export class SolutionService {
 
     const content = Buffer.from(exportFile, 'base64');
     await writeFile(outputPath, content);
+    const normalizedPackage = await normalizeSolutionArchivePackageType(outputPath, packageType);
+
+    if (!normalizedPackage.success) {
+      return fail(
+        mergeDiagnosticLists(solution.diagnostics, analysis.diagnostics, exportResult.diagnostics, normalizedPackage.diagnostics),
+        {
+          supportTier: 'preview',
+          warnings: mergeDiagnosticLists(solution.warnings, analysis.warnings, exportResult.warnings, normalizedPackage.warnings),
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse ExportSolution',
+            },
+          ],
+        }
+      );
+    }
+
     const artifact = await buildArtifactFile('solution-zip', outputPath);
     const manifestPath = resolveManifestPath(outputPath, options.manifestPath);
     const manifest = createReleaseManifest(solution.data, packageType, artifact, analysis.data);
@@ -1258,7 +1413,7 @@ export class SolutionService {
       {
         supportTier: 'preview',
         diagnostics: mergeDiagnosticLists(solution.diagnostics, analysis.diagnostics, exportResult.diagnostics),
-        warnings: mergeDiagnosticLists(solution.warnings, analysis.warnings, exportResult.warnings),
+        warnings: mergeDiagnosticLists(solution.warnings, analysis.warnings, exportResult.warnings, normalizedPackage.warnings),
         provenance: [
           {
             kind: 'official-api',
@@ -1350,16 +1505,44 @@ export class SolutionService {
     const startedAt = Date.now();
     let attempts = 0;
     let lastExportResult: OperationResult<SolutionExportResult> | undefined;
+    let lastExportDiagnostic: Pick<Diagnostic, 'code' | 'message'> | undefined;
+    let lastObservedReadBack: SolutionPublishReadback | undefined;
+    options.onProgress?.({
+      stage: 'accepted',
+      elapsedMs: 0,
+      pollIntervalMs,
+      timeoutMs,
+      remainingMs: timeoutMs,
+    });
 
     while (Date.now() - startedAt <= timeoutMs) {
       attempts += 1;
       const remainingMs = Math.max(1, timeoutMs - (Date.now() - startedAt));
+      options.onProgress?.({
+        stage: 'polling',
+        attempt: attempts,
+        elapsedMs: Date.now() - startedAt,
+        remainingMs,
+        pollIntervalMs,
+        timeoutMs,
+        latestExportDiagnostic: lastExportDiagnostic,
+        readBack: lastObservedReadBack,
+      });
       lastExportResult = await this.exportSolution(uniqueName, {
         ...options.exportOptions,
         requestTimeoutMs: remainingMs,
       });
 
       if (lastExportResult.success && lastExportResult.data) {
+        const readBack = await this.describePublishReadBack(uniqueName);
+        options.onProgress?.({
+          stage: 'confirmed',
+          attempt: attempts,
+          elapsedMs: Date.now() - startedAt,
+          remainingMs: Math.max(0, timeoutMs - (Date.now() - startedAt)),
+          pollIntervalMs,
+          timeoutMs,
+        });
         return ok(
           {
             solution: solution.data,
@@ -1376,11 +1559,12 @@ export class SolutionService {
               attempts,
               elapsedMs: Date.now() - startedAt,
             },
+            readBack: readBack?.data,
           },
           {
             supportTier: 'preview',
             diagnostics: mergeDiagnosticLists(solution.diagnostics, publishResult.diagnostics, lastExportResult.diagnostics),
-            warnings: mergeDiagnosticLists(solution.warnings, publishResult.warnings, lastExportResult.warnings),
+            warnings: mergeDiagnosticLists(solution.warnings, publishResult.warnings, lastExportResult.warnings, readBack?.warnings),
             provenance: [
               {
                 kind: 'official-api',
@@ -1390,10 +1574,19 @@ export class SolutionService {
                 kind: 'official-api',
                 source: 'Dataverse ExportSolution',
               },
+              ...(readBack?.provenance ?? []),
             ],
           }
         );
       }
+
+      lastExportDiagnostic = lastExportResult.diagnostics[0]
+        ? {
+            code: lastExportResult.diagnostics[0].code,
+            message: lastExportResult.diagnostics[0].message,
+          }
+        : undefined;
+      lastObservedReadBack = (await this.describePublishReadBack(uniqueName))?.data;
 
       if (Date.now() - startedAt >= timeoutMs) {
         break;
@@ -1435,6 +1628,99 @@ export class SolutionService {
             kind: 'official-api',
             source: 'Dataverse ExportSolution',
           },
+        ],
+      }
+    );
+  }
+
+  async syncStatus(uniqueName: string, options: SolutionSyncStatusOptions = {}): Promise<OperationResult<SolutionSyncStatusResult>> {
+    const solution = await this.inspect(uniqueName);
+    if (!solution.success) {
+      return solution as unknown as OperationResult<SolutionSyncStatusResult>;
+    }
+
+    if (!solution.data) {
+      return fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`), {
+        supportTier: 'preview',
+      });
+    }
+
+    const readBackResult = await this.readPublishReadBack(uniqueName);
+    if (!readBackResult.success || !readBackResult.data) {
+      return readBackResult as unknown as OperationResult<SolutionSyncStatusResult>;
+    }
+
+    const packageType: Exclude<SolutionPackageType, 'both'> = options.managed ? 'managed' : 'unmanaged';
+    const includeExportCheck = options.includeExportCheck ?? true;
+    let tempOutDir: string | undefined;
+    let tempManifestPath: string | undefined;
+    let exportCheck: SolutionSyncStatusExportCheck = {
+      attempted: false,
+      confirmed: false,
+      packageType,
+    };
+
+    if (includeExportCheck) {
+      if (!options.outDir && !options.outPath) {
+        tempOutDir = await mkdtemp(join(tmpdir(), 'pp-solution-sync-status-'));
+      }
+      if (!options.manifestPath && tempOutDir) {
+        tempManifestPath = join(tempOutDir, `${uniqueName}.${packageType}.pp-solution.json`);
+      }
+
+      try {
+        const exportResult = await this.exportSolution(uniqueName, {
+          managed: options.managed,
+          outDir: options.outDir ?? tempOutDir,
+          outPath: options.outPath,
+          manifestPath: options.manifestPath ?? tempManifestPath,
+          requestTimeoutMs: options.requestTimeoutMs,
+        });
+
+        if (exportResult.success && exportResult.data) {
+          exportCheck = {
+            attempted: true,
+            confirmed: true,
+            packageType,
+            artifact: options.outDir || options.outPath ? exportResult.data.artifact : undefined,
+            manifest: options.outDir || options.outPath || options.manifestPath ? exportResult.data.manifest : undefined,
+            manifestPath: options.outDir || options.outPath || options.manifestPath ? exportResult.data.manifestPath : undefined,
+          };
+        } else {
+          exportCheck = {
+            attempted: true,
+            confirmed: false,
+            packageType,
+            failure: {
+              diagnostics: exportResult.diagnostics,
+              warnings: exportResult.warnings,
+              suggestedNextActions: exportResult.suggestedNextActions,
+            },
+          };
+        }
+      } finally {
+        if (tempOutDir) {
+          await rm(tempOutDir, { recursive: true, force: true });
+        }
+      }
+    }
+
+    return ok(
+      {
+        solution: solution.data,
+        synchronization: {
+          kind: 'solution-export',
+          confirmed: exportCheck.confirmed,
+        },
+        readBack: readBackResult.data,
+        exportCheck,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(solution.diagnostics, readBackResult.diagnostics),
+        warnings: mergeDiagnosticLists(solution.warnings, readBackResult.warnings),
+        provenance: [
+          ...(readBackResult.provenance ?? []),
         ],
       }
     );
@@ -1511,6 +1797,139 @@ export class SolutionService {
         },
       ],
     };
+  }
+
+  private async describePublishReadBack(uniqueName: string): Promise<{
+    data: SolutionPublishReadback;
+    warnings?: Diagnostic[];
+    provenance?: ProvenanceRecord[];
+  } | undefined> {
+    const result = await this.readPublishReadBack(uniqueName);
+    if (!result.success || !result.data) {
+      return undefined;
+    }
+
+    return {
+      data: result.data,
+      warnings: result.warnings,
+      provenance: result.provenance,
+    };
+  }
+
+  private async readPublishReadBack(uniqueName: string): Promise<OperationResult<SolutionPublishReadback>> {
+    const components = await this.components(uniqueName);
+
+    if (!components.success || !components.data) {
+      return components as unknown as OperationResult<SolutionPublishReadback>;
+    }
+
+    const componentTypeCounts = summarizeComponentTypeCounts(components.data);
+    const canvasIds = new Set(
+      components.data
+        .filter((component) => component.componentType === 300 && component.objectId)
+        .map((component) => component.objectId!.toLowerCase())
+    );
+    const workflowIds = new Set(
+      components.data
+        .filter((component) => component.componentType === 29 && component.objectId)
+        .map((component) => component.objectId!.toLowerCase())
+    );
+    const modelDrivenAppIds = new Set(
+      components.data
+        .filter((component) => component.componentType === 80 && component.objectId)
+        .map((component) => component.objectId!.toLowerCase())
+    );
+
+    const [canvasApps, workflows, modelDrivenApps] = await Promise.all([
+      queryAllOrEmpty<{ canvasappid: string; displayname?: string; name?: string; lastpublishtime?: string }>(
+        this.dataverseClient,
+        canvasIds,
+        'canvasapps',
+        'canvasappid',
+        ['canvasappid', 'displayname', 'name', 'lastpublishtime']
+      ),
+      queryAllOrEmpty<{ workflowid: string; name?: string; uniquename?: string; category?: number; statecode?: number; statuscode?: number }>(
+        this.dataverseClient,
+        workflowIds,
+        'workflows',
+        'workflowid',
+        ['workflowid', 'name', 'uniquename', 'category', 'statecode', 'statuscode']
+      ),
+      queryAllOrEmpty<{ appmoduleid: string; name?: string; uniquename?: string; statecode?: number; publishedon?: string }>(
+        this.dataverseClient,
+        modelDrivenAppIds,
+        'appmodules',
+        'appmoduleid',
+        ['appmoduleid', 'name', 'uniquename', 'statecode', 'publishedon']
+      ),
+    ]);
+
+    if (!canvasApps.success || !workflows.success || !modelDrivenApps.success) {
+      return fail(
+        mergeDiagnosticLists(canvasApps.diagnostics, workflows.diagnostics, modelDrivenApps.diagnostics),
+        {
+          supportTier: 'preview',
+          warnings: mergeDiagnosticLists(components.warnings, canvasApps.warnings, workflows.warnings, modelDrivenApps.warnings),
+        }
+      );
+    }
+
+    return ok(
+      {
+        summary: {
+          componentCount: components.data.length,
+          componentTypeCounts,
+          canvasAppCount: canvasApps.data?.length ?? 0,
+          workflowCount: workflows.data?.length ?? 0,
+          modelDrivenAppCount: modelDrivenApps.data?.length ?? 0,
+        },
+        canvasApps: (canvasApps.data ?? [])
+          .map((app) => ({
+            id: app.canvasappid,
+            name: app.displayname ?? app.name,
+            logicalName: app.name,
+            lastPublishTime: app.lastpublishtime,
+          }))
+          .sort(compareNamedReadBackItems),
+        workflows: (workflows.data ?? [])
+          .map((workflow) => ({
+            id: workflow.workflowid,
+            name: workflow.name ?? workflow.uniquename,
+            logicalName: workflow.uniquename,
+            category: workflow.category,
+            workflowState: describeWorkflowState(workflow.statecode, workflow.statuscode),
+          }))
+          .sort(compareNamedReadBackItems),
+        modelDrivenApps: (modelDrivenApps.data ?? [])
+          .map((app) => ({
+            id: app.appmoduleid,
+            name: app.name ?? app.uniquename,
+            uniqueName: app.uniquename,
+            stateCode: app.statecode,
+            publishedOn: app.publishedon,
+          }))
+          .sort(compareNamedReadBackItems),
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: components.diagnostics,
+        warnings: mergeDiagnosticLists(components.warnings, canvasApps.warnings, workflows.warnings, modelDrivenApps.warnings),
+        provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse canvasapps',
+        },
+        {
+          kind: 'official-api',
+          source: 'Dataverse workflows',
+        },
+        {
+          kind: 'official-api',
+          source: 'Dataverse appmodules',
+        },
+        ],
+      }
+    );
   }
 
   async importSolution(packagePath: string, options: SolutionImportOptions = {}): Promise<OperationResult<SolutionImportResult>> {
@@ -1674,6 +2093,33 @@ export class SolutionService {
     return readReleaseManifest(resolve(path));
   }
 
+  async listPublishers(): Promise<OperationResult<SolutionPublisherSummary[]>> {
+    const publishers = await this.dataverseClient.query<PublisherSummary>({
+      table: 'publishers',
+      select: ['publisherid', 'uniquename', 'friendlyname'],
+      orderBy: ['uniquename asc'],
+    });
+
+    if (!publishers.success) {
+      return publishers as unknown as OperationResult<SolutionPublisherSummary[]>;
+    }
+
+    return ok(
+      (publishers.data ?? [])
+        .filter((publisher): publisher is PublisherSummary => Boolean(publisher.publisherid))
+        .map((publisher) => ({
+          publisherid: publisher.publisherid,
+          uniquename: publisher.uniquename,
+          friendlyname: publisher.friendlyname,
+        })),
+      {
+        supportTier: 'preview',
+        diagnostics: publishers.diagnostics,
+        warnings: publishers.warnings,
+      }
+    );
+  }
+
   private async resolvePublisherId(uniqueName: string | undefined): Promise<string | undefined> {
     if (!uniqueName) {
       return undefined;
@@ -1693,7 +2139,7 @@ export class SolutionService {
     return publishers.data?.[0]?.publisherid;
   }
 
-  private async listPublishers(): Promise<PublisherSummary[]> {
+  private async loadPublisherSummaries(): Promise<PublisherSummary[]> {
     const publishers = await this.dataverseClient.query<PublisherSummary>({
       table: 'publishers',
       select: ['publisherid', 'uniquename', 'friendlyname'],
@@ -1868,6 +2314,27 @@ function normalizeSolutionComponent(component: SolutionComponentRecord): Solutio
   };
 }
 
+function applyComponentResolutions(
+  components: SolutionComponentSummary[],
+  resolutions: Map<string, SolutionDependencyComponentResolution>
+): SolutionComponentSummary[] {
+  return components.map((component) => {
+    const resolution = getDependencyComponentResolution(resolutions, component.componentType, component.objectId);
+
+    if (!resolution) {
+      return component;
+    }
+
+    return {
+      ...component,
+      name: resolution.name,
+      logicalName: resolution.logicalName,
+      table: resolution.table,
+      entitySetName: resolution.entitySetName,
+    };
+  });
+}
+
 function normalizePublisherSummary(publisher: SolutionPublisherSummary | undefined): SolutionPublisherSummary | undefined {
   if (!publisher?.publisherid) {
     return undefined;
@@ -1892,13 +2359,29 @@ function normalizeSolutionDependency(
     requiredComponentObjectId: dependency.requiredcomponentobjectid,
     requiredComponentType: dependency.requiredcomponenttype,
     requiredComponentTypeLabel: describeComponentType(dependency.requiredcomponenttype),
+    requiredComponentTypeHint: describeUnknownComponentTypeHint(dependency.requiredcomponenttype),
     dependentComponentObjectId: dependency.dependentcomponentobjectid,
     dependentComponentType: dependency.dependentcomponenttype,
     dependentComponentTypeLabel: describeComponentType(dependency.dependentcomponenttype),
+    dependentComponentTypeHint: describeUnknownComponentTypeHint(dependency.dependentcomponenttype),
     missingRequiredComponent: Boolean(
       dependency.requiredcomponentobjectid && !componentIds.has(dependency.requiredcomponentobjectid)
     ),
   };
+}
+
+function summarizeComponentTypeCounts(components: SolutionComponentSummary[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  for (const component of components) {
+    counts[component.componentTypeLabel] = (counts[component.componentTypeLabel] ?? 0) + 1;
+  }
+
+  return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function compareNamedReadBackItems<T extends { name?: string; id: string }>(left: T, right: T): number {
+  return (left.name ?? left.id).localeCompare(right.name ?? right.id);
 }
 
 function applyDependencyComponentResolutions(
@@ -1937,19 +2420,8 @@ function getDependencyComponentResolution(
   return resolutions.get(buildDependencyResolutionKey(componentType, objectId));
 }
 
-function collectDependencyResolutionRequests(dependencies: SolutionDependencySummary[]): {
-  entityIds: Set<string>;
-  appModuleIds: Set<string>;
-  canvasAppIds: Set<string>;
-  workflowIds: Set<string>;
-  webResourceIds: Set<string>;
-  sitemapIds: Set<string>;
-  formIds: Set<string>;
-  viewIds: Set<string>;
-  connectionReferenceIds: Set<string>;
-  environmentVariableDefinitionIds: Set<string>;
-} {
-  const requests = {
+function collectDependencyResolutionRequests(dependencies: SolutionDependencySummary[]): ComponentResolutionRequests {
+  const requests: ComponentResolutionRequests = {
     entityIds: new Set<string>(),
     appModuleIds: new Set<string>(),
     canvasAppIds: new Set<string>(),
@@ -1971,7 +2443,7 @@ function collectDependencyResolutionRequests(dependencies: SolutionDependencySum
 }
 
 function collectDependencyResolutionRequest(
-  requests: ReturnType<typeof collectDependencyResolutionRequests>,
+  requests: ComponentResolutionRequests,
   componentType: number | undefined,
   objectId: string | undefined
 ): void {
@@ -2014,6 +2486,27 @@ function collectDependencyResolutionRequest(
     default:
       break;
   }
+}
+
+function collectComponentResolutionRequests(components: SolutionComponentSummary[]): ComponentResolutionRequests {
+  const requests: ComponentResolutionRequests = {
+    entityIds: new Set<string>(),
+    appModuleIds: new Set<string>(),
+    canvasAppIds: new Set<string>(),
+    workflowIds: new Set<string>(),
+    webResourceIds: new Set<string>(),
+    sitemapIds: new Set<string>(),
+    formIds: new Set<string>(),
+    viewIds: new Set<string>(),
+    connectionReferenceIds: new Set<string>(),
+    environmentVariableDefinitionIds: new Set<string>(),
+  };
+
+  for (const component of components) {
+    collectDependencyResolutionRequest(requests, component.componentType, component.objectId);
+  }
+
+  return requests;
 }
 
 async function queryAllOrEmpty<T extends Record<string, unknown>>(
@@ -2083,6 +2576,19 @@ function describeComponentType(componentType: number | undefined): string {
   };
 
   return componentType !== undefined ? labels[componentType] ?? `component-${componentType}` : 'unknown';
+}
+
+function describeUnknownComponentTypeHint(componentType: number | undefined): string | undefined {
+  if (componentType === undefined) {
+    return undefined;
+  }
+
+  const label = describeComponentType(componentType);
+  if (!label.startsWith('component-')) {
+    return undefined;
+  }
+
+  return `Unknown Dataverse solution component type ${componentType}. Inspect the dependency in Maker or solution component metadata to identify the blocker.`;
 }
 
 function describeWorkflowState(stateCode: number | undefined, statusCode: number | undefined): string {
@@ -2438,6 +2944,359 @@ function readXmlTag(content: string, tags: string[]): string | undefined {
   }
 
   return undefined;
+}
+
+async function normalizeSolutionArchivePackageType(
+  packagePath: string,
+  expectedPackageType: Exclude<SolutionPackageType, 'both'>
+): Promise<OperationResult<{ normalized: boolean }>> {
+  const inspectedPackageType = await readSolutionArchivePackageType(packagePath);
+
+  if (!inspectedPackageType.success || !inspectedPackageType.data) {
+    return inspectedPackageType as unknown as OperationResult<{ normalized: boolean }>;
+  }
+
+  if (inspectedPackageType.data === expectedPackageType) {
+    return ok(
+      {
+        normalized: false,
+      },
+      {
+        supportTier: 'preview',
+        warnings: inspectedPackageType.warnings,
+      }
+    );
+  }
+
+  const tempDir = await mkdtemp(join(tmpdir(), 'pp-solution-export-normalize-'));
+
+  try {
+    const extracted = await extractZipArchive(packagePath, tempDir);
+
+    if (!extracted.success) {
+      return extracted as unknown as OperationResult<{ normalized: boolean }>;
+    }
+
+    const metadataPath = await findFileByBasename(tempDir, 'solution.xml')
+      ?? await findFileByBasename(tempDir, 'Solution.xml')
+      ?? await findFileByBasename(tempDir, 'Other.xml');
+
+    if (!metadataPath) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'SOLUTION_EXPORT_PACKAGE_METADATA_MISSING',
+          `Exported solution package ${packagePath} does not contain solution metadata for package-type verification.`,
+          {
+            source: '@pp/solution',
+            path: packagePath,
+            hint: 'Inspect the exported archive contents and retry the export.',
+          }
+        ),
+        {
+          supportTier: 'preview',
+          warnings: mergeDiagnosticLists(inspectedPackageType.warnings, extracted.warnings),
+        }
+      );
+    }
+
+    const metadata = await readFile(metadataPath, 'utf8');
+    const rewritten = rewriteManagedTag(metadata, expectedPackageType);
+
+    if (!rewritten) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'SOLUTION_EXPORT_MANAGED_FLAG_MISSING',
+          `Exported solution metadata in ${packagePath} does not contain a <Managed> flag.`,
+          {
+            source: '@pp/solution',
+            path: metadataPath,
+            hint: 'Inspect the exported solution.xml/Other.xml payload and retry the export.',
+          }
+        ),
+        {
+          supportTier: 'preview',
+          warnings: mergeDiagnosticLists(inspectedPackageType.warnings, extracted.warnings),
+        }
+      );
+    }
+
+    await writeFile(metadataPath, rewritten, 'utf8');
+    const rebuiltPath = join(tempDir, 'normalized.zip');
+    const rebuilt = await createZipArchive(tempDir, rebuiltPath);
+
+    if (!rebuilt.success) {
+      return rebuilt as unknown as OperationResult<{ normalized: boolean }>;
+    }
+
+    const rebuiltBytes = await readFile(rebuiltPath);
+    await writeFile(packagePath, rebuiltBytes);
+
+    const verifiedPackageType = await readSolutionArchivePackageType(packagePath);
+
+    if (!verifiedPackageType.success || !verifiedPackageType.data) {
+      return verifiedPackageType as unknown as OperationResult<{ normalized: boolean }>;
+    }
+
+    if (verifiedPackageType.data !== expectedPackageType) {
+      return fail(
+        createDiagnostic(
+          'error',
+          'SOLUTION_EXPORT_PACKAGE_TYPE_MISMATCH',
+          `Exported solution package ${packagePath} still reports ${verifiedPackageType.data} after normalization; expected ${expectedPackageType}.`,
+          {
+            source: '@pp/solution',
+            path: packagePath,
+            hint: 'Retry the export or inspect the archive contents manually.',
+          }
+        ),
+        {
+          supportTier: 'preview',
+          warnings: mergeDiagnosticLists(inspectedPackageType.warnings, extracted.warnings, rebuilt.warnings, verifiedPackageType.warnings),
+        }
+      );
+    }
+
+    return ok(
+      {
+        normalized: true,
+      },
+      {
+        supportTier: 'preview',
+        warnings: mergeDiagnosticLists(
+          inspectedPackageType.warnings,
+          extracted.warnings,
+          rebuilt.warnings,
+          verifiedPackageType.warnings,
+          [
+            createDiagnostic(
+              'warning',
+              'SOLUTION_EXPORT_PACKAGE_TYPE_NORMALIZED',
+              `Exported solution package metadata reported ${inspectedPackageType.data}; rewrote the archive to ${expectedPackageType} so downstream unpack/import stays consistent.`,
+              {
+                source: '@pp/solution',
+                path: packagePath,
+                hint: 'The Dataverse export payload did not match the requested package type, so pp normalized the archive before writing the release manifest.',
+              }
+            ),
+          ]
+        ),
+      }
+    );
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function readSolutionArchivePackageType(
+  packagePath: string
+): Promise<OperationResult<Exclude<SolutionPackageType, 'both'>>> {
+  const entries = await listZipEntries(packagePath);
+
+  if (!entries.success || !entries.data) {
+    return entries as unknown as OperationResult<Exclude<SolutionPackageType, 'both'>>;
+  }
+
+  const metadataEntry = entries.data.find((entry) => {
+    const normalized = entry.replaceAll('\\', '/').toLowerCase();
+    return normalized.endsWith('/other.xml') || normalized.endsWith('/solution.xml') || normalized === 'other.xml' || normalized === 'solution.xml';
+  });
+
+  if (!metadataEntry) {
+    return fail(
+      createDiagnostic(
+        'error',
+        'SOLUTION_EXPORT_PACKAGE_METADATA_MISSING',
+        `Exported solution package ${packagePath} does not contain solution metadata for package-type verification.`,
+        {
+          source: '@pp/solution',
+          path: packagePath,
+          hint: 'Inspect the exported archive contents and retry the export.',
+        }
+      ),
+      {
+        supportTier: 'preview',
+        warnings: entries.warnings,
+      }
+    );
+  }
+
+  const metadata = await extractZipEntry(packagePath, metadataEntry);
+
+  if (!metadata.success || !metadata.data) {
+    return metadata as unknown as OperationResult<Exclude<SolutionPackageType, 'both'>>;
+  }
+
+  const managedValue = readXmlTag(metadata.data.toString('utf8'), ['Managed']);
+
+  if (managedValue === '1') {
+    return ok('managed', {
+      supportTier: 'preview',
+      warnings: mergeDiagnosticLists(entries.warnings, metadata.warnings),
+    });
+  }
+
+  if (managedValue === '0') {
+    return ok('unmanaged', {
+      supportTier: 'preview',
+      warnings: mergeDiagnosticLists(entries.warnings, metadata.warnings),
+    });
+  }
+
+  return fail(
+    createDiagnostic(
+      'error',
+      'SOLUTION_EXPORT_MANAGED_FLAG_INVALID',
+      `Exported solution metadata in ${packagePath} does not contain a valid <Managed> flag.`,
+      {
+        source: '@pp/solution',
+        path: packagePath,
+        detail: managedValue ? `Observed value: ${managedValue}.` : undefined,
+        hint: 'Inspect the solution metadata and retry the export.',
+      }
+    ),
+    {
+      supportTier: 'preview',
+      warnings: mergeDiagnosticLists(entries.warnings, metadata.warnings),
+    }
+  );
+}
+
+function rewriteManagedTag(
+  content: string,
+  packageType: Exclude<SolutionPackageType, 'both'>
+): string | undefined {
+  const nextValue = packageType === 'managed' ? '1' : '0';
+
+  if (!/<Managed>[^<]*<\/Managed>/i.test(content)) {
+    return undefined;
+  }
+
+  return content.replace(/<Managed>[^<]*<\/Managed>/i, `<Managed>${nextValue}</Managed>`);
+}
+
+async function listZipEntries(packagePath: string): Promise<OperationResult<string[]>> {
+  const result = await runArchiveCommand('unzip', ['-Z1', packagePath]);
+
+  if (!result.success || result.data === undefined) {
+    return result as unknown as OperationResult<string[]>;
+  }
+
+  return ok(
+    result.data
+      .toString('utf8')
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+    {
+      supportTier: 'preview',
+      diagnostics: result.diagnostics,
+      warnings: result.warnings,
+    }
+  );
+}
+
+async function extractZipEntry(packagePath: string, entry: string): Promise<OperationResult<Buffer>> {
+  return runArchiveCommand('unzip', ['-p', packagePath, entry]);
+}
+
+async function extractZipArchive(packagePath: string, outDir: string): Promise<OperationResult<undefined>> {
+  const result = await runArchiveCommand('unzip', ['-qq', packagePath, '-d', outDir]);
+
+  if (!result.success) {
+    return result as unknown as OperationResult<undefined>;
+  }
+
+  return ok(undefined, {
+    supportTier: 'preview',
+    diagnostics: result.diagnostics,
+    warnings: result.warnings,
+  });
+}
+
+async function createZipArchive(sourceDir: string, outPath: string): Promise<OperationResult<undefined>> {
+  const result = await runArchiveCommand('zip', ['-rqX', outPath, '.'], {
+    cwd: sourceDir,
+  });
+
+  if (!result.success) {
+    return result as unknown as OperationResult<undefined>;
+  }
+
+  return ok(undefined, {
+    supportTier: 'preview',
+    diagnostics: result.diagnostics,
+    warnings: result.warnings,
+  });
+}
+
+async function runArchiveCommand(
+  command: string,
+  args: string[],
+  options: {
+    cwd?: string;
+  } = {}
+): Promise<OperationResult<Buffer>> {
+  return new Promise((resolvePromise) => {
+    let settled = false;
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.on('error', (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolvePromise(
+        fail(
+          createDiagnostic('error', 'SOLUTION_ARCHIVE_COMMAND_FAILED', `Failed to run ${command}.`, {
+            source: '@pp/solution',
+            detail: error.message,
+            hint: `Install ${command} and retry.`,
+          }),
+          {
+            supportTier: 'preview',
+          }
+        )
+      );
+    });
+    child.on('close', (code) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      const stdoutBuffer = Buffer.concat(stdout);
+      const stderrBuffer = Buffer.concat(stderr);
+
+      if (code === 0) {
+        resolvePromise(
+          ok(stdoutBuffer, {
+            supportTier: 'preview',
+          })
+        );
+        return;
+      }
+
+      resolvePromise(
+        fail(
+          createDiagnostic('error', 'SOLUTION_ARCHIVE_COMMAND_FAILED', `${command} exited with code ${code ?? 'unknown'}.`, {
+            source: '@pp/solution',
+            detail: stderrBuffer.toString('utf8').trim() || stdoutBuffer.toString('utf8').trim() || undefined,
+          }),
+          {
+            supportTier: 'preview',
+          }
+        )
+      );
+    });
+  });
 }
 
 function createReleaseManifest(

@@ -81,6 +81,33 @@
       "solutionUniqueName": "CoreLifecycle",
       "stage": "dev"
     },
+    "assetPlacementGuidance": [
+      {
+        "asset": "apps",
+        "expectation": "Place editable canvas-app or other app source under app-specific subfolders in `apps/`; keep generated solution bundles out of this root.",
+        "root": "apps"
+      },
+      {
+        "asset": "flows",
+        "expectation": "Place editable flow source under flow-specific subfolders in `flows/` so repo-local flow artifacts stay separate from solution bundles.",
+        "root": "flows"
+      },
+      {
+        "asset": "solutions",
+        "expectation": "Keep unpacked solution source trees under `solutions/<solution>/`; treat zip files inside `solutions/` as generated or stale output, not canonical source.",
+        "root": "solutions"
+      },
+      {
+        "asset": "docs",
+        "expectation": "Keep repo-local runbooks, provenance notes, and workflow docs under `docs/` so project context stays with the source tree.",
+        "root": "docs"
+      },
+      {
+        "asset": "solutionBundle",
+        "expectation": "Write generated solution zip output to `artifacts/solutions/CoreLifecycle.zip` so packaged artifacts stay outside editable source roots.",
+        "root": "artifacts/solutions"
+      }
+    ],
     "canonicalBundlePath": "artifacts/solutions/CoreLifecycle.zip",
     "defaultTarget": {
       "environmentAlias": "sandbox",

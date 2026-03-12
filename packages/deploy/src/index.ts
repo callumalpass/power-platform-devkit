@@ -201,6 +201,7 @@ interface DeployTargetResolutionInspection {
   checks: DeployPreflightCheck[];
   diagnostics: Diagnostic[];
   warnings: Diagnostic[];
+  suggestedNextActions: string[];
 }
 
 export interface DeployBindingSummaryEntry {
@@ -566,6 +567,7 @@ export async function inspectDeployTargetResolution(target: DeployTarget): Promi
     supportTier: 'preview',
     diagnostics: inspection.diagnostics,
     warnings: inspection.warnings,
+    suggestedNextActions: inspection.suggestedNextActions,
   });
 }
 
@@ -2664,6 +2666,7 @@ async function collectDeployTargetResolutionInspection(target: DeployTarget): Pr
       checks: [],
       diagnostics: [],
       warnings: [],
+      suggestedNextActions: [],
     };
   }
 
@@ -2674,6 +2677,7 @@ async function collectDeployTargetResolutionInspection(target: DeployTarget): Pr
       checks: [],
       diagnostics: [],
       warnings: [],
+      suggestedNextActions: [],
     };
   }
 
@@ -2710,6 +2714,10 @@ async function collectDeployTargetResolutionInspection(target: DeployTarget): Pr
       }),
     ],
     warnings: resolutionDiagnostics,
+    suggestedNextActions: [
+      `Run \`pp env inspect ${target.environmentAlias} --format json\` to confirm whether the target alias is configured locally.`,
+      'Update the selected project stage or environment mapping before retrying deploy if the alias is not the intended target.',
+    ],
   };
 }
 

@@ -194,6 +194,22 @@ export interface CanvasTemplateResolution {
   support: CanvasSupportResolution;
 }
 
+export interface CanvasTemplateReportRecord {
+  templateName: string;
+  templateVersion: string;
+  contentHash: string;
+  aliases?: CanvasTemplateAliases;
+  files: string[];
+  provenance: CanvasTemplateProvenance;
+}
+
+export interface CanvasTemplateReportResolution {
+  requested: CanvasTemplateLookup;
+  template?: CanvasTemplateReportRecord;
+  matchedBy?: CanvasTemplateMatchType;
+  support: CanvasSupportResolution;
+}
+
 export interface CanvasTemplateRegistryInspectReport {
   path: string;
   hash: string;
@@ -261,7 +277,7 @@ export interface CanvasTemplateRegistryRefreshResult {
 
 export interface CanvasTemplateRequirementResolution {
   mode: CanvasBuildMode;
-  resolutions: CanvasTemplateResolution[];
+  resolutions: CanvasTemplateReportResolution[];
   missing: CanvasTemplateLookup[];
   supported: boolean;
 }
@@ -471,5 +487,6 @@ export interface CanvasBuildResult {
   sourceHash: string;
   templateHash: string;
   packageHash: string;
+  outFileSha256: string;
   supported: boolean;
 }

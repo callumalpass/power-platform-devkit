@@ -131,14 +131,9 @@
               ]
             },
             "contentHash": "df571778d09215de8132a20386290a5302d0c573c8afd93472a69cf670ca710c",
-            "files": {
-              "Controls/Button.json": {
-                "defaults": {
-                  "Text": "\"Button\""
-                },
-                "kind": "button"
-              }
-            },
+            "files": [
+              "Controls/Button.json"
+            ],
             "provenance": {
               "acquiredAt": "2026-03-10T00:00:00.000Z",
               "importedFrom": "<REPO_ROOT>/fixtures/canvas/apps/base-app/seed.templates.json",

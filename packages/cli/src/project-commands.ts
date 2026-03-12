@@ -9,11 +9,12 @@ import {
   summarizeResolvedParameter,
   type ProjectContext,
   type ProjectDoctorReport,
+  type ProjectDoctorCheck,
   type ProjectFeedbackReport,
   type ProjectInitPlan,
   type ProjectInitResult,
 } from '@pp/project';
-import type { OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, fail, type OperationResult } from '@pp/diagnostics';
 import type { ConfigStoreOptions } from '@pp/config';
 import { createMutationPreview, readMutationFlags, renderOutput, type CliOutputFormat } from './contract';
 import { buildProjectRelationshipSummary } from './relationship-context';
@@ -32,6 +33,7 @@ interface ProjectCommandDependencies {
   readProjectDiscoveryOptions(args: string[]): OperationResult<ProjectDiscoveryInput>;
   readConfigOptions(args: string[]): ConfigStoreOptions;
   printFailure(result: OperationResult<unknown>): number;
+  printFailureWithMachinePayload(result: OperationResult<unknown>, format: OutputFormat): number;
   printByFormat(value: unknown, format: OutputFormat): void;
   isMachineReadableOutputFormat(format: OutputFormat): boolean;
   printResultDiagnostics(result: OperationResult<unknown>, format: OutputFormat): void;
@@ -56,6 +58,32 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
   }
 
   const relationships = await buildProjectRelationshipSummary(project.data, deps.readConfigOptions(args));
+  const requestedStage = discoveryOptions.data.stage;
+  const stageNotFound = project.diagnostics.find((diagnostic) => diagnostic.code === 'PROJECT_STAGE_NOT_FOUND');
+
+  if (requestedStage && stageNotFound) {
+    const failure = fail(
+      createDiagnostic('error', 'PROJECT_STAGE_NOT_FOUND', `Requested stage ${requestedStage} is not defined in project topology`, {
+        source: '@pp/project',
+      }),
+      {
+        supportTier: project.supportTier,
+        details: {
+          requestedStage,
+          projectRoot: project.data.root,
+          defaultStage: project.data.topology.defaultStage,
+          activeEnvironment: project.data.topology.activeEnvironment,
+          activeSolution: project.data.topology.activeSolution?.uniqueName,
+          availableStages: Object.keys(project.data.topology.stages).sort((left, right) => left.localeCompare(right)),
+        },
+        suggestedNextActions: buildProjectInspectSuggestedNextActions(relationships, requestedStage),
+      }
+    );
+
+    return deps.printFailureWithMachinePayload(failure, format);
+  }
+
+  const suggestedNextActions = buildProjectInspectSuggestedNextActions(relationships);
   const payload = {
     success: true,
     canonicalProjectRoot: project.data.root,
@@ -75,7 +103,7 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
     docs: project.data.docs,
     diagnostics: project.diagnostics,
     warnings: project.warnings,
-    suggestedNextActions: project.suggestedNextActions ?? [],
+    suggestedNextActions,
     supportTier: project.supportTier,
     provenance: project.provenance,
     knownLimitations: project.knownLimitations,
@@ -90,6 +118,33 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
     deps.printResultDiagnostics(project, format);
   }
   return 0;
+}
+
+function buildProjectInspectSuggestedNextActions(
+  relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>,
+  requestedStage?: string
+): string[] {
+  const actions: string[] = [];
+  const activeRelationship = relationships.stageRelationships.find((stage) => stage.stage === relationships.selectedStage) ?? relationships.stageRelationships[0];
+  const environmentAlias = activeRelationship?.environmentAlias;
+
+  if (requestedStage) {
+    const configuredStages = relationships.stageRelationships.map((stage) => stage.stage).join(', ') || '<none>';
+    actions.push(`Choose one of the configured project stages instead: ${configuredStages}.`);
+    actions.push('Re-run `pp project inspect --format json` without `--stage` to inspect the default project target.');
+  }
+
+  if (environmentAlias && (activeRelationship?.environmentStatus !== 'configured' || activeRelationship?.authProfileStatus !== 'configured')) {
+    actions.push(`Run \`pp env inspect ${environmentAlias} --format json\` to inspect the external environment registry entry for alias ${environmentAlias}.`);
+  }
+
+  if (activeRelationship?.authProfile && activeRelationship.authProfileStatus === 'missing') {
+    actions.push(
+      `Run \`pp auth profile inspect ${activeRelationship.authProfile} --format json\` to verify the auth profile bound to environment alias ${environmentAlias ?? '<alias>'}.`
+    );
+  }
+
+  return [...new Set(actions)];
 }
 
 export async function runProjectInitCommand(args: string[], deps: ProjectCommandDependencies): Promise<number> {
@@ -326,6 +381,11 @@ function renderProjectInspectOutput(
     { field: 'solution source root', value: contract.solutionSourceRoot },
     { field: 'canonical bundle path', value: contract.canonicalBundlePath },
   ];
+  const placementRows = contract.assetPlacementGuidance.map((entry) => ({
+    asset: entry.asset,
+    root: entry.root,
+    expectation: entry.expectation,
+  }));
 
   if (format === 'table') {
     return [
@@ -340,6 +400,9 @@ function renderProjectInspectOutput(
       '',
       'Assets',
       renderOutput(assetRows, 'table').trimEnd(),
+      '',
+      'Placement guidance',
+      renderOutput(placementRows, 'table').trimEnd(),
       '',
       'Parameters',
       renderOutput(parameterRows, 'table').trimEnd(),
@@ -372,6 +435,9 @@ function renderProjectInspectOutput(
     '## Assets',
     ...assetRows.map((row) => `- \`${row.asset}\` (${row.kind}, exists=${row.exists}): \`${row.path}\``),
     '',
+    '## Placement Guidance',
+    ...placementRows.map((row) => `- \`${row.asset}\` -> \`${row.root}\`: ${row.expectation}`),
+    '',
     '## Parameters',
     ...(parameterRows.length > 0
       ? parameterRows.map((row) => `- \`${row.name}\` from ${row.source} (required=${row.required}): \`${row.value}\``)
@@ -401,11 +467,29 @@ function renderProjectDoctorOutput(
     { field: 'active target', value: report.summary.activeTargetSummary },
   ];
   const discoveryNote = summarizeProjectDiscoveryNote(report.discovery);
+  const checkGroups = report.checkGroups ?? categorizeProjectDoctorChecks(report.checks);
   const checkRows = report.checks.map((check) => ({
     status: check.status,
     code: check.code,
     message: check.message,
     path: check.path ?? '',
+  }));
+  const localCheckRows = checkGroups.localLayout.map((check) => ({
+    status: check.status,
+    code: check.code,
+    message: check.message,
+    path: check.path ?? '',
+  }));
+  const externalCheckRows = checkGroups.externalTargeting.map((check) => ({
+    status: check.status,
+    code: check.code,
+    message: check.message,
+    path: check.path ?? '',
+  }));
+  const placementRows = report.contract.assetPlacementGuidance.map((entry) => ({
+    asset: entry.asset,
+    root: entry.root,
+    expectation: entry.expectation,
   }));
 
   if (format === 'table') {
@@ -420,6 +504,13 @@ function renderProjectDoctorOutput(
       '',
       'Deployment route',
       ...report.summary.deploymentRouteSteps.map((step, index) => `${index + 1}. ${step}`),
+      '',
+      'Placement guidance',
+      renderOutput(placementRows, 'table').trimEnd(),
+      '',
+      'Local layout checks',
+      renderOutput(localCheckRows, 'table').trimEnd(),
+      ...(externalCheckRows.length > 0 ? ['', 'External target checks', renderOutput(externalCheckRows, 'table').trimEnd()] : []),
       '',
       `Bundle lifecycle: ${report.summary.bundleLifecycleSummary}`,
       '',
@@ -453,6 +544,15 @@ function renderProjectDoctorOutput(
     '## Deployment Route',
     ...report.summary.deploymentRouteSteps.map((step, index) => `${index + 1}. ${step}`),
     '',
+    '## Placement Guidance',
+    ...placementRows.map((row) => `- \`${row.asset}\` -> \`${row.root}\`: ${row.expectation}`),
+    '',
+    '## Local Layout Checks',
+    ...checkGroups.localLayout.map((check) => `- \`${check.status}\` \`${check.code}\`: ${check.message}`),
+    ...(checkGroups.externalTargeting.length > 0
+      ? ['', '## External Target Checks', ...checkGroups.externalTargeting.map((check) => `- \`${check.status}\` \`${check.code}\`: ${check.message}`)]
+      : []),
+    '',
     '## Checks',
     ...report.checks.map((check) => `- \`${check.status}\` \`${check.code}\`: ${check.message}`),
     '',
@@ -471,7 +571,7 @@ function enrichProjectDoctorReport(
         status: 'warn' as const,
         code: 'PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED',
         message: `Stage ${stage.stage} points to environment alias ${stage.environmentAlias}, but that alias is not configured in the active pp environment registry.`,
-        hint: `Add the alias with \`pp env add --name ${stage.environmentAlias} --url <dataverse-url> --profile <auth-profile>\`.`,
+        hint: `Add the alias with \`pp env add ${stage.environmentAlias} --url <dataverse-url> --profile <auth-profile>\`.`,
       });
     }
 
@@ -504,7 +604,25 @@ function enrichProjectDoctorReport(
   return {
     ...report,
     checks: [...report.checks, ...relationshipChecks, ...(authUsageCheck ? [authUsageCheck] : [])],
+    checkGroups: categorizeProjectDoctorChecks([...report.checks, ...relationshipChecks, ...(authUsageCheck ? [authUsageCheck] : [])]),
     relationships,
+  };
+}
+
+function categorizeProjectDoctorChecks(checks: ProjectDoctorCheck[]): {
+  localLayout: ProjectDoctorCheck[];
+  externalTargeting: ProjectDoctorCheck[];
+} {
+  const externalCodes = new Set([
+    'PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED',
+    'PROJECT_DOCTOR_AUTH_PROFILE_UNRESOLVED',
+    'PROJECT_DOCTOR_RELATIONSHIP_CHAIN',
+    'PROJECT_DOCTOR_AUTH_PROFILE_USAGE',
+  ]);
+
+  return {
+    localLayout: checks.filter((check) => !externalCodes.has(check.code)),
+    externalTargeting: checks.filter((check) => externalCodes.has(check.code)),
   };
 }
 

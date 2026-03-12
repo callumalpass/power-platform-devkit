@@ -689,6 +689,7 @@ describe('FlowService', () => {
       primaryentity: 'none',
     });
     expect(JSON.parse(String(creates[0]?.clientdata))).toMatchObject({
+      schemaVersion: 1,
       definition: expect.any(Object),
       properties: {
         definition: expect.any(Object),
@@ -803,6 +804,7 @@ describe('FlowService', () => {
       statuscode: 2,
     });
     expect(JSON.parse(String(creates[0]?.entity.clientdata))).toMatchObject({
+      schemaVersion: 1,
       definition: {
         actions: {
           ComposePayload: {
@@ -2899,6 +2901,10 @@ describe('FlowService', () => {
       solutionUniqueName: 'Core',
       since: '7d',
     });
+    const monitor = await service.monitor('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
 
     expect(runs.success).toBe(true);
     expect(runs.data).toHaveLength(2);
@@ -2954,6 +2960,93 @@ describe('FlowService', () => {
     expect(doctor.data?.missingEnvironmentVariables).toHaveLength(1);
     expect(doctor.data?.findings).toContain('1 of 2 recent runs failed (50.0%).');
     expect(doctor.data?.findings).toContain('Environment variable pp_ApiUrl does not have an effective value.');
+    expect(monitor.success).toBe(true);
+    expect(monitor.data).toMatchObject({
+      observationWindow: '7d',
+      health: {
+        status: 'blocked',
+        telemetryState: 'active',
+      },
+      recentRuns: {
+        total: 2,
+        failed: 1,
+      },
+    });
+    expect(monitor.data?.findings).toContain(
+      'Runtime monitoring found dependency blockers that can keep the flow unhealthy even when runs are still arriving.'
+    );
+  });
+
+  it('classifies quiet draft flows as blocked when dependency health is still broken', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
+
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Quiet Flow',
+                category: 5,
+                statecode: 0,
+                statuscode: 1,
+                clientdata: JSON.stringify({
+                  definition: {
+                    parameters: {
+                      '$connections': {
+                        value: {
+                          shared_office365: {
+                            connectionReferenceLogicalName: 'shared_office365',
+                          },
+                        },
+                      },
+                    },
+                  },
+                }),
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'flowruns') {
+          return ok([] as T[], { supportTier: 'preview' });
+        }
+
+        return baseClient.queryAll(options);
+      },
+    } as DataverseClient;
+
+    const service = new FlowService(client);
+    const doctor = await service.doctor('Quiet Flow', {
+      since: '2h',
+    });
+    const monitor = await service.monitor('Quiet Flow', {
+      since: '2h',
+    });
+
+    expect(doctor.success).toBe(true);
+    expect(doctor.data?.findings).toContain(
+      'No recent flow runs were returned because the flow is still draft and connection reference shared_office365 is not runnable yet.'
+    );
+    expect(monitor.success).toBe(true);
+    expect(monitor.data).toMatchObject({
+      health: {
+        status: 'blocked',
+        telemetryState: 'blocked',
+      },
+      recentRuns: {
+        total: 0,
+        failed: 0,
+      },
+    });
+    expect(monitor.data?.findings).toContain(
+      'Runtime monitoring found dependency blockers and no fresh run history, so the deployment still looks blocked rather than healthy.'
+    );
   });
 
   it('reports connection references even when flowrun rows omit workflowname', async () => {
@@ -4877,5 +4970,154 @@ describe('FlowService', () => {
         code: 'FLOW_PATCH_ENVIRONMENT_VARIABLE_TARGET_EXISTS',
       }),
     ]);
+  });
+
+  it('keeps preserved clientData definition mirrors in sync when patching canonical artifacts', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Patch Mirror Sync',
+            displayName: 'Patch Mirror Sync',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            actions: {
+              ComposeHarnessUrl: {
+                type: 'Compose',
+                inputs: {
+                  message: 'before',
+                },
+              },
+            },
+          },
+          clientData: {
+            schemaVersion: 1,
+            definition: {
+              actions: {
+                ComposeHarnessUrl: {
+                  type: 'Compose',
+                  inputs: {
+                    message: 'before',
+                  },
+                },
+              },
+            },
+            properties: {
+              definition: {
+                actions: {
+                  ComposeHarnessUrl: {
+                    type: 'Compose',
+                    inputs: {
+                      message: 'before',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const patched = await patchFlowArtifact(artifactPath, {
+      values: {
+        'actions.ComposeHarnessUrl.inputs.message': 'after',
+      },
+    });
+    const saved = JSON.parse(await readFile(join(artifactPath, 'flow.json'), 'utf8')) as {
+      definition: { actions: { ComposeHarnessUrl: { inputs: { message: string } } } };
+      clientData: {
+        definition: { actions: { ComposeHarnessUrl: { inputs: { message: string } } } };
+        properties: { definition: { actions: { ComposeHarnessUrl: { inputs: { message: string } } } } };
+      };
+    };
+
+    expect(patched.success).toBe(true);
+    expect(saved.definition.actions.ComposeHarnessUrl.inputs.message).toBe('after');
+    expect(saved.clientData.definition.actions.ComposeHarnessUrl.inputs.message).toBe('after');
+    expect(saved.clientData.properties.definition.actions.ComposeHarnessUrl.inputs.message).toBe('after');
+  });
+
+  it('reports stale preserved clientData definition mirrors during validation', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Validation Mirror Drift',
+            displayName: 'Validation Mirror Drift',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            actions: {
+              ComposeHarnessUrl: {
+                type: 'Compose',
+                inputs: {
+                  message: 'fresh',
+                },
+              },
+            },
+          },
+          clientData: {
+            schemaVersion: 1,
+            definition: {
+              actions: {
+                ComposeHarnessUrl: {
+                  type: 'Compose',
+                  inputs: {
+                    message: 'stale-top-level',
+                  },
+                },
+              },
+            },
+            properties: {
+              definition: {
+                actions: {
+                  ComposeHarnessUrl: {
+                    type: 'Compose',
+                    inputs: {
+                      message: 'stale-nested',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(
+      expect.arrayContaining([
+        'FLOW_CLIENTDATA_DEFINITION_MISMATCH',
+        'FLOW_CLIENTDATA_PROPERTIES_DEFINITION_MISMATCH',
+      ])
+    );
   });
 });

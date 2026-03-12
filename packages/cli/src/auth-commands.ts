@@ -625,14 +625,20 @@ async function resolveAuthProfileInspectTarget(
   const name = deps.positionalArgs(args)[0];
 
   if (name) {
-    return ok(
-      {
-        name,
-      },
-      {
-        supportTier: 'preview',
-      }
-    );
+    const shorthandEnvironmentAlias = readAuthProfileInspectEnvironmentShortcut(name);
+
+    if (!shorthandEnvironmentAlias) {
+      return ok(
+        {
+          name,
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+
+    return resolveAuthProfileInspectEnvironmentTarget(configOptions, shorthandEnvironmentAlias);
   }
 
   const environmentAlias = deps.readEnvironmentAlias(args);
@@ -641,6 +647,13 @@ async function resolveAuthProfileInspectTarget(
     return deps.argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name or --environment <alias> is required.');
   }
 
+  return resolveAuthProfileInspectEnvironmentTarget(configOptions, environmentAlias);
+}
+
+async function resolveAuthProfileInspectEnvironmentTarget(
+  configOptions: ConfigStoreOptions,
+  environmentAlias: string
+): Promise<OperationResult<{ name: string; environmentAlias?: string; environmentUrl?: string }>> {
   const environment = await getEnvironmentAlias(environmentAlias, configOptions);
 
   if (!environment.success) {
@@ -674,6 +687,11 @@ async function resolveAuthProfileInspectTarget(
       warnings: environment.warnings,
     }
   );
+}
+
+function readAuthProfileInspectEnvironmentShortcut(value: string): string | undefined {
+  const match = /^environment:(.+)$/i.exec(value.trim());
+  return match?.[1]?.trim() || undefined;
 }
 
 function maybeHandleMutationPreview(

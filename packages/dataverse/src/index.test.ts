@@ -143,6 +143,187 @@ describe('DataverseClient', () => {
     expect(httpClient.requests[1]?.path).toBe('https://example.crm.dynamics.com/api/data/v9.2/accounts?$skiptoken=abc');
   });
 
+  it('warns when an empty filtered query references unknown Dataverse columns', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'accounts',
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            { LogicalName: 'name', SchemaName: 'Name', IsFilterable: true },
+            { LogicalName: 'accountnumber', SchemaName: 'AccountNumber', IsFilterable: true },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.query({
+      table: 'accounts',
+      filter: "nam eq 'Acme'",
+      diagnoseEmptyFilter: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_QUERY_FILTER_COLUMNS_UNRESOLVED');
+    expect(result.warnings.find((warning) => warning.code === 'DATAVERSE_QUERY_FILTER_COLUMNS_UNRESOLVED')?.detail).toContain('nam: name');
+  });
+
+  it('warns when an empty filtered query used known filter columns', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'accounts',
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            { LogicalName: 'name', SchemaName: 'Name', IsFilterable: true },
+            { LogicalName: 'accountnumber', SchemaName: 'AccountNumber', IsFilterable: true },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.query({
+      table: 'accounts',
+      filter: "name eq 'Acme'",
+      diagnoseEmptyFilter: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_QUERY_EMPTY_FILTER_VALIDATED');
+    expect(result.warnings.find((warning) => warning.code === 'DATAVERSE_QUERY_EMPTY_FILTER_VALIDATED')?.detail).toContain('name');
+  });
+
+  it('retries a logical table name through its entity-set alias after a missing-collection 404', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic(
+          'error',
+          'HTTP_REQUEST_FAILED',
+          'GET solution?$select=solutionid,uniquename,friendlyname,version&$top=5&$orderby=uniquename asc&$count=true returned 404',
+          {
+            source: '@pp/http',
+            detail:
+              '{"error":{"code":"0x80060888","message":"Resource not found for the segment \'solution\'."}}',
+          }
+        )
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'solution',
+          EntitySetName: 'solutions',
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0' }],
+          '@odata.count': 1,
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.queryPage<{ solutionid: string; uniquename: string; friendlyname: string; version: string }>({
+      table: 'solution',
+      select: ['solutionid', 'uniquename', 'friendlyname', 'version'],
+      top: 5,
+      orderBy: ['uniquename asc'],
+      count: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({
+      records: [{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0' }],
+      count: 1,
+      nextLink: undefined,
+    });
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'solution?%24select=solutionid%2Cuniquename%2Cfriendlyname%2Cversion&%24top=5&%24orderby=uniquename+asc&%24count=true',
+      "EntityDefinitions(LogicalName='solution')",
+      'solutions?%24select=solutionid%2Cuniquename%2Cfriendlyname%2Cversion&%24top=5&%24orderby=uniquename+asc&%24count=true',
+    ]);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_QUERY_ENTITY_SET_ALIAS_APPLIED');
+  });
+
+  it('mirrors requested lookup ids onto logical field names when Dataverse only returns _value columns', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              systemuserid: 'user-1',
+              fullname: 'Callum Alpass',
+              _businessunitid_value: 'bu-1',
+              isdisabled: false,
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.queryPage<{
+      systemuserid: string;
+      fullname: string;
+      businessunitid?: string;
+      isdisabled: boolean;
+    }>({
+      table: 'systemusers',
+      select: ['systemuserid', 'fullname', 'businessunitid', 'isdisabled'],
+      filter: 'systemuserid eq user-1',
+      top: 1,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.records).toEqual([
+      {
+        systemuserid: 'user-1',
+        fullname: 'Callum Alpass',
+        businessunitid: 'bu-1',
+        _businessunitid_value: 'bu-1',
+        isdisabled: false,
+      },
+    ]);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_QUERY_LOOKUP_VALUE_ALIAS_APPLIED');
+  });
+
   it('extracts entity ids from write responses', async () => {
     const httpClient = new FakeHttpClient([
       ok({
@@ -540,6 +721,165 @@ OData-Version: 4.0\r
     expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_METADATA_TOP_CLIENT_SIDE');
   });
 
+  it('suggests nearby logical names when a query fails on a missing Dataverse property', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic(
+          'error',
+          'HTTP_REQUEST_FAILED',
+          "GET organizations?%24select=organizationid%2Cfriendlyname returned 400",
+          {
+            source: '@pp/http',
+            detail:
+              '{"error":{"code":"0x80060888","message":"Could not find a property named \'friendlyname\' on type \'Microsoft.Dynamics.CRM.organization\'."}}',
+          }
+        )
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ LogicalName: 'name' }, { LogicalName: 'organizationid' }, { LogicalName: 'versionnumber' }],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.query({
+      table: 'organizations',
+      select: ['organizationid', 'friendlyname'],
+      top: 1,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe('HTTP_REQUEST_FAILED');
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_QUERY_COLUMNS_SUGGESTED');
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Retry the query against organizations'),
+        expect.stringContaining('pp dv metadata columns organizations --environment <alias>'),
+      ])
+    );
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'organizations?%24select=organizationid%2Cfriendlyname&%24top=1',
+      "EntityDefinitions(LogicalName='organizations')/Attributes?%24select=LogicalName",
+    ]);
+  });
+
+  it('queries rows through a solution-scoped table contract', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ solutionid: 'sol-1', uniquename: 'HarnessSolution' }],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ objectid: 'entity-1' }],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          MetadataId: 'entity-1',
+          LogicalName: 'pp_project',
+          EntitySetName: 'pp_projects',
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ pp_projectid: 'proj-1', pp_name: 'Alpha' }],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.query({
+      table: 'pp_project',
+      select: ['pp_projectid', 'pp_name'],
+      top: 1,
+      solutionUniqueName: 'HarnessSolution',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([{ pp_projectid: 'proj-1', pp_name: 'Alpha' }]);
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      "solutions?%24select=solutionid%2Cuniquename&%24top=1&%24filter=uniquename+eq+%27HarnessSolution%27",
+      'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+1',
+      "EntityDefinitions(LogicalName='pp_project')",
+      'pp_project?%24select=pp_projectid%2Cpp_name&%24top=1',
+    ]);
+    expect(httpClient.requests[3]?.headers).toMatchObject({
+      'MSCRM.SolutionUniqueName': 'HarnessSolution',
+    });
+  });
+
+  it('fails solution-scoped queries when the table is outside the requested solution', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ solutionid: 'sol-1', uniquename: 'HarnessSolution' }],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ objectid: 'entity-1' }],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          MetadataId: 'entity-2',
+          LogicalName: 'pp_task',
+          EntitySetName: 'pp_tasks',
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            { MetadataId: 'entity-1', LogicalName: 'pp_project', EntitySetName: 'pp_projects' },
+            { MetadataId: 'entity-2', LogicalName: 'pp_task', EntitySetName: 'pp_tasks' },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.query({
+      table: 'pp_task',
+      solutionUniqueName: 'HarnessSolution',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'DATAVERSE_QUERY_TABLE_NOT_IN_SOLUTION',
+        message: 'Dataverse table pp_task is not part of solution HarnessSolution.',
+      }),
+    ]);
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('pp_project'),
+        expect.stringContaining('Omit `--solution HarnessSolution`'),
+      ])
+    );
+    expect(httpClient.requests).toHaveLength(4);
+  });
+
   it('retries metadata list filters client-side when Dataverse rejects the server filter', async () => {
     const httpClient = new FakeHttpClient([
       fail(
@@ -623,6 +963,52 @@ OData-Version: 4.0\r
     expect(httpClient.requests[0]?.path).toBe(
       "EntityDefinitions(LogicalName='account')/Attributes(LogicalName='name')?%24select=LogicalName%2CSchemaName%2CAttributeType"
     );
+  });
+
+  it('suggests the lookup navigation-property schema name when a write payload uses the logical name binding', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'POST pph34135_tasks returned 400', {
+          source: '@pp/http',
+          detail:
+            '{"error":{"code":"0x80048d19","message":"An undeclared property \'pph34135_projectid\' which only has property annotations in the payload but no property value was found in the payload."}}',
+        })
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'pph34135_projectid',
+          SchemaName: 'pph34135_ProjectId',
+          AttributeType: 'Lookup',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.create('pph34135_tasks', {
+      'pph34135_projectid@odata.bind': '/pph34135_projects(00000000-0000-0000-0000-000000000001)',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_WRITE_LOOKUP_BINDING_SUGGESTED',
+          message:
+            'Lookup column `pph34135_projectid` binds through navigation property `pph34135_ProjectId` on Dataverse table `pph34135_tasks`.',
+        }),
+      ])
+    );
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Retry the write with `pph34135_ProjectId@odata.bind` instead of `pph34135_projectid@odata.bind`.',
+      ])
+    );
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'pph34135_tasks',
+      "EntityDefinitions(LogicalName='pph34135_tasks')/Attributes(LogicalName='pph34135_projectid')?%24select=LogicalName%2CSchemaName%2CAttributeType",
+    ]);
   });
 
   it('creates a table, reads it back, and publishes it', async () => {
@@ -1851,7 +2237,19 @@ describe('ALM services', () => {
     const result = await service.validate({ solutionUniqueName: 'Core' });
 
     expect(result.success).toBe(true);
-    expect(result.data).toEqual([]);
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        reference: expect.objectContaining({
+          id: 'inferred:msdyn_Dataverse',
+          kind: 'inferred',
+          logicalName: 'msdyn_Dataverse',
+          displayName: 'msdyn_Dataverse',
+          solutionId: 'sol-1',
+          connected: false,
+        }),
+        valid: false,
+      }),
+    ]);
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1860,6 +2258,7 @@ describe('ALM services', () => {
         }),
       ])
     );
+    expect(result.data?.[0]?.diagnostics.map((diagnostic) => diagnostic.code)).toContain('DATAVERSE_CONNREF_ROW_INFERRED');
   });
 
   it('queries connection references with the live display-name column', async () => {
@@ -2103,7 +2502,7 @@ describe('ALM services', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual([]);
-    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE');
+    expect(result.warnings.map((warning) => warning.code)).not.toContain('DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE');
     expect(httpClient.requests.map((request) => request.path)).toEqual([
       'solutions?%24select=solutionid%2Cuniquename&%24top=1&%24filter=uniquename+eq+%27Harness%27',
       'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+371',
@@ -2302,6 +2701,89 @@ describe('ALM services', () => {
     expect(httpClient.requests[0]?.method).toBe('POST');
     expect(httpClient.requests[0]?.path).toBe('environmentvariabledefinitions');
     expect(httpClient.requests[0]?.headers?.['MSCRM.SolutionUniqueName']).toBe('Core');
+  });
+
+  it('returns reuse guidance when creating an environment variable collides with an existing schema name', async () => {
+    const httpClient = new FakeHttpClient([
+      {
+        success: false,
+        diagnostics: [
+          {
+            level: 'error',
+            code: 'HTTP_REQUEST_FAILED',
+            message: 'POST environmentvariabledefinitions returned 400',
+            detail: '{"error":{"code":"0x80040265","message":"A record with the specified key values already exists."}}',
+            source: '@pp/http',
+          },
+        ],
+        warnings: [],
+        supportTier: 'preview',
+      },
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariabledefinitionid: 'def-1',
+              schemaname: 'pp_ApiUrl',
+              displayname: 'API URL',
+              defaultvalue: 'https://default.example.test',
+              type: 'String',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.createDefinition('pp_ApiUrl', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_ENVVAR_SCHEMA_EXISTS',
+          message: 'Environment variable pp_ApiUrl already exists in the target environment.',
+          detail: expect.stringContaining('not currently visible in requested solution Core'),
+        }),
+      ])
+    );
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Run `pp envvar inspect pp_ApiUrl --environment <alias> --format json` to inspect the existing definition and current value.',
+        'Reuse the existing definition with `pp envvar set pp_ApiUrl --environment <alias> --solution Core --value VALUE` if a shared definition is acceptable.',
+      ])
+    );
   });
 
   it('filters environment variables by solution components when definition rows omit solution lookup columns', async () => {
@@ -2969,9 +3451,6 @@ describe('normalizeMetadataQueryOptions', () => {
               _ownerid_value: 'user-1',
               '_ownerid_value@OData.Community.Display.V1.FormattedValue': 'Callum Alpass',
               '_ownerid_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'systemuser',
-              _createdby_value: 'user-1',
-              '_createdby_value@OData.Community.Display.V1.FormattedValue': 'Callum Alpass',
-              '_createdby_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'systemuser',
             },
           ],
         },
@@ -3010,6 +3489,58 @@ describe('normalizeMetadataQueryOptions', () => {
         explicitShareCount: 0,
       },
     });
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'canvasapps?%24select=canvasappid%2Cdisplayname%2Cname%2Cappopenuri%2Cappversion%2Ccreatedbyclientversion%2Clastpublishtime%2Cstatus%2Ctags',
+      'canvasapps?%24select=canvasappid%2Cdisplayname%2Cname%2C_ownerid_value&%24filter=canvasappid+eq+canvas-1',
+      'principalobjectaccessset?%24select=principalobjectaccessid%2Cobjectid%2Cobjecttypecode%2Cprincipalid%2Cprincipaltypecode%2Caccessrightsmask%2Cinheritedaccessrightsmask%2Cchangedon&%24filter=objectid+eq+canvas-1',
+    ]);
+  });
+
+  it('treats connection references without an active connection binding as invalid', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              connectionreferenceid: 'ref-1',
+              connectionreferencelogicalname: 'msdyn_Dataverse',
+              connectionreferencedisplayname: 'Dataverse',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.validate();
+
+    expect(result.success).toBe(true);
+    expect(result.data?.[0]).toMatchObject({
+      valid: false,
+      reference: {
+        logicalName: 'msdyn_Dataverse',
+        connected: false,
+      },
+      diagnostics: [
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_CONNECTION_MISSING',
+          level: 'warning',
+        }),
+      ],
+    });
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_VALIDATE_SUMMARY',
+          message: 'Validated 1 connection reference: 0 valid, 1 invalid in the current environment scope.',
+        }),
+      ])
+    );
   });
 
   it('attaches canvas apps through typed services', async () => {
@@ -3481,6 +4012,54 @@ describe('normalizeMetadataQueryOptions', () => {
           'MSCRM.SolutionUniqueName': 'Core',
         },
       },
+    ]);
+  });
+
+  it('explains whether create failed before or after the model-driven app row persisted', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          appmoduleid: 'app-4',
+          uniquename: 'TransientHub',
+          name: 'Transient Hub',
+        },
+      }),
+      fail(createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'POST AddSolutionComponent returned 404', { source: '@pp/http' })),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ModelDrivenAppService(client);
+
+    const result = await service.create('TransientHub', {
+      name: 'Transient Hub',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_MODEL_APP_ATTACH_AFTER_CREATE_FAILED',
+          detail: 'Created app id: app-4. A follow-up inspect did not find the app row, so Dataverse likely rolled it back after the failed attach.',
+        }),
+      ])
+    );
+    expect(result.suggestedNextActions).toEqual([
+      'Treat the create as rolled back and retry with a different unique name only after confirming the tenant no longer returns app id app-4.',
+      'Use an existing app attach flow for the current solution if you need to keep the authoring step moving.',
+    ]);
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'appmodules',
+      'AddSolutionComponent',
+      'appmodules?%24select=appmoduleid%2Cuniquename%2Cname%2Cappmoduleversion%2Cstatecode%2Cpublishedon',
     ]);
   });
 

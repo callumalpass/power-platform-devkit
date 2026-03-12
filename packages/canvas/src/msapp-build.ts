@@ -1,4 +1,5 @@
 import { cp, mkdtemp, mkdir, readFile, readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -145,6 +146,7 @@ export async function buildCanvasMsappFromUnpackedSource(
         sourceHash: source.sourceHash,
         templateHash: sha256Hex(JSON.stringify(resolvedTemplates.map((template) => template.contentHash))),
         packageHash,
+        outFileSha256: createHash('sha256').update(await readFile(outPath)).digest('hex'),
         supported: true,
       },
       {

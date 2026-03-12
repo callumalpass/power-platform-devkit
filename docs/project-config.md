@@ -298,9 +298,11 @@ Returns a repo-local layout report with:
 
 - the inspected path plus `canonicalProjectRoot` so descendant auto-selection names the effective local project anchor directly in stdout
 - summary flags for config, assets, topology, provider bindings, registries, and required inputs
+- explicit per-root placement guidance for `apps/`, `flows/`, `solutions/`, `docs/`, and the canonical bundle output path
+- grouped check sections so repo-local layout findings stay distinct from external environment-registry/auth-resolution findings
 - a per-check assessment list (`pass`, `warn`, `fail`, `info`)
 - the resolved asset inventory used by `pp`
-- a `contract` summary with `solutionSourceRoot`, `canonicalBundlePath`, `defaultTarget`, `activeTarget`, and ordered `stageMappings`
+- a `contract` summary with `solutionSourceRoot`, `canonicalBundlePath`, `assetPlacementGuidance`, `defaultTarget`, `activeTarget`, and ordered `stageMappings`
 
 ## Template registries
 
@@ -330,6 +332,7 @@ Returns:
 
 - project summary
 - resolved topology, active environment, and active solution target
+- the canonical local layout contract, including per-root placement guidance for new app, flow, solution-source, docs, and bundle artifacts
 - resolved parameters
 - provider bindings
 - discovered assets

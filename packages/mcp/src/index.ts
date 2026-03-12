@@ -62,6 +62,44 @@ interface ResolvedRemoteRuntime {
     : never;
 }
 
+export function addSolutionInspectRecoveryGuidance<T>(
+  result: OperationResult<T>,
+  environment: string,
+  uniqueName: string
+): OperationResult<T> {
+  const diagnostics = result.diagnostics ?? [];
+  const isTransportFailure = diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === 'HTTP_UNHANDLED_ERROR' ||
+      diagnostic.code === 'HTTP_REQUEST_TIMEOUT' ||
+      /fetch failed|network/i.test(diagnostic.message),
+  );
+
+  if (!isTransportFailure) {
+    return result;
+  }
+
+  const suggestedNextActions = Array.from(
+    new Set([
+      ...(result.suggestedNextActions ?? []),
+      `Run \`pp solution inspect ${uniqueName} --environment ${environment} --format json\` to determine whether the failure is MCP transport-specific or a live Dataverse inspect error.`,
+      'If the CLI succeeds while MCP still fails, capture the MCP diagnostic detail and treat the issue as an MCP/HTTP transport boundary problem.',
+    ]),
+  );
+  const knownLimitations = Array.from(
+    new Set([
+      ...(result.knownLimitations ?? []),
+      'MCP solution inspect can still fail before Dataverse returns a response when the underlying HTTP transport reports fetch failed.',
+    ]),
+  );
+
+  return {
+    ...result,
+    suggestedNextActions,
+    knownLimitations,
+  };
+}
+
 interface DeploySessionRecord {
   id: string;
   createdAt: string;
@@ -149,6 +187,14 @@ const solutionScopeSchema = remoteBaseSchema.extend({
   solutionUniqueName: z.string().min(1).optional(),
 });
 
+const solutionExportSchema = remoteBaseSchema.extend({
+  uniqueName: z.string().min(1),
+  outPath: z.string().min(1),
+  manifestPath: z.string().min(1).optional(),
+  managed: z.boolean().optional(),
+  requestTimeoutMs: z.number().int().positive().optional(),
+});
+
 const projectScopeSchema = z.object({
   projectPath: z.string().min(1).optional(),
   stage: z.string().min(1).optional(),
@@ -216,9 +262,19 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'Inspect one solution with dependencies, invalid connection references, and missing environment variables.',
   },
   {
+    name: 'pp.solution.export',
+    title: 'Export Solution',
+    description: 'Export one bounded solution package to an explicit local path with optional managed packaging.',
+  },
+  {
     name: 'pp.dataverse.query',
     title: 'Query Dataverse',
     description: 'Run a read-only Dataverse table query with structured rows and diagnostics.',
+  },
+  {
+    name: 'pp.dataverse.whoami',
+    title: 'Who Am I',
+    description: 'Resolve the current Dataverse caller identity and organization through a harmless read-only route.',
   },
   {
     name: 'pp.connection-reference.inspect',
@@ -326,12 +382,33 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.solution.list',
       'pp.solution.inspect',
       'pp.dataverse.query',
+      'pp.dataverse.whoami',
       'pp.connection-reference.inspect',
       'pp.environment-variable.inspect',
       'pp.model-app.inspect',
     ],
     mutationToolsAvailable: false,
-    notes: 'The first MCP release exposes read-first Dataverse-backed inspection only.',
+    notes:
+      'The MCP Dataverse surface is read-first: solution/environment inspection, Dataverse queries that auto-resolve logical names like `solution` to entity sets like `solutions`, and harmless identity reads via pp.dataverse.whoami.',
+  },
+  {
+    name: 'solution-lifecycle',
+    kind: 'platform',
+    supportTier: 'preview',
+    readTools: ['pp.solution.list', 'pp.solution.inspect', 'pp.domain.list'],
+    mutationToolsAvailable: true,
+    mutationTools: ['pp.solution.export'],
+    notes:
+      'Use solution list/inspect to confirm ismanaged before export decisions. MCP now exposes one bounded package export tool through pp.solution.export when the caller supplies explicit output paths.',
+  },
+  {
+    name: 'flow-local-artifacts',
+    kind: 'local-context',
+    supportTier: 'preview',
+    readTools: ['pp.domain.list'],
+    mutationToolsAvailable: false,
+    notes:
+      'Local flow artifact inspect/unpack/normalize/validate/patch routes are CLI-only today: `pp flow inspect`, `pp flow unpack`, `pp flow normalize`, `pp flow validate`, and `pp flow patch`.',
   },
   {
     name: 'analysis',
@@ -346,10 +423,10 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     kind: 'interface',
     supportTier: 'preview',
     readTools: initialMcpTools
-      .filter((tool) => tool.name !== 'pp.deploy.plan' && tool.name !== 'pp.deploy.apply')
+      .filter((tool) => tool.name !== 'pp.deploy.plan' && tool.name !== 'pp.deploy.apply' && tool.name !== 'pp.solution.export')
       .map((tool) => tool.name),
     mutationToolsAvailable: true,
-    mutationTools: ['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.deploy.plan', 'pp.deploy.apply'],
+    mutationTools: ['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.solution.export', 'pp.deploy.plan', 'pp.deploy.apply'],
     notes: 'Mutation tools are exposed through stored plan sessions plus explicit approval for live apply.',
   },
 ];
@@ -439,8 +516,47 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         return toToolResult('pp.solution.inspect', resolution, readOnlyPolicy());
       }
 
-      const result = await new SolutionService(resolution.data.client).analyze(uniqueName);
+      const result = addSolutionInspectRecoveryGuidance(
+        await new SolutionService(resolution.data.client).analyze(uniqueName),
+        args.environment,
+        uniqueName,
+      );
       return toToolResult('pp.solution.inspect', result, readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.solution.export',
+    {
+      title: 'Export Solution',
+      description: 'Export one bounded solution package to an explicit local path with optional managed packaging.',
+      inputSchema: solutionExportSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Export Solution'),
+    },
+    async ({ uniqueName, outPath, manifestPath, managed, requestTimeoutMs, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult(
+          'pp.solution.export',
+          resolution,
+          remoteMutationPolicy('This tool performs one bounded remote export action and writes the package to an explicit local path.', true)
+        );
+      }
+
+      const workspaceRoot = resolveProjectPath(undefined, defaults);
+      const result = await new SolutionService(resolution.data.client).exportSolution(uniqueName, {
+        outPath: resolveWorkspacePath(outPath, workspaceRoot),
+        manifestPath: manifestPath ? resolveWorkspacePath(manifestPath, workspaceRoot) : undefined,
+        managed,
+        requestTimeoutMs,
+      });
+      return toToolResult(
+        'pp.solution.export',
+        result,
+        remoteMutationPolicy('This tool performs one bounded remote export action and writes the package to an explicit local path.', true)
+      );
     }
   );
 
@@ -483,6 +599,27 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       });
 
       return toToolResult('pp.dataverse.query', result, readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.dataverse.whoami',
+    {
+      title: 'Who Am I',
+      description: 'Resolve the current Dataverse caller identity and organization through a harmless read-only route.',
+      inputSchema: remoteBaseSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Who Am I'),
+    },
+    async (args) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult('pp.dataverse.whoami', resolution, readOnlyPolicy());
+      }
+
+      const result = await resolution.data.client.whoAmI();
+      return toToolResult('pp.dataverse.whoami', result, readOnlyPolicy());
     }
   );
 
@@ -959,6 +1096,10 @@ function resolveProjectPath(projectPath: string | undefined, defaults: PpMcpServ
   return resolve(projectPath ?? defaults.projectPath ?? process.cwd());
 }
 
+function resolveWorkspacePath(targetPath: string, workspaceRoot: string): string {
+  return resolve(workspaceRoot, targetPath);
+}
+
 async function resolvePortfolioProjects(
   projectPaths: string[] | undefined,
   stage: string | undefined,
@@ -1128,6 +1269,17 @@ function controlledMutationPolicy(approvalRequired: boolean): ToolMutationPolicy
     approvalStrategy: 'Plan first, then execute a stored MCP deploy session. Live apply requires explicit approval bound to the exact session id.',
     supportedExecutionModes: ['plan', 'dry-run', 'apply'],
     sessionRequired: true,
+  };
+}
+
+function remoteMutationPolicy(optInStrategy: string, approvalRequired: boolean): ToolMutationPolicyControlled {
+  return {
+    mode: 'controlled',
+    mutationsExposed: true,
+    approvalRequired,
+    approvalStrategy: optInStrategy,
+    supportedExecutionModes: ['apply'],
+    sessionRequired: false,
   };
 }
 

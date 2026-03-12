@@ -70,6 +70,22 @@ Current behavior:
   buckets, and a first runtime-to-source correlation slice that maps supported
   connection-reference or environment-variable evidence back to normalized
   action/trigger nodes
+- when a flow has no recent runs because it is still `draft`/`suspended` and a
+  required connection reference is invalid, `flow doctor` now says that
+  directly instead of only returning the raw state and dependency fields side by
+  side
+
+When you want a higher-level health summary for a quiet or partially blocked
+flow, use `flow monitor`:
+
+```bash
+pp flow monitor "Invoice Sync" --env dev --solution Core --since 2h --format json
+```
+
+`flow monitor` wraps the doctor report with a health status (`healthy`,
+`degraded`, `blocked`, `inactive`, or `unknown`) plus a short summary that
+explains whether quiet telemetry is expected, suspicious, or blocked by known
+dependency issues.
 
 Known limits in this slice:
 

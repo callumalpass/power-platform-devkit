@@ -11,13 +11,14 @@ import {
 import { resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { SolutionService } from '@pp/solution';
-import { createMutationPreview, readMutationFlags, type CliOutputFormat } from './contract';
+import { createMutationPreview, createSuccessPayload, readMutationFlags, type CliOutputFormat } from './contract';
 import { buildEnvironmentProjectUsageSummary } from './relationship-context';
 
 type OutputFormat = CliOutputFormat;
 
 interface EnvironmentCommandDependencies {
   positionalArgs(args: string[]): string[];
+  readRepeatedFlags(args: string[], name: string): string[];
   outputFormat(args: string[], fallback: OutputFormat): OutputFormat;
   printFailure(result: OperationResult<unknown>): number;
   printByFormat(value: unknown, format: OutputFormat): void;
@@ -51,12 +52,22 @@ export async function runEnvironmentAddCommand(
   args: string[],
   deps: EnvironmentCommandDependencies
 ): Promise<number> {
-  const alias = deps.readFlag(args, '--name');
+  const positionalAlias = deps.positionalArgs(args)[0];
+  const flaggedAlias = deps.readFlag(args, '--name');
+  const alias = positionalAlias ?? flaggedAlias;
   const url = deps.readFlag(args, '--url');
   const authProfile = deps.readFlag(args, '--profile');
 
+  if (positionalAlias && flaggedAlias && positionalAlias !== flaggedAlias) {
+    return deps.printFailure(
+      deps.argumentFailure('ENV_ADD_ALIAS_CONFLICT', `Provide the environment alias either positionally or with --name, not both (${positionalAlias} vs ${flaggedAlias}).`)
+    );
+  }
+
   if (!alias || !url || !authProfile) {
-    return deps.printFailure(deps.argumentFailure('ENV_ADD_ARGS_REQUIRED', '--name, --url, and --profile are required.'));
+    return deps.printFailure(
+      deps.argumentFailure('ENV_ADD_ARGS_REQUIRED', 'Usage: env add <alias> --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID]')
+    );
   }
 
   const environment: EnvironmentAlias = {
@@ -116,12 +127,115 @@ export async function runEnvironmentInspectCommand(
   const projectUsage = await buildEnvironmentProjectUsageSummary(environment.data.alias, configOptions);
 
   deps.printByFormat(
-    buildEnvironmentInspectView(
-      environment.data,
-      profile.success ? profile.data ?? undefined : undefined,
-      browserProfile?.success ? browserProfile.data ?? undefined : undefined,
-      projectUsage
+    createSuccessPayload(
+      buildEnvironmentInspectView(
+        environment.data,
+        profile.success ? profile.data ?? undefined : undefined,
+        browserProfile?.success ? browserProfile.data ?? undefined : undefined,
+        projectUsage
+      ),
+      buildEnvironmentInspectMetadata(environment.data, profile.success ? profile.data ?? undefined : undefined, projectUsage)
     ),
+    deps.outputFormat(args, 'json')
+  );
+  return 0;
+}
+
+export async function runEnvironmentBaselineCommand(
+  configOptions: ConfigStoreOptions,
+  args: string[],
+  deps: EnvironmentCommandDependencies
+): Promise<number> {
+  const alias = deps.positionalArgs(args)[0];
+  const prefix = deps.readFlag(args, '--prefix');
+
+  if (!alias) {
+    return deps.printFailure(deps.argumentFailure('ENV_ALIAS_REQUIRED', 'Environment alias is required.'));
+  }
+
+  if (!prefix) {
+    return deps.printFailure(deps.argumentFailure('ENV_BASELINE_PREFIX_REQUIRED', '--prefix is required.'));
+  }
+
+  const environment = await getEnvironmentAlias(alias, configOptions);
+  if (!environment.success) {
+    return deps.printFailure(environment);
+  }
+
+  if (!environment.data) {
+    return deps.printFailure(fail(createDiagnostic('error', 'ENV_NOT_FOUND', `Environment alias ${alias} was not found.`)));
+  }
+
+  const auth = new AuthService(configOptions);
+  const profile = await auth.getProfile(environment.data.authProfile);
+  const browserProfile =
+    profile.success && profile.data?.type === 'user' && profile.data.browserProfile
+      ? await auth.getBrowserProfile(profile.data.browserProfile)
+      : undefined;
+  const projectUsage = await buildEnvironmentProjectUsageSummary(environment.data.alias, configOptions);
+  const cleanupPlan = await buildEnvironmentCleanupPlan(configOptions, alias, prefix);
+
+  if (!cleanupPlan.success || !cleanupPlan.data) {
+    return deps.printFailure(cleanupPlan);
+  }
+
+  const resolution = await resolveDataverseClient(alias, configOptions);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+
+  const expectedAbsentSolutions = deps.readRepeatedFlags(args, '--expect-absent-solution');
+  const solutionService = new SolutionService(resolution.data.client);
+  const absenceChecks: Array<{
+    uniqueName: string;
+    status: 'absent' | 'present';
+    solution?: { solutionid: string; uniquename: string; friendlyname?: string; version?: string; ismanaged?: boolean };
+  }> = [];
+
+  for (const uniqueName of expectedAbsentSolutions) {
+    const inspection = await solutionService.inspect(uniqueName);
+
+    if (!inspection.success) {
+      return deps.printFailure(inspection);
+    }
+
+    absenceChecks.push({
+      uniqueName,
+      status: inspection.data ? 'present' : 'absent',
+      ...(inspection.data ? { solution: inspection.data } : {}),
+    });
+  }
+
+  const readyForBootstrap = cleanupPlan.data.candidateCount === 0 && absenceChecks.every((check) => check.status === 'absent');
+  const suggestedNextActions = [
+    ...cleanupPlan.data.suggestedNextActions,
+    ...absenceChecks
+      .filter((check) => check.status === 'present')
+      .flatMap((check) => [
+        `Solution ${check.uniqueName} is still present in ${alias}; inspect it with \`pp solution inspect ${check.uniqueName} --environment ${alias}\` before reusing the environment.`,
+        `Delete ${check.uniqueName} with \`pp solution delete ${check.uniqueName} --environment ${alias}\` or clear it through the broader reset workflow before bootstrap.`,
+      ]),
+  ];
+
+  deps.printByFormat(
+    {
+      environment: buildEnvironmentInspectView(
+        environment.data,
+        profile.success ? profile.data ?? undefined : undefined,
+        browserProfile?.success ? browserProfile.data ?? undefined : undefined,
+        projectUsage
+      ),
+      baseline: {
+        prefix,
+        remoteResetSupported: cleanupPlan.data.remoteResetSupported,
+        readyForBootstrap,
+        cleanupCandidates: cleanupPlan.data.cleanupCandidates,
+        candidateCount: cleanupPlan.data.candidateCount,
+        absenceChecks,
+        suggestedNextActions: dedupeStringArray(suggestedNextActions),
+        knownLimitations: cleanupPlan.data.knownLimitations,
+      },
+    },
     deps.outputFormat(args, 'json')
   );
   return 0;
@@ -440,6 +554,50 @@ function derivePacOrganizationUrl(url: string | undefined): string | undefined {
   }
 }
 
+function buildEnvironmentInspectMetadata(
+  environment: EnvironmentAlias,
+  profile: AuthProfile | undefined,
+  projectUsage:
+    | {
+        projectRoot: string;
+        selectedStage?: string;
+        stages: string[];
+        activeForSelectedStage: boolean;
+      }
+    | undefined
+): Pick<OperationResult<unknown>, 'diagnostics' | 'warnings' | 'supportTier' | 'suggestedNextActions' | 'provenance' | 'knownLimitations'> {
+  return {
+    diagnostics: [],
+    warnings: [],
+    supportTier: 'preview',
+    suggestedNextActions: dedupeStringArray(
+      [
+        profile
+          ? `Run \`pp auth profile inspect ${profile.name} --format json\` to confirm the auth profile bound to environment alias ${environment.alias}.`
+          : `Repair the missing auth profile binding for environment alias ${environment.alias} before using remote Dataverse commands.`,
+        `Run \`pp dv whoami --environment ${environment.alias} --format json\` to confirm live Dataverse access for this alias.`,
+        projectUsage
+          ? `Run \`pp project inspect ${projectUsage.projectRoot} --format json\` to review where the current project maps environment alias ${environment.alias}.`
+          : undefined,
+      ].filter((value): value is string => Boolean(value))
+    ),
+    provenance: [
+      {
+        kind: 'official-api',
+        source: '@pp/config environments',
+      },
+      {
+        kind: 'inferred',
+        source: '@pp/cli env inspect guidance',
+        detail: 'Browser and pac guidance is inferred from the bound auth profile, local browser bootstrap metadata, and project relationship context.',
+      },
+    ],
+    knownLimitations: [
+      'Environment inspect summarizes local pp config and cached browser bootstrap state; it does not prove live Dataverse access on its own.',
+    ],
+  };
+}
+
 function buildEnvironmentBrowserGuidance(
   profile: AuthProfile | undefined,
   browserProfile: BrowserProfile | undefined,
@@ -731,4 +889,8 @@ function maybeHandleMutationPreview(
 
   deps.printByFormat(createMutationPreview(action, mutation.data, target, input), deps.outputFormat(args, fallbackFormat));
   return 0;
+}
+
+function dedupeStringArray(values: string[]): string[] {
+  return [...new Set(values)];
 }

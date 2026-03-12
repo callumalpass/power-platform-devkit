@@ -605,6 +605,10 @@ export async function runDataverseGroup(
       }
       return handlers.runDataverseRows(args);
     case 'query':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printDataverseQueryHelp();
+        return 0;
+      }
       return handlers.runDataverseQuery(args);
     case 'get':
       return handlers.runDataverseGet(args);
@@ -631,8 +635,10 @@ export interface SolutionGroupHandlers {
   runSolutionDelete(args: string[]): Promise<number>;
   runSolutionSetMetadata(args: string[]): Promise<number>;
   runSolutionPublish(args: string[]): Promise<number>;
+  runSolutionSyncStatus(args: string[]): Promise<number>;
   runSolutionCheckpoint(args: string[]): Promise<number>;
   runSolutionList(args: string[]): Promise<number>;
+  runSolutionPublishers(args: string[]): Promise<number>;
   runSolutionInspect(args: string[]): Promise<number>;
   runSolutionComponents(args: string[]): Promise<number>;
   runSolutionDependencies(args: string[]): Promise<number>;
@@ -675,6 +681,12 @@ export async function runSolutionGroup(
         return 0;
       }
       return handlers.runSolutionPublish(args);
+    case 'sync-status':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionSyncStatusHelp();
+        return 0;
+      }
+      return handlers.runSolutionSyncStatus(args);
     case 'checkpoint':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printSolutionCheckpointHelp();
@@ -687,6 +699,12 @@ export async function runSolutionGroup(
         return 0;
       }
       return handlers.runSolutionList(args);
+    case 'publishers':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionPublishersHelp();
+        return 0;
+      }
+      return handlers.runSolutionPublishers(args);
     case 'inspect':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printSolutionInspectHelp();
@@ -708,10 +726,18 @@ export async function runSolutionGroup(
     case 'analyze':
       return handlers.runSolutionAnalyze(args);
     case 'compare':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionCompareHelp();
+        return 0;
+      }
       return handlers.runSolutionCompare(args);
     case 'export':
       return handlers.runSolutionExport(args);
     case 'import':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionImportHelp();
+        return 0;
+      }
       return handlers.runSolutionImport(args);
     case 'pack':
       return handlers.runSolutionPack(args);
@@ -829,6 +855,7 @@ export async function runEnvironmentVariableGroup(
 export interface CanvasGroupHandlers {
   runCanvasAttach(args: string[]): Promise<number>;
   runCanvasDownload(args: string[]): Promise<number>;
+  runCanvasImport(args: string[]): Promise<number>;
   runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number>;
   runCanvasList(args: string[]): Promise<number>;
   runCanvasAccess(args: string[]): Promise<number>;
@@ -876,7 +903,7 @@ export async function runCanvasGroup(
         cliHelp.printCanvasImportHelp();
         return 0;
       }
-      return handlers.runCanvasUnsupportedRemoteMutation('import', args);
+      return handlers.runCanvasImport(args);
     case 'list':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printCanvasListHelp();
@@ -928,6 +955,7 @@ export interface FlowGroupHandlers {
   runFlowGraph(args: string[]): Promise<number>;
   runFlowPatch(args: string[]): Promise<number>;
   runFlowRuns(args: string[]): Promise<number>;
+  runFlowMonitor(args: string[]): Promise<number>;
   runFlowErrors(args: string[]): Promise<number>;
   runFlowConnrefs(args: string[]): Promise<number>;
   runFlowDoctor(args: string[]): Promise<number>;
@@ -1017,6 +1045,12 @@ export async function runFlowGroup(
         return 0;
       }
       return handlers.runFlowRuns(args);
+    case 'monitor':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printFlowMonitorHelp();
+        return 0;
+      }
+      return handlers.runFlowMonitor(args);
     case 'errors':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printFlowErrorsHelp();

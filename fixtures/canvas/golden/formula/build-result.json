@@ -1,6 +1,7 @@
 {
   "mode": "strict",
   "outPath": "<TMP_DIR>/FormulaCanvas.msapp",
+  "outFileSha256": "efcf754a325744555f9f7430007715fb03045824e4ce05f95719d77ed7b9d6af",
   "packageHash": "5c7f506c52939906fc32daa2b34963fc58ca5927e64c3a45a9c9121656306eb2",
   "sourceHash": "67aa801ef7b06b9d15eab79d11751b24940cd1dbfdeac873df32deb839c1d06d",
   "supported": true,

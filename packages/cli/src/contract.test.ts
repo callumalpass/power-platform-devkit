@@ -43,6 +43,9 @@ describe('cli contract', () => {
           tooling: {
             pacInstalled: false,
           },
+          relationships: {
+            currentProject: undefined,
+          },
         },
         'table'
       )
@@ -54,6 +57,29 @@ describe('cli contract', () => {
         'auth.profile          test-user',
         'auth.target           https://fixture.crm.dynamics.com',
         'tooling.pacInstalled  false',
+        '',
+      ].join('\n')
+    );
+  });
+
+  it('omits undefined nested fields from table output instead of rendering blank orphan rows', () => {
+    expect(
+      renderOutput(
+        {
+          relationships: {
+            currentProject: undefined,
+            authBinding: {
+              alias: 'test',
+            },
+          },
+        },
+        'table'
+      )
+    ).toBe(
+      [
+        'field                            value',
+        '-------------------------------  -----',
+        'relationships.authBinding.alias  test',
         '',
       ].join('\n')
     );

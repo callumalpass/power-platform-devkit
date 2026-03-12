@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { createDiagnostic, fail } from '@pp/diagnostics';
 import { resolveRepoPath } from '../../../test/golden';
+import { addSolutionInspectRecoveryGuidance } from './index';
 
 describe('@pp/mcp', () => {
   const clients: Client[] = [];
@@ -74,6 +76,21 @@ describe('@pp/mcp', () => {
     );
   }
 
+  it('adds explicit CLI recovery guidance for transport-level solution inspect failures', () => {
+    const result = addSolutionInspectRecoveryGuidance(
+      fail(createDiagnostic('error', 'HTTP_UNHANDLED_ERROR', 'fetch failed', { source: '@pp/http' })),
+      'test',
+      'AccessTeam',
+    );
+
+    expect(result.suggestedNextActions).toContain(
+      'Run `pp solution inspect AccessTeam --environment test --format json` to determine whether the failure is MCP transport-specific or a live Dataverse inspect error.',
+    );
+    expect(result.knownLimitations).toContain(
+      'MCP solution inspect can still fail before Dataverse returns a response when the underlying HTTP transport reports fetch failed.',
+    );
+  });
+
   it('connects over stdio and exposes the read and controlled mutation surface', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
     await writeFixtureConfig(configDir);
@@ -94,7 +111,9 @@ describe('@pp/mcp', () => {
         'pp.environment.list',
         'pp.solution.list',
         'pp.solution.inspect',
+        'pp.solution.export',
         'pp.dataverse.query',
+        'pp.dataverse.whoami',
         'pp.connection-reference.inspect',
         'pp.environment-variable.inspect',
         'pp.model-app.inspect',
@@ -184,11 +203,27 @@ describe('@pp/mcp', () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: 'dataverse',
+          readTools: expect.arrayContaining(['pp.dataverse.query', 'pp.dataverse.whoami']),
+          notes: expect.stringContaining('logical names like `solution`'),
+        }),
+        expect.objectContaining({
+          name: 'solution-lifecycle',
+          mutationToolsAvailable: true,
+          mutationTools: expect.arrayContaining(['pp.solution.export']),
+          notes: expect.stringContaining('pp.solution.export'),
+        }),
+        expect.objectContaining({
+          name: 'flow-local-artifacts',
+          notes: expect.stringContaining('CLI-only today'),
         }),
         expect.objectContaining({
           name: 'project',
           mutationToolsAvailable: true,
           mutationTools: expect.arrayContaining(['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.deploy.plan', 'pp.deploy.apply']),
+        }),
+        expect.objectContaining({
+          name: 'mcp',
+          mutationTools: expect.arrayContaining(['pp.solution.export']),
         }),
       ])
     );

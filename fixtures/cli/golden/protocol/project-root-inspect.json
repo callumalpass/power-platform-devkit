@@ -34,6 +34,33 @@
       "solutionUniqueName": "Core",
       "stage": "dev"
     },
+    "assetPlacementGuidance": [
+      {
+        "asset": "apps",
+        "expectation": "Place editable canvas-app or other app source under app-specific subfolders in `apps/`; keep generated solution bundles out of this root.",
+        "root": "apps"
+      },
+      {
+        "asset": "flows",
+        "expectation": "Place editable flow source under flow-specific subfolders in `flows/` so repo-local flow artifacts stay separate from solution bundles.",
+        "root": "flows"
+      },
+      {
+        "asset": "solutions",
+        "expectation": "Keep unpacked solution source trees under `solutions/<solution>/`; treat zip files inside `solutions/` as generated or stale output, not canonical source.",
+        "root": "solutions"
+      },
+      {
+        "asset": "docs",
+        "expectation": "Keep repo-local runbooks, provenance notes, and workflow docs under `docs/` so project context stays with the source tree.",
+        "root": "docs"
+      },
+      {
+        "asset": "solutionBundle",
+        "expectation": "Write generated solution zip output to `artifacts/solutions/Core.zip` so packaged artifacts stay outside editable source roots.",
+        "root": "artifacts/solutions"
+      }
+    ],
     "bundleLifecycleSummary": "The canonical bundle path is artifacts/solutions/Core.zip, but that zip is a generated artifact and may be absent until you pack local source from solutions or export the solution from Dataverse. Typical creation paths are pp solution pack <solution-folder> --out artifacts/solutions/Core.zip or pp solution export Core --environment dev --out artifacts/solutions/Core.zip.",
     "canonicalBundlePath": "artifacts/solutions/Core.zip",
     "defaultTarget": {
@@ -105,7 +132,9 @@
     ]
   },
   "success": true,
-  "suggestedNextActions": [],
+  "suggestedNextActions": [
+    "Run `pp env inspect dev --format json` to inspect the external environment registry entry for alias dev."
+  ],
   "summary": {
     "activeEnvironment": "dev",
     "activeSolution": "Core",

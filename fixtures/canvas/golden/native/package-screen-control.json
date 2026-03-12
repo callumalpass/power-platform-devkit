@@ -6,7 +6,6 @@
         "AllowAccessToGlobals": true,
         "Children": [],
         "ControlPropertyState": [
-          "Height",
           {
             "AFDDataSourceName": "",
             "AutoRuleBindingEnabled": false,
@@ -15,7 +14,14 @@
             "IsLockable": false,
             "NameMapSourceSchema": "?"
           },
-          "Width",
+          {
+            "AFDDataSourceName": "",
+            "AutoRuleBindingEnabled": false,
+            "AutoRuleBindingString": "",
+            "InvariantPropertyName": "OnSelect",
+            "IsLockable": false,
+            "NameMapSourceSchema": "?"
+          },
           {
             "AFDDataSourceName": "",
             "AutoRuleBindingEnabled": false,
@@ -29,14 +35,6 @@
             "AutoRuleBindingEnabled": false,
             "AutoRuleBindingString": "",
             "InvariantPropertyName": "Y",
-            "IsLockable": false,
-            "NameMapSourceSchema": "?"
-          },
-          {
-            "AFDDataSourceName": "",
-            "AutoRuleBindingEnabled": false,
-            "AutoRuleBindingString": "",
-            "InvariantPropertyName": "OnSelect",
             "IsLockable": false,
             "NameMapSourceSchema": "?"
           },
@@ -59,21 +57,15 @@
         "PublishOrderIndex": 0,
         "Rules": [
           {
-            "Category": "Design",
-            "InvariantScript": "40",
-            "Property": "Height",
-            "RuleProviderType": "Unknown"
-          },
-          {
             "Category": "Data",
             "InvariantScript": "\"Ship it\"",
             "Property": "Text",
             "RuleProviderType": "Unknown"
           },
           {
-            "Category": "Design",
-            "InvariantScript": "120",
-            "Property": "Width",
+            "Category": "Behavior",
+            "InvariantScript": "Notify(\"Done\")",
+            "Property": "OnSelect",
             "RuleProviderType": "Unknown"
           },
           {
@@ -86,12 +78,6 @@
             "Category": "Design",
             "InvariantScript": "120",
             "Property": "Y",
-            "RuleProviderType": "Unknown"
-          },
-          {
-            "Category": "Behavior",
-            "InvariantScript": "Notify(\"Done\")",
-            "Property": "OnSelect",
             "RuleProviderType": "Unknown"
           },
           {
@@ -110,7 +96,7 @@
           "IsCustomGroupControlTemplate": false,
           "IsPremiumPcfControl": false,
           "LastModifiedTimestamp": "0",
-          "Name": "button",
+          "Name": "Button",
           "OverridableProperties": {},
           "Version": "2.2.0"
         },

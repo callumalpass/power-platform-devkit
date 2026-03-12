@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve as resolvePath } from 'node:path';
@@ -49,6 +50,14 @@ async function createZip(sourceDir: string, outPath: string): Promise<void> {
   });
 
   expect(result.status).toBe(0);
+}
+
+async function writeSolutionExportMetadata(root: string, managed = false): Promise<void> {
+  await writeFile(
+    join(root, 'solution.xml'),
+    `<ImportExportXml><SolutionManifest><UniqueName>Core</UniqueName><Version>1.0.0.0</Version><Managed>${managed ? '1' : '0'}</Managed></SolutionManifest></ImportExportXml>`,
+    'utf8'
+  );
 }
 
 async function writeCanvasApp(
@@ -544,6 +553,7 @@ describe('remote canvas app workflows', () => {
     const solutionRoot = join(dir, 'solution');
     await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
     await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), 'fixture-msapp', 'utf8');
+    await writeSolutionExportMetadata(solutionRoot);
     const solutionZip = join(dir, 'Core.zip');
     await createZip(solutionRoot, solutionZip);
 
@@ -590,6 +600,134 @@ describe('remote canvas app workflows', () => {
     expect(await readFile(outPath, 'utf8')).toBe('fixture-msapp');
   });
 
+  it('auto-resolves a unique containing solution before downloading a remote canvas app', async () => {
+    const dir = await createTempDir();
+    const solutionRoot = join(dir, 'solution');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), 'fixture-msapp', 'utf8');
+    await writeSolutionExportMetadata(solutionRoot);
+    const solutionZip = join(dir, 'Core.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'canvasapps') {
+          return ok(
+            [
+              {
+                canvasappid: 'canvas-1',
+                displayname: 'Harness Canvas',
+                name: 'crd_HarnessCanvas',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                objectid: 'canvas-1',
+                _solutionid_value: 'sol-1',
+                componenttype: 300,
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'solutions') {
+          return ok(
+            [
+              {
+                solutionid: 'sol-1',
+                uniquename: 'Core',
+                friendlyname: 'Core Solution',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+      invokeAction: async <T>(name: string): Promise<OperationResult<{ body?: T }>> => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const outPath = join(dir, 'downloaded', 'Harness Canvas.msapp');
+    const result = await service.downloadRemote('Harness Canvas', {
+      outPath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      solutionUniqueName: 'Core',
+      solutionResolution: {
+        status: 'ready',
+        autoResolved: true,
+        resolvedSolutionUniqueName: 'Core',
+      },
+    });
+    expect(await readFile(outPath, 'utf8')).toBe('fixture-msapp');
+  });
+
+  it('reports when a remote canvas app is not yet attached to a solution for download', async () => {
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'canvasapps') {
+          return ok(
+            [
+              {
+                canvasappid: 'canvas-1',
+                displayname: 'Harness Canvas',
+                name: 'crd_HarnessCanvas',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.downloadRemote('Harness Canvas', {});
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_REMOTE_DOWNLOAD_SOLUTION_REQUIRED',
+        }),
+      ])
+    );
+  });
+
   it('downloads and extracts a remote canvas app with normalized archive paths', async () => {
     const dir = await createTempDir();
     const msappRoot = join(dir, 'msapp');
@@ -604,6 +742,7 @@ describe('remote canvas app workflows', () => {
     const solutionRoot = join(dir, 'solution');
     await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
     await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    await writeSolutionExportMetadata(solutionRoot);
 
     const solutionZip = join(dir, 'Core.zip');
     await createZip(solutionRoot, solutionZip);
@@ -702,6 +841,7 @@ describe('remote canvas app workflows', () => {
     const solutionRoot = join(dir, 'solution');
     await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
     await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    await writeSolutionExportMetadata(solutionRoot);
 
     const solutionZip = join(dir, 'Core.zip');
     await createZip(solutionRoot, solutionZip);
@@ -838,6 +978,7 @@ describe('remote canvas app workflows', () => {
     const solutionRoot = join(dir, 'solution-mismatch');
     await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
     await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    await writeSolutionExportMetadata(solutionRoot);
 
     const solutionZip = join(dir, 'Core-mismatch.zip');
     await createZip(solutionRoot, solutionZip);
@@ -972,6 +1113,7 @@ describe('remote canvas app workflows', () => {
     const solutionRoot = join(dir, 'solution-conflict');
     await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
     await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    await writeSolutionExportMetadata(solutionRoot);
 
     const solutionZip = join(dir, 'Core-conflict.zip');
     await createZip(solutionRoot, solutionZip);
@@ -1401,6 +1543,9 @@ describe('canvas app workflows', () => {
     expect(build.success).toBe(true);
     expect(build.data?.outPath).toBe(join(dir, 'dist', 'CanvasOne.msapp'));
     expect(build.data?.packageHash).toMatch(/[a-f0-9]{64}/);
+    expect(build.data?.outFileSha256).toBe(
+      createHash('sha256').update(await readFile(join(dir, 'dist', 'CanvasOne.msapp'))).digest('hex'),
+    );
 
     const packageDocument = JSON.parse(await readFile(join(dir, 'dist', 'CanvasOne.msapp'), 'utf8')) as {
       kind: string;

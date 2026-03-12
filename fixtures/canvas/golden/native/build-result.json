@@ -1,7 +1,8 @@
 {
   "mode": "strict",
   "outPath": "<TMP_DIR>/NativeCanvas.msapp",
-  "packageHash": "42ec46b0ce8beb7bcf396b403a2d4a53e68542e873a6a7b076e75d85d0d3d473",
+  "outFileSha256": "117af666de4b94d308432d169c226a86d1cf046705acd61ec0309cd96dcb705d",
+  "packageHash": "fc98aa31d22b546167b1e12729b9c2a7ea70cf82867aedbc6ea1a1baf44b4261",
   "sourceHash": "053ee43c9a11f44d6dae91cfb02b504fd708be2f57ff9dd8a96c6dfc3c97fac8",
   "supported": true,
   "templateHash": "3d174cae84af8d025fc23ea424f274fff3c6b6d020aa7d5c812a4ded0e026327"

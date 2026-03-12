@@ -309,6 +309,7 @@ When bootstrap needs to clear stale run-scoped solutions before reuse, stay
 inside `pp`:
 
 ```bash
+pp env baseline test --prefix ppHarness20260310T013401820Z --format json
 pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json
 pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json
 pp env reset test --prefix ppHarness20260310T013401820Z --format json
@@ -317,7 +318,9 @@ pp env reset test --prefix ppHarness20260310T013401820Z --format json
 `cleanup-plan` enumerates solutions whose unique name or friendly name starts
 with the given prefix, and `reset` deletes those matches. This is the intended
 prefix-based reset workflow for disposable harness assets; use
-`--dry-run` or `--plan` before mutating a shared environment.
+`--dry-run` or `--plan` before mutating a shared environment. Use
+`env baseline` first when you want one non-mutating payload that also embeds the
+resolved environment/auth context and optional prior-solution absence checks.
 
 List, inspect, and validate connection references as first-class ALM objects:
 
@@ -700,6 +703,7 @@ pp solution components Core --env dev
 pp solution dependencies Core --env dev
 pp solution analyze Core --env dev
 pp solution compare Core --source-env dev --target-env prod
+pp solution compare Core --source-env dev --target-env prod --include-model-composition
 pp solution compare Core --source-env dev --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac
 pp solution compare --source-folder ./src/solutions/Core --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac
 ```
@@ -721,6 +725,7 @@ Current solution output includes:
 - connection-reference validation failures
 - environment variables with missing effective values
 - source/target drift summaries for compare output
+- shell-only model-driven app presence by default during environment compare, with `--include-model-composition` for deep model artifact drift
 
 ## Environment alias fields that matter here
 
@@ -764,6 +769,7 @@ Implemented today:
 - solution publish through the Dataverse `PublishAllXml` action, with an optional export-backed synchronization checkpoint
 - solution export through the Dataverse `ExportSolution` action with `pp` release manifests
 - solution import through the Dataverse `ImportSolution` action with structured retry guidance
+- target-aware `pp solution import --plan`, which reads the adjacent release manifest plus live target solution state to surface managed/unmanaged and same-version promotion diagnostics before mutating
 - typed Dataverse action, function, and `$batch` invocation helpers plus CLI commands
 - local solution pack and unpack orchestration through `pac solution pack|unpack`
 - Dataverse `WhoAmI`

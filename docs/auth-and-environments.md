@@ -236,6 +236,7 @@ Inspect and remove aliases:
 
 ```bash
 pp env inspect dev
+pp env baseline dev --prefix ppHarness20260310T013401820Z --format json
 pp env resolve-maker-id dev
 pp env cleanup-plan dev --prefix ppHarness20260310T013401820Z --format json
 pp env cleanup dev --prefix ppHarness20260310T013401820Z --dry-run --format json
@@ -299,7 +300,11 @@ lists solutions whose unique name or friendly name starts with that prefix.
 `pp env reset <alias> --prefix <runPrefix>` then deletes those matches through
 the typed `pp` solution path, with `--dry-run` or `--plan` available when you
 want a non-mutating preview first. `pp env cleanup` remains available as the
-lower-level equivalent deletion verb.
+lower-level equivalent deletion verb. If you need one machine-readable baseline
+report before mutating anything, start with
+`pp env baseline <alias> --prefix <runPrefix> [--expect-absent-solution <name>]`.
+That combines `env inspect`, prefix collision checks, and optional prior-solution
+absence checks behind one `readyForBootstrap` result.
 
 ## Typical flows
 

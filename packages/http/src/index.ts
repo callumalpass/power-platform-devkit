@@ -49,6 +49,7 @@ export class HttpClient {
   }
 
   async request<T>(request: HttpRequestOptions): Promise<OperationResult<HttpResponse<T>>> {
+    const requestDescription = describeRequest(this.options.baseUrl, request);
     try {
       const response = await this.perform(request);
       const parsed = await readResponse<T>(response, request.responseType ?? 'json');
@@ -88,8 +89,8 @@ export class HttpClient {
           error instanceof Error ? error.message : 'Unknown HTTP error',
           {
             source: '@pp/http',
-            hint: readErrorHint(error),
-            detail: readErrorDetail(error),
+            hint: readErrorHint(error) ?? createUnhandledRequestHint(error),
+            detail: joinDetailParts(readErrorDetail(error), requestDescription, describeRetryBudget(this.retries)),
           }
         ),
         {
@@ -205,6 +206,12 @@ export class HttpClient {
   }
 }
 
+function describeRequest(baseUrl: string | undefined, request: HttpRequestOptions): string {
+  const url = new URL(request.path, baseUrl);
+  applyQuery(url.searchParams, request.query);
+  return `${request.method ?? 'GET'} ${url.toString()}`;
+}
+
 function applyQuery(searchParams: URLSearchParams, query: Record<string, HttpQueryValue> | undefined): void {
   if (!query) {
     return;
@@ -250,6 +257,26 @@ function readErrorStringField(error: unknown, field: 'code' | 'hint' | 'detail')
 
   const value = (error as Record<string, unknown>)[field];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function createUnhandledRequestHint(error: unknown): string | undefined {
+  const code = readErrorCode(error);
+  const message = error instanceof Error ? error.message : String(error ?? '');
+
+  if (code === 'HTTP_UNHANDLED_ERROR' || /fetch failed/i.test(message) || /network/i.test(message)) {
+    return 'Retry once to rule out a transient network/auth issue. If the failure repeats, capture the request context from the diagnostic detail and inspect upstream service health.';
+  }
+
+  return undefined;
+}
+
+function joinDetailParts(...parts: Array<string | undefined>): string | undefined {
+  const filtered = parts.filter((value): value is string => Boolean(value && value.length > 0));
+  return filtered.length > 0 ? filtered.join(' ') : undefined;
+}
+
+function describeRetryBudget(retries: number): string {
+  return `Attempted up to ${retries + 1} request time(s) including retries.`;
 }
 
 function createRequestTimeoutError(request: HttpRequestOptions, timeoutMs: number): Error & { code: string; hint: string; detail: string } {

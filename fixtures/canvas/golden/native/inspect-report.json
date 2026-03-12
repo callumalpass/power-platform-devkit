@@ -100,13 +100,9 @@
             ]
           },
           "contentHash": "07ca0664d45a3917a40ea5f581e39ad6bcd0397790795d8df071c8ba41e84217",
-          "files": {
-            "References/Templates.json": {
-              "name": "Button",
-              "templateXml": "<widget xmlns=\"http://openajax.org/metadata\" xmlns:appMagic=\"http://schemas.microsoft.com/appMagic\" id=\"http://microsoft.com/appmagic/button\" name=\"button\" version=\"2.2.0\">  <properties>    <property name=\"Text\" datatype=\"String\" defaultValue=\"&quot;Button&quot;\" isExpr=\"true\">      <appMagic:category>data</appMagic:category>    </property>    <property name=\"OnSelect\" datatype=\"Behavior\" defaultValue=\"\" isExpr=\"true\">      <appMagic:category>behavior</appMagic:category>    </property>  </properties>  <appMagic:includeProperties>    <appMagic:includeProperty name=\"X\" defaultValue=\"0\" />    <appMagic:includeProperty name=\"Y\" defaultValue=\"0\" />    <appMagic:includeProperty name=\"Width\" defaultValue=\"120\" />    <appMagic:includeProperty name=\"Height\" defaultValue=\"40\" />  </appMagic:includeProperties></widget>",
-              "version": "2.2.0"
-            }
-          },
+          "files": [
+            "References/Templates.json"
+          ],
           "provenance": {
             "importedFrom": "<REPO_ROOT>/fixtures/canvas/apps/native-app/controls.json",
             "kind": "official-artifact",

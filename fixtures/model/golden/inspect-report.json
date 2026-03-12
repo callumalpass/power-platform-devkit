@@ -1,7 +1,17 @@
 {
   "app": {
+    "handoff": {
+      "makerSolutionApps": {
+        "accessCommand": "pp model access \"Sales Hub\" --environment source --format json",
+        "inspectCommand": "pp model inspect \"Sales Hub\" --environment source --solution Core"
+      }
+    },
     "id": "app-1",
     "name": "Sales Hub",
+    "portalProvenance": {
+      "solutionUniqueName": "Core",
+      "sources": {}
+    },
     "publishedOn": "2026-03-01T08:00:00.000Z",
     "stateCode": 0,
     "uniqueName": "SalesHub",

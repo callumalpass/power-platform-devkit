@@ -26,6 +26,105 @@
     }
   ],
   "canonicalProjectRoot": "<REPO_ROOT>",
+  "checkGroups": {
+    "externalTargeting": [
+      {
+        "code": "PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED",
+        "hint": "Add the alias with `pp env add --name dev --url <dataverse-url> --profile <auth-profile>`.",
+        "message": "Stage dev points to environment alias dev, but that alias is not configured in the active pp environment registry.",
+        "status": "warn"
+      },
+      {
+        "code": "PROJECT_DOCTOR_RELATIONSHIP_CHAIN",
+        "message": "stage dev -> environment dev -> auth profile <missing> -> solution Core (Core)",
+        "status": "info"
+      },
+      {
+        "code": "PROJECT_DOCTOR_AUTH_PROFILE_USAGE",
+        "message": "No auth profile could be resolved from the current project stage mappings.",
+        "status": "info"
+      }
+    ],
+    "localLayout": [
+      {
+        "code": "PROJECT_DOCTOR_CONFIG_PRESENT",
+        "message": "Project config found at <REPO_ROOT>/pp.config.yaml",
+        "path": "<REPO_ROOT>/pp.config.yaml",
+        "status": "pass"
+      },
+      {
+        "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+        "message": "Asset path apps is present for apps",
+        "path": "<REPO_ROOT>/apps",
+        "status": "pass"
+      },
+      {
+        "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
+        "hint": "Place editable canvas-app or other app source under app-specific subfolders in `apps/`; keep generated solution bundles out of this root.",
+        "message": "Asset root apps exists for apps, but it is still empty and does not yet prove the expected per-asset layout.",
+        "path": "<REPO_ROOT>/apps",
+        "status": "warn"
+      },
+      {
+        "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+        "message": "Asset path flows is present for flows",
+        "path": "<REPO_ROOT>/flows",
+        "status": "pass"
+      },
+      {
+        "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
+        "hint": "Place editable flow source under flow-specific subfolders in `flows/` so repo-local flow artifacts stay separate from solution bundles.",
+        "message": "Asset root flows exists for flows, but it is still empty and does not yet prove the expected per-asset layout.",
+        "path": "<REPO_ROOT>/flows",
+        "status": "warn"
+      },
+      {
+        "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+        "message": "Asset path solutions is present for solutions",
+        "path": "<REPO_ROOT>/solutions",
+        "status": "pass"
+      },
+      {
+        "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
+        "hint": "Keep unpacked solution source trees under `solutions/<solution>/`; treat zip files inside `solutions/` as generated or stale output, not canonical source.",
+        "message": "Asset root solutions exists for solutions, but it is still empty and does not yet prove the expected per-asset layout.",
+        "path": "<REPO_ROOT>/solutions",
+        "status": "warn"
+      },
+      {
+        "code": "PROJECT_DOCTOR_ASSET_PRESENT",
+        "message": "Asset path docs is present for docs",
+        "path": "<REPO_ROOT>/docs",
+        "status": "pass"
+      },
+      {
+        "code": "PROJECT_DOCTOR_PROVIDER_BINDINGS_PRESENT",
+        "message": "Project defines 1 provider binding(s).",
+        "status": "pass"
+      },
+      {
+        "code": "PROJECT_DOCTOR_TOPOLOGY_PRESENT",
+        "message": "Project topology defines 1 stage(s).",
+        "status": "pass"
+      },
+      {
+        "code": "PROJECT_DOCTOR_ACTIVE_TARGET",
+        "message": "Active target: stage dev -> environment dev -> solution Core (Core)",
+        "status": "info"
+      },
+      {
+        "code": "PROJECT_DOCTOR_STAGE_MAPPING",
+        "message": "dev (default stage, selected stage) -> environment dev -> solution Core (Core)",
+        "status": "info"
+      },
+      {
+        "code": "PROJECT_DOCTOR_LAYOUT_PROFILE",
+        "hint": "Keep editable sources and generated outputs in separate roots so the project intent stays obvious.",
+        "message": "Layout profile is source-first: editable assets live in dedicated roots and generated bundles are already separate or absent.",
+        "status": "info"
+      }
+    ]
+  },
   "checks": [
     {
       "code": "PROJECT_DOCTOR_CONFIG_PRESENT",
@@ -40,16 +139,37 @@
       "status": "pass"
     },
     {
+      "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
+      "hint": "Place editable canvas-app or other app source under app-specific subfolders in `apps/`; keep generated solution bundles out of this root.",
+      "message": "Asset root apps exists for apps, but it is still empty and does not yet prove the expected per-asset layout.",
+      "path": "<REPO_ROOT>/apps",
+      "status": "warn"
+    },
+    {
       "code": "PROJECT_DOCTOR_ASSET_PRESENT",
       "message": "Asset path flows is present for flows",
       "path": "<REPO_ROOT>/flows",
       "status": "pass"
     },
     {
+      "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
+      "hint": "Place editable flow source under flow-specific subfolders in `flows/` so repo-local flow artifacts stay separate from solution bundles.",
+      "message": "Asset root flows exists for flows, but it is still empty and does not yet prove the expected per-asset layout.",
+      "path": "<REPO_ROOT>/flows",
+      "status": "warn"
+    },
+    {
       "code": "PROJECT_DOCTOR_ASSET_PRESENT",
       "message": "Asset path solutions is present for solutions",
       "path": "<REPO_ROOT>/solutions",
       "status": "pass"
+    },
+    {
+      "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
+      "hint": "Keep unpacked solution source trees under `solutions/<solution>/`; treat zip files inside `solutions/` as generated or stale output, not canonical source.",
+      "message": "Asset root solutions exists for solutions, but it is still empty and does not yet prove the expected per-asset layout.",
+      "path": "<REPO_ROOT>/solutions",
+      "status": "warn"
     },
     {
       "code": "PROJECT_DOCTOR_ASSET_PRESENT",
@@ -108,6 +228,33 @@
       "solutionUniqueName": "Core",
       "stage": "dev"
     },
+    "assetPlacementGuidance": [
+      {
+        "asset": "apps",
+        "expectation": "Place editable canvas-app or other app source under app-specific subfolders in `apps/`; keep generated solution bundles out of this root.",
+        "root": "apps"
+      },
+      {
+        "asset": "flows",
+        "expectation": "Place editable flow source under flow-specific subfolders in `flows/` so repo-local flow artifacts stay separate from solution bundles.",
+        "root": "flows"
+      },
+      {
+        "asset": "solutions",
+        "expectation": "Keep unpacked solution source trees under `solutions/<solution>/`; treat zip files inside `solutions/` as generated or stale output, not canonical source.",
+        "root": "solutions"
+      },
+      {
+        "asset": "docs",
+        "expectation": "Keep repo-local runbooks, provenance notes, and workflow docs under `docs/` so project context stays with the source tree.",
+        "root": "docs"
+      },
+      {
+        "asset": "solutionBundle",
+        "expectation": "Write generated solution zip output to `artifacts/solutions/Core.zip` so packaged artifacts stay outside editable source roots.",
+        "root": "artifacts/solutions"
+      }
+    ],
     "canonicalBundlePath": "artifacts/solutions/Core.zip",
     "defaultTarget": {
       "environmentAlias": "dev",
