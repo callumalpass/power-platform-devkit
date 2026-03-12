@@ -526,7 +526,7 @@ export class CanvasLspSession {
             registry: bundle.data,
           })
         : undefined;
-    const semanticModel = buildCanvasSemanticModel(source.data, {
+    const semanticModel = await buildCanvasSemanticModel(source.data, {
       templateResolutions: templateRequirements?.resolutions,
     });
 

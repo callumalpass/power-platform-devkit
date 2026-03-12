@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { ChildProcessWithoutNullStreams, spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PowerFxAstNode } from './semantic-model';
@@ -16,38 +16,63 @@ interface PowerFxBridgeResponse {
   errors?: string[];
 }
 
-const parseCache = new Map<string, ParseResult>();
-let bridgeReady = false;
-const POWER_FX_BRIDGE_TIMEOUT_SECONDS = 5;
+interface PowerFxBridgeServerRequest {
+  id: number;
+  expression: string;
+  allowsSideEffects: boolean;
+}
 
-export function parsePowerFxExpression(expression: string, options: { allowsSideEffects?: boolean } = {}): ParseResult {
+interface PowerFxBridgeServerResponse extends PowerFxBridgeResponse {
+  id: number;
+}
+
+const parseCache = new Map<string, ParseResult>();
+const parseInflight = new Map<string, Promise<ParseResult>>();
+let bridgeReady = false;
+const POWER_FX_BRIDGE_TIMEOUT_MS = 5_000;
+let bridgeSession: PowerFxBridgeSession | undefined;
+let bridgeCleanupRegistered = false;
+
+export async function parsePowerFxExpression(expression: string, options: { allowsSideEffects?: boolean } = {}): Promise<ParseResult> {
   const cacheKey = `${options.allowsSideEffects ? '1' : '0'}:${expression}`;
   const cached = parseCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
-  try {
-    ensureBridgeBuilt();
-    const response = invokeBridge(expression, options);
-    const unsupportedReason = findUnsupportedReason(response.ast);
-    const result: ParseResult = {
-      ast: response.ast,
-      valid: response.success && !unsupportedReason,
-      unsupportedReason: !response.success
-        ? response.errors?.[0] ?? 'Power Fx parsing failed.'
-        : unsupportedReason,
-    };
-    parseCache.set(cacheKey, result);
-    return result;
-  } catch (error) {
-    const result: ParseResult = {
-      valid: false,
-      unsupportedReason: error instanceof Error ? error.message : String(error),
-    };
-    parseCache.set(cacheKey, result);
-    return result;
+  const inflight = parseInflight.get(cacheKey);
+  if (inflight) {
+    return inflight;
   }
+
+  const pending = (async (): Promise<ParseResult> => {
+    try {
+      ensureBridgeBuilt();
+      const response = await invokeBridge(expression, options);
+      const unsupportedReason = findUnsupportedReason(response.ast);
+      const result: ParseResult = {
+        ast: response.ast,
+        valid: response.success && !unsupportedReason,
+        unsupportedReason: !response.success
+          ? response.errors?.[0] ?? 'Power Fx parsing failed.'
+          : unsupportedReason,
+      };
+      parseCache.set(cacheKey, result);
+      return result;
+    } catch (error) {
+      const result: ParseResult = {
+        valid: false,
+        unsupportedReason: error instanceof Error ? error.message : String(error),
+      };
+      parseCache.set(cacheKey, result);
+      return result;
+    } finally {
+      parseInflight.delete(cacheKey);
+    }
+  })();
+
+  parseInflight.set(cacheKey, pending);
+  return pending;
 }
 
 export function visitPowerFxAst(node: PowerFxAstNode, visitor: (node: PowerFxAstNode, parent?: PowerFxAstNode) => void, parent?: PowerFxAstNode): void {
@@ -100,29 +125,9 @@ function ensureBridgeBuilt(): void {
   bridgeReady = true;
 }
 
-function invokeBridge(expression: string, options: { allowsSideEffects?: boolean }): PowerFxBridgeResponse {
-  const request = Buffer.from(
-    JSON.stringify({
-      expression,
-      allowsSideEffects: Boolean(options.allowsSideEffects),
-    }),
-    'utf8'
-  ).toString('base64');
-  const command = `timeout ${POWER_FX_BRIDGE_TIMEOUT_SECONDS}s dotnet '${getBridgeDllPath()}' --request-base64 '${request}'`;
-  const execution = spawnSync('/bin/sh', ['-lc', command], {
-    encoding: 'utf8',
-    maxBuffer: 10 * 1024 * 1024,
-  });
-
-  if (execution.status === 124) {
-    throw new Error(`Power Fx bridge timed out after ${POWER_FX_BRIDGE_TIMEOUT_SECONDS}s.`);
-  }
-
-  if (execution.status !== 0 || !execution.stdout.trim()) {
-    throw new Error(execution.stderr.trim() || execution.stdout.trim() || 'Power Fx bridge execution failed.');
-  }
-
-  return JSON.parse(execution.stdout) as PowerFxBridgeResponse;
+async function invokeBridge(expression: string, options: { allowsSideEffects?: boolean }): Promise<PowerFxBridgeResponse> {
+  const session = getBridgeSession();
+  return session.parse(expression, options);
 }
 
 function findUnsupportedReason(ast: PowerFxAstNode | undefined): string | undefined {
@@ -155,4 +160,165 @@ function getCanvasPackageRoot(): string {
   }
 
   return join(dirname(fileURLToPath(import.meta.url)), '..');
+}
+
+function getBridgeSession(): PowerFxBridgeSession {
+  if (!bridgeSession) {
+    bridgeSession = new PowerFxBridgeSession(getBridgeDllPath());
+  }
+
+  if (!bridgeCleanupRegistered) {
+    bridgeCleanupRegistered = true;
+    process.once('exit', () => {
+      bridgeSession?.dispose();
+      bridgeSession = undefined;
+    });
+  }
+
+  return bridgeSession;
+}
+
+class PowerFxBridgeSession {
+  private child: ChildProcessWithoutNullStreams | undefined;
+  private nextId = 1;
+  private stdoutBuffer = '';
+  private stderrBuffer = '';
+  private readonly pending = new Map<
+    number,
+    {
+      resolve: (response: PowerFxBridgeResponse) => void;
+      reject: (error: Error) => void;
+      timeout: NodeJS.Timeout;
+    }
+  >();
+
+  constructor(private readonly bridgeDllPath: string) {}
+
+  async parse(expression: string, options: { allowsSideEffects?: boolean }): Promise<PowerFxBridgeResponse> {
+    const child = this.ensureChild();
+    const id = this.nextId++;
+
+    return new Promise<PowerFxBridgeResponse>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        this.reset();
+        reject(new Error(`Power Fx bridge timed out after ${POWER_FX_BRIDGE_TIMEOUT_MS}ms.`));
+      }, POWER_FX_BRIDGE_TIMEOUT_MS);
+
+      this.pending.set(id, { resolve, reject, timeout });
+
+      const request: PowerFxBridgeServerRequest = {
+        id,
+        expression,
+        allowsSideEffects: Boolean(options.allowsSideEffects),
+      };
+      const writeOk = child.stdin.write(`${JSON.stringify(request)}\n`, 'utf8');
+
+      if (!writeOk) {
+        child.stdin.once('drain', () => undefined);
+      }
+    });
+  }
+
+  dispose(): void {
+    this.reset();
+  }
+
+  private ensureChild(): ChildProcessWithoutNullStreams {
+    if (this.child && this.child.exitCode === null && !this.child.killed) {
+      return this.child;
+    }
+
+    this.stdoutBuffer = '';
+    this.stderrBuffer = '';
+    const child = spawn('dotnet', [this.bridgeDllPath, '--server'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.unref();
+    child.stdin.unref();
+    child.stdout.unref();
+    child.stderr.unref();
+    child.stdout.on('data', (chunk: string) => this.handleStdout(chunk));
+    child.stderr.on('data', (chunk: string) => {
+      this.stderrBuffer = `${this.stderrBuffer}${chunk}`.slice(-8_192);
+    });
+    child.on('error', (error) => {
+      this.failPending(new Error(`Power Fx bridge failed to start: ${error.message}`));
+      this.child = undefined;
+    });
+    child.on('close', (code, signal) => {
+      const detail = this.stderrBuffer.trim();
+      const suffix = detail ? ` ${detail}` : '';
+      this.failPending(new Error(`Power Fx bridge exited unexpectedly (${signal ?? code ?? 'unknown'}).${suffix}`));
+      this.child = undefined;
+    });
+
+    this.child = child;
+    return child;
+  }
+
+  private handleStdout(chunk: string): void {
+    this.stdoutBuffer += chunk;
+    let newlineIndex = this.stdoutBuffer.indexOf('\n');
+
+    while (newlineIndex >= 0) {
+      const line = this.stdoutBuffer.slice(0, newlineIndex).trim();
+      this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1);
+
+      if (line.length > 0) {
+        this.handleResponseLine(line);
+      }
+
+      newlineIndex = this.stdoutBuffer.indexOf('\n');
+    }
+  }
+
+  private handleResponseLine(line: string): void {
+    let response: PowerFxBridgeServerResponse;
+
+    try {
+      response = JSON.parse(line) as PowerFxBridgeServerResponse;
+    } catch (error) {
+      this.failPending(new Error(`Power Fx bridge emitted invalid JSON: ${error instanceof Error ? error.message : String(error)}`));
+      this.reset();
+      return;
+    }
+
+    const pending = this.pending.get(response.id);
+
+    if (!pending) {
+      return;
+    }
+
+    clearTimeout(pending.timeout);
+    this.pending.delete(response.id);
+    pending.resolve({
+      success: response.success,
+      ast: response.ast,
+      errors: response.errors,
+    });
+  }
+
+  private failPending(error: Error): void {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(error);
+    }
+
+    this.pending.clear();
+  }
+
+  private reset(): void {
+    const child = this.child;
+    this.child = undefined;
+    this.stdoutBuffer = '';
+    this.stderrBuffer = '';
+
+    if (child && child.exitCode === null && !child.killed) {
+      child.kill('SIGKILL');
+    }
+  }
 }

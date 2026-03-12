@@ -310,7 +310,7 @@ interface CanvasComparable {
 interface PreparedCanvasValidation {
   source: CanvasSourceModel;
   templateRequirements: CanvasTemplateRequirementResolution;
-  semanticModel: ReturnType<typeof buildCanvasSemanticModel>;
+  semanticModel: Awaited<ReturnType<typeof buildCanvasSemanticModel>>;
   invalidPropertyChecks: CanvasPropertyCheck[];
   unresolvedTemplates: CanvasTemplateUsageIssue[];
   unsupportedTemplates: CanvasTemplateUsageIssue[];
@@ -3365,7 +3365,7 @@ async function prepareCanvasValidation(
     seeded: seeded.data,
     registry: registry.data,
   });
-  const semanticModel = buildCanvasSemanticModel(source.data, {
+  const semanticModel = await buildCanvasSemanticModel(source.data, {
     templateResolutions: templateRequirements.resolutions,
   });
   const formulas = collectCanvasFormulaChecks(semanticModel);
@@ -4020,22 +4020,22 @@ function flattenControlDefinitions(controls: CanvasControlDefinition[]): CanvasC
   return flattened;
 }
 
-function collectFormulaChecks(screens: CanvasScreenDefinition[]): CanvasFormulaCheck[] {
+async function collectFormulaChecks(screens: CanvasScreenDefinition[]): Promise<CanvasFormulaCheck[]> {
   const checks: CanvasFormulaCheck[] = [];
 
   for (const screen of screens) {
-    appendFormulaChecks(screen.name, screen.controls, screen.name, checks);
+    await appendFormulaChecks(screen.name, screen.controls, screen.name, checks);
   }
 
   return checks.sort((left, right) => left.controlPath.localeCompare(right.controlPath) || left.property.localeCompare(right.property));
 }
 
-function appendFormulaChecks(
+async function appendFormulaChecks(
   screenName: string,
   controls: CanvasControlDefinition[],
   prefix: string,
   destination: CanvasFormulaCheck[]
-): void {
+): Promise<void> {
   for (const control of controls) {
     const path = `${prefix}/${control.name}`;
 
@@ -4046,12 +4046,12 @@ function appendFormulaChecks(
           property,
           valid:
             typeof value === 'string' &&
-            (!value.trim().startsWith('=') || validatePowerFxSyntax(value)),
+            (!value.trim().startsWith('=') || (await validatePowerFxSyntax(value))),
         });
       }
     }
 
-    appendFormulaChecks(screenName, control.children, path, destination);
+    await appendFormulaChecks(screenName, control.children, path, destination);
   }
 }
 
@@ -4102,16 +4102,18 @@ function appendPropertyChecks(
   }
 }
 
-function validatePowerFxSyntax(expression: string): boolean {
+async function validatePowerFxSyntax(expression: string): Promise<boolean> {
   const trimmed = expression.trim();
 
   if (!trimmed.startsWith('=')) {
     return true;
   }
 
-  return parsePowerFxExpression(trimmed.slice(1), {
+  return (
+    await parsePowerFxExpression(trimmed.slice(1), {
     allowsSideEffects: trimmed.includes(';'),
-  }).valid;
+    })
+  ).valid;
 }
 
 function collectUnresolvedTemplateIssues(

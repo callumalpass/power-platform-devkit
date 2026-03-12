@@ -172,7 +172,10 @@ export interface BuildCanvasSemanticModelOptions {
   templates?: CanvasTemplateRecord[];
 }
 
-export function buildCanvasSemanticModel(source: CanvasSourceModel, options: BuildCanvasSemanticModelOptions = {}): CanvasSemanticModel {
+export async function buildCanvasSemanticModel(
+  source: CanvasSourceModel,
+  options: BuildCanvasSemanticModelOptions = {}
+): Promise<CanvasSemanticModel> {
   const templateMap = buildTemplateMap(options);
   const controls: CanvasSemanticControl[] = [];
   const symbols = new Map<string, CanvasSemanticSymbol>();
@@ -202,7 +205,11 @@ export function buildCanvasSemanticModel(source: CanvasSourceModel, options: Bui
     });
   }
 
-  const formulas = controls.flatMap((control) => buildFormulaSemantics(control, controlById, controlNameToIds, dataSourceSymbols, metadataCatalog));
+  const formulas = (
+    await Promise.all(
+      controls.map((control) => buildFormulaSemantics(control, controlById, controlNameToIds, dataSourceSymbols, metadataCatalog))
+    )
+  ).flat();
 
   for (const formula of formulas) {
     for (const binding of formula.bindings) {
@@ -283,13 +290,13 @@ function appendControlSemantics(
   }
 }
 
-function buildFormulaSemantics(
+async function buildFormulaSemantics(
   control: CanvasSemanticControl,
   controlById: Map<string, CanvasSemanticControl>,
   controlNameToIds: Map<string, string[]>,
   dataSourceSymbols: ReturnType<typeof buildDataSourceSymbols>,
   metadataCatalog: CanvasMetadataCatalog | undefined
-): CanvasFormulaSemantic[] {
+): Promise<CanvasFormulaSemantic[]> {
   const sourceControl = control.source;
   const formulas: CanvasFormulaSemantic[] = [];
 
@@ -319,7 +326,7 @@ function buildFormulaSemantics(
     }
 
     const expression = value.trim().startsWith('=') ? value.trim().slice(1) : value;
-    const parsed = parsePowerFxExpression(expression, {
+    const parsed = await parsePowerFxExpression(expression, {
       allowsSideEffects: property.startsWith('On') || expression.includes(';'),
     });
     const bindings = parsed.ast

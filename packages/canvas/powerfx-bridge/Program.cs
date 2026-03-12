@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Microsoft.PowerFx;
 using Microsoft.PowerFx.Syntax;
@@ -9,32 +10,84 @@ var serializerOptions = new JsonSerializerOptions
     PropertyNameCaseInsensitive = true,
 };
 
+if (args.Contains("--server"))
+{
+    await RunServerAsync(serializerOptions);
+    return;
+}
+
 var request = await ReadRequestAsync(args, serializerOptions);
 
 if (request?.Expression is null)
 {
-await JsonSerializer.SerializeAsync(
-    Console.OpenStandardOutput(),
-    new BridgeResponse(false, null, ["Missing expression input."]),
-    serializerOptions);
+    await JsonSerializer.SerializeAsync(
+        Console.OpenStandardOutput(),
+        new BridgeResponse(false, null, ["Missing expression input."]),
+        serializerOptions);
     return;
 }
 
-var engine = new Engine();
-var parse = engine.Parse(
-    request.Expression,
-    new ParserOptions(CultureInfo.InvariantCulture, request.AllowsSideEffects)
-    {
-        NumberIsFloat = true,
-    });
-
-var errors = parse.Errors.Select((error) => error.Message).ToArray();
-var ast = AstSerializer.Serialize(parse.Root, request.Expression);
+var response = ParseExpression(new Engine(), request.Expression, request.AllowsSideEffects);
 
 await JsonSerializer.SerializeAsync(
     Console.OpenStandardOutput(),
-    new BridgeResponse(parse.IsSuccess, ast, errors),
+    response,
     serializerOptions);
+
+static async Task RunServerAsync(JsonSerializerOptions serializerOptions)
+{
+    using var reader = new StreamReader(Console.OpenStandardInput(), Encoding.UTF8);
+    using var writer = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false))
+    {
+        AutoFlush = true,
+    };
+
+    var engine = new Engine();
+
+    while (await reader.ReadLineAsync() is { } line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            continue;
+        }
+
+        ServerParseRequest? request;
+
+        try
+        {
+            request = JsonSerializer.Deserialize<ServerParseRequest>(line, serializerOptions);
+        }
+        catch (Exception error)
+        {
+            await writer.WriteLineAsync(JsonSerializer.Serialize(new ServerBridgeResponse(0, false, null, [$"Invalid bridge request: {error.Message}"]), serializerOptions));
+            continue;
+        }
+
+        if (request is null)
+        {
+            await writer.WriteLineAsync(JsonSerializer.Serialize(new ServerBridgeResponse(0, false, null, ["Missing bridge request."]), serializerOptions));
+            continue;
+        }
+
+        var response = ParseExpression(engine, request.Expression, request.AllowsSideEffects);
+        await writer.WriteLineAsync(JsonSerializer.Serialize(new ServerBridgeResponse(request.Id, response.Success, response.Ast, response.Errors), serializerOptions));
+    }
+}
+
+static BridgeResponse ParseExpression(Engine engine, string expression, bool allowsSideEffects)
+{
+    var parse = engine.Parse(
+        expression,
+        new ParserOptions(CultureInfo.InvariantCulture, allowsSideEffects)
+        {
+            NumberIsFloat = true,
+        });
+
+    var errors = parse.Errors.Select((error) => error.Message).ToArray();
+    var ast = AstSerializer.Serialize(parse.Root, expression);
+
+    return new BridgeResponse(parse.IsSuccess, ast, errors);
+}
 
 static async Task<ParseRequest?> ReadRequestAsync(string[] args, JsonSerializerOptions serializerOptions)
 {
@@ -56,8 +109,10 @@ static async Task<ParseRequest?> ReadRequestAsync(string[] args, JsonSerializerO
 }
 
 internal sealed record ParseRequest(string Expression, bool AllowsSideEffects);
+internal sealed record ServerParseRequest(int Id, string Expression, bool AllowsSideEffects);
 
 internal sealed record BridgeResponse(bool Success, object? Ast, IReadOnlyList<string> Errors);
+internal sealed record ServerBridgeResponse(int Id, bool Success, object? Ast, IReadOnlyList<string> Errors);
 
 internal static class AstSerializer
 {
