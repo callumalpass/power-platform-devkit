@@ -333,6 +333,8 @@ export interface SolutionPublishWorkflowReadback {
   logicalName?: string;
   category?: number;
   workflowState?: string;
+  stateCode?: number;
+  statusCode?: number;
 }
 
 export interface SolutionPublishReadbackSummary {
@@ -362,6 +364,7 @@ export interface SolutionSyncStatusExportCheckFailure {
   diagnostics: Diagnostic[];
   warnings: Diagnostic[];
   suggestedNextActions?: string[];
+  details?: unknown;
 }
 
 export interface SolutionSyncStatusExportCheck {
@@ -376,6 +379,7 @@ export interface SolutionSyncStatusExportCheck {
 
 export interface SolutionSyncStatusOptions extends SolutionExportOptions {
   includeExportCheck?: boolean;
+  onProgress?: (event: SolutionSyncStatusProgressEvent) => void;
 }
 
 export interface SolutionSyncStatusResult {
@@ -389,6 +393,30 @@ export interface SolutionSyncStatusResult {
   exportCheck: SolutionSyncStatusExportCheck;
 }
 
+export interface SolutionManagedStateContradictionDetails {
+  diagnosticCode?: string;
+  message: string;
+  detail?: string;
+}
+
+export interface SolutionExportFailureDetails {
+  solution: SolutionSummary;
+  packageType: Exclude<SolutionPackageType, 'both'>;
+  managedStateContradiction?: {
+    inspect: Pick<SolutionSummary, 'solutionid' | 'uniquename' | 'friendlyname' | 'version' | 'ismanaged'>;
+    export: SolutionManagedStateContradictionDetails;
+  };
+}
+
+export interface SolutionSyncStatusProgressEvent {
+  stage: 'readback-complete' | 'export-check-started' | 'export-check-complete';
+  elapsedMs?: number;
+  packageType?: Exclude<SolutionPackageType, 'both'>;
+  readBack?: SolutionPublishReadback;
+  exportConfirmed?: boolean;
+  latestExportDiagnostic?: Pick<Diagnostic, 'code' | 'message'>;
+}
+
 export interface SolutionSyncStatusBlocker {
   kind: 'workflow-state';
   componentType: 'workflow';
@@ -396,6 +424,8 @@ export interface SolutionSyncStatusBlocker {
   name?: string;
   logicalName?: string;
   workflowState?: string;
+  stateCode?: number;
+  statusCode?: number;
   reason: string;
 }
 
@@ -416,6 +446,7 @@ export interface SolutionPublishResult {
   };
   readBack?: SolutionPublishReadback;
   blockers?: SolutionSyncStatusBlocker[];
+  exportCheck?: SolutionSyncStatusExportCheck;
 }
 
 export interface SolutionPackOptions {
@@ -620,6 +651,7 @@ export class SolutionService {
         {
           supportTier: 'preview',
           warnings: solution.warnings,
+          suggestedNextActions: solution.suggestedNextActions,
         }
       );
     }
@@ -797,11 +829,13 @@ export class SolutionService {
     }
 
     const summary = await this.enrichSolutionSummary(solutions.data?.[0]);
+    const missingSuggestions = !summary ? await this.buildMissingSolutionSuggestions(uniqueName) : undefined;
 
     return ok(summary, {
       supportTier: 'preview',
       diagnostics: solutions.diagnostics,
       warnings: solutions.warnings,
+      suggestedNextActions: missingSuggestions,
     });
   }
 
@@ -1351,13 +1385,41 @@ export class SolutionService {
 
     if (!exportResult.success) {
       const workflowExportContext = await this.describeWorkflowExportContext(uniqueName);
+      const exportContradictionContext = describeManagedExportContradiction(
+        uniqueName,
+        packageType,
+        solution.data,
+        exportResult.diagnostics
+      );
 
       return fail(
-        mergeDiagnosticLists(solution.diagnostics, analysis.diagnostics, exportResult.diagnostics, workflowExportContext?.diagnostics),
+        mergeDiagnosticLists(
+          solution.diagnostics,
+          analysis.diagnostics,
+          exportResult.diagnostics,
+          workflowExportContext?.diagnostics,
+          exportContradictionContext?.diagnostics
+        ),
         {
           supportTier: 'preview',
-          warnings: mergeDiagnosticLists(solution.warnings, analysis.warnings, exportResult.warnings, workflowExportContext?.warnings),
-          suggestedNextActions: workflowExportContext?.suggestedNextActions,
+          details: {
+            solution: solution.data,
+            packageType,
+            managedStateContradiction: exportContradictionContext?.details,
+          } satisfies SolutionExportFailureDetails,
+          warnings: mergeDiagnosticLists(
+            solution.warnings,
+            analysis.warnings,
+            exportResult.warnings,
+            workflowExportContext?.warnings,
+            exportContradictionContext?.warnings
+          ),
+          suggestedNextActions: Array.from(
+            new Set([
+              ...(exportContradictionContext?.suggestedNextActions ?? []),
+              ...(workflowExportContext?.suggestedNextActions ?? []),
+            ])
+          ),
           provenance: [
             {
               kind: 'official-api',
@@ -1445,6 +1507,7 @@ export class SolutionService {
     if (!solution.data) {
       return fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`), {
         supportTier: 'preview',
+        suggestedNextActions: solution.suggestedNextActions,
       });
     }
 
@@ -1470,9 +1533,29 @@ export class SolutionService {
     }
 
     if (!options.waitForExport) {
-      const readBack = await this.describePublishReadBack(uniqueName);
-      const blockers = buildSolutionSyncStatusBlockers(readBack?.data);
-      const blockingWorkflowActions = buildBlockingWorkflowSuggestedNextActions(uniqueName, readBack?.data);
+      const syncStatus = await this.syncStatus(uniqueName, {
+        includeExportCheck: true,
+        managed: options.exportOptions?.managed,
+        outDir: options.exportOptions?.outDir,
+        outPath: options.exportOptions?.outPath,
+        manifestPath: options.exportOptions?.manifestPath,
+        requestTimeoutMs: options.exportOptions?.requestTimeoutMs,
+      });
+      if (!syncStatus.success || !syncStatus.data) {
+        return fail(mergeDiagnosticLists(solution.diagnostics, publishResult.diagnostics, syncStatus.diagnostics), {
+          supportTier: 'preview',
+          warnings: prioritizeExportReadinessWarnings(mergeDiagnosticLists(solution.warnings, publishResult.warnings, syncStatus.warnings)),
+          suggestedNextActions: syncStatus.suggestedNextActions,
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse PublishAllXml',
+            },
+            ...(syncStatus.provenance ?? []),
+          ],
+        });
+      }
+      const blockingWorkflowActions = buildBlockingWorkflowSuggestedNextActions(uniqueName, syncStatus.data.readBack);
       return ok(
         {
           solution: solution.data,
@@ -1482,44 +1565,46 @@ export class SolutionService {
             accepted: true,
           },
           waitForExport: false,
-          synchronization: {
-            kind: 'none',
-            confirmed: false,
-          },
-          readBack: readBack?.data,
-          blockers,
+          synchronization: syncStatus.data.synchronization,
+          readBack: syncStatus.data.readBack,
+          blockers: syncStatus.data.blockers,
+          exportCheck: syncStatus.data.exportCheck,
         },
         {
           supportTier: 'preview',
-          diagnostics: mergeDiagnosticLists(solution.diagnostics, publishResult.diagnostics),
-          warnings: mergeDiagnosticLists(
-            solution.warnings,
-            publishResult.warnings,
-            readBack?.warnings,
-            buildBlockingWorkflowWarning(uniqueName, readBack?.data)
-              ? [buildBlockingWorkflowWarning(uniqueName, readBack?.data)!]
-              : undefined,
-            [
-              createDiagnostic(
-                'warning',
-                'SOLUTION_PUBLISH_SYNC_NOT_CONFIRMED',
-                `Publish for solution ${uniqueName} was accepted, but downstream Dataverse reads may still lag immediately after the action returns.`,
-                {
-                  source: '@pp/solution',
-                  detail: describePublishReadBackSummary(readBack?.data),
-                  hint:
-                    blockingWorkflowActions[0] ??
-                    `Re-run \`pp solution publish ${uniqueName} --environment <alias> --wait-for-export\` when you need an export-backed synchronization checkpoint.`,
-                }
-              ),
-            ]
+          diagnostics: mergeDiagnosticLists(solution.diagnostics, publishResult.diagnostics, syncStatus.diagnostics),
+          warnings: prioritizeExportReadinessWarnings(
+            mergeDiagnosticLists(
+              solution.warnings,
+              publishResult.warnings,
+              syncStatus.warnings,
+              buildBlockingWorkflowWarning(uniqueName, syncStatus.data.readBack)
+                ? [buildBlockingWorkflowWarning(uniqueName, syncStatus.data.readBack)!]
+                : undefined,
+              syncStatus.data.exportCheck.confirmed
+                ? undefined
+                : [
+                    createDiagnostic(
+                      'warning',
+                      'SOLUTION_PUBLISH_SYNC_NOT_CONFIRMED',
+                      `Publish for solution ${uniqueName} was accepted, but an immediate export-backed synchronization probe still did not confirm readiness.`,
+                      {
+                        source: '@pp/solution',
+                        detail: describePublishReadBackSummary(syncStatus.data.readBack),
+                        hint:
+                          blockingWorkflowActions[0] ??
+                          `Re-run \`pp solution publish ${uniqueName} --environment <alias> --wait-for-export\` when you need repeated export polling until one checkpoint succeeds.`,
+                      }
+                    ),
+                  ]
+            )
           ),
           provenance: [
             {
               kind: 'official-api',
               source: 'Dataverse PublishAllXml',
             },
-            ...(readBack?.provenance ?? []),
+            ...(syncStatus.provenance ?? []),
           ],
         }
       );
@@ -1542,7 +1627,19 @@ export class SolutionService {
 
     while (Date.now() - startedAt <= timeoutMs) {
       attempts += 1;
+      lastObservedReadBack = (await this.describePublishReadBack(uniqueName))?.data;
       const remainingMs = Math.max(1, timeoutMs - (Date.now() - startedAt));
+      const blockedWorkflowExportCheck = buildBlockedWorkflowExportCheck(
+        uniqueName,
+        options.exportOptions?.managed ? 'managed' : 'unmanaged',
+        lastObservedReadBack
+      );
+      if (blockedWorkflowExportCheck) {
+        lastExportDiagnostic = selectPrimaryExportReadinessDiagnostic(
+          blockedWorkflowExportCheck.failure?.diagnostics,
+          blockedWorkflowExportCheck.failure?.warnings
+        );
+      }
       options.onProgress?.({
         stage: 'polling',
         attempt: attempts,
@@ -1553,6 +1650,55 @@ export class SolutionService {
         latestExportDiagnostic: lastExportDiagnostic,
         readBack: lastObservedReadBack,
       });
+      if (blockedWorkflowExportCheck) {
+        return fail(
+          [
+            createDiagnostic(
+              'error',
+              'SOLUTION_PUBLISH_EXPORT_BLOCKED_WORKFLOW_STATE',
+              `Publish for solution ${uniqueName} was accepted, but packaged workflow state already shows export readiness is blocked.`,
+              {
+                source: '@pp/solution',
+                detail: describePublishReadBackSummary(lastObservedReadBack),
+                hint: buildBlockingWorkflowSuggestedNextActions(uniqueName, lastObservedReadBack)[0],
+              }
+            ),
+            ...solution.diagnostics,
+            ...publishResult.diagnostics,
+          ],
+          {
+            supportTier: 'preview',
+            details: {
+              solution: solution.data,
+              published: false,
+              action: {
+                name: 'PublishAllXml',
+                accepted: true,
+              },
+              waitForExport: true,
+              synchronization: {
+                kind: 'solution-export',
+                confirmed: false,
+                attempts,
+                elapsedMs: Date.now() - startedAt,
+              },
+              blockers: buildSolutionSyncStatusBlockers(lastObservedReadBack),
+              readBack: lastObservedReadBack,
+              exportCheck: blockedWorkflowExportCheck,
+            },
+            warnings: prioritizeExportReadinessWarnings(
+              mergeDiagnosticLists(solution.warnings, publishResult.warnings, blockedWorkflowExportCheck.failure?.warnings)
+            ),
+            suggestedNextActions: blockedWorkflowExportCheck.failure?.suggestedNextActions,
+            provenance: [
+              {
+                kind: 'official-api',
+                source: 'Dataverse PublishAllXml',
+              },
+            ],
+          }
+        );
+      }
       lastExportResult = await this.exportSolution(uniqueName, {
         ...options.exportOptions,
         requestTimeoutMs: remainingMs,
@@ -1606,13 +1752,15 @@ export class SolutionService {
         );
       }
 
-      lastExportDiagnostic = lastExportResult.diagnostics[0]
-        ? {
-            code: lastExportResult.diagnostics[0].code,
-            message: lastExportResult.diagnostics[0].message,
-          }
-        : undefined;
-      lastObservedReadBack = (await this.describePublishReadBack(uniqueName))?.data;
+      lastExportDiagnostic = selectPrimaryExportReadinessDiagnostic(
+        lastExportResult.diagnostics,
+        mergeDiagnosticLists(
+          lastExportResult.warnings,
+          buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)
+            ? [buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)!]
+            : undefined
+        )
+      );
 
       if (Date.now() - startedAt >= timeoutMs) {
         break;
@@ -1621,6 +1769,7 @@ export class SolutionService {
       await sleep(pollIntervalMs);
     }
 
+    const lastExportSplit = splitWarningDiagnostics(lastExportResult?.diagnostics);
     return fail(
       mergeDiagnosticLists(
         [
@@ -1636,31 +1785,63 @@ export class SolutionService {
         ],
         solution.diagnostics,
         publishResult.diagnostics,
-        lastExportResult?.diagnostics
-        ),
+        lastExportSplit.diagnostics
+      ),
       {
         supportTier: 'preview',
-        warnings: mergeDiagnosticLists(
-          solution.warnings,
-          publishResult.warnings,
-          lastExportResult?.warnings,
-          buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)
-            ? [buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)!]
-            : undefined,
-          lastObservedReadBack
-            ? [
-                createDiagnostic(
-                  'warning',
-                  'SOLUTION_PUBLISH_LAST_READBACK',
-                  `Latest component read-back for solution ${uniqueName} was captured before the export checkpoint timed out.`,
-                  {
-                    source: '@pp/solution',
-                    detail: describePublishReadBackSummary(lastObservedReadBack),
-                    hint: `Run \`pp solution sync-status ${uniqueName} --environment <alias> --format json\` to capture the same component read-back alongside a fresh export probe.`,
-                  }
-                ),
-              ]
-            : undefined
+        details: {
+          solution: solution.data,
+          published: false,
+          action: {
+            name: 'PublishAllXml',
+            accepted: true,
+          },
+          waitForExport: true,
+          synchronization: {
+            kind: 'solution-export',
+            confirmed: false,
+            attempts,
+            elapsedMs: Date.now() - startedAt,
+          },
+          blockers: buildSolutionSyncStatusBlockers(lastObservedReadBack),
+          readBack: lastObservedReadBack,
+          exportCheck: {
+            attempted: true,
+            confirmed: false,
+            packageType: options.exportOptions?.managed ? 'managed' : 'unmanaged',
+            failure: lastExportResult
+              ? {
+                  ...normalizeExportCheckFailure(lastExportResult.diagnostics, lastExportResult.warnings),
+                  suggestedNextActions: lastExportResult.suggestedNextActions,
+                  details: lastExportResult.details,
+                }
+              : undefined,
+          },
+        },
+        warnings: prioritizeExportReadinessWarnings(
+          mergeDiagnosticLists(
+            solution.warnings,
+            publishResult.warnings,
+            lastExportSplit.warnings,
+            lastExportResult?.warnings,
+            buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)
+              ? [buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)!]
+              : undefined,
+            lastObservedReadBack
+              ? [
+                  createDiagnostic(
+                    'warning',
+                    'SOLUTION_PUBLISH_LAST_READBACK',
+                    `Latest component read-back for solution ${uniqueName} was captured before the export checkpoint timed out.`,
+                    {
+                      source: '@pp/solution',
+                      detail: describePublishReadBackSummary(lastObservedReadBack),
+                      hint: `Run \`pp solution sync-status ${uniqueName} --environment <alias> --format json\` to capture the same component read-back alongside a fresh export probe.`,
+                    }
+                  ),
+                ]
+              : undefined
+          )
         ),
         suggestedNextActions: [
           ...buildBlockingWorkflowSuggestedNextActions(uniqueName, lastObservedReadBack),
@@ -1683,6 +1864,7 @@ export class SolutionService {
   }
 
   async syncStatus(uniqueName: string, options: SolutionSyncStatusOptions = {}): Promise<OperationResult<SolutionSyncStatusResult>> {
+    const startedAt = Date.now();
     const solution = await this.inspect(uniqueName);
     if (!solution.success) {
       return solution as unknown as OperationResult<SolutionSyncStatusResult>;
@@ -1691,6 +1873,7 @@ export class SolutionService {
     if (!solution.data) {
       return fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`), {
         supportTier: 'preview',
+        suggestedNextActions: solution.suggestedNextActions,
       });
     }
 
@@ -1699,6 +1882,11 @@ export class SolutionService {
       return readBackResult as unknown as OperationResult<SolutionSyncStatusResult>;
     }
     const blockingWorkflowActions = buildBlockingWorkflowSuggestedNextActions(uniqueName, readBackResult.data);
+    options.onProgress?.({
+      stage: 'readback-complete',
+      elapsedMs: Date.now() - startedAt,
+      readBack: readBackResult.data,
+    });
 
     const packageType: Exclude<SolutionPackageType, 'both'> = options.managed ? 'managed' : 'unmanaged';
     const includeExportCheck = options.includeExportCheck ?? true;
@@ -1711,51 +1899,101 @@ export class SolutionService {
     };
 
     if (includeExportCheck) {
-      if (!options.outDir && !options.outPath) {
-        tempOutDir = await mkdtemp(join(tmpdir(), 'pp-solution-sync-status-'));
-      }
-      if (!options.manifestPath && tempOutDir) {
-        tempManifestPath = join(tempOutDir, `${uniqueName}.${packageType}.pp-solution.json`);
-      }
-
-      try {
-        const exportResult = await this.exportSolution(uniqueName, {
-          managed: options.managed,
-          outDir: options.outDir ?? tempOutDir,
-          outPath: options.outPath,
-          manifestPath: options.manifestPath ?? tempManifestPath,
-          requestTimeoutMs: options.requestTimeoutMs,
+      options.onProgress?.({
+        stage: 'export-check-started',
+        elapsedMs: Date.now() - startedAt,
+        packageType,
+        readBack: readBackResult.data,
+      });
+      const blockedWorkflowExportCheck = buildBlockedWorkflowExportCheck(uniqueName, packageType, readBackResult.data);
+      if (blockedWorkflowExportCheck) {
+        exportCheck = blockedWorkflowExportCheck;
+        options.onProgress?.({
+          stage: 'export-check-complete',
+          elapsedMs: Date.now() - startedAt,
+          packageType,
+          readBack: readBackResult.data,
+          exportConfirmed: false,
+          latestExportDiagnostic: selectPrimaryExportReadinessDiagnostic(
+            blockedWorkflowExportCheck.failure?.diagnostics,
+            blockedWorkflowExportCheck.failure?.warnings
+          ),
         });
+      } else {
+        if (!options.outDir && !options.outPath) {
+          tempOutDir = await mkdtemp(join(tmpdir(), 'pp-solution-sync-status-'));
+        }
+        if (!options.manifestPath && tempOutDir) {
+          tempManifestPath = join(tempOutDir, `${uniqueName}.${packageType}.pp-solution.json`);
+        }
 
-        if (exportResult.success && exportResult.data) {
-          exportCheck = {
-            attempted: true,
-            confirmed: true,
-            packageType,
-            artifact: options.outDir || options.outPath ? exportResult.data.artifact : undefined,
-            manifest: options.outDir || options.outPath || options.manifestPath ? exportResult.data.manifest : undefined,
-            manifestPath: options.outDir || options.outPath || options.manifestPath ? exportResult.data.manifestPath : undefined,
-          };
-        } else {
-          exportCheck = {
-            attempted: true,
-            confirmed: false,
-            packageType,
-            failure: {
-              diagnostics: exportResult.diagnostics,
-              warnings: mergeDiagnosticLists(
+        try {
+          const exportResult = await this.exportSolution(uniqueName, {
+            managed: options.managed,
+            outDir: options.outDir ?? tempOutDir,
+            outPath: options.outPath,
+            manifestPath: options.manifestPath ?? tempManifestPath,
+            requestTimeoutMs: options.requestTimeoutMs,
+          });
+
+          if (exportResult.success && exportResult.data) {
+            exportCheck = {
+              attempted: true,
+              confirmed: true,
+              packageType,
+              artifact: options.outDir || options.outPath ? exportResult.data.artifact : undefined,
+              manifest: options.outDir || options.outPath || options.manifestPath ? exportResult.data.manifest : undefined,
+              manifestPath: options.outDir || options.outPath || options.manifestPath ? exportResult.data.manifestPath : undefined,
+            };
+            options.onProgress?.({
+              stage: 'export-check-complete',
+              elapsedMs: Date.now() - startedAt,
+              packageType,
+              readBack: readBackResult.data,
+              exportConfirmed: true,
+            });
+          } else {
+            const normalizedExportFailure = normalizeExportCheckFailure(
+              exportResult.diagnostics,
+              mergeDiagnosticLists(
                 exportResult.warnings,
                 buildBlockingWorkflowWarning(uniqueName, readBackResult.data)
                   ? [buildBlockingWorkflowWarning(uniqueName, readBackResult.data)!]
                   : undefined
+              )
+            );
+            exportCheck = {
+              attempted: true,
+              confirmed: false,
+              packageType,
+              failure: {
+                diagnostics: normalizedExportFailure.diagnostics,
+                warnings: normalizedExportFailure.warnings,
+                suggestedNextActions: [...new Set([...(blockingWorkflowActions ?? []), ...(exportResult.suggestedNextActions ?? [])])],
+                details: exportResult.details,
+              },
+            };
+            options.onProgress?.({
+              stage: 'export-check-complete',
+              elapsedMs: Date.now() - startedAt,
+              packageType,
+              readBack: readBackResult.data,
+              exportConfirmed: false,
+              latestExportDiagnostic: selectPrimaryExportReadinessDiagnostic(
+                exportResult.diagnostics,
+                mergeDiagnosticLists(
+                  exportResult.warnings,
+                  buildBlockingWorkflowWarning(uniqueName, readBackResult.data)
+                    ? [buildBlockingWorkflowWarning(uniqueName, readBackResult.data)!]
+                    : undefined
+                )
               ),
-              suggestedNextActions: [...new Set([...(blockingWorkflowActions ?? []), ...(exportResult.suggestedNextActions ?? [])])],
-            },
-          };
-        }
-      } finally {
-        if (tempOutDir) {
-          await rm(tempOutDir, { recursive: true, force: true });
+            });
+          }
+        } finally {
+          if (tempOutDir) {
+            await rm(tempOutDir, { recursive: true, force: true });
+          }
         }
       }
     }
@@ -1774,11 +2012,37 @@ export class SolutionService {
       {
         supportTier: 'preview',
         diagnostics: mergeDiagnosticLists(solution.diagnostics, readBackResult.diagnostics),
-        warnings: mergeDiagnosticLists(solution.warnings, readBackResult.warnings),
+        warnings: prioritizeExportReadinessWarnings(
+          mergeDiagnosticLists(solution.warnings, readBackResult.warnings, exportCheck.failure?.warnings)
+        ),
         provenance: [
           ...(readBackResult.provenance ?? []),
         ],
       }
+    );
+  }
+
+  private async buildMissingSolutionSuggestions(uniqueName: string): Promise<string[]> {
+    const listed = await this.list();
+
+    if (!listed.success) {
+      return [`Run \`pp solution list --environment <alias> --format json\` to inspect the visible solution unique names before retrying ${uniqueName}.`];
+    }
+
+    const available = listed.data ?? [];
+    const latestUnmanaged = chooseLatestVisibleSolution(available.filter((solution) => solution.ismanaged !== true)) ?? chooseLatestVisibleSolution(available);
+
+    return Array.from(
+      new Set(
+        [
+          available.length > 0
+            ? `Run \`pp solution list --environment <alias> --format json\` to inspect the ${available.length} visible solution unique name${available.length === 1 ? '' : 's'} before retrying ${uniqueName}.`
+            : `Run \`pp solution list --environment <alias> --format json\` to confirm which solutions are visible before retrying ${uniqueName}.`,
+          latestUnmanaged
+            ? `Latest visible unmanaged candidate: \`${latestUnmanaged.uniquename}\`${latestUnmanaged.version ? ` (version ${latestUnmanaged.version})` : ''}. Inspect it with \`pp solution inspect ${latestUnmanaged.uniquename} --environment <alias> --format json\` if this environment is using a newer disposable shell instead of ${uniqueName}.`
+            : undefined,
+        ].filter((value): value is string => Boolean(value))
+      )
     );
   }
 
@@ -1827,6 +2091,8 @@ export class SolutionService {
           uniqueName: workflow.uniquename,
           workflowState,
           category: workflow.category,
+          stateCode: workflow.statecode,
+          statusCode: workflow.statuscode,
           summary: `${label} [id=${workflow.workflowid}; category=${workflow.category ?? 'unknown'}; state=${workflowState}]`,
         };
       })
@@ -1841,8 +2107,23 @@ export class SolutionService {
     const blockingWorkflowDetails = workflowDetails.filter((workflow) => workflow.workflowState !== 'activated');
     const blockingWorkflowActions = blockingWorkflowDetails.flatMap((workflow) => {
       const identifier = workflow.uniqueName ?? workflow.label ?? workflow.id;
+      const inspectFilter = buildWorkflowInspectFilter(workflow);
+      const sharedActions = [
+        `Run \`pp flow inspect ${identifier} --environment <alias> --solution ${uniqueName} --format json\` to compare definition availability with the packaged workflow state ${workflow.workflowState}.`,
+        inspectFilter
+          ? `Run \`pp dv query workflows --environment <alias> --filter "${inspectFilter}" --select workflowid,name,uniquename,category,statecode,statuscode --format json\` to inspect the raw Dataverse workflow rows for this blocker without relying on unsupported solution scoping.`
+          : 'Query Dataverse workflows environment-wide with `pp dv query workflows --environment <alias> --select workflowid,name,uniquename,category,statecode,statuscode --format json` if you need the raw workflow row for this blocker.',
+      ];
+
+      if (workflow.category === 5) {
+        return [
+          ...sharedActions,
+          `Treat ${identifier} as a blocked draft Modern Flow until a supported activation path is available; current \`pp flow activate\` in-place remediation can still fail with \`FLOW_ACTIVATE_DEFINITION_REQUIRED\` for this Dataverse workflow path.`,
+        ];
+      }
+
       return [
-        `Run \`pp flow inspect ${identifier} --environment <alias> --solution ${uniqueName} --format json\` to confirm why the packaged flow is still ${workflow.workflowState}.`,
+        ...sharedActions,
         `If ${identifier} should already be runnable, activate it in place with \`pp flow activate ${identifier} --environment <alias> --solution ${uniqueName} --format json\`.`,
       ];
     });
@@ -1868,7 +2149,10 @@ export class SolutionService {
                 {
                   source: '@pp/solution',
                   detail: blockingWorkflowDetails
-                    .map((workflow) => `${workflow.label} state=${workflow.workflowState}`)
+                    .map(
+                      (workflow) =>
+                        `${workflow.label} state=${workflow.workflowState} (statecode=${workflow.stateCode ?? 'unknown'}, statuscode=${workflow.statusCode ?? 'unknown'})`
+                    )
                     .join('; '),
                   hint: blockingWorkflowActions[0],
                 }
@@ -1989,6 +2273,8 @@ export class SolutionService {
             logicalName: workflow.uniquename,
             category: workflow.category,
             workflowState: describeWorkflowState(workflow.statecode, workflow.statuscode),
+            stateCode: workflow.statecode,
+            statusCode: workflow.statuscode,
           }))
           .sort(compareNamedReadBackItems),
         modelDrivenApps: (modelDrivenApps.data ?? [])
@@ -2493,7 +2779,7 @@ function describePublishReadBackSummary(readBack: SolutionPublishReadback | unde
   if (readBack.workflows.length > 0) {
     parts.push(
       `workflows: ${readBack.workflows
-        .map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id} state=${workflow.workflowState ?? 'unknown'}`)
+        .map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id} state=${describeWorkflowReadBackState(workflow)}`)
         .join('; ')}`
     );
   }
@@ -2515,8 +2801,52 @@ function getBlockingWorkflowReadBacks(readBack: SolutionPublishReadback | undefi
   );
 }
 
+function hasBlockingWorkflowReadBacks(readBack: SolutionPublishReadback | undefined): boolean {
+  return getBlockingWorkflowReadBacks(readBack).length > 0;
+}
+
 function formatWorkflowIdentifier(workflow: SolutionPublishWorkflowReadback): string {
   return workflow.logicalName ?? workflow.name ?? workflow.id;
+}
+
+function isModernFlowReadBack(workflow: SolutionPublishWorkflowReadback): boolean {
+  return workflow.category === 5;
+}
+
+function describeWorkflowReadBackState(workflow: SolutionPublishWorkflowReadback): string {
+  const state = workflow.workflowState ?? 'unknown';
+
+  if (workflow.stateCode === undefined && workflow.statusCode === undefined) {
+    return state;
+  }
+
+  return `${state} (statecode=${workflow.stateCode ?? 'unknown'}, statuscode=${workflow.statusCode ?? 'unknown'})`;
+}
+
+function buildWorkflowInspectFilter(workflow: {
+  id?: string;
+  uniqueName?: string;
+  label?: string;
+}): string | undefined {
+  const clauses: string[] = [];
+
+  if (workflow.id) {
+    clauses.push(`workflowid eq ${workflow.id}`);
+  }
+
+  if (workflow.uniqueName) {
+    clauses.push(`uniquename eq '${workflow.uniqueName.replace(/'/g, "''")}'`);
+  }
+
+  if (workflow.label && workflow.label !== workflow.uniqueName) {
+    clauses.push(`name eq '${workflow.label.replace(/'/g, "''")}'`);
+  }
+
+  if (clauses.length === 0) {
+    return undefined;
+  }
+
+  return clauses.length === 1 ? clauses[0] : `(${clauses.join(' or ')})`;
 }
 
 function buildBlockingWorkflowSuggestedNextActions(
@@ -2531,8 +2861,27 @@ function buildBlockingWorkflowSuggestedNextActions(
 
   const actions = blocking.flatMap((workflow) => {
     const identifier = formatWorkflowIdentifier(workflow);
+    const inspectFilter = buildWorkflowInspectFilter({
+      id: workflow.id,
+      uniqueName: workflow.logicalName,
+      label: workflow.name,
+    });
+    const sharedActions = [
+      `Run \`pp flow inspect ${identifier} --environment <alias> --solution ${solutionUniqueName} --format json\` to compare definition availability with the packaged workflow state ${describeWorkflowReadBackState(workflow)}.`,
+      inspectFilter
+        ? `Run \`pp dv query workflows --environment <alias> --filter "${inspectFilter}" --select workflowid,name,uniquename,category,statecode,statuscode --format json\` to inspect the raw Dataverse workflow rows for this blocker without relying on unsupported solution scoping.`
+        : 'Query Dataverse workflows environment-wide with `pp dv query workflows --environment <alias> --select workflowid,name,uniquename,category,statecode,statuscode --format json` if you need the raw workflow row for this blocker.',
+    ];
+
+    if (isModernFlowReadBack(workflow)) {
+      return [
+        ...sharedActions,
+        `Treat ${identifier} as a blocked draft Modern Flow until a supported activation path is available; current \`pp flow activate\` in-place remediation can still fail with \`FLOW_ACTIVATE_DEFINITION_REQUIRED\` for this Dataverse workflow path.`,
+      ];
+    }
+
     return [
-      `Run \`pp flow inspect ${identifier} --environment <alias> --solution ${solutionUniqueName} --format json\` to confirm why the packaged flow is still ${workflow.workflowState}.`,
+      ...sharedActions,
       `If ${identifier} should already be runnable, activate it in place with \`pp flow activate ${identifier} --environment <alias> --solution ${solutionUniqueName} --format json\`.`,
     ];
   });
@@ -2557,11 +2906,48 @@ function buildBlockingWorkflowWarning(
     {
       source: '@pp/solution',
       detail: blocking
-        .map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id} state=${workflow.workflowState ?? 'unknown'}`)
+        .map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id} state=${describeWorkflowReadBackState(workflow)}`)
         .join('; '),
       hint: buildBlockingWorkflowSuggestedNextActions(solutionUniqueName, readBack)[0],
     }
   );
+}
+
+function buildBlockedWorkflowExportCheck(
+  solutionUniqueName: string,
+  packageType: Exclude<SolutionPackageType, 'both'>,
+  readBack: SolutionPublishReadback | undefined
+): SolutionSyncStatusExportCheck | undefined {
+  if (!hasBlockingWorkflowReadBacks(readBack)) {
+    return undefined;
+  }
+
+  const blockingWarning = buildBlockingWorkflowWarning(solutionUniqueName, readBack);
+  const skipWarning = createDiagnostic(
+    'warning',
+    'SOLUTION_EXPORT_CHECK_SKIPPED_BLOCKED_WORKFLOW_STATE',
+    `Skipped the export-readiness probe for solution ${solutionUniqueName} because packaged workflow state already shows export readiness is blocked.`,
+    {
+      source: '@pp/solution',
+      detail: describePublishReadBackSummary(readBack),
+      hint: buildBlockingWorkflowSuggestedNextActions(solutionUniqueName, readBack)[0],
+    }
+  );
+
+  return {
+    attempted: false,
+    confirmed: false,
+    packageType,
+    failure: {
+      diagnostics: [],
+      warnings: prioritizeExportReadinessWarnings([skipWarning, ...(blockingWarning ? [blockingWarning] : [])]),
+      suggestedNextActions: buildBlockingWorkflowSuggestedNextActions(solutionUniqueName, readBack),
+      details: {
+        reason: 'blocked-workflow-state',
+        readBack,
+      },
+    },
+  };
 }
 
 function buildSolutionSyncStatusBlockers(readBack: SolutionPublishReadback | undefined): SolutionSyncStatusBlocker[] {
@@ -2572,7 +2958,9 @@ function buildSolutionSyncStatusBlockers(readBack: SolutionPublishReadback | und
     name: workflow.name,
     logicalName: workflow.logicalName,
     workflowState: workflow.workflowState,
-    reason: `Workflow ${workflow.name ?? workflow.logicalName ?? workflow.id} is still ${workflow.workflowState ?? 'not runnable'}, so solution export readiness remains blocked.`,
+    stateCode: workflow.stateCode,
+    statusCode: workflow.statusCode,
+    reason: `Workflow ${workflow.name ?? workflow.logicalName ?? workflow.id} is still ${describeWorkflowReadBackState(workflow)}, so solution export readiness remains blocked.`,
   }));
 }
 
@@ -2805,6 +3193,62 @@ function describeWorkflowState(stateCode: number | undefined, statusCode: number
 
 function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagnostic[] {
   return lists.flatMap((list) => list ?? []);
+}
+
+function splitWarningDiagnostics(diagnostics: Diagnostic[] | undefined): {
+  diagnostics: Diagnostic[];
+  warnings: Diagnostic[];
+} {
+  const allDiagnostics = mergeDiagnosticLists(diagnostics);
+  return {
+    diagnostics: allDiagnostics.filter((diagnostic) => diagnostic.level !== 'warning'),
+    warnings: allDiagnostics.filter((diagnostic) => diagnostic.level === 'warning'),
+  };
+}
+
+function compareExportReadinessWarningPriority(left: Diagnostic, right: Diagnostic): number {
+  const priority = new Map<string, number>([
+    ['SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE', 0],
+    ['SOLUTION_EXPORT_BLOCKED_WORKFLOW_STATE', 1],
+    ['SOLUTION_EXPORT_WORKFLOW_CONTEXT', 2],
+    ['SOLUTION_PUBLISH_LAST_READBACK', 3],
+    ['DATAVERSE_CONNREF_SCOPE_EMPTY', 4],
+    ['DATAVERSE_CONNREF_VALIDATE_EMPTY', 5],
+  ]);
+
+  return (priority.get(left.code) ?? Number.MAX_SAFE_INTEGER) - (priority.get(right.code) ?? Number.MAX_SAFE_INTEGER);
+}
+
+function prioritizeExportReadinessWarnings(warnings: Diagnostic[] | undefined): Diagnostic[] {
+  return [...mergeDiagnosticLists(warnings)].sort((left, right) => {
+    const priorityCompare = compareExportReadinessWarningPriority(left, right);
+    if (priorityCompare !== 0) {
+      return priorityCompare;
+    }
+
+    return left.code.localeCompare(right.code);
+  });
+}
+
+function selectPrimaryExportReadinessDiagnostic(
+  diagnostics: Diagnostic[] | undefined,
+  warnings: Diagnostic[] | undefined
+): Pick<Diagnostic, 'code' | 'message'> | undefined {
+  const prioritizedWarnings = prioritizeExportReadinessWarnings(warnings);
+  const prioritizedDiagnostics = splitWarningDiagnostics(diagnostics);
+  const primary = prioritizedWarnings[0] ?? prioritizedDiagnostics.diagnostics[0] ?? prioritizedDiagnostics.warnings[0];
+  return primary ? { code: primary.code, message: primary.message } : undefined;
+}
+
+function normalizeExportCheckFailure(
+  diagnostics: Diagnostic[] | undefined,
+  warnings: Diagnostic[] | undefined
+): Pick<SolutionSyncStatusExportCheckFailure, 'diagnostics' | 'warnings'> {
+  const splitDiagnostics = splitWarningDiagnostics(diagnostics);
+  return {
+    diagnostics: splitDiagnostics.diagnostics,
+    warnings: prioritizeExportReadinessWarnings(mergeDiagnosticLists(warnings, splitDiagnostics.warnings)),
+  };
 }
 
 function readString(value: unknown): string | undefined {
@@ -3595,6 +4039,148 @@ function explainImportFailure(diagnostics: Diagnostic[], manifest?: SolutionRele
   }
 
   return Array.from(new Set(actions));
+}
+
+function describeManagedExportContradiction(
+  uniqueName: string,
+  packageType: Exclude<SolutionPackageType, 'both'>,
+  solution: SolutionSummary,
+  diagnostics: Diagnostic[] | undefined
+): {
+  diagnostics?: Diagnostic[];
+  warnings?: Diagnostic[];
+  suggestedNextActions?: string[];
+  details?: SolutionExportFailureDetails['managedStateContradiction'];
+} | undefined {
+  if (packageType !== 'unmanaged' || solution.ismanaged !== false) {
+    return undefined;
+  }
+
+  const conflictingDiagnostic = (diagnostics ?? []).find((diagnostic) => {
+    const haystack = `${diagnostic.message ?? ''}\n${diagnostic.detail ?? ''}`;
+    return /managed solutions cannot be exported/i.test(haystack);
+  });
+
+  if (!conflictingDiagnostic) {
+    return undefined;
+  }
+
+  return {
+    warnings: [
+      createDiagnostic(
+        'warning',
+        'SOLUTION_EXPORT_MANAGED_STATE_CONTRADICTION',
+        `Solution ${uniqueName} inspected as unmanaged, but ExportSolution reported that managed solutions cannot be exported.`,
+        {
+          source: '@pp/solution',
+          detail: `Inspect reported ismanaged=false for ${uniqueName}, but ${conflictingDiagnostic.code} said: ${conflictingDiagnostic.message}`,
+          hint: `Run \`pp solution sync-status ${uniqueName} --environment <alias> --format json\` to capture solution read-back plus a fresh export probe before retrying export.`,
+        }
+      ),
+    ],
+    suggestedNextActions: [
+      `Run \`pp solution sync-status ${uniqueName} --environment <alias> --format json\` to capture solution read-back and a fresh export probe in one response.`,
+      `Re-run \`pp solution inspect ${uniqueName} --environment <alias> --format json\` to confirm whether Dataverse still reports \`ismanaged=false\` before retrying export.`,
+    ],
+    details: {
+      inspect: {
+        solutionid: solution.solutionid,
+        uniquename: solution.uniquename,
+        friendlyname: solution.friendlyname,
+        version: solution.version,
+        ismanaged: solution.ismanaged,
+      },
+      export: {
+        diagnosticCode: conflictingDiagnostic.code,
+        message: conflictingDiagnostic.message,
+        detail: conflictingDiagnostic.detail,
+      },
+    },
+  };
+}
+
+function chooseLatestVisibleSolution(solutions: SolutionSummary[]): SolutionSummary | undefined {
+  return [...solutions].sort(compareSolutionRecency).at(0);
+}
+
+function compareSolutionRecency(left: SolutionSummary, right: SolutionSummary): number {
+  const timestampCompare = compareSolutionEmbeddedTimestamps(left, right);
+  if (timestampCompare !== 0) {
+    return timestampCompare;
+  }
+
+  const versionCompare = compareVersionStrings(right.version, left.version);
+  if (versionCompare !== 0) {
+    return versionCompare;
+  }
+
+  const friendlyCompare = (right.friendlyname ?? '').localeCompare(left.friendlyname ?? '');
+  if (friendlyCompare !== 0) {
+    return friendlyCompare;
+  }
+
+  return (right.uniquename ?? '').localeCompare(left.uniquename ?? '');
+}
+
+function compareSolutionEmbeddedTimestamps(left: SolutionSummary, right: SolutionSummary): number {
+  const leftTimestamp = extractSolutionRecencyTimestamp(left);
+  const rightTimestamp = extractSolutionRecencyTimestamp(right);
+
+  if (!leftTimestamp && !rightTimestamp) {
+    return 0;
+  }
+
+  if (!leftTimestamp) {
+    return -1;
+  }
+
+  if (!rightTimestamp) {
+    return 1;
+  }
+
+  return rightTimestamp.localeCompare(leftTimestamp);
+}
+
+function extractSolutionRecencyTimestamp(solution: SolutionSummary): string | undefined {
+  const candidates = [solution.uniquename, solution.friendlyname];
+
+  for (const candidate of candidates) {
+    const match = candidate?.match(/(20\d{6}(?:T?\d{6,9}Z?)?)/i);
+    if (match?.[1]) {
+      return match[1].replace(/[^0-9]/g, '');
+    }
+  }
+
+  return undefined;
+}
+
+function compareVersionStrings(left: string | undefined, right: string | undefined): number {
+  if (left === right) {
+    return 0;
+  }
+
+  if (!left) {
+    return -1;
+  }
+
+  if (!right) {
+    return 1;
+  }
+
+  const leftParts = left.split(/[^0-9]+/).filter(Boolean).map((part) => Number.parseInt(part, 10));
+  const rightParts = right.split(/[^0-9]+/).filter(Boolean).map((part) => Number.parseInt(part, 10));
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftValue = leftParts[index] ?? 0;
+    const rightValue = rightParts[index] ?? 0;
+
+    if (leftValue !== rightValue) {
+      return leftValue - rightValue;
+    }
+  }
+
+  return left.localeCompare(right);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

@@ -268,6 +268,11 @@ Look for:
 - `auth.type` and `auth.browserProfile` to see whether the alias is
   browser-backed
 - `tooling.pac.sharesPpAuthContext`, which is currently `false`
+- `tooling.pac.organizationUrl` and `tooling.pac.verificationCommand` so the
+  pac target URL check is explicit instead of implied
+- `tooling.pac.nonInteractiveVerification` so the non-interactive contract is
+  explicit: use `pp` for `--no-interactive-auth` checks instead of assuming the
+  same flag exists on `pac`
 - `tooling.pac.risk` and `tooling.pac.reason` before assuming a `pac` fallback
   will stay non-interactive
 
@@ -275,6 +280,11 @@ For harness and fallback workflows, use that output as the contract. Prefer
 staying inside `pp` when possible; if `pac` is unavoidable, treat it as a
 separately authenticated tool and verify it explicitly before relying on it in
 the middle of a scenario step.
+
+In particular, treat `--no-interactive-auth` as a `pp` contract, not a `pac`
+contract. Use `pp env inspect <alias>` plus `pp dv whoami --no-interactive-auth`
+for the non-interactive preflight, then use `pac auth list` only to verify
+whether pac is separately authenticated to the same org URL.
 
 For canvas workflows in particular, do not assume `pac canvas list` or
 `pac canvas download` can reuse a working `pp` browser-backed alias. If
@@ -286,14 +296,16 @@ When `pac` is genuinely required, bootstrap it as its own setup step instead of
 discovering that requirement mid-run:
 
 ```bash
+pac auth list
 pac auth create --name test-pac --deviceCode --environment https://example.crm.dynamics.com
 pac auth select --name test-pac
 pac auth who
 ```
 
-Use the Dataverse org URL from the target environment alias, not the fact that
-`pp dv whoami --env <alias>` succeeded, as the input contract for that
-bootstrap.
+First compare the active `pac auth list` URL with
+`tooling.pac.organizationUrl` from `pp env inspect`. Use the Dataverse org URL
+from the target environment alias, not the fact that `pp dv whoami --env
+<alias>` succeeded, as the input contract for that bootstrap.
 
 For disposable bootstrap flows, `pp env cleanup-plan <alias> --prefix <runPrefix>`
 lists solutions whose unique name or friendly name starts with that prefix.

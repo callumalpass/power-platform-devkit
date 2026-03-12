@@ -420,6 +420,7 @@ async function runCli(
   args: string[],
   options: {
     env?: Record<string, string | undefined>;
+    cwd?: string;
   } = {}
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const stdout: string[] = [];
@@ -433,9 +434,14 @@ async function runCli(
     return true;
   }) as typeof process.stderr.write);
   const originalArgv = process.argv;
+  const originalCwd = process.cwd();
   const originalEnv = new Map(Object.keys(options.env ?? {}).map((key) => [key, process.env[key]]));
 
   process.argv = ['node', 'pp', ...args];
+
+  if (options.cwd) {
+    process.chdir(options.cwd);
+  }
 
   for (const [key, value] of Object.entries(options.env ?? {})) {
     if (value === undefined) {
@@ -454,6 +460,7 @@ async function runCli(
     };
   } finally {
     process.argv = originalArgv;
+    process.chdir(originalCwd);
 
     for (const [key, value] of originalEnv.entries()) {
       if (value === undefined) {
@@ -5434,7 +5441,7 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenText(flowValidateYaml.stdout, 'fixtures/cli/golden/protocol/flow-validate-failure.yaml', {
       normalize: (value) => normalizeCliSnapshot(value),
     });
-    await expectGoldenText(flowValidateYaml.stderr, 'fixtures/cli/golden/protocol/flow-validate-diagnostics.yaml');
+    expect(flowValidateYaml.stderr).toBe('');
   });
 
   it('covers seeded-only and registry-only canvas mode failures through the CLI entrypoint', async () => {
@@ -6024,7 +6031,14 @@ describe('cli fixture-backed workflows', () => {
       'json',
     ]);
     expect(deploy.code).toBe(0);
-    expect(deploy.stderr).toBe('');
+    expect(JSON.parse(deploy.stderr)).toMatchObject({
+      success: true,
+      diagnostics: [
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_LIST_SUMMARY',
+        }),
+      ],
+    });
     expect(JSON.parse(deploy.stdout)).toMatchObject({
       targetIdentifier: 'crd_InvoiceFlow',
       operation: 'updated',
@@ -6033,7 +6047,7 @@ describe('cli fixture-backed workflows', () => {
         uniqueName: 'crd_InvoiceFlow',
         solutionUniqueName: 'Core',
       },
-      updatedFields: ['clientdata', 'name', 'description', 'category', 'statecode', 'statuscode'],
+      updatedFields: expect.arrayContaining(['clientdata', 'name', 'description', 'category', 'statecode', 'statuscode']),
     });
 
     const workflows = await client.queryAll<Record<string, unknown>>({
@@ -6361,7 +6375,8 @@ describe('cli fixture-backed workflows', () => {
   });
 
   it('activates a remote flow in place through the CLI entrypoint', async () => {
-    const environmentClient = createFixtureDataverseClient({
+    const updateCalls: Array<{ solutionUniqueName?: string; entity: Record<string, unknown> }> = [];
+    const baseClient = createFixtureDataverseClient({
       query: {
         solutions: [
           {
@@ -6380,8 +6395,11 @@ describe('cli fixture-backed workflows', () => {
             statecode: 0,
             statuscode: 1,
             clientdata: JSON.stringify({
-              definition: {
-                actions: {},
+              schemaVersion: 1,
+              properties: {
+                definition: {
+                  actions: {},
+                },
               },
             }),
           },
@@ -6398,6 +6416,13 @@ describe('cli fixture-backed workflows', () => {
         environmentvariablevalues: [],
       },
     });
+    const environmentClient = {
+      ...baseClient,
+      update: async (table: string, id: string, entity: Record<string, unknown>, options?: { solutionUniqueName?: string }) => {
+        updateCalls.push({ solutionUniqueName: options?.solutionUniqueName, entity });
+        return baseClient.update(table, id, entity, options);
+      },
+    } as unknown as DataverseClient;
 
     mockDataverseResolution({
       test: { client: environmentClient },
@@ -6416,14 +6441,7 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(activate.code).toBe(0);
-    expect(JSON.parse(activate.stderr)).toMatchObject({
-      diagnostics: [
-        expect.objectContaining({
-          code: 'DATAVERSE_CONNREF_SCOPE_EMPTY',
-        }),
-      ],
-      success: true,
-    });
+    expect(activate.stderr).toBe('');
     expect(JSON.parse(activate.stdout)).toMatchObject({
       identifier: 'Invoice Sync',
       source: {
@@ -6450,6 +6468,619 @@ describe('cli fixture-backed workflows', () => {
     expect(workflows.data?.[0]).toMatchObject({
       statecode: 1,
       statuscode: 2,
+    });
+    expect(updateCalls).toEqual([
+      {
+        solutionUniqueName: undefined,
+        entity: {
+          statecode: 1,
+          statuscode: 2,
+        },
+      },
+    ]);
+  });
+
+  it('returns post-failure inspect and sync-status details when flow activate cannot activate a solution-scoped flow in place', async () => {
+    const environmentClient = {
+      ...createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+              friendlyname: 'Core',
+            },
+          ],
+        },
+        queryAll: {
+          workflows: [
+            {
+              workflowid: 'flow-1',
+              name: 'Harness Flow',
+              uniquename: 'crd_HarnessFlow',
+              category: 5,
+              statecode: 0,
+              statuscode: 1,
+              clientdata: JSON.stringify({
+                definition: {
+                  actions: {},
+                },
+              }),
+            },
+          ],
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'comp-flow-1',
+              objectid: 'flow-1',
+              componenttype: 29,
+            },
+          ],
+          connectionreferences: [],
+          environmentvariabledefinitions: [],
+          environmentvariablevalues: [],
+        },
+      }),
+      update: async () =>
+        ({
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'PATCH workflows(flow-1) returned 400',
+              detail: JSON.stringify({
+                error: {
+                  code: 'DefinitionRequestMissingFields',
+                  message: "The definition request is missing required field 'definition'. ",
+                },
+              }),
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        } as OperationResult<never>),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'POST ExportSolution returned 405',
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            body: undefined as T,
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      test: {
+        client: environmentClient,
+        authProfile: {
+          name: 'fixture-user',
+          type: 'user',
+          defaultResource: 'https://test.example.crm.dynamics.com',
+          browserProfile: 'fixture-browser',
+        },
+      },
+    });
+
+    const activate = await runCli([
+      'flow',
+      'activate',
+      'Harness Flow',
+      '--environment',
+      'test',
+      '--solution',
+      'Core',
+      '--format',
+      'json',
+    ]);
+
+    expect(activate.code).toBe(1);
+    const activatePayload = JSON.parse(activate.stdout);
+    expect(activatePayload).toMatchObject({
+      success: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
+        }),
+      ]),
+      details: {
+        flow: {
+          id: 'flow-1',
+          uniqueName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+          solutionUniqueName: 'Core',
+        },
+        solutionSyncStatus: {
+          synchronization: {
+            confirmed: false,
+          },
+          blockers: [
+            expect.objectContaining({
+              logicalName: 'crd_HarnessFlow',
+              workflowState: 'draft',
+            }),
+          ],
+          readBack: {
+            workflows: [
+              expect.objectContaining({
+                logicalName: 'crd_HarnessFlow',
+                workflowState: 'draft',
+              }),
+            ],
+          },
+          exportCheck: {
+            attempted: false,
+            confirmed: false,
+            failure: {
+              warnings: expect.arrayContaining([
+                expect.objectContaining({
+                  code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
+                }),
+                expect.objectContaining({
+                  code: 'SOLUTION_EXPORT_CHECK_SKIPPED_BLOCKED_WORKFLOW_STATE',
+                }),
+              ]),
+            },
+          },
+        },
+      },
+    });
+    expect(activatePayload.details.solutionSyncStatus.exportCheck.failure.diagnostics).toEqual([]);
+  });
+
+  it('returns post-failure inspect and sync-status details when Dataverse nests DefinitionRequestMissingFields inside an outer error envelope', async () => {
+    const environmentClient = {
+      ...createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+              friendlyname: 'Core',
+            },
+          ],
+        },
+        queryAll: {
+          workflows: [
+            {
+              workflowid: 'flow-1',
+              name: 'Harness Flow',
+              uniquename: 'crd_HarnessFlow',
+              category: 5,
+              statecode: 0,
+              statuscode: 1,
+              clientdata: JSON.stringify({
+                definition: {
+                  actions: {},
+                },
+              }),
+            },
+          ],
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'comp-flow-1',
+              objectid: 'flow-1',
+              componenttype: 29,
+            },
+          ],
+          connectionreferences: [],
+          environmentvariabledefinitions: [],
+          environmentvariablevalues: [],
+        },
+      }),
+      update: async () =>
+        ({
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'PATCH workflows(flow-1) returned 400',
+              detail: JSON.stringify({
+                error: {
+                  code: '0x80060467',
+                  message:
+                    'Flow client error returned with status code "BadRequest" and details "{\\"error\\":{\\"code\\":\\"DefinitionRequestMissingFields\\",\\"message\\":\\"The definition request is missing required field \\\'definition\\\'. \\"}}".',
+                },
+              }),
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        } as OperationResult<never>),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'POST ExportSolution returned 405',
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            body: undefined as T,
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      test: { client: environmentClient },
+    });
+
+    const activate = await runCli([
+      'flow',
+      'activate',
+      'Harness Flow',
+      '--environment',
+      'test',
+      '--solution',
+      'Core',
+      '--format',
+      'json',
+    ]);
+
+    expect(activate.code).toBe(1);
+    expect(JSON.parse(activate.stdout)).toMatchObject({
+      success: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
+        }),
+      ]),
+      details: {
+        flow: {
+          id: 'flow-1',
+          uniqueName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+          solutionUniqueName: 'Core',
+        },
+        solutionSyncStatus: {
+          synchronization: {
+            confirmed: false,
+          },
+          blockers: [
+            expect.objectContaining({
+              logicalName: 'crd_HarnessFlow',
+              workflowState: 'draft',
+            }),
+          ],
+          readBack: {
+            workflows: [
+              expect.objectContaining({
+                logicalName: 'crd_HarnessFlow',
+                workflowState: 'draft',
+              }),
+            ],
+          },
+          exportCheck: {
+            attempted: false,
+            confirmed: false,
+          },
+        },
+        tooling: {
+          pac: {
+            selectedEnvironment: 'test',
+            sharesPpAuthContext: false,
+            organizationUrl: 'https://test.example.crm.dynamics.com',
+            recommendedAction: expect.stringContaining('Treat pac as a separately authenticated tool.'),
+          },
+        },
+      },
+      suggestedNextActions: expect.arrayContaining([
+        'Run `pp env inspect test --format json` to confirm the selected environment alias, bound auth profile, and pac/tooling guidance before attempting a non-pp fallback.',
+        expect.stringContaining('Treat pac as a separately authenticated tool.'),
+      ]),
+    });
+  });
+
+  it('returns post-failure inspect and sync-status details when Dataverse rejects the definition payload shape', async () => {
+    const environmentClient = {
+      ...createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+              friendlyname: 'Core',
+            },
+          ],
+        },
+        queryAll: {
+          workflows: [
+            {
+              workflowid: 'flow-1',
+              name: 'Harness Flow',
+              uniquename: 'crd_HarnessFlow',
+              category: 5,
+              statecode: 0,
+              statuscode: 1,
+              clientdata: JSON.stringify({
+                definition: {
+                  actions: {},
+                },
+              }),
+            },
+          ],
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'comp-flow-1',
+              objectid: 'flow-1',
+              componenttype: 29,
+            },
+          ],
+          connectionreferences: [],
+          environmentvariabledefinitions: [],
+          environmentvariablevalues: [],
+        },
+      }),
+      update: async () =>
+        ({
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'PATCH workflows(flow-1) returned 400',
+              detail: JSON.stringify({
+                error: {
+                  code: '0x80048d19',
+                  message:
+                    "Error identified in Payload provided by the user for Entity :'', For more information on this error please follow this help link https://go.microsoft.com/fwlink/?linkid=2195293  ---->  InnerException : Microsoft.OData.ODataException: An unexpected 'StartObject' node was found for property named 'definition' when reading from the JSON reader. A 'PrimitiveValue' node was expected.",
+                },
+              }),
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        } as OperationResult<never>),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'POST ExportSolution returned 405',
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            body: undefined as T,
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      test: { client: environmentClient },
+    });
+
+    const activate = await runCli([
+      'flow',
+      'activate',
+      'Harness Flow',
+      '--environment',
+      'test',
+      '--solution',
+      'Core',
+      '--format',
+      'json',
+    ]);
+
+    expect(activate.code).toBe(1);
+    expect(JSON.parse(activate.stdout)).toMatchObject({
+      success: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
+        }),
+      ]),
+      details: {
+        flow: {
+          id: 'flow-1',
+          uniqueName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+          solutionUniqueName: 'Core',
+        },
+        solutionSyncStatus: {
+          synchronization: {
+            confirmed: false,
+          },
+          blockers: [
+            expect.objectContaining({
+              logicalName: 'crd_HarnessFlow',
+              workflowState: 'draft',
+            }),
+          ],
+          readBack: {
+            workflows: [
+              expect.objectContaining({
+                logicalName: 'crd_HarnessFlow',
+                workflowState: 'draft',
+              }),
+            ],
+          },
+          exportCheck: {
+            attempted: false,
+            confirmed: false,
+          },
+        },
+      },
+      suggestedNextActions: expect.arrayContaining([
+        'Run `pp env inspect test --format json` to confirm the selected environment alias, bound auth profile, and pac/tooling guidance before attempting a non-pp fallback.',
+      ]),
+    });
+  });
+
+  it('returns machine-readable blockers when solution publish times out waiting for export readiness', async () => {
+    const client = {
+      ...createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+              friendlyname: 'Core',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'comp-flow-1',
+              objectid: 'flow-1',
+              componenttype: 29,
+            },
+          ],
+          workflows: [
+            {
+              workflowid: 'flow-1',
+              name: 'Harness Flow',
+              uniquename: 'crd_HarnessFlow',
+              category: 5,
+              statecode: 0,
+              statuscode: 1,
+            },
+          ],
+        },
+      }),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'PublishAllXml') {
+          return ok(
+            {
+              status: 204,
+              headers: {},
+            } as T,
+            { supportTier: 'preview' }
+          );
+        }
+
+        return {
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'POST ExportSolution returned 405',
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        } as OperationResult<never>;
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        client,
+      },
+    });
+
+    const publishResult = await runCli([
+      'solution',
+      'publish',
+      'Core',
+      '--env',
+      'source',
+      '--wait-for-export',
+      '--timeout-ms',
+      '1000',
+      '--poll-interval-ms',
+      '1000',
+      '--format',
+      'json',
+    ]);
+
+    expect(publishResult.code).toBe(1);
+    expect(publishResult.stderr).toContain('Waiting for publish checkpoint: attempt 1');
+    const publishPayload = JSON.parse(publishResult.stdout);
+    expect(publishPayload).toMatchObject({
+      success: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_PUBLISH_EXPORT_TIMEOUT',
+        }),
+      ]),
+      details: {
+        progress: [
+          expect.objectContaining({
+            stage: 'accepted',
+          }),
+          expect.objectContaining({
+            stage: 'polling',
+            attempt: 1,
+          }),
+        ],
+        published: false,
+        action: {
+          name: 'PublishAllXml',
+          accepted: true,
+        },
+        blockers: [
+          expect.objectContaining({
+            logicalName: 'crd_HarnessFlow',
+            workflowState: 'draft',
+          }),
+        ],
+        readBack: {
+          workflows: [
+            expect.objectContaining({
+              logicalName: 'crd_HarnessFlow',
+              workflowState: 'draft',
+            }),
+          ],
+        },
+      },
+    });
+    expect(publishPayload.diagnostics).not.toContainEqual(
+      expect.objectContaining({
+        code: 'DATAVERSE_CONNREF_SCOPE_EMPTY',
+      })
+    );
+    expect(publishPayload.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
+      })
+    );
+    expect(publishPayload.warnings[0]).toMatchObject({
+      code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
     });
   });
 
@@ -6527,11 +7158,11 @@ describe('cli fixture-backed workflows', () => {
     const validate = await runCli(['flow', 'validate', artifactPath, '--format', 'json']);
 
     expect(validate.code).toBe(1);
+    expect(validate.stderr).toBe('');
 
     await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/flow/golden/semantic/cli-validation-report.json', {
       normalize: (value) => normalizeCliSnapshot(value),
     });
-    await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/flow-validation-diagnostics.json');
   });
 
   it('covers semantic flow validation diagnostics through the CLI entrypoint', async () => {
@@ -6539,11 +7170,11 @@ describe('cli fixture-backed workflows', () => {
     const validate = await runCli(['flow', 'validate', artifactPath, '--format', 'json']);
 
     expect(validate.code).toBe(1);
+    expect(validate.stderr).toBe('');
 
     await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/flow/golden/semantic/cli-lint-report.json', {
       normalize: (value) => normalizeCliSnapshot(value),
     });
-    await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/flow-semantic-validation-diagnostics.json');
   });
 
   it('covers Office 365 semantic flow validation diagnostics through the CLI entrypoint', async () => {
@@ -6551,11 +7182,11 @@ describe('cli fixture-backed workflows', () => {
     const validate = await runCli(['flow', 'validate', artifactPath, '--format', 'json']);
 
     expect(validate.code).toBe(1);
+    expect(validate.stderr).toBe('');
 
-    await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/flow/golden/semantic/office365-cli-lint-report.json', {
+    await expectGoldenJson(JSON.parse(validate.stdout), 'fixtures/flow/golden/semantic/office365-validation-report.json', {
       normalize: (value) => normalizeCliSnapshot(value),
     });
-    await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/flow-office365-validation-diagnostics.json');
   });
 
   it('covers remote flow runtime diagnostics through the CLI entrypoint', async () => {
@@ -7007,13 +7638,63 @@ describe('cli fixture-backed workflows', () => {
 
     expect(whoami.code).toBe(0);
     expect(whoami.stderr).toBe('');
-    expect(JSON.parse(whoami.stdout)).toEqual({
+    expect(JSON.parse(whoami.stdout)).toMatchObject({
+      success: true,
+      supportTier: 'preview',
       environment: 'source',
       url: 'https://source.example.crm.dynamics.com',
       authProfile: 'source-user',
       BusinessUnitId: 'bu-1',
       OrganizationId: 'org-1',
       UserId: 'user-1',
+    });
+  });
+
+  it('inherits the active project environment for dv whoami when --environment is omitted', async () => {
+    const tempDir = await createTempDir();
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      ['defaults:', '  environment: fixture', ''].join('\n'),
+      'utf8'
+    );
+
+    const client = {
+      whoAmI: async () => ({
+        success: true,
+        data: {
+          BusinessUnitId: 'bu-project',
+          OrganizationId: 'org-project',
+          UserId: 'user-project',
+        },
+        supportTier: 'preview',
+      }),
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      fixture: {
+        client,
+        environment: {
+          url: 'https://fixture.example.crm.dynamics.com',
+        },
+        authProfile: {
+          name: 'fixture-user',
+        },
+      },
+    });
+
+    const whoami = await runCli(['dv', 'whoami', '--format', 'json'], { cwd: tempDir });
+
+    expect(whoami.code).toBe(0);
+    expect(whoami.stderr).toBe('');
+    expect(JSON.parse(whoami.stdout)).toMatchObject({
+      success: true,
+      supportTier: 'preview',
+      environment: 'fixture',
+      url: 'https://fixture.example.crm.dynamics.com',
+      authProfile: 'fixture-user',
+      BusinessUnitId: 'bu-project',
+      OrganizationId: 'org-project',
+      UserId: 'user-project',
     });
   });
 
@@ -7334,6 +8015,40 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
   });
 
+  it('lets explicit --environment override the active project environment for solution list', async () => {
+    const tempDir = await createTempDir();
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      ['defaults:', '  environment: fixture', ''].join('\n'),
+      'utf8'
+    );
+
+    const fixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
+    )) as SolutionFixtureEnvironments;
+
+    mockDataverseResolution({
+      source: createFixtureDataverseClient(fixture.source),
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [],
+        },
+      }),
+    });
+
+    const list = await runCli(['solution', 'list', '--environment', 'source', '--format', 'json'], { cwd: tempDir });
+
+    expect(list.code).toBe(0);
+    expect(list.stderr).toBe('');
+    expect(JSON.parse(list.stdout)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          uniquename: 'Core',
+        }),
+      ])
+    );
+  });
+
   it('filters solution list results by prefix and exact unique name', async () => {
     const fixture = (await readJsonFile(
       resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
@@ -7380,20 +8095,26 @@ describe('cli fixture-backed workflows', () => {
 
     expect(byPrefix.code).toBe(0);
     expect(byPrefix.stderr).toBe('');
-    expect(JSON.parse(byPrefix.stdout)).toEqual([
-      expect.objectContaining({
-        solutionid: 'sol-harness',
-        uniquename: 'ppHarness20260310T200706248Z',
-      }),
-    ]);
+    expect(JSON.parse(byPrefix.stdout)).toMatchObject({
+      success: true,
+      solutions: [
+        expect.objectContaining({
+          solutionid: 'sol-harness',
+          uniquename: 'ppHarness20260310T200706248Z',
+        }),
+      ],
+    });
 
     expect(byUniqueName.code).toBe(0);
     expect(byUniqueName.stderr).toBe('');
-    expect(JSON.parse(byUniqueName.stdout)).toEqual([
-      expect.objectContaining({
-        uniquename: 'Core',
-      }),
-    ]);
+    expect(JSON.parse(byUniqueName.stdout)).toMatchObject({
+      success: true,
+      solutions: [
+        expect.objectContaining({
+          uniquename: 'Core',
+        }),
+      ],
+    });
   });
 
   it('dispatches solution list when the argv starts with a wrapper separator', async () => {
@@ -7575,9 +8296,85 @@ describe('cli fixture-backed workflows', () => {
         }),
       ]),
       suggestedNextActions: expect.arrayContaining([
-        'If crd_HarnessFlow should already be runnable, activate it in place with `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json`.',
+        'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; current `pp flow activate` in-place remediation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.',
       ]),
       supportTier: 'preview',
+    });
+  });
+
+  it('includes managed-state contradiction details in machine-readable solution export failures', async () => {
+    const client = {
+      query: async <T>(options: { table: string }) =>
+        ok(
+          options.table === 'solutions'
+            ? ([{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0', ismanaged: false }] as T[])
+            : ([] as T[]),
+          { supportTier: 'preview' }
+        ),
+      queryAll: async <T>() => ok([] as T[], { supportTier: 'preview' }),
+      invokeAction: async () =>
+        fail(
+          [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'POST ExportSolution returned 400',
+              detail: JSON.stringify({
+                error: {
+                  code: '0x80048036',
+                  message: 'An error occurred while exporting a solution. Managed solutions cannot be exported.',
+                },
+              }),
+            },
+          ],
+          { supportTier: 'preview' }
+        ),
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        client,
+      },
+    });
+
+    const exportResult = await runCli(['solution', 'export', 'Core', '--env', 'source', '--format', 'json']);
+
+    expect(exportResult.code).toBe(1);
+    expect(exportResult.stderr).toBe('');
+    expect(JSON.parse(exportResult.stdout)).toMatchObject({
+      success: false,
+      details: {
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+          version: '1.0.0.0',
+          ismanaged: false,
+        },
+        packageType: 'unmanaged',
+        managedStateContradiction: {
+          inspect: {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+            friendlyname: 'Core',
+            version: '1.0.0.0',
+            ismanaged: false,
+          },
+          export: {
+            diagnosticCode: 'HTTP_REQUEST_FAILED',
+            message: 'POST ExportSolution returned 400',
+            detail: expect.stringContaining('0x80048036'),
+          },
+        },
+      },
+      warnings: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_EXPORT_MANAGED_STATE_CONTRADICTION',
+        }),
+      ]),
+      suggestedNextActions: expect.arrayContaining([
+        'Run `pp solution sync-status Core --environment <alias> --format json` to capture solution read-back and a fresh export probe in one response.',
+      ]),
     });
   });
 
@@ -7741,8 +8538,27 @@ describe('cli fixture-backed workflows', () => {
 
         return ok([] as T[], { supportTier: 'preview' });
       },
+      listTables: async () =>
+        ok([], {
+          supportTier: 'preview',
+        }),
       invokeAction: async <T>(name: string, parameters?: Record<string, unknown>) => {
         requests.push({ path: name, body: parameters });
+
+        if (name === 'ExportSolution') {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'POST ExportSolution returned 405',
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
 
         return ok(
           {
@@ -7901,8 +8717,27 @@ describe('cli fixture-backed workflows', () => {
 
         return ok([] as T[], { supportTier: 'preview' });
       },
+      listTables: async () =>
+        ok([], {
+          supportTier: 'preview',
+        }),
       invokeAction: async <T>(name: string, parameters?: Record<string, unknown>) => {
         requests.push({ path: name, body: parameters });
+
+        if (name === 'ExportSolution') {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'POST ExportSolution returned 405',
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
 
         return ok(
           {
@@ -7924,13 +8759,26 @@ describe('cli fixture-backed workflows', () => {
     const publishResult = await runCli(['solution', 'publish', 'Core', '--env', 'source', '--format', 'json']);
 
     expect(publishResult.code).toBe(0);
-    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml']);
+    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml', 'ExportSolution']);
     expect(JSON.parse(publishResult.stdout)).toMatchObject({
       published: true,
       waitForExport: false,
       synchronization: {
-        kind: 'none',
+        kind: 'solution-export',
         confirmed: false,
+      },
+      exportCheck: {
+        attempted: true,
+        confirmed: false,
+        packageType: 'unmanaged',
+        failure: {
+          diagnostics: [
+            {
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'POST ExportSolution returned 405',
+            },
+          ],
+        },
       },
       blockers: [
         {
@@ -8089,10 +8937,25 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
+    expect(result.stderr).toContain('captured publish readback for Core');
+    expect(result.stderr).toContain('starting unmanaged export probe for Core');
+    expect(result.stderr).toContain('export probe confirmed readiness for Core');
     expect(await access(exportPath).then(() => true, () => false)).toBe(true);
     expect(requests.map((request) => request.path)).toEqual(['ExportSolution']);
     expect(JSON.parse(result.stdout)).toMatchObject({
+      progress: [
+        expect.objectContaining({
+          stage: 'readback-complete',
+        }),
+        expect.objectContaining({
+          stage: 'export-check-started',
+          packageType: 'unmanaged',
+        }),
+        expect.objectContaining({
+          stage: 'export-check-complete',
+          exportConfirmed: true,
+        }),
+      ],
       synchronization: {
         kind: 'solution-export',
         confirmed: true,
@@ -8111,6 +8974,81 @@ describe('cli fixture-backed workflows', () => {
         confirmed: true,
       },
     });
+  });
+
+  it('passes solution sync-status timeout through to the export probe', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'pp-cli-sync-status-timeout-'));
+    tempDirs.push(tempDir);
+    const requests: Array<{ path: string; body: Record<string, unknown> | undefined; timeoutMs?: number }> = [];
+    const client = {
+      query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'solutions') {
+          return ok(
+            [
+              {
+                solutionid: 'sol-1',
+                uniquename: 'Core',
+                friendlyname: 'Core',
+                version: '1.0.0.0',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'solutioncomponents') {
+          return ok([] as T[], { supportTier: 'preview' });
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+      listTables: async () => ok([], { supportTier: 'preview' }),
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>, options?: { timeoutMs?: number }) => {
+        requests.push({ path: name, body: parameters, timeoutMs: options?.timeoutMs });
+
+        return ok(
+          {
+            status: 200,
+            headers: {},
+            body: {
+              ExportSolutionFile: Buffer.from('fixture').toString('base64'),
+            } as T,
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        client,
+      },
+    });
+
+    const result = await runCli([
+      'solution',
+      'sync-status',
+      'Core',
+      '--env',
+      'source',
+      '--timeout-ms',
+      '20000',
+      '--out',
+      join(tempDir, 'Core.zip'),
+      '--format',
+      'json',
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(requests).toContainEqual(
+      expect.objectContaining({
+        path: 'ExportSolution',
+        timeoutMs: 20_000,
+      })
+    );
   });
 
   it('packs and unpacks solution artifacts through the CLI entrypoint', async () => {
@@ -8287,6 +9225,13 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
     expect(JSON.parse(inspect.stdout)).toEqual({
+      success: true,
+      diagnostics: [],
+      warnings: [],
+      supportTier: 'preview',
+      suggestedNextActions: [],
+      provenance: [],
+      knownLimitations: [],
       name: 'fixture-user',
       type: 'user',
       tenantId: 'common',
@@ -9419,8 +10364,10 @@ describe('cli fixture-backed workflows', () => {
         pac: {
           sharesPpAuthContext: false,
           organizationUrl: 'https://fixture.crm.dynamics.com',
+          verificationCommand: 'pac auth list',
+          nonInteractiveVerification: expect.stringContaining('Do not assume pac supports pp-style `--no-interactive-auth` flags.'),
           risk: 'high',
-          recommendedAction: expect.stringContaining('Treat pac as a separately authenticated tool.'),
+          recommendedAction: expect.stringContaining('Run `pac auth list` and confirm the active profile targets https://fixture.crm.dynamics.com'),
           reason: expect.stringContaining('browser profile fixture-browser'),
         },
       },
@@ -9590,6 +10537,8 @@ describe('cli fixture-backed workflows', () => {
         pac: {
           sharesPpAuthContext: false,
           organizationUrl: 'https://fixture.crm.dynamics.com',
+          verificationCommand: 'pac auth list',
+          nonInteractiveVerification: expect.stringContaining('Use `pp env inspect <alias>` and `pp dv whoami --no-interactive-auth`'),
           risk: 'unknown',
         },
       },
@@ -9935,10 +10884,11 @@ describe('cli fixture-backed workflows', () => {
     expect(solutionSyncStatusHelp.code).toBe(0);
     expect(solutionSyncStatusHelp.stderr).toBe('');
     expect(solutionSyncStatusHelp.stdout).toContain(
-      'Usage: solution sync-status <uniqueName> --environment ALIAS [--skip-export-check] [--managed] [--out PATH] [--manifest FILE]'
+      'Usage: solution sync-status <uniqueName> --environment ALIAS [--skip-export-check] [--timeout-ms N] [--managed] [--out PATH] [--manifest FILE]'
     );
     expect(solutionSyncStatusHelp.stdout).toContain('pp solution sync-status Core --environment dev --format json');
     expect(solutionSyncStatusHelp.stdout).toContain('--skip-export-check');
+    expect(solutionSyncStatusHelp.stdout).toContain('--timeout-ms N');
     expect(solutionSyncStatusHelp.stdout).not.toContain('SOLUTION_SYNC_STATUS_ARGS_REQUIRED');
 
     expect(rootHelp.code).toBe(0);

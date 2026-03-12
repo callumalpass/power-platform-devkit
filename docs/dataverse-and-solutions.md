@@ -696,7 +696,7 @@ pp solution publish Core --env dev
 pp solution publish Core --env dev --wait-for-export --out ./artifacts/Core.zip
 ```
 
-`pp solution publish --format json` also returns `readBack` plus a machine-readable `blockers` list for packaged canvas apps, workflows, and model-driven apps so you can inspect the immediate post-publish state and see whether a draft or suspended workflow is still blocking export readiness even when you do not wait for the export checkpoint.
+`pp solution publish --format json` also returns a `progress` history, `readBack`, a machine-readable `blockers` list, and an `exportCheck` result from one immediate export-backed sync probe so the publish response itself shows whether export readiness was confirmed, timed out after polling, or is still blocked on packaged workflow state.
 
 Inspect solution inventory and preflight facts:
 
@@ -704,6 +704,7 @@ Inspect solution inventory and preflight facts:
 pp solution components Core --env dev
 pp solution dependencies Core --env dev
 pp solution analyze Core --env dev
+pp solution sync-status Core --env dev --timeout-ms 20000 --format json
 pp solution compare Core --source-env dev --target-env prod
 pp solution compare Core --source-env dev --target-env prod --include-model-composition
 pp solution compare Core --source-env dev --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac
@@ -768,7 +769,7 @@ Most current commands default to JSON output. Some project and analysis commands
 Implemented today:
 
 - solution create for unmanaged shells
-- solution publish through the Dataverse `PublishAllXml` action, with an optional export-backed synchronization checkpoint
+- solution publish through the Dataverse `PublishAllXml` action, with an optional export-backed synchronization checkpoint and structured progress history in machine-readable output
 - solution export through the Dataverse `ExportSolution` action with `pp` release manifests
 - solution import through the Dataverse `ImportSolution` action with structured retry guidance
 - target-aware `pp solution import --plan`, which reads the adjacent release manifest plus live target solution state to surface managed/unmanaged and same-version promotion diagnostics before mutating

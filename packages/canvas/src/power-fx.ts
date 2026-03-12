@@ -18,6 +18,7 @@ interface PowerFxBridgeResponse {
 
 const parseCache = new Map<string, ParseResult>();
 let bridgeReady = false;
+const POWER_FX_BRIDGE_TIMEOUT_SECONDS = 5;
 
 export function parsePowerFxExpression(expression: string, options: { allowsSideEffects?: boolean } = {}): ParseResult {
   const cacheKey = `${options.allowsSideEffects ? '1' : '0'}:${expression}`;
@@ -100,16 +101,24 @@ function ensureBridgeBuilt(): void {
 }
 
 function invokeBridge(expression: string, options: { allowsSideEffects?: boolean }): PowerFxBridgeResponse {
-  const execution = spawnSync('dotnet', [getBridgeDllPath()], {
-    input: JSON.stringify({
+  const request = Buffer.from(
+    JSON.stringify({
       expression,
       allowsSideEffects: Boolean(options.allowsSideEffects),
     }),
+    'utf8'
+  ).toString('base64');
+  const command = `timeout ${POWER_FX_BRIDGE_TIMEOUT_SECONDS}s dotnet '${getBridgeDllPath()}' --request-base64 '${request}'`;
+  const execution = spawnSync('/bin/sh', ['-lc', command], {
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
   });
 
-  if (execution.status !== 0) {
+  if (execution.status === 124) {
+    throw new Error(`Power Fx bridge timed out after ${POWER_FX_BRIDGE_TIMEOUT_SECONDS}s.`);
+  }
+
+  if (execution.status !== 0 || !execution.stdout.trim()) {
     throw new Error(execution.stderr.trim() || execution.stdout.trim() || 'Power Fx bridge execution failed.');
   }
 

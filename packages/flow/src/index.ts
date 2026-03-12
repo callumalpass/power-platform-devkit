@@ -16,7 +16,7 @@ import {
   type EnvironmentVariableSummary,
 } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
-import { SolutionService } from '@pp/solution';
+import { SolutionService, type SolutionSyncStatusResult } from '@pp/solution';
 import {
   normalizeConnectorApiId,
   resolveFlowSupportedConnectorOperation,
@@ -61,6 +61,35 @@ export interface FlowSummary {
 
 export interface FlowInspectResult extends FlowSummary {
   clientData?: Record<string, FlowJsonValue>;
+}
+
+interface FlowActivationFailureDetails {
+  flow: {
+    id: string;
+    name?: string;
+    uniqueName?: string;
+    category?: number;
+    workflowState?: FlowWorkflowStateLabel;
+    solutionUniqueName?: string;
+    definitionAvailable: boolean;
+    connectionReferences: string[];
+    parameters: string[];
+    environmentVariables: string[];
+  };
+  solutionSyncStatus?: {
+    synchronization: SolutionSyncStatusResult['synchronization'];
+    blockers: SolutionSyncStatusResult['blockers'];
+    readBack: {
+      summary: SolutionSyncStatusResult['readBack']['summary'];
+      workflows: SolutionSyncStatusResult['readBack']['workflows'];
+    };
+    exportCheck: SolutionSyncStatusResult['exportCheck'];
+  };
+  solutionSyncStatusFailure?: {
+    diagnostics: Diagnostic[];
+    warnings: Diagnostic[];
+    suggestedNextActions?: string[];
+  };
 }
 
 export interface FlowArtifact {
@@ -1322,6 +1351,13 @@ export class FlowService {
     });
   }
 
+  async activate(identifier: string, options: { solutionUniqueName?: string } = {}): Promise<OperationResult<FlowPromoteResult>> {
+    return activateRemoteFlow(identifier, {
+      ...options,
+      dataverseClient: this.dataverseClient,
+    });
+  }
+
   async normalize(path: string, outPath?: string): Promise<OperationResult<FlowUnpackResult>> {
     return normalizeFlowArtifact(path, outPath);
   }
@@ -1647,6 +1683,165 @@ export async function promoteRemoteFlowArtifact(
         {
           kind: 'official-api',
           source: 'Dataverse workflows GET/PATCH/POST',
+        },
+      ],
+    }
+  );
+}
+
+export async function activateRemoteFlow(
+  identifier: string,
+  options: {
+    dataverseClient?: DataverseClient;
+    solutionUniqueName?: string;
+  } = {}
+): Promise<OperationResult<FlowPromoteResult>> {
+  if (!options.dataverseClient) {
+    return fail(
+      createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote flow activation.', {
+        source: '@pp/flow',
+      })
+    );
+  }
+
+  const sourceFlow = await new FlowService(options.dataverseClient).inspect(identifier, {
+    solutionUniqueName: options.solutionUniqueName,
+  });
+
+  if (!sourceFlow.success) {
+    return sourceFlow as unknown as OperationResult<FlowPromoteResult>;
+  }
+
+  if (!sourceFlow.data) {
+    return fail(
+      [
+        ...sourceFlow.diagnostics,
+        createDiagnostic('error', 'FLOW_PROMOTE_SOURCE_NOT_FOUND', `Source flow ${identifier} was not found.`, {
+          source: '@pp/flow',
+        }),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: sourceFlow.warnings,
+      }
+    );
+  }
+
+  const artifact = buildFlowArtifactFromRemoteFlow(sourceFlow.data);
+
+  if (!artifact.success || !artifact.data) {
+    return fail([...sourceFlow.diagnostics, ...artifact.diagnostics], {
+      supportTier: 'preview',
+      warnings: [...sourceFlow.warnings, ...artifact.warnings],
+    });
+  }
+
+  const sourcePath = artifact.data.metadata.sourcePath ?? `dataverse://workflows/${sourceFlow.data.id}`;
+  const activatedArtifact = applyFlowWorkflowStateOverride(artifact.data, 'activated');
+  const validation = validateLoadedFlowArtifact(sourcePath, activatedArtifact, {
+    diagnostics: [...sourceFlow.diagnostics, ...artifact.diagnostics],
+    warnings: [...sourceFlow.warnings, ...artifact.warnings],
+  });
+
+  if (!validation.success || !validation.data) {
+    return validation as unknown as OperationResult<FlowPromoteResult>;
+  }
+
+  if (!validation.data.valid) {
+    return fail(
+      [
+        ...validation.diagnostics,
+        createDiagnostic('error', 'FLOW_DEPLOY_VALIDATION_FAILED', `Flow ${identifier} failed local validation and was not activated.`, {
+          source: '@pp/flow',
+          path: sourcePath,
+        }),
+      ],
+      {
+        supportTier: 'preview',
+        warnings: validation.warnings,
+      }
+    );
+  }
+
+  const updateEntity = buildFlowActivationUpdateEntity(activatedArtifact);
+  const update = await options.dataverseClient.update('workflows', sourceFlow.data.id, updateEntity);
+
+  if (!update.success) {
+    const activationFailure = detectInPlaceActivationFailure(update.diagnostics, {
+      identifier: sourceFlow.data.uniqueName ?? sourceFlow.data.name ?? sourceFlow.data.id,
+      solutionUniqueName: options.solutionUniqueName,
+      workflowCategory: sourceFlow.data.category,
+      workflowState: sourceFlow.data.workflowState,
+    });
+    const activationFailureDetails = activationFailure
+      ? await collectFlowActivationFailureDetails(sourceFlow.data, options.dataverseClient, options.solutionUniqueName)
+      : undefined;
+    const splitUpdateDiagnostics = splitWarningDiagnostics(update.diagnostics);
+    return fail(
+      [...validation.diagnostics, ...splitUpdateDiagnostics.diagnostics, ...(activationFailure?.diagnostics ?? [])],
+      {
+        ...(activationFailureDetails ? { details: activationFailureDetails } : {}),
+        supportTier: 'preview',
+        warnings: [...validation.warnings, ...splitUpdateDiagnostics.warnings, ...update.warnings],
+        suggestedNextActions: activationFailure?.suggestedNextActions,
+        knownLimitations: activationFailure?.knownLimitations,
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse workflows PATCH',
+          },
+        ],
+      }
+    );
+  }
+
+  return ok(
+    {
+      identifier,
+      source: {
+        id: sourceFlow.data.id,
+        name: sourceFlow.data.name,
+        description: sourceFlow.data.description,
+        uniqueName: sourceFlow.data.uniqueName,
+        category: sourceFlow.data.category,
+        workflowMetadata: sourceFlow.data.workflowMetadata,
+        workflowState: sourceFlow.data.workflowState,
+        stateCode: sourceFlow.data.stateCode,
+        statusCode: sourceFlow.data.statusCode,
+        solutionUniqueName: options.solutionUniqueName,
+      },
+      targetIdentifier: identifier,
+      operation: 'updated',
+      target: {
+        id: sourceFlow.data.id,
+        name: activatedArtifact.metadata.displayName ?? activatedArtifact.metadata.name ?? sourceFlow.data.name,
+        description: activatedArtifact.metadata.description ?? sourceFlow.data.description,
+        uniqueName: activatedArtifact.metadata.uniqueName ?? sourceFlow.data.uniqueName,
+        category: resolveSupportedFlowWorkflowCategory(activatedArtifact.metadata.category ?? sourceFlow.data.category).category,
+        workflowMetadata: resolveSupportedFlowWorkflowShellMetadata(
+          activatedArtifact.metadata.workflowMetadata ?? sourceFlow.data.workflowMetadata
+        ).workflowMetadata,
+        ...resolveFlowResultWorkflowState(activatedArtifact.metadata.stateCode, activatedArtifact.metadata.statusCode),
+        solutionUniqueName: options.solutionUniqueName,
+      },
+      summary: buildFlowArtifactSummary(sourcePath, activatedArtifact),
+      validation: {
+        valid: true,
+        warningCount: validation.warnings.length,
+      },
+      promotionMode: 'artifact',
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: [...validation.diagnostics, ...update.diagnostics],
+      warnings: [...validation.warnings, ...update.warnings],
+      knownLimitations: [
+        'In-place activation resolves the workflow through the requested solution scope when provided, then patches the Dataverse workflow record directly without re-attaching it to that solution during the same write.',
+      ],
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse workflows GET/PATCH',
         },
       ],
     }
@@ -2265,11 +2460,16 @@ async function deployLoadedFlowArtifact(
       workflowCategory: remoteFlow.data.category,
       workflowState: remoteFlow.data.workflowState,
     });
+    const activationFailureDetails = activationFailure
+      ? await collectFlowActivationFailureDetails(remoteFlow.data, options.dataverseClient, options.solutionUniqueName)
+      : undefined;
+    const splitUpdateDiagnostics = splitWarningDiagnostics(update.diagnostics);
     return fail(
-      [...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics, ...(activationFailure?.diagnostics ?? [])],
+      [...diagnostics, ...remoteFlow.diagnostics, ...splitUpdateDiagnostics.diagnostics, ...(activationFailure?.diagnostics ?? [])],
       {
+        ...(activationFailureDetails ? { details: activationFailureDetails } : {}),
         supportTier: 'preview',
-        warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
+        warnings: [...warnings, ...remoteFlow.warnings, ...splitUpdateDiagnostics.warnings, ...update.warnings],
         suggestedNextActions: activationFailure?.suggestedNextActions,
         knownLimitations: activationFailure?.knownLimitations,
         provenance: [
@@ -2324,6 +2524,73 @@ async function deployLoadedFlowArtifact(
   );
 }
 
+async function collectFlowActivationFailureDetails(
+  flow: FlowInspectResult,
+  dataverseClient: DataverseClient,
+  solutionUniqueName?: string
+): Promise<FlowActivationFailureDetails> {
+  const details: FlowActivationFailureDetails = {
+    flow: {
+      id: flow.id,
+      name: flow.name,
+      uniqueName: flow.uniqueName,
+      category: flow.category,
+      workflowState: flow.workflowState,
+      solutionUniqueName,
+      definitionAvailable: flow.definitionAvailable,
+      connectionReferences: flow.connectionReferences.map(
+        (reference) =>
+          reference.connectionReferenceLogicalName ?? reference.name ?? reference.connectionId ?? reference.apiId ?? '(unknown)'
+      ),
+      parameters: flow.parameters,
+      environmentVariables: flow.environmentVariables,
+    },
+  };
+
+  if (!solutionUniqueName) {
+    return details;
+  }
+
+  const syncStatus = await new SolutionService(dataverseClient).syncStatus(solutionUniqueName, {
+    includeExportCheck: true,
+  });
+
+  if (!syncStatus.success || !syncStatus.data) {
+    return {
+      ...details,
+      solutionSyncStatusFailure: {
+        diagnostics: syncStatus.diagnostics,
+        warnings: syncStatus.warnings,
+        suggestedNextActions: syncStatus.suggestedNextActions,
+      },
+    };
+  }
+
+  return {
+    ...details,
+    solutionSyncStatus: {
+      synchronization: syncStatus.data.synchronization,
+      blockers: syncStatus.data.blockers,
+      readBack: {
+        summary: syncStatus.data.readBack.summary,
+        workflows: syncStatus.data.readBack.workflows,
+      },
+      exportCheck: syncStatus.data.exportCheck,
+    },
+  };
+}
+
+function splitWarningDiagnostics(diagnostics: Diagnostic[] | undefined): {
+  diagnostics: Diagnostic[];
+  warnings: Diagnostic[];
+} {
+  const items = diagnostics ?? [];
+  return {
+    diagnostics: items.filter((diagnostic) => diagnostic.level !== 'warning'),
+    warnings: items.filter((diagnostic) => diagnostic.level === 'warning'),
+  };
+}
+
 function detectInPlaceActivationFailure(
   diagnostics: Diagnostic[],
   context: {
@@ -2344,8 +2611,12 @@ function detectInPlaceActivationFailure(
       return false;
     }
 
+    if (isDefinitionPayloadActivationFailure(diagnostic.detail)) {
+      return true;
+    }
+
     const detail = parseDataverseErrorDetail(diagnostic.detail);
-    return detail?.code === 'DefinitionRequestMissingFields';
+    return isDefinitionPayloadActivationFailureCodeOrMessage(detail?.code, detail?.message);
   });
 
   if (!blocking) {
@@ -2362,7 +2633,7 @@ function detectInPlaceActivationFailure(
         `Flow ${activationTarget} could not be activated in place because Dataverse requires a full flow definition payload for this workflow update path.`,
         {
           source: '@pp/flow',
-          hint: `Capture the current blocker with \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\` and avoid retrying ${activateCommand} until a definition-based activation path is available.`,
+          hint: `Capture the current blocker with \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\`; if that inspect still reports \`definitionAvailable=true\`, the remaining limitation is the Dataverse activation endpoint rather than missing flow metadata in pp.`,
         }
       ),
     ],
@@ -2376,9 +2647,33 @@ function detectInPlaceActivationFailure(
       context.workflowCategory === 5
         ? 'In-place activation for some Dataverse Modern Flow records is not yet supported through the current workflows PATCH path because the platform expects a full definition payload.'
         : 'In-place activation can fail when the Dataverse workflows PATCH path requires fields that pp does not currently round-trip.',
-      `When Dataverse returns \`DefinitionRequestMissingFields\`, repeating \`${activateCommand}\` without changing the activation path is unlikely to succeed.`,
+      `When Dataverse rejects the activation payload because the flow definition shape is incompatible with the workflows PATCH path, repeating \`${activateCommand}\` without changing the activation path is unlikely to succeed.`,
     ]),
   };
+}
+
+function isDefinitionPayloadActivationFailure(detail: string | undefined): boolean {
+  if (!detail) {
+    return false;
+  }
+
+  if (detail.includes('DefinitionRequestMissingFields')) {
+    return true;
+  }
+
+  return /unexpected 'StartObject' node .* property named 'definition'/i.test(detail);
+}
+
+function isDefinitionPayloadActivationFailureCodeOrMessage(code: string | undefined, message: string | undefined): boolean {
+  if (code === 'DefinitionRequestMissingFields') {
+    return true;
+  }
+
+  if (!message) {
+    return false;
+  }
+
+  return /required field 'definition'/i.test(message) || /unexpected 'StartObject' node .* property named 'definition'/i.test(message);
 }
 
 function parseDataverseErrorDetail(detail: string | undefined): { code?: string; message?: string } | undefined {
@@ -2386,19 +2681,60 @@ function parseDataverseErrorDetail(detail: string | undefined): { code?: string;
     return undefined;
   }
 
-  try {
-    const parsed = JSON.parse(detail) as Record<string, unknown>;
-    const nestedError =
-      parsed.error && typeof parsed.error === 'object' && !Array.isArray(parsed.error)
-        ? (parsed.error as Record<string, unknown>)
-        : undefined;
-    return {
-      code: readString(nestedError?.code) ?? readString(parsed.code),
-      message: readString(nestedError?.message) ?? readString(parsed.message),
-    };
-  } catch {
-    return undefined;
+  const parseCandidate = (value: string): { code?: string; message?: string } | undefined => {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      const nestedError =
+        parsed.error && typeof parsed.error === 'object' && !Array.isArray(parsed.error)
+          ? (parsed.error as Record<string, unknown>)
+          : undefined;
+      const code = readString(nestedError?.code) ?? readString(parsed.code);
+      const message = readString(nestedError?.message) ?? readString(parsed.message);
+      return code || message ? { code, message } : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const direct = parseCandidate(detail);
+  if (direct?.code || direct?.message) {
+    if (isDefinitionPayloadActivationFailureCodeOrMessage(direct.code, direct.message)) {
+      return direct;
+    }
+
+    const nested = direct.message ? parseCandidate(direct.message) : undefined;
+    if (nested?.code || nested?.message) {
+      return nested;
+    }
+
+    const embeddedJson = direct.message?.match(/\{.*\}/s)?.[0];
+    if (embeddedJson) {
+      const embedded = parseCandidate(embeddedJson);
+      if (embedded?.code || embedded?.message) {
+        return embedded;
+      }
+    }
+
+    return direct;
   }
+
+  const embeddedJson = detail.match(/\{.*\}/s)?.[0];
+  const embedded = embeddedJson ? parseCandidate(embeddedJson) : undefined;
+  if (embedded?.code || embedded?.message) {
+    return embedded;
+  }
+
+  if (isDefinitionPayloadActivationFailure(detail)) {
+    const nestedMessageMatch = detail.match(
+      /"message":"([^"]*DefinitionRequestMissingFields[^"]*)"|"message":"([^"]*required field[^"]*)"|"message":"([^"]*StartObject[^"]*property named 'definition'[^"]*)"/
+    );
+    return {
+      code: 'DefinitionRequestMissingFields',
+      message: nestedMessageMatch?.[3] ?? nestedMessageMatch?.[2] ?? nestedMessageMatch?.[1],
+    };
+  }
+
+  return undefined;
 }
 
 async function validateFlowArtifactRemoteTargets(
@@ -3742,15 +4078,27 @@ function buildFlowDeployClientData(artifact: FlowArtifact): string {
     : {};
   const existingClientDataRecord = asFlowJsonRecord(existingClientData) ?? {};
   const existingProperties = asFlowJsonRecord(existingClientDataRecord.properties);
+  const hadTopLevelDefinition = asFlowJsonRecord(existingClientDataRecord.definition) !== undefined;
+  const hadPropertiesDefinition = existingProperties ? asFlowJsonRecord(existingProperties.definition) !== undefined : false;
+  const includeTopLevelDefinition = hadTopLevelDefinition || (!artifact.clientData && !hadPropertiesDefinition);
+  const includePropertiesDefinition = hadPropertiesDefinition || !includeTopLevelDefinition;
 
   return stableStringify({
     ...existingClientDataRecord,
     schemaVersion: readNumber(existingClientDataRecord.schemaVersion) ?? 1,
-    definition: cloneJsonValue(artifact.definition),
-    properties: {
-      ...(existingProperties ? cloneJsonValue(existingProperties) : {}),
-      definition: cloneJsonValue(artifact.definition),
-    },
+    ...(includeTopLevelDefinition ? { definition: cloneJsonValue(artifact.definition) } : {}),
+    ...(includePropertiesDefinition
+      ? {
+          properties: {
+            ...(existingProperties ? cloneJsonValue(existingProperties) : {}),
+            definition: cloneJsonValue(artifact.definition),
+          },
+        }
+      : existingProperties
+        ? {
+            properties: cloneJsonValue(existingProperties),
+          }
+        : {}),
   });
 }
 
@@ -3784,6 +4132,15 @@ function buildFlowDeployUpdateEntity(artifact: FlowArtifact): Record<string, unk
     ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
     ...(workflowCategory.category !== undefined ? { category: workflowCategory.category } : {}),
     ...buildDataverseFlowWorkflowShellFields(artifact.metadata.workflowMetadata),
+    ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
+    ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
+  };
+}
+
+function buildFlowActivationUpdateEntity(artifact: FlowArtifact): Record<string, unknown> {
+  const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
+
+  return {
     ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
     ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
   };

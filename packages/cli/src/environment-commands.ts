@@ -485,13 +485,16 @@ function buildEnvironmentAuthSummary(environment: EnvironmentAlias, profile: Aut
   };
 }
 
-function buildPacEnvironmentGuidance(profile: AuthProfile | undefined, environment: EnvironmentAlias): Record<string, unknown> {
+export function buildPacEnvironmentGuidance(profile: AuthProfile | undefined, environment: EnvironmentAlias): Record<string, unknown> {
   const organizationUrl = derivePacOrganizationUrl(environment.url);
   const base = {
     sharesPpAuthContext: false,
     organizationUrl,
+    verificationCommand: 'pac auth list',
+    nonInteractiveVerification:
+      'Use `pp env inspect <alias>` and `pp dv whoami --no-interactive-auth` for agent-safe non-interactive verification. Do not assume pac supports pp-style `--no-interactive-auth` flags.',
     recommendedAction:
-      'Treat pac as a separately authenticated tool. Do not assume a successful `pp dv whoami` means pac can reuse that environment or session.',
+      `Treat pac as a separately authenticated tool. Run \`pac auth list\` and confirm the active profile targets ${organizationUrl} before using pac as a fallback.`,
   };
 
   if (!profile) {

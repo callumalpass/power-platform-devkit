@@ -10,6 +10,7 @@ import {
   type SolutionPublishProgressEvent,
   type SolutionReleaseManifest,
   type SolutionSummary,
+  type SolutionSyncStatusProgressEvent,
 } from '@pp/solution';
 import { createMutationPreview, createSuccessPayload, readMutationFlags, type CliOutputFormat } from './contract';
 
@@ -107,7 +108,7 @@ export async function runSolutionListCommand(args: string[], deps: SolutionComma
     return deps.printFailure(result);
   }
 
-  deps.printByFormat(result.data ?? [], deps.outputFormat(args, 'json'));
+  deps.printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'solutions' }), deps.outputFormat(args, 'json'));
   return 0;
 }
 
@@ -124,7 +125,7 @@ export async function runSolutionPublishersCommand(args: string[], deps: Solutio
     return deps.printFailure(result);
   }
 
-  deps.printByFormat(result.data ?? [], deps.outputFormat(args, 'json'));
+  deps.printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'publishers' }), deps.outputFormat(args, 'json'));
   return 0;
 }
 
@@ -335,31 +336,31 @@ export async function runSolutionPublishCommand(args: string[], deps: SolutionCo
     return preview;
   }
 
+  const progress: SolutionPublishProgressEvent[] = [];
   const result = await new SolutionService(resolution.data.client as never).publish(uniqueName, {
     waitForExport,
     timeoutMs: timeoutMs.data,
     pollIntervalMs: pollIntervalMs.data,
     onProgress: waitForExport
       ? (event) => {
+          progress.push(event);
           process.stderr.write(renderSolutionPublishProgress(uniqueName, event));
         }
       : undefined,
-    exportOptions: waitForExport
-      ? {
-          managed: args.includes('--managed'),
-          outPath: outputTarget.outPath,
-          outDir: outputTarget.outDir,
-          manifestPath: deps.readFlag(args, '--manifest'),
-        }
-      : undefined,
+    exportOptions: {
+      managed: args.includes('--managed'),
+      outPath: outputTarget.outPath,
+      outDir: outputTarget.outDir,
+      manifestPath: deps.readFlag(args, '--manifest'),
+    },
   });
 
   if (!result.success) {
-    return deps.printFailure(result);
+    return deps.printFailure(attachStructuredFailureProgress(result, progress));
   }
 
   deps.printWarnings(result);
-  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  deps.printByFormat(attachStructuredSuccessProgress(result.data, progress), deps.outputFormat(args, 'json'));
   return 0;
 }
 
@@ -407,9 +408,13 @@ export async function runSolutionSyncStatusCommand(args: string[], deps: Solutio
     return deps.printFailure(
       deps.argumentFailure(
         'SOLUTION_SYNC_STATUS_ARGS_REQUIRED',
-        'Usage: solution sync-status <uniqueName> --environment <alias> [--skip-export-check] [--managed] [--out PATH] [--manifest FILE]'
+        'Usage: solution sync-status <uniqueName> --environment <alias> [--skip-export-check] [--timeout-ms N] [--managed] [--out PATH] [--manifest FILE]'
       )
     );
+  }
+  const timeoutMs = readOptionalPositiveIntegerFlag(args, '--timeout-ms', deps);
+  if (!timeoutMs.success) {
+    return deps.printFailure(timeoutMs);
   }
 
   const resolution = await deps.resolveDataverseClientForCli(args);
@@ -418,21 +423,78 @@ export async function runSolutionSyncStatusCommand(args: string[], deps: Solutio
   }
 
   const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));
+  const progress: SolutionSyncStatusProgressEvent[] = [];
   const result = await new SolutionService(resolution.data.client as never).syncStatus(uniqueName, {
     includeExportCheck: !args.includes('--skip-export-check'),
+    requestTimeoutMs: timeoutMs.data,
     managed: args.includes('--managed'),
     outPath: outputTarget.outPath,
     outDir: outputTarget.outDir,
     manifestPath: deps.readFlag(args, '--manifest'),
+    onProgress: (event) => {
+      progress.push(event);
+      process.stderr.write(renderSolutionSyncStatusProgress(uniqueName, event));
+    },
   });
 
   if (!result.success) {
-    return deps.printFailure(result);
+    return deps.printFailure(attachStructuredFailureProgress(result, progress));
   }
 
   deps.printWarnings(result);
-  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  deps.printByFormat(attachStructuredSuccessProgress(result.data, progress), deps.outputFormat(args, 'json'));
   return 0;
+}
+
+function renderSolutionSyncStatusProgress(uniqueName: string, event: SolutionSyncStatusProgressEvent): string {
+  if (event.stage === 'readback-complete') {
+    const workflowSummary =
+      event.readBack?.workflows.map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id}=${workflow.workflowState ?? 'unknown'}`).join(', ') ??
+      '';
+    return `Inspecting solution sync status: captured publish readback for ${uniqueName} in ${event.elapsedMs ?? 0}ms.${workflowSummary ? ` Workflows: ${workflowSummary}.` : ''}\n`;
+  }
+
+  if (event.stage === 'export-check-started') {
+    return `Inspecting solution sync status: starting ${event.packageType ?? 'unmanaged'} export probe for ${uniqueName}; waiting for Dataverse export readiness.\n`;
+  }
+
+  const parts = [
+    `Inspecting solution sync status: ${event.exportConfirmed ? 'export probe confirmed readiness' : 'export probe still failed'} for ${uniqueName} after ${event.elapsedMs ?? 0}ms.`,
+  ];
+  if (event.latestExportDiagnostic) {
+    parts.push(`Latest export diagnostic ${event.latestExportDiagnostic.code}: ${event.latestExportDiagnostic.message}.`);
+  }
+  return `${parts.join(' ')}\n`;
+}
+
+function attachStructuredSuccessProgress<T>(data: T, progress: ReadonlyArray<unknown>): T {
+  if (progress.length === 0 || !data || typeof data !== 'object' || Array.isArray(data)) {
+    return data;
+  }
+
+  return {
+    ...(data as Record<string, unknown>),
+    progress,
+  } as T;
+}
+
+function attachStructuredFailureProgress<T>(result: OperationResult<T>, progress: ReadonlyArray<unknown>): OperationResult<T> {
+  if (progress.length === 0) {
+    return result;
+  }
+
+  const details =
+    result.details && typeof result.details === 'object' && !Array.isArray(result.details)
+      ? {
+          ...(result.details as Record<string, unknown>),
+          progress,
+        }
+      : { progress };
+
+  return {
+    ...result,
+    details,
+  };
 }
 
 export async function runSolutionComponentsCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {

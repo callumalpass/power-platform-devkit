@@ -172,6 +172,7 @@ const outputEnvelopeSchema = z
     warnings: z.array(diagnosticSchema),
     suggestedNextActions: z.array(z.string()),
     supportTier: z.enum(['stable', 'preview', 'experimental']),
+    details: z.unknown().optional(),
     provenance: z.array(provenanceSchema).optional(),
     knownLimitations: z.array(z.string()).optional(),
   })
@@ -193,6 +194,11 @@ const solutionExportSchema = remoteBaseSchema.extend({
   manifestPath: z.string().min(1).optional(),
   managed: z.boolean().optional(),
   requestTimeoutMs: z.number().int().positive().optional(),
+});
+
+const solutionSyncStatusSchema = remoteBaseSchema.extend({
+  uniqueName: z.string().min(1),
+  managed: z.boolean().optional(),
 });
 
 const projectScopeSchema = z.object({
@@ -260,6 +266,11 @@ export const initialMcpTools: McpToolDefinition[] = [
     name: 'pp.solution.inspect',
     title: 'Inspect Solution',
     description: 'Inspect one solution with dependencies, invalid connection references, and missing environment variables.',
+  },
+  {
+    name: 'pp.solution.sync-status',
+    title: 'Preflight Solution Export Readiness',
+    description: 'Inspect one solution for publish readback and packaged export blockers without attempting export.',
   },
   {
     name: 'pp.solution.export',
@@ -395,11 +406,11 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     name: 'solution-lifecycle',
     kind: 'platform',
     supportTier: 'preview',
-    readTools: ['pp.solution.list', 'pp.solution.inspect', 'pp.domain.list'],
+    readTools: ['pp.solution.list', 'pp.solution.inspect', 'pp.solution.sync-status', 'pp.domain.list'],
     mutationToolsAvailable: true,
     mutationTools: ['pp.solution.export'],
     notes:
-      'Use solution list/inspect to confirm ismanaged before export decisions. MCP now exposes one bounded package export tool through pp.solution.export when the caller supplies explicit output paths.',
+      'Use solution list/inspect plus pp.solution.sync-status to preflight export blockers before deciding whether to spend a bounded pp.solution.export attempt.',
   },
   {
     name: 'flow-local-artifacts',
@@ -522,6 +533,30 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         uniqueName,
       );
       return toToolResult('pp.solution.inspect', result, readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.solution.sync-status',
+    {
+      title: 'Preflight Solution Export Readiness',
+      description: 'Inspect one solution for publish readback and packaged export blockers without attempting export.',
+      inputSchema: solutionSyncStatusSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Preflight Solution Export Readiness'),
+    },
+    async ({ uniqueName, managed, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult('pp.solution.sync-status', resolution, readOnlyPolicy());
+      }
+
+      const result = await new SolutionService(resolution.data.client).syncStatus(uniqueName, {
+        includeExportCheck: false,
+        managed,
+      });
+      return toToolResult('pp.solution.sync-status', result, readOnlyPolicy());
     }
   );
 
@@ -1237,6 +1272,7 @@ function toToolResult<T>(toolName: string, result: OperationResult<T>, mutationP
     warnings: result.warnings,
     suggestedNextActions: result.suggestedNextActions ?? [],
     supportTier: result.supportTier,
+    ...(result.details !== undefined ? { details: result.details } : {}),
     provenance: result.provenance,
     knownLimitations: result.knownLimitations,
   };

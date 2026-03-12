@@ -285,7 +285,10 @@ The current pack/deploy boundary is:
   is declared it must also match the resolved existing target workflow instead
   of silently retargeting another flow by name or id; `--workflow-state` can
   override the bounded state/status pair for that mutation without changing the
-  local artifact
+  local artifact; when the remote row already stores its definition only under
+  `workflows.clientdata.properties.definition`, deploy/activate now preserves
+  that placement instead of inventing a new top-level `clientdata.definition`
+  sibling on write
 - remote promotion currently transfers that same bounded workflow shell plus
   the normalized definition, including the same solution-scoped target checks
   for artifact-mode promotion; artifact-mode promotion also accepts the same

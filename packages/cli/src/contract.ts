@@ -129,7 +129,8 @@ export function createMutationPreview(
   flags: MutationFlags,
   target: Record<string, unknown>,
   input?: unknown,
-  metadata: ResultOptions = {}
+  metadata: ResultOptions = {},
+  details: Record<string, unknown> = {}
 ): Record<string, unknown> {
   return {
     action,
@@ -142,6 +143,7 @@ export function createMutationPreview(
     suggestedNextActions: metadata.suggestedNextActions ?? [],
     provenance: metadata.provenance ?? [],
     knownLimitations: metadata.knownLimitations ?? [],
+    ...details,
   };
 }
 

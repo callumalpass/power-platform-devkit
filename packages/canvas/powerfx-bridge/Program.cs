@@ -9,7 +9,7 @@ var serializerOptions = new JsonSerializerOptions
     PropertyNameCaseInsensitive = true,
 };
 
-var request = await JsonSerializer.DeserializeAsync<ParseRequest>(Console.OpenStandardInput(), serializerOptions);
+var request = await ReadRequestAsync(args, serializerOptions);
 
 if (request?.Expression is null)
 {
@@ -35,6 +35,25 @@ await JsonSerializer.SerializeAsync(
     Console.OpenStandardOutput(),
     new BridgeResponse(parse.IsSuccess, ast, errors),
     serializerOptions);
+
+static async Task<ParseRequest?> ReadRequestAsync(string[] args, JsonSerializerOptions serializerOptions)
+{
+    var base64Index = Array.IndexOf(args, "--request-base64");
+    if (base64Index >= 0 && base64Index + 1 < args.Length)
+    {
+        try
+        {
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(args[base64Index + 1]));
+            return JsonSerializer.Deserialize<ParseRequest>(json, serializerOptions);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    return await JsonSerializer.DeserializeAsync<ParseRequest>(Console.OpenStandardInput(), serializerOptions);
+}
 
 internal sealed record ParseRequest(string Expression, bool AllowsSideEffects);
 

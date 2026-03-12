@@ -1561,10 +1561,10 @@ describe('SolutionService', () => {
     );
   });
 
-  it('publishes a solution through PublishAllXml and warns when no sync checkpoint is requested', async () => {
+  it('publishes a solution through PublishAllXml and returns an immediate export-backed sync probe when no wait loop is requested', async () => {
     const requests: Array<{ path: string; body: Record<string, unknown> | undefined }> = [];
-    const service = new SolutionService(
-      createStubClient({
+    const service = new SolutionService({
+      ...createStubClient({
         solution: {
           solutionid: 'sol-1',
           uniquename: 'Core',
@@ -1588,37 +1588,72 @@ describe('SolutionService', () => {
             name: 'Harness Flow',
             uniquename: 'crd_HarnessFlow',
             category: 5,
-            statecode: 0,
-            statuscode: 1,
+            statecode: 1,
+            statuscode: 2,
           },
         ],
         requestRecorder: requests,
-      })
-    );
+      }),
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>) => {
+        requests.push({
+          path: name,
+          body: parameters,
+        });
+
+        if (name === 'ExportSolution') {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'POST ExportSolution returned 405',
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
 
     const result = await service.publish('Core');
 
     expect(result.success).toBe(true);
-    expect(requests[0]?.path).toBe('PublishAllXml');
+    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml', 'ExportSolution']);
     expect(requests[0]?.body).toEqual({});
     expect(result.data).toMatchObject({
       published: true,
       waitForExport: false,
       synchronization: {
-        kind: 'none',
+        kind: 'solution-export',
         confirmed: false,
       },
-      blockers: [
-        {
-          kind: 'workflow-state',
-          componentType: 'workflow',
-          id: 'flow-1',
-          name: 'Harness Flow',
-          logicalName: 'crd_HarnessFlow',
-          workflowState: 'draft',
-          reason: 'Workflow Harness Flow is still draft, so solution export readiness remains blocked.',
+      exportCheck: {
+        attempted: true,
+        confirmed: false,
+        packageType: 'unmanaged',
+        failure: {
+          diagnostics: [
+            expect.objectContaining({
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'POST ExportSolution returned 405',
+            }),
+          ],
         },
-      ],
+      },
+      blockers: [],
       readBack: {
         summary: {
           componentCount: 2,
@@ -1635,23 +1670,18 @@ describe('SolutionService', () => {
         workflows: [
           expect.objectContaining({
             id: 'flow-1',
-            workflowState: 'draft',
+            workflowState: 'activated',
           }),
         ],
       },
     });
     expect(result.warnings).toContainEqual(
       expect.objectContaining({
-        code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
-        detail: expect.stringContaining('Harness Flow state=draft'),
-        hint: expect.stringContaining('pp flow inspect crd_HarnessFlow --environment <alias> --solution Core --format json'),
-      })
-    );
-    expect(result.warnings).toContainEqual(
-      expect.objectContaining({
         code: 'SOLUTION_PUBLISH_SYNC_NOT_CONFIRMED',
-        detail: expect.stringContaining('Harness Flow state=draft'),
-        hint: expect.stringContaining('pp flow inspect crd_HarnessFlow --environment <alias> --solution Core --format json'),
+        message:
+          'Publish for solution Core was accepted, but an immediate export-backed synchronization probe still did not confirm readiness.',
+        detail: expect.stringContaining('Harness Flow state=activated (statecode=1, statuscode=2)'),
+        hint: expect.stringContaining('pp solution publish Core --environment <alias> --wait-for-export'),
       })
     );
   });
@@ -1767,6 +1797,7 @@ describe('SolutionService', () => {
     const upstreamPath = join(tempDir, 'upstream.zip');
     await createSolutionArchive(upstreamPath, false);
     const upstreamBytes = await readFile(upstreamPath);
+    const progress: Array<{ stage: string; exportConfirmed?: boolean }> = [];
     const service = new SolutionService(
       createStubClient({
         solution: {
@@ -1814,9 +1845,17 @@ describe('SolutionService', () => {
 
     const result = await service.syncStatus('Core', {
       outPath: join(tempDir, 'Core.zip'),
+      onProgress: (event) => {
+        progress.push({ stage: event.stage, exportConfirmed: event.exportConfirmed });
+      },
     });
 
     expect(result.success).toBe(true);
+    expect(progress).toEqual([
+      { stage: 'readback-complete', exportConfirmed: undefined },
+      { stage: 'export-check-started', exportConfirmed: undefined },
+      { stage: 'export-check-complete', exportConfirmed: true },
+    ]);
     expect(result.data).toMatchObject({
       synchronization: {
         kind: 'solution-export',
@@ -1847,9 +1886,11 @@ describe('SolutionService', () => {
     });
   });
 
-  it('reports sync status export probe failures without failing the status command', async () => {
-    const service = new SolutionService({
-      ...createStubClient({
+  it('skips the sync-status export probe when readback already shows a blocked workflow state', async () => {
+    const requestRecorder: Array<{ path: string; body: Record<string, unknown> | undefined }> = [];
+    const progress: Array<{ stage: string; exportConfirmed?: boolean; latestExportDiagnostic?: { code: string; message: string } }> = [];
+    const service = new SolutionService(
+      createStubClient({
         solution: {
           solutionid: 'sol-1',
           uniquename: 'Core',
@@ -1873,36 +1914,32 @@ describe('SolutionService', () => {
             statuscode: 1,
           },
         ],
-      }),
-      invokeAction: async (name: string) =>
-        name === 'ExportSolution'
-          ? ({
-              success: false,
-              diagnostics: [
-                {
-                  level: 'error',
-                  code: 'HTTP_REQUEST_FAILED',
-                  message: 'POST ExportSolution returned 405',
-                },
-              ],
-              warnings: [],
-              supportTier: 'preview',
-            } as OperationResult<never>)
-          : ({
-              success: true,
-              data: {
-                status: 204,
-                headers: {},
-              },
-              diagnostics: [],
-              warnings: [],
-              supportTier: 'preview',
-            } as OperationResult<unknown>),
-    } as unknown as DataverseClient);
+        requestRecorder,
+      })
+    );
 
-    const result = await service.syncStatus('Core');
+    const result = await service.syncStatus('Core', {
+      onProgress: (event) => {
+        progress.push({
+          stage: event.stage,
+          exportConfirmed: event.exportConfirmed,
+          latestExportDiagnostic: event.latestExportDiagnostic as { code: string; message: string } | undefined,
+        });
+      },
+    });
 
     expect(result.success).toBe(true);
+    expect(requestRecorder.map((request) => request.path)).not.toContain('ExportSolution');
+    expect(progress).toContainEqual(
+      expect.objectContaining({
+        stage: 'export-check-complete',
+        exportConfirmed: false,
+        latestExportDiagnostic: expect.objectContaining({
+          code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
+          message: expect.stringContaining('still has packaged workflow components'),
+        }),
+      })
+    );
     expect(result.data).toMatchObject({
       synchronization: {
         confirmed: false,
@@ -1917,30 +1954,123 @@ describe('SolutionService', () => {
         }),
       ],
       exportCheck: {
-        attempted: true,
+        attempted: false,
         confirmed: false,
         failure: {
-          diagnostics: expect.arrayContaining([
-            expect.objectContaining({
-              code: 'HTTP_REQUEST_FAILED',
-            }),
-          ]),
           warnings: expect.arrayContaining([
             expect.objectContaining({
-              code: 'SOLUTION_EXPORT_WORKFLOW_CONTEXT',
+              code: 'SOLUTION_EXPORT_CHECK_SKIPPED_BLOCKED_WORKFLOW_STATE',
             }),
           ]),
         },
       },
     });
+    expect(result.data?.exportCheck.failure?.diagnostics).toEqual([]);
     expect(result.data?.exportCheck.failure?.warnings).toContainEqual(
       expect.objectContaining({
         code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
-        detail: expect.stringContaining('Harness Flow state=draft'),
+        detail: expect.stringContaining('Harness Flow state=draft (statecode=0, statuscode=1)'),
       })
     );
     expect(result.data?.exportCheck.failure?.suggestedNextActions).toContain(
-      'If crd_HarnessFlow should already be runnable, activate it in place with `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json`.'
+      "Run `pp dv query workflows --environment <alias> --filter \"(workflowid eq flow-1 or uniquename eq 'crd_HarnessFlow' or name eq 'Harness Flow')\" --select workflowid,name,uniquename,category,statecode,statuscode --format json` to inspect the raw Dataverse workflow rows for this blocker without relying on unsupported solution scoping."
+    );
+    expect(result.data?.exportCheck.failure?.suggestedNextActions).toContain(
+      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; current `pp flow activate` in-place remediation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
+    );
+  });
+
+  it('fails publish wait-for-export immediately when readback already shows blocked packaged workflows', async () => {
+    const requestRecorder: Array<{ path: string; body: Record<string, unknown> | undefined }> = [];
+    const progress: SolutionPublishProgressEvent[] = [];
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+        },
+        components: [
+          { solutioncomponentid: 'comp-flow', objectid: 'flow-1', componenttype: 29 },
+        ],
+        dependencies: [],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+            category: 5,
+            statecode: 0,
+            statuscode: 1,
+          },
+        ],
+        requestRecorder,
+      })
+    );
+
+    const result = await service.publish('Core', {
+      waitForExport: true,
+      timeoutMs: 5_000,
+      pollIntervalMs: 1_000,
+      onProgress: (event) => {
+        progress.push(event);
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(requestRecorder.map((request) => request.path)).toEqual(['PublishAllXml']);
+    expect(progress).toContainEqual(
+      expect.objectContaining({
+        stage: 'polling',
+        attempt: 1,
+        latestExportDiagnostic: expect.objectContaining({
+          code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
+        }),
+        readBack: expect.objectContaining({
+          workflows: [
+            expect.objectContaining({
+              workflowState: 'draft',
+            }),
+          ],
+        }),
+      })
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_PUBLISH_EXPORT_BLOCKED_WORKFLOW_STATE',
+      })
+    );
+    expect(result.details).toMatchObject({
+      published: false,
+      action: {
+        name: 'PublishAllXml',
+        accepted: true,
+      },
+      synchronization: {
+        kind: 'solution-export',
+        confirmed: false,
+        attempts: 1,
+      },
+      blockers: [
+        expect.objectContaining({
+          logicalName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+        }),
+      ],
+      exportCheck: {
+        attempted: false,
+        confirmed: false,
+        failure: {
+          warnings: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'SOLUTION_EXPORT_CHECK_SKIPPED_BLOCKED_WORKFLOW_STATE',
+            }),
+          ]),
+        },
+      },
+    });
+    expect(result.suggestedNextActions).toContain(
+      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; current `pp flow activate` in-place remediation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
     );
   });
 
@@ -1969,8 +2099,8 @@ describe('SolutionService', () => {
             name: 'Harness Flow',
             uniquename: 'crd_HarnessFlow',
             category: 5,
-            statecode: 0,
-            statuscode: 1,
+            statecode: 1,
+            statuscode: 2,
           },
         ],
       }),
@@ -2038,7 +2168,7 @@ describe('SolutionService', () => {
         readBack: expect.objectContaining({
           workflows: [
             expect.objectContaining({
-              workflowState: 'draft',
+              workflowState: 'activated',
             }),
           ],
         }),
@@ -2073,8 +2203,8 @@ describe('SolutionService', () => {
             name: 'Harness Flow',
             uniquename: 'crd_HarnessFlow',
             category: 5,
-            statecode: 0,
-            statuscode: 1,
+            statecode: 1,
+            statuscode: 2,
           },
         ],
       }),
@@ -2113,23 +2243,97 @@ describe('SolutionService', () => {
     expect(result.success).toBe(false);
     expect(result.warnings).toContainEqual(
       expect.objectContaining({
-        code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
-        detail: expect.stringContaining('Harness Flow state=draft'),
-        hint: expect.stringContaining('pp flow inspect crd_HarnessFlow --environment <alias> --solution Core --format json'),
-      })
-    );
-    expect(result.warnings).toContainEqual(
-      expect.objectContaining({
         code: 'SOLUTION_PUBLISH_LAST_READBACK',
         detail: expect.stringContaining('Harness Canvas lastPublishTime=2026-03-11T18:06:20.000Z'),
       })
     );
-    expect(result.suggestedNextActions).toContain(
-      'If crd_HarnessFlow should already be runnable, activate it in place with `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json`.'
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_EXPORT_WORKFLOW_CONTEXT',
+        detail: expect.stringContaining('Harness Flow [id=flow-1; category=5; state=activated'),
+      })
     );
     expect(result.suggestedNextActions).toContain(
       'Run `pp solution sync-status Core --environment <alias> --format json` to capture component read-back and the current export probe in one response.'
     );
+    expect(result.details).toMatchObject({
+      published: false,
+      action: {
+        name: 'PublishAllXml',
+        accepted: true,
+      },
+      synchronization: {
+        kind: 'solution-export',
+        confirmed: false,
+      },
+      blockers: [],
+      readBack: expect.objectContaining({
+        workflows: [
+          expect.objectContaining({
+            logicalName: 'crd_HarnessFlow',
+            workflowState: 'activated',
+          }),
+        ],
+      }),
+      exportCheck: {
+        attempted: true,
+        confirmed: false,
+        failure: {
+          diagnostics: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'HTTP_REQUEST_FAILED',
+            }),
+          ]),
+        },
+      },
+    });
+  });
+
+  it('suggests the latest visible unmanaged solution when publish targets a missing solution', async () => {
+    const listedSolutions = [
+      {
+        solutionid: 'sol-1',
+        uniquename: 'ppHarness20260311T180403593ZShell',
+        friendlyname: 'PP Harness 20260311T180403593Z Shell',
+        version: '2026.3.12.1804',
+        ismanaged: false,
+      },
+      {
+        solutionid: 'sol-2',
+        uniquename: 'ppHarness20260312T022137609ZShell',
+        friendlyname: 'PP Harness 20260312T022137609Z Shell',
+        version: '2026.3.12.0230',
+        ismanaged: false,
+      },
+    ];
+    const baseClient = createStubClient({
+      solution: listedSolutions[0]!,
+      solutions: listedSolutions,
+      components: [],
+      dependencies: [],
+    });
+    const service = new SolutionService({
+      ...baseClient,
+      query: async <T>(options: { table: string; filter?: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'solutions' && options.filter?.includes("uniquename eq 'Core'")) {
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+        }
+
+        return baseClient.query(options);
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.publish('Core');
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_NOT_FOUND',
+      })
+    );
+    expect((result.suggestedNextActions ?? []).join('\n')).toContain('ppHarness20260312T022137609ZShell');
   });
 
   it('enriches solution table components with logical names and entity set names', async () => {
@@ -2296,12 +2500,158 @@ describe('SolutionService', () => {
     expect(result.warnings).toContainEqual(
       expect.objectContaining({
         code: 'SOLUTION_EXPORT_BLOCKED_WORKFLOW_STATE',
-        detail: expect.stringContaining('Harness Flow state=draft'),
+        detail: expect.stringContaining('Harness Flow state=draft (statecode=0, statuscode=1)'),
         hint: expect.stringContaining('pp flow inspect crd_HarnessFlow --environment <alias> --solution Core --format json'),
       })
     );
     expect(result.suggestedNextActions).toContain(
-      'If crd_HarnessFlow should already be runnable, activate it in place with `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json`.'
+      "Run `pp dv query workflows --environment <alias> --filter \"(workflowid eq flow-1 or uniquename eq 'crd_HarnessFlow' or name eq 'Harness Flow')\" --select workflowid,name,uniquename,category,statecode,statuscode --format json` to inspect the raw Dataverse workflow rows for this blocker without relying on unsupported solution scoping."
+    );
+    expect(result.suggestedNextActions).toContain(
+      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; current `pp flow activate` in-place remediation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
+    );
+  });
+
+  it('warns when inspect reports unmanaged but ExportSolution says managed solutions cannot be exported', async () => {
+    const service = new SolutionService({
+      ...createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core Solution',
+          version: '1.0.0.0',
+          ismanaged: false,
+        },
+        components: [],
+        dependencies: [],
+      }),
+      invokeAction: async () =>
+        ({
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'POST ExportSolution returned 400',
+              detail: JSON.stringify({
+                error: {
+                  code: '0x80048036',
+                  message: 'An error occurred while exporting a solution. Managed solutions cannot be exported.',
+                },
+              }),
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        }) as OperationResult<never>,
+    } as unknown as DataverseClient);
+
+    const result = await service.exportSolution('Core');
+
+    expect(result.success).toBe(false);
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_EXPORT_MANAGED_STATE_CONTRADICTION',
+        detail: expect.stringContaining('Inspect reported ismanaged=false for Core'),
+        hint: expect.stringContaining('pp solution sync-status Core --environment <alias> --format json'),
+      })
+    );
+    expect(result.suggestedNextActions).toContain(
+      'Run `pp solution sync-status Core --environment <alias> --format json` to capture solution read-back and a fresh export probe in one response.'
+    );
+    expect(result.suggestedNextActions).toContain(
+      'Re-run `pp solution inspect Core --environment <alias> --format json` to confirm whether Dataverse still reports `ismanaged=false` before retrying export.'
+    );
+    expect(result.details).toMatchObject({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+        friendlyname: 'Core Solution',
+        version: '1.0.0.0',
+        ismanaged: false,
+      },
+      packageType: 'unmanaged',
+      managedStateContradiction: {
+        inspect: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core Solution',
+          version: '1.0.0.0',
+          ismanaged: false,
+        },
+        export: {
+          diagnosticCode: 'HTTP_REQUEST_FAILED',
+          message: 'POST ExportSolution returned 400',
+          detail: expect.stringContaining('0x80048036'),
+        },
+      },
+    });
+  });
+
+  it('preserves managed-state contradiction details in solution sync-status export failures', async () => {
+    const service = new SolutionService({
+      ...createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core Solution',
+          version: '1.0.0.0',
+          ismanaged: false,
+        },
+        components: [],
+        dependencies: [],
+      }),
+      invokeAction: async () =>
+        ({
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'POST ExportSolution returned 400',
+              detail: JSON.stringify({
+                error: {
+                  code: '0x80048036',
+                  message: 'An error occurred while exporting a solution. Managed solutions cannot be exported.',
+                },
+              }),
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        }) as OperationResult<never>,
+    } as unknown as DataverseClient);
+
+    const result = await service.syncStatus('Core');
+
+    expect(result.success).toBe(true);
+    expect(result.data?.exportCheck.confirmed).toBe(false);
+    expect(result.data?.exportCheck.failure?.details).toMatchObject({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+        friendlyname: 'Core Solution',
+        version: '1.0.0.0',
+        ismanaged: false,
+      },
+      packageType: 'unmanaged',
+      managedStateContradiction: {
+        inspect: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core Solution',
+          version: '1.0.0.0',
+          ismanaged: false,
+        },
+        export: {
+          diagnosticCode: 'HTTP_REQUEST_FAILED',
+          message: 'POST ExportSolution returned 400',
+          detail: expect.stringContaining('0x80048036'),
+        },
+      },
+    });
+    expect(result.data?.exportCheck.failure?.suggestedNextActions).toContain(
+      'Run `pp solution sync-status Core --environment <alias> --format json` to capture solution read-back and a fresh export probe in one response.'
     );
   });
 

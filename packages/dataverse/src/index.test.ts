@@ -880,6 +880,56 @@ OData-Version: 4.0\r
     expect(httpClient.requests).toHaveLength(4);
   });
 
+  it('applies solution-member filters for solution-scoped workflow queries', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ solutionid: 'sol-1', uniquename: 'HarnessSolution' }],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [{ objectid: 'flow-1' }, { objectid: 'flow-2' }],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            { workflowid: 'flow-1', uniquename: 'crd_FirstFlow' },
+            { workflowid: 'flow-2', uniquename: 'crd_SecondFlow' },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.query({
+      table: 'workflows',
+      select: ['workflowid', 'uniquename'],
+      filter: "category eq 5",
+      solutionUniqueName: 'HarnessSolution',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      { workflowid: 'flow-1', uniquename: 'crd_FirstFlow' },
+      { workflowid: 'flow-2', uniquename: 'crd_SecondFlow' },
+    ]);
+    expect(httpClient.requests).toHaveLength(3);
+    expect(httpClient.requests[2]?.path).toBe(
+      'workflows?%24select=workflowid%2Cuniquename&%24filter=%28category+eq+5%29+and+%28workflowid+eq+flow-1+or+workflowid+eq+flow-2%29'
+    );
+    expect(httpClient.requests[2]?.headers).toMatchObject({
+      'MSCRM.SolutionUniqueName': 'HarnessSolution',
+    });
+  });
+
   it('retries metadata list filters client-side when Dataverse rejects the server filter', async () => {
     const httpClient = new FakeHttpClient([
       fail(

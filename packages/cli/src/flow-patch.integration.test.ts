@@ -195,4 +195,60 @@ describe('flow patch cli coverage', () => {
     expect(patchedDocument.definition.actions.SetCounter.inputs.name).toBe('runCount');
     expect(patchedDocument.definition.actions.ComposeCounter.inputs.value).toBe("@{variables('runCount')}");
   });
+
+  it('includes patch acceptance analysis in flow patch plan previews without writing the requested output', async () => {
+    const tempDir = await createTempDir();
+    const rawPath = resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json');
+    const unpackedPath = join(tempDir, 'unpacked');
+    const plannedPath = join(tempDir, 'planned');
+    const patchPath = join(tempDir, 'rename-action.patch.json');
+
+    await writeFile(
+      patchPath,
+      JSON.stringify(
+        {
+          actions: {
+            ComposePayload: 'ComposeMessage',
+          },
+          values: {
+            'actions.ComposePayload.inputs.priority': 'High',
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const flowUnpack = await runCli(['flow', 'unpack', rawPath, '--out', unpackedPath, '--format', 'json']);
+    const preview = await runCli(['flow', 'patch', unpackedPath, '--file', patchPath, '--out', plannedPath, '--plan', '--format', 'json']);
+
+    expect(flowUnpack.code).toBe(0);
+    expect(preview.code).toBe(0);
+    expect(preview.stderr).toBe('');
+
+    const payload = JSON.parse(preview.stdout) as {
+      action: string;
+      mode: string;
+      validation: { patchAccepted: boolean; operationCount: number };
+      analysis: { changed: boolean; appliedOperations: string[] };
+    };
+
+    expect(payload).toMatchObject({
+      action: 'flow.patch',
+      mode: 'plan',
+      validation: {
+        patchAccepted: true,
+        operationCount: 2,
+      },
+      analysis: {
+        changed: true,
+        appliedOperations: [
+          'value:actions.ComposePayload.inputs.priority',
+          'action:ComposePayload->ComposeMessage',
+        ],
+      },
+    });
+    await expect(readFile(join(plannedPath, 'flow.json'), 'utf8')).rejects.toThrow();
+  });
 });

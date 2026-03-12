@@ -8,6 +8,7 @@ controlled deploy automation.
 - `pp.environment.list`
 - `pp.solution.list`
 - `pp.solution.inspect`
+- `pp.solution.sync-status`
 - `pp.solution.export`
 - `pp.dataverse.query`
 - `pp.dataverse.whoami`
@@ -58,6 +59,9 @@ pp-mcp --config-dir ~/.config/pp --project .
   - one bounded solution package export through `pp.solution.export`
   - deploy orchestration through `pp.deploy.plan`
   - `pp.deploy.apply`
+- `pp.solution.sync-status` is the read-only preflight for solution export
+  readiness. It captures solution readback and packaged blockers such as draft
+  workflows without attempting export.
 - `pp.solution.export` requires an explicit local output path and performs one
   export for one named solution. The structured response includes mutation
   policy metadata so agents can distinguish the bounded write from the read
@@ -76,8 +80,9 @@ pp-mcp --config-dir ~/.config/pp --project .
   `--allow-interactive-auth`, or pass `allowInteractiveAuth: true` on a remote
   tool call.
 
-This keeps the mutation boundary conservative while still allowing bounded
-solution export and plan-then-apply workflows through one interface.
+This keeps the mutation boundary conservative while still allowing read-only
+solution export preflight, bounded solution export, and plan-then-apply
+workflows through one interface.
 
 Discover the current read and mutation boundary:
 
@@ -88,9 +93,21 @@ Discover the current read and mutation boundary:
 }
 ```
 
-The `solution-lifecycle` domain reports `pp.solution.export` under
-`mutationTools`, and the `dataverse` domain includes `pp.dataverse.whoami`
-alongside the read inspection routes.
+The `solution-lifecycle` domain reports `pp.solution.sync-status` under
+`readTools` and `pp.solution.export` under `mutationTools`, and the `dataverse`
+domain includes `pp.dataverse.whoami` alongside the read inspection routes.
+
+Preflight one solution before deciding whether export is worth attempting:
+
+```json
+{
+  "name": "pp.solution.sync-status",
+  "arguments": {
+    "environment": "dev",
+    "uniqueName": "Core"
+  }
+}
+```
 
 ## Example workflow
 

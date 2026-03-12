@@ -13,6 +13,26 @@
       "name": "shared_office365"
     }
   ],
+  "diagnostics": [
+    {
+      "code": "FLOW_ARTIFACT_NAME_MISSING",
+      "level": "error",
+      "message": "Flow artifact <REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow does not define a name or displayName.",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_DEFINITION_MISSING",
+      "level": "error",
+      "message": "Flow artifact <REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow does not include a definition payload.",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNREF_DUPLICATE",
+      "level": "error",
+      "message": "Flow artifact <REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow contains duplicate connection reference shared_office365.",
+      "source": "@pp/flow"
+    }
+  ],
   "environmentVariables": [],
   "intermediateRepresentation": {
     "actionCount": 0,
@@ -26,10 +46,12 @@
     "variableReadCount": 0,
     "variableWriteCount": 0
   },
+  "knownLimitations": [],
   "parameters": [
     "ApiBaseUrl"
   ],
   "path": "<REPO_ROOT>/fixtures/flow/artifacts/diagnostic-flow",
+  "provenance": [],
   "semanticSummary": {
     "actionCount": 0,
     "controlFlowEdgeCount": 0,
@@ -51,5 +73,9 @@
       "writes": 0
     }
   },
-  "valid": false
+  "success": true,
+  "suggestedNextActions": [],
+  "supportTier": "preview",
+  "valid": false,
+  "warnings": []
 }

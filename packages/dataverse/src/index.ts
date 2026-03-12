@@ -56,6 +56,12 @@ export interface QueryOptions extends ODataQueryOptions {
   diagnoseEmptyFilter?: boolean;
 }
 
+interface SolutionScopedComponentQuerySupport {
+  componentType: number;
+  idColumn: string;
+  aliases: string[];
+}
+
 export interface EntityReadOptions extends Pick<ODataQueryOptions, 'select' | 'expand'> {
   includeAnnotations?: string[];
 }
@@ -1054,37 +1060,45 @@ export class DataverseClient {
   }
 
   async queryPage<T>(options: QueryOptions, continuationPath?: string): Promise<OperationResult<DataverseQueryPage<T>>> {
-    if (!continuationPath && options.solutionUniqueName) {
-      const validation = await validateSolutionScopedTable(this, options.table, options.solutionUniqueName);
+    const effectiveOptions =
+      !continuationPath && options.solutionUniqueName
+        ? await applySolutionScopedQueryFilter(this, options)
+        : ok(options, { supportTier: 'preview' });
+    if (!effectiveOptions.success || !effectiveOptions.data) {
+      return effectiveOptions as unknown as OperationResult<DataverseQueryPage<T>>;
+    }
+
+    if (!continuationPath && effectiveOptions.data.solutionUniqueName) {
+      const validation = await validateSolutionScopedTable(this, effectiveOptions.data.table, effectiveOptions.data.solutionUniqueName);
       if (!validation.success) {
         return validation as unknown as OperationResult<DataverseQueryPage<T>>;
       }
     }
 
     const response = await this.request<DataverseCollectionResponse<T>>({
-      path: continuationPath ?? buildQueryPath(options),
+      path: continuationPath ?? buildQueryPath(effectiveOptions.data),
       method: 'GET',
       responseType: 'json',
-      prefer: options.maxPageSize ? [`odata.maxpagesize=${options.maxPageSize}`] : undefined,
-      includeAnnotations: options.includeAnnotations,
-      solutionUniqueName: options.solutionUniqueName,
+      prefer: effectiveOptions.data.maxPageSize ? [`odata.maxpagesize=${effectiveOptions.data.maxPageSize}`] : undefined,
+      includeAnnotations: effectiveOptions.data.includeAnnotations,
+      solutionUniqueName: effectiveOptions.data.solutionUniqueName,
     });
 
     if (!response.success) {
       if (!continuationPath) {
-        const aliased = await this.retryQueryWithResolvedEntitySet<T>(options, response);
+        const aliased = await this.retryQueryWithResolvedEntitySet<T>(effectiveOptions.data, response);
         if (aliased) {
           return aliased;
         }
       }
-      return (await this.enrichQueryFailure<T>(options, response)) as unknown as OperationResult<DataverseQueryPage<T>>;
+      return (await this.enrichQueryFailure<T>(effectiveOptions.data, response)) as unknown as OperationResult<DataverseQueryPage<T>>;
     }
 
     const payload = response.data?.data ?? {};
-    const normalizedPage = normalizeQueryRecordsForSelectedLookups(payload.value ?? [], options.select);
+    const normalizedPage = normalizeQueryRecordsForSelectedLookups(payload.value ?? [], effectiveOptions.data.select);
     const emptyFilterWarnings =
-      !continuationPath && options.diagnoseEmptyFilter && options.filter && (payload.value?.length ?? 0) === 0
-        ? await this.buildEmptyFilteredQueryWarnings(options)
+      !continuationPath && effectiveOptions.data.diagnoseEmptyFilter && effectiveOptions.data.filter && (payload.value?.length ?? 0) === 0
+        ? await this.buildEmptyFilteredQueryWarnings(effectiveOptions.data)
         : [];
 
     return ok<DataverseQueryPage<T>>(
@@ -5631,11 +5645,132 @@ async function listSolutionComponentObjectIds(
   });
 }
 
+function resolveSolutionScopedComponentQuerySupport(tableName: string): SolutionScopedComponentQuerySupport | undefined {
+  const normalized = trimDataversePath(tableName).toLowerCase();
+  const supported: SolutionScopedComponentQuerySupport[] = [
+    {
+      componentType: 29,
+      idColumn: 'workflowid',
+      aliases: ['workflow', 'workflows'],
+    },
+    {
+      componentType: 80,
+      idColumn: 'appmoduleid',
+      aliases: ['appmodule', 'appmodules'],
+    },
+    {
+      componentType: 300,
+      idColumn: 'canvasappid',
+      aliases: ['canvasapp', 'canvasapps'],
+    },
+    {
+      componentType: 371,
+      idColumn: 'connectionreferenceid',
+      aliases: ['connectionreference', 'connectionreferences'],
+    },
+    {
+      componentType: 380,
+      idColumn: 'environmentvariabledefinitionid',
+      aliases: ['environmentvariabledefinition', 'environmentvariabledefinitions'],
+    },
+  ];
+
+  return supported.find((entry) => entry.aliases.includes(normalized));
+}
+
+function buildIdSetFilter(idColumn: string, ids: Iterable<string>): string | undefined {
+  const clauses = Array.from(ids)
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .map((id) => `${idColumn} eq ${id}`);
+
+  return clauses.length > 0 ? `(${clauses.join(' or ')})` : undefined;
+}
+
+function mergeQueryFilters(left: string | undefined, right: string | undefined): string | undefined {
+  if (left && right) {
+    return `(${left}) and ${right}`;
+  }
+
+  return left ?? right;
+}
+
+async function applySolutionScopedQueryFilter(
+  client: DataverseClient,
+  options: QueryOptions
+): Promise<OperationResult<QueryOptions>> {
+  if (!options.solutionUniqueName) {
+    return ok(options, { supportTier: 'preview' });
+  }
+
+  const support = resolveSolutionScopedComponentQuerySupport(options.table);
+  if (!support) {
+    return ok(options, { supportTier: 'preview' });
+  }
+
+  const solutionId = await resolveSolutionId(client, options.solutionUniqueName);
+  if (!solutionId.success) {
+    return solutionId as unknown as OperationResult<QueryOptions>;
+  }
+
+  if (!solutionId.data) {
+    return fail(
+      mergeDiagnosticLists(solutionId.diagnostics, [
+        createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${options.solutionUniqueName} was not found.`, {
+          source: '@pp/dataverse',
+        }),
+      ]),
+      {
+        supportTier: 'preview',
+        warnings: solutionId.warnings,
+      }
+    );
+  }
+
+  const componentIds = await listSolutionComponentObjectIds(client, solutionId.data, support.componentType);
+  if (!componentIds.success) {
+    return componentIds as unknown as OperationResult<QueryOptions>;
+  }
+
+  const componentFilter = buildIdSetFilter(support.idColumn, componentIds.data ?? []);
+  if (!componentFilter) {
+    return ok(
+      {
+        ...options,
+        filter: mergeQueryFilters(options.filter, `${support.idColumn} eq 00000000-0000-0000-0000-000000000000`),
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: componentIds.diagnostics,
+        warnings: componentIds.warnings,
+      }
+    );
+  }
+
+  return ok(
+    {
+      ...options,
+      filter: mergeQueryFilters(options.filter, componentFilter),
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(solutionId.diagnostics, componentIds.diagnostics),
+      warnings: mergeDiagnosticLists(solutionId.warnings, componentIds.warnings),
+    }
+  );
+}
+
 async function validateSolutionScopedTable(
   client: DataverseClient,
   tableName: string,
   solutionUniqueName: string
 ): Promise<OperationResult<void>> {
+  if (resolveSolutionScopedComponentQuerySupport(tableName)) {
+    return ok(undefined, {
+      supportTier: 'preview',
+    });
+  }
+
   const solutionId = await resolveSolutionId(client, solutionUniqueName);
   if (!solutionId.success) {
     return solutionId as unknown as OperationResult<void>;

@@ -111,6 +111,7 @@ describe('@pp/mcp', () => {
         'pp.environment.list',
         'pp.solution.list',
         'pp.solution.inspect',
+        'pp.solution.sync-status',
         'pp.solution.export',
         'pp.dataverse.query',
         'pp.dataverse.whoami',
@@ -210,7 +211,8 @@ describe('@pp/mcp', () => {
           name: 'solution-lifecycle',
           mutationToolsAvailable: true,
           mutationTools: expect.arrayContaining(['pp.solution.export']),
-          notes: expect.stringContaining('pp.solution.export'),
+          readTools: expect.arrayContaining(['pp.solution.sync-status']),
+          notes: expect.stringContaining('pp.solution.sync-status'),
         }),
         expect.objectContaining({
           name: 'flow-local-artifacts',
@@ -223,6 +225,7 @@ describe('@pp/mcp', () => {
         }),
         expect.objectContaining({
           name: 'mcp',
+          readTools: expect.arrayContaining(['pp.solution.sync-status']),
           mutationTools: expect.arrayContaining(['pp.solution.export']),
         }),
       ])

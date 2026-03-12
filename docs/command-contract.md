@@ -39,14 +39,17 @@ Commands still emit primary payloads on stdout and diagnostics on stderr.
   when the command can point to a canonical next step
 - warnings stay off stdout so structured payloads remain parseable
 
-`project inspect` is the current exception for machine-readable formats:
+`project inspect` and `flow validate` are the current exceptions for
+machine-readable formats:
 
 - successful `project inspect --format json|yaml|ndjson` responses embed
   `diagnostics`, `warnings`, `supportTier`, and related metadata directly in the
   stdout payload
-- those successful machine-readable `project inspect` responses do not emit a
-  second diagnostics envelope on stderr, so single-stream parsers can consume
-  one complete document
+- `flow validate --format json|yaml|ndjson` does the same, including validation
+  diagnostics when the report is semantically invalid and the command exits `1`
+- those successful machine-readable `project inspect` and `flow validate`
+  responses do not emit a second diagnostics envelope on stderr, so
+  single-stream parsers can consume one complete document
 - human-oriented `project inspect` formats still print diagnostic summaries on
   stderr
 
@@ -63,6 +66,16 @@ For successful mutation previews, stdout should also carry those fields when the
 preview represents a partial, delegated, or placeholder workflow. That keeps
 dry-run and plan payloads from looking fully supported when they are really
 handoff contracts.
+
+For successful machine-readable stdout payloads, the current direction is the
+same shared envelope:
+
+- singleton read commands should include `success`, `diagnostics`, `warnings`,
+  and related metadata alongside the domain fields
+- collection read commands should expose the collection under a named data key
+  such as `solutions`, `profiles`, or `runs` rather than returning a bare array
+- older bare-object and bare-array success payloads should be treated as legacy
+  shapes to migrate, not the preferred contract for new or updated commands
 
 ## Mutation flags
 

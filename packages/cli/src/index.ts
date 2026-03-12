@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { realpathSync } from 'node:fs';
-import { access, readFile, writeFile } from 'node:fs/promises';
-import { basename, dirname, extname, isAbsolute, resolve as resolvePath } from 'node:path';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, extname, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -178,6 +179,7 @@ import {
   runAuthTokenCommand,
 } from './auth-commands';
 import {
+  buildPacEnvironmentGuidance,
   runEnvironmentAddCommand,
   runEnvironmentBaselineCommand,
   runEnvironmentCleanupCommand,
@@ -2070,12 +2072,15 @@ async function runDataverseWhoAmI(args: string[]): Promise<number> {
   }
 
   printByFormat(
-    {
-      environment: resolution.data.environment.alias,
-      url: resolution.data.environment.url,
-      authProfile: resolution.data.authProfile.name,
-      ...whoAmI.data,
-    },
+    createSuccessPayload(
+      {
+        environment: resolution.data.environment.alias,
+        url: resolution.data.environment.url,
+        authProfile: resolution.data.authProfile.name,
+        ...whoAmI.data,
+      },
+      whoAmI
+    ),
     outputFormat(args, 'json')
   );
   return 0;
@@ -5518,21 +5523,64 @@ async function runFlowActivate(args: string[]): Promise<number> {
     return preview;
   }
 
-  const result = await new FlowService(resolution.data.client).promoteArtifact(identifier, {
-    sourceSolutionUniqueName: solutionUniqueName,
-    targetSolutionUniqueName: solutionUniqueName,
-    target: identifier,
-    workflowState: 'activated',
-    targetDataverseClient: resolution.data.client,
+  const result = await new FlowService(resolution.data.client).activate(identifier, {
+    solutionUniqueName,
   });
 
   if (!result.success || !result.data) {
-    return printFailure(result);
+    return printFailure(augmentFlowActivateFailureResult(result, resolution.data.environment, resolution.data.authProfile));
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
+}
+
+function augmentFlowActivateFailureResult<T>(
+  result: OperationResult<T>,
+  environment: EnvironmentAlias,
+  authProfile: AuthProfile | undefined
+): OperationResult<T> {
+  if (!result.diagnostics.some((diagnostic) => diagnostic.code === 'FLOW_ACTIVATE_DEFINITION_REQUIRED')) {
+    return result;
+  }
+
+  const pacGuidance: Record<string, unknown> = {
+    sharesPpAuthContext: false,
+    organizationUrl: environment.url,
+    verificationCommand: 'pac auth list',
+    recommendedAction:
+      `Treat pac as a separately authenticated tool. Run \`pac auth list\` and confirm the active profile targets ${environment.url} before using pac as a fallback.`,
+    ...(buildPacEnvironmentGuidance(authProfile, environment) ?? {}),
+  };
+  const pacRecommendedAction =
+    typeof pacGuidance.recommendedAction === 'string' ? pacGuidance.recommendedAction : undefined;
+  const pacReason = typeof pacGuidance.reason === 'string' ? pacGuidance.reason : undefined;
+  const tooling = {
+    pac: {
+      ...pacGuidance,
+      selectedEnvironment: environment.alias,
+    },
+  };
+
+  return {
+    ...result,
+    details: isRecord(result.details)
+      ? {
+          ...result.details,
+          tooling,
+        }
+      : {
+          tooling,
+        },
+    suggestedNextActions: dedupeStrings([
+      ...(result.suggestedNextActions ?? []),
+      `Run \`pp env inspect ${environment.alias} --format json\` to confirm the selected environment alias, bound auth profile, and pac/tooling guidance before attempting a non-pp fallback.`,
+      `Run \`pac auth list\` and confirm the active profile targets ${environment.url} before using pac as a fallback.`,
+      pacRecommendedAction,
+      pacReason ? `Only fall back to pac after validating that its auth context targets ${environment.url}; current guidance: ${pacReason}` : undefined,
+    ]),
+  };
 }
 
 async function runFlowPromote(args: string[]): Promise<number> {
@@ -5733,14 +5781,20 @@ async function runFlowValidate(args: string[]): Promise<number> {
     return printFailure(argumentFailure('FLOW_VALIDATE_PATH_REQUIRED', 'Usage: flow validate <path>'));
   }
 
+  const format = outputFormat(args, 'json');
   const result = await new FlowService().validate(inputPath);
 
   if (!result.success || !result.data) {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
-  printResultDiagnostics(result, outputFormat(args, 'json'));
+  if (isMachineReadableOutputFormat(format)) {
+    printByFormat(createSuccessPayload(result.data, result), format);
+  } else {
+    printByFormat(result.data, format);
+    printResultDiagnostics(result, format);
+  }
+
   return result.data.valid ? 0 : 1;
 }
 
@@ -5775,10 +5829,49 @@ async function runFlowPatch(args: string[]): Promise<number> {
     return printFailure(patch);
   }
 
-  const preview = maybeHandleMutationPreview(args, 'json', 'flow.patch', { inputPath, patchFile, outPath: readFlag(args, '--out') ?? 'in-place' }, patch.data);
+  const mutation = readMutationFlags(args);
 
-  if (preview !== undefined) {
-    return preview;
+  if (!mutation.success || !mutation.data) {
+    return printFailure(mutation);
+  }
+
+  const requestedOutPath = readFlag(args, '--out') ?? 'in-place';
+
+  if (mutation.data.mode !== 'apply') {
+    const previewOutRoot = await mkdtemp(join(tmpdir(), 'pp-flow-patch-preview-'));
+
+    try {
+      const analysis = await new FlowService().patch(inputPath, patch.data as FlowPatchDocument, previewOutRoot);
+
+      if (!analysis.success || !analysis.data) {
+        return printFailure(analysis);
+      }
+
+      printByFormat(
+        createMutationPreview(
+          'flow.patch',
+          mutation.data,
+          { inputPath, patchFile, outPath: requestedOutPath },
+          patch.data,
+          analysis,
+          {
+            validation: {
+              patchAccepted: true,
+              operationCount: analysis.data.appliedOperations.length,
+            },
+            analysis: {
+              changed: analysis.data.changed,
+              appliedOperations: analysis.data.appliedOperations,
+              summary: analysis.data.summary,
+            },
+          }
+        ),
+        outputFormat(args, 'json')
+      );
+      return 0;
+    } finally {
+      await rm(previewOutRoot, { recursive: true, force: true });
+    }
   }
 
   const result = await new FlowService().patch(inputPath, patch.data as FlowPatchDocument, readFlag(args, '--out'));
@@ -6456,16 +6549,71 @@ async function resolveDataverseClientForCli(args: string[]) {
 }
 
 async function resolveDataverseClientByFlag(args: string[], flag: string) {
-  const environmentAlias = readFlag(args, flag);
+  const environmentAliasResult = await resolveEnvironmentAliasForCli(args, flag);
 
-  if (!environmentAlias) {
-    return argumentFailure('DV_ENV_REQUIRED', `${flag} <alias> is required.`);
+  if (!environmentAliasResult.success || !environmentAliasResult.data) {
+    return environmentAliasResult;
   }
 
-  return resolveDataverseClient(environmentAlias, {
+  return resolveDataverseClient(environmentAliasResult.data, {
     ...readConfigOptions(args),
     publicClientLoginOptions: readPublicClientLoginOptions(args),
   });
+}
+
+async function resolveEnvironmentAliasForCli(args: string[], flag: string): Promise<OperationResult<string>> {
+  const explicitEnvironmentAlias = readFlag(args, flag);
+
+  if (explicitEnvironmentAlias) {
+    return ok(explicitEnvironmentAlias, {
+      supportTier: 'preview',
+    });
+  }
+
+  const discoveryOptions = readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return discoveryOptions as unknown as OperationResult<string>;
+  }
+
+  const project = await discoverProject(resolveDefaultInvocationPath(), discoveryOptions.data);
+
+  if (!project.success || !project.data) {
+    return project as unknown as OperationResult<string>;
+  }
+
+  const errorDiagnostics = project.diagnostics.filter((diagnostic) => diagnostic.severity === 'error');
+
+  if (errorDiagnostics.length > 0) {
+    return fail(errorDiagnostics, {
+      supportTier: project.supportTier,
+      warnings: project.warnings,
+      details: {
+        projectRoot: project.data.root,
+        selectedStage: project.data.topology.selectedStage,
+        activeEnvironment: project.data.topology.activeEnvironment,
+      },
+      provenance: project.provenance,
+      knownLimitations: project.knownLimitations,
+    });
+  }
+
+  if (project.data.topology.activeEnvironment) {
+    return ok(project.data.topology.activeEnvironment, {
+      supportTier: project.supportTier,
+      diagnostics: project.diagnostics,
+      warnings: project.warnings,
+      details: {
+        projectRoot: project.data.root,
+        selectedStage: project.data.topology.selectedStage,
+        source: 'project-topology',
+      },
+      provenance: project.provenance,
+      knownLimitations: project.knownLimitations,
+    });
+  }
+
+  return argumentFailure('DV_ENV_REQUIRED', `${flag} <alias> is required.`);
 }
 
 async function resolveCanvasCliContext(args: string[], canvasTarget?: string): Promise<OperationResult<CanvasCliContext>> {
@@ -8089,6 +8237,10 @@ async function writeStructuredArtifact(path: string, value: unknown): Promise<vo
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function dedupeStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
 function readStringArrayValue(value: unknown): string[] | undefined {
