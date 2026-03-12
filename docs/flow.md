@@ -45,8 +45,12 @@ solution-packaged import/export surface.
 When a solution-scoped cloud flow is stuck in `draft` or `suspended`, use
 `pp flow activate <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME]`
 to re-apply that remote flow back into the same environment with workflow state
-forced to `activated`. This is the shortest remediation path when
-`pp solution publish` or `pp solution sync-status` shows a blocked workflow.
+forced to `activated`. This is still the shortest remediation path when
+`pp solution publish` or `pp solution sync-status` shows a blocked workflow,
+and MCP now exposes the same bounded remediation through `pp.flow.activate`.
+When Dataverse still rejects that update path, both surfaces preserve the same
+structured blocker details so the remaining limitation is explicit instead of
+leaving publish readiness ambiguous.
 
 ## Runtime commands
 
@@ -93,6 +97,16 @@ pp flow monitor "Invoice Sync" --env dev --solution Core --since 2h --format jso
 `degraded`, `blocked`, `inactive`, or `unknown`) plus a short summary that
 explains whether quiet telemetry is expected, suspicious, or blocked by known
 dependency issues.
+
+When you save one monitor payload and compare the next follow-up against it,
+pass `--baseline`:
+
+```bash
+pp flow monitor "Invoice Sync" --env dev --solution Core --since 2h --baseline ./artifacts/invoice-sync.monitor.json --format json
+```
+
+The comparison block reports whether health, run counts, latest failure, or
+grouped runtime errors changed since the baseline capture.
 
 Known limits in this slice:
 

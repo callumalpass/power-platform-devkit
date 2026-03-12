@@ -3,6 +3,8 @@
     "componentType": 80,
     "componentTypeLabel": "app-module",
     "id": "comp-source-app",
+    "logicalName": "SalesHub",
+    "name": "Sales Hub",
     "objectId": "obj-app"
   },
   {

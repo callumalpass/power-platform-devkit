@@ -112,6 +112,7 @@ export interface SolutionDependencySummary {
   requiredComponentName?: string;
   requiredComponentLogicalName?: string;
   requiredComponentTable?: string;
+  requiredComponentCustom?: boolean;
   dependentComponentObjectId?: string;
   dependentComponentType?: number;
   dependentComponentTypeLabel: string;
@@ -120,6 +121,14 @@ export interface SolutionDependencySummary {
   dependentComponentLogicalName?: string;
   dependentComponentTable?: string;
   missingRequiredComponent: boolean;
+  importRisk: SolutionDependencyImportRisk;
+}
+
+export interface SolutionDependencyImportRisk {
+  classification: 'resolved' | 'expected-external' | 'likely-import-blocker' | 'review-required';
+  severity: 'none' | 'info' | 'warning';
+  reason: string;
+  suggestedAction?: string;
 }
 
 interface SolutionDependencyComponentResolution {
@@ -127,6 +136,7 @@ interface SolutionDependencyComponentResolution {
   logicalName?: string;
   table?: string;
   entitySetName?: string;
+  custom?: boolean;
 }
 
 interface ComponentResolutionRequests {
@@ -408,6 +418,15 @@ export interface SolutionExportFailureDetails {
   };
 }
 
+export interface SolutionPackageMetadata {
+  uniqueName?: string;
+  friendlyName?: string;
+  version?: string;
+  packageType?: Exclude<SolutionPackageType, 'both'>;
+  manifestPath?: string;
+  source: 'manifest' | 'archive';
+}
+
 export interface SolutionSyncStatusProgressEvent {
   stage: 'readback-complete' | 'export-check-started' | 'export-check-complete';
   elapsedMs?: number;
@@ -423,10 +442,18 @@ export interface SolutionSyncStatusBlocker {
   id: string;
   name?: string;
   logicalName?: string;
+  category?: number;
   workflowState?: string;
   stateCode?: number;
   statusCode?: number;
   reason: string;
+  remediation?: {
+    kind: 'inspect-only' | 'activate-in-place';
+    mcpMutationAvailable: boolean;
+    cliCommand?: string;
+    limitationCode?: string;
+    summary: string;
+  };
 }
 
 export interface SolutionPublishResult {
@@ -830,11 +857,12 @@ export class SolutionService {
 
     const summary = await this.enrichSolutionSummary(solutions.data?.[0]);
     const missingSuggestions = !summary ? await this.buildMissingSolutionSuggestions(uniqueName) : undefined;
+    const warnings = !summary ? rewriteMissingSolutionWarnings(uniqueName, solutions.warnings) : solutions.warnings;
 
     return ok(summary, {
       supportTier: 'preview',
       diagnostics: solutions.diagnostics,
-      warnings: solutions.warnings,
+      warnings,
       suggestedNextActions: missingSuggestions,
     });
   }
@@ -956,7 +984,7 @@ export class SolutionService {
     ] = await Promise.all([
       requested.entityIds.size > 0
         ? this.dataverseClient.listTables({
-            select: ['MetadataId', 'LogicalName', 'SchemaName', 'DisplayName', 'EntitySetName'],
+            select: ['MetadataId', 'LogicalName', 'SchemaName', 'DisplayName', 'EntitySetName', 'IsCustomEntity'],
             all: true,
           })
         : ok([] as EntityDefinition[], { supportTier: 'preview' }),
@@ -1036,6 +1064,7 @@ export class SolutionService {
       logicalName: readString(record.LogicalName),
       table: readString(record.LogicalName),
       entitySetName: readString(record.EntitySetName),
+      custom: typeof record.IsCustomEntity === 'boolean' ? record.IsCustomEntity : undefined,
     }));
     addComponentResolutions(map, 80, appModules.data ?? [], (record) => record.appmoduleid, (record) => ({
       name: record.name ?? record.uniquename,
@@ -1120,12 +1149,58 @@ export class SolutionService {
     }
 
     if (!solution.data) {
-      return ok(undefined, {
-        supportTier: 'preview',
-        diagnostics: solution.diagnostics,
-        warnings: solution.warnings,
-      });
+      return fail(
+        [
+          ...solution.diagnostics,
+          createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`, {
+            source: '@pp/solution',
+            hint: solution.suggestedNextActions?.[0],
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: solution.warnings,
+          suggestedNextActions: solution.suggestedNextActions,
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse solutions',
+            },
+          ],
+        }
+      );
     }
+
+    const provenance = [
+      {
+        kind: 'official-api' as const,
+        source: 'Dataverse solutions',
+      },
+      {
+        kind: 'official-api' as const,
+        source: 'Dataverse solutioncomponents',
+      },
+      {
+        kind: 'official-api' as const,
+        source: 'Dataverse dependencies',
+      },
+      {
+        kind: 'official-api' as const,
+        source: 'Dataverse connectionreferences',
+      },
+      {
+        kind: 'official-api' as const,
+        source: 'Dataverse environmentvariabledefinitions',
+      },
+      {
+        kind: 'official-api' as const,
+        source: 'Dataverse environmentvariablevalues',
+      },
+      {
+        kind: 'official-api' as const,
+        source: 'Dataverse appmodules',
+      },
+    ];
 
     const modelService = new ModelService(this.dataverseClient);
     const [components, dependencies, connectionReferences, environmentVariables, modelApps] = await Promise.all([
@@ -1257,6 +1332,8 @@ export class SolutionService {
         environmentVariables.warnings,
         modelWarnings
       ),
+      suggestedNextActions: solution.suggestedNextActions,
+      provenance,
     });
   }
 
@@ -2023,14 +2100,26 @@ export class SolutionService {
   }
 
   private async buildMissingSolutionSuggestions(uniqueName: string): Promise<string[]> {
-    const listed = await this.list();
+    const [listed, publishers] = await Promise.all([this.list(), this.loadPublisherSummaries()]);
 
     if (!listed.success) {
-      return [`Run \`pp solution list --environment <alias> --format json\` to inspect the visible solution unique names before retrying ${uniqueName}.`];
+      return [
+        `Run \`pp solution list --environment <alias> --format json\` to inspect the visible solution unique names before retrying ${uniqueName}.`,
+        `If ${uniqueName} has not been created or imported into this environment yet, do that first; \`pp solution publish\` and \`pp solution sync-status\` only work after the target solution exists remotely.`,
+        `Run \`pp solution publishers --environment <alias> --format json\` to choose a safe publisher before creating ${uniqueName}.`,
+      ];
     }
 
     const available = listed.data ?? [];
-    const latestUnmanaged = chooseLatestVisibleSolution(available.filter((solution) => solution.ismanaged !== true)) ?? chooseLatestVisibleSolution(available);
+    const relatedVisibleCandidate = chooseLatestVisibleSolution(
+      available.filter((solution) => isCredibleMissingSolutionAlternative(uniqueName, solution))
+    );
+    const creationSuggestions = [
+      `If ${uniqueName} has not been created or imported into this environment yet, do that first; \`pp solution publish\` and \`pp solution sync-status\` only work after the target solution exists remotely.`,
+      `Run \`pp solution publishers --environment <alias> --format json\` to choose a safe publisher before creating ${uniqueName}.`,
+      ...this.buildPublisherSuggestions(uniqueName, publishers),
+      `If ${uniqueName} should come from a package artifact instead of a new shell, import that solution into this environment before retrying publish or sync-status.`,
+    ];
 
     return Array.from(
       new Set(
@@ -2038,9 +2127,10 @@ export class SolutionService {
           available.length > 0
             ? `Run \`pp solution list --environment <alias> --format json\` to inspect the ${available.length} visible solution unique name${available.length === 1 ? '' : 's'} before retrying ${uniqueName}.`
             : `Run \`pp solution list --environment <alias> --format json\` to confirm which solutions are visible before retrying ${uniqueName}.`,
-          latestUnmanaged
-            ? `Latest visible unmanaged candidate: \`${latestUnmanaged.uniquename}\`${latestUnmanaged.version ? ` (version ${latestUnmanaged.version})` : ''}. Inspect it with \`pp solution inspect ${latestUnmanaged.uniquename} --environment <alias> --format json\` if this environment is using a newer disposable shell instead of ${uniqueName}.`
+          relatedVisibleCandidate
+            ? `Closest visible candidate: \`${relatedVisibleCandidate.uniquename}\`${relatedVisibleCandidate.version ? ` (version ${relatedVisibleCandidate.version})` : ''}. Inspect it with \`pp solution inspect ${relatedVisibleCandidate.uniquename} --environment <alias> --format json\` only if you expected a renamed or newer shell from the same solution family instead of ${uniqueName}.`
             : undefined,
+          ...creationSuggestions,
         ].filter((value): value is string => Boolean(value))
       )
     );
@@ -2118,7 +2208,7 @@ export class SolutionService {
       if (workflow.category === 5) {
         return [
           ...sharedActions,
-          `Treat ${identifier} as a blocked draft Modern Flow until a supported activation path is available; current \`pp flow activate\` in-place remediation can still fail with \`FLOW_ACTIVATE_DEFINITION_REQUIRED\` for this Dataverse workflow path.`,
+          `Treat ${identifier} as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP \`pp.flow.activate\`, but current in-place activation can still fail with \`FLOW_ACTIVATE_DEFINITION_REQUIRED\` for this Dataverse workflow path.`,
         ];
       }
 
@@ -2422,7 +2512,13 @@ export class SolutionService {
     const outputDir = resolve(options.outDir);
     await mkdir(outputDir, { recursive: true });
 
-    const packageType = options.packageType ?? 'both';
+    const resolvedPackageType = await resolveSolutionUnpackPackageType(resolvedPackagePath, options.packageType);
+
+    if (!resolvedPackageType.success || !resolvedPackageType.data) {
+      return resolvedPackageType as unknown as OperationResult<SolutionUnpackResult>;
+    }
+
+    const packageType = resolvedPackageType.data;
     const command = await this.runPacCommand({
       pacExecutable: options.pacExecutable,
       args: [
@@ -2455,7 +2551,7 @@ export class SolutionService {
       {
         supportTier: 'preview',
         diagnostics: command.diagnostics,
-        warnings: command.warnings,
+        warnings: mergeDiagnosticLists(resolvedPackageType.warnings, command.warnings),
         provenance: [
           {
             kind: 'official-artifact',
@@ -2468,6 +2564,70 @@ export class SolutionService {
 
   async readReleaseManifest(path: string): Promise<OperationResult<SolutionReleaseManifest | undefined>> {
     return readReleaseManifest(resolve(path));
+  }
+
+  async inspectPackageMetadata(packagePath: string): Promise<OperationResult<SolutionPackageMetadata | undefined>> {
+    const resolvedPackagePath = resolve(packagePath);
+    const manifestPath = resolveAdjacentManifestPath(resolvedPackagePath);
+    const manifest = await readReleaseManifest(manifestPath);
+
+    if (!manifest.success) {
+      return manifest as unknown as OperationResult<SolutionPackageMetadata | undefined>;
+    }
+
+    if (manifest.data) {
+      return ok(
+        {
+          uniqueName: manifest.data.solution.uniqueName,
+          friendlyName: manifest.data.solution.friendlyName,
+          version: manifest.data.solution.version,
+          packageType: manifest.data.solution.packageType,
+          manifestPath,
+          source: 'manifest',
+        },
+        {
+          supportTier: 'preview',
+          warnings: manifest.warnings,
+          provenance: [
+            {
+              kind: 'official-artifact',
+              source: 'pp solution release manifest',
+            },
+          ],
+        }
+      );
+    }
+
+    const archivePackageType = await readSolutionArchivePackageType(resolvedPackagePath);
+    if (!archivePackageType.success || !archivePackageType.data) {
+      return archivePackageType as unknown as OperationResult<SolutionPackageMetadata | undefined>;
+    }
+
+    const archiveMetadata = await readSolutionArchiveMetadata(resolvedPackagePath);
+    if (!archiveMetadata.success) {
+      return archiveMetadata as unknown as OperationResult<SolutionPackageMetadata | undefined>;
+    }
+
+    return ok(
+      {
+        uniqueName: archiveMetadata.data?.uniqueName,
+        friendlyName: archiveMetadata.data?.friendlyName,
+        version: archiveMetadata.data?.version,
+        packageType: archivePackageType.data,
+        manifestPath,
+        source: 'archive',
+      },
+      {
+        supportTier: 'preview',
+        warnings: mergeDiagnosticLists(archivePackageType.warnings, archiveMetadata.warnings),
+        provenance: [
+          {
+            kind: 'official-artifact',
+            source: 'solution package metadata',
+          },
+        ],
+      }
+    );
   }
 
   async listPublishers(): Promise<OperationResult<SolutionPublisherSummary[]>> {
@@ -2612,6 +2772,28 @@ export class SolutionService {
   }
 }
 
+function rewriteMissingSolutionWarnings(uniqueName: string, warnings: Diagnostic[]): Diagnostic[] {
+  const retained = warnings.filter((warning) => warning.code !== 'DATAVERSE_QUERY_EMPTY_RESULT_AMBIGUOUS_SCOPE');
+  const hadAmbiguousEmptyResult = retained.length !== warnings.length;
+
+  if (!hadAmbiguousEmptyResult) {
+    return warnings;
+  }
+
+  return [
+    ...retained,
+    createDiagnostic(
+      'warning',
+      'SOLUTION_NOT_VISIBLE_IN_SCOPE',
+      `Solution ${uniqueName} was not visible in the current Dataverse scope.`,
+      {
+        source: '@pp/solution',
+        hint: 'This usually means the solution is absent, but security-filtered visibility can still hide rows. If you expected it to exist, confirm the active identity or run a broader known-good solution list before treating the absence as authoritative.',
+      }
+    ),
+  ];
+}
+
 class DefaultSolutionCommandRunner implements SolutionCommandRunner {
   async run(invocation: SolutionCommandInvocation): Promise<OperationResult<SolutionCommandResult>> {
     return new Promise((resolvePromise) => {
@@ -2730,7 +2912,7 @@ function normalizeSolutionDependency(
   dependency: SolutionDependencyRecord,
   componentIds: Set<string>
 ): SolutionDependencySummary {
-  return {
+  const normalized: Omit<SolutionDependencySummary, 'importRisk'> = {
     id: dependency.dependencyid,
     dependencyType: dependency.dependencytype,
     requiredComponentObjectId: dependency.requiredcomponentobjectid,
@@ -2744,6 +2926,62 @@ function normalizeSolutionDependency(
     missingRequiredComponent: Boolean(
       dependency.requiredcomponentobjectid && !componentIds.has(dependency.requiredcomponentobjectid)
     ),
+  };
+
+  return {
+    ...normalized,
+    importRisk: classifySolutionDependencyImportRisk(normalized),
+  };
+}
+
+function classifySolutionDependencyImportRisk(
+  dependency: Omit<SolutionDependencySummary, 'importRisk'>
+): SolutionDependencyImportRisk {
+  if (!dependency.missingRequiredComponent) {
+    return {
+      classification: 'resolved',
+      severity: 'none',
+      reason: 'The required component is already present in the solution.',
+    };
+  }
+
+  if (dependency.requiredComponentType === 1 && dependency.requiredComponentCustom === false) {
+    return {
+      classification: 'expected-external',
+      severity: 'info',
+      reason: `The missing ${dependency.requiredComponentLogicalName ?? dependency.requiredComponentName ?? 'Dataverse table'} is a standard Dataverse table, so it is usually expected to exist in the target environment outside this solution package.`,
+      suggestedAction:
+        'Confirm the target environment already has access to the standard table and any required security roles instead of treating this as a same-solution packaging defect.',
+    };
+  }
+
+  if (dependency.requiredComponentType === 1 && dependency.requiredComponentCustom === true) {
+    return {
+      classification: 'likely-import-blocker',
+      severity: 'warning',
+      reason: `The missing ${dependency.requiredComponentLogicalName ?? dependency.requiredComponentName ?? 'custom table'} is a custom Dataverse table, so target environments usually need it deployed by this solution or by a coordinated prerequisite solution.`,
+      suggestedAction:
+        'Add the custom table to the solution or document and validate the prerequisite solution in the target environment before export/import.',
+    };
+  }
+
+  if ([24, 26, 29, 60, 61, 62, 80, 300, 371, 380].includes(dependency.requiredComponentType ?? -1)) {
+    return {
+      classification: 'likely-import-blocker',
+      severity: 'warning',
+      reason: `The missing ${dependency.requiredComponentTypeLabel} is another solution component rather than a standard platform table, so cross-environment import usually stays blocked until that component is packaged or provisioned separately.`,
+      suggestedAction:
+        'Package the component with the solution or capture an explicit prerequisite/install step for the target environment.',
+    };
+  }
+
+  return {
+    classification: 'review-required',
+    severity: 'warning',
+    reason:
+      'pp could not confidently classify this missing component from the available metadata, so export/import risk still needs manual review.',
+    suggestedAction:
+      'Inspect the dependency in Maker or Dataverse metadata and decide whether it is a platform prerequisite or a missing same-solution component.',
   };
 }
 
@@ -2876,7 +3114,7 @@ function buildBlockingWorkflowSuggestedNextActions(
     if (isModernFlowReadBack(workflow)) {
       return [
         ...sharedActions,
-        `Treat ${identifier} as a blocked draft Modern Flow until a supported activation path is available; current \`pp flow activate\` in-place remediation can still fail with \`FLOW_ACTIVATE_DEFINITION_REQUIRED\` for this Dataverse workflow path.`,
+        `Treat ${identifier} as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP \`pp.flow.activate\`, but current in-place activation can still fail with \`FLOW_ACTIVATE_DEFINITION_REQUIRED\` for this Dataverse workflow path.`,
       ];
     }
 
@@ -2957,10 +3195,26 @@ function buildSolutionSyncStatusBlockers(readBack: SolutionPublishReadback | und
     id: workflow.id,
     name: workflow.name,
     logicalName: workflow.logicalName,
+    category: workflow.category,
     workflowState: workflow.workflowState,
     stateCode: workflow.stateCode,
     statusCode: workflow.statusCode,
     reason: `Workflow ${workflow.name ?? workflow.logicalName ?? workflow.id} is still ${describeWorkflowReadBackState(workflow)}, so solution export readiness remains blocked.`,
+    remediation: isModernFlowReadBack(workflow)
+      ? {
+          kind: 'inspect-only',
+          mcpMutationAvailable: false,
+          cliCommand: `pp flow activate ${formatWorkflowIdentifier(workflow)} --environment <alias> --solution <solution> --format json`,
+          limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
+          summary:
+            'Modern Flow blocker is diagnosable through pp solution/flow inspect surfaces, but pp does not yet expose MCP activation and the current CLI in-place activation path can still fail for this Dataverse workflow update route.',
+        }
+      : {
+          kind: 'activate-in-place',
+          mcpMutationAvailable: false,
+          cliCommand: `pp flow activate ${formatWorkflowIdentifier(workflow)} --environment <alias> --solution <solution> --format json`,
+          summary: 'Retry in-place activation through the CLI when this workflow should already be runnable.',
+        },
   }));
 }
 
@@ -2978,12 +3232,23 @@ function applyDependencyComponentResolutions(
 
     return {
       ...dependency,
-      requiredComponentName: required?.name,
-      requiredComponentLogicalName: required?.logicalName,
-      requiredComponentTable: required?.table,
-      dependentComponentName: dependent?.name,
-      dependentComponentLogicalName: dependent?.logicalName,
-      dependentComponentTable: dependent?.table,
+      requiredComponentName: required?.name ?? dependency.requiredComponentName,
+      requiredComponentLogicalName: required?.logicalName ?? dependency.requiredComponentLogicalName,
+      requiredComponentTable: required?.table ?? dependency.requiredComponentTable,
+      requiredComponentCustom: required?.custom ?? dependency.requiredComponentCustom,
+      dependentComponentName: dependent?.name ?? dependency.dependentComponentName,
+      dependentComponentLogicalName: dependent?.logicalName ?? dependency.dependentComponentLogicalName,
+      dependentComponentTable: dependent?.table ?? dependency.dependentComponentTable,
+      importRisk: classifySolutionDependencyImportRisk({
+        ...dependency,
+        requiredComponentName: required?.name ?? dependency.requiredComponentName,
+        requiredComponentLogicalName: required?.logicalName ?? dependency.requiredComponentLogicalName,
+        requiredComponentTable: required?.table ?? dependency.requiredComponentTable,
+        requiredComponentCustom: required?.custom ?? dependency.requiredComponentCustom,
+        dependentComponentName: dependent?.name ?? dependency.dependentComponentName,
+        dependentComponentLogicalName: dependent?.logicalName ?? dependency.dependentComponentLogicalName,
+        dependentComponentTable: dependent?.table ?? dependency.dependentComponentTable,
+      }),
     };
   });
 }
@@ -3402,6 +3667,76 @@ function resolveAdjacentManifestPath(packagePath: string): string {
   return `${packagePath}.pp-solution.json`;
 }
 
+async function resolveSolutionUnpackPackageType(
+  packagePath: string,
+  requestedPackageType: SolutionPackageType | undefined
+): Promise<OperationResult<SolutionPackageType>> {
+  if (requestedPackageType) {
+    return ok(requestedPackageType, {
+      supportTier: 'preview',
+    });
+  }
+
+  const manifest = await readReleaseManifest(resolveAdjacentManifestPath(packagePath));
+
+  if (!manifest.success) {
+    return ok('both', {
+      supportTier: 'preview',
+      warnings: [
+        createDiagnostic(
+          'warning',
+          'SOLUTION_UNPACK_PACKAGE_TYPE_AUTO_DETECT_FAILED',
+          `Could not read the adjacent release manifest for ${packagePath}; defaulting solution unpack to package type both.`,
+          {
+            source: '@pp/solution',
+            path: packagePath,
+            detail: manifest.diagnostics.map((diagnostic) => diagnostic.message).join('; '),
+            hint: 'Pass --package-type explicitly when unpacking a package without readable release metadata.',
+          }
+        ),
+        ...manifest.warnings,
+      ],
+    });
+  }
+
+  if (manifest.data?.solution.packageType) {
+    return ok(manifest.data.solution.packageType, {
+      supportTier: 'preview',
+      warnings: manifest.warnings,
+    });
+  }
+
+  const archivePackageType = await readSolutionArchivePackageType(packagePath);
+
+  if (archivePackageType.success && archivePackageType.data) {
+    return ok(archivePackageType.data, {
+      supportTier: 'preview',
+      warnings: mergeDiagnosticLists(manifest.warnings, archivePackageType.warnings),
+    });
+  }
+
+  return ok('both', {
+    supportTier: 'preview',
+    warnings: mergeDiagnosticLists(
+      manifest.warnings,
+      archivePackageType.warnings,
+      [
+        createDiagnostic(
+          'warning',
+          'SOLUTION_UNPACK_PACKAGE_TYPE_AUTO_DETECT_FAILED',
+          `Could not infer whether ${packagePath} is managed or unmanaged; defaulting solution unpack to package type both.`,
+          {
+            source: '@pp/solution',
+            path: packagePath,
+            detail: archivePackageType.diagnostics.map((diagnostic) => diagnostic.message).join('; '),
+            hint: 'Pass --package-type explicitly when unpacking a package without readable embedded metadata.',
+          }
+        ),
+      ]
+    ),
+  });
+}
+
 async function buildArtifactFile(role: SolutionArtifactFile['role'], path: string): Promise<SolutionArtifactFile> {
   const resolvedPath = resolve(path);
   const content = await readFile(resolvedPath);
@@ -3728,10 +4063,75 @@ async function normalizeSolutionArchivePackageType(
 async function readSolutionArchivePackageType(
   packagePath: string
 ): Promise<OperationResult<Exclude<SolutionPackageType, 'both'>>> {
+  const metadata = await readSolutionArchiveMetadataContent(packagePath);
+
+  if (!metadata.success || !metadata.data) {
+    return metadata as unknown as OperationResult<Exclude<SolutionPackageType, 'both'>>;
+  }
+
+  const managedValue = readXmlTag(metadata.data.toString('utf8'), ['Managed']);
+
+  if (managedValue === '1') {
+    return ok('managed', {
+      supportTier: 'preview',
+      warnings: metadata.warnings,
+    });
+  }
+
+  if (managedValue === '0') {
+    return ok('unmanaged', {
+      supportTier: 'preview',
+      warnings: metadata.warnings,
+    });
+  }
+
+  return fail(
+    createDiagnostic(
+      'error',
+      'SOLUTION_EXPORT_MANAGED_FLAG_INVALID',
+      `Exported solution metadata in ${packagePath} does not contain a valid <Managed> flag.`,
+      {
+        source: '@pp/solution',
+        path: packagePath,
+        detail: managedValue ? `Observed value: ${managedValue}.` : undefined,
+        hint: 'Inspect the solution metadata and retry the export.',
+      }
+    ),
+    {
+      supportTier: 'preview',
+      warnings: metadata.warnings,
+    }
+  );
+}
+
+async function readSolutionArchiveMetadata(
+  packagePath: string
+): Promise<OperationResult<{ uniqueName?: string; friendlyName?: string; version?: string }>> {
+  const metadata = await readSolutionArchiveMetadataContent(packagePath);
+
+  if (!metadata.success || !metadata.data) {
+    return metadata as unknown as OperationResult<{ uniqueName?: string; friendlyName?: string; version?: string }>;
+  }
+
+  const content = metadata.data.toString('utf8');
+  return ok(
+    {
+      uniqueName: readXmlTag(content, ['UniqueName', 'uniquename']),
+      friendlyName: readXmlTag(content, ['LocalizedName', 'FriendlyName', 'friendlyname']),
+      version: readXmlTag(content, ['Version', 'version']),
+    },
+    {
+      supportTier: 'preview',
+      warnings: metadata.warnings,
+    }
+  );
+}
+
+async function readSolutionArchiveMetadataContent(packagePath: string): Promise<OperationResult<Buffer>> {
   const entries = await listZipEntries(packagePath);
 
   if (!entries.success || !entries.data) {
-    return entries as unknown as OperationResult<Exclude<SolutionPackageType, 'both'>>;
+    return entries as unknown as OperationResult<Buffer>;
   }
 
   const metadataEntry = entries.data.find((entry) => {
@@ -3758,45 +4158,7 @@ async function readSolutionArchivePackageType(
     );
   }
 
-  const metadata = await extractZipEntry(packagePath, metadataEntry);
-
-  if (!metadata.success || !metadata.data) {
-    return metadata as unknown as OperationResult<Exclude<SolutionPackageType, 'both'>>;
-  }
-
-  const managedValue = readXmlTag(metadata.data.toString('utf8'), ['Managed']);
-
-  if (managedValue === '1') {
-    return ok('managed', {
-      supportTier: 'preview',
-      warnings: mergeDiagnosticLists(entries.warnings, metadata.warnings),
-    });
-  }
-
-  if (managedValue === '0') {
-    return ok('unmanaged', {
-      supportTier: 'preview',
-      warnings: mergeDiagnosticLists(entries.warnings, metadata.warnings),
-    });
-  }
-
-  return fail(
-    createDiagnostic(
-      'error',
-      'SOLUTION_EXPORT_MANAGED_FLAG_INVALID',
-      `Exported solution metadata in ${packagePath} does not contain a valid <Managed> flag.`,
-      {
-        source: '@pp/solution',
-        path: packagePath,
-        detail: managedValue ? `Observed value: ${managedValue}.` : undefined,
-        hint: 'Inspect the solution metadata and retry the export.',
-      }
-    ),
-    {
-      supportTier: 'preview',
-      warnings: mergeDiagnosticLists(entries.warnings, metadata.warnings),
-    }
-  );
+  return extractZipEntry(packagePath, metadataEntry);
 }
 
 function rewriteManagedTag(
@@ -4101,6 +4463,30 @@ function describeManagedExportContradiction(
 
 function chooseLatestVisibleSolution(solutions: SolutionSummary[]): SolutionSummary | undefined {
   return [...solutions].sort(compareSolutionRecency).at(0);
+}
+
+function isCredibleMissingSolutionAlternative(requestedUniqueName: string, candidate: SolutionSummary): boolean {
+  const normalizedRequested = normalizeSolutionNameForMatch(requestedUniqueName);
+  if (!normalizedRequested) {
+    return false;
+  }
+
+  return [candidate.uniquename, candidate.friendlyname].some((value) => {
+    const normalizedCandidate = normalizeSolutionNameForMatch(value);
+    if (!normalizedCandidate) {
+      return false;
+    }
+
+    return normalizedCandidate.includes(normalizedRequested) || normalizedRequested.includes(normalizedCandidate);
+  });
+}
+
+function normalizeSolutionNameForMatch(value: string | undefined): string {
+  if (!value) {
+    return '';
+  }
+
+  return value.toLowerCase().replace(/shell$/i, '').replace(/[^a-z0-9]+/g, '');
 }
 
 function compareSolutionRecency(left: SolutionSummary, right: SolutionSummary): number {

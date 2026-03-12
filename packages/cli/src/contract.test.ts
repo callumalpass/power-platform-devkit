@@ -29,6 +29,35 @@ describe('cli contract', () => {
       ),
       'fixtures/cli/golden/contract/output.table.txt'
     );
+    expect(renderOutput([{ alias: 'dev', url: 'https://example.test' }], 'markdown')).toBe(
+      ['| alias | url |', '| --- | --- |', '| dev | https://example.test |', ''].join('\n')
+    );
+    expect(renderOutput([{ alias: 'dev', url: 'https://example.test' }], 'raw')).toBe(
+      ['alias  url', '-----  --------------------', 'dev    https://example.test', ''].join('\n')
+    );
+  });
+
+  it('unwraps collection success envelopes for ndjson and table rendering', () => {
+    const payload = {
+      success: true,
+      solutions: [
+        { uniquename: 'Core', version: '1.0.0.0' },
+        { uniquename: 'Harness', version: '1.0.0.1' },
+      ],
+      diagnostics: [],
+      warnings: [],
+      supportTier: 'preview',
+      suggestedNextActions: [],
+      provenance: [],
+      knownLimitations: [],
+    };
+
+    expect(renderOutput(payload, 'ndjson')).toBe(
+      ['{"uniquename":"Core","version":"1.0.0.0"}', '{"uniquename":"Harness","version":"1.0.0.1"}', ''].join('\n')
+    );
+    expect(renderOutput(payload, 'table')).toBe(
+      ['uniquename  version', '----------  -------', 'Core        1.0.0.0', 'Harness     1.0.0.1', ''].join('\n')
+    );
   });
 
   it('flattens nested singleton objects in table output', () => {

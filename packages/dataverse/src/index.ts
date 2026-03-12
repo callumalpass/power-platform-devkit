@@ -3,6 +3,8 @@ import { getAuthProfile, getEnvironmentAlias, type ConfigStoreOptions, type Envi
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { HttpClient, type HttpQueryValue, type HttpRequestOptions, type HttpResponse } from '@pp/http';
 import {
+  buildMetadataContractSchema,
+  buildMetadataScaffold,
   buildColumnCreatePayload,
   buildColumnUpdatePayload,
   buildCustomerRelationshipCreatePayload,
@@ -18,6 +20,8 @@ import {
   parseOneToManyRelationshipUpdateSpec,
   parseTableUpdateSpec,
   resolveLogicalName,
+  listColumnCreateKinds,
+  type ColumnCreateKind,
   type ColumnUpdateSpec,
   type ColumnCreateSpec,
   type CustomerRelationshipCreateSpec,
@@ -33,6 +37,37 @@ import {
   type TableUpdateSpec,
   type TableCreateSpec,
 } from './metadata-create';
+import {
+  buildAttributeCollectionPath,
+  buildCollectionPath,
+  buildDataverseActionPath,
+  buildDataverseFunctionPath,
+  buildEntityPath,
+  buildGlobalOptionSetPath,
+  buildMetadataAttributePath,
+  buildMetadataEntityPath,
+  buildODataPath,
+  buildQueryPath,
+  buildRelationshipPath,
+  escapeODataLiteral,
+  normalizeMetadataQueryOptions,
+  trimDataversePath,
+} from './path-utils';
+export {
+  buildAttributeCollectionPath,
+  buildCollectionPath,
+  buildDataverseActionPath,
+  buildDataverseFunctionPath,
+  buildEntityPath,
+  buildGlobalOptionSetPath,
+  buildMetadataAttributePath,
+  buildMetadataEntityPath,
+  buildODataPath,
+  buildQueryPath,
+  buildRelationshipPath,
+  normalizeMetadataQueryOptions,
+} from './path-utils';
+export { buildMetadataContractSchema, buildMetadataScaffold, listColumnCreateKinds, type ColumnCreateKind } from './metadata-create';
 
 export interface DataverseEnvironment {
   url: string;
@@ -1096,6 +1131,8 @@ export class DataverseClient {
 
     const payload = response.data?.data ?? {};
     const normalizedPage = normalizeQueryRecordsForSelectedLookups(payload.value ?? [], effectiveOptions.data.select);
+    const emptyResultWarnings =
+      !continuationPath && (payload.value?.length ?? 0) === 0 ? [buildEmptyQueryResultWarning(effectiveOptions.data.table)] : [];
     const emptyFilterWarnings =
       !continuationPath && effectiveOptions.data.diagnoseEmptyFilter && effectiveOptions.data.filter && (payload.value?.length ?? 0) === 0
         ? await this.buildEmptyFilteredQueryWarnings(effectiveOptions.data)
@@ -1110,7 +1147,7 @@ export class DataverseClient {
       {
         supportTier: 'preview',
         diagnostics: response.diagnostics,
-        warnings: mergeDiagnosticLists(response.warnings, normalizedPage.warnings, emptyFilterWarnings),
+        warnings: mergeDiagnosticLists(response.warnings, normalizedPage.warnings, emptyResultWarnings, emptyFilterWarnings),
       }
     );
   }
@@ -1317,12 +1354,18 @@ export class DataverseClient {
   }
 
   async getById<T>(table: string, id: string, options: EntityReadOptions = {}): Promise<OperationResult<T>> {
-    return this.requestJson<T>({
+    const response = await this.requestJson<T>({
       path: buildEntityPath(table, id, options),
       method: 'GET',
       responseType: 'json',
       includeAnnotations: options.includeAnnotations,
     });
+
+    if (!response.success) {
+      return this.enrichEntityReferenceFailure<T>(table, response);
+    }
+
+    return response;
   }
 
   async create<TRecord extends Record<string, unknown>, TResult = TRecord>(
@@ -1359,7 +1402,7 @@ export class DataverseClient {
     });
 
     if (!response.success) {
-      return response as unknown as OperationResult<DataverseWriteResult>;
+      return this.enrichEntityReferenceFailure<DataverseWriteResult>(table, response);
     }
 
     return ok(
@@ -2427,6 +2470,12 @@ export class DataverseClient {
     });
 
     if (!response.success) {
+      if (method === 'POST' && tableName) {
+        const retried = await this.retryCreateWithResolvedEntitySet<TResult>(tableName, entity, options, response);
+        if (retried) {
+          return retried;
+        }
+      }
       return (await this.enrichWriteFailure<TResult>(tableName, entity, response)) as OperationResult<DataverseWriteResult<TResult>>;
     }
 
@@ -2442,6 +2491,73 @@ export class DataverseClient {
         supportTier: 'preview',
         diagnostics: response.diagnostics,
         warnings: response.warnings,
+      }
+    );
+  }
+
+  private async retryCreateWithResolvedEntitySet<TResult>(
+    tableName: string,
+    entity: Record<string, unknown>,
+    options: DataverseWriteOptions,
+    result: OperationResult<unknown>
+  ): Promise<OperationResult<DataverseWriteResult<TResult>> | undefined> {
+    if (!queryFailureLooksLikeMissingCollection(result)) {
+      return undefined;
+    }
+
+    const table = await this.getTable(tableName);
+    if (!table.success || !table.data) {
+      return undefined;
+    }
+
+    const entitySetName = readString(table.data.EntitySetName);
+    if (!entitySetName || entitySetName === tableName) {
+      return undefined;
+    }
+
+    const returnRepresentation = shouldReturnRepresentation(options);
+    const retry = await this.request<TResult | undefined>({
+      path: buildCollectionPath(entitySetName, options),
+      method: 'POST',
+      body: entity,
+      responseType: returnRepresentation ? 'json' : 'void',
+      ifMatch: options.ifMatch,
+      ifNoneMatch: options.ifNoneMatch,
+      prefer: mergePrefer(options.prefer, returnRepresentation ? ['return=representation'] : undefined),
+      includeAnnotations: options.includeAnnotations,
+      solutionUniqueName: options.solutionUniqueName,
+    });
+
+    if (!retry.success) {
+      return undefined;
+    }
+
+    return ok(
+      {
+        status: retry.data?.status ?? 204,
+        headers: retry.data?.headers ?? {},
+        entity: retry.data?.data,
+        entityId: extractEntityId(retry.data?.headers),
+        location: extractLocation(retry.data?.headers),
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: retry.diagnostics,
+        warnings: mergeDiagnosticLists(
+          [
+            createDiagnostic(
+              'warning',
+              'DATAVERSE_WRITE_ENTITY_SET_ALIAS_APPLIED',
+              `Resolved Dataverse table reference \`${tableName}\` to entity set \`${entitySetName}\` for this create request.`,
+              {
+                source: '@pp/dataverse',
+                detail: `Logical table name ${tableName} maps to entity set ${entitySetName}.`,
+                hint: `Use \`${entitySetName}\` explicitly when you want the raw OData collection path, or keep \`${tableName}\` when you want pp to resolve the logical name for you.`,
+              }
+            ),
+          ],
+          retry.warnings
+        ),
       }
     );
   }
@@ -2636,6 +2752,35 @@ export class DataverseClient {
       nextAction: `Retry the query against \`${entitySetName}\` or use the logical table name \`${tableName}\` through a pp surface that resolves entity sets automatically.`,
     };
   }
+
+  private async enrichEntityReferenceFailure<TResult>(
+    tableName: string,
+    result: OperationResult<unknown>
+  ): Promise<OperationResult<TResult>> {
+    const entitySetSuggestion = await this.buildEntitySetSuggestion(tableName, result);
+
+    if (!entitySetSuggestion) {
+      return result as OperationResult<TResult>;
+    }
+
+    return fail(result.diagnostics, {
+      supportTier: result.supportTier,
+      warnings: [...result.warnings, entitySetSuggestion.warning],
+      suggestedNextActions: uniqueStrings([...(result.suggestedNextActions ?? []), entitySetSuggestion.nextAction]),
+    }) as OperationResult<TResult>;
+  }
+}
+
+function buildEmptyQueryResultWarning(table: string): Diagnostic {
+  return createDiagnostic(
+    'warning',
+    'DATAVERSE_QUERY_EMPTY_RESULT_AMBIGUOUS_SCOPE',
+    `Dataverse returned no rows for table ${table}. This is consistent with either an empty scope or a security-filtered slice; no authorization error was raised for the query.`,
+    {
+      source: '@pp/dataverse',
+      hint: 'If you expected rows, confirm the active identity, retry with a broader known-good query, or validate table privileges/sharing before treating the scope as empty.',
+    }
+  );
 }
 
 export class ConnectionReferenceService {
@@ -3107,16 +3252,65 @@ export class EnvironmentVariableService {
       }
     }
 
-    return ok(
-      (definitions.data ?? [])
-        .filter((definition) => !solutionMembers.data || solutionMembers.data.has(definition.environmentvariabledefinitionid))
-        .map((definition) => normalizeEnvironmentVariable(definition, valueMap.get(definition.environmentvariabledefinitionid))),
-      {
-        supportTier: 'preview',
-        diagnostics: mergeDiagnosticLists(definitions.diagnostics, values.diagnostics, solutionId.diagnostics, solutionMembers.diagnostics),
-        warnings: mergeDiagnosticLists(definitions.warnings, values.warnings, solutionId.warnings, solutionMembers.warnings),
-      }
-    );
+    const summaries = (definitions.data ?? [])
+      .filter((definition) => !solutionMembers.data || solutionMembers.data.has(definition.environmentvariabledefinitionid))
+      .map((definition) => normalizeEnvironmentVariable(definition, valueMap.get(definition.environmentvariabledefinitionid)));
+
+    return ok(summaries, {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(
+        definitions.diagnostics,
+        values.diagnostics,
+        solutionId.diagnostics,
+        solutionMembers.diagnostics,
+        [
+          createDiagnostic(
+            summaries.length === 0 ? 'warning' : 'info',
+            summaries.length === 0 ? 'DATAVERSE_ENVVAR_SCOPE_EMPTY' : 'DATAVERSE_ENVVAR_LIST_SUMMARY',
+            options.solutionUniqueName
+              ? summaries.length === 0
+                ? `No environment variables were found in solution ${options.solutionUniqueName}.`
+                : `Listed ${summaries.length} environment variable${summaries.length === 1 ? '' : 's'} from solution ${options.solutionUniqueName}.`
+              : summaries.length === 0
+                ? 'No environment variables were found in the current environment.'
+                : `Listed ${summaries.length} environment variable${summaries.length === 1 ? '' : 's'} from the current environment.`,
+            {
+              source: '@pp/dataverse',
+            }
+          ),
+        ]
+      ),
+      warnings: mergeDiagnosticLists(definitions.warnings, values.warnings, solutionId.warnings, solutionMembers.warnings),
+      suggestedNextActions:
+        summaries.length === 0
+          ? options.solutionUniqueName
+            ? [
+                `Run \`pp solution inspect ${options.solutionUniqueName} --environment <alias> --format json\` to confirm the solution exists before assuming the scope is empty.`,
+                'Retry without the solution filter if you need to compare solution membership against environment-wide environment variable definitions.',
+              ]
+            : [
+                'Create a definition with `pp envvar create <schemaName> --environment <alias>` when the environment should expose a new variable.',
+              ]
+          : undefined,
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse environmentvariabledefinitions',
+        },
+        {
+          kind: 'official-api',
+          source: 'Dataverse environmentvariablevalues',
+        },
+        ...(options.solutionUniqueName
+          ? [
+              {
+                kind: 'official-api' as const,
+                source: 'Dataverse solutioncomponents',
+              },
+            ]
+          : []),
+      ],
+    });
   }
 
   async inspect(identifier: string, options: { solutionUniqueName?: string } = {}): Promise<OperationResult<EnvironmentVariableSummary | undefined>> {
@@ -3510,6 +3704,7 @@ export class ModelDrivenAppService {
 
   async create(uniqueName: string, options: ModelDrivenAppCreateOptions = {}): Promise<OperationResult<ModelDrivenAppSummary>> {
     const normalizedUniqueName = uniqueName.trim();
+    const requestedName = options.name?.trim() || normalizedUniqueName;
 
     if (!normalizedUniqueName) {
       return fail(
@@ -3523,7 +3718,7 @@ export class ModelDrivenAppService {
       'appmodules',
       {
         uniquename: normalizedUniqueName,
-        name: options.name?.trim() || normalizedUniqueName,
+        name: requestedName,
         webresourceid: DEFAULT_MODEL_DRIVEN_APP_ICON_WEB_RESOURCE_ID,
       },
       {
@@ -3532,11 +3727,10 @@ export class ModelDrivenAppService {
     );
 
     if (!createResult.success) {
-      return createResult as unknown as OperationResult<ModelDrivenAppSummary>;
+      return this.enrichCreateFailure(normalizedUniqueName, requestedName, options, createResult);
     }
 
     const created = createResult.data?.entity;
-    const requestedName = options.name?.trim() || normalizedUniqueName;
     const createdSummary = normalizeModelDrivenApp({
       appmoduleid: created?.appmoduleid ?? createResult.data?.entityId ?? '',
       uniquename: created?.uniquename ?? normalizedUniqueName,
@@ -3693,6 +3887,95 @@ export class ModelDrivenAppService {
         supportTier: 'preview',
         diagnostics: actionResult.diagnostics,
         warnings: actionResult.warnings,
+      }
+    );
+  }
+
+  private async enrichCreateFailure(
+    uniqueName: string,
+    requestedName: string,
+    options: ModelDrivenAppCreateOptions,
+    createResult: OperationResult<DataverseWriteResult<ModelDrivenAppRecord>>
+  ): Promise<OperationResult<ModelDrivenAppSummary>> {
+    const createFailure = createResult.diagnostics.find(
+      (diagnostic) => diagnostic.code === 'HTTP_REQUEST_FAILED' && extractHttpStatusCode(diagnostic.message) === 400
+    );
+
+    if (!createFailure) {
+      return createResult as unknown as OperationResult<ModelDrivenAppSummary>;
+    }
+
+    const parsedError = parseDataverseErrorDetail(createFailure.detail);
+    const persisted = await this.inspect(uniqueName);
+    const persistedApp = persisted.success ? persisted.data : undefined;
+    const tenantRejectedCreate = parsedError?.code === '0x80050135';
+    const detailParts = [
+      options.solutionUniqueName ? `Requested solution scope: ${options.solutionUniqueName}.` : undefined,
+      parsedError?.code ? `Dataverse error code: ${parsedError.code}.` : undefined,
+      parsedError?.message ? `Dataverse message: ${parsedError.message}.` : undefined,
+      persistedApp
+        ? `A follow-up appmodules read found ${persistedApp.name ?? persistedApp.uniqueName ?? persistedApp.id} (${persistedApp.id}), so the row already exists or Dataverse persisted it despite the create failure.`
+        : `A follow-up appmodules read did not find a model-driven app row for unique name ${uniqueName}.`,
+      tenantRejectedCreate
+        ? 'This tenant is currently rejecting direct appmodules creation, so pp cannot prove clean model-driven app authoring here without falling back to an existing app attach flow.'
+        : undefined,
+    ].filter(Boolean);
+    const suggestedNextActions = persistedApp
+      ? [
+          `Inspect ${persistedApp.id} or ${persistedApp.uniqueName ?? uniqueName} before retrying so you can confirm whether Dataverse created a usable app row.`,
+          options.solutionUniqueName
+            ? `If that row is the intended app, attach it explicitly with \`pp model attach ${persistedApp.id} --environment <alias> --solution ${options.solutionUniqueName} --format json\` instead of retrying blind creates.`
+            : `If that row is the intended app, treat the create as ambiguous and inspect it before attempting another create with the same unique name.`,
+        ]
+      : [
+          tenantRejectedCreate
+            ? 'Treat this as a tenant-side create limitation for now; keep the workflow moving with `pp model attach <existing-app> --environment <alias> --solution <solutionUniqueName> --format json` if an existing model-driven app is acceptable.'
+            : 'Retry the create only after capturing the Dataverse error detail from the failure payload so you can distinguish a tenant-side rejection from a transient HTTP issue.',
+          'Run `pp model list --environment <alias> --format json` to confirm whether the target unique name already exists before changing names or retrying.',
+        ];
+
+    return fail(
+      [
+        createDiagnostic(
+          'error',
+          tenantRejectedCreate ? 'DATAVERSE_MODEL_APP_CREATE_TENANT_REJECTED' : 'DATAVERSE_MODEL_APP_CREATE_FAILED',
+          `Dataverse rejected model-driven app creation for ${requestedName}.`,
+          {
+            source: '@pp/dataverse',
+            detail: detailParts.join(' '),
+            hint: persistedApp
+              ? `Inspect or attach the existing row ${persistedApp.id} explicitly before issuing another create with unique name ${uniqueName}.`
+              : tenantRejectedCreate
+                ? 'Use an existing app attach flow on this tenant until Dataverse appmodules creation is accepted.'
+                : 'Capture the Dataverse error detail and retry only if the failure looks transient.',
+          }
+        ),
+        ...createResult.diagnostics,
+      ],
+      {
+        supportTier: createResult.supportTier,
+        warnings: mergeDiagnosticLists(createResult.warnings, persisted.warnings),
+        details: compactObject({
+          category: tenantRejectedCreate ? 'model-app-create-tenant-rejected' : 'model-app-create-failed',
+          uniqueName,
+          requestedName,
+          solutionUniqueName: options.solutionUniqueName,
+          httpStatus: 400,
+          dataverseErrorCode: parsedError?.code,
+          dataverseErrorMessage: parsedError?.message,
+          persistedApp: persistedApp
+            ? {
+                id: persistedApp.id,
+                uniqueName: persistedApp.uniqueName,
+                name: persistedApp.name,
+              }
+            : undefined,
+        }),
+        suggestedNextActions,
+        provenance: createResult.provenance,
+        knownLimitations: tenantRejectedCreate
+          ? ['Some tenants can reject direct Dataverse appmodules creation even when read and attach operations succeed; pp cannot force clean model-driven app creation in that environment.']
+          : createResult.knownLimitations,
       }
     );
   }
@@ -3867,148 +4150,6 @@ export async function resolveDataverseClient(
   );
 }
 
-export function buildQueryPath(options: QueryOptions): string {
-  return buildODataPath(options.table, options);
-}
-
-export function buildODataPath(basePath: string, options: ODataQueryOptions): string {
-  const params = new URLSearchParams();
-
-  if (options.select?.length) {
-    params.set('$select', options.select.join(','));
-  }
-
-  if (options.top !== undefined) {
-    params.set('$top', String(options.top));
-  }
-
-  if (options.filter) {
-    params.set('$filter', options.filter);
-  }
-
-  if (options.expand?.length) {
-    params.set('$expand', options.expand.join(','));
-  }
-
-  if (options.orderBy?.length) {
-    params.set('$orderby', options.orderBy.join(','));
-  }
-
-  if (options.count) {
-    params.set('$count', 'true');
-  }
-
-  const suffix = params.toString();
-  return suffix ? `${basePath}?${suffix}` : basePath;
-}
-
-export function buildEntityPath(
-  table: string,
-  id: string,
-  options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
-): string {
-  return buildODataPath(`${table}(${id})`, options);
-}
-
-export function buildDataverseActionPath(name: string, boundPath?: string): string {
-  const normalizedName = name.trim();
-  return boundPath ? `${trimDataversePath(boundPath)}/${normalizedName}` : normalizedName;
-}
-
-export function buildDataverseFunctionPath(
-  name: string,
-  parameters: Record<string, unknown> = {},
-  boundPath?: string
-): OperationResult<string> {
-  const normalizedName = name.trim();
-  const aliases: string[] = [];
-  const queryEntries: Array<[string, string]> = [];
-  let aliasIndex = 0;
-
-  for (const [key, value] of Object.entries(parameters)) {
-    const alias = `@p${aliasIndex}`;
-    const serialized = serializeDataverseFunctionParameter(value);
-
-    if (!serialized.success || serialized.data === undefined) {
-      return serialized as OperationResult<string>;
-    }
-
-    aliases.push(`${key}=${alias}`);
-    queryEntries.push([alias, serialized.data]);
-    aliasIndex += 1;
-  }
-
-  const actionPath = buildDataverseActionPath(normalizedName, boundPath);
-  const basePath = aliases.length > 0 ? `${actionPath}(${aliases.join(',')})` : `${actionPath}()`;
-
-  if (queryEntries.length === 0) {
-    return ok(basePath, {
-      supportTier: 'preview',
-    });
-  }
-
-  const query = new URLSearchParams();
-
-  for (const [key, value] of queryEntries) {
-    query.set(key, value);
-  }
-
-  return ok(`${basePath}?${query.toString()}`, {
-    supportTier: 'preview',
-  });
-}
-
-export function buildCollectionPath(
-  table: string,
-  options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
-): string {
-  return buildODataPath(table, options);
-}
-
-export function buildMetadataEntityPath(
-  logicalName: string,
-  options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
-): string {
-  return buildODataPath(`EntityDefinitions(LogicalName='${escapeODataLiteral(logicalName)}')`, options);
-}
-
-export function buildAttributeCollectionPath(logicalName: string): string {
-  return `${buildMetadataEntityPath(logicalName)}/Attributes`;
-}
-
-export function buildGlobalOptionSetPath(
-  name: string,
-  options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
-): string {
-  return buildODataPath(`GlobalOptionSetDefinitions(Name='${escapeODataLiteral(name)}')`, options);
-}
-
-export function buildRelationshipPath(
-  schemaName: string,
-  kind: Exclude<RelationshipMetadataKind, 'auto'> = 'one-to-many',
-  options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
-): string {
-  const suffix =
-    kind === 'many-to-many'
-      ? '/Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata'
-      : '/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata';
-
-  return buildODataPath(
-    `RelationshipDefinitions(SchemaName='${escapeODataLiteral(schemaName)}')${suffix}`,
-    options
-  );
-}
-
-export function buildMetadataAttributePath(
-  tableLogicalName: string,
-  columnLogicalName: string,
-  options: Pick<ODataQueryOptions, 'select' | 'expand'> = {}
-): string {
-  return buildODataPath(
-    `${buildAttributeCollectionPath(tableLogicalName)}(LogicalName='${escapeODataLiteral(columnLogicalName)}')`,
-    options
-  );
-}
 
 export function normalizeAttributeDefinition(
   attribute: AttributeDefinition,
@@ -4155,56 +4296,6 @@ export function normalizeRelationshipDefinition(relationship: RelationshipDefini
   });
 }
 
-export function normalizeMetadataQueryOptions(basePath: string, options: MetadataQueryOptions): OperationResult<NormalizedMetadataQuery> {
-  if (options.orderBy && options.orderBy.length > 0) {
-    return fail(
-      createDiagnostic('error', 'DATAVERSE_METADATA_ORDERBY_UNSUPPORTED', 'Dataverse metadata queries do not support $orderby. Remove --orderby.', {
-        source: '@pp/dataverse',
-      })
-    );
-  }
-
-  if (options.count) {
-    return fail(
-      createDiagnostic('error', 'DATAVERSE_METADATA_COUNT_UNSUPPORTED', 'Dataverse metadata queries do not support $count. Remove --count.', {
-        source: '@pp/dataverse',
-      })
-    );
-  }
-
-  const warnings: Diagnostic[] = [];
-
-  if (options.top !== undefined) {
-    warnings.push(
-      createDiagnostic(
-        'warning',
-        'DATAVERSE_METADATA_TOP_CLIENT_SIDE',
-        'Dataverse metadata queries do not support $top. The limit was applied client-side after retrieval.',
-        {
-          source: '@pp/dataverse',
-          hint: 'This may require reading more metadata than the final result count.',
-        }
-      )
-    );
-  }
-
-  return ok(
-    {
-      path: buildODataPath(basePath, {
-        select: options.select,
-        filter: options.filter,
-        expand: options.expand,
-      }),
-      top: options.top,
-      fetchAll: Boolean(options.all || options.top !== undefined),
-      warnings,
-    },
-    {
-      supportTier: 'preview',
-      warnings,
-    }
-  );
-}
 
 export function diffDataverseMetadataSnapshots(
   left: DataverseMetadataSnapshot,
@@ -4697,7 +4788,7 @@ const baseConnectionReferenceSelect = [
 
 const optionalConnectionReferenceSelect = ['customconnectorid'] as const;
 const baseFlowRunSelect = ['flowrunid', 'name', 'workflowid', 'status', 'starttime', 'endtime', 'errorcode', 'errormessage'] as const;
-const optionalFlowRunSelect = ['workflowname', 'durationinms', 'retrycount'] as const;
+const optionalFlowRunSelect = ['durationinms', 'retrycount'] as const;
 const baseModelDrivenAppComponentSelect = ['appmodulecomponentid', 'componenttype', 'objectid'] as const;
 const optionalModelDrivenAppComponentSelect = ['_appmoduleidunique_value', 'appmoduleidunique'] as const;
 
@@ -6464,10 +6555,6 @@ function mapApplyOperationResult(
   );
 }
 
-function escapeODataLiteral(value: string): string {
-  return value.replaceAll("'", "''");
-}
-
 function normalizeMetadataApplyEntity(
   kind: MetadataApplyOperation['kind'],
   entity: unknown
@@ -6931,38 +7018,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function serializeDataverseFunctionParameter(value: unknown): OperationResult<string> {
-  if (value === null) {
-    return ok('null', {
-      supportTier: 'preview',
-    });
-  }
-
-  if (typeof value === 'string') {
-    return ok(`'${escapeODataLiteral(value)}'`, {
-      supportTier: 'preview',
-    });
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return ok(String(value), {
-      supportTier: 'preview',
-    });
-  }
-
-  return fail(
-    createDiagnostic(
-      'error',
-      'DATAVERSE_FUNCTION_PARAMETER_UNSUPPORTED',
-      'Dataverse function parameters currently support string, number, boolean, and null values.',
-      {
-        source: '@pp/dataverse',
-        detail: value === undefined ? 'undefined' : typeof value,
-      }
-    )
-  );
-}
-
 function buildDataverseBatchHeaders(boundary: string, options: DataverseBatchOptions): Record<string, string> {
   const headers: Record<string, string> = {
     'content-type': `multipart/mixed;boundary=${boundary}`,
@@ -7333,10 +7388,6 @@ function parseHeaderLines(input: string): Record<string, string> {
 function readMultipartBoundary(contentType: string | undefined): string | undefined {
   const match = contentType?.match(/boundary=([^;]+)/i);
   return match?.[1]?.replace(/^"|"$/g, '');
-}
-
-function trimDataversePath(path: string): string {
-  return path.replace(/^\/+/, '').trim();
 }
 
 function randomBoundaryId(): string {

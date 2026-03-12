@@ -286,6 +286,15 @@ staying inside `pp` when possible; if `pac` is unavoidable, treat it as a
 separately authenticated tool and verify it explicitly before relying on it in
 the middle of a scenario step.
 
+When a browser-mediated fallback still needs Playwright or another automation
+tool to capture portal evidence, do not point that tool directly at a live
+managed browser profile if Chromium left a `SingletonLock` in place. Keep the
+saved `pp` browser profile as the bootstrap source of truth, but copy it into a
+run-local directory before launching read-only provenance capture from a second
+process. Record that distinction in the harness/report notes so later triage can
+tell whether the fallback proved reusable `pp` session state or only harvested
+evidence from a safe local clone.
+
 In particular, treat `--no-interactive-auth` as a `pp` contract, not a `pac`
 contract. Use `pp env inspect <alias>` plus `pp dv whoami --no-interactive-auth`
 for the non-interactive preflight, then use `pac auth list` only to verify

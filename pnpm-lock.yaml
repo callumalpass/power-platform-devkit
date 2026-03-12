@@ -99,9 +99,15 @@ importers:
       '@pp/config':
         specifier: workspace:*
         version: link:../config
+      '@pp/dataverse':
+        specifier: workspace:*
+        version: link:../dataverse
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
+      '@pp/solution':
+        specifier: workspace:*
+        version: link:../solution
       yaml:
         specifier: ^2.7.1
         version: 2.8.2
@@ -189,12 +195,18 @@ importers:
       zod:
         specifier: ^3.24.2
         version: 3.25.76
+      zod-to-json-schema:
+        specifier: ^3.25.1
+        version: 3.25.1(zod@3.25.76)
 
   packages/deploy:
     dependencies:
       '@pp/auth':
         specifier: workspace:*
         version: link:../auth
+      '@pp/config':
+        specifier: workspace:*
+        version: link:../config
       '@pp/dataverse':
         specifier: workspace:*
         version: link:../dataverse
@@ -260,6 +272,12 @@ importers:
       '@pp/analysis':
         specifier: workspace:*
         version: link:../analysis
+      '@pp/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@pp/canvas':
+        specifier: workspace:*
+        version: link:../canvas
       '@pp/config':
         specifier: workspace:*
         version: link:../config
@@ -281,6 +299,9 @@ importers:
       '@pp/solution':
         specifier: workspace:*
         version: link:../solution
+      yaml:
+        specifier: ^2.8.1
+        version: 2.8.2
       zod:
         specifier: ^3.24.2
         version: 3.25.76
@@ -305,6 +326,9 @@ importers:
 
   packages/project:
     dependencies:
+      '@pp/auth':
+        specifier: workspace:*
+        version: link:../auth
       '@pp/config':
         specifier: workspace:*
         version: link:../config

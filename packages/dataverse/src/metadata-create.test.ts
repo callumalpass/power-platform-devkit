@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildMetadataContractSchema,
+  buildMetadataScaffold,
   buildColumnCreatePayload,
   buildColumnUpdatePayload,
   buildCustomerRelationshipCreatePayload,
@@ -409,6 +411,61 @@ describe('metadata-create payloads', () => {
           },
         },
       },
+    });
+  });
+});
+
+describe('metadata-create contracts', () => {
+  it('emits a validator-derived JSON schema for create-table', () => {
+    const result = buildMetadataContractSchema('create-table');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      definitions: {
+        DataverseCreateTableSpec: {
+          type: 'object',
+          required: ['schemaName', 'displayName', 'pluralDisplayName', 'primaryName'],
+          properties: {
+            schemaName: { type: 'string' },
+            primaryName: {
+              type: 'object',
+              required: ['schemaName', 'displayName'],
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('emits a narrowed JSON schema for add-column choice scaffolds', () => {
+    const result = buildMetadataContractSchema('add-column', { kind: 'choice' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      definitions: {
+        DataverseAddChoiceColumnSpec: {
+          anyOf: expect.any(Array),
+        },
+      },
+    });
+  });
+
+  it('builds a default scaffold for create-table and add-column', () => {
+    const table = buildMetadataScaffold('create-table');
+    const column = buildMetadataScaffold('add-column', { kind: 'choice' });
+
+    expect(table.success).toBe(true);
+    expect(table.data).toMatchObject({
+      schemaName: 'pp_Project',
+      primaryName: {
+        schemaName: 'pp_Name',
+      },
+    });
+    expect(column.success).toBe(true);
+    expect(column.data).toMatchObject({
+      kind: 'choice',
+      schemaName: 'pp_Status',
+      options: [{ label: 'Planned' }, { label: 'Active' }, { label: 'Closed' }],
     });
   });
 });

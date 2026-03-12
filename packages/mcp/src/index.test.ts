@@ -1,12 +1,28 @@
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { createDiagnostic, fail } from '@pp/diagnostics';
+import { readJsonFile } from '@pp/artifacts';
+import { CanvasService } from '@pp/canvas';
+import { createDiagnostic, fail, ok } from '@pp/diagnostics';
+import { ConnectionReferenceService } from '@pp/dataverse';
+import { FlowService } from '@pp/flow';
+import { SolutionService } from '@pp/solution';
 import { resolveRepoPath } from '../../../test/golden';
-import { addSolutionInspectRecoveryGuidance } from './index';
+import { createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
+import {
+  addSolutionInspectRecoveryGuidance,
+  createPpMcpServer,
+  executeDataverseCreate,
+  executeDataverseMetadataApply,
+  buildEnvironmentCleanupPlan,
+  compareSolutionAcrossEnvironments,
+  executeDataverseDelete,
+  executeEnvironmentCleanup,
+  inspectAuthProfile,
+} from './index';
 
 describe('@pp/mcp', () => {
   const clients: Client[] = [];
@@ -14,6 +30,7 @@ describe('@pp/mcp', () => {
   afterEach(async () => {
     await Promise.all(clients.map(async (client) => client.close()));
     clients.length = 0;
+    vi.restoreAllMocks();
   });
 
   async function createClient(args: { configDir: string; projectPath: string; env?: Record<string, string> }): Promise<Client> {
@@ -109,16 +126,44 @@ describe('@pp/mcp', () => {
     expect(tools.tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         'pp.environment.list',
+        'pp.environment.cleanup-plan',
+        'pp.environment.cleanup',
+        'pp.auth-profile.inspect',
         'pp.solution.list',
         'pp.solution.inspect',
+        'pp.solution.compare',
         'pp.solution.sync-status',
+        'pp.solution.create',
+        'pp.solution.set-metadata',
+        'pp.solution.publish',
         'pp.solution.export',
+        'pp.solution.import',
+        'pp.solution.checkpoint',
+        'pp.dataverse.metadata.apply',
         'pp.dataverse.query',
+        'pp.dataverse.create',
+        'pp.dataverse.delete',
         'pp.dataverse.whoami',
+        'pp.flow.inspect',
+        'pp.flow.connrefs',
+        'pp.flow.runs',
+        'pp.flow.errors',
+        'pp.flow.doctor',
+        'pp.flow.monitor',
+        'pp.flow.activate',
+        'pp.flow.deploy',
+        'pp.flow.export',
+        'pp.canvas-app.inspect',
+        'pp.canvas-app.access',
+        'pp.canvas-app.attach',
         'pp.connection-reference.inspect',
         'pp.environment-variable.inspect',
         'pp.model-app.inspect',
+        'pp.canvas-app.download',
+        'pp.canvas-app.import',
         'pp.project.inspect',
+        'pp.project.doctor',
+        'pp.project.feedback',
         'pp.init.start',
         'pp.init.status',
         'pp.init.answer',
@@ -163,9 +208,36 @@ describe('@pp/mcp', () => {
         name: 'pp.project.inspect',
       },
     });
+    expect((project.structuredContent as { data: { discovery: { resolvedRoot: string } } }).data.discovery.resolvedRoot).toBe(
+      resolveRepoPath('fixtures', 'analysis', 'project')
+    );
     expect(
-      (project.structuredContent as { data: { discovery: { resolvedRoot: string } } }).data.discovery.resolvedRoot
-    ).toBe(resolveRepoPath('fixtures', 'analysis', 'project'));
+      (project.structuredContent as { data: { contract: { deploymentRouteSummary: string } } }).data.contract.deploymentRouteSummary
+    ).toContain('environment alias');
+
+    const doctor = await client.callTool({
+      name: 'pp.project.doctor',
+      arguments: {},
+    });
+    expect(doctor.isError).toBeFalsy();
+    expect(doctor.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.project.doctor',
+      },
+    });
+
+    const feedback = await client.callTool({
+      name: 'pp.project.feedback',
+      arguments: {},
+    });
+    expect(feedback.isError).toBeFalsy();
+    expect(feedback.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.project.feedback',
+      },
+    });
 
     const analysis = await client.callTool({
       name: 'pp.analysis.context',
@@ -203,6 +275,26 @@ describe('@pp/mcp', () => {
     expect((domains.structuredContent as { data: Array<{ name: string }> }).data).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          name: 'auth',
+          readTools: expect.arrayContaining(['pp.auth-profile.inspect', 'pp.environment.list']),
+          notes: expect.stringContaining('bound auth profile'),
+        }),
+        expect.objectContaining({
+          name: 'dataverse',
+          mutationToolsAvailable: true,
+          mutationTools: expect.arrayContaining(['pp.environment.cleanup', 'pp.dataverse.metadata.apply', 'pp.dataverse.create', 'pp.dataverse.delete']),
+          readTools: expect.arrayContaining([
+            'pp.environment.cleanup-plan',
+            'pp.solution.compare',
+            'pp.dataverse.query',
+            'pp.dataverse.whoami',
+            'pp.flow.inspect',
+            'pp.flow.connrefs',
+            'pp.canvas-app.inspect',
+          ]),
+          notes: expect.stringContaining('single-row create/delete'),
+        }),
+        expect.objectContaining({
           name: 'dataverse',
           readTools: expect.arrayContaining(['pp.dataverse.query', 'pp.dataverse.whoami']),
           notes: expect.stringContaining('logical names like `solution`'),
@@ -210,9 +302,30 @@ describe('@pp/mcp', () => {
         expect.objectContaining({
           name: 'solution-lifecycle',
           mutationToolsAvailable: true,
-          mutationTools: expect.arrayContaining(['pp.solution.export']),
-          readTools: expect.arrayContaining(['pp.solution.sync-status']),
-          notes: expect.stringContaining('pp.solution.sync-status'),
+          mutationTools: expect.arrayContaining([
+            'pp.solution.create',
+            'pp.solution.set-metadata',
+            'pp.solution.publish',
+            'pp.solution.export',
+            'pp.solution.import',
+            'pp.solution.checkpoint',
+          ]),
+          readTools: expect.arrayContaining(['pp.solution.compare', 'pp.solution.sync-status']),
+          notes: expect.stringContaining('PublishAllXml'),
+        }),
+        expect.objectContaining({
+          name: 'flow-lifecycle',
+          mutationToolsAvailable: true,
+          readTools: expect.arrayContaining(['pp.flow.inspect', 'pp.flow.connrefs', 'pp.flow.runs', 'pp.flow.errors', 'pp.flow.doctor', 'pp.flow.monitor']),
+          mutationTools: expect.arrayContaining(['pp.flow.activate', 'pp.flow.deploy', 'pp.flow.export']),
+          notes: expect.stringContaining('in-place remediation attempt'),
+        }),
+        expect.objectContaining({
+          name: 'canvas-lifecycle',
+          mutationToolsAvailable: true,
+          readTools: expect.arrayContaining(['pp.canvas-app.inspect']),
+          mutationTools: expect.arrayContaining(['pp.canvas-app.attach', 'pp.canvas-app.download', 'pp.canvas-app.import']),
+          notes: expect.stringContaining('remote `.msapp`'),
         }),
         expect.objectContaining({
           name: 'flow-local-artifacts',
@@ -220,15 +333,1204 @@ describe('@pp/mcp', () => {
         }),
         expect.objectContaining({
           name: 'project',
+          readTools: expect.arrayContaining(['pp.project.inspect', 'pp.project.doctor', 'pp.project.feedback']),
           mutationToolsAvailable: true,
           mutationTools: expect.arrayContaining(['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.deploy.plan', 'pp.deploy.apply']),
         }),
         expect.objectContaining({
           name: 'mcp',
           readTools: expect.arrayContaining(['pp.solution.sync-status']),
-          mutationTools: expect.arrayContaining(['pp.solution.export']),
+          mutationTools: expect.arrayContaining([
+            'pp.environment.cleanup',
+            'pp.dataverse.metadata.apply',
+            'pp.dataverse.create',
+            'pp.dataverse.delete',
+            'pp.solution.create',
+            'pp.solution.set-metadata',
+            'pp.solution.publish',
+            'pp.solution.export',
+            'pp.solution.import',
+            'pp.solution.checkpoint',
+            'pp.flow.activate',
+            'pp.flow.deploy',
+            'pp.flow.export',
+            'pp.canvas-app.attach',
+            'pp.canvas-app.download',
+            'pp.canvas-app.import',
+          ]),
         }),
       ])
+    );
+  });
+
+  it('passes run-prefix and exact-name filters through the MCP solution list tool', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const listSpy = vi.spyOn(SolutionService.prototype, 'list').mockResolvedValue(
+      ok(
+        [
+          {
+            solutionid: 'sol-harness',
+            uniquename: 'ppHarness20260312T205428716ZShell',
+            friendlyname: 'PP Harness Shell',
+            version: '1.0.0.0',
+            ismanaged: false,
+          },
+        ],
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+    const listTool = server._registeredTools['pp.solution.list'];
+
+    const result = await listTool.handler({
+      environment: 'dev',
+      prefix: 'ppHarness20260312T205428716Z',
+      uniqueName: 'ppHarness20260312T205428716ZShell',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.solution.list',
+        mutationPolicy: {
+          mode: 'read-only',
+          mutationsExposed: false,
+        },
+      },
+      data: [
+        {
+          uniquename: 'ppHarness20260312T205428716ZShell',
+        },
+      ],
+    });
+    expect(listSpy).toHaveBeenCalledWith({
+      prefix: 'ppHarness20260312T205428716Z',
+      uniqueName: 'ppHarness20260312T205428716ZShell',
+    });
+  });
+
+  it('publishes a solution through the MCP tool surface with export-backed confirmation', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const publishSpy = vi.spyOn(SolutionService.prototype, 'publish').mockResolvedValue(
+      ok(
+        {
+          solution: {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+            friendlyname: 'Core Solution',
+            version: '1.0.0.0',
+            ismanaged: false,
+          },
+          published: true,
+          action: {
+            name: 'PublishAllXml',
+            accepted: true,
+          },
+          waitForExport: true,
+          synchronization: {
+            kind: 'solution-export',
+            confirmed: true,
+            attempts: 1,
+            elapsedMs: 25,
+          },
+          blockers: [],
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+    const publishTool = server._registeredTools['pp.solution.publish'];
+
+    const result = await publishTool.handler({
+      environment: 'dev',
+      uniqueName: 'Core',
+      waitForExport: true,
+      timeoutMs: 30_000,
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.solution.publish',
+        mutationPolicy: {
+          mode: 'controlled',
+          mutationsExposed: true,
+        },
+      },
+      data: {
+        published: true,
+        action: {
+          name: 'PublishAllXml',
+          accepted: true,
+        },
+        waitForExport: true,
+        synchronization: {
+          confirmed: true,
+        },
+      },
+    });
+    expect(publishSpy).toHaveBeenCalledWith('Core', {
+      waitForExport: true,
+      timeoutMs: 30_000,
+      pollIntervalMs: undefined,
+      exportOptions: {
+        managed: undefined,
+        outPath: undefined,
+        manifestPath: undefined,
+        requestTimeoutMs: undefined,
+      },
+    });
+  });
+
+  it('activates a flow through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const activateSpy = vi.spyOn(FlowService.prototype, 'activate').mockResolvedValue(
+      ok(
+        {
+          identifier: 'Harness Flow',
+          sourcePath: 'dataverse://workflows/flow-1',
+          targetEnvironment: 'dev',
+          target: {
+            id: 'flow-1',
+            uniqueName: 'crd_HarnessFlow',
+            workflowState: 'activated',
+            stateCode: 1,
+            statusCode: 2,
+          },
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+    const activateTool = server._registeredTools['pp.flow.activate'];
+
+    const result = await activateTool.handler({
+      environment: 'dev',
+      identifier: 'Harness Flow',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.flow.activate',
+        mutationPolicy: {
+          mode: 'controlled',
+          mutationsExposed: true,
+        },
+      },
+      data: {
+        identifier: 'Harness Flow',
+        target: {
+          uniqueName: 'crd_HarnessFlow',
+          workflowState: 'activated',
+        },
+      },
+    });
+    expect(activateSpy).toHaveBeenCalledWith('Harness Flow', {
+      solutionUniqueName: 'Core',
+    });
+  });
+
+  it('downloads a remote canvas app through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const downloadSpy = vi.spyOn(CanvasService.prototype, 'downloadRemote').mockResolvedValue(
+      ok(
+        {
+          app: {
+            id: 'canvas-1',
+            name: 'crd_HarnessCanvas',
+            displayName: 'Harness Canvas',
+          },
+          solutionUniqueName: 'Core',
+          packagePath: '/tmp/HarnessCanvas.msapp',
+          extractedPath: '/tmp/HarnessCanvas',
+          exportedEntry: 'CanvasApps/crd_HarnessCanvas.msapp',
+          availableEntries: ['CanvasApps/crd_HarnessCanvas.msapp'],
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.canvas-app.download'].handler({
+      environment: 'dev',
+      identifier: 'Harness Canvas',
+      solutionUniqueName: 'Core',
+      outPath: 'artifacts/HarnessCanvas.msapp',
+      extractToDirectory: 'artifacts/HarnessCanvas',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.canvas-app.download',
+      },
+      data: {
+        solutionUniqueName: 'Core',
+        exportedEntry: 'CanvasApps/crd_HarnessCanvas.msapp',
+      },
+    });
+    expect(downloadSpy).toHaveBeenCalledWith('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      outPath: resolveRepoPath('artifacts', 'HarnessCanvas.msapp'),
+      extractToDirectory: resolveRepoPath('artifacts', 'HarnessCanvas'),
+    });
+  });
+
+  it('inspects remote canvas access through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const accessSpy = vi.spyOn(CanvasService.prototype, 'accessRemote').mockResolvedValue(
+      ok(
+        {
+          assetType: 'canvas',
+          id: 'canvas-1',
+          name: 'crd_HarnessCanvas',
+          displayName: 'Harness Canvas',
+          owner: {
+            id: 'user-1',
+            type: 'systemuser',
+            name: 'Fixture User',
+          },
+          explicitShares: [],
+          explicitShareCount: 0,
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.canvas-app.access'].handler({
+      environment: 'dev',
+      identifier: 'Harness Canvas',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.canvas-app.access',
+      },
+      data: {
+        displayName: 'Harness Canvas',
+        explicitShareCount: 0,
+      },
+    });
+    expect(accessSpy).toHaveBeenCalledWith('Harness Canvas', {
+      solutionUniqueName: 'Core',
+    });
+  });
+
+  it('imports a remote canvas app through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const importSpy = vi.spyOn(CanvasService.prototype, 'importRemote').mockResolvedValue(
+      ok(
+        {
+          app: {
+            id: 'canvas-1',
+            name: 'crd_HarnessCanvas',
+            displayName: 'Harness Canvas',
+          },
+          solutionUniqueName: 'Core',
+          sourcePath: '/tmp/HarnessCanvas.msapp',
+          importedEntry: 'CanvasApps/crd_HarnessCanvas.msapp',
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.canvas-app.import'].handler({
+      environment: 'dev',
+      identifier: 'Harness Canvas',
+      solutionUniqueName: 'Core',
+      importPath: 'dist/HarnessCanvas.msapp',
+      publishWorkflows: true,
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.canvas-app.import',
+      },
+      data: {
+        solutionUniqueName: 'Core',
+        importedEntry: 'CanvasApps/crd_HarnessCanvas.msapp',
+      },
+    });
+    expect(importSpy).toHaveBeenCalledWith('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      importPath: resolveRepoPath('dist', 'HarnessCanvas.msapp'),
+      publishWorkflows: true,
+      overwriteUnmanagedCustomizations: undefined,
+    });
+  });
+
+  it('passes flow monitor baseline comparison through the MCP tool surface', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    const runtimeFixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'flow', 'runtime', 'invoice-sync-runtime.json')
+    )) as Record<string, unknown>;
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient(runtimeFixture),
+    });
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+    const monitorTool = server._registeredTools['pp.flow.monitor'];
+
+    const baseline = await monitorTool.handler({
+        environment: 'dev',
+        solutionUniqueName: 'Core',
+        identifier: 'Invoice Sync',
+        since: '7d',
+    });
+    expect(baseline.structuredContent).toMatchObject({
+      success: true,
+    });
+
+    const changedClient = createFixtureDataverseClient(runtimeFixture);
+    const baselineQueryAll = changedClient.queryAll.bind(changedClient);
+    changedClient.queryAll = async <T>(options: { table: string }) => {
+      if (options.table === 'flowruns') {
+        const flowruns = await baselineQueryAll<T>(options);
+
+        if (!flowruns.success || !flowruns.data) {
+          return flowruns;
+        }
+
+        return {
+          ...flowruns,
+          data: [
+            {
+              flowrunid: 'run-3',
+              workflowid: 'flow-1',
+              workflowname: 'Invoice Sync',
+              status: 'Failed',
+              starttime: '2026-03-10T11:30:00.000Z',
+              endtime: '2026-03-10T11:31:00.000Z',
+              durationinms: 60000,
+              retrycount: 0,
+              errorcode: 'ConnectorTimeout',
+              errormessage: 'shared_office365 timed out',
+            } as T,
+            ...flowruns.data,
+          ],
+        };
+      }
+
+      if (options.table === 'environmentvariablevalues') {
+        return {
+          success: true as const,
+          data: [
+            {
+              environmentvariablevalueid: 'envvalue-1',
+              _environmentvariabledefinitionid_value: 'env-1',
+              value: 'https://api.example.test',
+            } as T,
+          ],
+          diagnostics: [],
+          warnings: [],
+          supportTier: 'preview' as const,
+        };
+      }
+
+      return baselineQueryAll<T>(options);
+    };
+
+    mockDataverseResolution({
+      dev: changedClient,
+    });
+
+    const compared = await monitorTool.handler({
+        environment: 'dev',
+        solutionUniqueName: 'Core',
+        identifier: 'Invoice Sync',
+        since: '7d',
+        baseline: baseline.structuredContent,
+    });
+    expect(compared.structuredContent).toMatchObject({
+      success: true,
+      data: {
+        comparison: {
+          changed: true,
+          recentRuns: {
+            totalDelta: 1,
+            failedDelta: 1,
+            latestFailureChanged: true,
+          },
+        },
+        findings: expect.arrayContaining([
+          'Compared against monitor baseline from 2026-03-10T12:00:00.000Z; runtime state changed since the prior capture.',
+        ]),
+      },
+    });
+  });
+
+  it('passes flow doctor through the MCP tool surface without re-emitting optional flowrun schema warnings', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    const runtimeFixture = (await readJsonFile(
+      resolveRepoPath('fixtures', 'flow', 'runtime', 'invoice-sync-runtime.json')
+    )) as Record<string, unknown>;
+
+    const sparseClient = createFixtureDataverseClient(runtimeFixture);
+    const baseQueryAll = sparseClient.queryAll.bind(sparseClient);
+    sparseClient.queryAll = async <T>(options: { table: string }) => {
+      if (options.table === 'flowruns') {
+        const select = 'select' in options && Array.isArray((options as { select?: unknown }).select)
+          ? ((options as { select?: string[] }).select ?? [])
+          : [];
+        const missingOptionalColumn = select.find((column) => ['workflowname', 'durationinms', 'retrycount'].includes(column));
+        if (missingOptionalColumn) {
+          return fail(
+            createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'GET flowruns returned 400', {
+              source: '@pp/http',
+              detail: JSON.stringify({
+                error: {
+                  code: '0x80060888',
+                  message: `Could not find a property named '${missingOptionalColumn}' on type 'Microsoft.Dynamics.CRM.flowrun'.`,
+                },
+              }),
+            })
+          ) as ReturnType<typeof sparseClient.queryAll<T>>;
+        }
+      }
+
+      return baseQueryAll(options);
+    };
+
+    mockDataverseResolution({
+      dev: sparseClient,
+    });
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+    const doctorTool = server._registeredTools['pp.flow.doctor'];
+
+    const doctor = await doctorTool.handler({
+      environment: 'dev',
+      identifier: 'Invoice Sync',
+      since: '7d',
+    });
+
+    expect(doctor.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.flow.doctor',
+      },
+      knownLimitations: expect.arrayContaining([
+        expect.stringContaining('optional flowrun columns'),
+      ]),
+    });
+    expect((doctor.structuredContent as { warnings: Array<{ code: string }> }).warnings).not.toContainEqual(
+      expect.objectContaining({
+        code: 'DATAVERSE_FLOWRUN_OPTIONAL_COLUMNS_UNAVAILABLE',
+      })
+    );
+  });
+
+  it('builds a bounded cleanup plan for run-scoped bootstrap prefixes', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'ppHarness20260312T114029287ZShell',
+              friendlyname: 'ppHarness20260312T114029287Z Shell',
+              version: '1.0.0.0',
+              ismanaged: false,
+            },
+            {
+              solutionid: 'sol-2',
+              uniquename: 'ppHarness20260312T114029287ZExtras',
+              friendlyname: 'ppHarness20260312T114029287Z Extras',
+              version: '1.0.0.1',
+              ismanaged: false,
+            },
+          ],
+        },
+        queryAll: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'ppHarness20260312T114029287ZShell',
+              friendlyname: 'ppHarness20260312T114029287Z Shell',
+              version: '1.0.0.0',
+              ismanaged: false,
+            },
+            {
+              solutionid: 'sol-2',
+              uniquename: 'SharedFoundation',
+              friendlyname: 'Shared Foundation',
+              version: '2.0.0.0',
+              ismanaged: false,
+            },
+          ],
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'component-1',
+              objectid: 'canvas-contained',
+              componenttype: 300,
+              _solutionid_value: 'sol-1',
+            },
+          ],
+          canvasapps: [
+            {
+              canvasappid: 'canvas-contained',
+              displayname: 'ppHarness20260312T114029287Z App In Solution',
+              name: 'ppHarness20260312T114029287ZAppInSolution',
+            },
+            {
+              canvasappid: 'canvas-orphan',
+              displayname: 'ppHarness20260312T114029287Z Orphan Canvas',
+              name: 'ppHarness20260312T114029287ZOrphanCanvas',
+            },
+          ],
+          workflows: [
+            {
+              workflowid: 'flow-orphan',
+              name: 'ppHarness20260312T114029287Z Flow',
+              uniquename: 'ppHarness20260312T114029287ZFlow',
+              category: 5,
+            },
+          ],
+          appmodules: [
+            {
+              appmoduleid: 'model-orphan',
+              name: 'ppHarness20260312T114029287Z Model',
+              uniquename: 'ppHarness20260312T114029287ZModel',
+            },
+          ],
+          connectionreferences: [],
+          environmentvariabledefinitions: [
+            {
+              environmentvariabledefinitionid: 'envvar-orphan',
+              schemaname: 'ppHarness20260312T114029287Z_Flag',
+              displayname: 'ppHarness20260312T114029287Z Flag',
+            },
+          ],
+          environmentvariablevalues: [],
+        },
+      }),
+    });
+
+    const result = await buildEnvironmentCleanupPlan({
+      environment: 'fixture',
+      prefix: 'ppHarness20260312T114029287Z',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      environment: {
+        alias: 'fixture',
+      },
+      prefix: 'ppHarness20260312T114029287Z',
+      candidateCount: 5,
+      solutionCandidateCount: 1,
+      assetCandidateCount: 4,
+      cleanupCandidates: [
+        {
+          solutionid: 'sol-1',
+          uniquename: 'ppHarness20260312T114029287ZShell',
+        },
+      ],
+      assetCandidates: expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'canvas-app',
+          id: 'canvas-orphan',
+        }),
+        expect.objectContaining({
+          kind: 'cloud-flow',
+          id: 'flow-orphan',
+        }),
+        expect.objectContaining({
+          kind: 'model-app',
+          id: 'model-orphan',
+        }),
+        expect.objectContaining({
+          kind: 'environment-variable',
+          id: 'envvar-orphan',
+        }),
+      ]),
+    });
+    expect(result.suggestedNextActions).toContain(
+      'Call pp.environment.cleanup with environment fixture, prefix ppHarness20260312T114029287Z, and mode apply to delete the listed disposable solutions and orphaned prefixed assets through MCP.',
+    );
+  });
+
+  it('suppresses unrelated connection-reference optional-column warnings during cleanup planning', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [],
+        },
+        queryAll: {
+          solutions: [],
+          solutioncomponents: [],
+          canvasapps: [],
+          workflows: [],
+          appmodules: [],
+          connectionreferences: [],
+          environmentvariabledefinitions: [],
+          environmentvariablevalues: [],
+        },
+      }),
+    });
+    vi.spyOn(ConnectionReferenceService.prototype, 'list').mockResolvedValue(
+      ok([], {
+        supportTier: 'preview',
+        warnings: [
+          createDiagnostic(
+            'warning',
+            'DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE',
+            'Connection reference query retried without unsupported columns.',
+            {
+              source: '@pp/dataverse',
+            }
+          ),
+        ],
+      }),
+    );
+
+    const result = await buildEnvironmentCleanupPlan({
+      environment: 'fixture',
+      prefix: 'ppHarness20260312T114029287Z',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.warnings).not.toContainEqual(
+      expect.objectContaining({
+        code: 'DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE',
+      }),
+    );
+  });
+
+  it('inspects an auth profile by resolving it from an environment alias', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-auth-config-'));
+    await writeFixtureConfig(configDir);
+
+    const result = await inspectAuthProfile({
+      environment: 'dev',
+      configDir,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      name: 'fixture-user',
+      type: 'user',
+      resolvedFromEnvironment: 'dev',
+      resolvedEnvironmentUrl: 'https://example.crm.dynamics.com',
+      targetResource: 'https://example.crm.dynamics.com',
+      relationships: {
+        environmentAliases: ['dev'],
+        environmentCount: 1,
+      },
+    });
+    expect(result.suggestedNextActions).toContain(
+      'Call pp.dataverse.whoami with environment dev to confirm the resolved profile still has live Dataverse access.',
+    );
+  });
+
+  it('lists auth profiles and alias relationships when inspect is called without a selector', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-auth-config-'));
+    await writeFixtureConfig(configDir);
+
+    const result = await inspectAuthProfile({
+      configDir,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      mode: 'catalog',
+      profiles: expect.arrayContaining([
+        expect.objectContaining({
+          name: 'fixture-user',
+          type: 'user',
+          relationships: {
+            environmentAliases: ['dev'],
+            environmentCount: 1,
+          },
+        }),
+      ]),
+    });
+    expect(result.suggestedNextActions).toContain(
+      'Call pp.auth-profile.inspect again with an environment alias when you want the alias-bound auth profile resolved in one step.',
+    );
+  });
+
+  it('executes bounded environment cleanup through solution delete', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'ppHarness20260312T114029287ZShell',
+              friendlyname: 'ppHarness20260312T114029287Z Shell',
+              version: '1.0.0.0',
+              ismanaged: false,
+            },
+            {
+              solutionid: 'sol-2',
+              uniquename: 'ppHarness20260312T114029287ZExtras',
+              friendlyname: 'ppHarness20260312T114029287Z Extras',
+              version: '1.0.0.1',
+              ismanaged: false,
+            },
+          ],
+        },
+        queryAll: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'ppHarness20260312T114029287ZShell',
+              friendlyname: 'ppHarness20260312T114029287Z Shell',
+              version: '1.0.0.0',
+              ismanaged: false,
+            },
+            {
+              solutionid: 'sol-2',
+              uniquename: 'ppHarness20260312T114029287ZExtras',
+              friendlyname: 'ppHarness20260312T114029287Z Extras',
+              version: '1.0.0.1',
+              ismanaged: false,
+            },
+          ],
+          solutioncomponents: [],
+          canvasapps: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'ppHarness20260312T114029287Z Canvas',
+              name: 'ppHarness20260312T114029287ZCanvas',
+            },
+          ],
+          workflows: [],
+          appmodules: [],
+          connectionreferences: [],
+          environmentvariabledefinitions: [],
+          environmentvariablevalues: [],
+        },
+      }),
+    });
+
+    const result = await executeEnvironmentCleanup({
+      environment: 'fixture',
+      prefix: 'ppHarness20260312T114029287Z',
+      mode: 'apply',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      mode: 'apply',
+      candidateCount: 3,
+      solutionCandidateCount: 2,
+      assetCandidateCount: 1,
+      deletedCount: 3,
+      failedCount: 0,
+      deletedSolutions: [
+        {
+          solution: {
+            uniquename: 'ppHarness20260312T114029287ZShell',
+          },
+        },
+        {
+          solution: {
+            uniquename: 'ppHarness20260312T114029287ZExtras',
+          },
+        },
+      ],
+      deletedAssets: [
+        {
+          asset: {
+            kind: 'canvas-app',
+            id: 'canvas-1',
+          },
+        },
+      ],
+    });
+
+    const remaining = await buildEnvironmentCleanupPlan({
+      environment: 'fixture',
+      prefix: 'ppHarness20260312T114029287Z',
+    });
+    expect(remaining.success).toBe(true);
+    expect(remaining.data?.candidateCount).toBe(0);
+  });
+
+  it('executes one bounded dataverse delete through the shared remote client path', async () => {
+    const fixtureClient = createFixtureDataverseClient({
+      queryAll: {
+        accounts: [
+          {
+            accountid: 'account-1',
+            name: 'Harness Account Seed',
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({
+      fixture: fixtureClient,
+    });
+
+    const result = await executeDataverseDelete({
+      environment: 'fixture',
+      table: 'accounts',
+      id: 'account-1',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      deleted: true,
+      table: 'accounts',
+      id: 'account-1',
+      result: {
+        status: 204,
+        entityId: 'account-1',
+      },
+    });
+    expect(result.suggestedNextActions).toContain(
+      'Call pp.dataverse.query with environment fixture and a filter that targets account-1 if you need read-side confirmation that the row is gone.',
+    );
+
+    const remaining = await fixtureClient.queryAll<{ accountid: string }>({
+      table: 'accounts',
+    });
+    expect(remaining.success).toBe(true);
+    expect(remaining.data).toEqual([]);
+  });
+
+  it('executes one bounded dataverse create through the shared remote client path', async () => {
+    const fixtureClient = createFixtureDataverseClient({
+      queryAll: {
+        accounts: [],
+      },
+    });
+
+    mockDataverseResolution({
+      fixture: fixtureClient,
+    });
+
+    const result = await executeDataverseCreate({
+      environment: 'fixture',
+      table: 'accounts',
+      body: {
+        name: 'Harness Account Seed',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      created: true,
+      table: 'accounts',
+      result: {
+        status: 204,
+        entityId: 'fixture-accounts-1',
+      },
+    });
+    expect(result.suggestedNextActions).toContain(
+      'Call pp.dataverse.query with environment fixture and a filter that targets fixture-accounts-1 if you need read-side confirmation of the inserted row.',
+    );
+
+    const remaining = await fixtureClient.queryAll<{ accountid: string; name: string }>({
+      table: 'accounts',
+    });
+    expect(remaining.success).toBe(true);
+    expect(remaining.data).toEqual([
+      {
+        accountid: 'fixture-accounts-1',
+        name: 'Harness Account Seed',
+      },
+    ]);
+  });
+
+  it('previews one repo-local dataverse metadata manifest without mutating the target environment', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-metadata-plan-'));
+    await writeFile(
+      join(projectRoot, 'schema.apply.yaml'),
+      ['operations:', '  - kind: add-column', '    tableLogicalName: pp_project', '    file: project-status.column.yaml', '  - kind: create-table', '    file: project.table.yaml', ''].join('\n'),
+      'utf8',
+    );
+    await writeFile(
+      join(projectRoot, 'project.table.yaml'),
+      ['schemaName: pp_Project', 'displayName: Project', 'pluralDisplayName: Projects', 'primaryName:', '  schemaName: pp_Name', '  displayName: Name', ''].join('\n'),
+      'utf8',
+    );
+    await writeFile(
+      join(projectRoot, 'project-status.column.yaml'),
+      ['kind: string', 'schemaName: pp_Status', 'displayName: Status', 'maxLength: 100', ''].join('\n'),
+      'utf8',
+    );
+
+    const result = await executeDataverseMetadataApply(
+      {
+        environment: 'fixture',
+        manifestPath: 'schema.apply.yaml',
+        mode: 'dry-run',
+      },
+      {
+        projectPath: projectRoot,
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      mode: 'dry-run',
+      operationCount: 2,
+      operationsByKind: {
+        'create-table': 1,
+        'add-column': 1,
+      },
+      publishRequested: true,
+    });
+    expect(result.data?.plan.operations.map((operation) => operation.kind)).toEqual(['create-table', 'add-column']);
+    expect(result.provenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'harvested',
+        }),
+      ]),
+    );
+  });
+
+  it('applies one repo-local dataverse metadata manifest through the shared remote client path', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-metadata-apply-'));
+    await writeFile(
+      join(projectRoot, 'schema.apply.yaml'),
+      ['operations:', '  - kind: create-table', '    file: project.table.yaml', ''].join('\n'),
+      'utf8',
+    );
+    await writeFile(
+      join(projectRoot, 'project.table.yaml'),
+      ['schemaName: pp_Project', 'displayName: Project', 'pluralDisplayName: Projects', 'primaryName:', '  schemaName: pp_Name', '  displayName: Name', ''].join('\n'),
+      'utf8',
+    );
+
+    const applyMetadataPlan = vi.fn(async () => ({
+      success: true,
+      data: {
+        operations: [
+          {
+            kind: 'create-table',
+            status: 204,
+            entityId: 'entity-1',
+            entitySummary: {
+              kind: 'table',
+              logicalName: 'pp_project',
+            },
+          },
+        ],
+        summary: {
+          operationCount: 1,
+          operationsByKind: {
+            'create-table': 1,
+          },
+        },
+        published: true,
+        publishTargets: ['pp_project'],
+      },
+      diagnostics: [],
+      warnings: [],
+      supportTier: 'preview',
+    }));
+
+    mockDataverseResolution({
+      fixture: {
+        client: {
+          applyMetadataPlan,
+        } as never,
+      },
+    });
+
+    const result = await executeDataverseMetadataApply(
+      {
+        environment: 'fixture',
+        manifestPath: 'schema.apply.yaml',
+        solutionUniqueName: 'Core',
+        mode: 'apply',
+        publish: false,
+      },
+      {
+        projectPath: projectRoot,
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(applyMetadataPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operations: [expect.objectContaining({ kind: 'create-table' })],
+      }),
+      {
+        solutionUniqueName: 'Core',
+        publish: false,
+      },
+    );
+    expect(result.data).toMatchObject({
+      mode: 'apply',
+      publishRequested: false,
+      result: {
+        published: true,
+        publishTargets: ['pp_project'],
+      },
+    });
+  });
+
+  it('returns structured install-state drift when the target environment lacks the solution', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'canvasdemonstration',
+              friendlyname: 'Canvas Demonstration',
+              version: '1.0.0.0',
+              ismanaged: false,
+            },
+          ],
+        },
+        queryAll: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'canvasdemonstration',
+              friendlyname: 'Canvas Demonstration',
+              version: '1.0.0.0',
+              ismanaged: false,
+            },
+          ],
+        },
+      }),
+      target: createFixtureDataverseClient({
+        query: {
+          solutions: [],
+        },
+        queryAll: {
+          solutions: [],
+        },
+      }),
+    });
+
+    const result = await compareSolutionAcrossEnvironments({
+      uniqueName: 'canvasdemonstration',
+      sourceEnvironment: 'source',
+      targetEnvironment: 'target',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      uniqueName: 'canvasdemonstration',
+      sourceEnvironment: 'source',
+      targetEnvironment: 'target',
+      installState: {
+        sourcePresent: true,
+        targetPresent: false,
+      },
+      compare: {
+        uniqueName: 'canvasdemonstration',
+        source: {
+          solution: {
+            uniquename: 'canvasdemonstration',
+          },
+        },
+      },
+    });
+    expect(result.suggestedNextActions).toContain(
+      'Solution canvasdemonstration is present in source but absent from target; use this install-state drift as the compare result instead of treating the compare as a terminal failure.',
     );
   });
 

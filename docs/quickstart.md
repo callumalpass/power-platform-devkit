@@ -96,6 +96,8 @@ For metadata listing, `--top` is applied locally after retrieval because Dataver
 You can also create supported schema metadata from YAML or JSON specs:
 
 ```bash
+pp dv metadata schema create-table --format json-schema
+pp dv metadata init add-column --kind choice
 pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
 pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
 ```

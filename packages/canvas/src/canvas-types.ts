@@ -385,6 +385,7 @@ export interface CanvasPropertyCheck {
   templateVersion: string;
   valid: boolean;
   source?: string;
+  reason?: string;
 }
 
 export interface CanvasValidationReport {

@@ -7,8 +7,8 @@ import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult, type
 import {
   SolutionService,
   type SolutionAnalysis,
+  type SolutionPackageMetadata,
   type SolutionPublishProgressEvent,
-  type SolutionReleaseManifest,
   type SolutionSummary,
   type SolutionSyncStatusProgressEvent,
 } from '@pp/solution';
@@ -785,7 +785,7 @@ export async function runSolutionImportCommand(args: string[], deps: SolutionCom
 }
 
 type SolutionImportPlanStatus =
-  | 'manifest-missing'
+  | 'package-metadata-missing'
   | 'target-absent'
   | 'same-version-managed-installed'
   | 'managed-upgrade-candidate'
@@ -801,6 +801,10 @@ interface SolutionImportPlanCompatibility {
   sameVersion?: boolean;
   versionComparison?: 'older' | 'equal' | 'newer' | 'unknown';
   recommendedWorkflow: 'direct-import' | 'holding-upgrade' | 'review-target-first';
+}
+
+interface SolutionImportPlanPackageInfo extends SolutionPackageMetadata {
+  available: boolean;
 }
 
 async function buildSolutionImportPlanPreview(
@@ -819,44 +823,52 @@ async function buildSolutionImportPlanPreview(
     importJobId: deps.readFlag(args, '--import-job-id'),
   };
   const manifestPath = resolveAdjacentSolutionManifestPath(resolvedPackagePath);
-  const manifest = await deps.createLocalSolutionService().readReleaseManifest(manifestPath);
+  const packageMetadata = await deps.createLocalSolutionService().inspectPackageMetadata(resolvedPackagePath);
 
-  if (!manifest.success) {
-    return manifest as unknown as OperationResult<Record<string, unknown>>;
+  if (!packageMetadata.success) {
+    return packageMetadata as unknown as OperationResult<Record<string, unknown>>;
   }
 
-  const targetSolutionUniqueName = manifest.data?.solution.uniqueName;
+  const targetSolutionUniqueName = packageMetadata.data?.uniqueName;
   let targetState: Record<string, unknown> | undefined;
   let compatibility: SolutionImportPlanCompatibility;
   const suggestedNextActions: string[] = [];
   const provenance: ProvenanceRecord[] = [];
   const knownLimitations = [
-    'Import planning uses the adjacent pp release manifest plus a live target solution inspect; it does not run server-side dependency or upgrade simulation.',
+    'Import planning uses solution package metadata plus a live target solution inspect; it does not run server-side dependency or upgrade simulation.',
   ];
 
-  if (manifest.data) {
-    provenance.push({ kind: 'official-artifact', source: 'pp solution release manifest' });
-    suggestedNextActions.push(
-      `Run \`pp solution inspect ${manifest.data.solution.uniqueName} --environment ${environmentAlias} --format json\` to re-check live target state immediately before applying the import.`
+  if (packageMetadata.data) {
+    provenance.push(
+      packageMetadata.data.source === 'manifest'
+        ? { kind: 'official-artifact', source: 'pp solution release manifest' }
+        : { kind: 'official-artifact', source: 'solution package metadata' }
     );
-  } else {
-    knownLimitations.push('Without a release manifest, pp cannot infer package type, solution unique name, or version from the zip during plan mode.');
+    suggestedNextActions.push(
+      `Run \`pp solution inspect ${packageMetadata.data.uniqueName} --environment ${environmentAlias} --format json\` to re-check live target state immediately before applying the import.`
+    );
+    if (packageMetadata.data.source === 'archive') {
+      knownLimitations.push('Archive-derived plan metadata comes from solution.xml/Other.xml and may omit friendly name or other release-manifest-only provenance.');
+    }
   }
 
-  if (!manifest.data) {
+  if (!packageMetadata.data?.uniqueName || !packageMetadata.data.packageType) {
     compatibility = {
-      status: 'manifest-missing',
+      status: 'package-metadata-missing',
       summary:
-        'No adjacent `.pp-solution.json` release manifest was found, so plan mode cannot describe the target solution state, package type, or version compatibility.',
+        'The solution package did not expose enough metadata for plan mode to identify the solution unique name and package type.',
       recommendedWorkflow: 'review-target-first',
     };
     suggestedNextActions.push(
-      'Export or pack the solution with `pp` first so the package has an adjacent `.pp-solution.json` release manifest for plan mode.',
-      `Re-run \`pp solution import ${resolvedPackagePath} --environment ${environmentAlias} --plan --format json\` after the manifest exists.`
+      'Export or pack the solution with `pp` first so the package includes readable solution metadata or an adjacent `.pp-solution.json` release manifest for plan mode.',
+      `Re-run \`pp solution import ${resolvedPackagePath} --environment ${environmentAlias} --plan --format json\` after the package metadata is available.`
     );
   } else {
-    const releaseManifest = manifest.data;
-    const inspect = await new SolutionService(client as never).inspect(releaseManifest.solution.uniqueName);
+    const packageInfo: SolutionImportPlanPackageInfo = {
+      ...packageMetadata.data,
+      available: true,
+    };
+    const inspect = await new SolutionService(client as never).inspect(packageInfo.uniqueName!);
     if (!inspect.success) {
       return inspect as unknown as OperationResult<Record<string, unknown>>;
     }
@@ -871,10 +883,10 @@ async function buildSolutionImportPlanPreview(
         }
       : {
           found: false,
-          uniqueName: releaseManifest.solution.uniqueName,
+          uniqueName: packageInfo.uniqueName,
         };
-    compatibility = classifySolutionImportCompatibility(releaseManifest, inspect.data);
-    suggestedNextActions.push(...suggestedActionsForSolutionImportPlan(releaseManifest, environmentAlias, compatibility));
+    compatibility = classifySolutionImportCompatibility(packageInfo, inspect.data);
+    suggestedNextActions.push(...suggestedActionsForSolutionImportPlan(packageInfo, environmentAlias, compatibility));
   }
 
   const payload = createMutationPreview(
@@ -887,15 +899,15 @@ async function buildSolutionImportPlanPreview(
     },
     {
       importOptions,
-      package: manifest.data
+      package: packageMetadata.data
         ? {
-            manifestPath,
+            manifestPath: packageMetadata.data.manifestPath ?? manifestPath,
             available: true,
-            uniqueName: manifest.data.solution.uniqueName,
-            friendlyName: manifest.data.solution.friendlyName,
-            version: manifest.data.solution.version,
-            packageType: manifest.data.solution.packageType,
-            sourceEnvironmentUrl: manifest.data.source?.environmentUrl,
+            metadataSource: packageMetadata.data.source,
+            uniqueName: packageMetadata.data.uniqueName,
+            friendlyName: packageMetadata.data.friendlyName,
+            version: packageMetadata.data.version,
+            packageType: packageMetadata.data.packageType,
           }
         : {
             manifestPath,
@@ -920,20 +932,20 @@ async function buildSolutionImportPlanPreview(
 }
 
 function classifySolutionImportCompatibility(
-  manifest: SolutionReleaseManifest,
+  packageInfo: Pick<SolutionImportPlanPackageInfo, 'uniqueName' | 'version' | 'packageType'>,
   targetSolution: Pick<SolutionSummary, 'uniquename' | 'version' | 'ismanaged'> | undefined
 ): SolutionImportPlanCompatibility {
   if (!targetSolution) {
     return {
       status: 'target-absent',
-      summary: `Target environment does not currently have ${manifest.solution.uniqueName} installed, so this import would behave like a new ${manifest.solution.packageType} install.`,
+      summary: `Target environment does not currently have ${packageInfo.uniqueName} installed, so this import would behave like a new ${packageInfo.packageType} install.`,
       recommendedWorkflow: 'direct-import',
     };
   }
 
-  const packageType = manifest.solution.packageType;
+  const packageType = packageInfo.packageType!;
   const targetManaged = targetSolution.ismanaged ?? false;
-  const versionComparison = compareSolutionVersions(manifest.solution.version, targetSolution.version);
+  const versionComparison = compareSolutionVersions(packageInfo.version, targetSolution.version);
   const sameVersion = versionComparison === 'equal';
 
   if (packageType === 'managed' && targetManaged) {
@@ -942,7 +954,7 @@ function classifySolutionImportCompatibility(
         status: 'same-version-managed-installed',
         sameVersion: true,
         versionComparison,
-        summary: `Target already has managed ${manifest.solution.uniqueName} at the same version (${targetSolution.version ?? 'unknown'}), so plan mode cannot prove whether re-import would no-op, reinstall, or require a staged upgrade path.`,
+        summary: `Target already has managed ${packageInfo.uniqueName} at the same version (${targetSolution.version ?? 'unknown'}), so plan mode cannot prove whether re-import would no-op, reinstall, or require a staged upgrade path.`,
         recommendedWorkflow: 'review-target-first',
       };
     }
@@ -953,8 +965,8 @@ function classifySolutionImportCompatibility(
         versionComparison,
         summary:
           versionComparison === 'older'
-            ? `Target already has managed ${manifest.solution.uniqueName} at ${targetSolution.version}; importing ${manifest.solution.version ?? 'the package'} looks like an upgrade candidate.`
-            : `Target already has managed ${manifest.solution.uniqueName}, but one side has no comparable version, so pp cannot prove whether a staged upgrade path is required.`,
+            ? `Target already has managed ${packageInfo.uniqueName} at ${targetSolution.version}; importing ${packageInfo.version ?? 'the package'} looks like an upgrade candidate.`
+            : `Target already has managed ${packageInfo.uniqueName}, but one side has no comparable version, so pp cannot prove whether a staged upgrade path is required.`,
         recommendedWorkflow: versionComparison === 'older' ? 'holding-upgrade' : 'review-target-first',
       };
     }
@@ -962,7 +974,7 @@ function classifySolutionImportCompatibility(
       status: 'managed-version-downgrade',
       sameVersion: false,
       versionComparison,
-      summary: `Target already has managed ${manifest.solution.uniqueName} at ${targetSolution.version}, which is newer than the package version ${manifest.solution.version ?? 'unknown'}.`,
+      summary: `Target already has managed ${packageInfo.uniqueName} at ${targetSolution.version}, which is newer than the package version ${packageInfo.version ?? 'unknown'}.`,
       recommendedWorkflow: 'review-target-first',
     };
   }
@@ -972,7 +984,7 @@ function classifySolutionImportCompatibility(
       status: 'managed-over-unmanaged-installed',
       sameVersion,
       versionComparison,
-      summary: `Target currently has unmanaged ${manifest.solution.uniqueName}, so importing a managed package over it is not a standard in-place promotion path.`,
+      summary: `Target currently has unmanaged ${packageInfo.uniqueName}, so importing a managed package over it is not a standard in-place promotion path.`,
       recommendedWorkflow: 'review-target-first',
     };
   }
@@ -982,7 +994,7 @@ function classifySolutionImportCompatibility(
       status: 'unmanaged-over-managed-installed',
       sameVersion,
       versionComparison,
-      summary: `Target currently has managed ${manifest.solution.uniqueName}, so importing an unmanaged package over it is likely the wrong ALM path.`,
+      summary: `Target currently has managed ${packageInfo.uniqueName}, so importing an unmanaged package over it is likely the wrong ALM path.`,
       recommendedWorkflow: 'review-target-first',
     };
   }
@@ -993,18 +1005,18 @@ function classifySolutionImportCompatibility(
     versionComparison,
     summary:
       versionComparison === 'unknown'
-        ? `Target already has unmanaged ${manifest.solution.uniqueName}, but one side has no comparable version metadata.`
-        : `Target already has unmanaged ${manifest.solution.uniqueName}; this looks like a standard unmanaged update path.`,
+        ? `Target already has unmanaged ${packageInfo.uniqueName}, but one side has no comparable version metadata.`
+        : `Target already has unmanaged ${packageInfo.uniqueName}; this looks like a standard unmanaged update path.`,
     recommendedWorkflow: 'direct-import',
   };
 }
 
 function suggestedActionsForSolutionImportPlan(
-  manifest: SolutionReleaseManifest,
+  packageInfo: Pick<SolutionImportPlanPackageInfo, 'uniqueName'>,
   environmentAlias: string,
   compatibility: SolutionImportPlanCompatibility
 ): string[] {
-  const inspectCommand = `pp solution inspect ${manifest.solution.uniqueName} --environment ${environmentAlias} --format json`;
+  const inspectCommand = `pp solution inspect ${packageInfo.uniqueName} --environment ${environmentAlias} --format json`;
   switch (compatibility.status) {
     case 'target-absent':
     case 'unmanaged-update-candidate':
@@ -1027,7 +1039,7 @@ function suggestedActionsForSolutionImportPlan(
     case 'unmanaged-over-managed-installed':
     case 'managed-version-downgrade':
     case 'target-version-unknown':
-    case 'manifest-missing':
+    case 'package-metadata-missing':
     default:
       return [
         `${inspectCommand} is the first check to confirm the live target before attempting a risky import path.`,
@@ -1097,7 +1109,7 @@ export async function runSolutionPackCommand(args: string[], deps: SolutionComma
     return deps.printFailure(deps.argumentFailure('SOLUTION_PACK_OUT_REQUIRED', '--out <file.zip> is required.'));
   }
   const packageType = deps.readSolutionPackageTypeFlag(args);
-  if (!packageType.success || !packageType.data) {
+  if (!packageType.success) {
     return deps.printFailure(packageType);
   }
   const preview = deps.maybeHandleMutationPreview(args, 'json', 'solution.pack', { sourceFolder, outPath, packageType: packageType.data });
@@ -1224,11 +1236,16 @@ export async function runSolutionUnpackCommand(args: string[], deps: SolutionCom
   if (!outDir) {
     return deps.printFailure(deps.argumentFailure('SOLUTION_UNPACK_OUT_REQUIRED', '--out <dir> is required.'));
   }
-  const packageType = deps.readSolutionPackageTypeFlag(args);
-  if (!packageType.success || !packageType.data) {
+  const packageType = readOptionalSolutionPackageTypeFlag(args, deps);
+  if (!packageType.success) {
     return deps.printFailure(packageType);
   }
-  const preview = deps.maybeHandleMutationPreview(args, 'json', 'solution.unpack', { packagePath, outDir, packageType: packageType.data });
+  const preview = deps.maybeHandleMutationPreview(
+    args,
+    'json',
+    'solution.unpack',
+    packageType.data ? { packagePath, outDir, packageType: packageType.data } : { packagePath, outDir, packageType: 'auto' }
+  );
   if (preview !== undefined) {
     return preview;
   }
@@ -1256,6 +1273,27 @@ export async function runSolutionUnpackCommand(args: string[], deps: SolutionCom
     deps.outputFormat(args, 'json')
   );
   return 0;
+}
+
+function readOptionalSolutionPackageTypeFlag(
+  args: string[],
+  deps: Pick<SolutionCommandDependencies, 'readFlag' | 'argumentFailure'>
+): OperationResult<'managed' | 'unmanaged' | 'both' | undefined> {
+  const value = deps.readFlag(args, '--package-type');
+
+  if (value === undefined) {
+    return ok(undefined, {
+      supportTier: 'preview',
+    });
+  }
+
+  if (value === 'managed' || value === 'unmanaged' || value === 'both') {
+    return ok(value, {
+      supportTier: 'preview',
+    });
+  }
+
+  return deps.argumentFailure('SOLUTION_PACKAGE_TYPE_INVALID', 'Use --package-type managed, unmanaged, or both.');
 }
 
 async function extractCanvasAppsFromUnpackedSolution(unpackedRoot: string): Promise<OperationResult<SolutionUnpackCanvasExtraction[]>> {

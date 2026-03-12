@@ -123,6 +123,14 @@ interface ModelSolutionComponentRecord {
   _solutionid_value?: string;
 }
 
+interface ModelComponentDependencyRecord {
+  dependencyid?: string;
+  requiredcomponentobjectid?: string;
+  requiredcomponenttype?: number;
+  dependentcomponentobjectid?: string;
+  dependentcomponenttype?: number;
+}
+
 interface ModelLookups {
   tables: Map<string, ModelTableSummary>;
   forms: Map<string, ModelFormSummary>;
@@ -139,6 +147,14 @@ interface ModelInspectContext {
   sitemaps: ModelSitemapSummary[];
   dependencies: ModelDependencySummary[];
   missingComponents: ModelDependencySummary[];
+}
+
+interface ModelInspectComponentsLoadResult {
+  appComponents: ModelDrivenAppComponentSummary[];
+  dependencies?: ModelDependencySummary[];
+  warnings: Diagnostic[];
+  suggestedNextActions?: string[];
+  knownLimitations?: string[];
 }
 
 export class ModelService {
@@ -211,16 +227,52 @@ export class ModelService {
       warnings = [...warnings, ...solutions.warnings, ...solutionComponents.warnings];
     }
 
-    return ok(
-      (apps.data ?? [])
-        .filter((app) => !allowedIds || allowedIds.has(app.id))
-        .sort((left, right) => (left.name ?? left.uniqueName ?? left.id).localeCompare(right.name ?? right.uniqueName ?? right.id)),
-      {
-        supportTier: 'preview',
-        diagnostics,
-        warnings,
-      }
-    );
+    const filteredApps = (apps.data ?? [])
+      .filter((app) => !allowedIds || allowedIds.has(app.id))
+      .sort((left, right) => (left.name ?? left.uniqueName ?? left.id).localeCompare(right.name ?? right.uniqueName ?? right.id));
+
+    return ok(filteredApps, {
+      supportTier: 'preview',
+      diagnostics: [
+        ...diagnostics,
+        {
+          level: filteredApps.length === 0 ? 'warning' : 'info',
+          code: filteredApps.length === 0 ? 'MODEL_SCOPE_EMPTY' : 'MODEL_LIST_SUMMARY',
+          message: options.solutionUniqueName
+            ? filteredApps.length === 0
+              ? `No model-driven apps were found in solution ${options.solutionUniqueName}.`
+              : `Listed ${filteredApps.length} model-driven app${filteredApps.length === 1 ? '' : 's'} from solution ${options.solutionUniqueName}.`
+            : filteredApps.length === 0
+              ? 'No model-driven apps were found in the current environment.'
+              : `Listed ${filteredApps.length} model-driven app${filteredApps.length === 1 ? '' : 's'} from the current environment.`,
+          source: '@pp/model',
+        },
+      ],
+      warnings,
+      suggestedNextActions:
+        filteredApps.length === 0
+          ? options.solutionUniqueName
+            ? [
+                `Run \`pp solution inspect ${options.solutionUniqueName} --environment <alias> --format json\` to confirm the solution exists before assuming the scope is empty.`,
+                'Retry without the solution filter if you need to compare solution membership against environment-wide model-driven apps.',
+              ]
+            : ['Create or attach a model-driven app before expecting model composition in this environment.']
+          : undefined,
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse appmodules',
+        },
+        ...(options.solutionUniqueName
+          ? [
+              {
+                kind: 'official-api' as const,
+                source: 'Dataverse solutioncomponents',
+              },
+            ]
+          : []),
+      ],
+    });
   }
 
   async inspect(identifier: string, options: { solutionUniqueName?: string } = {}): Promise<OperationResult<ModelInspectResult | undefined>> {
@@ -252,6 +304,8 @@ export class ModelService {
         supportTier: 'preview',
         diagnostics: context.diagnostics,
         warnings: context.warnings,
+        suggestedNextActions: context.suggestedNextActions,
+        knownLimitations: context.knownLimitations,
       }
     );
   }
@@ -277,6 +331,8 @@ export class ModelService {
       supportTier: 'preview',
       diagnostics: context.diagnostics,
       warnings: context.warnings,
+      suggestedNextActions: context.suggestedNextActions,
+      knownLimitations: context.knownLimitations,
     });
   }
 
@@ -491,8 +547,7 @@ export class ModelService {
       });
     }
 
-    const [components, forms, views, sitemaps, tables] = await Promise.all([
-      this.loadInspectableComponents(appService, app),
+    const [forms, views, sitemaps, tables] = await Promise.all([
       appService.forms(),
       appService.views(),
       appService.sitemaps(),
@@ -501,10 +556,6 @@ export class ModelService {
         all: true,
       }),
     ]);
-
-    if (!components.success) {
-      return components as unknown as OperationResult<ModelInspectContext | undefined>;
-    }
 
     if (!forms.success) {
       return forms as unknown as OperationResult<ModelInspectContext | undefined>;
@@ -523,8 +574,18 @@ export class ModelService {
     }
 
     const lookups = createLookups(forms.data ?? [], views.data ?? [], sitemaps.data ?? [], tables.data ?? []);
-    const appComponents = components.data ?? [];
-    const dependencies = appComponents.map((component) => summarizeDependency(component, lookups));
+    const components = await this.loadInspectableComponents(appService, app, lookups);
+
+    if (!components.success) {
+      return components as unknown as OperationResult<ModelInspectContext | undefined>;
+    }
+
+    const componentData: ModelInspectComponentsLoadResult = components.data ?? {
+      appComponents: [],
+      warnings: [],
+    };
+    const appComponents = componentData.appComponents;
+    const dependencies = componentData.dependencies ?? appComponents.map((component) => summarizeDependency(component, lookups));
     const data: ModelInspectContext = {
       app,
       appComponents,
@@ -550,40 +611,119 @@ export class ModelService {
 
     return ok(data, {
       supportTier: 'preview',
-      diagnostics: mergeDiagnostics(apps.diagnostics, components.diagnostics, forms.diagnostics, views.diagnostics, sitemaps.diagnostics, tables.diagnostics),
-      warnings: mergeDiagnostics(apps.warnings, components.warnings, forms.warnings, views.warnings, sitemaps.warnings, tables.warnings),
+      diagnostics: mergeDiagnostics(
+        apps.diagnostics,
+        components.diagnostics,
+        forms.diagnostics,
+        views.diagnostics,
+        sitemaps.diagnostics,
+        tables.diagnostics
+      ),
+      warnings: mergeDiagnostics(apps.warnings, componentData.warnings, forms.warnings, views.warnings, sitemaps.warnings, tables.warnings),
+      suggestedNextActions: componentData.suggestedNextActions,
+      knownLimitations: componentData.knownLimitations,
     });
   }
 
   private async loadInspectableComponents(
     appService: ModelDrivenAppService,
-    app: ModelAppSummary
-  ): Promise<OperationResult<ModelDrivenAppComponentSummary[]>> {
+    app: ModelAppSummary,
+    lookups: ModelLookups
+  ): Promise<OperationResult<ModelInspectComponentsLoadResult>> {
     const components = await appService.components(app.id);
 
     if (components.success) {
-      return ok(components.data ?? [], {
-        supportTier: 'preview',
-        diagnostics: components.diagnostics,
-        warnings: components.warnings,
-      });
+      return ok(
+        {
+          appComponents: components.data ?? [],
+          warnings: components.warnings,
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: components.diagnostics,
+          warnings: components.warnings,
+        }
+      );
     }
 
+    const inferredDependencies = await this.inferInspectableDependencies(app);
+
+    if (!inferredDependencies.success) {
+      return inferredDependencies as unknown as OperationResult<ModelInspectComponentsLoadResult>;
+    }
+
+    const dependencies = (inferredDependencies.data ?? []).map((dependency) => summarizeDependencyRecord(dependency, lookups));
+    const resolvedComponentCount = dependencies.filter((dependency) => dependency.status === 'resolved').length;
     const warning = createDiagnostic(
       'warning',
       'MODEL_COMPONENTS_UNAVAILABLE',
-      `Model-driven app component inspection was unavailable for ${app.name ?? app.uniqueName ?? app.id}; returning the app shell without composition rows.`,
+      `Model-driven app component inspection was unavailable for ${app.name ?? app.uniqueName ?? app.id}; inferred composition from Dataverse dependency rows instead.`,
       {
         source: '@pp/model',
         detail: components.diagnostics.map((diagnostic) => diagnostic.message).join('\n') || undefined,
-        hint: 'Retry against a tenant that exposes appmodulecomponents, or use `pp solution components <solution>` to confirm the app module membership.',
+        hint: `Review \`pp model dependencies ${app.name ?? app.uniqueName ?? app.id} --environment <alias>\` to inspect the inferred dependency-derived component set.`,
+      }
+    );
+    const inferredWarning = createDiagnostic(
+      'warning',
+      'MODEL_COMPONENTS_INFERRED_FROM_DEPENDENCIES',
+      `Recovered ${resolvedComponentCount} model-driven artifact${resolvedComponentCount === 1 ? '' : 's'} for ${app.name ?? app.uniqueName ?? app.id} from Dataverse dependencies because appmodulecomponents was unavailable.`,
+      {
+        source: '@pp/model',
+        detail:
+          'This fallback derives forms, views, sitemaps, and tables from dependency rows where the model-driven app is the dependent component. It may omit direct membership rows that do not surface through dependencies.',
       }
     );
 
-    return ok([], {
-      supportTier: 'preview',
-      warnings: [warning],
+    return ok(
+      {
+        appComponents: [],
+        dependencies,
+        warnings: mergeDiagnostics(components.warnings, inferredDependencies.warnings, [warning, inferredWarning]),
+        suggestedNextActions: [
+          `Use \`pp model dependencies ${app.name ?? app.uniqueName ?? app.id} --environment <alias>\` to review the inferred artifact set and identify anything still missing.`,
+          `Retry pp model inspect ${app.name ?? app.uniqueName ?? app.id} against a tenant that exposes appmodule_appmodulecomponent reads if you need direct membership rather than dependency-derived composition.`,
+        ],
+        knownLimitations: [
+          'When Dataverse blocks appmodule_appmodulecomponent reads, pp now falls back to dependency-derived model composition. Direct membership rows can still be incomplete until a tenant exposes appmodulecomponents.',
+        ],
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: components.diagnostics,
+        warnings: mergeDiagnostics(components.warnings, inferredDependencies.warnings, [warning, inferredWarning]),
+      }
+    );
+  }
+
+  private async inferInspectableDependencies(
+    app: ModelAppSummary
+  ): Promise<OperationResult<ModelComponentDependencyRecord[]>> {
+    const dependencies = await this.dataverseClient.queryAll<ModelComponentDependencyRecord>({
+      table: 'dependencies',
+      select: [
+        'dependencyid',
+        'requiredcomponentobjectid',
+        'requiredcomponenttype',
+        'dependentcomponentobjectid',
+        'dependentcomponenttype',
+      ],
     });
+
+    if (!dependencies.success) {
+      return dependencies;
+    }
+
+    return ok(
+      (dependencies.data ?? []).filter(
+        (dependency) => dependency.dependentcomponenttype === 80 && dependency.dependentcomponentobjectid === app.id
+      ),
+      {
+        supportTier: 'preview',
+        diagnostics: dependencies.diagnostics,
+        warnings: dependencies.warnings,
+      }
+    );
   }
 }
 
@@ -843,6 +983,20 @@ function summarizeDependency(component: ModelDrivenAppComponentSummary, lookups:
         status: 'missing',
       };
   }
+}
+
+function summarizeDependencyRecord(dependency: ModelComponentDependencyRecord, lookups: ModelLookups): ModelDependencySummary {
+  return summarizeDependency(
+    {
+      id:
+        dependency.dependencyid ??
+        `dependency:${dependency.requiredcomponenttype ?? 'unknown'}:${normalizeMetadataId(dependency.requiredcomponentobjectid)}`,
+      componentType: dependency.requiredcomponenttype,
+      objectId: dependency.requiredcomponentobjectid,
+      appId: dependency.dependentcomponentobjectid,
+    },
+    lookups
+  );
 }
 
 function compareArtifacts(left: ModelCompositionArtifact, right: ModelCompositionArtifact): number {

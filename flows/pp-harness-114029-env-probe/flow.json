@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "kind": "pp.flow.artifact",
+  "metadata": {
+    "name": "PP Harness Flow 20260312T114029287Z",
+    "displayName": "PP Harness Flow 20260312T114029287Z",
+    "description": "Harness flow created through pp flow deploy create-if-missing for add-flow coverage.",
+    "category": 5,
+    "workflowMetadata": {
+      "type": 1,
+      "mode": 0,
+      "onDemand": false,
+      "primaryEntity": "none"
+    },
+    "stateCode": 0,
+    "statusCode": 1,
+    "uniqueName": "cr0b1_PPHarnessFlow_20260312T114029287Z",
+    "environmentVariables": [
+      "pp_HarnessApiUrl114029"
+    ]
+  },
+  "definition": {
+    "triggers": {
+      "Manual": {
+        "type": "Request"
+      }
+    },
+    "actions": {
+      "ComposeHarnessUrl": {
+        "type": "Compose",
+        "inputs": {
+          "flowUrl": "@{environmentVariables('pp_HarnessApiUrl114029')}",
+          "runId": "20260312T114029287Z",
+          "solution": "ppHarness20260312T114029287ZShell"
+        }
+      }
+    }
+  },
+  "clientData": {
+    "schemaVersion": 1
+  }
+}

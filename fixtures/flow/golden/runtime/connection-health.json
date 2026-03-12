@@ -1,7 +1,11 @@
 {
   "connectionReferences": [
     {
-      "diagnostics": [],
+      "diagnostics": [
+        "Connection reference shared_office365 was inferred from embedded flow metadata because no Dataverse connection reference row was visible in scope.",
+        "Connection reference shared_office365 does not declare a connector id.",
+        "Connection reference shared_office365 has no active connection binding."
+      ],
       "name": "shared_office365",
       "recentFailures": 2,
       "sourceNodes": [
@@ -88,7 +92,8 @@
     ],
     "stateCode": 1,
     "statusCode": 2,
-    "uniqueName": "crd_InvoiceSync"
+    "uniqueName": "crd_InvoiceSync",
+    "workflowState": "activated"
   },
   "sourceDefinition": {
     "artifactName": "Invoice Sync",

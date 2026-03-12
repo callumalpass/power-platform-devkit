@@ -1,17 +1,8 @@
-{
-  "diagnostics": [],
-  "knownLimitations": [],
-  "provenance": [],
-  "solutions": [
-    {
-      "friendlyname": "Core Solution",
-      "solutionid": "sol-source",
-      "uniquename": "Core",
-      "version": "1.2.0.0"
-    }
-  ],
-  "success": true,
-  "suggestedNextActions": [],
-  "supportTier": "preview",
-  "warnings": []
-}
+[
+  {
+    "friendlyname": "Core Solution",
+    "solutionid": "sol-source",
+    "uniquename": "Core",
+    "version": "1.2.0.0"
+  }
+]

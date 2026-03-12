@@ -15,6 +15,8 @@ import { createMutationPreview, createSuccessPayload, readMutationFlags, type Cl
 import { buildEnvironmentProjectUsageSummary } from './relationship-context';
 
 type OutputFormat = CliOutputFormat;
+const BROWSER_BOOTSTRAP_STALE_AFTER_HOURS = 24;
+const BROWSER_BOOTSTRAP_STALE_AFTER_MS = BROWSER_BOOTSTRAP_STALE_AFTER_HOURS * 60 * 60 * 1000;
 
 interface EnvironmentCommandDependencies {
   positionalArgs(args: string[]): string[];
@@ -570,6 +572,7 @@ function buildEnvironmentInspectMetadata(
     | undefined
 ): Pick<OperationResult<unknown>, 'diagnostics' | 'warnings' | 'supportTier' | 'suggestedNextActions' | 'provenance' | 'knownLimitations'> {
   const profileResourceWarning = buildEnvironmentProfileResourceMismatchWarning(environment, profile);
+  const browserBootstrapRefreshAction = buildEnvironmentBrowserRefreshAction(environment, profile);
 
   return {
     diagnostics: [],
@@ -581,6 +584,7 @@ function buildEnvironmentInspectMetadata(
           ? `Run \`pp auth profile inspect ${profile.name} --format json\` to confirm the auth profile bound to environment alias ${environment.alias}.`
           : `Repair the missing auth profile binding for environment alias ${environment.alias} before using remote Dataverse commands.`,
         `Run \`pp dv whoami --environment ${environment.alias} --format json\` to confirm live Dataverse access for this alias.`,
+        browserBootstrapRefreshAction,
         profileResourceWarning
           ? `Update environment alias ${environment.alias} or auth profile ${profile?.name} so both point at the same Dataverse URL before relying on stored environment provenance.`
           : undefined,
@@ -604,6 +608,17 @@ function buildEnvironmentInspectMetadata(
       'Environment inspect summarizes local pp config and cached browser bootstrap state; it does not prove live Dataverse access on its own.',
     ],
   };
+}
+
+function buildEnvironmentBrowserRefreshAction(environment: EnvironmentAlias, profile: AuthProfile | undefined): string | undefined {
+  if (!profile || profile.type !== 'user' || !profile.browserProfile) {
+    return undefined;
+  }
+
+  return `Run \`pp auth browser-profile bootstrap ${profile.browserProfile} --url '${deriveEnvironmentBrowserBootstrapUrl(environment, {
+    name: profile.browserProfile,
+    kind: 'edge',
+  })}'\` if Maker sign-in prompts reappear or the stored browser bootstrap metadata is stale.`;
 }
 
 function buildEnvironmentProfileResourceMismatchWarning(
@@ -668,6 +683,9 @@ function buildEnvironmentBrowserGuidance(
   const summary = summarizeBrowserProfile(browserProfile);
   const bootstrapUrl = deriveEnvironmentBrowserBootstrapUrl(environment, browserProfile);
   const command = `pp auth browser-profile bootstrap ${browserProfile.name} --url '${bootstrapUrl}'`;
+  const bootstrapAgeMs = readBrowserBootstrapAgeMs(browserProfile.lastBootstrappedAt);
+  const bootstrapAgeHours = bootstrapAgeMs !== undefined ? roundBootstrapAgeHours(bootstrapAgeMs) : undefined;
+  const staleBootstrap = bootstrapAgeMs !== undefined && bootstrapAgeMs >= BROWSER_BOOTSTRAP_STALE_AFTER_MS;
   const targetsMakerEnvironment =
     environment.makerEnvironmentId !== undefined
       ? browserProfileTargetsMakerEnvironment(browserProfile.lastBootstrapUrl, environment.makerEnvironmentId)
@@ -686,8 +704,11 @@ function buildEnvironmentBrowserGuidance(
   }
 
   return {
-    status: browserProfile.lastBootstrappedAt ? 'bootstrapped' : 'needs-bootstrap',
     ...summary,
+    status: !browserProfile.lastBootstrappedAt ? 'needs-bootstrap' : staleBootstrap ? 'stale-bootstrap' : 'bootstrapped',
+    staleBootstrap,
+    staleAfterHours: BROWSER_BOOTSTRAP_STALE_AFTER_HOURS,
+    ...(bootstrapAgeHours !== undefined ? { bootstrapAgeHours } : {}),
     ...(targetsMakerEnvironment !== undefined
       ? {
           targetsMakerEnvironment,
@@ -695,11 +716,30 @@ function buildEnvironmentBrowserGuidance(
           recommendedBootstrapUrl: bootstrapUrl,
         }
       : {}),
-    recommendedAction: browserProfile.lastBootstrappedAt
-      ? `Refresh the browser profile before Maker-critical steps if the stored session is stale or sign-in prompts reappear for ${environment.alias}.`
-      : `Bootstrap the browser profile once before Maker-critical steps for ${environment.alias}.`,
+    recommendedAction: !browserProfile.lastBootstrappedAt
+      ? `Bootstrap the browser profile once before Maker-critical steps for ${environment.alias}.`
+      : staleBootstrap
+        ? `Re-bootstrap the browser profile before Maker-critical steps for ${environment.alias}; the stored Maker session metadata is older than ${BROWSER_BOOTSTRAP_STALE_AFTER_HOURS} hours and may fail with an expired refresh token.`
+        : `Refresh the browser profile before Maker-critical steps if the stored session is stale or sign-in prompts reappear for ${environment.alias}.`,
     bootstrapCommand: command,
   };
+}
+
+function readBrowserBootstrapAgeMs(lastBootstrappedAt: string | undefined): number | undefined {
+  if (!lastBootstrappedAt) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(lastBootstrappedAt);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+
+  return Math.max(0, Date.now() - parsed);
+}
+
+function roundBootstrapAgeHours(ageMs: number): number {
+  return Math.round((ageMs / (60 * 60 * 1000)) * 10) / 10;
 }
 
 function deriveEnvironmentBrowserBootstrapUrl(environment: EnvironmentAlias, browserProfile: BrowserProfile): string {

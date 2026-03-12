@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ok, type OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient, EntityDefinition } from '@pp/dataverse';
 import { SolutionService, type SolutionCommandInvocation, type SolutionCommandResult, type SolutionPublishProgressEvent } from './index';
 
@@ -611,6 +611,7 @@ describe('SolutionService', () => {
             MetadataId: 'entity-1',
             LogicalName: 'account',
             SchemaName: 'Account',
+            IsCustomEntity: false,
             DisplayName: {
               UserLocalizedLabel: {
                 Label: 'Account',
@@ -631,7 +632,12 @@ describe('SolutionService', () => {
         requiredComponentName: 'Account',
         requiredComponentLogicalName: 'account',
         requiredComponentTable: 'account',
+        requiredComponentCustom: false,
         dependentComponentTypeLabel: 'app-module',
+        importRisk: expect.objectContaining({
+          classification: 'expected-external',
+          severity: 'info',
+        }),
       }),
       expect.objectContaining({
         missingRequiredComponent: true,
@@ -639,6 +645,10 @@ describe('SolutionService', () => {
         requiredComponentName: 'Navigation Icon',
         requiredComponentLogicalName: 'pp_/icons/nav.svg',
         dependentComponentName: 'Core',
+        importRisk: expect.objectContaining({
+          classification: 'likely-import-blocker',
+          severity: 'warning',
+        }),
       }),
       expect.objectContaining({
         missingRequiredComponent: true,
@@ -647,8 +657,74 @@ describe('SolutionService', () => {
         dependentComponentTypeLabel: 'canvas-app',
         dependentComponentName: 'Shell App',
         dependentComponentLogicalName: 'ShellApp',
+        importRisk: expect.objectContaining({
+          classification: 'likely-import-blocker',
+          severity: 'warning',
+        }),
       }),
     ]);
+  });
+
+  it('classifies custom-table dependencies as likely import blockers', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        components: [
+          {
+            solutioncomponentid: 'comp-1',
+            objectid: 'canvas-1',
+            componenttype: 300,
+          },
+        ],
+        dependencies: [
+          {
+            dependencyid: 'dep-1',
+            dependentcomponentobjectid: 'canvas-1',
+            dependentcomponenttype: 300,
+            requiredcomponentobjectid: 'entity-custom-1',
+            requiredcomponenttype: 1,
+          },
+        ],
+        canvasApps: [
+          {
+            canvasappid: 'canvas-1',
+            displayname: 'Shell App',
+            name: 'ShellApp',
+          },
+        ],
+        tables: [
+          {
+            MetadataId: 'entity-custom-1',
+            LogicalName: 'pp_project',
+            SchemaName: 'pp_Project',
+            IsCustomEntity: true,
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'PP Project',
+              },
+            },
+          },
+        ],
+      })
+    );
+
+    const result = await service.dependencies('Core');
+
+    expect(result.success).toBe(true);
+    expect(result.data?.[0]).toMatchObject({
+      requiredComponentLogicalName: 'pp_project',
+      requiredComponentCustom: true,
+      importRisk: {
+        classification: 'likely-import-blocker',
+        severity: 'warning',
+        reason: expect.stringContaining('custom Dataverse table'),
+        suggestedAction: expect.stringContaining('Add the custom table to the solution'),
+      },
+    });
   });
 
   it('lists all solution pages and can narrow results by prefix or unique name', async () => {
@@ -810,6 +886,74 @@ describe('SolutionService', () => {
         }),
       ])
     );
+  });
+
+  it('rewrites generic empty-scope warnings when solution inspect misses an exact unique name', async () => {
+    const service = new SolutionService({
+      query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
+        ok((options.table === 'solutions' ? [] : []) as T[], {
+          supportTier: 'preview',
+          warnings: [
+            createDiagnostic(
+              'warning',
+              'DATAVERSE_QUERY_EMPTY_RESULT_AMBIGUOUS_SCOPE',
+              'Dataverse returned no rows for table solutions.',
+              {
+                source: '@pp/dataverse',
+              }
+            ),
+          ],
+        }),
+      queryAll: async <T>(): Promise<OperationResult<T[]>> =>
+        ok([] as T[], {
+          supportTier: 'preview',
+        }),
+    } as unknown as DataverseClient);
+
+    const result = await service.inspect('MissingSolution');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toBeUndefined();
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: 'SOLUTION_NOT_VISIBLE_IN_SCOPE',
+        message: 'Solution MissingSolution was not visible in the current Dataverse scope.',
+        source: '@pp/solution',
+      }),
+    ]);
+  });
+
+  it('fails analyze explicitly when the target solution does not exist', async () => {
+    const service = new SolutionService({
+      query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> =>
+        ok((options.table === 'solutions' ? [] : []) as T[], {
+          supportTier: 'preview',
+        }),
+      queryAll: async <T>(): Promise<OperationResult<T[]>> =>
+        ok([] as T[], {
+          supportTier: 'preview',
+        }),
+    } as unknown as DataverseClient);
+
+    const result = await service.analyze('MissingSolution');
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_NOT_FOUND',
+          message: 'Solution MissingSolution was not found.',
+          source: '@pp/solution',
+        }),
+      ])
+    );
+    expect(result.provenance).toEqual([
+      {
+        kind: 'official-api',
+        source: 'Dataverse solutions',
+      },
+    ]);
+    expect(result.suggestedNextActions?.length ?? 0).toBeGreaterThan(0);
   });
 
   it('analyzes missing config and dependency blockers', async () => {
@@ -1949,8 +2093,14 @@ describe('SolutionService', () => {
           kind: 'workflow-state',
           componentType: 'workflow',
           id: 'flow-1',
+          category: 5,
           logicalName: 'crd_HarnessFlow',
           workflowState: 'draft',
+          remediation: expect.objectContaining({
+            kind: 'inspect-only',
+            mcpMutationAvailable: false,
+            limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
+          }),
         }),
       ],
       exportCheck: {
@@ -1976,7 +2126,7 @@ describe('SolutionService', () => {
       "Run `pp dv query workflows --environment <alias> --filter \"(workflowid eq flow-1 or uniquename eq 'crd_HarnessFlow' or name eq 'Harness Flow')\" --select workflowid,name,uniquename,category,statecode,statuscode --format json` to inspect the raw Dataverse workflow rows for this blocker without relying on unsupported solution scoping."
     );
     expect(result.data?.exportCheck.failure?.suggestedNextActions).toContain(
-      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; current `pp flow activate` in-place remediation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
+      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP `pp.flow.activate`, but current in-place activation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
     );
   });
 
@@ -2053,8 +2203,13 @@ describe('SolutionService', () => {
       },
       blockers: [
         expect.objectContaining({
+          category: 5,
           logicalName: 'crd_HarnessFlow',
           workflowState: 'draft',
+          remediation: expect.objectContaining({
+            kind: 'inspect-only',
+            limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
+          }),
         }),
       ],
       exportCheck: {
@@ -2070,7 +2225,7 @@ describe('SolutionService', () => {
       },
     });
     expect(result.suggestedNextActions).toContain(
-      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; current `pp flow activate` in-place remediation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
+      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP `pp.flow.activate`, but current in-place activation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
     );
   });
 
@@ -2289,20 +2444,20 @@ describe('SolutionService', () => {
     });
   });
 
-  it('suggests the latest visible unmanaged solution when publish targets a missing solution', async () => {
+  it('suggests a related visible unmanaged solution when publish targets a missing solution', async () => {
     const listedSolutions = [
       {
         solutionid: 'sol-1',
-        uniquename: 'ppHarness20260311T180403593ZShell',
-        friendlyname: 'PP Harness 20260311T180403593Z Shell',
-        version: '2026.3.12.1804',
+        uniquename: 'CoreShell',
+        friendlyname: 'Core Shell',
+        version: '1.0.0.0',
         ismanaged: false,
       },
       {
         solutionid: 'sol-2',
-        uniquename: 'ppHarness20260312T022137609ZShell',
-        friendlyname: 'PP Harness 20260312T022137609Z Shell',
-        version: '2026.3.12.0230',
+        uniquename: 'CoreShell20260312T022137609Z',
+        friendlyname: 'Core Shell 20260312T022137609Z',
+        version: '1.0.1.0',
         ismanaged: false,
       },
     ];
@@ -2333,7 +2488,67 @@ describe('SolutionService', () => {
         code: 'SOLUTION_NOT_FOUND',
       })
     );
-    expect((result.suggestedNextActions ?? []).join('\n')).toContain('ppHarness20260312T022137609ZShell');
+    expect((result.suggestedNextActions ?? []).join('\n')).toContain('CoreShell');
+  });
+
+  it('prefers create-or-import guidance over unrelated visible solutions when sync-status targets a missing solution', async () => {
+    const baseClient = createStubClient({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Cr11105',
+        friendlyname: 'Default Solution',
+        version: '1.0.0.0',
+        ismanaged: false,
+      },
+      solutions: [
+        {
+          solutionid: 'sol-1',
+          uniquename: 'Cr11105',
+          friendlyname: 'Default Solution',
+          version: '1.0.0.0',
+          ismanaged: false,
+        },
+      ],
+      publishers: [
+        {
+          publisherid: 'pub-1',
+          uniquename: 'DefaultPublisher',
+          friendlyname: 'Default Publisher',
+        },
+      ],
+      components: [],
+      dependencies: [],
+    });
+    const service = new SolutionService({
+      ...baseClient,
+      query: async <T>(options: { table: string; filter?: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'solutions' && options.filter?.includes("uniquename eq 'Core'")) {
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+        }
+
+        return baseClient.query(options);
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.syncStatus('Core');
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_NOT_FOUND',
+      })
+    );
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('If Core has not been created or imported into this environment yet'),
+        'Run `pp solution publishers --environment <alias> --format json` to choose a safe publisher before creating Core.',
+        'Retry with `pp solution create Core --environment <alias> --publisher-unique-name DefaultPublisher`.',
+        'If Core should come from a package artifact instead of a new shell, import that solution into this environment before retrying publish or sync-status.',
+      ])
+    );
+    expect((result.suggestedNextActions ?? []).join('\n')).not.toContain('Cr11105');
   });
 
   it('enriches solution table components with logical names and entity set names', async () => {
@@ -2508,7 +2723,7 @@ describe('SolutionService', () => {
       "Run `pp dv query workflows --environment <alias> --filter \"(workflowid eq flow-1 or uniquename eq 'crd_HarnessFlow' or name eq 'Harness Flow')\" --select workflowid,name,uniquename,category,statecode,statuscode --format json` to inspect the raw Dataverse workflow rows for this blocker without relying on unsupported solution scoping."
     );
     expect(result.suggestedNextActions).toContain(
-      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; current `pp flow activate` in-place remediation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
+      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP `pp.flow.activate`, but current in-place activation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
     );
   });
 
@@ -2711,6 +2926,45 @@ describe('SolutionService', () => {
     expect(unpackResult.data?.unpackedRoot.path).toBe(unpackDir);
   });
 
+  it('infers the unpack package type from archive metadata when the caller leaves it unspecified', async () => {
+    const tempDir = await createTempDir();
+    const packagePath = join(tempDir, 'Core_unmanaged.zip');
+    const unpackDir = join(tempDir, 'unpacked');
+    await createSolutionArchive(packagePath, false);
+
+    const runner = createStubCommandRunner(async (invocation) => {
+      if (invocation.args[1] === 'unpack') {
+        await mkdir(unpackDir, { recursive: true });
+        await writeFile(join(unpackDir, 'Other.xml'), '<ImportExportXml />', 'utf8');
+      }
+    });
+    const service = new SolutionService(createStubClient({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+      },
+      components: [],
+      dependencies: [],
+    }), {
+      commandRunner: runner,
+    });
+
+    const unpackResult = await service.unpack(packagePath, {
+      outDir: unpackDir,
+      pacExecutable: '/tmp/fake-pac',
+    });
+
+    expect(unpackResult.success).toBe(true);
+    expect(unpackResult.data?.packageType).toBe('unmanaged');
+    expect(runner.invocations).toEqual([
+      {
+        executable: '/tmp/fake-pac',
+        args: ['solution', 'unpack', '--zipfile', packagePath, '--folder', unpackDir, '--packagetype', 'Unmanaged'],
+        cwd: undefined,
+      },
+    ]);
+  });
+
   it('analyzes unpacked local solution artifacts and compares file drift', async () => {
     const tempDir = await createTempDir();
     const sourceDir = join(tempDir, 'source');
@@ -2816,6 +3070,31 @@ describe('SolutionService', () => {
     expect(runner.invocations[0]).toMatchObject({
       executable: '/tmp/fake-pac',
       args: expect.arrayContaining(['solution', 'unpack', '--zipfile', packagePath]),
+    });
+  });
+
+  it('inspects package metadata from the archive when no release manifest is present', async () => {
+    const tempDir = await createTempDir();
+    const packagePath = join(tempDir, 'Core_managed.zip');
+    await createSolutionArchive(packagePath, true);
+
+    const service = new SolutionService(createStubClient({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+      },
+      components: [],
+      dependencies: [],
+    }));
+
+    const result = await service.inspectPackageMetadata(packagePath);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      uniqueName: 'Core',
+      version: '1.2.3.4',
+      packageType: 'managed',
+      source: 'archive',
     });
   });
 });

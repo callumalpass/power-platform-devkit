@@ -9,6 +9,23 @@
     "makerStudio": {
       "inspectCommand": "pp canvas inspect \"Harness Canvas\" --environment fixture --solution Core",
       "recommendedUrl": "https://make.powerapps.com/e/env-123/canvas/?action=edit&app-id=%2Fproviders%2FMicrosoft.PowerApps%2Fapps%2Fcanvas-1&tenantId=tenant-1&hint=user-1"
+    },
+    "runtime": {
+      "bootstrapCommand": "pp auth browser-profile bootstrap fixture-browser --url \"https://apps.powerapps.com/play/e/env-123/a/canvas-1?tenantId=tenant-1&hint=user-1\" --no-wait",
+      "browserProfile": "fixture-browser",
+      "expectedHosts": {
+        "authRedirect": "login.microsoftonline.com",
+        "makerStudio": "make.powerapps.com",
+        "runtime": "apps.powerapps.com"
+      },
+      "inspectCommand": "pp canvas inspect \"Harness Canvas\" --environment fixture --solution Core --format json",
+      "makerStudioUrl": "https://make.powerapps.com/e/env-123/canvas/?action=edit&app-id=%2Fproviders%2FMicrosoft.PowerApps%2Fapps%2Fcanvas-1&tenantId=tenant-1&hint=user-1",
+      "notes": [
+        "Use the play URL for runtime landing checks and compare the final browser host against the expected runtime/auth hosts here.",
+        "If the handoff lands on login.microsoftonline.com instead of the Power Apps runtime host, treat that as an auth redirect rather than a missing app."
+      ],
+      "playUrl": "https://apps.powerapps.com/play/e/env-123/a/canvas-1?tenantId=tenant-1&hint=user-1",
+      "probeCommand": "pp canvas probe \"Harness Canvas\" --environment fixture --solution Core --browser-profile fixture-browser --format json"
     }
   },
   "id": "canvas-1",

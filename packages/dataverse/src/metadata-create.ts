@@ -1,5 +1,6 @@
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
 import { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 const requiredLevelSchema = z.enum(['none', 'recommended', 'applicationRequired', 'systemRequired']).default('none');
 const ownershipTypeSchema = z.enum(['userOwned', 'organizationOwned']).default('userOwned');
@@ -116,6 +117,20 @@ export const columnCreateSpecSchema = z.union([
   fileColumnSchema,
   imageColumnSchema,
 ]);
+
+const columnCreateSchemaByKind = {
+  string: stringColumnSchema,
+  memo: memoColumnSchema,
+  integer: integerColumnSchema,
+  decimal: decimalColumnSchema,
+  money: moneyColumnSchema,
+  datetime: dateTimeColumnSchema,
+  boolean: booleanColumnSchema,
+  autonumber: autoNumberColumnSchema,
+  choice: z.union([localChoiceColumnSchema, globalChoiceColumnSchema]),
+  file: fileColumnSchema,
+  image: imageColumnSchema,
+} as const;
 
 const primaryNameColumnSchema = z.object({
   schemaName: z.string().min(1),
@@ -339,6 +354,7 @@ export const metadataApplyPlanSchema = z.object({
 });
 
 export type RequiredLevel = z.output<typeof requiredLevelSchema>;
+export type ColumnCreateKind = keyof typeof columnCreateSchemaByKind;
 export type TableCreateSpec = z.output<typeof tableCreateSpecSchema>;
 export type ColumnCreateSpec = z.output<typeof columnCreateSpecSchema>;
 export type GlobalOptionSetCreateSpec = z.output<typeof globalOptionSetCreateSpecSchema>;
@@ -353,6 +369,14 @@ export type ManyToManyRelationshipUpdateSpec = z.output<typeof manyToManyRelatio
 export type MetadataApplyOperation = z.output<typeof metadataApplyOperationSchema>;
 export type MetadataApplyPlan = z.output<typeof metadataApplyPlanSchema>;
 
+export interface MetadataContractSchemaOptions {
+  title?: string;
+}
+
+export interface MetadataScaffoldOptions {
+  kind?: ColumnCreateKind;
+}
+
 export interface MetadataBuildOptions {
   languageCode?: number;
 }
@@ -363,6 +387,74 @@ export function parseTableCreateSpec(input: unknown): OperationResult<TableCreat
 
 export function parseColumnCreateSpec(input: unknown): OperationResult<ColumnCreateSpec> {
   return parseSpec(columnCreateSpecSchema, input, 'DATAVERSE_METADATA_COLUMN_SPEC_INVALID', 'Column creation spec is invalid.');
+}
+
+export function listColumnCreateKinds(): ColumnCreateKind[] {
+  return Object.keys(columnCreateSchemaByKind) as ColumnCreateKind[];
+}
+
+export function buildMetadataContractSchema(
+  action: 'create-table' | 'add-column',
+  options: MetadataScaffoldOptions & MetadataContractSchemaOptions = {}
+): OperationResult<Record<string, unknown>> {
+  if (action === 'create-table') {
+    return ok(zodToJsonSchema(tableCreateSpecSchema, options.title ?? 'DataverseCreateTableSpec') as Record<string, unknown>, {
+      supportTier: 'preview',
+    });
+  }
+
+  if (action === 'add-column') {
+    const schema = resolveColumnCreateContractSchema(options.kind);
+
+    if (!schema.success || !schema.data) {
+      return fail(schema.diagnostics);
+    }
+
+    const suffix = options.kind ? `${capitalize(options.kind)}Column` : 'Column';
+    return ok(zodToJsonSchema(schema.data, options.title ?? `DataverseAdd${suffix}Spec`) as Record<string, unknown>, {
+      supportTier: 'preview',
+    });
+  }
+
+  return fail(createDiagnostic('error', 'DATAVERSE_METADATA_SCHEMA_ACTION_UNSUPPORTED', `Unsupported metadata schema action ${action}.`, {
+    source: '@pp/dataverse',
+  }));
+}
+
+export function buildMetadataScaffold(
+  action: 'create-table' | 'add-column',
+  options: MetadataScaffoldOptions = {}
+): OperationResult<Record<string, unknown>> {
+  if (action === 'create-table') {
+    return ok(
+      {
+        schemaName: 'pp_Project',
+        displayName: 'Project',
+        pluralDisplayName: 'Projects',
+        description: 'Tracks a business project.',
+        ownership: 'userOwned',
+        hasActivities: false,
+        hasNotes: true,
+        isActivity: false,
+        primaryName: {
+          schemaName: 'pp_Name',
+          displayName: 'Name',
+          description: 'Primary project name.',
+          maxLength: 100,
+          requiredLevel: 'none',
+        },
+      },
+      { supportTier: 'preview' }
+    );
+  }
+
+  if (action === 'add-column') {
+    return ok(buildColumnScaffold(options.kind), { supportTier: 'preview' });
+  }
+
+  return fail(createDiagnostic('error', 'DATAVERSE_METADATA_INIT_ACTION_UNSUPPORTED', `Unsupported metadata init action ${action}.`, {
+    source: '@pp/dataverse',
+  }));
 }
 
 export function parseGlobalOptionSetCreateSpec(input: unknown): OperationResult<GlobalOptionSetCreateSpec> {
@@ -894,6 +986,150 @@ function parseSpec<TSchema extends z.ZodTypeAny>(
   return ok(result.data, {
     supportTier: 'preview',
   });
+}
+
+function resolveColumnCreateContractSchema(kind: ColumnCreateKind | undefined): OperationResult<z.ZodTypeAny> {
+  if (!kind) {
+    return ok(columnCreateSpecSchema, { supportTier: 'preview' });
+  }
+
+  const schema = columnCreateSchemaByKind[kind];
+  if (!schema) {
+    return fail(
+      createDiagnostic('error', 'DATAVERSE_METADATA_COLUMN_KIND_INVALID', `Unsupported column kind ${kind}.`, {
+        source: '@pp/dataverse',
+        detail: `Use one of: ${listColumnCreateKinds().join(', ')}.`,
+      })
+    );
+  }
+
+  return ok(schema, { supportTier: 'preview' });
+}
+
+function buildColumnScaffold(kind: ColumnCreateKind | undefined): Record<string, unknown> {
+  switch (kind ?? 'string') {
+    case 'memo':
+      return {
+        kind: 'memo',
+        schemaName: 'pp_Notes',
+        displayName: 'Notes',
+        description: 'Stores longer free-form notes.',
+        maxLength: 2000,
+        format: 'textArea',
+        requiredLevel: 'none',
+      };
+    case 'integer':
+      return {
+        kind: 'integer',
+        schemaName: 'pp_EstimateHours',
+        displayName: 'Estimate Hours',
+        description: 'Estimated effort in hours.',
+        minValue: 0,
+        maxValue: 1000,
+        format: 'none',
+        requiredLevel: 'none',
+      };
+    case 'decimal':
+      return {
+        kind: 'decimal',
+        schemaName: 'pp_Progress',
+        displayName: 'Progress',
+        description: 'Percent complete as a decimal value.',
+        minValue: 0,
+        maxValue: 100,
+        precision: 2,
+        requiredLevel: 'none',
+      };
+    case 'money':
+      return {
+        kind: 'money',
+        schemaName: 'pp_Budget',
+        displayName: 'Budget',
+        description: 'Allocated budget amount.',
+        minValue: 0,
+        precision: 2,
+        precisionSource: 1,
+        requiredLevel: 'none',
+      };
+    case 'datetime':
+      return {
+        kind: 'datetime',
+        schemaName: 'pp_TargetDate',
+        displayName: 'Target Date',
+        description: 'Expected delivery date.',
+        format: 'dateOnly',
+        behavior: 'dateOnly',
+        requiredLevel: 'none',
+      };
+    case 'boolean':
+      return {
+        kind: 'boolean',
+        schemaName: 'pp_IsBillable',
+        displayName: 'Is Billable',
+        description: 'Flags whether the item is billable.',
+        defaultValue: false,
+        trueLabel: 'Yes',
+        falseLabel: 'No',
+        requiredLevel: 'none',
+      };
+    case 'autonumber':
+      return {
+        kind: 'autonumber',
+        schemaName: 'pp_ProjectNumber',
+        displayName: 'Project Number',
+        description: 'System-generated project number.',
+        autoNumberFormat: 'PRJ-{SEQNUM:5}',
+        maxLength: 100,
+        requiredLevel: 'none',
+      };
+    case 'choice':
+      return {
+        kind: 'choice',
+        schemaName: 'pp_Status',
+        displayName: 'Status',
+        description: 'Project lifecycle status.',
+        requiredLevel: 'none',
+        options: [
+          { label: 'Planned' },
+          { label: 'Active' },
+          { label: 'Closed' },
+        ],
+      };
+    case 'file':
+      return {
+        kind: 'file',
+        schemaName: 'pp_Specification',
+        displayName: 'Specification',
+        description: 'Attached specification document.',
+        maxSizeInKB: 30720,
+        requiredLevel: 'none',
+      };
+    case 'image':
+      return {
+        kind: 'image',
+        schemaName: 'pp_Thumbnail',
+        displayName: 'Thumbnail',
+        description: 'Primary thumbnail image.',
+        maxSizeInKB: 30720,
+        canStoreFullImage: false,
+        requiredLevel: 'none',
+      };
+    case 'string':
+    default:
+      return {
+        kind: 'string',
+        schemaName: 'pp_ClientCode',
+        displayName: 'Client Code',
+        description: 'External client identifier.',
+        maxLength: 100,
+        format: 'text',
+        requiredLevel: 'none',
+      };
+  }
+}
+
+function capitalize(value: string): string {
+  return value.length === 0 ? value : `${value[0]!.toUpperCase()}${value.slice(1)}`;
 }
 
 function buildBaseColumnPayload(

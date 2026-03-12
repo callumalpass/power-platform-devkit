@@ -12,6 +12,7 @@ interface SmokeSuccessEnvelope {
   data?: unknown;
   results?: unknown;
   runs?: unknown;
+  solutions?: unknown;
   success?: boolean;
 }
 
@@ -230,6 +231,10 @@ function asRecordArray(value: unknown): Array<Record<string, unknown>> {
 
   if (Array.isArray(envelope.runs)) {
     return envelope.runs as Array<Record<string, unknown>>;
+  }
+
+  if (Array.isArray(envelope.solutions)) {
+    return envelope.solutions as Array<Record<string, unknown>>;
   }
 
   return [];

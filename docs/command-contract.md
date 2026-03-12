@@ -29,11 +29,15 @@ singleton object becomes one line.
 
 ## Errors and warnings
 
-Commands still emit primary payloads on stdout and diagnostics on stderr.
+Commands still emit primary payloads on stdout. Diagnostic routing differs today
+by success/failure state.
 
-- machine-oriented formats (`json`, `yaml`, `ndjson`) emit structured
-  diagnostic envelopes on stderr whenever commands surface diagnostics, even if
-  they also emit a primary payload on stdout
+- for successful commands, machine-oriented formats (`json`, `yaml`, `ndjson`)
+  keep the primary payload on stdout and send success-side diagnostics/warnings
+  to stderr when the command does not embed them in the stdout contract
+- for non-zero exits, most machine-oriented commands currently emit the
+  structured failure envelope on stdout and leave stderr empty so callers still
+  receive one parseable machine document
 - human-oriented formats (`table`, `markdown`, `raw`) emit readable diagnostic
   summaries on stderr for the same cases, including `suggestedNextActions`
   when the command can point to a canonical next step
@@ -52,6 +56,9 @@ machine-readable formats:
   single-stream parsers can consume one complete document
 - human-oriented `project inspect` formats still print diagnostic summaries on
   stderr
+- failure-side stdout envelopes are the current general machine-readable
+  behavior, so parser guidance should treat stdout as authoritative on non-zero
+  exits unless a command documents a different exception
 
 ## Result metadata
 

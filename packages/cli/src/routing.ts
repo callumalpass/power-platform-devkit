@@ -59,7 +59,7 @@ export async function dispatchMainCommand(argv: string[], handlers: MainGroupHan
 
   const requestedFormat = readOutputFormat(normalizedArgv, 'json');
 
-  if (!requestedFormat.success) {
+  if (!requestedFormat.success && !allowsCustomOutputFormat(normalizedArgv)) {
     return handlers.printFailureForInvalidFormat(requestedFormat);
   }
 
@@ -67,6 +67,7 @@ export async function dispatchMainCommand(argv: string[], handlers: MainGroupHan
     case 'auth':
       return handlers.runAuth(command, rest);
     case 'env':
+    case 'environment':
       return handlers.runEnvironment(command, rest);
     case 'dv':
       return handlers.runDataverse(command, rest);
@@ -96,4 +97,8 @@ export async function dispatchMainCommand(argv: string[], handlers: MainGroupHan
       cliHelp.printHelp();
       return 1;
   }
+}
+
+function allowsCustomOutputFormat(argv: string[]): boolean {
+  return argv[0] === 'dv' && argv[1] === 'metadata' && argv[2] === 'schema';
 }

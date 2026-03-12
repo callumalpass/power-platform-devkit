@@ -408,6 +408,10 @@ Notes:
 Create metadata from structured spec files:
 
 ```bash
+pp dv metadata schema create-table --format json-schema
+pp dv metadata schema add-column --kind string --format json-schema
+pp dv metadata init create-table
+pp dv metadata init add-column --kind choice
 pp dv metadata apply --env dev --file ./specs/schema.apply.yaml --solution Core
 pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
 pp dv metadata update-table pp_project --env dev --file ./specs/project.table.update.yaml --solution Core
@@ -455,6 +459,8 @@ Normalized inspection defaults:
 Common flags:
 
 - `pp dv metadata --help` now prints the metadata command surface directly instead of requiring a subcommand first
+- `dv metadata schema <create-table|add-column>` emits validator-derived JSON Schema for the selected spec contract
+- `dv metadata init <create-table|add-column>` prints a starter scaffold; `add-column` accepts `--kind`
 - `--file` accepts JSON, YAML, or YML
 - `dv metadata apply --file` accepts a manifest whose `operations` entries point at isolated spec files; `add-column` entries also require `tableLogicalName`
 - `--solution` adds `MSCRM.SolutionUniqueName` to the metadata request
@@ -696,7 +702,7 @@ pp solution publish Core --env dev
 pp solution publish Core --env dev --wait-for-export --out ./artifacts/Core.zip
 ```
 
-`pp solution publish --format json` also returns a `progress` history, `readBack`, a machine-readable `blockers` list, and an `exportCheck` result from one immediate export-backed sync probe so the publish response itself shows whether export readiness was confirmed, timed out after polling, or is still blocked on packaged workflow state.
+`pp solution publish --format json` also returns a `progress` history, `readBack`, a machine-readable `blockers` list, and an `exportCheck` result from one immediate export-backed sync probe so the publish response itself shows whether export readiness was confirmed, timed out after polling, or is still blocked on packaged workflow state. Workflow blockers now also carry remediation metadata so modern-flow blockers can say explicitly that MCP and CLI share the same bounded activation route, while making the remaining `FLOW_ACTIVATE_DEFINITION_REQUIRED` limitation explicit when Dataverse still rejects that path.
 
 Inspect solution inventory and preflight facts:
 
@@ -724,7 +730,7 @@ Current solution output includes:
 - `publisher.customizationprefix`
 - `publisher.customizationoptionvalueprefix`
 - normalized component inventory
-- dependency edges with missing-required-component flags
+- dependency edges with missing-required-component flags plus import-risk classification (`resolved`, `expected-external`, `likely-import-blocker`, or `review-required`)
 - connection-reference validation failures
 - environment variables with missing effective values
 - source/target drift summaries for compare output
@@ -772,7 +778,7 @@ Implemented today:
 - solution publish through the Dataverse `PublishAllXml` action, with an optional export-backed synchronization checkpoint and structured progress history in machine-readable output
 - solution export through the Dataverse `ExportSolution` action with `pp` release manifests
 - solution import through the Dataverse `ImportSolution` action with structured retry guidance
-- target-aware `pp solution import --plan`, which reads the adjacent release manifest plus live target solution state to surface managed/unmanaged and same-version promotion diagnostics before mutating
+- target-aware `pp solution import --plan`, which reads the adjacent release manifest when present and otherwise falls back to solution package metadata before combining that with live target solution state to surface managed/unmanaged and same-version promotion diagnostics before mutating
 - typed Dataverse action, function, and `$batch` invocation helpers plus CLI commands
 - local solution pack and unpack orchestration through `pac solution pack|unpack`
 - Dataverse `WhoAmI`

@@ -1,17 +1,18 @@
-import { spawn } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
 import {
+  type AssetAccessReport,
   CanvasAppService,
   type CanvasAppAttachResult,
   type CanvasAppSummary as DataverseCanvasAppSummary,
   type DataverseClient,
 } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type OperationResult, type ProvenanceClass } from '@pp/diagnostics';
-import { SolutionService } from '@pp/solution';
+import { SolutionService, type SolutionComponentSummary, type SolutionDependencySummary } from '@pp/solution';
 import { buildCanvasMsappFromUnpackedSource } from './msapp-build';
+import { createZipArchive, extractCanvasMsappArchive, extractZipArchive, extractZipEntry, listZipEntries, mergeDiagnosticLists } from './archive';
 import type {
   CanvasBuildMode,
   CanvasBuildResult,
@@ -233,7 +234,6 @@ export type CanvasAppSummary = DataverseCanvasAppSummary & {
   inSolution?: boolean;
 };
 
-const CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT_MS = 30_000;
 const CANVAS_REMOTE_PROGRESS_HEARTBEAT_MS = 10_000;
 
 export interface CanvasRemoteDownloadResult {
@@ -247,7 +247,23 @@ export interface CanvasRemoteDownloadResult {
   solutionResolution: CanvasRemoteDownloadResolution;
 }
 
-export type CanvasRemoteAttachResult = CanvasAppAttachResult;
+export interface CanvasRemoteAttachImpact {
+  addedComponents: SolutionComponentSummary[];
+  addedRequiredComponents: SolutionComponentSummary[];
+  missingDependencies: SolutionDependencySummary[];
+  summary: {
+    componentCountBefore: number;
+    componentCountAfter: number;
+    addedComponentCount: number;
+    addedRequiredComponentCount: number;
+    missingDependencyCount: number;
+  };
+}
+
+export interface CanvasRemoteAttachResult extends CanvasAppAttachResult {
+  solutionImpact?: CanvasRemoteAttachImpact;
+}
+
 export interface CanvasRemoteImportResult {
   app: CanvasAppSummary;
   solutionUniqueName: string;
@@ -495,6 +511,47 @@ export class CanvasService {
       supportTier: 'preview',
       diagnostics: apps.diagnostics,
       warnings: apps.warnings,
+    });
+  }
+
+  async accessRemote(
+    identifier: string,
+    options: {
+      solutionUniqueName?: string;
+    } = {}
+  ): Promise<OperationResult<AssetAccessReport | undefined>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote canvas access inspection.', {
+          source: '@pp/canvas',
+        })
+      );
+    }
+
+    const app = await this.inspectRemote(identifier, options);
+
+    if (!app.success) {
+      return app as unknown as OperationResult<AssetAccessReport | undefined>;
+    }
+
+    if (!app.data) {
+      return ok(undefined, {
+        supportTier: 'preview',
+        diagnostics: app.diagnostics,
+        warnings: app.warnings,
+      });
+    }
+
+    const access = await new CanvasAppService(this.dataverseClient).access(app.data.id);
+
+    if (!access.success) {
+      return access as unknown as OperationResult<AssetAccessReport | undefined>;
+    }
+
+    return ok(access.data, {
+      supportTier: access.supportTier,
+      diagnostics: mergeDiagnosticLists(app.diagnostics, access.diagnostics),
+      warnings: mergeDiagnosticLists(app.warnings, access.warnings),
     });
   }
 
@@ -778,7 +835,7 @@ export class CanvasService {
           stage: 'extract-source',
           detail: `Extracting ${outPath} into ${resolve(options.extractToDirectory)}.`,
         });
-        const extracted = await extractCanvasArchive(outPath, resolve(options.extractToDirectory));
+        const extracted = await extractCanvasMsappArchive(outPath, resolve(options.extractToDirectory));
 
         if (!extracted.success || !extracted.data) {
           return extracted as unknown as OperationResult<CanvasRemoteDownloadResult>;
@@ -907,9 +964,83 @@ export class CanvasService {
       );
     }
 
-    return new CanvasAppService(this.dataverseClient).attachToSolution(identifier, options.solutionUniqueName, {
+    const solutionService = new SolutionService(this.dataverseClient);
+    const beforeComponents = await solutionService.components(options.solutionUniqueName);
+    const attached = await new CanvasAppService(this.dataverseClient).attachToSolution(identifier, options.solutionUniqueName, {
       addRequiredComponents: options.addRequiredComponents,
     });
+
+    if (!attached.success || !attached.data) {
+      return attached as OperationResult<CanvasRemoteAttachResult>;
+    }
+
+    const diagnostics = [...attached.diagnostics];
+    const warnings = [...attached.warnings];
+    const suggestedNextActions = [...(attached.suggestedNextActions ?? [])];
+
+    if (beforeComponents.success) {
+      diagnostics.push(...beforeComponents.diagnostics);
+      warnings.push(...beforeComponents.warnings);
+    }
+
+    const afterComponents = await solutionService.components(options.solutionUniqueName);
+    const afterDependencies = await solutionService.dependencies(options.solutionUniqueName);
+
+    if (!afterComponents.success || !afterDependencies.success || !beforeComponents.success) {
+      const failureDetail = [
+        !beforeComponents.success ? `Pre-attach components: ${beforeComponents.diagnostics.map((item) => item.message).join('; ')}` : undefined,
+        !afterComponents.success ? `Post-attach components: ${afterComponents.diagnostics.map((item) => item.message).join('; ')}` : undefined,
+        !afterDependencies.success ? `Post-attach dependencies: ${afterDependencies.diagnostics.map((item) => item.message).join('; ')}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      return ok(attached.data, {
+        supportTier: attached.supportTier,
+        diagnostics,
+        warnings: [
+          ...warnings,
+          createDiagnostic(
+            'warning',
+            'CANVAS_ATTACH_IMPACT_UNAVAILABLE',
+            `Canvas app ${attached.data.app.displayName ?? attached.data.app.name ?? attached.data.app.id} was attached, but pp could not summarize the resulting solution impact in-band.`,
+            {
+              source: '@pp/canvas',
+              detail: failureDetail || undefined,
+              hint: `Run \`pp solution inspect ${options.solutionUniqueName} --environment <alias> --format json\` or \`pp solution components ${options.solutionUniqueName} --environment <alias> --format json\` for the authoritative post-attach readback.`,
+            }
+          ),
+        ],
+        suggestedNextActions: [
+          ...suggestedNextActions,
+          `Run \`pp solution inspect ${options.solutionUniqueName} --environment <alias> --format json\` to inspect the current post-attach solution state.`,
+        ],
+      });
+    }
+
+    diagnostics.push(...afterComponents.diagnostics, ...afterDependencies.diagnostics);
+    warnings.push(...afterComponents.warnings, ...afterDependencies.warnings);
+
+    const solutionImpact = buildCanvasAttachImpact(attached.data.app.id, beforeComponents.data ?? [], afterComponents.data ?? [], afterDependencies.data ?? []);
+
+    if (solutionImpact.summary.missingDependencyCount > 0) {
+      suggestedNextActions.push(
+        `Review \`pp solution inspect ${options.solutionUniqueName} --environment <alias> --format json\` to resolve the ${solutionImpact.summary.missingDependencyCount} missing dependenc${solutionImpact.summary.missingDependencyCount === 1 ? 'y' : 'ies'} still present after attach.`
+      );
+    }
+
+    return ok(
+      {
+        ...attached.data,
+        solutionImpact,
+      },
+      {
+        supportTier: attached.supportTier,
+        diagnostics,
+        warnings,
+        suggestedNextActions: suggestedNextActions.length > 0 ? uniqueSorted(suggestedNextActions) : undefined,
+      }
+    );
   }
 
   async importRemote(
@@ -1199,6 +1330,35 @@ export class CanvasService {
   }
 }
 
+function buildCanvasAttachImpact(
+  attachedAppId: string,
+  beforeComponents: SolutionComponentSummary[],
+  afterComponents: SolutionComponentSummary[],
+  dependencies: SolutionDependencySummary[]
+): CanvasRemoteAttachImpact {
+  const beforeKeys = new Set(beforeComponents.map((component) => solutionComponentKey(component)));
+  const addedComponents = afterComponents.filter((component) => !beforeKeys.has(solutionComponentKey(component)));
+  const addedRequiredComponents = addedComponents.filter((component) => component.objectId !== attachedAppId);
+  const missingDependencies = dependencies.filter((dependency) => dependency.missingRequiredComponent);
+
+  return {
+    addedComponents,
+    addedRequiredComponents,
+    missingDependencies,
+    summary: {
+      componentCountBefore: beforeComponents.length,
+      componentCountAfter: afterComponents.length,
+      addedComponentCount: addedComponents.length,
+      addedRequiredComponentCount: addedRequiredComponents.length,
+      missingDependencyCount: missingDependencies.length,
+    },
+  };
+}
+
+function solutionComponentKey(component: SolutionComponentSummary): string {
+  return `${component.componentType ?? 'unknown'}:${component.objectId ?? component.id}`;
+}
+
 function defaultCanvasDownloadBaseName(app: CanvasAppSummary): string {
   return sanitizeCanvasArtifactName(app.displayName ?? app.name ?? app.id);
 }
@@ -1212,16 +1372,20 @@ function buildCanvasRemoteProofCheck(
   const actualValue = control?.properties[expectation.property];
   const sourceActualValueText = actualValue === undefined ? undefined : formatCanvasProofValue(actualValue);
   const actualValueText = harvestedActualValueText ?? sourceActualValueText;
+  const normalizedExpectedValueText = normalizeCanvasProofFormulaText(expectation.expectedValue);
+  const normalizedSourceActualValueText = normalizeCanvasProofFormulaText(sourceActualValueText);
+  const normalizedHarvestedActualValueText = normalizeCanvasProofFormulaText(harvestedActualValueText);
+  const normalizedActualValueText = normalizeCanvasProofFormulaText(actualValueText);
   const conflict =
     harvestedActualValueText !== undefined &&
     sourceActualValueText !== undefined &&
-    harvestedActualValueText !== sourceActualValueText;
+    normalizedHarvestedActualValueText !== normalizedSourceActualValueText;
 
   return {
     controlPath: expectation.controlPath,
     property: expectation.property,
     found: actualValueText !== undefined,
-    matched: actualValueText === expectation.expectedValue,
+    matched: normalizedActualValueText === normalizedExpectedValueText,
     expectedValue: expectation.expectedValue,
     actualValue: harvestedActualValueText !== undefined ? harvestedActualValueText : actualValue,
     actualValueText,
@@ -1280,6 +1444,19 @@ function buildCanvasRemoteProofConflictDiagnostics(expectations: CanvasRemotePro
 
 function formatCanvasProofValue(value: CanvasJsonValue): string {
   return typeof value === 'string' ? value : stableStringify(value as Parameters<typeof stableStringify>[0]);
+}
+
+function normalizeCanvasProofFormulaText(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return trimmed;
+  }
+
+  return trimmed.startsWith('=') ? trimmed : `=${trimmed}`;
 }
 
 function buildCanvasProofKey(controlPath: string, property: string): string {
@@ -1410,272 +1587,6 @@ function normalizeCanvasArtifactToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagnostic[] {
-  return lists.flatMap((list) => list ?? []);
-}
-
-async function extractCanvasArchive(
-  packagePath: string,
-  outPath: string
-): Promise<OperationResult<{ outPath: string; entries: string[] }>> {
-  const listedEntries = await listZipEntries(packagePath);
-
-  if (!listedEntries.success || !listedEntries.data) {
-    return listedEntries as unknown as OperationResult<{ outPath: string; entries: string[] }>;
-  }
-
-  const rawExtractRoot = await mkdtemp(join(tmpdir(), 'pp-canvas-extract-'));
-
-  try {
-    const extractedArchive = await extractZipArchive(packagePath, rawExtractRoot);
-
-    if (!extractedArchive.success) {
-      return extractedArchive as unknown as OperationResult<{ outPath: string; entries: string[] }>;
-    }
-
-    await mkdir(outPath, { recursive: true });
-
-    const normalizedEntries = new Map<string, string>();
-    const extractedEntries: string[] = [];
-
-    for (const entry of listedEntries.data) {
-      const normalizedEntry = normalizeCanvasArchiveEntryPath(entry);
-
-      if (!normalizedEntry.success || normalizedEntry.data === undefined) {
-        return normalizedEntry as unknown as OperationResult<{ outPath: string; entries: string[] }>;
-      }
-
-      if (!normalizedEntry.data) {
-        continue;
-      }
-
-      const existingEntry = normalizedEntries.get(normalizedEntry.data);
-
-      if (existingEntry) {
-        return fail(
-          createDiagnostic(
-            'error',
-            'CANVAS_ARCHIVE_EXTRACT_PATH_COLLISION',
-            `Canvas archive entries ${existingEntry} and ${entry} normalize to the same extracted path ${normalizedEntry.data}.`,
-            {
-              source: '@pp/canvas',
-              path: packagePath,
-            }
-          ),
-          {
-            supportTier: 'preview',
-          }
-        );
-      }
-
-      normalizedEntries.set(normalizedEntry.data, entry);
-
-      const sourcePath = join(rawExtractRoot, entry.replace(/^\/+/, ''));
-      const targetPath = join(outPath, ...normalizedEntry.data.split('/'));
-      await mkdir(dirname(targetPath), { recursive: true });
-      await writeFile(targetPath, await readFile(sourcePath));
-      extractedEntries.push(normalizedEntry.data);
-    }
-
-    return ok(
-      {
-        outPath,
-        entries: [...extractedEntries].sort((left, right) => left.localeCompare(right)),
-      },
-      {
-        supportTier: 'preview',
-      }
-    );
-  } finally {
-    await rm(rawExtractRoot, { recursive: true, force: true });
-  }
-}
-
-export async function extractCanvasMsappArchive(
-  packagePath: string,
-  outPath: string
-): Promise<OperationResult<{ outPath: string; entries: string[] }>> {
-  return extractCanvasArchive(packagePath, outPath);
-}
-
-function normalizeCanvasArchiveEntryPath(entry: string): OperationResult<string> {
-  const normalized = entry.replaceAll('\\', '/').replace(/^\/+/, '').trim();
-
-  if (!normalized || normalized.endsWith('/')) {
-    return ok('', {
-      supportTier: 'preview',
-    });
-  }
-
-  const segments = normalized.split('/').filter((segment) => segment.length > 0);
-
-  if (segments.some((segment) => segment === '.' || segment === '..')) {
-    return fail(
-      createDiagnostic('error', 'CANVAS_ARCHIVE_ENTRY_PATH_INVALID', `Canvas archive entry ${entry} resolves outside the target directory.`, {
-        source: '@pp/canvas',
-        hint: 'Use an archive with portable relative entry names.',
-      }),
-      {
-        supportTier: 'preview',
-      }
-    );
-  }
-
-  return ok(segments.join('/'), {
-    supportTier: 'preview',
-  });
-}
-
-async function listZipEntries(packagePath: string): Promise<OperationResult<string[]>> {
-  const result = await runCommand('unzip', ['-Z1', packagePath]);
-
-  if (!result.success || result.data === undefined) {
-    return result as unknown as OperationResult<string[]>;
-  }
-
-  return ok(
-    result.data
-      .toString('utf8')
-      .split(/\r?\n/)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0),
-    {
-      supportTier: 'preview',
-      diagnostics: result.diagnostics,
-      warnings: result.warnings,
-    }
-  );
-}
-
-async function extractZipEntry(packagePath: string, entry: string): Promise<OperationResult<Buffer>> {
-  const result = await runCommand('unzip', ['-p', packagePath, entry]);
-
-  if (!result.success || result.data === undefined) {
-    return result as unknown as OperationResult<Buffer>;
-  }
-
-  return ok(result.data, {
-    supportTier: 'preview',
-    diagnostics: result.diagnostics,
-    warnings: result.warnings,
-  });
-}
-
-async function extractZipArchive(packagePath: string, outPath: string): Promise<OperationResult<undefined>> {
-  const result = await runCommand('unzip', ['-qq', packagePath, '-d', outPath]);
-
-  if (!result.success) {
-    return result as unknown as OperationResult<undefined>;
-  }
-
-  return ok(undefined, {
-    supportTier: 'preview',
-    diagnostics: result.diagnostics,
-    warnings: result.warnings,
-  });
-}
-
-async function createZipArchive(sourceDir: string, outPath: string): Promise<OperationResult<undefined>> {
-  const result = await runCommand('zip', ['-rqX', outPath, '.'], {
-    cwd: sourceDir,
-  });
-
-  if (!result.success) {
-    return result as unknown as OperationResult<undefined>;
-  }
-
-  return ok(undefined, {
-    supportTier: 'preview',
-    diagnostics: result.diagnostics,
-    warnings: result.warnings,
-  });
-}
-
-async function runCommand(command: string, args: string[], options: { cwd?: string } = {}): Promise<OperationResult<Buffer>> {
-  return new Promise((resolvePromise) => {
-    let settled = false;
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    const timeout = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      child.kill('SIGKILL');
-      resolvePromise(
-        fail(
-          createDiagnostic(
-            'error',
-            'CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT',
-            `${command} timed out after ${CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT_MS}ms.`,
-            {
-              source: '@pp/canvas',
-              hint: `Command: ${command} ${args.join(' ')}`.trim(),
-            }
-          ),
-          {
-            supportTier: 'preview',
-          }
-        )
-      );
-    }, CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT_MS);
-
-    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-    child.on('error', (error) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeout);
-      resolvePromise(
-        fail(
-          createDiagnostic('error', 'CANVAS_REMOTE_ZIP_TOOL_UNAVAILABLE', `Failed to execute ${command}.`, {
-            source: '@pp/canvas',
-            hint: error instanceof Error ? error.message : 'Install unzip and retry.',
-          }),
-          {
-            supportTier: 'preview',
-          }
-        )
-      );
-    });
-    child.on('close', (code) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeout);
-      if (code !== 0) {
-        resolvePromise(
-          fail(
-            createDiagnostic('error', 'CANVAS_REMOTE_ZIP_COMMAND_FAILED', `${command} exited with code ${code ?? 'unknown'}.`, {
-              source: '@pp/canvas',
-              hint: stderr.length > 0 ? Buffer.concat(stderr).toString('utf8').trim() : undefined,
-            }),
-            {
-              supportTier: 'preview',
-            }
-          )
-        );
-        return;
-      }
-
-      resolvePromise(
-        ok(Buffer.concat(stdout), {
-          supportTier: 'preview',
-        })
-      );
-    });
-  });
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -2230,6 +2141,7 @@ export async function validateCanvasApp(
     supportTier: 'preview',
     diagnostics: prepared.data.diagnostics,
     warnings: prepared.data.warnings,
+    suggestedNextActions: prepared.suggestedNextActions,
   });
 }
 
@@ -2305,6 +2217,7 @@ export async function buildCanvasApp(
         },
         supportTier: 'preview',
         warnings: prepared.data.warnings,
+        suggestedNextActions: buildCanvasTemplateResolutionNextActions(prepared.data.source, prepared.data.report.mode),
       }
     );
   }
@@ -2788,6 +2701,51 @@ function diffLoadedCanvasRegistries(
 
 function formatTemplateKey(templateName: string, templateVersion: string): string {
   return `${templateName}@${templateVersion}`;
+}
+
+function buildCanvasTemplateResolutionHint(source: CanvasSourceModel, mode: CanvasBuildMode): string {
+  if (source.kind === 'json-manifest' && source.seedRegistryPath) {
+    return `Inspect ${basename(source.seedRegistryPath)} to confirm it includes every required control template, or retry with --mode seeded if formula-only validation is sufficient for this legacy manifest.`;
+  }
+
+  if (source.kind === 'pa-yaml-unpacked') {
+    return mode === 'registry'
+      ? 'Add a matching pinned registry with --registry or pp.config.* templateRegistries because registry mode ignores embedded References/Templates.json payloads.'
+      : 'Confirm the unpacked app still includes References/Templates.json or add a matching pinned registry with --registry or pp.config.* templateRegistries.';
+  }
+
+  return 'Provide seeded metadata or load a matching template registry with --registry or pp.config.* templateRegistries.';
+}
+
+function buildCanvasTemplateResolutionNextActions(source: CanvasSourceModel, mode: CanvasBuildMode): string[] {
+  const manifestArg = source.root;
+  const actions = [
+    `Run \`pp canvas inspect ${manifestArg} --mode ${mode} --format json\` to review the resolved registry stack and missing template requirements.`,
+  ];
+
+  if (source.kind === 'json-manifest' && source.seedRegistryPath) {
+    actions.push(
+      `Review \`${source.seedRegistryPath}\` and add the missing control templates before retrying strict mode.`,
+      `If formula-only coverage is acceptable for this legacy manifest, retry with \`pp canvas validate ${manifestArg} --mode seeded --format json\`.`
+    );
+  } else {
+    actions.push(`Add a pinned registry with \`--registry <file>\` or \`templateRegistries\` in \`pp.config.*\`, then rerun the canvas command.`);
+  }
+
+  if (source.kind === 'pa-yaml-unpacked' && mode !== 'registry') {
+    actions.push('Confirm the unpacked source still contains `References/Templates.json`; strict mode can auto-consume that embedded registry.');
+  }
+
+  return uniqueSorted(actions);
+}
+
+function buildCanvasUnsupportedTemplateDetail(issue: CanvasTemplateUsageIssue, nextActions: string[]): string | undefined {
+  const details = [
+    issue.modes.length > 0 ? `Supported modes: ${issue.modes.join(', ')}` : 'No supported modes were declared.',
+    nextActions[0],
+  ];
+
+  return details.join(' ');
 }
 
 function uniqueSorted(values: Array<string | undefined>): string[] {
@@ -3373,6 +3331,8 @@ async function prepareCanvasValidation(
   const invalidPropertyChecks = propertyChecks.filter((property) => !property.valid);
   const unresolvedTemplates = collectUnresolvedTemplateIssues(source.data, templateRequirements);
   const unsupportedTemplates = collectUnsupportedTemplateIssues(source.data, templateRequirements, mode);
+  const templateResolutionHint = buildCanvasTemplateResolutionHint(source.data, mode);
+  const templateResolutionNextActions = buildCanvasTemplateResolutionNextActions(source.data, mode);
   const diagnostics = [
     ...source.diagnostics,
     ...seeded.diagnostics,
@@ -3395,10 +3355,12 @@ async function prepareCanvasValidation(
         createDiagnostic(
           'error',
           'CANVAS_CONTROL_PROPERTY_INVALID',
-          `Property ${property.property} is not valid for ${property.templateName}@${property.templateVersion} on ${property.controlPath}.`,
+          property.reason
+            ? `Property ${property.property} is not valid for ${property.templateName}@${property.templateVersion} on ${property.controlPath}: ${property.reason}`
+            : `Property ${property.property} is not valid for ${property.templateName}@${property.templateVersion} on ${property.controlPath}.`,
           {
             source: '@pp/canvas',
-            detail: property.source ? `Validated from ${property.source}.` : undefined,
+            detail: [property.source ? `Validated from ${property.source}.` : undefined, property.reason].filter(Boolean).join(' '),
           }
         )
       ),
@@ -3409,7 +3371,7 @@ async function prepareCanvasValidation(
         `Template metadata for ${issue.templateName}@${issue.templateVersion} was not resolved for ${issue.controlPath}.`,
         {
           source: '@pp/canvas',
-          hint: 'Provide seeded metadata or load a matching template registry.',
+          hint: templateResolutionHint,
         }
       )
     ),
@@ -3420,7 +3382,7 @@ async function prepareCanvasValidation(
         `Template ${issue.templateName}@${issue.templateVersion} for ${issue.controlPath} is ${issue.status} in ${mode} mode.`,
         {
           source: '@pp/canvas',
-          detail: issue.modes.length > 0 ? `Supported modes: ${issue.modes.join(', ')}` : undefined,
+          detail: buildCanvasUnsupportedTemplateDetail(issue, templateResolutionNextActions),
         }
       )
     ),
@@ -3469,6 +3431,7 @@ async function prepareCanvasValidation(
       supportTier: 'preview',
       diagnostics,
       warnings,
+      suggestedNextActions: templateResolutionNextActions,
     }
   );
 }
@@ -4087,19 +4050,97 @@ function appendPropertyChecks(
       const allowed = new Set(surface.allowedProperties.map((property) => normalizeName(property)));
 
       for (const property of Object.keys(control.properties).sort((left, right) => left.localeCompare(right))) {
+        const propertyValue = control.properties[property];
+        let valid = !surface.strictValidation || allowed.has(normalizeName(property));
+        let reason: string | undefined;
+
+        if (valid) {
+          const expectedLiteralKind = inferExpectedLiteralKind(surface.defaultProperties[property]);
+          const actualLiteralKind = inferActualLiteralKind(propertyValue);
+
+          if (expectedLiteralKind && actualLiteralKind && expectedLiteralKind !== actualLiteralKind) {
+            valid = false;
+            reason = `Expected a ${expectedLiteralKind} literal-compatible expression but found a ${actualLiteralKind} literal.`;
+          }
+        }
+
         destination.push({
           controlPath: path,
           property,
           templateName: template.templateName,
           templateVersion: template.templateVersion,
-          valid: !surface.strictValidation || allowed.has(normalizeName(property)),
+          valid,
           source: surface.sources.join(', '),
+          ...(reason ? { reason } : {}),
         });
       }
     }
 
     appendPropertyChecks(control.children, path, resolutions, destination);
   }
+}
+
+function inferExpectedLiteralKind(defaultValue: string | undefined): 'boolean' | 'number' | 'string' | undefined {
+  if (!defaultValue) {
+    return undefined;
+  }
+
+  const normalized = defaultValue.trim();
+
+  if (/^-?\d+(?:\.\d+)?$/.test(normalized)) {
+    return 'number';
+  }
+
+  if (/^(true|false)$/i.test(normalized)) {
+    return 'boolean';
+  }
+
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    return 'string';
+  }
+
+  return undefined;
+}
+
+function inferActualLiteralKind(value: CanvasJsonValue | undefined): 'boolean' | 'number' | 'string' | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'number') {
+    return 'number';
+  }
+
+  if (typeof value === 'boolean') {
+    return 'boolean';
+  }
+
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  const expression = normalized.startsWith('=') ? normalized.slice(1).trim() : normalized;
+
+  if (/^-?\d+(?:\.\d+)?$/.test(expression)) {
+    return 'number';
+  }
+
+  if (/^(true|false)$/i.test(expression)) {
+    return 'boolean';
+  }
+
+  if (
+    (expression.startsWith('"') && expression.endsWith('"')) ||
+    (expression.startsWith("'") && expression.endsWith("'"))
+  ) {
+    return 'string';
+  }
+
+  return undefined;
 }
 
 async function validatePowerFxSyntax(expression: string): Promise<boolean> {
@@ -4236,11 +4277,14 @@ function buildCanvasLintDiagnostics(prepared: PreparedCanvasValidation): CanvasL
   for (const property of prepared.invalidPropertyChecks) {
     const control = controlByPath.get(property.controlPath);
     const location = control?.source?.propertySpans?.[property.property];
+    const message = property.reason
+      ? `Property ${property.property} is not valid for ${property.templateName}@${property.templateVersion} on ${property.controlPath}: ${property.reason}`
+      : `Property ${property.property} is not valid for ${property.templateName}@${property.templateVersion} on ${property.controlPath}.`;
     diagnostics.push({
       severity: 'error',
       code: 'CANVAS_CONTROL_PROPERTY_INVALID',
       category: 'property',
-      message: `Property ${property.property} is not valid for ${property.templateName}@${property.templateVersion} on ${property.controlPath}.`,
+      message,
       source: '@pp/canvas',
       path: buildLintPath(property.controlPath, property.property, location),
       controlPath: property.controlPath,
@@ -4249,7 +4293,9 @@ function buildCanvasLintDiagnostics(prepared: PreparedCanvasValidation): CanvasL
       related: [
         {
           kind: 'template',
-          message: property.source ? `Template metadata source: ${property.source}.` : `Template ${property.templateName}@${property.templateVersion}.`,
+          message: [property.source ? `Template metadata source: ${property.source}.` : `Template ${property.templateName}@${property.templateVersion}.`, property.reason]
+            .filter(Boolean)
+            .join(' '),
           path: property.controlPath,
         },
       ],
@@ -4891,6 +4937,7 @@ export {
   type PowerFxAstNode,
 } from './semantic-model';
 export * from './control-catalog';
+export * from './archive';
 export * from './harvest';
 export * from './harvest-fixture';
 export * from './harvest-studio-plan';

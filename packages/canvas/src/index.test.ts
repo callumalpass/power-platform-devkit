@@ -934,6 +934,132 @@ describe('remote canvas app workflows', () => {
     });
   });
 
+  it('summarizes added components and missing dependencies after remote canvas attach', async () => {
+    let attached = false;
+    const service = new CanvasService({
+      query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'solutions') {
+          return ok(
+            [
+              {
+                solutionid: 'sol-1',
+                uniquename: 'Core',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        switch (options.table) {
+          case 'canvasapps':
+            return ok(
+              [
+                {
+                  canvasappid: 'canvas-1',
+                  displayname: 'Harness Canvas',
+                  name: 'crd_HarnessCanvas',
+                },
+              ] as T[],
+              { supportTier: 'preview' }
+            );
+          case 'solutioncomponents':
+            return ok(
+              (attached
+                ? [
+                    { solutioncomponentid: 'comp-canvas', objectid: 'canvas-1', componenttype: 300, _solutionid_value: 'sol-1' },
+                    { solutioncomponentid: 'comp-project', objectid: 'entity-project', componenttype: 1, _solutionid_value: 'sol-1' },
+                    { solutioncomponentid: 'comp-task', objectid: 'entity-task', componenttype: 1, _solutionid_value: 'sol-1' },
+                  ]
+                : [{ solutioncomponentid: 'comp-canvas', objectid: 'canvas-1', componenttype: 300, _solutionid_value: 'sol-1' }]) as T[],
+              { supportTier: 'preview' }
+            );
+          case 'dependencies':
+            return ok(
+              [
+                {
+                  dependencyid: 'dep-1',
+                  dependencytype: 0,
+                  requiredcomponentobjectid: 'entity-account',
+                  requiredcomponenttype: 1,
+                  dependentcomponentobjectid: 'canvas-1',
+                  dependentcomponenttype: 300,
+                },
+              ] as T[],
+              { supportTier: 'preview' }
+            );
+          default:
+            return ok([] as T[], { supportTier: 'preview' });
+        }
+      },
+      listTables: async () =>
+        ok(
+          [
+            { MetadataId: 'entity-project', LogicalName: 'pp_project', SchemaName: 'pp_Project', DisplayName: { UserLocalizedLabel: { Label: 'PP Harness Project' } } },
+            { MetadataId: 'entity-task', LogicalName: 'pp_task', SchemaName: 'pp_Task', DisplayName: { UserLocalizedLabel: { Label: 'PP Harness Task' } } },
+            { MetadataId: 'entity-account', LogicalName: 'account', SchemaName: 'Account', DisplayName: { UserLocalizedLabel: { Label: 'Account' } } },
+          ],
+          { supportTier: 'preview' }
+        ),
+      invokeAction: async () => {
+        attached = true;
+        return ok(
+          {
+            status: 200,
+            headers: {},
+            body: {},
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.attachRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      attached: true,
+      solutionImpact: {
+        summary: {
+          componentCountBefore: 1,
+          componentCountAfter: 3,
+          addedComponentCount: 2,
+          addedRequiredComponentCount: 2,
+          missingDependencyCount: 1,
+        },
+        addedRequiredComponents: [
+          {
+            componentTypeLabel: 'entity',
+            logicalName: 'pp_project',
+            name: 'PP Harness Project',
+          },
+          {
+            componentTypeLabel: 'entity',
+            logicalName: 'pp_task',
+            name: 'PP Harness Task',
+          },
+        ],
+        missingDependencies: [
+          {
+            requiredComponentTypeLabel: 'entity',
+            requiredComponentLogicalName: 'account',
+            requiredComponentName: 'Account',
+            missingRequiredComponent: true,
+          },
+        ],
+      },
+    });
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Review `pp solution inspect Core --environment <alias> --format json` to resolve the 1 missing dependency still present after attach.',
+      ])
+    );
+  });
+
   it('emits a guided mismatch diagnostic for failed remote proof expectations', async () => {
     const dir = await createTempDir();
     const msappRoot = join(dir, 'msapp-source-mismatch');
@@ -1171,6 +1297,152 @@ describe('remote canvas app workflows', () => {
       },
     ]);
     expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_REMOTE_PROOF_SOURCE_CONFLICT',
+        }),
+      ])
+    );
+  });
+
+  it('normalizes harvested control rules that omit the leading equals sign', async () => {
+    const dir = await createTempDir();
+    const msappRoot = join(dir, 'msapp-source-normalized');
+    await mkdir(join(msappRoot, 'Src'), { recursive: true });
+    await mkdir(join(msappRoot, 'References'), { recursive: true });
+    await mkdir(join(msappRoot, 'Controls'), { recursive: true });
+    await writeFile(join(msappRoot, 'Src', 'App.pa.yaml'), 'App:\n  Properties:\n    Theme: =PowerAppsTheme\n', 'utf8');
+    await writeFile(
+      join(msappRoot, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Gallery1:',
+        '          Control: Gallery@2.15.0',
+        '          Properties:',
+        "            Items: ='PP Harness Projects'",
+      ].join('\n') + '\n',
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'Controls', '4.json'),
+      JSON.stringify(
+        {
+          TopParent: {
+            Type: 'ControlInfo',
+            Name: 'Screen1',
+            Template: {
+              Name: 'screen',
+              Version: '1.0',
+            },
+            Children: [
+              {
+                Type: 'ControlInfo',
+                Name: 'Gallery1',
+                Parent: 'Screen1',
+                Template: {
+                  Name: 'Gallery',
+                  Version: '2.15.0',
+                },
+                Rules: [
+                  {
+                    Property: 'Items',
+                    InvariantScript: "'PP Harness Projects'",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'PP Harness Projects',
+              Type: 'Table',
+              DatasetName: 'default.cds',
+              EntityName: 'pph34135_projects',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const msappPath = join(dir, 'Harness Canvas normalized.msapp');
+    await createZip(msappRoot, msappPath);
+
+    const solutionRoot = join(dir, 'solution-normalized');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    await writeSolutionExportMetadata(solutionRoot);
+
+    const solutionZip = join(dir, 'Core-normalized.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.proveRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      expectations: [
+        {
+          controlPath: 'Screen1/Gallery1',
+          property: 'Items',
+          expectedValue: "='PP Harness Projects'",
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.expectations).toMatchObject([
+      {
+        controlPath: 'Screen1/Gallery1',
+        property: 'Items',
+        found: true,
+        matched: true,
+        evidence: 'harvested',
+        sourceActualValueText: "='PP Harness Projects'",
+        harvestedActualValueText: "'PP Harness Projects'",
+        actualValueText: "'PP Harness Projects'",
+        conflict: false,
+      },
+    ]);
+    expect(result.diagnostics).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: 'CANVAS_REMOTE_PROOF_SOURCE_CONFLICT',
@@ -1438,6 +1710,174 @@ describe('canvas app workflows', () => {
     );
   });
 
+  it('adds registry guidance for legacy manifest validation and build failures', async () => {
+    const dir = await createTempDir();
+    const appPath = await writeCanvasApp(dir, {
+      name: 'FormulaCanvas',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'SaveButton',
+              templateName: 'Button',
+              templateVersion: '1.0.0',
+              properties: {
+                TextFormula: '"Save"',
+              },
+            },
+            {
+              name: 'SummaryLabel',
+              templateName: 'Label',
+              templateVersion: '1.0.0',
+              properties: {
+                Text: 'Ready',
+              },
+            },
+          ],
+        },
+      ],
+      seededTemplates: {
+        templates: [
+          {
+            templateName: 'Button',
+            templateVersion: '1.0.0',
+            files: {
+              'Controls/Button.json': {
+                kind: 'button',
+              },
+            },
+            provenance: {
+              kind: 'official-artifact',
+              source: 'FormulaCanvasSeed',
+            },
+          },
+        ],
+        supportMatrix: [
+          {
+            templateName: 'Button',
+            version: '1.*',
+            status: 'supported',
+            modes: ['strict', 'seeded', 'registry'],
+          },
+        ],
+      },
+    });
+
+    const validation = await validateCanvasApp(appPath, {
+      mode: 'strict',
+    });
+    const build = await buildCanvasApp(appPath, {
+      mode: 'strict',
+      outPath: join(dir, 'dist', 'FormulaCanvas.msapp'),
+    });
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_TEMPLATE_METADATA_MISSING',
+          hint: expect.stringContaining('retry with --mode seeded'),
+        }),
+      ])
+    );
+    expect(validation.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('pp canvas inspect'),
+        expect.stringContaining('seed.templates.json'),
+        expect.stringContaining('pp canvas validate'),
+      ])
+    );
+
+    expect(build.success).toBe(false);
+    expect(build.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('pp canvas inspect'),
+        expect.stringContaining('seed.templates.json'),
+        expect.stringContaining('--mode seeded'),
+      ])
+    );
+  });
+
+  it('rejects obvious literal type mismatches for template-backed control properties', async () => {
+    const dir = await createTempDir();
+    const appPath = await writeCanvasApp(dir, {
+      name: 'LiteralMismatchCanvas',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'Title1',
+              templateName: 'Label',
+              templateVersion: '2.5.1',
+              properties: {
+                Text: '= "Ready"',
+                Width: '= "too wide"',
+              },
+            },
+          ],
+        },
+      ],
+      seededTemplates: {
+        templates: [
+          {
+            templateName: 'Label',
+            templateVersion: '2.5.1',
+            files: {
+              'References/Templates.json': {
+                name: 'label',
+                version: '2.5.1',
+                templateXml:
+                  '<widget xmlns:appMagic="http://schemas.microsoft.com/appMagic"><appMagic:includeProperties><appMagic:includeProperty name="Text" defaultValue="&quot;Label&quot;" /><appMagic:includeProperty name="Width" defaultValue="150" /></appMagic:includeProperties></widget>',
+              },
+            },
+            provenance: {
+              kind: 'official-artifact',
+              source: 'LiteralMismatchSeed',
+            },
+          },
+        ],
+        supportMatrix: [
+          {
+            templateName: 'Label',
+            version: '2.*',
+            status: 'supported',
+            modes: ['strict', 'seeded', 'registry'],
+          },
+        ],
+      },
+    });
+
+    const validation = await validateCanvasApp(appPath, {
+      mode: 'strict',
+    });
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.data?.propertyChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          controlPath: 'Home/Title1',
+          property: 'Width',
+          valid: false,
+          reason: 'Expected a number literal-compatible expression but found a string literal.',
+        }),
+      ])
+    );
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_CONTROL_PROPERTY_INVALID',
+          message: expect.stringContaining('Expected a number literal-compatible expression but found a string literal.'),
+        }),
+      ])
+    );
+  });
+
   it('builds a deterministic package and diffs canvas source trees', async () => {
     const dir = await createTempDir();
     const registryPath = join(dir, 'controls.json');
@@ -1557,6 +1997,11 @@ describe('canvas app workflows', () => {
     expect(diff.success).toBe(true);
     expect(diff.data?.appChanged).toBe(true);
     expect(diff.data?.controls).toEqual([
+      {
+        controlPath: 'Home/SaveButton',
+        kind: 'changed',
+        changedProperties: ['properties.TextFormula'],
+      },
       {
         controlPath: 'Home/StatusLabel',
         kind: 'added',

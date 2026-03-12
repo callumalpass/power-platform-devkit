@@ -227,6 +227,44 @@ function createComponentFailureClient(): DataverseClient {
         };
       }
 
+      if (options.table === 'dependencies') {
+        return ok(
+          [
+            {
+              dependencyid: 'dep-1',
+              dependentcomponentobjectid: 'app-1',
+              dependentcomponenttype: 80,
+              requiredcomponentobjectid: 'entity-1',
+              requiredcomponenttype: 1,
+            },
+            {
+              dependencyid: 'dep-2',
+              dependentcomponentobjectid: 'app-1',
+              dependentcomponenttype: 80,
+              requiredcomponentobjectid: 'form-1',
+              requiredcomponenttype: 60,
+            },
+            {
+              dependencyid: 'dep-3',
+              dependentcomponentobjectid: 'app-1',
+              dependentcomponenttype: 80,
+              requiredcomponentobjectid: 'view-1',
+              requiredcomponenttype: 26,
+            },
+            {
+              dependencyid: 'dep-4',
+              dependentcomponentobjectid: 'app-1',
+              dependentcomponenttype: 80,
+              requiredcomponentobjectid: 'sitemap-1',
+              requiredcomponenttype: 62,
+            },
+          ] as T[],
+          {
+            supportTier: 'preview',
+          }
+        );
+      }
+
       return createStubClient().queryAll<T>(options);
     },
   } as DataverseClient;
@@ -247,6 +285,76 @@ describe('ModelService', () => {
       uniqueName: 'SalesHub',
       name: 'Sales Hub',
     });
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'MODEL_LIST_SUMMARY',
+        }),
+      ])
+    );
+    expect(result.provenance).toEqual(
+      expect.arrayContaining([
+        {
+          kind: 'official-api',
+          source: 'Dataverse appmodules',
+        },
+        {
+          kind: 'official-api',
+          source: 'Dataverse solutioncomponents',
+        },
+      ])
+    );
+  });
+
+  it('reports empty model-driven app solution scope explicitly', async () => {
+    const service = new ModelService({
+      query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'solutions') {
+          return ok(
+            [
+              {
+                solutionid: 'sol-1',
+                uniquename: 'Core',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok([] as T[], {
+          supportTier: 'preview',
+        });
+      },
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'appmodules' || options.table === 'solutioncomponents') {
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+        }
+
+        return createStubClient().queryAll<T>(options);
+      },
+    } as DataverseClient);
+
+    const result = await service.list({ solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'MODEL_SCOPE_EMPTY',
+          message: 'No model-driven apps were found in solution Core.',
+        }),
+      ])
+    );
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Run `pp solution inspect Core --environment <alias> --format json` to confirm the solution exists before assuming the scope is empty.',
+      ])
+    );
   });
 
   it('creates and attaches model-driven apps through the domain service', async () => {
@@ -319,7 +427,7 @@ describe('ModelService', () => {
     ]);
   });
 
-  it('returns a partial inspect payload when appmodulecomponents are unavailable', async () => {
+  it('falls back to dependency-derived inspect data when appmodulecomponents are unavailable', async () => {
     const service = new ModelService(createComponentFailureClient());
 
     const result = await service.inspect('Sales Hub', {
@@ -333,11 +441,44 @@ describe('ModelService', () => {
         uniqueName: 'SalesHub',
         name: 'Sales Hub',
       },
-      tables: [],
-      forms: [],
-      views: [],
-      sitemaps: [],
-      dependencies: [],
+      tables: [
+        {
+          logicalName: 'account',
+        },
+      ],
+      forms: [
+        {
+          name: 'Account Main',
+        },
+      ],
+      views: [
+        {
+          name: 'Active Accounts',
+        },
+      ],
+      sitemaps: [
+        {
+          name: 'Sales Hub sitemap',
+        },
+      ],
+      dependencies: [
+        expect.objectContaining({
+          componentTypeLabel: 'table',
+          status: 'resolved',
+        }),
+        expect.objectContaining({
+          componentTypeLabel: 'form',
+          status: 'resolved',
+        }),
+        expect.objectContaining({
+          componentTypeLabel: 'view',
+          status: 'resolved',
+        }),
+        expect.objectContaining({
+          componentTypeLabel: 'sitemap',
+          status: 'resolved',
+        }),
+      ],
       missingComponents: [],
     });
     expect(result.warnings).toEqual(
@@ -345,6 +486,20 @@ describe('ModelService', () => {
         expect.objectContaining({
           code: 'MODEL_COMPONENTS_UNAVAILABLE',
         }),
+        expect.objectContaining({
+          code: 'MODEL_COMPONENTS_INFERRED_FROM_DEPENDENCIES',
+        }),
+      ])
+    );
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('pp model dependencies Sales Hub'),
+        expect.stringContaining('appmodule_appmodulecomponent'),
+      ])
+    );
+    expect(result.knownLimitations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('dependency-derived model composition'),
       ])
     );
   });

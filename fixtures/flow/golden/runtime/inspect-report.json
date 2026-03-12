@@ -54,5 +54,6 @@
   ],
   "stateCode": 1,
   "statusCode": 2,
-  "uniqueName": "crd_InvoiceSync"
+  "uniqueName": "crd_InvoiceSync",
+  "workflowState": "activated"
 }

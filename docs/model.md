@@ -26,6 +26,7 @@ The service queries:
 
 - `appmodules`
 - `appmodulecomponents`
+- `dependencies` as an inferred fallback when `appmodulecomponents` is blocked
 - `systemforms`
 - `savedqueries`
 - `sitemaps`
@@ -39,6 +40,11 @@ That produces:
 - view composition
 - table references
 - dependency summaries with resolved vs missing component state
+
+When tenants reject `appmodule_appmodulecomponent` reads, `pp model inspect`
+now falls back to `dependencies` rows where the model-driven app is the
+dependent component. That recovers sitemap, form, view, and table detail with a
+warning that the composition is inferred rather than direct membership.
 
 ## Output shape
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { realpathSync } from 'node:fs';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -38,7 +38,10 @@ import {
 import {
   CanvasAppService,
   CloudFlowService,
+  buildMetadataContractSchema,
+  buildMetadataScaffold,
   DataverseClient,
+  listColumnCreateKinds,
   parseColumnCreateSpec,
   parseColumnUpdateSpec,
   ConnectionReferenceService,
@@ -63,13 +66,14 @@ import {
   normalizeGlobalOptionSetDefinition,
   normalizeRelationshipDefinition,
   resolveDataverseClient,
+  type ColumnCreateKind,
   type MetadataApplyPlan,
   type AttributeMetadataView,
   type DataverseMetadataSnapshot,
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
 import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } from '@pp/diagnostics';
-import { FlowService, type FlowPatchDocument, type FlowWorkflowStateLabel } from '@pp/flow';
+import { FlowService, type FlowMonitorReport, type FlowPatchDocument, type FlowWorkflowStateLabel } from '@pp/flow';
 import { HttpClient } from '@pp/http';
 import { ModelService, type ModelArtifactMutationKind, type ModelInspectResult } from '@pp/model';
 import { PowerBiClient } from '@pp/powerbi';
@@ -96,6 +100,7 @@ import {
 import { SharePointClient } from '@pp/sharepoint';
 import { SolutionService, type SolutionAnalysis, type SolutionPackageType } from '@pp/solution';
 import { runDelegatedCanvasCreate } from './canvas-create-delegate';
+import { launchPersistentBrowserProfileContext } from './browser-profile-playwright';
 import {
   CLI_PACKAGE_NAME,
   CLI_VERSION,
@@ -123,6 +128,7 @@ import {
   runSharePointGroup,
   runSolutionGroup,
 } from './command-groups';
+import { createTopLevelCommandRunners } from './top-level-command-runners';
 import {
   runInitAnswerCommand,
   runInitCancelCommand,
@@ -227,12 +233,54 @@ const ATTRIBUTE_COMMON_SELECT_FIELDS = [
   'IsValidForAdvancedFind',
   'IsSecured',
 ] as const;
+const ATTRIBUTE_SELECT_TO_NORMALIZED_FIELD = new Map<string, string>([
+  ['LogicalName', 'logicalName'],
+  ['SchemaName', 'schemaName'],
+  ['DisplayName', 'displayName'],
+  ['Description', 'description'],
+  ['EntityLogicalName', 'entityLogicalName'],
+  ['MetadataId', 'metadataId'],
+  ['AttributeType', 'attributeType'],
+  ['AttributeTypeName', 'attributeTypeName'],
+  ['RequiredLevel', 'requiredLevel'],
+  ['IsPrimaryId', 'primaryId'],
+  ['IsPrimaryName', 'primaryName'],
+  ['IsCustomAttribute', 'custom'],
+  ['IsManaged', 'managed'],
+  ['IsLogical', 'logical'],
+  ['IsValidForCreate', 'createable'],
+  ['IsValidForRead', 'readable'],
+  ['IsValidForUpdate', 'updateable'],
+  ['IsFilterable', 'filterable'],
+  ['IsSearchable', 'searchable'],
+  ['IsValidForAdvancedFind', 'advancedFind'],
+  ['IsSecured', 'secured'],
+]);
 const POWER_PLATFORM_ENVIRONMENTS_API_VERSION = '2020-10-01';
+const topLevelCommandRunners = createTopLevelCommandRunners(
+  {
+    outputFormat,
+    positionalArgs,
+    printByFormat,
+    printFailure,
+    renderCompletionScript,
+    cliPackageName: CLI_PACKAGE_NAME,
+    cliVersion: CLI_VERSION,
+  },
+  {
+    runProjectGroup,
+    runAnalysisGroup,
+    runDeployGroup,
+    runDiagnosticsGroup,
+    runSharePointGroup,
+    runPowerBiGroup,
+  }
+);
 
 export async function main(argv: string[]): Promise<number> {
   return dispatchMainCommand(argv, {
-    runVersion,
-    runCompletion,
+    runVersion: topLevelCommandRunners.runVersion,
+    runCompletion: topLevelCommandRunners.runCompletion,
     runDiagnostics,
     runInit,
     runAuth,
@@ -254,7 +302,12 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 async function runProject(command: string | undefined, args: string[]): Promise<number> {
-  return runProjectGroup(command, args, { runProjectInit, runProjectDoctor, runProjectFeedback, runProjectInspect });
+  return topLevelCommandRunners.runProject(command, args, {
+    runProjectInit,
+    runProjectDoctor,
+    runProjectFeedback,
+    runProjectInspect,
+  });
 }
 
 async function runInit(command: string | undefined, args: string[]): Promise<number> {
@@ -268,7 +321,7 @@ async function runInit(command: string | undefined, args: string[]): Promise<num
 }
 
 async function runAnalysis(command: string | undefined, args: string[]): Promise<number> {
-  return runAnalysisGroup(command, args, {
+  return topLevelCommandRunners.runAnalysis(command, args, {
     runAnalysisReport,
     runAnalysisContext,
     runAnalysisPortfolio,
@@ -364,15 +417,15 @@ async function runInitCancel(args: string[]): Promise<number> {
 }
 
 async function runDeploy(command: string | undefined, args: string[]): Promise<number> {
-  return runDeployGroup(command, args, { runDeployPlan, runDeployApply, runDeployRelease });
+  return topLevelCommandRunners.runDeploy(command, args, { runDeployPlan, runDeployApply, runDeployRelease });
 }
 
 async function runDiagnostics(command: string | undefined, args: string[]): Promise<number> {
-  return runDiagnosticsGroup(command, args, { runDiagnosticsDoctor, runDiagnosticsBundle });
+  return topLevelCommandRunners.runDiagnostics(command, args, { runDiagnosticsDoctor, runDiagnosticsBundle });
 }
 
 async function runSharePoint(command: string | undefined, args: string[]): Promise<number> {
-  return runSharePointGroup(command, args, {
+  return topLevelCommandRunners.runSharePoint(command, args, {
     runSharePointSiteInspect,
     runSharePointListInspect,
     runSharePointFileInspect,
@@ -381,50 +434,11 @@ async function runSharePoint(command: string | undefined, args: string[]): Promi
 }
 
 async function runPowerBi(command: string | undefined, args: string[]): Promise<number> {
-  return runPowerBiGroup(command, args, { runPowerBiWorkspaceInspect, runPowerBiDatasetInspect, runPowerBiReportInspect });
-}
-
-async function runVersion(args: string[]): Promise<number> {
-  const format = outputFormat(args, 'json');
-  const payload = {
-    name: 'pp',
-    packageName: CLI_PACKAGE_NAME,
-    version: CLI_VERSION,
-  };
-
-  if (format === 'raw') {
-    process.stdout.write(`${CLI_VERSION}\n`);
-    return 0;
-  }
-
-  printByFormat(payload, format);
-  return 0;
-}
-
-async function runCompletion(args: string[]): Promise<number> {
-  const shell = positionalArgs(args)[0] as 'bash' | 'zsh' | 'fish' | undefined;
-
-  if (!shell || args.includes('--help') || args.includes('help')) {
-    cliHelp.printCompletionHelp();
-    return shell ? 0 : 1;
-  }
-
-  if (shell !== 'bash' && shell !== 'zsh' && shell !== 'fish') {
-    return printFailure(
-      fail(
-        createDiagnostic('error', 'COMPLETION_SHELL_UNSUPPORTED', `Unsupported completion shell ${shell}.`, {
-          source: '@pp/cli',
-          hint: 'Use one of: bash, zsh, fish.',
-        }),
-        {
-          suggestedNextActions: ['pp completion bash', 'pp completion zsh', 'pp completion fish'],
-        }
-      )
-    );
-  }
-
-  process.stdout.write(renderCompletionScript(shell));
-  return 0;
+  return topLevelCommandRunners.runPowerBi(command, args, {
+    runPowerBiWorkspaceInspect,
+    runPowerBiDatasetInspect,
+    runPowerBiReportInspect,
+  });
 }
 
 async function runDiagnosticsDoctor(args: string[]): Promise<number> {
@@ -554,6 +568,7 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
     runCanvasImport,
     runCanvasUnsupportedRemoteMutation,
     runCanvasList,
+    runCanvasProbe,
     runCanvasAccess,
     runCanvasTemplates,
     runCanvasWorkspace,
@@ -2623,7 +2638,7 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'DV_METADATA_ACTION_REQUIRED',
-        'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata option-set <name>`, `dv metadata relationship <schemaName>`, `dv metadata snapshot ...`, `dv metadata diff`, `dv metadata apply`, `dv metadata create-table`, `dv metadata update-table`, `dv metadata add-column`, `dv metadata update-column`, `dv metadata create-option-set`, `dv metadata update-option-set`, `dv metadata create-relationship`, `dv metadata update-relationship`, `dv metadata create-many-to-many`, or `dv metadata create-customer-relationship`.'
+        'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata option-set <name>`, `dv metadata relationship <schemaName>`, `dv metadata snapshot ...`, `dv metadata diff`, `dv metadata schema ...`, `dv metadata init ...`, `dv metadata apply`, `dv metadata create-table`, `dv metadata update-table`, `dv metadata add-column`, `dv metadata update-column`, `dv metadata create-option-set`, `dv metadata update-option-set`, `dv metadata create-relationship`, `dv metadata update-relationship`, `dv metadata create-many-to-many`, or `dv metadata create-customer-relationship`.'
       )
     );
   }
@@ -2658,6 +2673,14 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
 
   if (action === 'diff') {
     return runDataverseMetadataDiff(args);
+  }
+
+  if (action === 'schema') {
+    return runDataverseMetadataSchema(args);
+  }
+
+  if (action === 'init') {
+    return runDataverseMetadataInit(args);
   }
 
   if (action === 'apply') {
@@ -2783,8 +2806,9 @@ async function runDataverseMetadataColumns(args: string[]): Promise<number> {
     return printFailure(view);
   }
 
+  const requestedSelect = readListFlag(args, '--select');
   const result = await resolution.data.client.listColumns(logicalName, {
-    select: view.data === 'raw' ? readListFlag(args, '--select') : mergeUniqueStrings(ATTRIBUTE_COMMON_SELECT_FIELDS, readListFlag(args, '--select')),
+    select: view.data === 'raw' ? requestedSelect : mergeUniqueStrings(ATTRIBUTE_COMMON_SELECT_FIELDS, requestedSelect),
     top: readNumberFlag(args, '--top'),
     filter: readFlag(args, '--filter'),
     expand: view.data === 'raw' ? readListFlag(args, '--expand') : undefined,
@@ -2800,9 +2824,33 @@ async function runDataverseMetadataColumns(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  const payload = view.data === 'raw' ? result.data ?? [] : normalizeAttributeDefinitions(result.data ?? [], 'common');
+  const payload =
+    view.data === 'raw'
+      ? result.data ?? []
+      : projectNormalizedAttributeSelection(normalizeAttributeDefinitions(result.data ?? [], 'common'), requestedSelect);
   printByFormat(payload, outputFormat(args, 'json'));
   return 0;
+}
+
+function projectNormalizedAttributeSelection(
+  attributes: Array<Record<string, unknown>>,
+  requestedSelect: string[] | undefined,
+): Array<Record<string, unknown>> {
+  if (!requestedSelect || requestedSelect.length === 0) {
+    return attributes;
+  }
+
+  const selectedKeys = Array.from(
+    new Set(
+      requestedSelect
+        .map((field) => ATTRIBUTE_SELECT_TO_NORMALIZED_FIELD.get(field) ?? field)
+        .filter((field) => typeof field === 'string' && field.length > 0),
+    ),
+  );
+
+  return attributes.map((attribute) =>
+    Object.fromEntries(selectedKeys.filter((key) => key in attribute).map((key) => [key, attribute[key]])),
+  );
 }
 
 async function runDataverseMetadataColumn(args: string[]): Promise<number> {
@@ -3046,6 +3094,74 @@ async function runDataverseMetadataDiff(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runDataverseMetadataSchema(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const action = positional[1];
+
+  if (action !== 'create-table' && action !== 'add-column') {
+    return printFailure(
+      argumentFailure(
+        'DV_METADATA_SCHEMA_ACTION_REQUIRED',
+        'Usage: dv metadata schema <create-table|add-column> [--kind KIND] [--format json-schema]'
+      )
+    );
+  }
+
+  const schemaFormat = readFlag(args, '--format') ?? 'json-schema';
+  if (schemaFormat !== 'json-schema') {
+    return printFailure(
+      argumentFailure('DV_METADATA_SCHEMA_FORMAT_INVALID', 'dv metadata schema only supports --format json-schema.')
+    );
+  }
+
+  const kind = readMetadataColumnKind(args);
+  if (!kind.success) {
+    return printFailure(kind);
+  }
+
+  if (action === 'create-table' && kind.data) {
+    return printFailure(
+      argumentFailure('DV_METADATA_SCHEMA_KIND_UNSUPPORTED', 'dv metadata schema create-table does not accept --kind.')
+    );
+  }
+
+  const result = buildMetadataContractSchema(action, { kind: kind.data });
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  process.stdout.write(`${JSON.stringify(result.data, null, 2)}\n`);
+  return 0;
+}
+
+async function runDataverseMetadataInit(args: string[]): Promise<number> {
+  const positional = positionalArgs(args);
+  const action = positional[1];
+
+  if (action !== 'create-table' && action !== 'add-column') {
+    return printFailure(
+      argumentFailure('DV_METADATA_INIT_ACTION_REQUIRED', 'Usage: dv metadata init <create-table|add-column> [--kind KIND] [--format json|yaml]')
+    );
+  }
+
+  const kind = readMetadataColumnKind(args);
+  if (!kind.success) {
+    return printFailure(kind);
+  }
+
+  if (action === 'create-table' && kind.data) {
+    return printFailure(argumentFailure('DV_METADATA_INIT_KIND_UNSUPPORTED', 'dv metadata init create-table does not accept --kind.'));
+  }
+
+  const result = buildMetadataScaffold(action, { kind: kind.data });
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'yaml'));
   return 0;
 }
 
@@ -4395,6 +4511,7 @@ async function runCanvasInspect(args: string[]): Promise<number> {
     }
 
     const proofExpectations = expectations.data ?? [];
+    const browserProfileName = resolveBrowserProfileNameFromAuthProfile(resolution.data.authProfile);
 
     if (proofExpectations.length > 0) {
       const proofSolutionUniqueName = downloadPlan.data?.resolution.resolvedSolutionUniqueName;
@@ -4429,6 +4546,7 @@ async function runCanvasInspect(args: string[]): Promise<number> {
             resolution.data.authProfile,
             readConfigOptions(args)
           ),
+          browserProfileName,
           proof: proof.data,
         }),
         outputFormat(args, 'json')
@@ -4449,6 +4567,7 @@ async function runCanvasInspect(args: string[]): Promise<number> {
           resolution.data.authProfile,
           readConfigOptions(args)
         ),
+        browserProfileName,
       }),
       outputFormat(args, 'json')
     );
@@ -4489,6 +4608,179 @@ async function runCanvasList(args: string[]): Promise<number> {
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasProbe(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure('CANVAS_IDENTIFIER_REQUIRED', 'Usage: canvas probe <displayName|name|id> --environment ALIAS [--solution UNIQUE_NAME]')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const solutionUniqueName = readFlag(args, '--solution');
+  const service = new CanvasService(resolution.data.client);
+  const result = await service.inspectRemote(identifier, {
+    solutionUniqueName,
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'CANVAS_REMOTE_NOT_FOUND', `Canvas app ${identifier} was not found.`)));
+  }
+
+  if (!result.data.openUri) {
+    return printFailure(
+      fail(
+        createDiagnostic('error', 'CANVAS_RUNTIME_URL_MISSING', `Canvas app ${identifier} does not expose an app play URL to probe.`, {
+          source: '@pp/cli',
+        })
+      )
+    );
+  }
+
+  const configOptions = readConfigOptions(args);
+  const browserProfileName = readFlag(args, '--browser-profile') ?? resolveBrowserProfileNameFromAuthProfile(resolution.data.authProfile);
+
+  if (!browserProfileName) {
+    return printFailure(
+      fail(
+        createDiagnostic('error', 'AUTH_BROWSER_PROFILE_REQUIRED', 'Canvas runtime probing requires a persisted browser profile.', {
+          source: '@pp/cli',
+          hint:
+            'Pass `--browser-profile <name>`, or configure the environment auth profile with `browserProfile`, then rerun `pp canvas probe`.',
+        })
+      )
+    );
+  }
+
+  const auth = new AuthService(configOptions);
+  const browserProfile = await auth.getBrowserProfile(browserProfileName);
+
+  if (!browserProfile.success) {
+    return printFailure(browserProfile);
+  }
+
+  if (!browserProfile.data) {
+    return printFailure(
+      fail(createDiagnostic('error', 'AUTH_BROWSER_PROFILE_NOT_FOUND', `Browser profile ${browserProfileName} was not found.`))
+    );
+  }
+
+  const timeoutMs = readNumberFlag(args, '--timeout-ms');
+  const settleMs = readNumberFlag(args, '--settle-ms');
+  const slowMoMs = readNumberFlag(args, '--slow-mo-ms');
+
+  if ([timeoutMs, settleMs, slowMoMs].some((value) => value !== undefined && !Number.isFinite(value))) {
+    return printFailure(
+      argumentFailure('CANVAS_PROBE_INVALID_NUMERIC_FLAG', '--timeout-ms, --settle-ms, and --slow-mo-ms must be numeric when provided.')
+    );
+  }
+
+  const effectiveTimeoutMs = timeoutMs !== undefined ? timeoutMs : 45_000;
+  const effectiveSettleMs = settleMs !== undefined ? settleMs : 5_000;
+  const effectiveSlowMoMs = slowMoMs !== undefined ? slowMoMs : 0;
+  const artifactsDir = resolveOptionalInvocationPath(readFlag(args, '--artifacts-dir')) ?? (await mkdtemp(join(tmpdir(), 'pp-canvas-probe-')));
+  await access(artifactsDir).catch(async () => mkdir(artifactsDir, { recursive: true }));
+
+  const downloadPlan = await service.planRemoteDownload(identifier, {
+    solutionUniqueName,
+  });
+
+  if (!downloadPlan.success) {
+    return printFailure(downloadPlan);
+  }
+
+  const makerEnvironmentId = await resolveCanvasMakerEnvironmentId(
+    undefined,
+    resolution.data.environment,
+    resolution.data.authProfile,
+    configOptions
+  );
+  const portalProvenance = buildCanvasPortalProvenance({
+    appId: result.data.id,
+    appOpenUri: result.data.openUri,
+    makerEnvironmentId,
+  });
+  const runtimeHandoff = buildCanvasRuntimeHandoff({
+    appId: result.data.id,
+    displayName: result.data.displayName ?? result.data.name ?? result.data.id,
+    appOpenUri: result.data.openUri,
+    makerStudioUrl: portalProvenance?.makerStudioUrl,
+    browserProfileName,
+    envAlias: resolution.data.environment.alias,
+    solutionUniqueName,
+  });
+
+  let launched;
+  try {
+    launched = await launchPersistentBrowserProfileContext(
+      resolveBrowserProfileDirectory(browserProfile.data, configOptions),
+      browserProfile.data,
+      {
+        browserProfileName,
+        outDir: artifactsDir,
+        headless: hasFlag(args, '--headless'),
+        slowMoMs: effectiveSlowMoMs,
+      }
+    );
+  } catch (error) {
+    return printFailure(
+      fail(
+        createDiagnostic('error', 'CANVAS_RUNTIME_PROBE_LAUNCH_FAILED', `Failed to launch browser profile ${browserProfileName}.`, {
+          source: '@pp/cli',
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      )
+    );
+  }
+
+  const context = launched.context;
+  const page = context.pages()[0] ?? (await context.newPage());
+  let navigationError: string | undefined;
+
+  try {
+    await page.goto(result.data.openUri, { waitUntil: 'domcontentloaded', timeout: effectiveTimeoutMs });
+  } catch (error) {
+    navigationError = error instanceof Error ? error.message : String(error);
+  }
+
+  await page.waitForTimeout(Math.max(effectiveSettleMs, 0)).catch(() => undefined);
+  const probe = await captureCanvasRuntimeProbe(page, {
+    requestedUrl: result.data.openUri,
+    expectedHosts: runtimeHandoff.expectedHosts,
+    outDir: artifactsDir,
+    appDisplayName: result.data.displayName ?? result.data.name ?? result.data.id,
+    browserLaunch: launched,
+    navigationError,
+  });
+  await context.close().catch(() => undefined);
+
+  printByFormat(
+    {
+      ...buildCanvasRemoteInspectPayload({
+        app: result.data,
+        envAlias: resolution.data.environment.alias,
+        solutionUniqueName,
+        downloadPlan: downloadPlan.data?.resolution,
+        makerEnvironmentId,
+        browserProfileName,
+      }),
+      runtimeProbe: probe,
+    },
+    outputFormat(args, 'json')
+  );
   return 0;
 }
 
@@ -4727,12 +5019,22 @@ function buildCanvasRemoteInspectPayload(input: {
       : never
     : never;
   makerEnvironmentId?: string;
+  browserProfileName?: string;
   proof?: unknown;
 }) {
   const portalProvenance = buildCanvasPortalProvenance({
     appId: input.app.id,
     appOpenUri: input.app.openUri,
     makerEnvironmentId: input.makerEnvironmentId,
+  });
+  const runtimeHandoff = buildCanvasRuntimeHandoff({
+    appId: input.app.id,
+    displayName: input.app.displayName ?? input.app.name ?? input.app.id,
+    appOpenUri: input.app.openUri,
+    makerStudioUrl: portalProvenance?.makerStudioUrl,
+    browserProfileName: input.browserProfileName,
+    envAlias: input.envAlias,
+    solutionUniqueName: input.solutionUniqueName,
   });
 
   return compactObject({
@@ -4764,6 +5066,7 @@ function buildCanvasRemoteInspectPayload(input: {
       dataverse: {
         accessCommand: `pp canvas access ${formatCliArg(input.app.displayName ?? input.app.name ?? input.app.id)} --environment ${formatCliArg(input.envAlias)} --format json`,
       },
+      runtime: runtimeHandoff,
     },
     ...(input.proof ? { proof: input.proof } : {}),
   });
@@ -4977,6 +5280,155 @@ function buildCanvasPortalProvenance(input: {
   });
 }
 
+function buildCanvasRuntimeHandoff(input: {
+  appId: string;
+  displayName: string;
+  appOpenUri?: string;
+  makerStudioUrl?: string;
+  browserProfileName?: string;
+  envAlias?: string;
+  solutionUniqueName?: string;
+}) {
+  const runtimeHost = readUrlHost(input.appOpenUri);
+  const envSuffix = input.envAlias ? ` --environment ${formatCliArg(input.envAlias)}` : ' --environment <alias>';
+  const solutionSuffix = input.solutionUniqueName ? ` --solution ${formatCliArg(input.solutionUniqueName)}` : '';
+
+  return compactObject({
+    playUrl: input.appOpenUri,
+    makerStudioUrl: input.makerStudioUrl,
+    browserProfile: input.browserProfileName,
+    expectedHosts: compactObject({
+      runtime: runtimeHost,
+      authRedirect: input.appOpenUri ? 'login.microsoftonline.com' : undefined,
+      makerStudio: readUrlHost(input.makerStudioUrl),
+    }),
+    bootstrapCommand:
+      input.browserProfileName && input.appOpenUri
+        ? `pp auth browser-profile bootstrap ${formatCliArg(input.browserProfileName)} --url ${formatCliArg(input.appOpenUri)} --no-wait`
+        : undefined,
+    inspectCommand: `pp canvas inspect ${formatCliArg(input.displayName)}${envSuffix}${solutionSuffix} --format json`,
+    probeCommand:
+      input.appOpenUri && input.browserProfileName
+        ? `pp canvas probe ${formatCliArg(input.displayName)}${envSuffix}${solutionSuffix} --browser-profile ${formatCliArg(input.browserProfileName)} --format json`
+        : undefined,
+    notes: input.appOpenUri
+      ? [
+          'Use the play URL for runtime landing checks and compare the final browser host against the expected runtime/auth hosts here.',
+          'If the handoff lands on login.microsoftonline.com instead of the Power Apps runtime host, treat that as an auth redirect rather than a missing app.',
+        ]
+      : undefined,
+  });
+}
+
+function readUrlHost(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return new URL(value).host;
+  } catch {
+    return undefined;
+  }
+}
+
+async function captureCanvasRuntimeProbe(
+  page: {
+    url(): string;
+    title(): Promise<string>;
+    frames(): Array<{ name(): string; url(): string }>;
+    screenshot(options: { path: string; fullPage: boolean }): Promise<unknown>;
+  },
+  input: {
+    requestedUrl: string;
+    expectedHosts?: {
+      runtime?: string;
+      authRedirect?: string;
+      makerStudio?: string;
+    };
+    outDir: string;
+    appDisplayName: string;
+    browserLaunch: {
+      profileName: string;
+      requestedUserDataDir: string;
+      effectiveUserDataDir: string;
+      fallbackClone?: {
+        sourceUserDataDir: string;
+        clonedUserDataDir: string;
+        omittedEntries: string[];
+        trigger: string;
+      };
+    };
+    navigationError?: string;
+  }
+) {
+  const finalUrl = page.url();
+  const finalHost = readUrlHost(finalUrl);
+  const title = await page.title().catch(() => '');
+  const frames = page.frames().map((frame) =>
+    compactObject({
+      name: frame.name() || undefined,
+      url: frame.url() || undefined,
+      host: readUrlHost(frame.url()),
+    })
+  );
+  const slug = slugifyCanvasDelegatedArtifacts(input.appDisplayName);
+  const screenshotPath = join(input.outDir, `${slug}.runtime-probe.png`);
+  const sessionPath = join(input.outDir, `${slug}.runtime-probe.json`);
+  await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => undefined);
+
+  const payload = compactObject({
+    requestedUrl: input.requestedUrl,
+    finalUrl,
+    finalHost,
+    title: title || undefined,
+    landingKind: classifyCanvasRuntimeLanding(finalHost, input.expectedHosts),
+    expectedHosts: input.expectedHosts,
+    navigationError: input.navigationError,
+    matchedExpectedHost:
+      finalHost && input.expectedHosts
+        ? [input.expectedHosts.runtime, input.expectedHosts.authRedirect, input.expectedHosts.makerStudio].includes(finalHost)
+        : undefined,
+    frames,
+    browserLaunch: input.browserLaunch,
+    artifacts: {
+      screenshotPath,
+      sessionPath,
+    },
+  });
+  await writeJsonFile(sessionPath, payload).catch(() => undefined);
+  return payload;
+}
+
+function classifyCanvasRuntimeLanding(
+  host: string | undefined,
+  expectedHosts:
+    | {
+        runtime?: string;
+        authRedirect?: string;
+        makerStudio?: string;
+      }
+    | undefined
+): 'runtime' | 'auth-redirect' | 'maker-studio' | 'other' | 'unknown' {
+  if (!host) {
+    return 'unknown';
+  }
+
+  if (expectedHosts?.runtime && host === expectedHosts.runtime) {
+    return 'runtime';
+  }
+
+  if (expectedHosts?.authRedirect && host === expectedHosts.authRedirect) {
+    return 'auth-redirect';
+  }
+
+  if (expectedHosts?.makerStudio && host === expectedHosts.makerStudio) {
+    return 'maker-studio';
+  }
+
+  return 'other';
+}
+
 function normalizeExistingMakerCanvasUrl(appOpenUri: string | undefined, appId: string): string | undefined {
   if (!appOpenUri) {
     return undefined;
@@ -5032,6 +5484,7 @@ function buildModelArtifactProjectionReport(
           ? inspect.views
           : inspect.dependencies;
   const omissionReason = result.warnings.find((warning) => warning.code === 'MODEL_COMPONENTS_UNAVAILABLE');
+  const inferredReason = result.warnings.find((warning) => warning.code === 'MODEL_COMPONENTS_INFERRED_FROM_DEPENDENCIES');
 
   return compactObject({
     app: inspect.app,
@@ -5043,13 +5496,20 @@ function buildModelArtifactProjectionReport(
       missingComponentCount: inspect.missingComponents.length,
     },
     coverage: compactObject({
-      componentMembershipSource: 'appmodulecomponents',
-      componentInspectionAvailable: omissionReason === undefined,
+      componentMembershipSource: inferredReason ? 'dependencies' : 'appmodulecomponents',
+      componentInspectionAvailable: omissionReason === undefined || inferredReason !== undefined,
       omissionReason: omissionReason
         ? compactObject({
             code: omissionReason.code,
             message: omissionReason.message,
             hint: omissionReason.hint,
+          })
+        : undefined,
+      inferenceReason: inferredReason
+        ? compactObject({
+            code: inferredReason.code,
+            message: inferredReason.message,
+            hint: inferredReason.hint,
           })
         : undefined,
     }),
@@ -5928,9 +6388,16 @@ async function runFlowMonitor(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
+  const baseline = await readFlowMonitorBaselineForCli(readFlag(args, '--baseline'));
+
+  if (!baseline.success) {
+    return printFailure(baseline);
+  }
+
   const result = await new FlowService(resolution.data.client).monitor(identifier, {
     solutionUniqueName: readFlag(args, '--solution'),
     since: readFlag(args, '--since'),
+    baseline: baseline.data,
   });
 
   if (!result.success || !result.data) {
@@ -7556,6 +8023,27 @@ function readMetadataInspectView(args: string[]): OperationResult<'normalized' |
   return argumentFailure('DV_METADATA_VIEW_INVALID', 'Unsupported --view. Use `normalized` or `raw`.');
 }
 
+function readMetadataColumnKind(args: string[]): OperationResult<ColumnCreateKind | undefined> {
+  const kind = readFlag(args, '--kind');
+
+  if (!kind) {
+    return ok(undefined, {
+      supportTier: 'preview',
+    });
+  }
+
+  if (listColumnCreateKinds().includes(kind as ColumnCreateKind)) {
+    return ok(kind as ColumnCreateKind, {
+      supportTier: 'preview',
+    });
+  }
+
+  return argumentFailure(
+    'DV_METADATA_COLUMN_KIND_INVALID',
+    `Unsupported --kind. Use ${listColumnCreateKinds().join(', ')}.`
+  );
+}
+
 function readRelationshipKind(args: string[]): OperationResult<RelationshipMetadataKind> {
   const kind = readFlag(args, '--kind') ?? 'auto';
 
@@ -7710,6 +8198,72 @@ async function readJsonFileForCli(
       })
     );
   }
+}
+
+async function readFlowMonitorBaselineForCli(path: string | undefined): Promise<OperationResult<FlowMonitorReport | undefined>> {
+  if (!path) {
+    return ok(undefined, {
+      supportTier: 'preview',
+    });
+  }
+
+  const loaded = await readJsonFileForCli(path, 'FLOW_MONITOR_BASELINE_INVALID', 'Failed to parse flow monitor baseline JSON.');
+
+  if (!loaded.success) {
+    return loaded as OperationResult<FlowMonitorReport | undefined>;
+  }
+
+  const report = unwrapFlowMonitorBaseline(loaded.data);
+
+  if (!report) {
+    return fail(
+      createDiagnostic(
+        'error',
+        'FLOW_MONITOR_BASELINE_SHAPE_INVALID',
+        'Flow monitor baseline must be a prior `pp flow monitor --format json` payload or its top-level report object.',
+        {
+          source: '@pp/cli',
+          path,
+        }
+      )
+    );
+  }
+
+  return ok(report, {
+    supportTier: 'preview',
+  });
+}
+
+function unwrapFlowMonitorBaseline(value: unknown): FlowMonitorReport | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  if (isFlowMonitorReport(value)) {
+    return value;
+  }
+
+  const candidate = (value as { data?: unknown }).data;
+  return isFlowMonitorReport(candidate) ? candidate : undefined;
+}
+
+function isFlowMonitorReport(value: unknown): value is FlowMonitorReport {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const report = value as Partial<FlowMonitorReport>;
+  return (
+    typeof report.checkedAt === 'string' &&
+    Boolean(report.health) &&
+    typeof report.health?.status === 'string' &&
+    typeof report.health?.telemetryState === 'string' &&
+    Boolean(report.recentRuns) &&
+    typeof report.recentRuns?.total === 'number' &&
+    typeof report.recentRuns?.failed === 'number' &&
+    Array.isArray(report.errorGroups) &&
+    Array.isArray(report.findings)
+  );
 }
 
 async function pathExists(path: string): Promise<boolean> {

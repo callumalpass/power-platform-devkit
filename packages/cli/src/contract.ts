@@ -51,9 +51,9 @@ export function resolveOutputFormat(args: string[], fallback: CliOutputFormat): 
 export function renderOutput(value: unknown, format: CliOutputFormat): string {
   switch (format) {
     case 'raw':
-      return typeof value === 'string' ? ensureTrailingNewline(value) : ensureTrailingNewline(stableStringify(asJsonValue(value) as never));
+      return typeof value === 'string' ? ensureTrailingNewline(value) : renderTable(value);
     case 'markdown':
-      return typeof value === 'string' ? ensureTrailingNewline(value) : ensureTrailingNewline(stableStringify(asJsonValue(value) as never));
+      return typeof value === 'string' ? ensureTrailingNewline(value) : renderMarkdown(value);
     case 'yaml':
       return ensureTrailingNewline(YAML.stringify(value));
     case 'ndjson':
@@ -234,12 +234,13 @@ function isOutputFormat(value: string): value is CliOutputFormat {
 }
 
 function renderNdjson(value: unknown): string {
-  const records = Array.isArray(value) ? value : [value];
+  const normalized = unwrapCollectionEnvelope(value);
+  const records = Array.isArray(normalized) ? normalized : [normalized];
   return ensureTrailingNewline(records.map((record) => stableStringify(asJsonValue(record) as never, 0)).join('\n'));
 }
 
 function renderTable(value: unknown): string {
-  const rows = normalizeTableRows(value);
+  const rows = normalizeTableRows(unwrapCollectionEnvelope(value));
 
   if (rows.headers.length === 0) {
     return 'No rows.\n';
@@ -258,6 +259,21 @@ function renderTable(value: unknown): string {
   const divider = widths.map((width) => '-'.repeat(width)).join('  ');
 
   return ensureTrailingNewline([renderRow(rows.headers), divider, ...rows.records.map(renderRow)].join('\n'));
+}
+
+function renderMarkdown(value: unknown): string {
+  const rows = normalizeTableRows(unwrapCollectionEnvelope(value));
+
+  if (rows.headers.length === 0) {
+    return 'No rows.\n';
+  }
+
+  const escapeCell = (cell: string) => cell.replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+  const headerRow = `| ${rows.headers.map(escapeCell).join(' | ')} |`;
+  const dividerRow = `| ${rows.headers.map(() => '---').join(' | ')} |`;
+  const recordRows = rows.records.map((record) => `| ${record.map(escapeCell).join(' | ')} |`);
+
+  return ensureTrailingNewline([headerRow, dividerRow, ...recordRows].join('\n'));
 }
 
 function normalizeTableRows(value: unknown): { headers: string[]; records: string[][] } {
@@ -294,6 +310,30 @@ function normalizeTableRows(value: unknown): { headers: string[]; records: strin
     headers: ['value'],
     records: [[stringifyCell(value)]],
   };
+}
+
+function unwrapCollectionEnvelope(value: unknown): unknown {
+  if (!isPlainObject(value)) {
+    return value;
+  }
+
+  const metadataKeys = new Set([
+    'success',
+    'diagnostics',
+    'warnings',
+    'supportTier',
+    'suggestedNextActions',
+    'provenance',
+    'knownLimitations',
+  ]);
+
+  const dataEntries = Object.entries(value).filter(([key]) => !metadataKeys.has(key));
+  if (dataEntries.length !== 1) {
+    return value;
+  }
+
+  const [, collection] = dataEntries[0] ?? [];
+  return Array.isArray(collection) ? collection : value;
 }
 
 function collectHeaders(records: Array<Record<string, unknown>>): string[] {

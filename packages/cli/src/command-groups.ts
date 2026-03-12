@@ -613,6 +613,10 @@ export async function runDataverseGroup(
     case 'get':
       return handlers.runDataverseGet(args);
     case 'create':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printDataverseCreateHelp();
+        return 0;
+      }
       return handlers.runDataverseCreate(args);
     case 'update':
       return handlers.runDataverseUpdate(args);
@@ -732,6 +736,10 @@ export async function runSolutionGroup(
       }
       return handlers.runSolutionCompare(args);
     case 'export':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionExportHelp();
+        return 0;
+      }
       return handlers.runSolutionExport(args);
     case 'import':
       if (args.includes('--help') || args.includes('help')) {
@@ -858,6 +866,7 @@ export interface CanvasGroupHandlers {
   runCanvasImport(args: string[]): Promise<number>;
   runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number>;
   runCanvasList(args: string[]): Promise<number>;
+  runCanvasProbe(args: string[]): Promise<number>;
   runCanvasAccess(args: string[]): Promise<number>;
   runCanvasTemplates(args: string[]): Promise<number>;
   runCanvasWorkspace(args: string[]): Promise<number>;
@@ -910,6 +919,12 @@ export async function runCanvasGroup(
         return 0;
       }
       return handlers.runCanvasList(args);
+    case 'probe':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printCanvasProbeHelp();
+        return 0;
+      }
+      return handlers.runCanvasProbe(args);
     case 'access':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printCanvasAccessHelp();
@@ -925,6 +940,10 @@ export async function runCanvasGroup(
     case 'lint':
       return handlers.runCanvasLint(args);
     case 'validate':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printCanvasValidateHelp();
+        return 0;
+      }
       return handlers.runCanvasValidate(args);
     case 'inspect':
       if (args.includes('--help') || args.includes('help')) {
@@ -933,8 +952,16 @@ export async function runCanvasGroup(
       }
       return handlers.runCanvasInspect(args);
     case 'build':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printCanvasBuildHelp();
+        return 0;
+      }
       return handlers.runCanvasBuild(args);
     case 'diff':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printCanvasDiffHelp();
+        return 0;
+      }
       return handlers.runCanvasDiff(args);
     default:
       cliHelp.printHelp();

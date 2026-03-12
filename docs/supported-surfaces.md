@@ -64,7 +64,11 @@ available.
 ## Current rough edges to expect
 
 - some live workflows still depend on browser-mediated auth or maker-session bootstrapping
+- MCP and CLI are still asymmetric in a few confirmation-heavy paths such as
+  publish/export readiness, cleanup, and parts of flow runtime follow-up
 - canvas registry quality depends on the pinned harvested metadata you commit
+- a successful Dataverse query with zero rows should still be treated as
+  security-ambiguous unless follow-up evidence proves the scope is truly empty
 - flow remote deploy/promotion only carries the normalized supported artifact and bounded workflow metadata
 - SharePoint and Power BI are focused inspection and deploy-adjacent utilities, not full authoring suites
 - packaging and install ergonomics are still source-repo oriented

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ok, type OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
 import { resolveRepoPath } from '../../../test/golden';
 import {
@@ -2299,26 +2299,28 @@ describe('FlowService', () => {
     expect(JSON.parse(String(packedDocument.clientdata))).toMatchObject({
       workflowEntityId: 'flow-pack-1',
       connectionKeySavedTimeKey: '2026-03-10T00:00:00.000Z',
-      definition: {
-        parameters: {
-          '$connections': {
-            value: {
-              shared_office365: {
-                connectionReferenceLogicalName: 'shared_office365',
-                connectionId: '/connections/office365',
-                apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+      properties: {
+        definition: {
+          parameters: {
+            '$connections': {
+              value: {
+                shared_office365: {
+                  connectionReferenceLogicalName: 'shared_office365',
+                  connectionId: '/connections/office365',
+                  apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                },
               },
             },
+            ApiBaseUrl: {
+              defaultValue: 'https://example.test',
+            },
           },
-          ApiBaseUrl: {
-            defaultValue: 'https://example.test',
-          },
-        },
-        actions: {
-          SendMail: {
-            type: 'Compose',
-            inputs: {
-              body: "@{environmentVariables('pp_ApiUrl')}",
+          actions: {
+            SendMail: {
+              type: 'Compose',
+              inputs: {
+                body: "@{environmentVariables('pp_ApiUrl')}",
+              },
             },
           },
         },
@@ -3520,6 +3522,13 @@ describe('FlowService', () => {
     expect(doctor.data?.findings).toContain(
       'No recent flow runs were returned because the flow is still draft and connection reference shared_office365 is not runnable yet.'
     );
+    expect(doctor.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Inspect the failing binding with `pp connref inspect shared_office365 --environment <alias> --format json`.',
+        'Repair the binding with `pp connref set shared_office365 --environment <alias> --connection-id <connection-id> --format json` once the target connection is known.',
+        'After repairing dependency blockers, re-enable the workflow with `pp flow activate Quiet Flow --environment <alias> --format json`.',
+      ])
+    );
     expect(monitor.success).toBe(true);
     expect(monitor.data).toMatchObject({
       health: {
@@ -3533,6 +3542,154 @@ describe('FlowService', () => {
     });
     expect(monitor.data?.findings).toContain(
       'Runtime monitoring found dependency blockers and no fresh run history, so the deployment still looks blocked rather than healthy.'
+    );
+  });
+
+  it('compares monitor output against a prior baseline capture', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
+
+    const service = new FlowService(createStubDataverseClient());
+    const baseline = await service.monitor('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
+
+    expect(baseline.success).toBe(true);
+    expect(baseline.data).toBeDefined();
+
+    const changedClient = createStubDataverseClient();
+    changedClient.queryAll = async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+      if (options.table === 'flowruns') {
+        return ok(
+          [
+            {
+              flowrunid: 'run-3',
+              workflowid: 'flow-1',
+              workflowname: 'Invoice Sync',
+              status: 'Failed',
+              starttime: '2026-03-10T11:30:00.000Z',
+              endtime: '2026-03-10T11:31:00.000Z',
+              durationinms: 60000,
+              retrycount: 0,
+              errorcode: 'ConnectorTimeout',
+              errormessage: 'shared_office365 timed out',
+            },
+            {
+              flowrunid: 'run-2',
+              workflowid: 'flow-1',
+              workflowname: 'Invoice Sync',
+              status: 'Succeeded',
+              starttime: '2026-03-09T08:00:00.000Z',
+              endtime: '2026-03-09T08:01:00.000Z',
+              durationinms: 60000,
+            },
+            {
+              flowrunid: 'run-1',
+              workflowid: 'flow-1',
+              workflowname: 'Invoice Sync',
+              status: 'Failed',
+              starttime: '2026-03-09T09:00:00.000Z',
+              endtime: '2026-03-09T09:02:00.000Z',
+              durationinms: 120000,
+              retrycount: 1,
+              errorcode: 'ConnectorAuthFailed',
+              errormessage: 'shared_office365 connection is not authorized',
+            },
+          ] as T[],
+          {
+            supportTier: 'preview',
+          }
+        );
+      }
+
+      return createStubDataverseClient().queryAll(options);
+    };
+
+    const compared = await new FlowService(changedClient).monitor('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+      baseline: baseline.data,
+    });
+
+    expect(compared.success).toBe(true);
+    expect(compared.data?.comparison).toMatchObject({
+      baselineCheckedAt: '2026-03-10T12:00:00.000Z',
+      changed: true,
+      health: {
+        changed: true,
+        previousStatus: 'blocked',
+        currentStatus: 'blocked',
+      },
+      recentRuns: {
+        totalDelta: 1,
+        failedDelta: 1,
+        latestFailureChanged: true,
+      },
+      errorGroups: {
+        changed: true,
+        added: [
+          {
+            group: 'ConnectorTimeout',
+          },
+        ],
+      },
+    });
+    expect(compared.data?.findings).toContain('Compared against monitor baseline from 2026-03-10T12:00:00.000Z; runtime state changed since the prior capture.');
+    expect(compared.data?.findings).toContain('Recent runs changed by +1 total and +1 failed since the prior capture.');
+  });
+
+  it('moves optional flowrun schema retries into known limitations instead of warning noise', async () => {
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string; select?: string[] }): Promise<OperationResult<T[]>> => {
+        const missingOptionalColumn = options.select?.find((column) => ['workflowname', 'durationinms', 'retrycount'].includes(column));
+        if (options.table === 'flowruns' && missingOptionalColumn) {
+          return fail(
+            createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'GET flowruns returned 400', {
+              source: '@pp/http',
+              detail: JSON.stringify({
+                error: {
+                  code: '0x80060888',
+                  message: `Could not find a property named '${missingOptionalColumn}' on type 'Microsoft.Dynamics.CRM.flowrun'.`,
+                },
+              }),
+            })
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+    } as DataverseClient;
+
+    const service = new FlowService(client);
+    const runs = await service.runs('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
+    const doctor = await service.doctor('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
+
+    expect(runs.success).toBe(true);
+    expect(runs.warnings).toEqual([]);
+    expect(runs.knownLimitations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('optional flowrun columns'),
+      ])
+    );
+    expect(doctor.success).toBe(true);
+    expect(doctor.warnings).not.toContainEqual(
+      expect.objectContaining({
+        code: 'DATAVERSE_FLOWRUN_OPTIONAL_COLUMNS_UNAVAILABLE',
+      })
+    );
+    expect(doctor.knownLimitations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('optional flowrun columns'),
+      ])
     );
   });
 

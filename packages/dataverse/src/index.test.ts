@@ -225,6 +225,30 @@ describe('DataverseClient', () => {
     expect(result.warnings.find((warning) => warning.code === 'DATAVERSE_QUERY_EMPTY_FILTER_VALIDATED')?.detail).toContain('name');
   });
 
+  it('warns that an empty query result can still reflect security filtering', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.query({
+      table: 'accounts',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_QUERY_EMPTY_RESULT_AMBIGUOUS_SCOPE');
+    expect(result.warnings.find((warning) => warning.code === 'DATAVERSE_QUERY_EMPTY_RESULT_AMBIGUOUS_SCOPE')?.message).toContain(
+      'security-filtered slice'
+    );
+  });
+
   it('retries a logical table name through its entity-set alias after a missing-collection 404', async () => {
     const httpClient = new FakeHttpClient([
       fail(
@@ -239,6 +263,13 @@ describe('DataverseClient', () => {
           }
         )
       ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
       ok({
         status: 200,
         headers: {},
@@ -278,6 +309,66 @@ describe('DataverseClient', () => {
       'solutions?%24select=solutionid%2Cuniquename%2Cfriendlyname%2Cversion&%24top=5&%24orderby=uniquename+asc&%24count=true',
     ]);
     expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_QUERY_ENTITY_SET_ALIAS_APPLIED');
+  });
+
+  it('adds an entity-set hint when getById fails against a missing logical collection path', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'GET pph34135_project(55a509b4-0d1e-f111-8341-6045bde68dac) returned 404', {
+          source: '@pp/http',
+          detail: '{"error":{"code":"0x80060888","message":"Resource not found for the segment \'pph34135_project\'."}}',
+        })
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'pph34135_project',
+          EntitySetName: 'pph34135_projects',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.getById('pph34135_project', '55a509b4-0d1e-f111-8341-6045bde68dac');
+
+    expect(result.success).toBe(false);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_QUERY_ENTITY_SET_HINT');
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Retry the query against `pph34135_projects` or use the logical table name `pph34135_project` through a pp surface that resolves entity sets automatically.',
+      ])
+    );
+  });
+
+  it('adds an entity-set hint when delete fails against a missing logical collection path', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'DELETE pph34135_task(e5240cc5-0d1e-f111-8341-6045bde68dac) returned 404', {
+          source: '@pp/http',
+          detail: '{"error":{"code":"0x80060888","message":"Resource not found for the segment \'pph34135_task\'."}}',
+        })
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'pph34135_task',
+          EntitySetName: 'pph34135_tasks',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.delete('pph34135_task', 'e5240cc5-0d1e-f111-8341-6045bde68dac');
+
+    expect(result.success).toBe(false);
+    expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_QUERY_ENTITY_SET_HINT');
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Retry the query against `pph34135_tasks` or use the logical table name `pph34135_task` through a pp surface that resolves entity sets automatically.',
+      ])
+    );
   });
 
   it('mirrors requested lookup ids onto logical field names when Dataverse only returns _value columns', async () => {
@@ -1059,6 +1150,55 @@ OData-Version: 4.0\r
       'pph34135_tasks',
       "EntityDefinitions(LogicalName='pph34135_tasks')/Attributes(LogicalName='pph34135_projectid')?%24select=LogicalName%2CSchemaName%2CAttributeType",
     ]);
+  });
+
+  it('retries create through an entity-set alias when the logical table collection path is missing', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'POST pph34135_project returned 404', {
+          source: '@pp/http',
+          detail: '{"error":{"code":"0x80060888","message":"Resource not found for the segment \'pph34135_project\'."}}',
+        })
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          LogicalName: 'pph34135_project',
+          EntitySetName: 'pph34135_projects',
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {
+          'odata-entityid':
+            'https://example.crm.dynamics.com/api/data/v9.2/pph34135_projects(55a509b4-0d1e-f111-8341-6045bde68dac)',
+        },
+        data: undefined,
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+
+    const result = await client.create('pph34135_project', {
+      pph34135_name: 'Harness Project Seed',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.entityId).toBe('55a509b4-0d1e-f111-8341-6045bde68dac');
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'pph34135_project',
+      "EntityDefinitions(LogicalName='pph34135_project')",
+      'pph34135_projects',
+    ]);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_WRITE_ENTITY_SET_ALIAS_APPLIED',
+          message:
+            'Resolved Dataverse table reference `pph34135_project` to entity set `pph34135_projects` for this create request.',
+        }),
+      ])
+    );
   });
 
   it('creates a table, reads it back, and publishes it', async () => {
@@ -2046,6 +2186,34 @@ OData-Version: 4.0\r
         status: 200,
         headers: {},
         data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
           '@odata.type': '#Microsoft.Dynamics.CRM.ManyToManyRelationshipMetadata',
           SchemaName: 'pp_project_contact',
         },
@@ -2369,6 +2537,13 @@ describe('ALM services', () => {
         status: 200,
         headers: {},
         data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
           value: [
             {
               connectionreferenceid: 'ref-1',
@@ -2396,6 +2571,7 @@ describe('ALM services', () => {
     });
     expect(httpClient.requests.map((request) => request.path)).toEqual([
       'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode%2Ccustomconnectorid',
+      "EntityDefinitions(LogicalName='connectionreferences')/Attributes?%24select=LogicalName",
       'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode',
     ]);
     expect(result.warnings.map((warning) => warning.code)).toContain('DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE');
@@ -2511,6 +2687,13 @@ describe('ALM services', () => {
         status: 200,
         headers: {},
         data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
           value: [
             {
               connectionreferenceid: 'ref-1',
@@ -2557,6 +2740,7 @@ describe('ALM services', () => {
       'solutions?%24select=solutionid%2Cuniquename&%24top=1&%24filter=uniquename+eq+%27Harness%27',
       'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+371',
       'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode%2Ccustomconnectorid',
+      "EntityDefinitions(LogicalName='connectionreferences')/Attributes?%24select=LogicalName",
       'connectionreferences?%24select=connectionreferenceid%2Cconnectionreferencelogicalname%2Cconnectionreferencedisplayname%2Cconnectorid%2Cconnectionid%2Cstatecode',
       'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+29',
     ]);
@@ -2911,6 +3095,80 @@ describe('ALM services', () => {
     });
     expect(httpClient.requests[3]?.path).toBe(
       'solutioncomponents?%24select=objectid&%24filter=_solutionid_value+eq+sol-1+and+componenttype+eq+380'
+    );
+  });
+
+  it('reports empty environment variable solution scope explicitly', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.list({ solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_ENVVAR_SCOPE_EMPTY',
+          message: 'No environment variables were found in solution Core.',
+        }),
+      ])
+    );
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Run `pp solution inspect Core --environment <alias> --format json` to confirm the solution exists before assuming the scope is empty.',
+      ])
+    );
+    expect(result.provenance).toEqual(
+      expect.arrayContaining([
+        {
+          kind: 'official-api',
+          source: 'Dataverse environmentvariabledefinitions',
+        },
+        {
+          kind: 'official-api',
+          source: 'Dataverse environmentvariablevalues',
+        },
+        {
+          kind: 'official-api',
+          source: 'Dataverse solutioncomponents',
+        },
+      ])
     );
   });
 
@@ -3354,6 +3612,13 @@ describe('normalizeMetadataQueryOptions', () => {
         status: 200,
         headers: {},
         data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
           value: [
             {
               flowrunid: 'run-1',
@@ -3397,8 +3662,9 @@ describe('normalizeMetadataQueryOptions', () => {
       ])
     );
     expect(httpClient.requests[0]?.path).toContain('durationinms');
-    expect(httpClient.requests[1]?.path).not.toContain('durationinms');
-    expect(httpClient.requests[1]?.path).toContain('retrycount');
+    expect(httpClient.requests[1]?.path).toBe("EntityDefinitions(LogicalName='flowruns')/Attributes?%24select=LogicalName");
+    expect(httpClient.requests[2]?.path).not.toContain('durationinms');
+    expect(httpClient.requests[2]?.path).toContain('retrycount');
   });
 
   it('lists and inspects canvas apps through a typed service', async () => {
@@ -3908,6 +4174,13 @@ describe('normalizeMetadataQueryOptions', () => {
         status: 200,
         headers: {},
         data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
           value: [
             {
               appmodulecomponentid: 'amc-1',
@@ -3952,6 +4225,7 @@ describe('normalizeMetadataQueryOptions', () => {
     );
     expect(httpClient.requests.map((request) => request.path)).toEqual([
       'appmodulecomponents?%24select=appmodulecomponentid%2Ccomponenttype%2Cobjectid%2C_appmoduleidunique_value%2Cappmoduleidunique',
+      "EntityDefinitions(LogicalName='appmodulecomponents')/Attributes?%24select=LogicalName",
       'appmodules(app-1)/appmodule_appmodulecomponent?%24select=appmodulecomponentid%2Ccomponenttype%2Cobjectid',
     ]);
   });
@@ -4109,6 +4383,73 @@ describe('normalizeMetadataQueryOptions', () => {
     expect(httpClient.requests.map((request) => request.path)).toEqual([
       'appmodules',
       'AddSolutionComponent',
+      'appmodules?%24select=appmoduleid%2Cuniquename%2Cname%2Cappmoduleversion%2Cstatecode%2Cpublishedon',
+    ]);
+  });
+
+  it('enriches tenant-side appmodule create rejections with readback guidance', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'POST appmodules returned 400', {
+          source: '@pp/http',
+          detail: JSON.stringify({
+            error: {
+              code: '0x80050135',
+              message: '-2147155681',
+            },
+          }),
+        })
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ModelDrivenAppService(client);
+
+    const result = await service.create('BlockedHub', {
+      name: 'Blocked Hub',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_MODEL_APP_CREATE_TENANT_REJECTED',
+          detail: expect.stringContaining('Dataverse error code: 0x80050135.'),
+        }),
+        expect.objectContaining({
+          code: 'HTTP_REQUEST_FAILED',
+          message: 'POST appmodules returned 400',
+        }),
+      ])
+    );
+    expect(result.details).toMatchObject({
+      category: 'model-app-create-tenant-rejected',
+      uniqueName: 'BlockedHub',
+      solutionUniqueName: 'Core',
+      httpStatus: 400,
+      dataverseErrorCode: '0x80050135',
+      dataverseErrorMessage: '-2147155681',
+    });
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('tenant-side create limitation'),
+        'Run `pp model list --environment <alias> --format json` to confirm whether the target unique name already exists before changing names or retrying.',
+      ])
+    );
+    expect(result.knownLimitations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Some tenants can reject direct Dataverse appmodules creation'),
+      ])
+    );
+    expect(httpClient.requests.map((request) => request.path)).toEqual([
+      'appmodules',
       'appmodules?%24select=appmoduleid%2Cuniquename%2Cname%2Cappmoduleversion%2Cstatecode%2Cpublishedon',
     ]);
   });

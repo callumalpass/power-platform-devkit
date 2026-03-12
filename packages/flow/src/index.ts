@@ -22,8 +22,23 @@ import {
   resolveFlowSupportedConnectorOperation,
   type FlowSupportedConnectorOperationParameter,
 } from './connector-operation-registry';
+import {
+  asFlowJsonRecord,
+  asRecord,
+  cloneJsonValue,
+  fileExists,
+  normalizeFlowJsonRecord,
+  normalizeFlowJsonValue,
+  parseFlowPath,
+  readBoolean,
+  readNumber,
+  readString,
+  resolveFlowOutputPath,
+  stripNoisyFlowValue,
+  type FlowJsonValue,
+} from './flow-json';
 
-export type FlowJsonValue = null | boolean | number | string | FlowJsonValue[] | { [key: string]: FlowJsonValue };
+export type { FlowJsonValue } from './flow-json';
 
 export interface FlowRecord extends DataverseCloudFlowRecord {}
 
@@ -620,6 +635,40 @@ export interface FlowMonitorReport {
   errorGroups: FlowErrorGroup[];
   invalidConnectionReferences: ConnectionReferenceValidationResult[];
   missingEnvironmentVariables: EnvironmentVariableSummary[];
+  comparison?: FlowMonitorComparison;
+  findings: string[];
+}
+
+export interface FlowMonitorComparison {
+  baselineCheckedAt?: string;
+  changed: boolean;
+  health: {
+    changed: boolean;
+    previousStatus: FlowMonitorReport['health']['status'];
+    currentStatus: FlowMonitorReport['health']['status'];
+    previousTelemetryState: FlowMonitorReport['health']['telemetryState'];
+    currentTelemetryState: FlowMonitorReport['health']['telemetryState'];
+    previousLatestRunAt?: string;
+    currentLatestRunAt?: string;
+  };
+  recentRuns: {
+    totalDelta: number;
+    failedDelta: number;
+    latestFailureChanged: boolean;
+    previousLatestFailure?: FlowRunSummary;
+    currentLatestFailure?: FlowRunSummary;
+  };
+  errorGroups: {
+    changed: boolean;
+    added: FlowErrorGroup[];
+    removed: FlowErrorGroup[];
+    updated: Array<{
+      group: string;
+      previous: FlowErrorGroup;
+      current: FlowErrorGroup;
+    }>;
+    unchangedCount: number;
+  };
   findings: string[];
 }
 
@@ -710,15 +759,6 @@ export interface FlowVariableWrite {
   path: string;
   operation: 'initialize' | 'set' | 'append' | 'increment' | 'decrement';
 }
-
-const NOISY_FLOW_KEYS = new Set([
-  'createdTime',
-  'lastModifiedTime',
-  'changedTime',
-  'lastModifiedBy',
-  'creator',
-  'owners',
-]);
 
 export class FlowService {
   constructor(private readonly dataverseClient?: DataverseClient) {}
@@ -841,11 +881,12 @@ export class FlowService {
     }
 
     const filtered = (runs.data ?? []).map(normalizeFlowRun);
+    const runtimeSchemaNotice = moveFlowRunSchemaWarningToKnownLimitations(runs.warnings);
 
     return ok(filtered, {
       supportTier: 'experimental',
       diagnostics: [...flow.diagnostics, ...runs.diagnostics],
-      warnings: [...flow.warnings, ...runs.warnings],
+      warnings: [...flow.warnings, ...runtimeSchemaNotice.warnings],
       suggestedNextActions: dedupeStrings(
         [
           filtered.length === 0
@@ -856,6 +897,7 @@ export class FlowService {
       ),
       knownLimitations: [
         'FlowRun data may be delayed or incomplete depending on ingestion and retention settings.',
+        ...runtimeSchemaNotice.knownLimitations,
       ],
       provenance: [
         {
@@ -953,6 +995,7 @@ export class FlowService {
         supportTier: 'experimental',
         diagnostics: runs.diagnostics,
         warnings: runs.warnings,
+        knownLimitations: runs.knownLimitations,
       }
     );
   }
@@ -1057,6 +1100,7 @@ export class FlowService {
         supportTier: 'experimental',
         diagnostics: [...flow.diagnostics, ...runs.diagnostics, ...references.diagnostics, ...variables.diagnostics],
         warnings: [...flow.warnings, ...runs.warnings, ...references.warnings, ...variables.warnings],
+        knownLimitations: dedupeStrings([...(runs.knownLimitations ?? [])]),
       }
     );
   }
@@ -1211,8 +1255,22 @@ export class FlowService {
             invalidConnectionReferences.length > 0
               ? `Run \`pp connref validate --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\` to inspect the failing connection references directly.`
               : undefined,
+            ...invalidConnectionReferences.flatMap((reference) => {
+              const logicalName = reference.reference.logicalName ?? reference.reference.id;
+              if (!logicalName) {
+                return [];
+              }
+
+              return [
+                `Inspect the failing binding with \`pp connref inspect ${logicalName} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\`.`,
+                `Repair the binding with \`pp connref set ${logicalName} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --connection-id <connection-id> --format json\` once the target connection is known.`,
+              ];
+            }),
             missingEnvironmentVariables.length > 0
               ? `Run \`pp envvar list --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\` to inspect missing effective environment-variable values.`
+              : undefined,
+            flow.data?.workflowState === 'draft'
+              ? `After repairing dependency blockers, re-enable the workflow with \`pp flow activate ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\`.`
               : undefined,
             failedRuns.length > 0
               ? `Run \`pp flow runs ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --status Failed --format json\` to review the raw failed-run slice.`
@@ -1221,6 +1279,7 @@ export class FlowService {
           ].filter((value): value is string => Boolean(value))
         ),
         knownLimitations: [
+          ...(runs.knownLimitations ?? []),
           'Runtime diagnostics depend on FlowRun ingestion and may lag behind portal data.',
           'Connector-level grouping is heuristic until richer runtime fields are available.',
         ],
@@ -1248,6 +1307,7 @@ export class FlowService {
     options: {
       solutionUniqueName?: string;
       since?: string;
+      baseline?: FlowMonitorReport;
     } = {}
   ): Promise<OperationResult<FlowMonitorReport>> {
     const doctor = await this.doctor(identifier, options);
@@ -1258,6 +1318,19 @@ export class FlowService {
 
     const latestRunAt = resolveLatestFlowRunTimestamp(doctor.data.runtimeSummary, doctor.data.recentRuns.latestFailure);
     const health = summarizeFlowMonitoringHealth(doctor.data, latestRunAt);
+    const report: FlowMonitorReport = {
+      checkedAt: new Date().toISOString(),
+      observationWindow: options.since,
+      flow: doctor.data.flow,
+      health,
+      recentRuns: doctor.data.recentRuns,
+      runtimeSummary: doctor.data.runtimeSummary,
+      errorGroups: doctor.data.errorGroups,
+      invalidConnectionReferences: doctor.data.invalidConnectionReferences,
+      missingEnvironmentVariables: doctor.data.missingEnvironmentVariables,
+      findings: [],
+    };
+    const comparison = options.baseline ? compareFlowMonitorReports(options.baseline, report) : undefined;
     const findings = dedupeStrings([
       health.summary,
       ...(doctor.data.recentRuns.total === 0 && health.telemetryState === 'quiet'
@@ -1265,28 +1338,26 @@ export class FlowService {
             'No recent runs or grouped errors were returned in the requested window, so follow-up monitoring is relying on static dependency health rather than fresh execution telemetry.',
           ]
         : []),
+      ...(comparison?.findings ?? []),
       ...doctor.data.findings,
     ]);
 
+    report.comparison = comparison;
+    report.findings = findings;
+
     return ok(
-      {
-        checkedAt: new Date().toISOString(),
-        observationWindow: options.since,
-        flow: doctor.data.flow,
-        health,
-        recentRuns: doctor.data.recentRuns,
-        runtimeSummary: doctor.data.runtimeSummary,
-        errorGroups: doctor.data.errorGroups,
-        invalidConnectionReferences: doctor.data.invalidConnectionReferences,
-        missingEnvironmentVariables: doctor.data.missingEnvironmentVariables,
-        findings,
-      },
+      report,
       {
         supportTier: doctor.supportTier,
         diagnostics: doctor.diagnostics,
         warnings: doctor.warnings,
         suggestedNextActions: dedupeStrings([
           ...(doctor.suggestedNextActions ?? []),
+          ...(options.baseline
+            ? [
+                'Persist this monitor payload and pass it back through `pp flow monitor --baseline <file>` when you want the next follow-up to report runtime deltas instead of manual JSON diffing.',
+              ]
+            : []),
           ...(doctor.data.recentRuns?.total === 0
             ? [
                 `Re-run \`pp flow monitor ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --since ${options.since ?? '1h'} --format json\` after the next expected trigger window to confirm whether runtime telemetry stays quiet.`,
@@ -1369,6 +1440,27 @@ export class FlowService {
   async patch(path: string, patch: FlowPatchDocument, outPath?: string): Promise<OperationResult<FlowPatchResult>> {
     return patchFlowArtifact(path, patch, outPath);
   }
+}
+
+function moveFlowRunSchemaWarningToKnownLimitations(warnings: Diagnostic[]): { warnings: Diagnostic[]; knownLimitations: string[] } {
+  const remainingWarnings: Diagnostic[] = [];
+  const knownLimitations: string[] = [];
+
+  for (const warning of warnings) {
+    if (warning.code !== 'DATAVERSE_FLOWRUN_OPTIONAL_COLUMNS_UNAVAILABLE') {
+      remainingWarnings.push(warning);
+      continue;
+    }
+
+    knownLimitations.push(
+      'This environment omits optional flowrun columns such as workflowname, durationinms, or retrycount; pp retried without them so runtime evidence may omit workflow names, durations, or retry counts.'
+    );
+  }
+
+  return {
+    warnings: remainingWarnings,
+    knownLimitations: dedupeStrings(knownLimitations),
+  };
 }
 
 function buildQuietRuntimeBlockerFindings(
@@ -3442,6 +3534,201 @@ function summarizeFlowMonitoringHealth(
     latestRunAt,
     summary: 'No recent runs or grouped failures were returned, so the current window is quiet but not enough to prove the deployment stayed healthy.',
   };
+}
+
+function compareFlowMonitorReports(baseline: FlowMonitorReport, current: FlowMonitorReport): FlowMonitorComparison {
+  const baselineGroups = new Map(baseline.errorGroups.map((group) => [group.group, group]));
+  const currentGroups = new Map(current.errorGroups.map((group) => [group.group, group]));
+  const added: FlowErrorGroup[] = [];
+  const removed: FlowErrorGroup[] = [];
+  const updated: Array<{
+    group: string;
+    previous: FlowErrorGroup;
+    current: FlowErrorGroup;
+  }> = [];
+  let unchangedCount = 0;
+
+  for (const [group, currentEntry] of currentGroups) {
+    const baselineEntry = baselineGroups.get(group);
+
+    if (!baselineEntry) {
+      added.push(currentEntry);
+      continue;
+    }
+
+    if (areFlowErrorGroupsEqual(baselineEntry, currentEntry)) {
+      unchangedCount += 1;
+      continue;
+    }
+
+    updated.push({
+      group,
+      previous: baselineEntry,
+      current: currentEntry,
+    });
+  }
+
+  for (const [group, baselineEntry] of baselineGroups) {
+    if (!currentGroups.has(group)) {
+      removed.push(baselineEntry);
+    }
+  }
+
+  const healthChanged =
+    baseline.health.status !== current.health.status ||
+    baseline.health.telemetryState !== current.health.telemetryState ||
+    baseline.health.latestRunAt !== current.health.latestRunAt;
+  const latestFailureChanged = !areFlowRunsEquivalent(baseline.recentRuns.latestFailure, current.recentRuns.latestFailure);
+  const errorGroupsChanged = added.length > 0 || removed.length > 0 || updated.length > 0;
+  const changed =
+    healthChanged ||
+    baseline.recentRuns.total !== current.recentRuns.total ||
+    baseline.recentRuns.failed !== current.recentRuns.failed ||
+    latestFailureChanged ||
+    errorGroupsChanged;
+
+  return {
+    baselineCheckedAt: baseline.checkedAt,
+    changed,
+    health: {
+      changed: healthChanged,
+      previousStatus: baseline.health.status,
+      currentStatus: current.health.status,
+      previousTelemetryState: baseline.health.telemetryState,
+      currentTelemetryState: current.health.telemetryState,
+      previousLatestRunAt: baseline.health.latestRunAt,
+      currentLatestRunAt: current.health.latestRunAt,
+    },
+    recentRuns: {
+      totalDelta: current.recentRuns.total - baseline.recentRuns.total,
+      failedDelta: current.recentRuns.failed - baseline.recentRuns.failed,
+      latestFailureChanged,
+      previousLatestFailure: baseline.recentRuns.latestFailure,
+      currentLatestFailure: current.recentRuns.latestFailure,
+    },
+    errorGroups: {
+      changed: errorGroupsChanged,
+      added,
+      removed,
+      updated,
+      unchangedCount,
+    },
+    findings: buildFlowMonitorComparisonFindings(baseline, current, {
+      changed,
+      healthChanged,
+      latestFailureChanged,
+      added,
+      removed,
+      updated,
+    }),
+  };
+}
+
+function buildFlowMonitorComparisonFindings(
+  baseline: FlowMonitorReport,
+  current: FlowMonitorReport,
+  context: {
+    changed: boolean;
+    healthChanged: boolean;
+    latestFailureChanged: boolean;
+    added: FlowErrorGroup[];
+    removed: FlowErrorGroup[];
+    updated: Array<{
+      group: string;
+      previous: FlowErrorGroup;
+      current: FlowErrorGroup;
+    }>;
+  }
+): string[] {
+  const totalDelta = current.recentRuns.total - baseline.recentRuns.total;
+  const failedDelta = current.recentRuns.failed - baseline.recentRuns.failed;
+
+  return [
+    context.changed
+      ? `Compared against monitor baseline from ${baseline.checkedAt}; runtime state changed since the prior capture.`
+      : `Compared against monitor baseline from ${baseline.checkedAt}; health, run counts, latest failure, and grouped errors are unchanged.`,
+    context.healthChanged
+      ? `Health changed from ${baseline.health.status}/${baseline.health.telemetryState} to ${current.health.status}/${current.health.telemetryState}.`
+      : `Health is unchanged at ${current.health.status}/${current.health.telemetryState}.`,
+    totalDelta === 0 && failedDelta === 0
+      ? `Recent run counts are unchanged at ${current.recentRuns.total} total and ${current.recentRuns.failed} failed.`
+      : `Recent runs changed by ${formatSignedCount(totalDelta)} total and ${formatSignedCount(failedDelta)} failed since the prior capture.`,
+    describeLatestFailureChange(baseline.recentRuns.latestFailure, current.recentRuns.latestFailure, context.latestFailureChanged),
+    context.added.length === 0 && context.removed.length === 0 && context.updated.length === 0
+      ? `Grouped runtime errors are unchanged across ${current.errorGroups.length} groups.`
+      : `Grouped runtime errors changed: ${context.added.length} added, ${context.removed.length} removed, ${context.updated.length} updated.`,
+  ];
+}
+
+function describeLatestFailureChange(
+  baseline?: FlowRunSummary,
+  current?: FlowRunSummary,
+  changed = false
+): string {
+  if (!baseline && !current) {
+    return 'Latest failure is unchanged because neither capture reported a failed run.';
+  }
+
+  if (!changed) {
+    return `Latest failure is unchanged at ${describeFlowRunForComparison(current)}.`;
+  }
+
+  if (!baseline && current) {
+    return `Latest failure changed from none to ${describeFlowRunForComparison(current)}.`;
+  }
+
+  if (baseline && !current) {
+    return `Latest failure cleared since the prior capture; baseline had ${describeFlowRunForComparison(baseline)}.`;
+  }
+
+  return `Latest failure changed from ${describeFlowRunForComparison(baseline)} to ${describeFlowRunForComparison(current)}.`;
+}
+
+function describeFlowRunForComparison(run?: FlowRunSummary): string {
+  if (!run) {
+    return 'no failure';
+  }
+
+  const parts = [run.id];
+
+  if (run.startTime) {
+    parts.push(run.startTime);
+  }
+
+  if (run.errorCode) {
+    parts.push(run.errorCode);
+  }
+
+  return parts.join(' @ ');
+}
+
+function formatSignedCount(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function areFlowRunsEquivalent(left?: FlowRunSummary, right?: FlowRunSummary): boolean {
+  return (
+    left?.id === right?.id &&
+    left?.startTime === right?.startTime &&
+    left?.status === right?.status &&
+    left?.errorCode === right?.errorCode &&
+    left?.errorMessage === right?.errorMessage
+  );
+}
+
+function areFlowErrorGroupsEqual(left: FlowErrorGroup, right: FlowErrorGroup): boolean {
+  return (
+    left.group === right.group &&
+    left.count === right.count &&
+    left.latestRunId === right.latestRunId &&
+    left.latestStatus === right.latestStatus &&
+    left.latestStartTime === right.latestStartTime &&
+    left.sampleErrorCode === right.sampleErrorCode &&
+    left.sampleErrorMessage === right.sampleErrorMessage &&
+    left.averageDurationMs === right.averageDurationMs &&
+    left.totalRetries === right.totalRetries &&
+    left.maxRetryCount === right.maxRetryCount
+  );
 }
 
 function normalizeRuntimeStatusLabel(value: string | undefined): string {
@@ -6503,90 +6790,5 @@ function setFlowPathValue(root: Record<string, FlowJsonValue>, path: string[], v
 
   if (typeof current === 'object' && current !== null) {
     (current as Record<string, FlowJsonValue>)[finalSegment] = value;
-  }
-}
-
-function parseFlowPath(pathExpression: string): string[] {
-  return pathExpression
-    .split('.')
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-}
-
-function resolveFlowOutputPath(path: string): string {
-  const resolved = resolve(path);
-  return resolved.endsWith('.json') ? resolved : resolve(resolved, 'flow.json');
-}
-
-function stripNoisyFlowValue(value: FlowJsonValue): FlowJsonValue {
-  if (Array.isArray(value)) {
-    return value.map((item) => stripNoisyFlowValue(item));
-  }
-
-  if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([key]) => !NOISY_FLOW_KEYS.has(key))
-        .map(([key, nested]) => [key, stripNoisyFlowValue(nested)])
-    );
-  }
-
-  return value;
-}
-
-function normalizeFlowJsonRecord(record: Record<string, unknown>): Record<string, FlowJsonValue> {
-  return Object.fromEntries(Object.entries(record).map(([key, nested]) => [key, normalizeFlowJsonValue(nested)]));
-}
-
-function normalizeFlowJsonValue(value: unknown): FlowJsonValue {
-  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeFlowJsonValue(item));
-  }
-
-  if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, nested]) => [key, normalizeFlowJsonValue(nested)])
-    );
-  }
-
-  return String(value);
-}
-
-function cloneJsonValue<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function readString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
-}
-
-function readNumber(value: unknown): number | undefined {
-  return typeof value === 'number' ? value : undefined;
-}
-
-function readBoolean(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function asFlowJsonRecord(value: unknown): Record<string, FlowJsonValue> | undefined {
-  return asRecord(value) as Record<string, FlowJsonValue> | undefined;
-}
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
   }
 }

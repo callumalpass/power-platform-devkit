@@ -64,6 +64,12 @@
         "dependentComponentType": 29,
         "dependentComponentTypeLabel": "workflow",
         "id": "dep-source-missing-form",
+        "importRisk": {
+          "classification": "likely-import-blocker",
+          "reason": "The missing form is another solution component rather than a standard platform table, so cross-environment import usually stays blocked until that component is packaged or provisioned separately.",
+          "severity": "warning",
+          "suggestedAction": "Package the component with the solution or capture an explicit prerequisite/install step for the target environment."
+        },
         "missingRequiredComponent": true,
         "requiredComponentObjectId": "obj-form",
         "requiredComponentType": 24,
@@ -79,6 +85,8 @@
         "componentType": 80,
         "componentTypeLabel": "app-module",
         "id": "comp-source-app",
+        "logicalName": "SalesHub",
+        "name": "Sales Hub",
         "objectId": "obj-app"
       },
       {
@@ -101,6 +109,12 @@
         "dependentComponentType": 29,
         "dependentComponentTypeLabel": "workflow",
         "id": "dep-source-missing-form",
+        "importRisk": {
+          "classification": "likely-import-blocker",
+          "reason": "The missing form is another solution component rather than a standard platform table, so cross-environment import usually stays blocked until that component is packaged or provisioned separately.",
+          "severity": "warning",
+          "suggestedAction": "Package the component with the solution or capture an explicit prerequisite/install step for the target environment."
+        },
         "missingRequiredComponent": true,
         "requiredComponentObjectId": "obj-form",
         "requiredComponentType": 24,
@@ -108,10 +122,17 @@
       },
       {
         "dependencyType": 1,
+        "dependentComponentLogicalName": "SalesHub",
+        "dependentComponentName": "Sales Hub",
         "dependentComponentObjectId": "obj-app",
         "dependentComponentType": 80,
         "dependentComponentTypeLabel": "app-module",
         "id": "dep-source-satisfied-site",
+        "importRisk": {
+          "classification": "resolved",
+          "reason": "The required component is already present in the solution.",
+          "severity": "none"
+        },
         "missingRequiredComponent": false,
         "requiredComponentObjectId": "obj-site",
         "requiredComponentType": 62,
@@ -126,6 +147,12 @@
         "dependentComponentType": 29,
         "dependentComponentTypeLabel": "workflow",
         "id": "dep-source-missing-form",
+        "importRisk": {
+          "classification": "likely-import-blocker",
+          "reason": "The missing form is another solution component rather than a standard platform table, so cross-environment import usually stays blocked until that component is packaged or provisioned separately.",
+          "severity": "warning",
+          "suggestedAction": "Package the component with the solution or capture an explicit prerequisite/install step for the target environment."
+        },
         "missingRequiredComponent": true,
         "requiredComponentObjectId": "obj-form",
         "requiredComponentType": 24,
@@ -247,6 +274,8 @@
         "componentType": 80,
         "componentTypeLabel": "app-module",
         "id": "comp-target-app",
+        "logicalName": "SalesHub",
+        "name": "Sales Hub",
         "objectId": "obj-app"
       },
       {
