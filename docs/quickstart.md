@@ -52,6 +52,10 @@ Create a reusable named auth profile with browser login:
 pp auth login --name dev-user --resource https://example.crm.dynamics.com
 ```
 
+For ordinary Dataverse login, prefer `--resource` and let `pp` derive the
+standard Dataverse delegated scope. Treat `--scope` as an advanced OAuth
+override for cases where you intentionally need exact scopes.
+
 Useful variants:
 
 - force account selection again:

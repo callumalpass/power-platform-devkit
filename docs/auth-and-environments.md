@@ -31,6 +31,11 @@ Browser-first login with silent cache reuse. This is the easiest interactive pat
 pp auth login --name dev-user --resource https://example.crm.dynamics.com
 ```
 
+For normal Dataverse sign-in, prefer `--resource`. `pp` will derive the usual
+delegated Dataverse scope from that URL. Treat `--scope` as an advanced escape
+hatch when you intentionally need exact OAuth scopes instead of the Dataverse
+default.
+
 Notes:
 
 - uses Microsoft’s public client by default

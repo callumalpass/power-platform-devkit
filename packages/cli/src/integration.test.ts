@@ -10633,6 +10633,38 @@ describe('cli fixture-backed workflows', () => {
     expect(envAddHelp.stdout).toContain('`--name ALIAS` is still accepted');
   });
 
+  it('documents scope-aware auth help for login and profile creation commands', async () => {
+    const authLoginHelp = await runCli(['auth', 'login', '--help']);
+    const authAddUserHelp = await runCli(['auth', 'profile', 'add-user', '--help']);
+    const authAddDeviceCodeHelp = await runCli(['auth', 'profile', 'add-device-code', '--help']);
+
+    expect(authLoginHelp.code).toBe(0);
+    expect(authLoginHelp.stderr).toBe('');
+    expect(authLoginHelp.stdout).toContain('Usage: auth login --name NAME [--resource URL] [--scope s1,s2]');
+    expect(authLoginHelp.stdout).toContain(
+      'For normal Dataverse sign-in, prefer `--resource https://<org>.crm.dynamics.com`.'
+    );
+    expect(authLoginHelp.stdout).toContain(
+      '`--scope` is an advanced escape hatch for exact OAuth scopes and those stored scopes take precedence over `--resource` on later logins.'
+    );
+
+    expect(authAddUserHelp.code).toBe(0);
+    expect(authAddUserHelp.stderr).toBe('');
+    expect(authAddUserHelp.stdout).toContain('Usage: auth profile add-user --name NAME [--resource URL] [--scope s1,s2]');
+    expect(authAddUserHelp.stdout).toContain(
+      'If `--scope` is supplied, pp stores those exact delegated scopes on the profile instead of deriving `<resource>/user_impersonation` later.'
+    );
+
+    expect(authAddDeviceCodeHelp.code).toBe(0);
+    expect(authAddDeviceCodeHelp.stderr).toBe('');
+    expect(authAddDeviceCodeHelp.stdout).toContain(
+      'Usage: auth profile add-device-code --name NAME [--resource URL] [--scope s1,s2]'
+    );
+    expect(authAddDeviceCodeHelp.stdout).toContain(
+      'If `--scope` is supplied, pp stores those exact scopes on the profile instead of deriving them from `--resource`.'
+    );
+  });
+
   it('accepts a positional alias for env add preview mode', async () => {
     const tempDir = await createTempDir();
     const result = await runCli(

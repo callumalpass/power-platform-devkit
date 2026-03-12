@@ -261,14 +261,16 @@ export function printAuthProfileInspectHelp(): void {
 export function printAuthProfileAddUserHelp(): void {
   process.stdout.write(
     [
-      'Usage: auth profile add-user --name NAME [--resource URL] [--login-hint user@contoso.com] [--browser-profile NAME] [--config-dir path]',
+      'Usage: auth profile add-user --name NAME [--resource URL] [--scope s1,s2] [--login-hint user@contoso.com] [--browser-profile NAME] [--config-dir path]',
       '',
       'Behavior:',
       '  - Creates an auth profile that can sign in as a user through the browser flow.',
+      '  - If `--scope` is supplied, pp stores those exact delegated scopes on the profile instead of deriving `<resource>/user_impersonation` later.',
       '  - Optionally records a browser profile for later interactive auth or Maker handoff use.',
       '',
       'Examples:',
       '  pp auth profile add-user --name work',
+      '  pp auth profile add-user --name graph --scope User.Read,openid --login-hint user@contoso.com',
       '  pp auth profile add-user --name work --login-hint user@contoso.com --browser-profile edge-work',
       '',
       'See also:',
@@ -334,10 +336,11 @@ export function printAuthProfileAddClientSecretHelp(): void {
 export function printAuthProfileAddDeviceCodeHelp(): void {
   process.stdout.write(
     [
-      'Usage: auth profile add-device-code --name NAME [--resource URL] [--login-hint user@contoso.com] [--config-dir path]',
+      'Usage: auth profile add-device-code --name NAME [--resource URL] [--scope s1,s2] [--login-hint user@contoso.com] [--config-dir path]',
       '',
       'Behavior:',
       '  - Creates an auth profile that signs in with the device code flow.',
+      '  - If `--scope` is supplied, pp stores those exact scopes on the profile instead of deriving them from `--resource`.',
       '  - Useful when a browser is unavailable or you want a more explicit interactive flow.',
       '',
       'Examples:',
@@ -445,11 +448,18 @@ export function printAuthBrowserProfileRemoveHelp(): void {
 export function printAuthLoginHelp(): void {
   process.stdout.write(
     [
-      'Usage: auth login --name NAME --resource URL [--login-hint user@contoso.com] [--browser-profile NAME] [--force-prompt] [--device-code] [--config-dir path]',
+      'Usage: auth login --name NAME [--resource URL] [--scope s1,s2] [--login-hint user@contoso.com] [--browser-profile NAME] [--force-prompt] [--device-code] [--config-dir path]',
       '',
       'Behavior:',
       '  - Performs an interactive sign-in for the named auth profile and target resource.',
+      '  - For normal Dataverse sign-in, prefer `--resource https://<org>.crm.dynamics.com`.',
+      '  - `--resource` lets pp derive a standard scope such as `<resource>/user_impersonation` for user auth.',
+      '  - `--scope` is an advanced escape hatch for exact OAuth scopes and those stored scopes take precedence over `--resource` on later logins.',
       '  - Use `--device-code` to force the device code flow.',
+      '',
+      'Examples:',
+      '  pp auth login --name work --resource https://contoso.crm.dynamics.com',
+      '  pp auth login --name graph --scope User.Read,openid --login-hint user@contoso.com',
     ].join('\n') + '\n'
   );
 }
