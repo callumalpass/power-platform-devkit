@@ -1213,6 +1213,68 @@ describe('FlowService', () => {
     });
   });
 
+  it('translates DefinitionRequestMissingFields into an explicit in-place activation limitation', async () => {
+    const sourceClient = createStubDataverseClient();
+    const targetClient = {
+      ...createStubDataverseClient(),
+      update: async () =>
+        ({
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'PATCH workflows(target-flow-1) returned 400',
+              detail: JSON.stringify({
+                error: {
+                  code: 'DefinitionRequestMissingFields',
+                  message: "The definition request is missing required field 'definition'. ",
+                },
+              }),
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        } as OperationResult<never>),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'target-flow-1',
+                name: 'Invoice Sync',
+                uniquename: 'crd_InvoiceSync',
+                category: 5,
+                statecode: 0,
+                statuscode: 1,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return createStubDataverseClient().queryAll(options);
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(sourceClient).promoteArtifact('Invoice Sync', {
+      targetDataverseClient: targetClient,
+      workflowState: 'activated',
+      target: 'crd_InvoiceSync',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('FLOW_ACTIVATE_DEFINITION_REQUIRED');
+    expect(result.suggestedNextActions).toContain(
+      'Run `pp flow inspect crd_InvoiceSync --environment <alias> --format json` to capture the current workflow state and identifiers.'
+    );
+    expect(result.knownLimitations).toContain(
+      'In-place activation for some Dataverse Modern Flow records is not yet supported through the current workflows PATCH path because the platform expects a full definition payload.'
+    );
+  });
+
   it('blocks artifact-mode promotion when the resolved target has a different unique name', async () => {
     let updated = false;
     const sourceClient = createStubDataverseClient();

@@ -931,9 +931,9 @@ export function printSolutionPublishHelp(): void {
       '',
       'Behavior:',
       '  - Triggers Dataverse `PublishAllXml` through a first-class solution workflow instead of requiring a generic `pp dv action` call.',
-      '  - Without `--wait-for-export`, returns as soon as Dataverse accepts the publish request and warns that read-back may still lag.',
+      '  - Without `--wait-for-export`, returns as soon as Dataverse accepts the publish request and includes the latest component read-back summary when it can be queried immediately.',
       '  - With `--wait-for-export`, polls `pp` solution export until one export succeeds, giving a concrete post-publish synchronization checkpoint.',
-      '  - Successful `--wait-for-export --format json` output also includes a `readBack` summary for packaged canvas apps and flows so the publish command itself returns the immediate post-publish state probe.',
+      '  - Successful `solution publish --format json` output includes `readBack` plus `blockers` summaries for packaged canvas apps, flows, and model-driven apps so the publish command itself returns the immediate post-publish state probe and any workflow-state export blockers.',
       '',
       'Choose this when:',
       '  - You need to publish remote changes and want `pp` to own both the publish action and the readiness checkpoint.',
@@ -963,6 +963,7 @@ export function printSolutionSyncStatusHelp(): void {
       '',
       'Behavior:',
       '  - Returns a first-class publish readback for the solution-scoped canvas apps, flows, and model-driven apps.',
+      '  - Returns a `blockers` list when packaged workflows are still draft or suspended, so export-readiness failures are machine-readable instead of diagnostic-only.',
       '  - By default also runs an export probe so the result answers whether Dataverse packaging is currently exportable.',
       '  - When no `--out` path is provided, the export probe uses a transient artifact and only returns readiness plus diagnostics.',
       '',
@@ -1818,6 +1819,7 @@ export function printFlowHelp(): void {
       '  list                        list remote flows',
       '  inspect <name|id|...>       inspect a remote flow or a local artifact',
       '  export <name|id|...>        export a remote flow artifact',
+      '  activate <name|id|...>      activate a remote flow in place',
       '  promote <name|id|...>       move a flow between environments',
       '  deploy <path>               deploy a local flow artifact into an environment',
       '  unpack <path>               unpack a flow artifact into a folder',
@@ -1841,6 +1843,7 @@ export function printFlowHelp(): void {
       'Examples:',
       '  pp flow inspect ./flows/invoice/flow.json',
       '  pp flow inspect InvoiceSync --environment dev --solution Core',
+      '  pp flow activate InvoiceSync --environment dev --solution Core --format json',
       '  pp flow access InvoiceSync --environment dev --format json',
       '  pp flow deploy ./flows/invoice/flow.json --environment dev --solution Core --dry-run --format json',
       '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --solution-package --format json',
@@ -1911,6 +1914,28 @@ export function printFlowExportHelp(): void {
   );
 }
 
+export function printFlowActivateHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow activate <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Choose this when:',
+      '  - A remote flow already exists in one environment, but it is still draft or suspended and blocking solution export or runtime checks.',
+      '',
+      'Behavior:',
+      '  - Re-applies the selected remote flow back into the same environment with workflow state forced to `activated`.',
+      '  - Keeps the operation solution-aware when `--solution` is supplied so resolution stays inside that solution boundary.',
+      '',
+      'Examples:',
+      '  pp flow activate InvoiceSync --environment dev --format json',
+      '  pp flow activate crd_InvoiceSync --environment test --solution Core --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
 export function printFlowPromoteHelp(): void {
   process.stdout.write(
     [
@@ -1930,6 +1955,7 @@ export function printFlowPromoteHelp(): void {
       'Examples:',
       '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --format json',
       '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --target-solution Core --solution-package --format json',
+      '  pp flow activate crd_InvoiceSync --environment test --solution Core --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

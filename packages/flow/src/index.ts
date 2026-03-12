@@ -2257,16 +2257,27 @@ async function deployLoadedFlowArtifact(
   );
 
   if (!update.success) {
-    return fail([...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics], {
-      supportTier: 'preview',
-      warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
-      provenance: [
-        {
-          kind: 'official-api',
-          source: 'Dataverse workflows PATCH',
-        },
-      ],
+    const activationFailure = detectInPlaceActivationFailure(update.diagnostics, {
+      identifier: remoteFlow.data.uniqueName ?? remoteFlow.data.name ?? remoteFlow.data.id,
+      solutionUniqueName: options.solutionUniqueName,
+      workflowCategory: remoteFlow.data.category,
+      workflowState: remoteFlow.data.workflowState,
     });
+    return fail(
+      [...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics, ...(activationFailure?.diagnostics ?? [])],
+      {
+        supportTier: 'preview',
+        warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
+        suggestedNextActions: activationFailure?.suggestedNextActions,
+        knownLimitations: activationFailure?.knownLimitations,
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse workflows PATCH',
+          },
+        ],
+      }
+    );
   }
 
   return ok(
@@ -2309,6 +2320,83 @@ async function deployLoadedFlowArtifact(
       ],
     }
   );
+}
+
+function detectInPlaceActivationFailure(
+  diagnostics: Diagnostic[],
+  context: {
+    identifier: string;
+    solutionUniqueName?: string;
+    workflowCategory?: number;
+    workflowState?: FlowWorkflowStateLabel;
+  }
+):
+  | {
+      diagnostics: Diagnostic[];
+      suggestedNextActions: string[];
+      knownLimitations: string[];
+    }
+  | undefined {
+  const blocking = diagnostics.find((diagnostic) => {
+    if (diagnostic.code !== 'HTTP_REQUEST_FAILED' || !/\breturned 400\b/.test(diagnostic.message)) {
+      return false;
+    }
+
+    const detail = parseDataverseErrorDetail(diagnostic.detail);
+    return detail?.code === 'DefinitionRequestMissingFields';
+  });
+
+  if (!blocking) {
+    return undefined;
+  }
+
+  const activationTarget = context.identifier;
+  const activateCommand = `pp flow activate ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json`;
+  return {
+    diagnostics: [
+      createDiagnostic(
+        'error',
+        'FLOW_ACTIVATE_DEFINITION_REQUIRED',
+        `Flow ${activationTarget} could not be activated in place because Dataverse requires a full flow definition payload for this workflow update path.`,
+        {
+          source: '@pp/flow',
+          hint: `Capture the current blocker with \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\` and avoid retrying ${activateCommand} until a definition-based activation path is available.`,
+        }
+      ),
+    ],
+    suggestedNextActions: dedupeStrings([
+      `Run \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\` to capture the current workflow state and identifiers.`,
+      context.solutionUniqueName
+        ? `Run \`pp solution sync-status ${context.solutionUniqueName} --environment <alias> --format json\` to confirm whether this draft workflow is still blocking solution export readiness.`
+        : `Inspect the parent solution packaging state before retrying activation if this workflow is meant to unblock a solution export.`,
+    ]),
+    knownLimitations: dedupeStrings([
+      context.workflowCategory === 5
+        ? 'In-place activation for some Dataverse Modern Flow records is not yet supported through the current workflows PATCH path because the platform expects a full definition payload.'
+        : 'In-place activation can fail when the Dataverse workflows PATCH path requires fields that pp does not currently round-trip.',
+      `When Dataverse returns \`DefinitionRequestMissingFields\`, repeating \`${activateCommand}\` without changing the activation path is unlikely to succeed.`,
+    ]),
+  };
+}
+
+function parseDataverseErrorDetail(detail: string | undefined): { code?: string; message?: string } | undefined {
+  if (!detail) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(detail) as Record<string, unknown>;
+    const nestedError =
+      parsed.error && typeof parsed.error === 'object' && !Array.isArray(parsed.error)
+        ? (parsed.error as Record<string, unknown>)
+        : undefined;
+    return {
+      code: readString(nestedError?.code) ?? readString(parsed.code),
+      message: readString(nestedError?.message) ?? readString(parsed.message),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 async function validateFlowArtifactRemoteTargets(

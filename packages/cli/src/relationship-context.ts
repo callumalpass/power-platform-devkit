@@ -6,12 +6,14 @@ export interface ProjectStageRelationship {
   stage: string;
   environmentAlias?: string;
   environmentUrl?: string;
+  environmentDefaultSolution?: string;
   environmentStatus: 'configured' | 'missing' | 'unset';
   authProfile?: string;
   authProfileType?: string;
   authProfileStatus: 'configured' | 'missing' | 'unresolved' | 'unset';
   solutionAlias?: string;
   solutionUniqueName?: string;
+  solutionAlignment: 'aligned' | 'mismatch' | 'unknown';
   summary: string;
 }
 
@@ -71,6 +73,7 @@ export async function buildProjectRelationshipSummary(
       `stage ${stage.stage ?? '<unset>'}`,
       `environment ${environmentAlias ?? '<unset>'}`,
       environment?.url ? `url ${environment.url}` : undefined,
+      environment?.defaultSolution ? `registry default solution ${environment.defaultSolution}` : undefined,
       `auth profile ${
         profile?.name ?? environment?.authProfile ?? (environmentAlias ? '<missing>' : '<unset>')
       }${profile?.type ? ` (${profile.type})` : ''}`,
@@ -81,6 +84,7 @@ export async function buildProjectRelationshipSummary(
       stage: stage.stage ?? '<unset>',
       environmentAlias,
       environmentUrl: environment?.url,
+      environmentDefaultSolution: environment?.defaultSolution,
       environmentStatus: environmentAlias ? (environment ? 'configured' : 'missing') : 'unset',
       authProfile: profile?.name ?? environment?.authProfile,
       authProfileType: profile?.type,
@@ -88,11 +92,17 @@ export async function buildProjectRelationshipSummary(
         ? environment
           ? profile
             ? 'configured'
-            : 'missing'
-          : 'unresolved'
-        : 'unset',
+          : 'missing'
+        : 'unresolved'
+      : 'unset',
       solutionAlias: stage.solutionAlias,
       solutionUniqueName: stage.solutionUniqueName,
+      solutionAlignment:
+        environment?.defaultSolution && stage.solutionUniqueName
+          ? environment.defaultSolution === stage.solutionUniqueName
+            ? 'aligned'
+            : 'mismatch'
+          : 'unknown',
       summary: summaryParts.join(' -> '),
     });
   }

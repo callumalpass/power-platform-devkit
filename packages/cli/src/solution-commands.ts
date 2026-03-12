@@ -376,12 +376,18 @@ function renderSolutionPublishProgress(uniqueName: string, event: SolutionPublis
       parts.push(`Latest export diagnostic ${event.latestExportDiagnostic.code}: ${event.latestExportDiagnostic.message}.`);
     }
     if (event.readBack) {
+      const canvasSummary = event.readBack.canvasApps
+        .map((app) => `${app.name ?? app.logicalName ?? app.id}=lastPublishTime:${app.lastPublishTime ?? 'unknown'}`)
+        .join(', ');
       const workflowSummary = event.readBack.workflows
         .map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id}=${workflow.workflowState ?? 'unknown'}`)
         .join(', ');
       const modelSummary = event.readBack.modelDrivenApps
         .map((app) => `${app.name ?? app.uniqueName ?? app.id}=publishedOn:${app.publishedOn ?? 'unknown'}`)
         .join(', ');
+      if (canvasSummary) {
+        parts.push(`Observed canvas apps: ${canvasSummary}.`);
+      }
       if (workflowSummary) {
         parts.push(`Observed workflows: ${workflowSummary}.`);
       }

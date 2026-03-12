@@ -8,7 +8,9 @@ controlled deploy automation.
 - `pp.environment.list`
 - `pp.solution.list`
 - `pp.solution.inspect`
+- `pp.solution.export`
 - `pp.dataverse.query`
+- `pp.dataverse.whoami`
 - `pp.connection-reference.inspect`
 - `pp.environment-variable.inspect`
 - `pp.model-app.inspect`
@@ -52,9 +54,14 @@ pp-mcp --config-dir ~/.config/pp --project .
 ## Safety and mutation boundary
 
 - Read helpers remain available with the same read-only contract.
-- Mutation is currently limited to deploy orchestration through:
-  - `pp.deploy.plan`
+- Mutation is currently limited to:
+  - one bounded solution package export through `pp.solution.export`
+  - deploy orchestration through `pp.deploy.plan`
   - `pp.deploy.apply`
+- `pp.solution.export` requires an explicit local output path and performs one
+  export for one named solution. The structured response includes mutation
+  policy metadata so agents can distinguish the bounded write from the read
+  surface.
 - `pp.deploy.plan` resolves the workspace, produces the shared deploy preview,
   and stores an in-memory MCP plan session.
 - `pp.deploy.apply` only executes a stored session. Live apply requires
@@ -69,8 +76,21 @@ pp-mcp --config-dir ~/.config/pp --project .
   `--allow-interactive-auth`, or pass `allowInteractiveAuth: true` on a remote
   tool call.
 
-This keeps the mutation boundary conservative while still allowing a bounded
-plan-then-apply workflow through one interface.
+This keeps the mutation boundary conservative while still allowing bounded
+solution export and plan-then-apply workflows through one interface.
+
+Discover the current read and mutation boundary:
+
+```json
+{
+  "name": "pp.domain.list",
+  "arguments": {}
+}
+```
+
+The `solution-lifecycle` domain reports `pp.solution.export` under
+`mutationTools`, and the `dataverse` domain includes `pp.dataverse.whoami`
+alongside the read inspection routes.
 
 ## Example workflow
 

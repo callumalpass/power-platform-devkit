@@ -946,6 +946,7 @@ export interface FlowGroupHandlers {
   runFlowList(args: string[]): Promise<number>;
   runFlowInspect(args: string[]): Promise<number>;
   runFlowExport(args: string[]): Promise<number>;
+  runFlowActivate(args: string[]): Promise<number>;
   runFlowPromote(args: string[]): Promise<number>;
   runFlowUnpack(args: string[]): Promise<number>;
   runFlowPack(args: string[]): Promise<number>;
@@ -991,6 +992,12 @@ export async function runFlowGroup(
         return 0;
       }
       return handlers.runFlowExport(args);
+    case 'activate':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printFlowActivateHelp();
+        return 0;
+      }
+      return handlers.runFlowActivate(args);
     case 'promote':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printFlowPromoteHelp();

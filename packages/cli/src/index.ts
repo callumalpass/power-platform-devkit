@@ -1481,6 +1481,7 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
     runFlowList,
     runFlowInspect,
     runFlowExport,
+    runFlowActivate,
     runFlowPromote,
     runFlowUnpack,
     runFlowPack,
@@ -5470,6 +5471,54 @@ async function runFlowExport(args: string[]): Promise<number> {
 
   const result = await new FlowService(resolution.data.client).exportArtifact(identifier, outPath, {
     solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowActivate(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure(
+        'FLOW_ACTIVATE_ARGS_REQUIRED',
+        'Usage: flow activate <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const solutionUniqueName = readFlag(args, '--solution');
+  const preview = maybeHandleMutationPreview(args, 'json', 'flow.activate', {
+    identifier,
+    environment: resolution.data.environment.alias,
+    solution: solutionUniqueName,
+    target: identifier,
+    workflowState: 'activated',
+  });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new FlowService(resolution.data.client).promoteArtifact(identifier, {
+    sourceSolutionUniqueName: solutionUniqueName,
+    targetSolutionUniqueName: solutionUniqueName,
+    target: identifier,
+    workflowState: 'activated',
+    targetDataverseClient: resolution.data.client,
   });
 
   if (!result.success || !result.data) {

@@ -127,11 +127,21 @@ function buildProjectInspectSuggestedNextActions(
   const actions: string[] = [];
   const activeRelationship = relationships.stageRelationships.find((stage) => stage.stage === relationships.selectedStage) ?? relationships.stageRelationships[0];
   const environmentAlias = activeRelationship?.environmentAlias;
+  const configuredStages = relationships.stageRelationships.map((stage) => stage.stage).filter((stage) => stage && stage !== '<unset>');
 
   if (requestedStage) {
-    const configuredStages = relationships.stageRelationships.map((stage) => stage.stage).join(', ') || '<none>';
-    actions.push(`Choose one of the configured project stages instead: ${configuredStages}.`);
+    actions.push(`Choose one of the configured project stages instead: ${configuredStages.join(', ') || '<none>'}.`);
     actions.push('Re-run `pp project inspect --format json` without `--stage` to inspect the default project target.');
+  }
+
+  if (!requestedStage && configuredStages.length > 1) {
+    const explicitStages = configuredStages.filter((stage) => stage !== relationships.selectedStage);
+    actions.push(
+      `Project topology exposes multiple stages (${configuredStages.join(', ')}); re-run \`pp project inspect --stage <stage> --format json\` before mutating a non-default environment target.`
+    );
+    for (const stage of explicitStages) {
+      actions.push(`Run \`pp project inspect --stage ${stage} --format json\` to inspect that stage's environment and solution mapping explicitly.`);
+    }
   }
 
   if (environmentAlias && (activeRelationship?.environmentStatus !== 'configured' || activeRelationship?.authProfileStatus !== 'configured')) {
@@ -141,6 +151,17 @@ function buildProjectInspectSuggestedNextActions(
   if (activeRelationship?.authProfile && activeRelationship.authProfileStatus === 'missing') {
     actions.push(
       `Run \`pp auth profile inspect ${activeRelationship.authProfile} --format json\` to verify the auth profile bound to environment alias ${environmentAlias ?? '<alias>'}.`
+    );
+  }
+
+  if (
+    environmentAlias &&
+    activeRelationship?.environmentDefaultSolution &&
+    activeRelationship.solutionUniqueName &&
+    activeRelationship.solutionAlignment === 'mismatch'
+  ) {
+    actions.push(
+      `Environment alias ${environmentAlias} defaults to solution ${activeRelationship.environmentDefaultSolution}, but the selected project stage targets ${activeRelationship.solutionUniqueName}; re-run \`pp project inspect --stage <stage> --format json\` or update \`pp.config.yaml\` if this workflow should follow the registry default.`
     );
   }
 

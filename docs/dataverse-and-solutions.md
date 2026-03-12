@@ -696,6 +696,8 @@ pp solution publish Core --env dev
 pp solution publish Core --env dev --wait-for-export --out ./artifacts/Core.zip
 ```
 
+`pp solution publish --format json` also returns `readBack` plus a machine-readable `blockers` list for packaged canvas apps, workflows, and model-driven apps so you can inspect the immediate post-publish state and see whether a draft or suspended workflow is still blocking export readiness even when you do not wait for the export checkpoint.
+
 Inspect solution inventory and preflight facts:
 
 ```bash

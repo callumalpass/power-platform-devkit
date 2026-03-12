@@ -566,9 +566,11 @@ function buildEnvironmentInspectMetadata(
       }
     | undefined
 ): Pick<OperationResult<unknown>, 'diagnostics' | 'warnings' | 'supportTier' | 'suggestedNextActions' | 'provenance' | 'knownLimitations'> {
+  const profileResourceWarning = buildEnvironmentProfileResourceMismatchWarning(environment, profile);
+
   return {
     diagnostics: [],
-    warnings: [],
+    warnings: profileResourceWarning ? [profileResourceWarning] : [],
     supportTier: 'preview',
     suggestedNextActions: dedupeStringArray(
       [
@@ -576,6 +578,9 @@ function buildEnvironmentInspectMetadata(
           ? `Run \`pp auth profile inspect ${profile.name} --format json\` to confirm the auth profile bound to environment alias ${environment.alias}.`
           : `Repair the missing auth profile binding for environment alias ${environment.alias} before using remote Dataverse commands.`,
         `Run \`pp dv whoami --environment ${environment.alias} --format json\` to confirm live Dataverse access for this alias.`,
+        profileResourceWarning
+          ? `Update environment alias ${environment.alias} or auth profile ${profile?.name} so both point at the same Dataverse URL before relying on stored environment provenance.`
+          : undefined,
         projectUsage
           ? `Run \`pp project inspect ${projectUsage.projectRoot} --format json\` to review where the current project maps environment alias ${environment.alias}.`
           : undefined,
@@ -596,6 +601,44 @@ function buildEnvironmentInspectMetadata(
       'Environment inspect summarizes local pp config and cached browser bootstrap state; it does not prove live Dataverse access on its own.',
     ],
   };
+}
+
+function buildEnvironmentProfileResourceMismatchWarning(
+  environment: EnvironmentAlias,
+  profile: AuthProfile | undefined
+): Diagnostic | undefined {
+  if (!profile?.defaultResource) {
+    return undefined;
+  }
+
+  const environmentUrl = normalizeComparableUrl(environment.url);
+  const profileResourceUrl = normalizeComparableUrl(profile.defaultResource);
+
+  if (!environmentUrl || !profileResourceUrl || environmentUrl === profileResourceUrl) {
+    return undefined;
+  }
+
+  return createDiagnostic(
+    'warning',
+    'ENV_AUTH_PROFILE_RESOURCE_MISMATCH',
+    `Environment alias ${environment.alias} points at ${environment.url}, but bound auth profile ${profile.name} defaults to ${profile.defaultResource}.`,
+    {
+      source: '@pp/cli env inspect guidance',
+      hint: 'Align the alias URL and auth profile defaultResource before assuming checked-in config still targets the intended Dataverse org.',
+    }
+  );
+}
+
+function normalizeComparableUrl(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    return new URL(url).toString().replace(/\/$/, '');
+  } catch {
+    return undefined;
+  }
 }
 
 function buildEnvironmentBrowserGuidance(

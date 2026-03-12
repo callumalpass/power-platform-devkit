@@ -384,8 +384,19 @@ export interface SolutionSyncStatusResult {
     kind: 'solution-export';
     confirmed: boolean;
   };
+  blockers: SolutionSyncStatusBlocker[];
   readBack: SolutionPublishReadback;
   exportCheck: SolutionSyncStatusExportCheck;
+}
+
+export interface SolutionSyncStatusBlocker {
+  kind: 'workflow-state';
+  componentType: 'workflow';
+  id: string;
+  name?: string;
+  logicalName?: string;
+  workflowState?: string;
+  reason: string;
 }
 
 export interface SolutionPublishResult {
@@ -404,6 +415,7 @@ export interface SolutionPublishResult {
     elapsedMs?: number;
   };
   readBack?: SolutionPublishReadback;
+  blockers?: SolutionSyncStatusBlocker[];
 }
 
 export interface SolutionPackOptions {
@@ -1458,6 +1470,9 @@ export class SolutionService {
     }
 
     if (!options.waitForExport) {
+      const readBack = await this.describePublishReadBack(uniqueName);
+      const blockers = buildSolutionSyncStatusBlockers(readBack?.data);
+      const blockingWorkflowActions = buildBlockingWorkflowSuggestedNextActions(uniqueName, readBack?.data);
       return ok(
         {
           solution: solution.data,
@@ -1471,6 +1486,8 @@ export class SolutionService {
             kind: 'none',
             confirmed: false,
           },
+          readBack: readBack?.data,
+          blockers,
         },
         {
           supportTier: 'preview',
@@ -1478,6 +1495,10 @@ export class SolutionService {
           warnings: mergeDiagnosticLists(
             solution.warnings,
             publishResult.warnings,
+            readBack?.warnings,
+            buildBlockingWorkflowWarning(uniqueName, readBack?.data)
+              ? [buildBlockingWorkflowWarning(uniqueName, readBack?.data)!]
+              : undefined,
             [
               createDiagnostic(
                 'warning',
@@ -1485,7 +1506,10 @@ export class SolutionService {
                 `Publish for solution ${uniqueName} was accepted, but downstream Dataverse reads may still lag immediately after the action returns.`,
                 {
                   source: '@pp/solution',
-                  hint: `Re-run \`pp solution publish ${uniqueName} --environment <alias> --wait-for-export\` when you need an export-backed synchronization checkpoint.`,
+                  detail: describePublishReadBackSummary(readBack?.data),
+                  hint:
+                    blockingWorkflowActions[0] ??
+                    `Re-run \`pp solution publish ${uniqueName} --environment <alias> --wait-for-export\` when you need an export-backed synchronization checkpoint.`,
                 }
               ),
             ]
@@ -1495,6 +1519,7 @@ export class SolutionService {
               kind: 'official-api',
               source: 'Dataverse PublishAllXml',
             },
+            ...(readBack?.provenance ?? []),
           ],
         }
       );
@@ -1560,6 +1585,7 @@ export class SolutionService {
               elapsedMs: Date.now() - startedAt,
             },
             readBack: readBack?.data,
+            blockers: buildSolutionSyncStatusBlockers(readBack?.data),
           },
           {
             supportTier: 'preview',
@@ -1611,12 +1637,35 @@ export class SolutionService {
         solution.diagnostics,
         publishResult.diagnostics,
         lastExportResult?.diagnostics
-      ),
+        ),
       {
         supportTier: 'preview',
-        warnings: mergeDiagnosticLists(solution.warnings, publishResult.warnings, lastExportResult?.warnings),
+        warnings: mergeDiagnosticLists(
+          solution.warnings,
+          publishResult.warnings,
+          lastExportResult?.warnings,
+          buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)
+            ? [buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)!]
+            : undefined,
+          lastObservedReadBack
+            ? [
+                createDiagnostic(
+                  'warning',
+                  'SOLUTION_PUBLISH_LAST_READBACK',
+                  `Latest component read-back for solution ${uniqueName} was captured before the export checkpoint timed out.`,
+                  {
+                    source: '@pp/solution',
+                    detail: describePublishReadBackSummary(lastObservedReadBack),
+                    hint: `Run \`pp solution sync-status ${uniqueName} --environment <alias> --format json\` to capture the same component read-back alongside a fresh export probe.`,
+                  }
+                ),
+              ]
+            : undefined
+        ),
         suggestedNextActions: [
+          ...buildBlockingWorkflowSuggestedNextActions(uniqueName, lastObservedReadBack),
           `Retry with \`pp solution publish ${uniqueName} --environment <alias> --wait-for-export --timeout-ms ${timeoutMs * 2}\`.`,
+          `Run \`pp solution sync-status ${uniqueName} --environment <alias> --format json\` to capture component read-back and the current export probe in one response.`,
           `Run \`pp solution export ${uniqueName} --environment <alias> --format json\` to inspect the current packaging failure directly.`,
         ],
         provenance: [
@@ -1649,6 +1698,7 @@ export class SolutionService {
     if (!readBackResult.success || !readBackResult.data) {
       return readBackResult as unknown as OperationResult<SolutionSyncStatusResult>;
     }
+    const blockingWorkflowActions = buildBlockingWorkflowSuggestedNextActions(uniqueName, readBackResult.data);
 
     const packageType: Exclude<SolutionPackageType, 'both'> = options.managed ? 'managed' : 'unmanaged';
     const includeExportCheck = options.includeExportCheck ?? true;
@@ -1693,8 +1743,13 @@ export class SolutionService {
             packageType,
             failure: {
               diagnostics: exportResult.diagnostics,
-              warnings: exportResult.warnings,
-              suggestedNextActions: exportResult.suggestedNextActions,
+              warnings: mergeDiagnosticLists(
+                exportResult.warnings,
+                buildBlockingWorkflowWarning(uniqueName, readBackResult.data)
+                  ? [buildBlockingWorkflowWarning(uniqueName, readBackResult.data)!]
+                  : undefined
+              ),
+              suggestedNextActions: [...new Set([...(blockingWorkflowActions ?? []), ...(exportResult.suggestedNextActions ?? [])])],
             },
           };
         }
@@ -1712,6 +1767,7 @@ export class SolutionService {
           kind: 'solution-export',
           confirmed: exportCheck.confirmed,
         },
+        blockers: buildSolutionSyncStatusBlockers(readBackResult.data),
         readBack: readBackResult.data,
         exportCheck,
       },
@@ -1761,17 +1817,35 @@ export class SolutionService {
       return undefined;
     }
 
-    const workflowSummaries = (workflows.data ?? [])
+    const workflowDetails = (workflows.data ?? [])
       .map((workflow) => {
         const label = workflow.name ?? workflow.uniquename ?? workflow.workflowid;
         const workflowState = describeWorkflowState(workflow.statecode, workflow.statuscode);
-        return `${label} [id=${workflow.workflowid}; category=${workflow.category ?? 'unknown'}; state=${workflowState}]`;
+        return {
+          id: workflow.workflowid,
+          label,
+          uniqueName: workflow.uniquename,
+          workflowState,
+          category: workflow.category,
+          summary: `${label} [id=${workflow.workflowid}; category=${workflow.category ?? 'unknown'}; state=${workflowState}]`,
+        };
       })
-      .sort((left, right) => left.localeCompare(right));
+      .sort((left, right) => left.summary.localeCompare(right.summary));
+
+    const workflowSummaries = workflowDetails.map((workflow) => workflow.summary);
 
     if (workflowSummaries.length === 0) {
       return undefined;
     }
+
+    const blockingWorkflowDetails = workflowDetails.filter((workflow) => workflow.workflowState !== 'activated');
+    const blockingWorkflowActions = blockingWorkflowDetails.flatMap((workflow) => {
+      const identifier = workflow.uniqueName ?? workflow.label ?? workflow.id;
+      return [
+        `Run \`pp flow inspect ${identifier} --environment <alias> --solution ${uniqueName} --format json\` to confirm why the packaged flow is still ${workflow.workflowState}.`,
+        `If ${identifier} should already be runnable, activate it in place with \`pp flow activate ${identifier} --environment <alias> --solution ${uniqueName} --format json\`.`,
+      ];
+    });
 
     return {
       warnings: [
@@ -1785,8 +1859,25 @@ export class SolutionService {
             hint: 'Inspect the listed workflow with `pp flow inspect <name|id|uniqueName> --environment <alias>` before retrying export.',
           }
         ),
+        ...(blockingWorkflowDetails.length > 0
+          ? [
+              createDiagnostic(
+                'warning',
+                'SOLUTION_EXPORT_BLOCKED_WORKFLOW_STATE',
+                `Solution ${uniqueName} still has packaged workflow components in a non-runnable state, so ExportSolution is likely to keep failing until those flows become runnable.`,
+                {
+                  source: '@pp/solution',
+                  detail: blockingWorkflowDetails
+                    .map((workflow) => `${workflow.label} state=${workflow.workflowState}`)
+                    .join('; '),
+                  hint: blockingWorkflowActions[0],
+                }
+              ),
+            ]
+          : []),
       ],
       suggestedNextActions: [
+        ...blockingWorkflowActions,
         `Run \`pp solution components ${uniqueName} --environment <alias> --format json\` to confirm which workflow components are packaged.`,
         'Inspect any draft or unexpected workflow state before retrying export.',
       ],
@@ -2382,6 +2473,107 @@ function summarizeComponentTypeCounts(components: SolutionComponentSummary[]): R
 
 function compareNamedReadBackItems<T extends { name?: string; id: string }>(left: T, right: T): number {
   return (left.name ?? left.id).localeCompare(right.name ?? right.id);
+}
+
+function describePublishReadBackSummary(readBack: SolutionPublishReadback | undefined): string | undefined {
+  if (!readBack) {
+    return undefined;
+  }
+
+  const parts: string[] = [];
+
+  if (readBack.canvasApps.length > 0) {
+    parts.push(
+      `canvas apps: ${readBack.canvasApps
+        .map((app) => `${app.name ?? app.logicalName ?? app.id} lastPublishTime=${app.lastPublishTime ?? 'unknown'}`)
+        .join('; ')}`
+    );
+  }
+
+  if (readBack.workflows.length > 0) {
+    parts.push(
+      `workflows: ${readBack.workflows
+        .map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id} state=${workflow.workflowState ?? 'unknown'}`)
+        .join('; ')}`
+    );
+  }
+
+  if (readBack.modelDrivenApps.length > 0) {
+    parts.push(
+      `model-driven apps: ${readBack.modelDrivenApps
+        .map((app) => `${app.name ?? app.uniqueName ?? app.id} publishedOn=${app.publishedOn ?? 'unknown'}`)
+        .join('; ')}`
+    );
+  }
+
+  return parts.length > 0 ? parts.join(' | ') : undefined;
+}
+
+function getBlockingWorkflowReadBacks(readBack: SolutionPublishReadback | undefined): SolutionPublishWorkflowReadback[] {
+  return (readBack?.workflows ?? []).filter(
+    (workflow) => workflow.workflowState === 'draft' || workflow.workflowState === 'suspended'
+  );
+}
+
+function formatWorkflowIdentifier(workflow: SolutionPublishWorkflowReadback): string {
+  return workflow.logicalName ?? workflow.name ?? workflow.id;
+}
+
+function buildBlockingWorkflowSuggestedNextActions(
+  solutionUniqueName: string,
+  readBack: SolutionPublishReadback | undefined
+): string[] {
+  const blocking = getBlockingWorkflowReadBacks(readBack);
+
+  if (blocking.length === 0) {
+    return [];
+  }
+
+  const actions = blocking.flatMap((workflow) => {
+    const identifier = formatWorkflowIdentifier(workflow);
+    return [
+      `Run \`pp flow inspect ${identifier} --environment <alias> --solution ${solutionUniqueName} --format json\` to confirm why the packaged flow is still ${workflow.workflowState}.`,
+      `If ${identifier} should already be runnable, activate it in place with \`pp flow activate ${identifier} --environment <alias> --solution ${solutionUniqueName} --format json\`.`,
+    ];
+  });
+
+  return [...new Set(actions)];
+}
+
+function buildBlockingWorkflowWarning(
+  solutionUniqueName: string,
+  readBack: SolutionPublishReadback | undefined
+): Diagnostic | undefined {
+  const blocking = getBlockingWorkflowReadBacks(readBack);
+
+  if (blocking.length === 0) {
+    return undefined;
+  }
+
+  return createDiagnostic(
+    'warning',
+    'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
+    `Solution ${solutionUniqueName} still has packaged workflow components in a non-runnable state, so export readiness is expected to stay false until those flows become runnable.`,
+    {
+      source: '@pp/solution',
+      detail: blocking
+        .map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id} state=${workflow.workflowState ?? 'unknown'}`)
+        .join('; '),
+      hint: buildBlockingWorkflowSuggestedNextActions(solutionUniqueName, readBack)[0],
+    }
+  );
+}
+
+function buildSolutionSyncStatusBlockers(readBack: SolutionPublishReadback | undefined): SolutionSyncStatusBlocker[] {
+  return getBlockingWorkflowReadBacks(readBack).map((workflow) => ({
+    kind: 'workflow-state',
+    componentType: 'workflow',
+    id: workflow.id,
+    name: workflow.name,
+    logicalName: workflow.logicalName,
+    workflowState: workflow.workflowState,
+    reason: `Workflow ${workflow.name ?? workflow.logicalName ?? workflow.id} is still ${workflow.workflowState ?? 'not runnable'}, so solution export readiness remains blocked.`,
+  }));
 }
 
 function applyDependencyComponentResolutions(

@@ -2189,6 +2189,126 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('suggests explicit stage inspection when project topology exposes multiple stages', async () => {
+    const tempDir = await createTempDir();
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      [
+        'name: staged-fixture',
+        'defaults:',
+        '  environment: dev',
+        '  solution: core',
+        'solutions:',
+        '  core:',
+        '    environment: dev',
+        '    uniqueName: Core',
+        'assets:',
+        '  solutions: solutions',
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev:',
+        '      environment: dev',
+        '      solution: core',
+        '    test:',
+        '      environment: test',
+        '      solution: core',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    await mkdir(join(tempDir, 'solutions'), { recursive: true });
+
+    const inspect = await runCli(['project', 'inspect', tempDir, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      success: true,
+      suggestedNextActions: expect.arrayContaining([
+        'Project topology exposes multiple stages (dev, test); re-run `pp project inspect --stage <stage> --format json` before mutating a non-default environment target.',
+        'Run `pp project inspect --stage test --format json` to inspect that stage\'s environment and solution mapping explicitly.',
+      ]),
+    });
+  });
+
+  it('flags when the selected project solution disagrees with the environment registry default solution', async () => {
+    const tempDir = await createTempDir();
+    const configDir = await createTempDir();
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      [
+        'name: staged-fixture',
+        'defaults:',
+        '  environment: test',
+        '  solution: core',
+        'solutions:',
+        '  core:',
+        '    environment: test',
+        '    uniqueName: Core',
+        'assets:',
+        '  solutions: solutions',
+        'topology:',
+        '  defaultStage: test',
+        '  stages:',
+        '    test:',
+        '      environment: test',
+        '      solution: core',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    await mkdir(join(tempDir, 'solutions'), { recursive: true });
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          environments: {
+            test: {
+              alias: 'test',
+              url: 'https://example.crm.dynamics.com',
+              authProfile: 'fixture-user',
+              defaultSolution: 'ppHarnessShell',
+            },
+          },
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              tenantId: '11111111-1111-1111-1111-111111111111',
+              clientId: '00000000-0000-0000-0000-000000000000',
+              scopes: ['https://example.crm.dynamics.com/.default'],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await runCli(['project', 'inspect', tempDir, '--config-dir', configDir, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      success: true,
+      relationships: {
+        stageRelationships: expect.arrayContaining([
+          expect.objectContaining({
+            stage: 'test',
+            environmentAlias: 'test',
+            environmentDefaultSolution: 'ppHarnessShell',
+            solutionUniqueName: 'Core',
+            solutionAlignment: 'mismatch',
+          }),
+        ]),
+      },
+      suggestedNextActions: expect.arrayContaining([
+        'Environment alias test defaults to solution ppHarnessShell, but the selected project stage targets Core; re-run `pp project inspect --stage <stage> --format json` or update `pp.config.yaml` if this workflow should follow the registry default.',
+      ]),
+    });
+  });
+
   it('preserves runtime metadata in flow runs, doctor, and monitor JSON success payloads', async () => {
     const flowRuntimeFixture = (await readJsonFile(
       resolveRepoPath('fixtures', 'flow', 'runtime', 'invoice-sync-runtime.json')
@@ -6240,6 +6360,99 @@ describe('cli fixture-backed workflows', () => {
     expect(String(workflows.data?.[0]?.clientdata)).toContain('"definition"');
   });
 
+  it('activates a remote flow in place through the CLI entrypoint', async () => {
+    const environmentClient = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+          },
+        ],
+      },
+      queryAll: {
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Invoice Sync',
+            uniquename: 'crd_InvoiceSync',
+            category: 5,
+            statecode: 0,
+            statuscode: 1,
+            clientdata: JSON.stringify({
+              definition: {
+                actions: {},
+              },
+            }),
+          },
+        ],
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'comp-1',
+            objectid: 'flow-1',
+            componenttype: 29,
+          },
+        ],
+        connectionreferences: [],
+        environmentvariabledefinitions: [],
+        environmentvariablevalues: [],
+      },
+    });
+
+    mockDataverseResolution({
+      test: { client: environmentClient },
+    });
+
+    const activate = await runCli([
+      'flow',
+      'activate',
+      'Invoice Sync',
+      '--environment',
+      'test',
+      '--solution',
+      'Core',
+      '--format',
+      'json',
+    ]);
+
+    expect(activate.code).toBe(0);
+    expect(JSON.parse(activate.stderr)).toMatchObject({
+      diagnostics: [
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_SCOPE_EMPTY',
+        }),
+      ],
+      success: true,
+    });
+    expect(JSON.parse(activate.stdout)).toMatchObject({
+      identifier: 'Invoice Sync',
+      source: {
+        id: 'flow-1',
+        uniqueName: 'crd_InvoiceSync',
+        workflowState: 'draft',
+        solutionUniqueName: 'Core',
+      },
+      targetIdentifier: 'Invoice Sync',
+      operation: 'updated',
+      target: {
+        id: 'flow-1',
+        uniqueName: 'crd_InvoiceSync',
+        workflowState: 'activated',
+        solutionUniqueName: 'Core',
+      },
+      promotionMode: 'artifact',
+    });
+
+    const workflows = await environmentClient.queryAll<Record<string, unknown>>({
+      table: 'workflows',
+    });
+    expect(workflows.success).toBe(true);
+    expect(workflows.data?.[0]).toMatchObject({
+      statecode: 1,
+      statuscode: 2,
+    });
+  });
+
   it('rejects workflow-state overrides on solution-package flow promote through the CLI entrypoint', async () => {
     mockDataverseResolution({
       source: {
@@ -7265,6 +7478,109 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('surfaces draft workflow remediation when solution export is blocked by packaged flows', async () => {
+    const client = {
+      query: async <T>(options: {
+        table: string;
+        filter?: string;
+      }) => {
+        if (options.table === 'solutions') {
+          return ok(
+            [{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0' }] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Harness Flow',
+                uniquename: 'crd_HarnessFlow',
+                category: 5,
+                statecode: 0,
+                statuscode: 1,
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+      queryAll: async <T>(options?: { table?: string }) => {
+        if (options?.table === 'solutioncomponents') {
+          return ok(
+            [{ solutioncomponentid: 'comp-workflow', objectid: 'flow-1', componenttype: 29, ismetadata: false, rootcomponentbehavior: 0 }] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options?.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Harness Flow',
+                uniquename: 'crd_HarnessFlow',
+                category: 5,
+                statecode: 0,
+                statuscode: 1,
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+      invokeAction: async () =>
+        fail(
+          [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'POST ExportSolution returned 405',
+            },
+          ],
+          { supportTier: 'preview' }
+        ),
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        client,
+      },
+    });
+
+    const exportResult = await runCli(['solution', 'export', 'Core', '--env', 'source', '--format', 'json']);
+
+    expect(exportResult.code).toBe(1);
+    expect(exportResult.stderr).toBe('');
+    expect(JSON.parse(exportResult.stdout)).toMatchObject({
+      success: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'HTTP_REQUEST_FAILED',
+        }),
+      ]),
+      warnings: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_EXPORT_WORKFLOW_CONTEXT',
+        }),
+        expect.objectContaining({
+          code: 'SOLUTION_EXPORT_BLOCKED_WORKFLOW_STATE',
+          detail: expect.stringContaining('Harness Flow state=draft'),
+        }),
+      ]),
+      suggestedNextActions: expect.arrayContaining([
+        'If crd_HarnessFlow should already be runnable, activate it in place with `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json`.',
+      ]),
+      supportTier: 'preview',
+    });
+  });
+
   it('captures a rollback checkpoint through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
     const requests: Array<{ path: string; body?: Record<string, unknown> }> = [];
@@ -7480,6 +7796,7 @@ describe('cli fixture-backed workflows', () => {
         confirmed: true,
         attempts: 1,
       },
+      blockers: [],
       export: {
         packageType: 'unmanaged',
       },
@@ -7509,6 +7826,139 @@ describe('cli fixture-backed workflows', () => {
             logicalName: 'crd_HarnessFlow',
             category: 5,
             workflowState: 'activated',
+          },
+        ],
+      },
+    });
+  });
+
+  it('publishes a solution through the CLI entrypoint and returns immediate readback without waiting for export', async () => {
+    const requests: Array<{ path: string; body?: Record<string, unknown> }> = [];
+    const client = {
+      query: async <T>(options: { table: string }) =>
+        ok(
+          options.table === 'solutions'
+            ? ([{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0' }] as T[])
+            : ([] as T[]),
+          { supportTier: 'preview' }
+        ),
+      queryAll: async <T>(options: { table: string }) => {
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              { solutioncomponentid: 'comp-canvas', objectid: 'canvas-1', componenttype: 300 },
+              { solutioncomponentid: 'comp-flow', objectid: 'flow-1', componenttype: 29 },
+              { solutioncomponentid: 'comp-model', objectid: 'app-1', componenttype: 80 },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'canvasapps') {
+          return ok(
+            [
+              {
+                canvasappid: 'canvas-1',
+                displayname: 'Harness Canvas',
+                name: 'crd_HarnessCanvas',
+                lastpublishtime: '2026-03-11T18:06:20.000Z',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Harness Flow',
+                uniquename: 'crd_HarnessFlow',
+                category: 5,
+                statecode: 0,
+                statuscode: 1,
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'appmodules') {
+          return ok(
+            [
+              {
+                appmoduleid: 'app-1',
+                name: 'Harness Hub',
+                uniquename: 'crd_HarnessHub',
+                statecode: 0,
+                publishedon: '2026-03-11T18:07:00.000Z',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>) => {
+        requests.push({ path: name, body: parameters });
+
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            body: undefined as T,
+          },
+          { supportTier: 'preview' }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        client,
+      },
+    });
+
+    const publishResult = await runCli(['solution', 'publish', 'Core', '--env', 'source', '--format', 'json']);
+
+    expect(publishResult.code).toBe(0);
+    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml']);
+    expect(JSON.parse(publishResult.stdout)).toMatchObject({
+      published: true,
+      waitForExport: false,
+      synchronization: {
+        kind: 'none',
+        confirmed: false,
+      },
+      blockers: [
+        {
+          kind: 'workflow-state',
+          componentType: 'workflow',
+          id: 'flow-1',
+          name: 'Harness Flow',
+          logicalName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+        },
+      ],
+      readBack: {
+        summary: {
+          componentCount: 3,
+          canvasAppCount: 1,
+          workflowCount: 1,
+          modelDrivenAppCount: 1,
+        },
+        workflows: [
+          {
+            id: 'flow-1',
+            workflowState: 'draft',
+          },
+        ],
+        modelDrivenApps: [
+          {
+            id: 'app-1',
+            publishedOn: '2026-03-11T18:07:00.000Z',
           },
         ],
       },
@@ -7647,6 +8097,7 @@ describe('cli fixture-backed workflows', () => {
         kind: 'solution-export',
         confirmed: true,
       },
+      blockers: [],
       readBack: {
         summary: {
           componentCount: 3,
@@ -8983,6 +9434,62 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('warns when the bound auth profile default resource disagrees with the alias url', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+              defaultResource: 'https://stale.crm.dynamics.com',
+              loginHint: 'fixture.user@example.com',
+              browserProfile: 'fixture-browser',
+            },
+          },
+          browserProfiles: {
+            'fixture-browser': {
+              name: 'fixture-browser',
+              kind: 'edge',
+              lastBootstrapUrl: 'https://make.powerapps.com/',
+              lastBootstrappedAt: '2026-03-11T10:00:00.000Z',
+            },
+          },
+          environments: {
+            fixture: {
+              alias: 'fixture',
+              url: 'https://live.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await runCli(['env', 'inspect', 'fixture', '--config-dir', configDir, '--format', 'json']);
+
+    expect(inspect.code).toBe(0);
+    expect(inspect.stderr).toBe('');
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      warnings: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'ENV_AUTH_PROFILE_RESOURCE_MISMATCH',
+          message:
+            'Environment alias fixture points at https://live.crm.dynamics.com, but bound auth profile fixture-user defaults to https://stale.crm.dynamics.com.',
+        }),
+      ]),
+      suggestedNextActions: expect.arrayContaining([
+        'Update environment alias fixture or auth profile fixture-user so both point at the same Dataverse URL before relying on stored environment provenance.',
+      ]),
+    });
+  });
+
   it('flags browser profiles that were not bootstrapped against the resolved maker environment', async () => {
     const configDir = await createTempDir();
     await mkdir(configDir, { recursive: true });
@@ -9268,6 +9775,7 @@ describe('cli fixture-backed workflows', () => {
   it('scopes flow help and keeps local-vs-remote guidance discoverable', async () => {
     const flowHelp = await runCli(['flow', '--help']);
     const flowInspectHelp = await runCli(['flow', 'inspect', '--help']);
+    const flowActivateHelp = await runCli(['flow', 'activate', '--help']);
     const flowDeployHelp = await runCli(['flow', 'deploy', '--help']);
     const flowPromoteHelp = await runCli(['flow', 'promote', '--help']);
 
@@ -9282,6 +9790,11 @@ describe('cli fixture-backed workflows', () => {
     expect(flowInspectHelp.stderr).toBe('');
     expect(flowInspectHelp.stdout).toContain('Without `--environment`, inspect a local flow artifact on disk.');
     expect(flowInspectHelp.stdout).toContain('With `--environment`, inspect a remote flow by name, id, or unique name.');
+
+    expect(flowActivateHelp.code).toBe(0);
+    expect(flowActivateHelp.stderr).toBe('');
+    expect(flowActivateHelp.stdout).toContain('Usage: flow activate <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [options]');
+    expect(flowActivateHelp.stdout).toContain('A remote flow already exists in one environment, but it is still draft or suspended');
 
     expect(flowDeployHelp.code).toBe(0);
     expect(flowDeployHelp.stderr).toBe('');
@@ -9415,7 +9928,7 @@ describe('cli fixture-backed workflows', () => {
     expect(solutionPublishHelp.stdout).toContain('pp solution publish Core --environment dev --format json');
     expect(solutionPublishHelp.stdout).toContain('--wait-for-export');
     expect(solutionPublishHelp.stdout).toContain(
-      'Successful `--wait-for-export --format json` output also includes a `readBack` summary for packaged canvas apps and flows'
+      'Successful `solution publish --format json` output includes a `readBack` summary for packaged canvas apps, flows, and model-driven apps'
     );
     expect(solutionPublishHelp.stdout).not.toContain('SOLUTION_PUBLISH_ARGS_REQUIRED');
 
