@@ -629,14 +629,22 @@ export function summarizeBrowserProfile(
   profile: BrowserProfile,
   options: ConfigStoreOptions = {}
 ): Record<string, unknown> {
+  const bootstrapUrl = profile.lastBootstrapUrl ?? DEFAULT_BROWSER_BOOTSTRAP_URL;
+  const bootstrapCommand = `pp auth browser-profile bootstrap ${profile.name} --url '${bootstrapUrl}'`;
+
   return {
     name: profile.name,
     kind: profile.kind,
     command: profile.command ?? (profile.kind === 'custom' ? undefined : resolveBrowserCommand(profile, process.platform)),
     args: profile.args ?? [],
     profileDir: resolveBrowserProfileDirectory(profile, options),
+    status: profile.lastBootstrappedAt ? 'bootstrapped' : 'needs-bootstrap',
     lastBootstrapUrl: profile.lastBootstrapUrl,
     lastBootstrappedAt: profile.lastBootstrappedAt,
+    bootstrapCommand,
+    recommendedAction: profile.lastBootstrappedAt
+      ? 'Refresh the browser profile if sign-in prompts reappear before browser-backed validation.'
+      : 'Bootstrap the browser profile once before relying on browser-backed validation.',
   };
 }
 

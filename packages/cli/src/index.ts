@@ -15,9 +15,10 @@ import {
   summarizeProfile,
   type AuthProfile,
 } from '@pp/auth';
-import { CanvasService, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
+import { CanvasService, deriveCanvasStudioEditUrl, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
 import {
   createMutationPreview,
+  createSuccessPayload,
   readMutationFlags,
   resolveOutputFormat,
   renderFailure,
@@ -34,6 +35,9 @@ import {
   type EnvironmentAlias,
 } from '@pp/config';
 import {
+  CanvasAppService,
+  CloudFlowService,
+  DataverseClient,
   parseColumnCreateSpec,
   parseColumnUpdateSpec,
   ConnectionReferenceService,
@@ -51,6 +55,7 @@ import {
   parseTableCreateSpec,
   parseTableUpdateSpec,
   diffDataverseMetadataSnapshots,
+  ModelDrivenAppService,
   normalizeAttributeDefinition,
   normalizeAttributeDefinitions,
   type DataverseMetadataApplyResult,
@@ -65,7 +70,7 @@ import {
 import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowPatchDocument, type FlowWorkflowStateLabel } from '@pp/flow';
 import { HttpClient } from '@pp/http';
-import { ModelService, type ModelArtifactMutationKind } from '@pp/model';
+import { ModelService, type ModelArtifactMutationKind, type ModelInspectResult } from '@pp/model';
 import { PowerBiClient } from '@pp/powerbi';
 import {
   discoverProject,
@@ -100,6 +105,7 @@ import {
 import YAML from 'yaml';
 import * as cliHelp from './help';
 import {
+  runInitGroup,
   runAuthGroup,
   runAnalysisGroup,
   runCanvasGroup,
@@ -116,6 +122,13 @@ import {
   runSharePointGroup,
   runSolutionGroup,
 } from './command-groups';
+import {
+  runInitAnswerCommand,
+  runInitCancelCommand,
+  runInitResumeCommand,
+  runInitStartCommand,
+  runInitStatusCommand,
+} from './init-commands';
 import {
   runProjectDoctorCommand,
   runProjectFeedbackCommand,
@@ -134,6 +147,7 @@ import {
   runSolutionAnalyzeCommand,
   runSolutionComponentsCommand,
   runSolutionCompareCommand,
+  runSolutionCheckpointCommand,
   runSolutionCreateCommand,
   runSolutionDeleteCommand,
   runSolutionDependenciesCommand,
@@ -141,7 +155,10 @@ import {
   runSolutionImportCommand,
   runSolutionInspectCommand,
   runSolutionListCommand,
+  runSolutionPublishersCommand,
   runSolutionPackCommand,
+  runSolutionPublishCommand,
+  runSolutionSyncStatusCommand,
   runSolutionSetMetadataCommand,
   runSolutionUnpackCommand,
   createLocalSolutionService,
@@ -162,6 +179,7 @@ import {
 } from './auth-commands';
 import {
   runEnvironmentAddCommand,
+  runEnvironmentBaselineCommand,
   runEnvironmentCleanupCommand,
   runEnvironmentCleanupPlanCommand,
   runEnvironmentInspectCommand,
@@ -214,6 +232,7 @@ export async function main(argv: string[]): Promise<number> {
     runVersion,
     runCompletion,
     runDiagnostics,
+    runInit,
     runAuth,
     runEnvironment,
     runDataverse,
@@ -236,6 +255,16 @@ async function runProject(command: string | undefined, args: string[]): Promise<
   return runProjectGroup(command, args, { runProjectInit, runProjectDoctor, runProjectFeedback, runProjectInspect });
 }
 
+async function runInit(command: string | undefined, args: string[]): Promise<number> {
+  return runInitGroup(command, args, {
+    runInitStart,
+    runInitStatus,
+    runInitResume,
+    runInitAnswer,
+    runInitCancel,
+  });
+}
+
 async function runAnalysis(command: string | undefined, args: string[]): Promise<number> {
   return runAnalysisGroup(command, args, {
     runAnalysisReport,
@@ -244,6 +273,91 @@ async function runAnalysis(command: string | undefined, args: string[]): Promise
     runAnalysisDrift,
     runAnalysisUsage,
     runAnalysisPolicy,
+  });
+}
+
+async function runInitStart(args: string[]): Promise<number> {
+  return runInitStartCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
+  });
+}
+
+async function runInitStatus(args: string[]): Promise<number> {
+  return runInitStatusCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
+  });
+}
+
+async function runInitResume(args: string[]): Promise<number> {
+  return runInitResumeCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
+  });
+}
+
+async function runInitAnswer(args: string[]): Promise<number> {
+  return runInitAnswerCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
+  });
+}
+
+async function runInitCancel(args: string[]): Promise<number> {
+  return runInitCancelCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readConfigOptions,
+    readFlag,
+    readRepeatedFlags,
+    hasFlag,
+    isMachineReadableOutputFormat,
+    printFailure,
+    printByFormat,
+    promptForInput,
+    argumentFailure,
   });
 }
 
@@ -363,6 +477,7 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
     runEnvironmentList,
     runEnvironmentAdd,
     runEnvironmentInspect,
+    runEnvironmentBaseline,
     runEnvironmentResolveMakerId,
     runEnvironmentCleanupPlan,
     runEnvironmentReset,
@@ -394,7 +509,11 @@ async function runSolution(command: string | undefined, args: string[]): Promise
     runSolutionCreate,
     runSolutionDelete,
     runSolutionSetMetadata,
+    runSolutionPublish,
+    runSolutionSyncStatus,
+    runSolutionCheckpoint,
     runSolutionList,
+    runSolutionPublishers,
     runSolutionInspect,
     runSolutionComponents,
     runSolutionDependencies,
@@ -409,8 +528,10 @@ async function runSolution(command: string | undefined, args: string[]): Promise
 
 async function runConnectionReference(command: string | undefined, args: string[]): Promise<number> {
   return runConnectionReferenceGroup(command, args, {
+    runConnectionReferenceCreate,
     runConnectionReferenceList,
     runConnectionReferenceInspect,
+    runConnectionReferenceSet,
     runConnectionReferenceValidate,
   });
 }
@@ -428,8 +549,10 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
   return runCanvasGroup(command, args, {
     runCanvasAttach,
     runCanvasDownload,
+    runCanvasImport,
     runCanvasUnsupportedRemoteMutation,
     runCanvasList,
+    runCanvasAccess,
     runCanvasTemplates,
     runCanvasWorkspace,
     runCanvasPatch,
@@ -1358,6 +1481,7 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
     runFlowList,
     runFlowInspect,
     runFlowExport,
+    runFlowActivate,
     runFlowPromote,
     runFlowUnpack,
     runFlowPack,
@@ -1367,9 +1491,11 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
     runFlowGraph,
     runFlowPatch,
     runFlowRuns,
+    runFlowMonitor,
     runFlowErrors,
     runFlowConnrefs,
     runFlowDoctor,
+    runFlowAccess,
   });
 }
 
@@ -1379,6 +1505,7 @@ async function runModel(command: string | undefined, args: string[]): Promise<nu
     runModelAttach,
     runModelList,
     runModelInspect,
+    runModelAccess,
     runModelComposition,
     runModelImpact,
     runModelSitemap,
@@ -1395,7 +1522,9 @@ async function runProjectInspect(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
+    printFailureWithMachinePayload,
     printByFormat,
     isMachineReadableOutputFormat,
     printResultDiagnostics,
@@ -1411,6 +1540,7 @@ async function runProjectInit(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     isMachineReadableOutputFormat,
@@ -1427,6 +1557,7 @@ async function runProjectDoctor(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     isMachineReadableOutputFormat,
@@ -1443,6 +1574,7 @@ async function runProjectFeedback(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     isMachineReadableOutputFormat,
@@ -1555,6 +1687,7 @@ async function runDeployPlan(args: string[]): Promise<number> {
     outputFormat,
     readProjectDiscoveryOptions,
     printFailure,
+    printFailureWithMachinePayload,
     printByFormat,
     printResultDiagnostics,
     readFlag,
@@ -1797,6 +1930,7 @@ async function runAuthToken(auth: AuthService, args: string[]): Promise<number> 
 async function runEnvironmentList(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentListCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1810,6 +1944,7 @@ async function runEnvironmentList(configOptions: ConfigStoreOptions, args: strin
 async function runEnvironmentAdd(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentAddCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1823,6 +1958,21 @@ async function runEnvironmentAdd(configOptions: ConfigStoreOptions, args: string
 async function runEnvironmentInspect(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentInspectCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    readFlag,
+    argumentFailure,
+    discoverMakerEnvironmentIdForEnvironment,
+  });
+}
+
+async function runEnvironmentBaseline(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
+  return runEnvironmentBaselineCommand(configOptions, args, {
+    positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1836,6 +1986,7 @@ async function runEnvironmentInspect(configOptions: ConfigStoreOptions, args: st
 async function runEnvironmentResolveMakerId(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentResolveMakerIdCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1849,6 +2000,7 @@ async function runEnvironmentResolveMakerId(configOptions: ConfigStoreOptions, a
 async function runEnvironmentRemove(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentRemoveCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1862,6 +2014,7 @@ async function runEnvironmentRemove(configOptions: ConfigStoreOptions, args: str
 async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentCleanupPlanCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1875,6 +2028,7 @@ async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args
 async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentCleanupCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -1888,6 +2042,7 @@ async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: st
 async function runEnvironmentReset(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentResetCommand(configOptions, args, {
     positionalArgs,
+    readRepeatedFlags,
     outputFormat,
     printFailure,
     printByFormat,
@@ -2023,6 +2178,7 @@ async function runDataverseAction(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2112,7 +2268,8 @@ async function runDataverseBatch(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2160,6 +2317,8 @@ async function runDataverseRowsExport(args: string[]): Promise<number> {
     maxPageSize: readNumberFlag(args, '--max-page-size'),
     includeAnnotations: readListFlag(args, '--annotations'),
     all: hasFlag(args, '--all'),
+    solutionUniqueName: readFlag(args, '--solution'),
+    diagnoseEmptyFilter: true,
   });
 
   if (!result.success || !result.data) {
@@ -2182,7 +2341,7 @@ async function runDataverseRowsExport(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2241,7 +2400,7 @@ async function runDataverseQuery(args: string[]): Promise<number> {
   const table = positionalArgs(args)[0];
 
   if (!table) {
-    return printFailure(argumentFailure('DV_TABLE_REQUIRED', 'Table logical name is required.'));
+    return printFailure(argumentFailure('DV_TABLE_REQUIRED', 'Usage: dv query <table> --environment ALIAS [--solution UNIQUE_NAME] [options]'));
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2260,6 +2419,8 @@ async function runDataverseQuery(args: string[]): Promise<number> {
     count: hasFlag(args, '--count'),
     maxPageSize: readNumberFlag(args, '--max-page-size'),
     includeAnnotations: readListFlag(args, '--annotations'),
+    solutionUniqueName: readFlag(args, '--solution'),
+    diagnoseEmptyFilter: true,
   };
 
   if (hasFlag(args, '--page-info')) {
@@ -2282,7 +2443,7 @@ async function runDataverseQuery(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2311,7 +2472,7 @@ async function runDataverseGet(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2562,7 +2723,7 @@ async function runDataverseMetadataTables(args: string[]): Promise<number> {
   }
 
   printWarnings(result);
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -2590,7 +2751,7 @@ async function runDataverseMetadataTable(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -3487,6 +3648,23 @@ async function runSolutionList(args: string[]): Promise<number> {
   });
 }
 
+async function runSolutionPublishers(args: string[]): Promise<number> {
+  return runSolutionPublishersCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
+}
+
 async function runSolutionCreate(args: string[]): Promise<number> {
   return runSolutionCreateCommand(args, {
     positionalArgs,
@@ -3497,6 +3675,24 @@ async function runSolutionCreate(args: string[]): Promise<number> {
     printWarnings,
     maybeHandleMutationPreview,
     resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
+}
+
+async function runSolutionCheckpoint(args: string[]): Promise<number> {
+  return runSolutionCheckpointCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    resolveDataverseClientByFlag,
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
@@ -3540,6 +3736,40 @@ async function runSolutionInspect(args: string[]): Promise<number> {
 
 async function runSolutionSetMetadata(args: string[]): Promise<number> {
   return runSolutionSetMetadataCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
+}
+
+async function runSolutionPublish(args: string[]): Promise<number> {
+  return runSolutionPublishCommand(args, {
+    positionalArgs,
+    readFlag,
+    outputFormat,
+    printFailure,
+    printByFormat,
+    printWarnings,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForCli,
+    readSolutionOutputTarget,
+    readSolutionPackageTypeFlag,
+    createLocalSolutionService,
+    argumentFailure,
+  });
+}
+
+async function runSolutionSyncStatus(args: string[]): Promise<number> {
+  return runSolutionSyncStatusCommand(args, {
     positionalArgs,
     readFlag,
     outputFormat,
@@ -3708,7 +3938,63 @@ async function runConnectionReferenceList(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runConnectionReferenceCreate(args: string[]): Promise<number> {
+  const logicalName = positionalArgs(args)[0];
+  const connectionId = readFlag(args, '--connection-id');
+
+  if (!logicalName || !connectionId) {
+    return printFailure(
+      argumentFailure(
+        'CONNREF_CREATE_ARGS_REQUIRED',
+        'Usage: connref create <logicalName> --environment <alias> --connection-id CONNECTION_ID [--display-name NAME] [--connector-id CONNECTOR_ID] [--custom-connector-id CONNECTOR_ID]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const displayName = readFlag(args, '--display-name');
+  const connectorId = readFlag(args, '--connector-id');
+  const customConnectorId = readFlag(args, '--custom-connector-id');
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'connref.create',
+    { logicalName, solution: readFlag(args, '--solution') },
+    {
+      connectionId,
+      ...(displayName !== undefined ? { displayName } : {}),
+      ...(connectorId !== undefined ? { connectorId } : {}),
+      ...(customConnectorId !== undefined ? { customConnectorId } : {}),
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = new ConnectionReferenceService(resolution.data.client);
+  const result = await service.create(logicalName, connectionId, {
+    displayName,
+    connectorId,
+    customConnectorId,
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -3744,6 +4030,50 @@ async function runConnectionReferenceInspect(args: string[]): Promise<number> {
   return 0;
 }
 
+async function runConnectionReferenceSet(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+  const connectionId = readFlag(args, '--connection-id');
+
+  if (!identifier || !connectionId) {
+    return printFailure(
+      argumentFailure(
+        'CONNREF_SET_ARGS_REQUIRED',
+        'Usage: connref set <logicalName|displayName|id> --environment <alias> --connection-id CONNECTION_ID'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'connref.set',
+    { identifier, solution: readFlag(args, '--solution') },
+    { connectionId }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = new ConnectionReferenceService(resolution.data.client);
+  const result = await service.setConnectionId(identifier, connectionId, {
+    solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
 async function runConnectionReferenceValidate(args: string[]): Promise<number> {
   const resolution = await resolveDataverseClientForCli(args);
 
@@ -3760,7 +4090,15 @@ async function runConnectionReferenceValidate(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  const format = outputFormat(args, 'json');
+
+  if (isMachineReadableOutputFormat(format)) {
+    printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'results' }), format);
+    return 0;
+  }
+
+  printByFormat(result.data ?? [], format);
+  printResultDiagnostics(result, format);
   return 0;
 }
 
@@ -3781,6 +4119,7 @@ async function runEnvironmentVariableList(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4019,8 +4358,16 @@ async function runCanvasInspect(args: string[]): Promise<number> {
       return printFailure(resolution);
     }
 
-    const result = await new CanvasService(resolution.data.client).inspectRemote(identifier, {
-      solutionUniqueName: readFlag(args, '--solution'),
+    const expectations = readCanvasRemoteProofExpectations(args);
+
+    if (!expectations.success) {
+      return printFailure(expectations);
+    }
+
+    const solutionUniqueName = readFlag(args, '--solution');
+    const service = new CanvasService(resolution.data.client);
+    const result = await service.inspectRemote(identifier, {
+      solutionUniqueName,
     });
 
     if (!result.success) {
@@ -4031,7 +4378,70 @@ async function runCanvasInspect(args: string[]): Promise<number> {
       return printFailure(fail(createDiagnostic('error', 'CANVAS_REMOTE_NOT_FOUND', `Canvas app ${identifier} was not found.`)));
     }
 
-    printByFormat(result.data, outputFormat(args, 'json'));
+    const downloadPlan = await service.planRemoteDownload(identifier, {
+      solutionUniqueName,
+    });
+
+    if (!downloadPlan.success) {
+      return printFailure(downloadPlan);
+    }
+
+    if (expectations.data.length > 0) {
+      const proofSolutionUniqueName = downloadPlan.data?.resolution.resolvedSolutionUniqueName;
+
+      if (!proofSolutionUniqueName) {
+        return printFailure(
+          argumentFailure(
+            'SOLUTION_UNIQUE_NAME_REQUIRED',
+            '--solution UNIQUE_NAME is required for proof mode unless pp can auto-resolve a single containing solution for the remote app.'
+          )
+        );
+      }
+
+      const proof = await service.proveRemote(identifier, {
+        solutionUniqueName: proofSolutionUniqueName,
+        expectations: expectations.data,
+      });
+
+      if (!proof.success || !proof.data) {
+        return printFailure(proof);
+      }
+
+      printByFormat(
+        buildCanvasRemoteInspectPayload({
+          app: result.data,
+          envAlias: resolution.data.environment.alias,
+          solutionUniqueName,
+          downloadPlan: downloadPlan.data?.resolution,
+          makerEnvironmentId: await resolveCanvasMakerEnvironmentId(
+            undefined,
+            resolution.data.environment,
+            resolution.data.authProfile,
+            readConfigOptions(args)
+          ),
+          proof: proof.data,
+        }),
+        outputFormat(args, 'json')
+      );
+      printResultDiagnostics(proof, outputFormat(args, 'json'));
+      return proof.data.valid ? 0 : 1;
+    }
+
+    printByFormat(
+      buildCanvasRemoteInspectPayload({
+        app: result.data,
+        envAlias: resolution.data.environment.alias,
+        solutionUniqueName,
+        downloadPlan: downloadPlan.data?.resolution,
+        makerEnvironmentId: await resolveCanvasMakerEnvironmentId(
+          undefined,
+          resolution.data.environment,
+          resolution.data.authProfile,
+          readConfigOptions(args)
+        ),
+      }),
+      outputFormat(args, 'json')
+    );
     return 0;
   }
 
@@ -4068,6 +4478,35 @@ async function runCanvasList(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runCanvasAccess(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('CANVAS_IDENTIFIER_REQUIRED', 'Usage: canvas access <displayName|name|id> --environment ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new CanvasAppService(resolution.data.client).access(identifier);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'CANVAS_NOT_FOUND', `Canvas app ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4130,16 +4569,12 @@ async function runCanvasDownload(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'CANVAS_DOWNLOAD_ARG_REQUIRED',
-        'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [--extract-to-directory DIR]'
+        'Usage: canvas download <displayName|name|id> --environment ALIAS [--solution UNIQUE_NAME] [--out FILE] [--extract-to-directory DIR]'
       )
     );
   }
 
   const solutionUniqueName = readFlag(args, '--solution');
-
-  if (!solutionUniqueName) {
-    return printFailure(argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', '--solution UNIQUE_NAME is required.'));
-  }
 
   const resolution = await resolveDataverseClientForCli(args);
 
@@ -4149,16 +4584,466 @@ async function runCanvasDownload(args: string[]): Promise<number> {
 
   const result = await new CanvasService(resolution.data.client).downloadRemote(identifier, {
     solutionUniqueName,
-    outPath: readFlag(args, '--out'),
-    extractToDirectory: readFlag(args, '--extract-to-directory'),
+    outPath: resolveOptionalInvocationPath(readFlag(args, '--out')),
+    extractToDirectory: resolveOptionalInvocationPath(readFlag(args, '--extract-to-directory')),
+    onProgress: (event) => {
+      process.stderr.write(renderCanvasDownloadProgress(event));
+    },
   });
 
   if (!result.success || !result.data) {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(
+    await buildCanvasRemoteDownloadPayload(result.data, {
+      envAlias: resolution.data.environment.alias,
+      solutionUniqueName: result.data.solutionUniqueName,
+    }),
+    outputFormat(args, 'json')
+  );
   return 0;
+}
+
+async function runCanvasImport(args: string[]): Promise<number> {
+  const importPath = positionalArgs(args)[0];
+  const solutionUniqueName = readFlag(args, '--solution');
+  const target = readFlag(args, '--target');
+
+  if (!importPath || !solutionUniqueName || !target) {
+    return printFailure(
+      argumentFailure(
+        'CANVAS_IMPORT_ARGS_REQUIRED',
+        'Usage: canvas import <file.msapp> --environment ALIAS --solution UNIQUE_NAME --target <displayName|name|id> [--overwrite-unmanaged-customizations] [--no-publish-workflows]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const publishWorkflows = !hasFlag(args, '--no-publish-workflows');
+  const overwriteUnmanagedCustomizations = hasFlag(args, '--overwrite-unmanaged-customizations');
+  const preview = maybeHandleMutationPreview(
+    args,
+    'json',
+    'canvas.import',
+    {
+      importPath,
+      target,
+      environment: resolution.data.environment.alias,
+      solution: solutionUniqueName,
+    },
+    {
+      publishWorkflows,
+      overwriteUnmanagedCustomizations,
+    }
+  );
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new CanvasService(resolution.data.client).importRemote(target, {
+    solutionUniqueName,
+    importPath: resolveOptionalInvocationPath(importPath) ?? importPath,
+    publishWorkflows,
+    overwriteUnmanagedCustomizations,
+    onProgress: (event) => {
+      process.stderr.write(renderCanvasImportProgress(event));
+    },
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(
+    buildCanvasRemoteImportPayload(result.data, {
+      envAlias: resolution.data.environment.alias,
+    }),
+    outputFormat(args, 'json')
+  );
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+function renderCanvasDownloadProgress(event: { stage: string; detail?: string }): string {
+  const summary =
+    event.stage === 'resolve-app'
+      ? 'resolving remote app'
+      : event.stage === 'export-solution'
+        ? 'exporting solution package'
+        : event.stage === 'read-solution-archive'
+          ? 'reading solution archive'
+          : event.stage === 'write-msapp'
+            ? 'writing .msapp artifact'
+            : event.stage === 'extract-source'
+              ? 'extracting editable source'
+              : event.stage;
+  return `[pp] canvas download: ${summary}${event.detail ? ` - ${event.detail}` : ''}\n`;
+}
+
+function renderCanvasImportProgress(event: { stage: string; detail?: string }): string {
+  const summary =
+    event.stage === 'resolve-app'
+      ? 'resolving target app'
+      : event.stage === 'export-solution'
+        ? 'exporting solution package'
+        : event.stage === 'read-solution-archive'
+          ? 'reading solution archive'
+          : event.stage === 'extract-solution-archive'
+            ? 'extracting solution archive'
+            : event.stage === 'replace-msapp'
+              ? 'replacing canvas artifact'
+              : event.stage === 'rebuild-solution'
+                ? 'rebuilding solution package'
+                : event.stage === 'import-solution'
+                  ? 'importing solution package'
+                  : event.stage;
+  return `[pp] canvas import: ${summary}${event.detail ? ` - ${event.detail}` : ''}\n`;
+}
+
+function buildCanvasRemoteInspectPayload(input: {
+  app: Awaited<ReturnType<CanvasService['inspectRemote']>> extends OperationResult<infer T> ? NonNullable<T> : never;
+  envAlias: string;
+  solutionUniqueName?: string;
+  downloadPlan?: Awaited<ReturnType<CanvasService['planRemoteDownload']>> extends OperationResult<infer T>
+    ? T extends { resolution: infer R }
+      ? R
+      : never
+    : never;
+  makerEnvironmentId?: string;
+  proof?: unknown;
+}) {
+  const portalProvenance = buildCanvasPortalProvenance({
+    appId: input.app.id,
+    appOpenUri: input.app.openUri,
+    makerEnvironmentId: input.makerEnvironmentId,
+  });
+
+  return compactObject({
+    ...input.app,
+    portalProvenance,
+    handoff: {
+      makerStudio: compactObject({
+        recommendedUrl: portalProvenance?.makerStudioUrl,
+        inspectCommand: `pp canvas inspect ${formatCliArg(input.app.displayName ?? input.app.name ?? input.app.id)} --environment ${formatCliArg(input.envAlias)}${input.solutionUniqueName ? ` --solution ${formatCliArg(input.solutionUniqueName)}` : ''}`,
+      }),
+      download: !input.downloadPlan
+        ? undefined
+        : input.downloadPlan.status === 'ready' && input.downloadPlan.resolvedSolutionUniqueName
+          ? {
+              solutionUniqueName: input.downloadPlan.resolvedSolutionUniqueName,
+              autoResolved: input.downloadPlan.autoResolved,
+              downloadCommand: `pp canvas download ${formatCliArg(input.app.displayName ?? input.app.name ?? input.app.id)} --environment ${formatCliArg(input.envAlias)} --solution ${formatCliArg(input.downloadPlan.resolvedSolutionUniqueName)}`,
+            }
+          : compactObject({
+              status: input.downloadPlan?.status,
+              candidateSolutions: input.downloadPlan?.candidateSolutions.map((candidate) => candidate.uniqueName ?? candidate.solutionId),
+              hint:
+                input.downloadPlan?.status === 'requires-solution-membership'
+                  ? 'Attach the app to a solution before attempting remote schema harvest or download.'
+                  : input.downloadPlan?.status === 'solution-ambiguous'
+                    ? 'Pass --solution <unique-name> to choose the containing solution for download/proof.'
+                    : undefined,
+            }),
+      dataverse: {
+        accessCommand: `pp canvas access ${formatCliArg(input.app.displayName ?? input.app.name ?? input.app.id)} --environment ${formatCliArg(input.envAlias)} --format json`,
+      },
+    },
+    ...(input.proof ? { proof: input.proof } : {}),
+  });
+}
+
+async function buildCanvasRemoteDownloadPayload(
+  result: Awaited<ReturnType<CanvasService['downloadRemote']>> extends OperationResult<infer T> ? NonNullable<T> : never,
+  context: {
+    envAlias: string;
+    solutionUniqueName: string;
+  }
+) {
+  const dataSources = result.extractedPath ? await inspectExtractedCanvasDataSources(result.extractedPath) : [];
+
+  return compactObject({
+    ...result,
+    handoff: {
+      roundTrip: compactObject({
+        extractedPath: result.extractedPath,
+        buildCommand: result.extractedPath
+          ? `pp canvas build ${formatCliArg(result.extractedPath)} --out <rebuilt-msapp>`
+          : undefined,
+        replaceTargetHint: `Use \`pp solution pack <unpacked-solution-dir> --rebuild-canvas-apps --out <solution.zip>\` to rebuild extracted CanvasApps/* folders back into their sibling .msapp artifacts before packing.`,
+        extractSuggestion: result.extractedPath
+          ? undefined
+          : 'Use `--extract-to-directory <dir>` on download or `pp solution unpack <solution.zip> --extract-canvas-apps` to get editable source before rebuilding.',
+        packCommand: 'pp solution pack <unpacked-solution-dir> --rebuild-canvas-apps --out <solution.zip>',
+      }),
+      dataSources:
+        dataSources.length > 0
+          ? dataSources.map((source) =>
+              compactObject({
+                name: source.name,
+                datasetName: source.datasetName,
+                entityName: source.entityName,
+                metadataCommand: source.entityName
+                  ? `pp dv metadata table ${formatCliArg(source.entityName)} --environment ${formatCliArg(context.envAlias)} --format json`
+                  : undefined,
+              })
+            )
+          : undefined,
+    },
+  });
+}
+
+function buildCanvasRemoteImportPayload(
+  result: Awaited<ReturnType<CanvasService['importRemote']>> extends OperationResult<infer T> ? NonNullable<T> : never,
+  context: {
+    envAlias: string;
+  }
+) {
+  const targetIdentifier = result.app.displayName ?? result.app.name ?? result.app.id;
+
+  return compactObject({
+    ...result,
+    handoff: {
+      verification: {
+        inspectCommand: `pp canvas inspect ${formatCliArg(targetIdentifier)} --environment ${formatCliArg(context.envAlias)} --solution ${formatCliArg(result.solutionUniqueName)}`,
+        downloadCommand: `pp canvas download ${formatCliArg(targetIdentifier)} --environment ${formatCliArg(context.envAlias)} --solution ${formatCliArg(result.solutionUniqueName)} --out <verified.msapp>`,
+        solutionComponentsCommand: `pp solution components ${formatCliArg(result.solutionUniqueName)} --environment ${formatCliArg(context.envAlias)} --format json`,
+      },
+    },
+  });
+}
+
+async function resolveSolutionIdForCli(client: InstanceType<typeof DataverseClient>, solutionUniqueName: string): Promise<string | undefined> {
+  const result = await client.query<{ solutionid?: string; uniquename?: string }>({
+    table: 'solutions',
+    select: ['solutionid', 'uniquename'],
+    filter: `uniquename eq '${solutionUniqueName.replace(/'/g, "''")}'`,
+  });
+
+  if (!result.success) {
+    return undefined;
+  }
+
+  return (result.data ?? []).find((solution) => solution.uniquename === solutionUniqueName)?.solutionid;
+}
+
+function buildModelRemotePayload(input: {
+  app: Awaited<ReturnType<ModelService['list']>> extends OperationResult<(infer T)[]> ? T : never;
+  envAlias: string;
+  solutionUniqueName?: string;
+  solutionId?: string;
+  makerEnvironmentId?: string;
+}) {
+  const portalProvenance = buildModelPortalProvenance({
+    makerEnvironmentId: input.makerEnvironmentId,
+    solutionUniqueName: input.solutionUniqueName,
+    solutionId: input.solutionId,
+  });
+
+  return compactObject({
+    ...input.app,
+    portalProvenance,
+    handoff: {
+      makerSolutionApps: compactObject({
+        recommendedUrl: portalProvenance?.solutionAppsUrl,
+        inspectCommand: `pp model inspect ${formatCliArg(input.app.name ?? input.app.uniqueName ?? input.app.id)} --environment ${formatCliArg(input.envAlias)}${input.solutionUniqueName ? ` --solution ${formatCliArg(input.solutionUniqueName)}` : ''}`,
+        accessCommand: `pp model access ${formatCliArg(input.app.name ?? input.app.uniqueName ?? input.app.id)} --environment ${formatCliArg(input.envAlias)} --format json`,
+      }),
+    },
+  });
+}
+
+function buildModelInspectPayload(input: {
+  result: Awaited<ReturnType<ModelService['inspect']>> extends OperationResult<infer T> ? NonNullable<T> : never;
+  envAlias: string;
+  solutionUniqueName?: string;
+  solutionId?: string;
+  makerEnvironmentId?: string;
+}) {
+  return compactObject({
+    ...input.result,
+    app: buildModelRemotePayload({
+      app: input.result.app,
+      envAlias: input.envAlias,
+      solutionUniqueName: input.solutionUniqueName,
+      solutionId: input.solutionId,
+      makerEnvironmentId: input.makerEnvironmentId,
+    }),
+  });
+}
+
+function buildModelPortalProvenance(input: {
+  makerEnvironmentId?: string;
+  solutionUniqueName?: string;
+  solutionId?: string;
+}) {
+  const makerUrls = buildMakerModelUrls(input);
+
+  return compactObject({
+    makerEnvironmentId: input.makerEnvironmentId,
+    solutionUniqueName: input.solutionUniqueName,
+    solutionsUrl: makerUrls.solutionsUrl,
+    solutionAppsUrl: makerUrls.solutionAppsUrl,
+    sources: compactObject({
+      makerEnvironmentId: input.makerEnvironmentId ? 'config.environment.makerEnvironmentId' : undefined,
+      solutionAppsUrl:
+        input.makerEnvironmentId && input.solutionId ? 'synthesized-from-maker-environment-id-and-solution-id' : undefined,
+    }),
+  });
+}
+
+function buildMakerModelUrls(context: {
+  makerEnvironmentId?: string;
+  solutionId?: string;
+}): {
+  solutionsUrl?: string;
+  solutionAppsUrl?: string;
+} {
+  if (!context.makerEnvironmentId) {
+    return {};
+  }
+
+  const solutionsUrl = `https://make.powerapps.com/environments/${encodeURIComponent(context.makerEnvironmentId)}/solutions`;
+
+  if (!context.solutionId) {
+    return { solutionsUrl };
+  }
+
+  return {
+    solutionsUrl,
+    solutionAppsUrl: `${solutionsUrl}/${encodeURIComponent(context.solutionId)}/apps`,
+  };
+}
+
+async function inspectExtractedCanvasDataSources(extractedPath: string) {
+  const path = resolvePath(extractedPath, 'References', 'DataSources.json');
+  const document = await readJsonFile<Record<string, unknown>>(path).catch(() => undefined);
+  const entries = Array.isArray(document?.DataSources) ? document.DataSources : [];
+
+  return entries
+    .map((entry) => (entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : undefined))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) =>
+      compactObject({
+        name: typeof entry.Name === 'string' ? entry.Name : '<unknown>',
+        datasetName: typeof entry.DatasetName === 'string' ? entry.DatasetName : undefined,
+        entityName: typeof entry.EntityName === 'string' ? entry.EntityName : undefined,
+      })
+    );
+}
+
+function buildCanvasPortalProvenance(input: {
+  appId: string;
+  appOpenUri?: string;
+  makerEnvironmentId?: string;
+}) {
+  const canonicalOpenUri = input.appOpenUri;
+  const derivedStudioUrl = canonicalOpenUri ? deriveCanvasStudioEditUrl(canonicalOpenUri) : undefined;
+  const normalizedStudioUrl = normalizeExistingMakerCanvasUrl(canonicalOpenUri, input.appId);
+  const makerStudioUrl = derivedStudioUrl ?? normalizedStudioUrl ?? synthesizeCanvasStudioUrl(input.appId, input.makerEnvironmentId);
+
+  const makerStudioSource = derivedStudioUrl
+    ? 'derived-from-app-open-uri'
+    : normalizedStudioUrl
+      ? 'normalized-from-app-open-uri'
+      : makerStudioUrl
+        ? 'synthesized-from-maker-environment-id'
+        : undefined;
+
+  return compactObject({
+    appOpenUri: canonicalOpenUri,
+    makerEnvironmentId: input.makerEnvironmentId,
+    makerStudioUrl,
+    sources: compactObject({
+      appOpenUri: canonicalOpenUri ? 'dataverse.canvasapps.appopenuri' : undefined,
+      makerStudioUrl: makerStudioSource,
+    }),
+  });
+}
+
+function normalizeExistingMakerCanvasUrl(appOpenUri: string | undefined, appId: string): string | undefined {
+  if (!appOpenUri) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(appOpenUri);
+
+    if (url.hostname !== 'make.powerapps.com' || !url.pathname.includes('/canvas/')) {
+      return undefined;
+    }
+
+    if (!url.searchParams.get('action')) {
+      url.searchParams.set('action', 'edit');
+    }
+
+    if (!url.searchParams.get('app-id')) {
+      url.searchParams.set('app-id', `/providers/Microsoft.PowerApps/apps/${appId}`);
+    }
+
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function synthesizeCanvasStudioUrl(appId: string, makerEnvironmentId: string | undefined): string | undefined {
+  if (!makerEnvironmentId) {
+    return undefined;
+  }
+
+  const url = new URL(`https://make.powerapps.com/e/${encodeURIComponent(makerEnvironmentId)}/canvas/`);
+  url.searchParams.set('action', 'edit');
+  url.searchParams.set('app-id', `/providers/Microsoft.PowerApps/apps/${appId}`);
+  return url.toString();
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function buildModelArtifactProjectionReport(
+  result: OperationResult<ModelInspectResult>,
+  inspect: ModelInspectResult,
+  artifactKind: 'sitemap' | 'form' | 'view' | 'dependency'
+): Record<string, unknown> {
+  const items =
+    artifactKind === 'sitemap'
+      ? inspect.sitemaps
+      : artifactKind === 'form'
+        ? inspect.forms
+        : artifactKind === 'view'
+          ? inspect.views
+          : inspect.dependencies;
+  const omissionReason = result.warnings.find((warning) => warning.code === 'MODEL_COMPONENTS_UNAVAILABLE');
+
+  return compactObject({
+    app: inspect.app,
+    items,
+    summary: {
+      artifactKind,
+      count: items.length,
+      componentCount: inspect.dependencies.length,
+      missingComponentCount: inspect.missingComponents.length,
+    },
+    coverage: compactObject({
+      componentMembershipSource: 'appmodulecomponents',
+      componentInspectionAvailable: omissionReason === undefined,
+      omissionReason: omissionReason
+        ? compactObject({
+            code: omissionReason.code,
+            message: omissionReason.message,
+            hint: omissionReason.hint,
+          })
+        : undefined,
+    }),
+  });
 }
 
 async function runCanvasBuild(args: string[]): Promise<number> {
@@ -4174,7 +5059,7 @@ async function runCanvasBuild(args: string[]): Promise<number> {
     return printFailure(context);
   }
 
-  const outPath = readFlag(args, '--out');
+  const outPath = resolveOptionalInvocationPath(readFlag(args, '--out'));
   const preview = maybeHandleMutationPreview(
     args,
     'json',
@@ -4194,12 +5079,13 @@ async function runCanvasBuild(args: string[]): Promise<number> {
     ...context.data.options,
     outPath,
   });
+  const format = outputFormat(args, 'json');
 
   if (!result.success || !result.data) {
-    return printFailure(result);
+    return printFailureWithMachinePayload(result, format);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(result.data, format);
   return 0;
 }
 
@@ -4455,6 +5341,7 @@ async function runFlowList(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4495,6 +5382,34 @@ async function runFlowInspect(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowAccess(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow access <name|id|uniqueName> --environment ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new CloudFlowService(resolution.data.client).access(identifier);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'FLOW_NOT_FOUND', `Flow ${identifier} was not found.`)));
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4556,6 +5471,54 @@ async function runFlowExport(args: string[]): Promise<number> {
 
   const result = await new FlowService(resolution.data.client).exportArtifact(identifier, outPath, {
     solutionUniqueName: readFlag(args, '--solution'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowActivate(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure(
+        'FLOW_ACTIVATE_ARGS_REQUIRED',
+        'Usage: flow activate <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME]'
+      )
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const solutionUniqueName = readFlag(args, '--solution');
+  const preview = maybeHandleMutationPreview(args, 'json', 'flow.activate', {
+    identifier,
+    environment: resolution.data.environment.alias,
+    solution: solutionUniqueName,
+    target: identifier,
+    workflowState: 'activated',
+  });
+
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new FlowService(resolution.data.client).promoteArtifact(identifier, {
+    sourceSolutionUniqueName: solutionUniqueName,
+    targetSolutionUniqueName: solutionUniqueName,
+    target: identifier,
+    workflowState: 'activated',
+    targetDataverseClient: resolution.data.client,
   });
 
   if (!result.success || !result.data) {
@@ -4848,7 +5811,35 @@ async function runFlowRuns(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
+  return 0;
+}
+
+async function runFlowMonitor(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow monitor <name|id|uniqueName> --environment ALIAS [--since 7d]')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new FlowService(resolution.data.client).monitor(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    since: readFlag(args, '--since'),
+  });
+
+  if (!result.success || !result.data) {
+    return printFailure(result);
+  }
+
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -4947,7 +5938,7 @@ async function runFlowDoctor(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -5016,7 +6007,18 @@ async function runModelCreate(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  const solutionId = solutionUniqueName ? await resolveSolutionIdForCli(resolution.data.client, solutionUniqueName) : undefined;
+
+  printByFormat(
+    buildModelRemotePayload({
+      app: result.data,
+      envAlias: resolution.data.environment.alias,
+      solutionUniqueName,
+      solutionId,
+      makerEnvironmentId: resolution.data.environment.makerEnvironmentId,
+    }),
+    outputFormat(args, 'json')
+  );
   printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
@@ -5067,7 +6069,21 @@ async function runModelAttach(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  const solutionId = solutionUniqueName ? await resolveSolutionIdForCli(resolution.data.client, solutionUniqueName) : undefined;
+
+  printByFormat(
+    compactObject({
+      ...result.data,
+      app: buildModelRemotePayload({
+        app: result.data.app,
+        envAlias: resolution.data.environment.alias,
+        solutionUniqueName,
+        solutionId,
+        makerEnvironmentId: resolution.data.environment.makerEnvironmentId,
+      }),
+    }),
+    outputFormat(args, 'json')
+  );
   printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
@@ -5097,7 +6113,70 @@ async function runModelInspect(args: string[]): Promise<number> {
     return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
   }
 
-  printByFormat(result.data, outputFormat(args, 'json'));
+  const solutionUniqueName = readFlag(args, '--solution');
+  const solutionId = solutionUniqueName ? await resolveSolutionIdForCli(resolution.data.client, solutionUniqueName) : undefined;
+
+  printByFormat(
+    buildModelInspectPayload({
+      result: result.data,
+      envAlias: resolution.data.environment.alias,
+      solutionUniqueName,
+      solutionId,
+      makerEnvironmentId: resolution.data.environment.makerEnvironmentId,
+    }),
+    outputFormat(args, 'json')
+  );
+  return 0;
+}
+
+async function runModelAccess(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(argumentFailure('MODEL_IDENTIFIER_REQUIRED', 'Usage: model access <name|id|uniqueName> --environment ALIAS'));
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new ModelDrivenAppService(resolution.data.client).access(identifier);
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
+  }
+
+  const solutionUniqueName = readFlag(args, '--solution');
+  const solutionId = solutionUniqueName ? await resolveSolutionIdForCli(resolution.data.client, solutionUniqueName) : undefined;
+
+  printByFormat(
+    compactObject({
+      ...result.data,
+      portalProvenance: buildModelPortalProvenance({
+        makerEnvironmentId: resolution.data.environment.makerEnvironmentId,
+        solutionUniqueName,
+        solutionId,
+      }),
+      handoff: {
+        makerSolutionApps: compactObject({
+          recommendedUrl: buildModelPortalProvenance({
+            makerEnvironmentId: resolution.data.environment.makerEnvironmentId,
+            solutionUniqueName,
+            solutionId,
+          })?.solutionAppsUrl,
+          inspectCommand: `pp model inspect ${formatCliArg(identifier)} --environment ${formatCliArg(resolution.data.environment.alias)}${solutionUniqueName ? ` --solution ${formatCliArg(solutionUniqueName)}` : ''}`,
+        }),
+      },
+    }),
+    outputFormat(args, 'json')
+  );
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -5114,7 +6193,7 @@ async function runModelSitemap(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
-  const result = await new ModelService(resolution.data.client).sitemap(identifier, {
+  const result = await new ModelService(resolution.data.client).inspect(identifier, {
     solutionUniqueName: readFlag(args, '--solution'),
   });
 
@@ -5122,7 +6201,12 @@ async function runModelSitemap(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
+  }
+
+  printByFormat(buildModelArtifactProjectionReport(result, result.data, 'sitemap'), outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -5139,7 +6223,7 @@ async function runModelForms(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
-  const result = await new ModelService(resolution.data.client).forms(identifier, {
+  const result = await new ModelService(resolution.data.client).inspect(identifier, {
     solutionUniqueName: readFlag(args, '--solution'),
   });
 
@@ -5147,7 +6231,12 @@ async function runModelForms(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
+  }
+
+  printByFormat(buildModelArtifactProjectionReport(result, result.data, 'form'), outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -5164,7 +6253,7 @@ async function runModelViews(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
-  const result = await new ModelService(resolution.data.client).views(identifier, {
+  const result = await new ModelService(resolution.data.client).inspect(identifier, {
     solutionUniqueName: readFlag(args, '--solution'),
   });
 
@@ -5172,7 +6261,12 @@ async function runModelViews(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
+  }
+
+  printByFormat(buildModelArtifactProjectionReport(result, result.data, 'view'), outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -5189,7 +6283,7 @@ async function runModelDependencies(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
-  const result = await new ModelService(resolution.data.client).dependencies(identifier, {
+  const result = await new ModelService(resolution.data.client).inspect(identifier, {
     solutionUniqueName: readFlag(args, '--solution'),
   });
 
@@ -5197,7 +6291,12 @@ async function runModelDependencies(args: string[]): Promise<number> {
     return printFailure(result);
   }
 
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  if (!result.data) {
+    return printFailure(fail(createDiagnostic('error', 'MODEL_NOT_FOUND', `Model-driven app ${identifier} was not found.`)));
+  }
+
+  printByFormat(buildModelArtifactProjectionReport(result, result.data, 'dependency'), outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
@@ -5916,9 +7015,25 @@ function isMachineReadableOutputFormat(format: OutputFormat): boolean {
 }
 
 function printFailure(result: OperationResult<unknown>): number {
-  process.stderr.write(renderFailure(result, resolveProcessOutputFormat()));
+  const format = resolveProcessOutputFormat();
+
+  if (isMachineReadableOutputFormat(format)) {
+    process.stdout.write(renderFailure(result, format));
+    return 1;
+  }
+
+  process.stderr.write(renderFailure(result, format));
 
   return 1;
+}
+
+function printFailureWithMachinePayload(result: OperationResult<unknown>, format: OutputFormat): number {
+  if (isMachineReadableOutputFormat(format)) {
+    process.stdout.write(renderFailure(result, format));
+    return 1;
+  }
+
+  return printFailure(result);
 }
 
 function printWarnings(result: OperationResult<unknown>): void {
@@ -6027,6 +7142,10 @@ function resolveInvocationPath(path?: string): string {
   return resolvePath(resolveDefaultInvocationPath(), path);
 }
 
+function resolveOptionalInvocationPath(path?: string): string | undefined {
+  return path ? resolveInvocationPath(path) : undefined;
+}
+
 function resolveDefaultInvocationPath(): string {
   return process.env.INIT_CWD ?? process.cwd();
 }
@@ -6074,6 +7193,15 @@ async function promptForEnter(message: string): Promise<void> {
   }
 }
 
+async function promptForInput(message: string): Promise<string> {
+  const rl = createInterface({ input, output });
+  try {
+    return await rl.question(message);
+  } finally {
+    rl.close();
+  }
+}
+
 function readRepeatedFlags(args: string[], name: string): string[] {
   const values: string[] = [];
   const aliases = new Set(flagAliases(name));
@@ -6086,6 +7214,59 @@ function readRepeatedFlags(args: string[], name: string): string[] {
   }
 
   return values;
+}
+
+function readCanvasRemoteProofExpectations(args: string[]): OperationResult<Array<{ controlPath: string; property: string; expectedValue: string }>> {
+  const specs = readRepeatedFlags(args, '--expect-control-property');
+  const expectations: Array<{ controlPath: string; property: string; expectedValue: string }> = [];
+
+  for (const spec of specs) {
+    const parsed = parseCanvasRemoteProofExpectation(spec);
+
+    if (!parsed.success || !parsed.data) {
+      return parsed as OperationResult<Array<{ controlPath: string; property: string; expectedValue: string }>>;
+    }
+
+    expectations.push(parsed.data);
+  }
+
+  return ok(expectations, {
+    supportTier: 'preview',
+  });
+}
+
+function parseCanvasRemoteProofExpectation(spec: string): OperationResult<{ controlPath: string; property: string; expectedValue: string }> {
+  const separator = '::';
+  const first = spec.indexOf(separator);
+  const second = first === -1 ? -1 : spec.indexOf(separator, first + separator.length);
+
+  if (first <= 0 || second <= first + separator.length || second + separator.length >= spec.length) {
+    return fail(
+      createDiagnostic(
+        'error',
+        'CANVAS_REMOTE_PROOF_EXPECTATION_INVALID',
+        `Invalid --expect-control-property value ${spec}.`,
+        {
+          source: '@pp/cli',
+          hint: "Use <controlPath>::<property>::<expectedValue>, for example Screen1/Gallery1::Items::='PP Harness Projects'.",
+        }
+      ),
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  return ok(
+    {
+      controlPath: spec.slice(0, first),
+      property: spec.slice(first + separator.length, second),
+      expectedValue: spec.slice(second + separator.length),
+    },
+    {
+      supportTier: 'preview',
+    }
+  );
 }
 
 function readAnalysisPortfolioProjectPaths(args: string[]): string[] {
@@ -7053,6 +8234,7 @@ const BOOLEAN_FLAGS = new Set([
   '--holding-solution',
   '--managed',
   '--no-device-code-fallback',
+  '--no-interactive',
   '--no-publish',
   '--no-publish-workflows',
   '--overwrite-unmanaged-customizations',

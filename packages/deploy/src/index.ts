@@ -197,6 +197,13 @@ export interface DeployConfirmation {
   status: 'not-required' | 'confirmed' | 'blocked';
 }
 
+interface DeployTargetResolutionInspection {
+  checks: DeployPreflightCheck[];
+  diagnostics: Diagnostic[];
+  warnings: Diagnostic[];
+  suggestedNextActions: string[];
+}
+
 export interface DeployBindingSummaryEntry {
   kind: 'deploy-input' | 'deploy-secret';
   parameter: string;
@@ -432,6 +439,15 @@ export function buildDeployPlan(project: ProjectContext): OperationResult<Deploy
     );
   }
 
+  if (operations.length === 0) {
+    diagnostics.push(
+      createDiagnostic('warning', 'DEPLOY_PLAN_NO_SUPPORTED_OPERATIONS', 'Deploy plan resolved no supported operations from the current project slice.', {
+        source: '@pp/deploy',
+        hint: buildNoSupportedOperationsHint(project),
+      })
+    );
+  }
+
   return ok(
     {
       projectRoot: project.root,
@@ -544,6 +560,17 @@ export async function executeDeployPlan(
   });
 }
 
+export async function inspectDeployTargetResolution(target: DeployTarget): Promise<OperationResult<undefined>> {
+  const inspection = await collectDeployTargetResolutionInspection(target);
+
+  return ok(undefined, {
+    supportTier: 'preview',
+    diagnostics: inspection.diagnostics,
+    warnings: inspection.warnings,
+    suggestedNextActions: inspection.suggestedNextActions,
+  });
+}
+
 async function executePreparedDeploy(context: {
   mode: DeployExecutionMode;
   plan: DeployPlan | undefined;
@@ -558,6 +585,10 @@ async function executePreparedDeploy(context: {
 }): Promise<OperationResult<DeployExecutionResult>> {
   const { mode, plan, bindings, confirmation, target, preparedOperations, diagnostics, warnings, startedAt } = context;
   const checks = [...context.checks];
+  const targetResolution = await collectDeployTargetResolutionInspection(target);
+  checks.push(...targetResolution.checks);
+  diagnostics.push(...targetResolution.diagnostics);
+  warnings.push(...targetResolution.warnings);
   const applyOperations: DeployOperationResult[] = [];
   const conflicts = analyzeDeployTargetConflicts(preparedOperations.map((operation) => operation.plan));
   const dataverseOperations = preparedOperations.filter((operation) => isDataverseMutationOperation(operation.plan));
@@ -2389,6 +2420,15 @@ function resolvePowerBiDeployMappingDiagnostics(
   return [];
 }
 
+function buildNoSupportedOperationsHint(project: ProjectContext): string {
+  const assetSummary = project.assets
+    .map((asset) => `${asset.name}:${asset.exists ? asset.kind : 'missing'}`)
+    .join(', ');
+  const targetSummary = `stage ${project.topology.selectedStage ?? '<default>'} -> environment ${project.topology.activeEnvironment ?? '<unset>'} -> solution ${project.topology.activeSolution?.uniqueName ?? project.topology.activeSolution?.alias ?? '<unset>'}`;
+
+  return `Configured assets are ${assetSummary || '<none>'}. No parameter mappings produced executable deploy operations for ${targetSummary}, so check whether the current slice has deployable artifacts, whether mappings only target unsupported providers, or whether the selected target needs a different environment/stage.`;
+}
+
 function collectMissingMappingChecks(project: ProjectContext): DeployPreflightCheck[] {
   const checks: DeployPreflightCheck[] = [];
 
@@ -2618,6 +2658,67 @@ function collectExpectedPlanChecks(expectedPlan: DeployPlan | undefined, actualP
       },
     },
   ];
+}
+
+async function collectDeployTargetResolutionInspection(target: DeployTarget): Promise<DeployTargetResolutionInspection> {
+  if (!target.environmentAlias) {
+    return {
+      checks: [],
+      diagnostics: [],
+      warnings: [],
+      suggestedNextActions: [],
+    };
+  }
+
+  const resolution = await resolveDataverseClient(target.environmentAlias);
+
+  if (resolution.success && resolution.data) {
+    return {
+      checks: [],
+      diagnostics: [],
+      warnings: [],
+      suggestedNextActions: [],
+    };
+  }
+
+  const resolutionDiagnostics = [...resolution.diagnostics, ...resolution.warnings];
+  const missingAliasCode = resolutionDiagnostics.some((diagnostic) => diagnostic.code === 'DATAVERSE_ENV_NOT_FOUND')
+    ? 'DEPLOY_TARGET_ENVIRONMENT_UNRESOLVED'
+    : 'DEPLOY_TARGET_ENVIRONMENT_RESOLUTION_FAILED';
+  const missingAliasMessage =
+    missingAliasCode === 'DEPLOY_TARGET_ENVIRONMENT_UNRESOLVED'
+      ? `Deploy target environment alias ${target.environmentAlias} is not present in the active pp environment registry.`
+      : `Deploy target environment alias ${target.environmentAlias} could not be resolved.`;
+
+  return {
+    checks: [
+      {
+        status: 'fail',
+        code: missingAliasCode,
+        message: missingAliasMessage,
+        target: target.environmentAlias,
+        details: {
+          stage: target.stage,
+          solution: target.solutionUniqueName ?? target.solutionAlias,
+        },
+      },
+    ],
+    diagnostics: [
+      createDiagnostic('warning', missingAliasCode, missingAliasMessage, {
+        source: '@pp/deploy',
+        hint: `Run \`pp env inspect ${target.environmentAlias} --format json\` or update the selected stage/environment mapping before retrying deploy.`,
+        detail:
+          target.solutionUniqueName || target.solutionAlias
+            ? `Resolved target: stage ${target.stage ?? '<default>'} -> environment ${target.environmentAlias} -> solution ${target.solutionUniqueName ?? target.solutionAlias}.`
+            : `Resolved target: stage ${target.stage ?? '<default>'} -> environment ${target.environmentAlias}.`,
+      }),
+    ],
+    warnings: resolutionDiagnostics,
+    suggestedNextActions: [
+      `Run \`pp env inspect ${target.environmentAlias} --format json\` to confirm whether the target alias is configured locally.`,
+      'Update the selected project stage or environment mapping before retrying deploy if the alias is not the intended target.',
+    ],
+  };
 }
 
 function collectSavedPlanMissingChecks(plan: DeployPlan): DeployPreflightCheck[] {

@@ -10,12 +10,15 @@ export function printHelp(): void {
       '  environment alias   named Dataverse target that points to a URL and auth profile',
       '  stage               project topology selector for deploy and analysis workflows',
       '',
+      'Resolution model:',
+      '  project/stage -> environment alias -> auth profile -> token -> Dataverse/solution',
+      '',
       'Top-level areas:',
       '  auth          manage auth profiles, browser profiles, login, and tokens',
       '  env           manage Dataverse environment aliases',
       '  dv            Dataverse requests, rows, and metadata workflows',
       '  solution      inspect and mutate solutions',
-      '  connref       inspect and validate connection references',
+      '  connref       inspect, validate, and mutate connection references',
       '  envvar        inspect and mutate environment variables',
       '  canvas        inspect and package canvas apps',
       '  flow          inspect and package flows',
@@ -26,12 +29,14 @@ export function printHelp(): void {
       '  sharepoint    inspect SharePoint bindings and assets',
       '  powerbi       inspect Power BI bindings and assets',
       '  diagnostics   install/config/project diagnostics',
+      '  init          guided, resumable first-run setup for auth, environments, browser bootstrap, and project scaffold',
       '  completion    shell completion script generation',
       '  version       print the CLI version',
       '',
       'Getting started:',
       '  pp auth profile add-user --name work',
-      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
+      '  pp env add dev --url https://contoso.crm.dynamics.com --profile work',
+      '  pp init',
       '  pp dv whoami --environment dev',
       '',
       'Examples:',
@@ -68,6 +73,15 @@ export function printAuthHelp(): void {
       '  auth profile      stores how pp gets credentials',
       '  browser profile   stores how pp launches a browser session when a flow needs one',
       '',
+      'Relationship model:',
+      '  one auth profile can be reused by multiple environment aliases',
+      '  browser profiles are launch contexts, not identities',
+      '',
+      'Decision guide:',
+      '  - Need pp to read credentials from an environment variable? Use `pp auth profile add-env`.',
+      '  - Need a named Dataverse target such as `dev` or `test`? Use `pp env add`.',
+      '  - Need to see which profile an alias already uses? Use `pp auth profile inspect --environment dev`.',
+      '',
       'Examples:',
       '  pp auth profile add-user --name work',
       '  pp auth profile add-env --name ci --env-var PP_ACCESS_TOKEN',
@@ -76,6 +90,94 @@ export function printAuthHelp(): void {
       '',
       'See also:',
       '  - Use `pp env add` to bind a Dataverse environment URL to an existing auth profile.',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitHelp(): void {
+  process.stdout.write(
+    [
+      'Usage:',
+      '  init [root] [options]',
+      '  init status <session-id> [options]',
+      '  init resume <session-id> [options]',
+      '  init answer <session-id> --set field=value [--set field=value ...] [options]',
+      '  init cancel <session-id> [options]',
+      '',
+      'Guided setup for first-run pp use. The init workflow is resumable so CLI and agent surfaces can pause for user input or browser work and continue later.',
+      '',
+      'Common options:',
+      '  --goal dataverse|maker|project|full',
+      '  --auth-mode user|device-code|environment-token|client-secret|static-token',
+      '  --profile NAME',
+      '  --env ALIAS',
+      '  --url https://contoso.crm.dynamics.com',
+      '  --browser-profile NAME',
+      '  --name PROJECT_NAME',
+      '  --solution UNIQUE_NAME',
+      '  --stage NAME',
+      '  --config-dir path',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+      '',
+      'Behavior:',
+      '  - Creates or reuses auth profiles and environment aliases.',
+      '  - Blocks on external actions such as browser login or browser-profile bootstrap, then resumes cleanly.',
+      '  - Optionally scaffolds a local project and verifies it with `project doctor`.',
+      '',
+      'Examples:',
+      '  pp init',
+      '  pp init --goal dataverse --auth-mode environment-token --profile ci --token-env PP_TOKEN --env dev --url https://contoso.crm.dynamics.com',
+      '  pp init status <session-id>',
+      '  pp init answer <session-id> --set solutionName=Core --set projectName=demo',
+      '  pp init resume <session-id>',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitStatusHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: init status <session-id> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Print the persisted state of one init session, including any blocked prompt or external action.',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitResumeHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: init resume <session-id> [options]',
+      '',
+      'Resume a setup session after you have answered a question, completed browser auth, or completed browser-profile bootstrap.',
+      '',
+      'Useful options:',
+      '  --set field=value is not supported here; use `pp init answer` for explicit field updates.',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitAnswerHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: init answer <session-id> --set field=value [--set field=value ...] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Apply one or more answers to a persisted init session and then re-evaluate the next blocked step.',
+      '',
+      'Examples:',
+      '  pp init answer <session-id> --set goal=full',
+      '  pp init answer <session-id> --set environmentUrl=https://contoso.crm.dynamics.com --set environmentAlias=dev',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printInitCancelHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: init cancel <session-id> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Mark a persisted init session as cancelled without deleting the underlying config artifacts it may already have created.',
     ].join('\n') + '\n'
   );
 }
@@ -89,6 +191,12 @@ export function printAuthProfileHelp(): void {
       '',
       'A profile defines how pp gets credentials.',
       'Use `pp env add` separately to bind a Dataverse environment URL to a profile.',
+      'Multiple environment aliases may point at the same auth profile.',
+      '',
+      'Decision guide:',
+      '  - `add-user`, `add-device-code`, `add-client-secret`, `add-static`, and `add-env` create credential sources.',
+      '  - `add-env` means "read a token from an environment variable", not "register a Dataverse environment".',
+      '  - Use `pp env add` for Dataverse aliases, then `pp auth profile inspect --environment <alias>` to confirm the binding later.',
       '',
       'Commands:',
       '  list                 list auth profiles',
@@ -138,11 +246,14 @@ export function printAuthProfileInspectHelp(): void {
       'Behavior:',
       '  - Inspects one auth profile directly by name.',
       '  - Or resolves the auth profile attached to a Dataverse environment alias.',
+      '  - Also accepts the shorthand positional form `environment:ALIAS` when the surrounding workflow already carries an environment-prefixed target.',
       '  - Environment-scoped output includes the resolved alias URL, target resource, and whether the profile default resource still matches that alias.',
+      '  - Includes reverse relationship context: which environment aliases reuse this profile and whether the current project routes any stages through them.',
       '',
       'Examples:',
       '  pp auth profile inspect work',
       '  pp auth profile inspect --environment dev',
+      '  pp auth profile inspect environment:dev',
     ].join('\n') + '\n'
   );
 }
@@ -161,7 +272,7 @@ export function printAuthProfileAddUserHelp(): void {
       '  pp auth profile add-user --name work --login-hint user@contoso.com --browser-profile edge-work',
       '',
       'See also:',
-      '  - Use `pp env add --name dev --url https://contoso.crm.dynamics.com --profile work` after the profile exists.',
+      '  - Use `pp env add dev --url https://contoso.crm.dynamics.com --profile work` after the profile exists.',
     ].join('\n') + '\n'
   );
 }
@@ -195,10 +306,12 @@ export function printAuthProfileAddEnvHelp(): void {
       '',
       'Common confusion:',
       '  - If you want to add a new Dataverse environment to pp, use `pp env add` instead.',
+      '  - If you already have an alias and want to see its bound profile, use `pp auth profile inspect --environment <alias>`.',
       '',
       'Examples:',
       '  pp auth profile add-env --name ci --env-var PP_ACCESS_TOKEN',
-      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile ci',
+      '  pp env add dev --url https://contoso.crm.dynamics.com --profile ci',
+      '  pp auth profile inspect --environment dev',
     ].join('\n') + '\n'
   );
 }
@@ -363,6 +476,7 @@ export function printModelHelp(): void {
       '  attach <name|id|uniqueName> attach an existing model-driven app to a solution through AddSolutionComponent',
       '  list                        list model-driven apps',
       '  inspect <name|id|uniqueName> inspect one model-driven app',
+      '  access <name|id|uniqueName> inspect ownership and explicit share state',
       '  composition <name|id|uniqueName> emit a normalized composition graph',
       '  impact <name|id|uniqueName> preview artifact impact within one model-driven app',
       '  sitemap <name|id|uniqueName> list sitemap artifacts',
@@ -375,11 +489,13 @@ export function printModelHelp(): void {
       '  pp model create SalesHub --environment dev --name "Sales Hub" --solution Core',
       '  pp model attach SalesHub --environment dev --solution Core',
       '  pp model inspect SalesHub --environment dev --solution Core',
+      '  pp model access SalesHub --environment dev --format json',
       '',
       'Notes:',
       '  - `model create` uses solution-scoped Dataverse creation when `--solution` or the environment alias defaultSolution is available.',
       '  - `model attach` uses `--solution` when provided, otherwise the environment alias defaultSolution when configured.',
       '  - `model attach` uses the supported solution component action rather than direct raw row writes.',
+      '  - `model sitemap`, `forms`, `views`, and `dependencies` emit counts plus inspection coverage so empty outputs explain whether component membership was inspectable.',
       '  - Composition inspection and patch planning remain bounded to the current read-first model surface.',
       '',
       'Common output options:',
@@ -402,8 +518,9 @@ export function printCanvasHelp(): void {
       '  attach <displayName|name|id> attach an existing remote canvas app to a solution through AddSolutionComponent',
       '  download <displayName|name|id> export a solution-scoped remote canvas app into an .msapp',
       '  inspect <displayName|name|id> inspect a remote canvas app when used with --environment',
+      '  access <displayName|name|id> inspect ownership and explicit share state for a remote canvas app',
       '  create                       preview handoff today; `--delegate` can drive the Maker blank-app flow through a browser profile',
-      '  import <file.msapp>          reserved for future remote import; currently returns diagnostics',
+      '  import <file.msapp>          replace one remote solution-scoped canvas app with a local .msapp',
       '',
       'Local canvas commands:',
       '  validate <path>              validate a local canvas source tree',
@@ -432,15 +549,18 @@ export function printCanvasHelp(): void {
       '  pp canvas list --environment dev --solution Core',
       '  pp canvas attach "Harness Canvas" --environment dev --solution Core',
       '  pp canvas download "Harness Canvas" --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp',
+      '  pp canvas import ./dist/HarnessCanvas.msapp --environment dev --solution Core --target "Harness Canvas"',
+      '  pp canvas download "Harness Canvas" --environment dev',
       '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
+      '  pp canvas access "Harness Canvas" --environment dev --format json',
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
       '  pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp',
       '',
       'Notes:',
       '  - Remote canvas download exports the containing solution through Dataverse and extracts CanvasApps/*.msapp without leaving pp.',
-      '  - Remote create/import still use preview flows rather than first-class server-side APIs.',
+      '  - Remote canvas import replaces one explicit CanvasApps/*.msapp entry by exporting and re-importing the containing solution through Dataverse.',
       '  - `canvas create --delegate` can drive the Maker blank-app flow and wait for the created app id through Dataverse.',
-      '  - Attempted remote create/import calls return machine-readable diagnostics with next steps.',
+      '  - `canvas create` remains a guided preview flow, while `canvas import` now requires `--solution` plus an explicit `--target` to avoid destructive guesses.',
       '  - Use --environment to switch canvas inspect from local-path mode to remote lookup mode.',
       '  - Use --workspace to resolve a workspace app name plus shared registry catalogs.',
       '  - Canvas patching currently targets the supported json-manifest source slice only.',
@@ -506,7 +626,7 @@ export function printDataverseHelp(): void {
 export function printDataverseWhoAmIHelp(): void {
   process.stdout.write(
     [
-      'Usage: dv whoami --environment ALIAS [options]',
+      'Usage: dv whoami --environment ALIAS [--no-interactive-auth] [options]',
       '',
       'Behavior:',
       '  - Resolves the target environment alias and auth profile.',
@@ -515,6 +635,30 @@ export function printDataverseWhoAmIHelp(): void {
       'Examples:',
       '  pp dv whoami --environment dev',
       '  pp dv whoami --environment dev --format json',
+      '  pp dv whoami --environment dev --no-interactive-auth --format json',
+      '',
+      'Options:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printDataverseQueryHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: dv query <table> --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Behavior:',
+      '  - Queries one Dataverse table and prints the matching rows.',
+      '  - Accepts either a logical table name or an entity set name.',
+      '  - With `--solution`, validates that the table belongs to that solution before running the read.',
+      '',
+      'Examples:',
+      '  pp dv query solutions --environment dev --select solutionid,uniquename --top 5',
+      '  pp dv query pp_project --environment dev --solution HarnessSolution --select pp_projectid,pp_name --top 10',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -640,7 +784,11 @@ export function printSolutionHelp(): void {
       '  create <uniqueName>         create a solution shell in an environment',
       '  delete <uniqueName>         delete one solution from an environment',
       '  set-metadata <uniqueName>   update solution publisher or version metadata',
+      '  publish <uniqueName>        publish customizations and optionally wait for an export checkpoint',
+      '  sync-status <uniqueName>    inspect publish readback and export readiness for one solution',
+      '  checkpoint <uniqueName>     capture a rollback-ready export plus live solution inventory',
       '  list                        list solutions in an environment',
+      '  publishers                  list available solution publishers in an environment',
       '  inspect <uniqueName>        inspect one solution',
       '  components <uniqueName>     list solution components',
       '  dependencies <uniqueName>   list solution dependencies',
@@ -656,10 +804,13 @@ export function printSolutionHelp(): void {
       'How to think about it:',
       '  - Use remote commands when the solution already lives in Dataverse and you need inventory, metadata, or lifecycle operations.',
       '  - Use pack/unpack when you are moving between editable local source and packaged zip artifacts.',
+      '  - `pp solution unpack ... --extract-canvas-apps` also expands each CanvasApps/*.msapp into normalized editable source inside the unpacked solution tree.',
+      '  - `pp solution pack ... --rebuild-canvas-apps` rebuilds those extracted CanvasApps/* folders back into sibling .msapp files before zipping the solution.',
       '  - A solution is the ALM boundary that groups canvas apps, flows, model-driven apps, env vars, and connection references.',
       '',
       'Examples:',
       '  pp solution list --environment dev --format json',
+      '  pp solution publishers --environment dev --format json',
       '  pp solution list --environment dev --prefix ppHarness --format json',
       '  pp solution inspect Core --environment dev',
       '',
@@ -672,7 +823,7 @@ export function printSolutionHelp(): void {
 export function printSolutionListHelp(): void {
   process.stdout.write(
     [
-      'Usage: solution list --environment ALIAS [options]',
+      'Usage: solution list --environment ALIAS [--no-interactive-auth] [options]',
       '',
       'Behavior:',
       '  - Lists installed solutions in the target environment across all Dataverse pages.',
@@ -685,11 +836,40 @@ export function printSolutionListHelp(): void {
       'Examples:',
       '  pp solution list --environment dev',
       '  pp solution list --environment dev --format json',
+      '  pp solution list --environment dev --no-interactive-auth --format json',
       '  pp solution list --environment dev --prefix ppHarness20260310T200706248Z --format json',
       '',
       'Options:',
       '  --prefix PREFIX            Match solution unique names or friendly names starting with PREFIX',
       '  --unique-name NAME        Match one exact solution unique name',
+      '  --no-interactive-auth     Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSolutionPublishersHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution publishers --environment ALIAS [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Lists available solution publishers in the target environment.',
+      '  - Returns structured records with publisher ids, unique names, and friendly names when available.',
+      '  - Gives solution creation a first-class discovery step instead of requiring raw Dataverse queries or existing-solution archaeology.',
+      '',
+      'Choose this when:',
+      '  - You need a valid `--publisher-id` or `--publisher-unique-name` before running `pp solution create` or `pp solution set-metadata`.',
+      '',
+      'Examples:',
+      '  pp solution publishers --environment dev',
+      '  pp solution publishers --environment dev --format json',
+      '  pp solution create Core --environment dev --publisher-unique-name DefaultPublisher',
+      '',
+      'Options:',
+      '  --no-interactive-auth     Fail fast with structured diagnostics instead of opening browser auth',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -705,6 +885,7 @@ export function printSolutionCreateHelp(): void {
       'Behavior:',
       '  - Creates one unmanaged solution shell in the target environment.',
       '  - Requires either a publisher id or publisher unique name so the new solution has an explicit publisher binding.',
+      '  - Use `pp solution publishers --environment <alias>` when you need to discover a valid publisher binding first.',
       '  - `--help` only prints this text and never validates the solution name or environment flags.',
       '',
       'Choose this when:',
@@ -736,6 +917,97 @@ export function printSolutionSetMetadataHelp(): void {
       'Examples:',
       '  pp solution set-metadata Core --environment dev --version 2026.3.11.51035',
       '  pp solution set-metadata Core --environment dev --publisher-unique-name pp',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSolutionPublishHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution publish <uniqueName> --environment ALIAS [--wait-for-export] [--timeout-ms N] [--poll-interval-ms N] [--managed] [--out PATH] [--manifest FILE]',
+      '',
+      'Behavior:',
+      '  - Triggers Dataverse `PublishAllXml` through a first-class solution workflow instead of requiring a generic `pp dv action` call.',
+      '  - Without `--wait-for-export`, returns as soon as Dataverse accepts the publish request and includes the latest component read-back summary when it can be queried immediately.',
+      '  - With `--wait-for-export`, polls `pp` solution export until one export succeeds, giving a concrete post-publish synchronization checkpoint.',
+      '  - Successful `solution publish --format json` output includes `readBack` plus `blockers` summaries for packaged canvas apps, flows, and model-driven apps so the publish command itself returns the immediate post-publish state probe and any workflow-state export blockers.',
+      '',
+      'Choose this when:',
+      '  - You need to publish remote changes and want `pp` to own both the publish action and the readiness checkpoint.',
+      '',
+      'Examples:',
+      '  pp solution publish Core --environment dev --format json',
+      '  pp solution publish Core --environment dev --wait-for-export --out ./artifacts/solutions/Core.zip --format json',
+      '',
+      'Options:',
+      '  --wait-for-export         Poll solution export until one export succeeds after publish',
+      '  --timeout-ms N            Maximum time to wait for an export checkpoint when --wait-for-export is set',
+      '  --poll-interval-ms N      Delay between export retries when --wait-for-export is set',
+      '  --managed                 Export a managed package while waiting for the checkpoint',
+      '  --out PATH                Write the export checkpoint artifact to PATH or a directory',
+      '  --manifest FILE           Write the export checkpoint manifest to FILE',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSolutionSyncStatusHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution sync-status <uniqueName> --environment ALIAS [--skip-export-check] [--managed] [--out PATH] [--manifest FILE]',
+      '',
+      'Behavior:',
+      '  - Returns a first-class publish readback for the solution-scoped canvas apps, flows, and model-driven apps.',
+      '  - Returns a `blockers` list when packaged workflows are still draft or suspended, so export-readiness failures are machine-readable instead of diagnostic-only.',
+      '  - By default also runs an export probe so the result answers whether Dataverse packaging is currently exportable.',
+      '  - When no `--out` path is provided, the export probe uses a transient artifact and only returns readiness plus diagnostics.',
+      '',
+      'Choose this when:',
+      '  - You need to prove whether a solution is both published enough to inspect and stable enough to export without reissuing PublishAllXml.',
+      '',
+      'Examples:',
+      '  pp solution sync-status Core --environment dev --format json',
+      '  pp solution sync-status Core --environment dev --skip-export-check --format json',
+      '',
+      'Options:',
+      '  --skip-export-check      Skip the export probe and only return component publish readback',
+      '  --managed                Probe managed export readiness instead of unmanaged export readiness',
+      '  --out PATH               Write the successful export probe artifact to PATH or a directory',
+      '  --manifest FILE          Write the successful export probe manifest to FILE',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSolutionCheckpointHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution checkpoint <uniqueName> --environment ALIAS [--out PATH] [--managed] [--manifest FILE] [--checkpoint FILE]',
+      '',
+      'Behavior:',
+      '  - Captures a rollback-oriented solution checkpoint in one command by exporting the package, preserving the release manifest, and snapshotting the current solution component inventory.',
+      '  - Writes a checkpoint document adjacent to the exported package by default, or to `--checkpoint FILE` when provided.',
+      '  - Includes a PAC-friendly organization URL hint so any downstream fallback does not need to infer it from the Dataverse API host.',
+      '',
+      'Choose this when:',
+      '  - You are about to import, promote, or patch a solution and want one durable pre-change checkpoint that is easy to compare or re-import.',
+      '',
+      'Examples:',
+      '  pp solution checkpoint Core --environment dev --out ./artifacts/checkpoints/Core-pre-import.zip --format json',
+      '  pp solution checkpoint Core --environment dev --out ./artifacts/checkpoints/ --checkpoint ./artifacts/checkpoints/Core.pp-checkpoint.json',
+      '',
+      'Options:',
+      '  --out PATH                Write the exported package to PATH or a directory',
+      '  --managed                 Export a managed package instead of the default unmanaged checkpoint',
+      '  --manifest FILE           Write the release manifest to FILE',
+      '  --checkpoint FILE         Write the composite checkpoint document to FILE',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -812,6 +1084,75 @@ export function printSolutionDependenciesHelp(): void {
   );
 }
 
+export function printSolutionCompareHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution compare [uniqueName] --source-env ALIAS|--source-zip PATH|--source-folder PATH --target-env ALIAS|--target-zip PATH|--target-folder PATH [options]',
+      '',
+      'Behavior:',
+      '  - Compares source and target solution state using exactly one input per side.',
+      '  - When either side is an environment, provide the solution unique name positionally.',
+      '  - Environment-based compare defaults to a shell-only model-driven pass so drift checks return quickly and reliably.',
+      '  - Add --include-model-composition when you need model-driven artifact drift (forms, views, sitemaps) in the compare report.',
+      '',
+      'Options:',
+      '  --source-env ALIAS',
+      '  --source-zip PATH',
+      '  --source-folder PATH',
+      '  --target-env ALIAS',
+      '  --target-zip PATH',
+      '  --target-folder PATH',
+      '  --include-model-composition',
+      '  --pac PATH',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+      '',
+      'Examples:',
+      '  pp solution compare Core --source-env dev --target-env prod --format json',
+      '  pp solution compare Core --source-env dev --target-env prod --include-model-composition --format json',
+      '  pp solution compare Core --source-env dev --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac --format json',
+      '  pp solution compare --source-folder ./src/solutions/Core --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac --format json',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSolutionImportHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: solution import <path.zip> --environment ALIAS [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID] [--plan] [--dry-run] [options]',
+      '',
+      'Behavior:',
+      '  - Imports one solution package into the target environment through Dataverse `ImportSolution`.',
+      '  - `--plan` reads the adjacent `.pp-solution.json` release manifest plus the live target solution state so managed promotion decisions include package type, installed version, and managed/unmanaged target state.',
+      '  - `--holding-solution` is the first-class pp flag for staged managed upgrades; after the holding import, complete the platform upgrade flow before treating the promotion as finished.',
+      '  - `--dry-run` keeps the generic non-mutating preview contract and skips target-state analysis.',
+      '',
+      'Choose this when:',
+      '  - You already have a packaged solution artifact and need an environment-scoped import or promotion step.',
+      '',
+      'Choose a different path when:',
+      '  - You still need to produce the package: use `pp solution export` or `pp solution pack` first.',
+      '  - You need richer pre-import source/target drift evidence: use `pp solution compare` before importing.',
+      '',
+      'Examples:',
+      '  pp solution import ./artifacts/Core_managed.zip --environment uat --plan --format json',
+      '  pp solution import ./artifacts/Core_managed.zip --environment uat --holding-solution --format json',
+      '  pp solution import ./artifacts/Core_unmanaged.zip --environment dev --overwrite-unmanaged-customizations --format json',
+      '',
+      'Options:',
+      '  --overwrite-unmanaged-customizations   Allow the import to overwrite unmanaged customizations in the target',
+      '  --holding-solution                     Stage a managed holding import before the follow-up upgrade path',
+      '  --skip-product-update-dependencies     Skip product update dependency enforcement during import',
+      '  --no-publish-workflows                 Skip workflow publication during import',
+      '  --import-job-id GUID                   Reuse a caller-provided Dataverse import job id',
+      '  --plan                                 Print a target-aware non-mutating import plan',
+      '  --dry-run                              Print the generic non-mutating mutation preview',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
 export function printEnvironmentHelp(): void {
   process.stdout.write(
     [
@@ -820,11 +1161,18 @@ export function printEnvironmentHelp(): void {
       'Manage Dataverse environment aliases used by pp.',
       '',
       'An environment alias is a named Dataverse target that points to a URL and an existing auth profile.',
+      'Many aliases may reuse one auth profile, while each alias binds to one profile at a time.',
+      '',
+      'Decision guide:',
+      '  - Use `pp env add` when you need a saved Dataverse alias such as `dev`, `test`, or `uat`.',
+      '  - Use `pp auth profile add-env` only when the credential source is an access token already present in an environment variable.',
+      '  - Use `pp auth profile inspect --environment <alias>` when the workflow starts from an alias and you need the concrete profile behind it.',
       '',
       'Commands:',
       '  list                         list saved environment aliases',
       '  add                          add or update one environment alias',
       '  inspect <alias>              inspect one saved alias',
+      '  baseline <alias>             inspect one alias plus bootstrap-reset baseline checks',
       '  resolve-maker-id <alias>     discover and persist the Maker environment id for an alias',
       '  cleanup-plan <alias>         list disposable solutions matching a run prefix before bootstrap reset',
       '  reset <alias>                delete disposable solutions matching a run prefix for bootstrap reset',
@@ -832,9 +1180,10 @@ export function printEnvironmentHelp(): void {
       '  remove <alias>               remove one saved alias from local config',
       '',
       'Examples:',
-      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
+      '  pp env add dev --url https://contoso.crm.dynamics.com --profile work',
       '  pp env list',
       '  pp env inspect dev',
+      '  pp env baseline test --prefix ppHarness20260310T013401820Z --format json',
       '  pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json',
       '  pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json',
       '  pp env cleanup test --prefix ppHarness20260310T013401820Z --dry-run --format json',
@@ -868,7 +1217,7 @@ export function printEnvironmentListHelp(): void {
 export function printEnvironmentAddHelp(): void {
   process.stdout.write(
     [
-      'Usage: env add --name ALIAS --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]',
+      'Usage: env add <alias> --url URL --profile PROFILE [--default-solution NAME] [--maker-env-id GUID] [--config-dir path]',
       '',
       'Behavior:',
       '  - Adds one Dataverse environment alias that points to an existing auth profile.',
@@ -878,11 +1227,16 @@ export function printEnvironmentAddHelp(): void {
       '  - `--profile` must name an existing auth profile.',
       '',
       'Examples:',
-      '  pp env add --name dev --url https://contoso.crm.dynamics.com --profile work',
-      '  pp env add --name uat --url https://contoso-uat.crm.dynamics.com --profile work --default-solution Core',
+      '  pp env add dev --url https://contoso.crm.dynamics.com --profile work',
+      '  pp env add uat --url https://contoso-uat.crm.dynamics.com --profile work --default-solution Core',
+      '',
+      'Compatibility:',
+      '  - `--name ALIAS` is still accepted, but the positional alias form matches `env inspect`, `env remove`, and other alias-scoped commands.',
       '',
       'See also:',
       '  - If you still need credentials, create the profile first with `pp auth profile add-user` or another `auth profile add-*` command.',
+      '  - If the profile should read a token from an environment variable, use `pp auth profile add-env` before this alias step.',
+      '  - To confirm which profile an existing alias resolves to, use `pp auth profile inspect --environment <alias>`.',
     ].join('\n') + '\n'
   );
 }
@@ -895,11 +1249,33 @@ export function printEnvironmentInspectHelp(): void {
       'Behavior:',
       '  - Inspects one Dataverse environment alias and its bound auth profile state.',
       '  - When the auth profile uses a browser profile, includes its last bootstrap metadata and refresh command for Maker workflows.',
+      '  - Includes current-project stage usage when the inspected alias is referenced by the local project topology.',
       '  - Includes tooling advisories such as whether pac is likely to share the pp auth context.',
       '',
       'Examples:',
       '  pp env inspect dev',
       '  pp env inspect dev --format json',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printEnvironmentBaselineHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: env baseline <alias> --prefix PREFIX [--expect-absent-solution NAME ...] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
+      '',
+      'Behavior:',
+      '  - Combines `env inspect` with prefix-scoped reset checks into one non-mutating bootstrap baseline report.',
+      '  - Lists disposable solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
+      '  - Optionally verifies that specific prior solutions are absent before the next harness run begins.',
+      '  - Returns a `readyForBootstrap` signal plus next-step guidance for `pp env reset` or targeted `pp solution delete` cleanup.',
+      '',
+      'Examples:',
+      '  pp env baseline test --prefix ppHarness20260310T013401820Z --format json',
+      '  pp env baseline test --prefix ppHarness20260310T013401820Z --expect-absent-solution ppHarness20260309T215614036ZShell --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
     ].join('\n') + '\n'
   );
 }
@@ -1013,13 +1389,39 @@ export function printConnectionReferenceHelp(): void {
       'Usage: connref <command> [options]',
       '',
       'Commands:',
+      '  create <logicalName>        create one connection reference with connector metadata and a bound connection id',
       '  list                        list connection references',
       '  inspect <identifier>        inspect one connection reference by logical name, display name, or id',
+      '  set <identifier>            update the bound connection id for one connection reference',
       '  validate                    validate connection reference bindings and health',
       '',
       'Examples:',
+      '  pp connref create pp_shared_sql --environment dev --solution Core --connector-id /providers/Microsoft.PowerApps/apis/shared_sql --connection-id /providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-123 --format json',
       '  pp connref list --environment dev --solution Core --no-interactive-auth --format json',
+      '  pp connref set pp_shared_sql --environment dev --connection-id /providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456 --format json',
       '  pp connref validate --environment dev --solution Core --no-interactive-auth',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printConnectionReferenceCreateHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: connref create <logicalName> --environment ALIAS --connection-id CONNECTION_ID [--display-name NAME] [--connector-id CONNECTOR_ID] [--custom-connector-id CONNECTOR_ID] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Creates one connection reference in the target environment or solution scope.',
+      '  - Requires either `--connector-id` or `--custom-connector-id` so the created reference preserves connector metadata.',
+      '',
+      'Examples:',
+      '  pp connref create pp_shared_sql --environment dev --solution Core --connector-id /providers/Microsoft.PowerApps/apis/shared_sql --connection-id /providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-123',
+      '  pp connref create pp_shared_custom --environment dev --custom-connector-id custom-connector-guid --connection-id /providers/Microsoft.PowerApps/apis/shared_customapi/connections/shared-custom-123 --no-interactive-auth --format json',
       '',
       'Remote auth option:',
       '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
@@ -1064,6 +1466,28 @@ export function printConnectionReferenceInspectHelp(): void {
       'Examples:',
       '  pp connref inspect shared_office365 --environment dev',
       '  pp connref inspect shared_office365 --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Remote auth option:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printConnectionReferenceSetHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: connref set <logicalName|displayName|id> --environment ALIAS --connection-id CONNECTION_ID [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Updates the bound connection id for one connection reference in the target environment or solution scope.',
+      '  - Returns the updated reference after the write succeeds.',
+      '',
+      'Examples:',
+      '  pp connref set pp_shared_sql --environment dev --connection-id /providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456',
+      '  pp connref set pp_shared_sql --environment dev --solution Core --connection-id /providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456 --no-interactive-auth --format json',
       '',
       'Remote auth option:',
       '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
@@ -1246,18 +1670,21 @@ export function printCanvasCreateHelp(): void {
 export function printCanvasDownloadHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas download <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--out FILE] [--extract-to-directory DIR] [options]',
+      'Usage: canvas download <displayName|name|id> --environment ALIAS [--solution UNIQUE_NAME] [--out FILE] [--extract-to-directory DIR] [options]',
       '',
       'Status:',
       '  Exports the containing solution through Dataverse and extracts the matching CanvasApps/*.msapp entry.',
       '',
       'Behavior:',
-      '  - Requires `--environment` and `--solution` so pp can export the correct solution package.',
+      '  - Requires `--environment`; pass `--solution` when you already know the containing solution, otherwise pp auto-resolves it when the app belongs to exactly one solution.',
       '  - Uses the existing pp Dataverse auth context; it does not shell out to pac for canvas download.',
       '  - When `--out` is omitted, writes `<displayName|name|id>.msapp` in the current working directory.',
       '  - `--extract-to-directory` also expands the downloaded `.msapp` into a normalized source tree, converting archive backslashes into portable folder separators.',
+      '  - When the app is not attached to any solution, pp returns a machine-readable diagnostic explaining that solution membership is required before remote schema harvest/download can proceed.',
+      '  - Extracted downloads also emit round-trip handoff details for rebuild/repack and Dataverse table metadata lookup.',
       '',
       'Examples:',
+      '  pp canvas download "Harness Canvas" --environment dev',
       '  pp canvas download "Harness Canvas" --environment dev --solution Core',
       '  pp canvas download crd_HarnessCanvas --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp',
       '  pp canvas download "Harness Canvas" --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp --extract-to-directory ./artifacts/HarnessCanvas',
@@ -1294,45 +1721,38 @@ export function printCanvasListHelp(): void {
 export function printCanvasImportHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas import <file.msapp> --environment ALIAS [--solution UNIQUE_NAME] [--name DISPLAY_NAME] [options]',
-      '',
-      'Status:',
-      '  Preview placeholder. Remote canvas import is not implemented yet.',
+      'Usage: canvas import <file.msapp> --environment ALIAS --solution UNIQUE_NAME --target <displayName|name|id> [options]',
       '',
       'Choose this when:',
-      '  - You already have an `.msapp` artifact and want guidance for getting it into a remote environment.',
+      '  - You already rebuilt an `.msapp` artifact and need to replace one existing remote canvas app in a solution.',
       '',
       'Choose a different path when:',
       '  - You only need a packaged artifact from local source: use `pp canvas build`.',
       '  - You need to inspect or export an existing remote app: use `pp canvas list`, `inspect`, or `download`.',
       '',
       'Options:',
-      '  --name DISPLAY_NAME        Expected remote display name for post-import verification guidance',
-      '  --maker-env-id ID          Optional Maker environment id override for deep-link guidance',
-      '  --open                     Launch the resolved Maker handoff URL instead of only printing it',
-      '  --browser-profile NAME     Optional override for the browser profile used with --open',
+      '  --target <name|id>         Required remote canvas app to replace inside the specified solution',
+      '  --overwrite-unmanaged-customizations',
+      '                            Pass through Dataverse ImportSolution overwrite behavior',
+      '  --no-publish-workflows     Skip workflow publishing during the backing solution import',
       '',
       'What works today:',
       '  - Use `pp canvas build <path> --out <file.msapp>` to package a local canvas source tree.',
-      '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps.',
-      '  - Use `--open` to launch the resolved Maker handoff when the environment auth profile already names a browser profile.',
-      '  - Use `--open --browser-profile <name>` to override that browser profile for a one-off handoff.',
+      '  - Use `pp canvas list --environment <alias> --solution <solution>` to inspect existing remote canvas apps and choose the exact `--target`.',
+      '  - `pp canvas import` exports the solution, replaces one `CanvasApps/*.msapp` entry, and imports the rebuilt package back through Dataverse.',
       '',
-      'Recommended flow today:',
+      'Recommended flow:',
       '  1. Build or locate the `.msapp` artifact you intend to import.',
-      '  2. Use `--open` if you want pp to take you to the right Maker context for the target environment.',
-      '  3. Use Maker or solution tooling for the actual import step until `pp canvas import` exists.',
-      '',
-      'Next steps for remote import today:',
-      '  - Use Maker or solution tooling for the remote import step until `pp canvas import` exists.',
+      '  2. Run `pp canvas list --environment <alias> --solution <solution>` to choose the exact remote app to replace.',
+      '  3. Run `pp canvas import <file.msapp> --environment <alias> --solution <solution> --target <displayName|name|id>`.',
       '',
       'Known limitations:',
-      '  - Remote canvas coverage in pp is currently read-only.',
-      '  - pp does not yet return a remote canvas app id for create/import workflows.',
+      '  - Import is solution-scoped and intentionally requires an explicit `--target`; pp will not guess which remote app entry to replace.',
+      '  - pp still does not create brand-new remote canvas apps directly; use `pp canvas create --delegate` or Maker for blank-app creation.',
       '',
       'Preview options:',
       '  --dry-run                     Resolve env/solution context and print a structured no-op preview',
-      '  --plan                        Resolve env/solution context and print a structured fallback plan',
+      '  --plan                        Resolve env/solution context and print a structured no-op plan',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1352,13 +1772,33 @@ export function printCanvasInspectHelp(): void {
       'Remote behavior:',
       '  - Requires the positional identifier plus `--environment`.',
       '  - Accepts optional `--solution` to scope remote lookup to a solution.',
+      '  - Remote inspect includes portal provenance with the Dataverse app open URI and a canonical Maker studio edit URL when pp can derive one.',
+      '  - Use repeated `--expect-control-property <controlPath>::<property>::<expectedValue>` to export the remote app package and return a pass/fail proof summary for deployed control bindings.',
       '',
       'Local behavior:',
       '  - Accepts a local canvas path plus `--project`, repeated `--registry`, `--cache-dir`, and `--mode` options.',
       '',
       'Examples:',
       '  pp canvas inspect "Harness Canvas" --environment dev --solution Core',
+      "  pp canvas inspect \"Harness Canvas\" --environment dev --solution Core --expect-control-property \"Screen1/Gallery1::Items::='PP Harness Projects'\"",
       '  pp canvas inspect ./apps/MyCanvas --project . --mode strict',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printCanvasAccessHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: canvas access <displayName|name|id> --environment ALIAS [options]',
+      '',
+      'Behavior:',
+      '  - Reports owner/creator lookups plus explicit principalobjectaccess shares for one remote canvas app.',
+      '',
+      'Examples:',
+      '  pp canvas access "Harness Canvas" --environment dev --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1379,6 +1819,7 @@ export function printFlowHelp(): void {
       '  list                        list remote flows',
       '  inspect <name|id|...>       inspect a remote flow or a local artifact',
       '  export <name|id|...>        export a remote flow artifact',
+      '  activate <name|id|...>      activate a remote flow in place',
       '  promote <name|id|...>       move a flow between environments',
       '  deploy <path>               deploy a local flow artifact into an environment',
       '  unpack <path>               unpack a flow artifact into a folder',
@@ -1388,9 +1829,11 @@ export function printFlowHelp(): void {
       '  graph <path>                emit a graph view of a local artifact',
       '  patch <path> --file ...     apply a bounded patch to a local artifact',
       '  runs <name|id|...>          inspect recent remote run history',
+      '  monitor <name|id|...>       summarize follow-up runtime health in one report',
       '  errors <name|id|...>        summarize remote runtime failures',
       '  connrefs <name|id|...>      inspect connection references used by a flow',
       '  doctor <name|id|...>        summarize remote runtime health and dependencies',
+      '  access <name|id|...>        inspect ownership and explicit share state',
       '',
       'How to think about it:',
       '  - Use remote commands when the flow already exists in an environment and you need lifecycle or runtime insight.',
@@ -1400,6 +1843,8 @@ export function printFlowHelp(): void {
       'Examples:',
       '  pp flow inspect ./flows/invoice/flow.json',
       '  pp flow inspect InvoiceSync --environment dev --solution Core',
+      '  pp flow activate InvoiceSync --environment dev --solution Core --format json',
+      '  pp flow access InvoiceSync --environment dev --format json',
       '  pp flow deploy ./flows/invoice/flow.json --environment dev --solution Core --dry-run --format json',
       '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --solution-package --format json',
       '',
@@ -1469,6 +1914,28 @@ export function printFlowExportHelp(): void {
   );
 }
 
+export function printFlowActivateHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow activate <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Choose this when:',
+      '  - A remote flow already exists in one environment, but it is still draft or suspended and blocking solution export or runtime checks.',
+      '',
+      'Behavior:',
+      '  - Re-applies the selected remote flow back into the same environment with workflow state forced to `activated`.',
+      '  - Keeps the operation solution-aware when `--solution` is supplied so resolution stays inside that solution boundary.',
+      '',
+      'Examples:',
+      '  pp flow activate InvoiceSync --environment dev --format json',
+      '  pp flow activate crd_InvoiceSync --environment test --solution Core --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
 export function printFlowPromoteHelp(): void {
   process.stdout.write(
     [
@@ -1488,6 +1955,7 @@ export function printFlowPromoteHelp(): void {
       'Examples:',
       '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --format json',
       '  pp flow promote InvoiceSync --source-environment dev --target-environment uat --target-solution Core --solution-package --format json',
+      '  pp flow activate crd_InvoiceSync --environment test --solution Core --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1637,6 +2105,24 @@ export function printFlowRunsHelp(): void {
   );
 }
 
+export function printFlowMonitorHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow monitor <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [options]',
+      '',
+      'Behavior:',
+      '  - Combines recent runs, grouped runtime errors, and doctor findings into one follow-up monitoring report.',
+      '  - Emits a health classification so repeated deployment checks do not require manual correlation across multiple commands.',
+      '',
+      'Examples:',
+      '  pp flow monitor InvoiceSync --environment dev --since 2h --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
 export function printFlowErrorsHelp(): void {
   process.stdout.write(
     [
@@ -1681,6 +2167,40 @@ export function printFlowDoctorHelp(): void {
       '',
       'Examples:',
       '  pp flow doctor InvoiceSync --environment dev --since 7d --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printFlowAccessHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow access <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Behavior:',
+      '  - Reports owner/creator lookups plus explicit principalobjectaccess shares for one remote flow.',
+      '',
+      'Examples:',
+      '  pp flow access InvoiceSync --environment dev --solution Core --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printModelAccessHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: model access <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [options]',
+      '',
+      'Behavior:',
+      '  - Reports owner/creator lookups plus explicit principalobjectaccess shares for one model-driven app.',
+      '',
+      'Examples:',
+      '  pp model access SalesHub --environment dev --solution Core --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -2015,7 +2535,10 @@ export function printProjectDoctorHelp(): void {
       '  - Reports config presence, asset-path checks, provider bindings, topology, registries, and unresolved required parameters.',
       '  - Machine-readable formats emit one payload on stdout, including diagnostics and suggested next actions.',
       '  - Reads project context without mutating the filesystem.',
+      '  - Separates repo-local layout checks from external environment-registry and auth-resolution findings so local shape health is easier to read.',
       '  - Calls out when packaged solution zips live inline under `solutions/` instead of the canonical `artifacts/solutions/` bundle path.',
+      '  - Makes the stage -> environment alias -> auth profile -> solution chain explicit when those external relationships can be resolved.',
+      '  - Includes per-root placement guidance for `apps/`, `flows/`, `solutions/`, `docs/`, and the canonical bundle output path.',
       '',
       'Choose this when:',
       '  - You want pp to tell you what is broken, missing, or unresolved in the local project model.',
@@ -2061,7 +2584,9 @@ export function printProjectInspectHelp(): void {
       '  - Reads project context without mutating the filesystem.',
       '  - Auto-selects the lone descendant `pp.config.*` under the inspected path and reports discovery details when the current path is not itself a pp project.',
       '  - Calls out that editable sources belong under `apps/`, `flows/`, `solutions/`, and `docs/`, while generated solution zips belong under `artifacts/solutions/`.',
+      '  - Includes per-root placement guidance so agents can tell where new app, flow, solution-source, docs, and bundle artifacts should live without repo archaeology.',
       '  - Pair with `pp project doctor` for layout validation and `pp project init` to scaffold a canonical `apps/`, `flows/`, `solutions/`, and `docs/` workspace.',
+      '  - Makes the active stage -> environment alias -> auth profile -> solution relationship explicit when the referenced environment metadata is available.',
       '',
       'Choose this when:',
       '  - You want the resolved project model that an agent, analysis command, or deploy workflow will actually see.',

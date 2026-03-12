@@ -14,7 +14,15 @@ import {
 import { executeDeploy, executeDeployPlan, type DeployExecutionMode, type DeployPlan } from '@pp/deploy';
 import { createDiagnostic, fail, type Diagnostic, type OperationResult, type ProvenanceRecord, type SupportTier, ok } from '@pp/diagnostics';
 import { ModelService, type ModelAppSummary, type ModelInspectResult } from '@pp/model';
-import { discoverProject, type ProjectContext } from '@pp/project';
+import {
+  cancelInitSession,
+  discoverProject,
+  getInitSession,
+  resumeInitSession,
+  startInitSession,
+  type InitSessionAnswers,
+  type ProjectContext,
+} from '@pp/project';
 import { SolutionService, type SolutionAnalysis, type SolutionSummary } from '@pp/solution';
 import { z } from 'zod';
 
@@ -52,6 +60,44 @@ interface ResolvedRemoteRuntime {
       ? C
       : never
     : never;
+}
+
+export function addSolutionInspectRecoveryGuidance<T>(
+  result: OperationResult<T>,
+  environment: string,
+  uniqueName: string
+): OperationResult<T> {
+  const diagnostics = result.diagnostics ?? [];
+  const isTransportFailure = diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === 'HTTP_UNHANDLED_ERROR' ||
+      diagnostic.code === 'HTTP_REQUEST_TIMEOUT' ||
+      /fetch failed|network/i.test(diagnostic.message),
+  );
+
+  if (!isTransportFailure) {
+    return result;
+  }
+
+  const suggestedNextActions = Array.from(
+    new Set([
+      ...(result.suggestedNextActions ?? []),
+      `Run \`pp solution inspect ${uniqueName} --environment ${environment} --format json\` to determine whether the failure is MCP transport-specific or a live Dataverse inspect error.`,
+      'If the CLI succeeds while MCP still fails, capture the MCP diagnostic detail and treat the issue as an MCP/HTTP transport boundary problem.',
+    ]),
+  );
+  const knownLimitations = Array.from(
+    new Set([
+      ...(result.knownLimitations ?? []),
+      'MCP solution inspect can still fail before Dataverse returns a response when the underlying HTTP transport reports fetch failed.',
+    ]),
+  );
+
+  return {
+    ...result,
+    suggestedNextActions,
+    knownLimitations,
+  };
 }
 
 interface DeploySessionRecord {
@@ -141,6 +187,14 @@ const solutionScopeSchema = remoteBaseSchema.extend({
   solutionUniqueName: z.string().min(1).optional(),
 });
 
+const solutionExportSchema = remoteBaseSchema.extend({
+  uniqueName: z.string().min(1),
+  outPath: z.string().min(1),
+  manifestPath: z.string().min(1).optional(),
+  managed: z.boolean().optional(),
+  requestTimeoutMs: z.number().int().positive().optional(),
+});
+
 const projectScopeSchema = z.object({
   projectPath: z.string().min(1).optional(),
   stage: z.string().min(1).optional(),
@@ -156,6 +210,26 @@ const portfolioScopeSchema = z.object({
 const deployScopeSchema = z.object({
   projectPath: z.string().min(1).optional(),
   stage: z.string().min(1).optional(),
+});
+
+const initAnswerSchema = z.object({
+  goal: z.enum(['dataverse', 'maker', 'project', 'full']).optional(),
+  authMode: z.enum(['user', 'device-code', 'environment-token', 'client-secret', 'static-token']).optional(),
+  authProfileName: z.string().min(1).optional(),
+  loginHint: z.string().optional(),
+  tokenEnvVar: z.string().min(1).optional(),
+  tenantId: z.string().min(1).optional(),
+  clientId: z.string().min(1).optional(),
+  clientSecretEnv: z.string().min(1).optional(),
+  staticToken: z.string().min(1).optional(),
+  environmentAlias: z.string().min(1).optional(),
+  environmentUrl: z.string().url().optional(),
+  browserProfileName: z.string().min(1).optional(),
+  browserProfileKind: z.enum(['chrome', 'edge', 'chromium', 'custom']).optional(),
+  browserBootstrapUrl: z.string().url().optional(),
+  projectName: z.string().min(1).optional(),
+  solutionName: z.string().min(1).optional(),
+  stageName: z.string().min(1).optional(),
 });
 
 const deployApplySchema = z.object({
@@ -188,9 +262,19 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'Inspect one solution with dependencies, invalid connection references, and missing environment variables.',
   },
   {
+    name: 'pp.solution.export',
+    title: 'Export Solution',
+    description: 'Export one bounded solution package to an explicit local path with optional managed packaging.',
+  },
+  {
     name: 'pp.dataverse.query',
     title: 'Query Dataverse',
     description: 'Run a read-only Dataverse table query with structured rows and diagnostics.',
+  },
+  {
+    name: 'pp.dataverse.whoami',
+    title: 'Who Am I',
+    description: 'Resolve the current Dataverse caller identity and organization through a harmless read-only route.',
   },
   {
     name: 'pp.connection-reference.inspect',
@@ -211,6 +295,31 @@ export const initialMcpTools: McpToolDefinition[] = [
     name: 'pp.project.inspect',
     title: 'Inspect Project',
     description: 'Inspect the local pp project context resolved from the working tree.',
+  },
+  {
+    name: 'pp.init.start',
+    title: 'Start Init Session',
+    description: 'Start a guided, resumable pp init session for local setup.',
+  },
+  {
+    name: 'pp.init.status',
+    title: 'Inspect Init Session',
+    description: 'Inspect the state of a persisted pp init session.',
+  },
+  {
+    name: 'pp.init.answer',
+    title: 'Answer Init Session',
+    description: 'Apply one or more user answers to a persisted pp init session.',
+  },
+  {
+    name: 'pp.init.resume',
+    title: 'Resume Init Session',
+    description: 'Resume a persisted pp init session after an external step completes.',
+  },
+  {
+    name: 'pp.init.cancel',
+    title: 'Cancel Init Session',
+    description: 'Cancel a persisted pp init session.',
   },
   {
     name: 'pp.analysis.context',
@@ -259,10 +368,10 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     name: 'project',
     kind: 'local-context',
     supportTier: 'preview',
-    readTools: ['pp.project.inspect', 'pp.analysis.context', 'pp.analysis.portfolio', 'pp.analysis.drift', 'pp.analysis.usage', 'pp.analysis.policy'],
+    readTools: ['pp.project.inspect', 'pp.init.status', 'pp.analysis.context', 'pp.analysis.portfolio', 'pp.analysis.drift', 'pp.analysis.usage', 'pp.analysis.policy'],
     mutationToolsAvailable: true,
-    mutationTools: ['pp.deploy.plan', 'pp.deploy.apply'],
-    notes: 'Reads local project topology and can drive bounded deploy plan-then-apply workflows against the resolved workspace.',
+    mutationTools: ['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.deploy.plan', 'pp.deploy.apply'],
+    notes: 'Reads local project topology and can drive guided init sessions plus bounded deploy plan-then-apply workflows against the resolved workspace.',
   },
   {
     name: 'dataverse',
@@ -273,12 +382,33 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.solution.list',
       'pp.solution.inspect',
       'pp.dataverse.query',
+      'pp.dataverse.whoami',
       'pp.connection-reference.inspect',
       'pp.environment-variable.inspect',
       'pp.model-app.inspect',
     ],
     mutationToolsAvailable: false,
-    notes: 'The first MCP release exposes read-first Dataverse-backed inspection only.',
+    notes:
+      'The MCP Dataverse surface is read-first: solution/environment inspection, Dataverse queries that auto-resolve logical names like `solution` to entity sets like `solutions`, and harmless identity reads via pp.dataverse.whoami.',
+  },
+  {
+    name: 'solution-lifecycle',
+    kind: 'platform',
+    supportTier: 'preview',
+    readTools: ['pp.solution.list', 'pp.solution.inspect', 'pp.domain.list'],
+    mutationToolsAvailable: true,
+    mutationTools: ['pp.solution.export'],
+    notes:
+      'Use solution list/inspect to confirm ismanaged before export decisions. MCP now exposes one bounded package export tool through pp.solution.export when the caller supplies explicit output paths.',
+  },
+  {
+    name: 'flow-local-artifacts',
+    kind: 'local-context',
+    supportTier: 'preview',
+    readTools: ['pp.domain.list'],
+    mutationToolsAvailable: false,
+    notes:
+      'Local flow artifact inspect/unpack/normalize/validate/patch routes are CLI-only today: `pp flow inspect`, `pp flow unpack`, `pp flow normalize`, `pp flow validate`, and `pp flow patch`.',
   },
   {
     name: 'analysis',
@@ -293,10 +423,10 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     kind: 'interface',
     supportTier: 'preview',
     readTools: initialMcpTools
-      .filter((tool) => tool.name !== 'pp.deploy.plan' && tool.name !== 'pp.deploy.apply')
+      .filter((tool) => tool.name !== 'pp.deploy.plan' && tool.name !== 'pp.deploy.apply' && tool.name !== 'pp.solution.export')
       .map((tool) => tool.name),
     mutationToolsAvailable: true,
-    mutationTools: ['pp.deploy.plan', 'pp.deploy.apply'],
+    mutationTools: ['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.solution.export', 'pp.deploy.plan', 'pp.deploy.apply'],
     notes: 'Mutation tools are exposed through stored plan sessions plus explicit approval for live apply.',
   },
 ];
@@ -386,8 +516,47 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         return toToolResult('pp.solution.inspect', resolution, readOnlyPolicy());
       }
 
-      const result = await new SolutionService(resolution.data.client).analyze(uniqueName);
+      const result = addSolutionInspectRecoveryGuidance(
+        await new SolutionService(resolution.data.client).analyze(uniqueName),
+        args.environment,
+        uniqueName,
+      );
       return toToolResult('pp.solution.inspect', result, readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.solution.export',
+    {
+      title: 'Export Solution',
+      description: 'Export one bounded solution package to an explicit local path with optional managed packaging.',
+      inputSchema: solutionExportSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Export Solution'),
+    },
+    async ({ uniqueName, outPath, manifestPath, managed, requestTimeoutMs, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult(
+          'pp.solution.export',
+          resolution,
+          remoteMutationPolicy('This tool performs one bounded remote export action and writes the package to an explicit local path.', true)
+        );
+      }
+
+      const workspaceRoot = resolveProjectPath(undefined, defaults);
+      const result = await new SolutionService(resolution.data.client).exportSolution(uniqueName, {
+        outPath: resolveWorkspacePath(outPath, workspaceRoot),
+        manifestPath: manifestPath ? resolveWorkspacePath(manifestPath, workspaceRoot) : undefined,
+        managed,
+        requestTimeoutMs,
+      });
+      return toToolResult(
+        'pp.solution.export',
+        result,
+        remoteMutationPolicy('This tool performs one bounded remote export action and writes the package to an explicit local path.', true)
+      );
     }
   );
 
@@ -430,6 +599,27 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       });
 
       return toToolResult('pp.dataverse.query', result, readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.dataverse.whoami',
+    {
+      title: 'Who Am I',
+      description: 'Resolve the current Dataverse caller identity and organization through a harmless read-only route.',
+      inputSchema: remoteBaseSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Who Am I'),
+    },
+    async (args) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult('pp.dataverse.whoami', resolution, readOnlyPolicy());
+      }
+
+      const result = await resolution.data.client.whoAmI();
+      return toToolResult('pp.dataverse.whoami', result, readOnlyPolicy());
     }
   );
 
@@ -530,6 +720,97 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       });
       return toToolResult('pp.project.inspect', result, readOnlyPolicy());
     }
+  );
+
+  server.registerTool(
+    'pp.init.start',
+    {
+      title: 'Start Init Session',
+      description: 'Start a guided, resumable pp init session rooted at the selected project path.',
+      inputSchema: initAnswerSchema.extend({
+        projectPath: z.string().min(1).optional(),
+        configDir: z.string().min(1).optional(),
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Start Init Session'),
+    },
+    async ({ projectPath, configDir, ...answers }) =>
+      toToolResult(
+        'pp.init.start',
+        await startInitSession(
+          {
+            root: resolveProjectPath(projectPath, defaults),
+            ...(answers as Partial<InitSessionAnswers>),
+          },
+          readConfigOptions(configDir, defaults)
+        ),
+        localMutationPolicy()
+      )
+  );
+
+  server.registerTool(
+    'pp.init.status',
+    {
+      title: 'Inspect Init Session',
+      description: 'Inspect the current state of a persisted pp init session.',
+      inputSchema: z.object({
+        sessionId: z.string().uuid(),
+        configDir: z.string().min(1).optional(),
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Init Session'),
+    },
+    async ({ sessionId, configDir }) =>
+      toToolResult('pp.init.status', await getInitSession(sessionId, readConfigOptions(configDir, defaults)), readOnlyPolicy())
+  );
+
+  server.registerTool(
+    'pp.init.answer',
+    {
+      title: 'Answer Init Session',
+      description: 'Apply one or more user answers to a persisted pp init session.',
+      inputSchema: z.object({
+        sessionId: z.string().uuid(),
+        configDir: z.string().min(1).optional(),
+        answers: initAnswerSchema,
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Answer Init Session'),
+    },
+    async ({ sessionId, configDir, answers }) =>
+      toToolResult('pp.init.answer', await resumeInitSession(sessionId, { answers }, readConfigOptions(configDir, defaults)), localMutationPolicy())
+  );
+
+  server.registerTool(
+    'pp.init.resume',
+    {
+      title: 'Resume Init Session',
+      description: 'Resume a persisted pp init session after an external step completes.',
+      inputSchema: z.object({
+        sessionId: z.string().uuid(),
+        configDir: z.string().min(1).optional(),
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Resume Init Session'),
+    },
+    async ({ sessionId, configDir }) =>
+      toToolResult('pp.init.resume', await resumeInitSession(sessionId, {}, readConfigOptions(configDir, defaults)), localMutationPolicy())
+  );
+
+  server.registerTool(
+    'pp.init.cancel',
+    {
+      title: 'Cancel Init Session',
+      description: 'Cancel a persisted pp init session.',
+      inputSchema: z.object({
+        sessionId: z.string().uuid(),
+        configDir: z.string().min(1).optional(),
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Cancel Init Session'),
+    },
+    async ({ sessionId, configDir }) =>
+      toToolResult('pp.init.cancel', await cancelInitSession(sessionId, readConfigOptions(configDir, defaults)), localMutationPolicy())
   );
 
   server.registerTool(
@@ -815,6 +1096,10 @@ function resolveProjectPath(projectPath: string | undefined, defaults: PpMcpServ
   return resolve(projectPath ?? defaults.projectPath ?? process.cwd());
 }
 
+function resolveWorkspacePath(targetPath: string, workspaceRoot: string): string {
+  return resolve(workspaceRoot, targetPath);
+}
+
 async function resolvePortfolioProjects(
   projectPaths: string[] | undefined,
   stage: string | undefined,
@@ -984,6 +1269,28 @@ function controlledMutationPolicy(approvalRequired: boolean): ToolMutationPolicy
     approvalStrategy: 'Plan first, then execute a stored MCP deploy session. Live apply requires explicit approval bound to the exact session id.',
     supportedExecutionModes: ['plan', 'dry-run', 'apply'],
     sessionRequired: true,
+  };
+}
+
+function remoteMutationPolicy(optInStrategy: string, approvalRequired: boolean): ToolMutationPolicyControlled {
+  return {
+    mode: 'controlled',
+    mutationsExposed: true,
+    approvalRequired,
+    approvalStrategy: optInStrategy,
+    supportedExecutionModes: ['apply'],
+    sessionRequired: false,
+  };
+}
+
+function localMutationPolicy(): ToolMutationPolicyControlled {
+  return {
+    mode: 'controlled',
+    mutationsExposed: true,
+    approvalRequired: false,
+    approvalStrategy: 'This tool mutates only local pp config or workspace files and returns the resulting session state for inspection.',
+    supportedExecutionModes: ['apply'],
+    sessionRequired: false,
   };
 }
 

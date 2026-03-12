@@ -309,6 +309,7 @@ When bootstrap needs to clear stale run-scoped solutions before reuse, stay
 inside `pp`:
 
 ```bash
+pp env baseline test --prefix ppHarness20260310T013401820Z --format json
 pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json
 pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json
 pp env reset test --prefix ppHarness20260310T013401820Z --format json
@@ -317,7 +318,9 @@ pp env reset test --prefix ppHarness20260310T013401820Z --format json
 `cleanup-plan` enumerates solutions whose unique name or friendly name starts
 with the given prefix, and `reset` deletes those matches. This is the intended
 prefix-based reset workflow for disposable harness assets; use
-`--dry-run` or `--plan` before mutating a shared environment.
+`--dry-run` or `--plan` before mutating a shared environment. Use
+`env baseline` first when you want one non-mutating payload that also embeds the
+resolved environment/auth context and optional prior-solution absence checks.
 
 List, inspect, and validate connection references as first-class ALM objects:
 
@@ -686,6 +689,15 @@ Inspect a solution by unique name:
 pp solution inspect Core --env dev
 ```
 
+Publish a solution and optionally wait until export succeeds as the post-publish checkpoint:
+
+```bash
+pp solution publish Core --env dev
+pp solution publish Core --env dev --wait-for-export --out ./artifacts/Core.zip
+```
+
+`pp solution publish --format json` also returns `readBack` plus a machine-readable `blockers` list for packaged canvas apps, workflows, and model-driven apps so you can inspect the immediate post-publish state and see whether a draft or suspended workflow is still blocking export readiness even when you do not wait for the export checkpoint.
+
 Inspect solution inventory and preflight facts:
 
 ```bash
@@ -693,6 +705,7 @@ pp solution components Core --env dev
 pp solution dependencies Core --env dev
 pp solution analyze Core --env dev
 pp solution compare Core --source-env dev --target-env prod
+pp solution compare Core --source-env dev --target-env prod --include-model-composition
 pp solution compare Core --source-env dev --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac
 pp solution compare --source-folder ./src/solutions/Core --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac
 ```
@@ -714,6 +727,7 @@ Current solution output includes:
 - connection-reference validation failures
 - environment variables with missing effective values
 - source/target drift summaries for compare output
+- shell-only model-driven app presence by default during environment compare, with `--include-model-composition` for deep model artifact drift
 
 ## Environment alias fields that matter here
 
@@ -754,8 +768,10 @@ Most current commands default to JSON output. Some project and analysis commands
 Implemented today:
 
 - solution create for unmanaged shells
+- solution publish through the Dataverse `PublishAllXml` action, with an optional export-backed synchronization checkpoint
 - solution export through the Dataverse `ExportSolution` action with `pp` release manifests
 - solution import through the Dataverse `ImportSolution` action with structured retry guidance
+- target-aware `pp solution import --plan`, which reads the adjacent release manifest plus live target solution state to surface managed/unmanaged and same-version promotion diagnostics before mutating
 - typed Dataverse action, function, and `$batch` invocation helpers plus CLI commands
 - local solution pack and unpack orchestration through `pac solution pack|unpack`
 - Dataverse `WhoAmI`

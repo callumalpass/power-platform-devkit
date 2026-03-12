@@ -30,6 +30,7 @@
       "mode": "seeded"
     }
   },
+  "canonicalProjectRoot": "<REPO_ROOT>/fixtures/analysis/project",
   "contract": {
     "activeTarget": {
       "environmentAlias": "prod",
@@ -176,6 +177,35 @@
       "kind": "dataverse",
       "target": "dev"
     }
+  },
+  "relationships": {
+    "activeAuthProfileStatus": "unresolved",
+    "activeEnvironmentAlias": "prod",
+    "activeRelationshipSummary": "stage prod -> environment prod -> auth profile <missing> -> solution core (CoreManaged)",
+    "authProfileNames": [],
+    "authProfileUsageSummary": "No auth profile could be resolved from the current project stage mappings.",
+    "projectRoot": "<REPO_ROOT>/fixtures/analysis/project",
+    "selectedStage": "prod",
+    "stageRelationships": [
+      {
+        "authProfileStatus": "unresolved",
+        "environmentAlias": "dev",
+        "environmentStatus": "missing",
+        "solutionAlias": "core",
+        "solutionUniqueName": "CoreDev",
+        "stage": "dev",
+        "summary": "stage dev -> environment dev -> auth profile <missing> -> solution core (CoreDev)"
+      },
+      {
+        "authProfileStatus": "unresolved",
+        "environmentAlias": "prod",
+        "environmentStatus": "missing",
+        "solutionAlias": "core",
+        "solutionUniqueName": "CoreManaged",
+        "stage": "prod",
+        "summary": "stage prod -> environment prod -> auth profile <missing> -> solution core (CoreManaged)"
+      }
+    ]
   },
   "success": true,
   "suggestedNextActions": [],

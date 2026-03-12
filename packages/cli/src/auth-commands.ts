@@ -10,6 +10,7 @@ import {
 import { getEnvironmentAlias, type ConfigStoreOptions } from '@pp/config';
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
 import { createMutationPreview, readMutationFlags, type CliOutputFormat } from './contract';
+import { buildAuthProfileUsageSummary } from './relationship-context';
 
 type OutputFormat = CliOutputFormat;
 
@@ -68,22 +69,30 @@ export async function runAuthProfileInspectCommand(
   }
 
   const summary = summarizeProfile(profile.data);
+  const usage = await buildAuthProfileUsageSummary(target.data.name, configOptions);
 
   deps.printByFormat(
-    target.data.environmentAlias
-      ? {
-          ...omitAuthProfileInspectDefaultResource(summary),
-          resolvedFromEnvironment: target.data.environmentAlias,
-          resolvedEnvironmentUrl: target.data.environmentUrl,
-          targetResource: target.data.environmentUrl,
-          profileDefaultResource: summary.defaultResource,
-          defaultResourceMatchesResolvedEnvironment:
-            typeof summary.defaultResource === 'string' && typeof target.data.environmentUrl === 'string'
-              ? normalizeAuthProfileInspectResource(summary.defaultResource) ===
-                normalizeAuthProfileInspectResource(target.data.environmentUrl)
-              : undefined,
-        }
-      : summary,
+    {
+      ...(target.data.environmentAlias
+        ? {
+            ...omitAuthProfileInspectDefaultResource(summary),
+            resolvedFromEnvironment: target.data.environmentAlias,
+            resolvedEnvironmentUrl: target.data.environmentUrl,
+            targetResource: target.data.environmentUrl,
+            profileDefaultResource: summary.defaultResource,
+            defaultResourceMatchesResolvedEnvironment:
+              typeof summary.defaultResource === 'string' && typeof target.data.environmentUrl === 'string'
+                ? normalizeAuthProfileInspectResource(summary.defaultResource) ===
+                  normalizeAuthProfileInspectResource(target.data.environmentUrl)
+                : undefined,
+          }
+        : summary),
+      relationships: {
+        environmentAliases: usage.environmentAliases,
+        environmentCount: usage.environmentCount,
+        currentProject: usage.currentProject,
+      },
+    },
     format
   );
   return 0;
@@ -616,14 +625,20 @@ async function resolveAuthProfileInspectTarget(
   const name = deps.positionalArgs(args)[0];
 
   if (name) {
-    return ok(
-      {
-        name,
-      },
-      {
-        supportTier: 'preview',
-      }
-    );
+    const shorthandEnvironmentAlias = readAuthProfileInspectEnvironmentShortcut(name);
+
+    if (!shorthandEnvironmentAlias) {
+      return ok(
+        {
+          name,
+        },
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+
+    return resolveAuthProfileInspectEnvironmentTarget(configOptions, shorthandEnvironmentAlias);
   }
 
   const environmentAlias = deps.readEnvironmentAlias(args);
@@ -632,6 +647,13 @@ async function resolveAuthProfileInspectTarget(
     return deps.argumentFailure('AUTH_PROFILE_NAME_REQUIRED', 'Auth profile name or --environment <alias> is required.');
   }
 
+  return resolveAuthProfileInspectEnvironmentTarget(configOptions, environmentAlias);
+}
+
+async function resolveAuthProfileInspectEnvironmentTarget(
+  configOptions: ConfigStoreOptions,
+  environmentAlias: string
+): Promise<OperationResult<{ name: string; environmentAlias?: string; environmentUrl?: string }>> {
   const environment = await getEnvironmentAlias(environmentAlias, configOptions);
 
   if (!environment.success) {
@@ -665,6 +687,11 @@ async function resolveAuthProfileInspectTarget(
       warnings: environment.warnings,
     }
   );
+}
+
+function readAuthProfileInspectEnvironmentShortcut(value: string): string | undefined {
+  const match = /^environment:(.+)$/i.exec(value.trim());
+  return match?.[1]?.trim() || undefined;
 }
 
 function maybeHandleMutationPreview(

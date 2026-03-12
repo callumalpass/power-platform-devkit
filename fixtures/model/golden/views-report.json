@@ -1,8 +1,28 @@
-[
-  {
-    "id": "view-1",
-    "name": "Active Accounts",
-    "queryType": 0,
-    "table": "account"
+{
+  "app": {
+    "id": "app-1",
+    "name": "Sales Hub",
+    "publishedOn": "2026-03-01T08:00:00.000Z",
+    "stateCode": 0,
+    "uniqueName": "SalesHub",
+    "version": "1.0.0.0"
+  },
+  "coverage": {
+    "componentInspectionAvailable": true,
+    "componentMembershipSource": "appmodulecomponents"
+  },
+  "items": [
+    {
+      "id": "view-1",
+      "name": "Active Accounts",
+      "queryType": 0,
+      "table": "account"
+    }
+  ],
+  "summary": {
+    "artifactKind": "view",
+    "componentCount": 5,
+    "count": 1,
+    "missingComponentCount": 1
   }
-]
+}

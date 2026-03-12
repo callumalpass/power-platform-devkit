@@ -145,6 +145,37 @@ export function createMutationPreview(
   };
 }
 
+export function createSuccessPayload(
+  value: unknown,
+  result: Pick<
+    OperationResult<unknown>,
+    'diagnostics' | 'warnings' | 'supportTier' | 'suggestedNextActions' | 'provenance' | 'knownLimitations'
+  >,
+  options: { dataKey?: string } = {}
+): Record<string, unknown> {
+  const metadata = {
+    success: true,
+    diagnostics: result.diagnostics,
+    warnings: result.warnings,
+    supportTier: result.supportTier,
+    suggestedNextActions: result.suggestedNextActions ?? [],
+    provenance: result.provenance ?? [],
+    knownLimitations: result.knownLimitations ?? [],
+  };
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return {
+      ...(value as Record<string, unknown>),
+      ...metadata,
+    };
+  }
+
+  return {
+    ...(options.dataKey ? { [options.dataKey]: value } : { data: value }),
+    ...metadata,
+  };
+}
+
 function renderDiagnostics(result: OperationResult<unknown>, format: CliOutputFormat, success: boolean): string {
   if (format === 'json' || format === 'yaml' || format === 'ndjson') {
     return renderOutput(
@@ -281,6 +312,10 @@ function flattenTableObject(value: Record<string, unknown>, prefix?: string): st
   const records: string[][] = [];
 
   for (const [field, cellValue] of Object.entries(value)) {
+    if (cellValue === undefined) {
+      continue;
+    }
+
     const key = prefix ? `${prefix}.${field}` : field;
 
     if (isPlainObject(cellValue)) {
@@ -288,8 +323,9 @@ function flattenTableObject(value: Record<string, unknown>, prefix?: string): st
 
       if (nested.length > 0) {
         records.push(...nested);
-        continue;
       }
+
+      continue;
     }
 
     records.push([key, stringifyCell(cellValue)]);

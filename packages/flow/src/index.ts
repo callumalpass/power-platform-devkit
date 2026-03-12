@@ -572,6 +572,28 @@ export interface FlowDoctorReport {
   findings: string[];
 }
 
+export interface FlowMonitorReport {
+  checkedAt: string;
+  observationWindow?: string;
+  flow?: FlowInspectResult;
+  health: {
+    status: 'healthy' | 'degraded' | 'blocked' | 'inactive' | 'unknown';
+    summary: string;
+    telemetryState: 'active' | 'quiet' | 'blocked' | 'unknown';
+    latestRunAt?: string;
+  };
+  recentRuns: {
+    total: number;
+    failed: number;
+    latestFailure?: FlowRunSummary;
+  };
+  runtimeSummary: FlowRuntimeAnalyticsSummary;
+  errorGroups: FlowErrorGroup[];
+  invalidConnectionReferences: ConnectionReferenceValidationResult[];
+  missingEnvironmentVariables: EnvironmentVariableSummary[];
+  findings: string[];
+}
+
 interface FlowNodeSummary {
   id: string;
   name: string;
@@ -753,8 +775,18 @@ export class FlowService {
         supportTier: 'experimental',
         diagnostics: flow.diagnostics,
         warnings: flow.warnings,
+        suggestedNextActions: [
+          'Run `pp flow list --environment <alias> --format json` to confirm the flow identifier before retrying runtime inspection.',
+          `Run \`pp solution components ${options.solutionUniqueName ?? '<solution>'} --environment <alias> --format json\` if the flow is expected to be solution-scoped.`,
+        ],
         knownLimitations: [
           'Flow runtime diagnostics require FlowRun ingestion to be available in the target environment.',
+        ],
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse workflows',
+          },
         ],
       });
     }
@@ -785,8 +817,26 @@ export class FlowService {
       supportTier: 'experimental',
       diagnostics: [...flow.diagnostics, ...runs.diagnostics],
       warnings: [...flow.warnings, ...runs.warnings],
+      suggestedNextActions: dedupeStrings(
+        [
+          filtered.length === 0
+            ? `No recent runs were returned. Re-run \`pp flow doctor ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\` for richer runtime context.`
+            : `Run \`pp flow doctor ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\` to correlate these runs with connection and environment-variable health.`,
+          `Run \`pp flow inspect ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\` to confirm the resolved workflow identity.`,
+        ]
+      ),
       knownLimitations: [
         'FlowRun data may be delayed or incomplete depending on ingestion and retention settings.',
+      ],
+      provenance: [
+        {
+          kind: 'official-api',
+          source: 'Dataverse workflows',
+        },
+        {
+          kind: 'official-api',
+          source: 'Dataverse FlowRun history',
+        },
       ],
     });
   }
@@ -1055,6 +1105,7 @@ export class FlowService {
         ? `${((failedRuns.length / Math.max(runs.data?.length ?? 0, 1)) * 100).toFixed(1)}%`
         : undefined;
     const findings = [
+      ...buildQuietRuntimeBlockerFindings(flow.data, runs.data ?? [], invalidConnectionReferences),
       ...(failureRate
         ? [`${failedRuns.length} of ${runs.data?.length ?? 0} recent runs failed (${failureRate}).`]
         : []),
@@ -1126,10 +1177,96 @@ export class FlowService {
         supportTier: 'experimental',
         diagnostics: [...flow.diagnostics, ...runs.diagnostics, ...errors.diagnostics, ...references.diagnostics, ...variables.diagnostics],
         warnings: [...flow.warnings, ...runs.warnings, ...errors.warnings, ...references.warnings, ...variables.warnings],
+        suggestedNextActions: dedupeStrings(
+          [
+            invalidConnectionReferences.length > 0
+              ? `Run \`pp connref validate --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\` to inspect the failing connection references directly.`
+              : undefined,
+            missingEnvironmentVariables.length > 0
+              ? `Run \`pp envvar list --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\` to inspect missing effective environment-variable values.`
+              : undefined,
+            failedRuns.length > 0
+              ? `Run \`pp flow runs ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --status Failed --format json\` to review the raw failed-run slice.`
+              : undefined,
+            `Run \`pp flow inspect ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --format json\` to confirm the resolved workflow metadata and attached connection references.`,
+          ].filter((value): value is string => Boolean(value))
+        ),
         knownLimitations: [
           'Runtime diagnostics depend on FlowRun ingestion and may lag behind portal data.',
           'Connector-level grouping is heuristic until richer runtime fields are available.',
         ],
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse workflows',
+          },
+          {
+            kind: 'official-api',
+            source: 'Dataverse FlowRun history',
+          },
+          {
+            kind: 'inferred',
+            source: '@pp/flow source correlation',
+            detail: 'Connection-reference and environment-variable source correlation is inferred from the exported workflow definition graph.',
+          },
+        ],
+      }
+    );
+  }
+
+  async monitor(
+    identifier: string,
+    options: {
+      solutionUniqueName?: string;
+      since?: string;
+    } = {}
+  ): Promise<OperationResult<FlowMonitorReport>> {
+    const doctor = await this.doctor(identifier, options);
+
+    if (!doctor.success || !doctor.data) {
+      return doctor as unknown as OperationResult<FlowMonitorReport>;
+    }
+
+    const latestRunAt = resolveLatestFlowRunTimestamp(doctor.data.runtimeSummary, doctor.data.recentRuns.latestFailure);
+    const health = summarizeFlowMonitoringHealth(doctor.data, latestRunAt);
+    const findings = dedupeStrings([
+      health.summary,
+      ...(doctor.data.recentRuns.total === 0 && health.telemetryState === 'quiet'
+        ? [
+            'No recent runs or grouped errors were returned in the requested window, so follow-up monitoring is relying on static dependency health rather than fresh execution telemetry.',
+          ]
+        : []),
+      ...doctor.data.findings,
+    ]);
+
+    return ok(
+      {
+        checkedAt: new Date().toISOString(),
+        observationWindow: options.since,
+        flow: doctor.data.flow,
+        health,
+        recentRuns: doctor.data.recentRuns,
+        runtimeSummary: doctor.data.runtimeSummary,
+        errorGroups: doctor.data.errorGroups,
+        invalidConnectionReferences: doctor.data.invalidConnectionReferences,
+        missingEnvironmentVariables: doctor.data.missingEnvironmentVariables,
+        findings,
+      },
+      {
+        supportTier: doctor.supportTier,
+        diagnostics: doctor.diagnostics,
+        warnings: doctor.warnings,
+        suggestedNextActions: dedupeStrings([
+          ...(doctor.suggestedNextActions ?? []),
+          doctor.data.recentRuns.total === 0
+            ? `Re-run \`pp flow monitor ${identifier} --environment <alias>${options.solutionUniqueName ? ` --solution ${options.solutionUniqueName}` : ''} --since ${options.since ?? '1h'} --format json\` after the next expected trigger window to confirm whether runtime telemetry stays quiet.`
+            : undefined,
+        ]),
+        knownLimitations: dedupeStrings([
+          ...(doctor.knownLimitations ?? []),
+          'Monitoring summaries only reflect the requested lookback window; use repeated polls when you need a longer trend line.',
+        ]),
+        provenance: doctor.provenance,
       }
     );
   }
@@ -1194,6 +1331,37 @@ export class FlowService {
   async patch(path: string, patch: FlowPatchDocument, outPath?: string): Promise<OperationResult<FlowPatchResult>> {
     return patchFlowArtifact(path, patch, outPath);
   }
+}
+
+function buildQuietRuntimeBlockerFindings(
+  flow: FlowInspectResult | undefined,
+  runs: FlowRunSummary[],
+  invalidConnectionReferences: ConnectionReferenceValidationResult[]
+): string[] {
+  if (!flow || runs.length > 0) {
+    return [];
+  }
+
+  if (flow.workflowState !== 'draft' && flow.workflowState !== 'suspended') {
+    return [];
+  }
+
+  if (invalidConnectionReferences.length === 0) {
+    return [];
+  }
+
+  const names = invalidConnectionReferences
+    .map((reference) => reference.reference.logicalName ?? reference.reference.displayName ?? reference.reference.id)
+    .filter((value): value is string => Boolean(value));
+
+  if (names.length === 0) {
+    return [];
+  }
+
+  const label = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+  return [
+    `No recent flow runs were returned because the flow is still ${flow.workflowState} and connection reference ${label} is not runnable yet.`,
+  ];
 }
 
 export async function loadFlowArtifact(path: string): Promise<OperationResult<FlowArtifact>> {
@@ -2089,16 +2257,27 @@ async function deployLoadedFlowArtifact(
   );
 
   if (!update.success) {
-    return fail([...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics], {
-      supportTier: 'preview',
-      warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
-      provenance: [
-        {
-          kind: 'official-api',
-          source: 'Dataverse workflows PATCH',
-        },
-      ],
+    const activationFailure = detectInPlaceActivationFailure(update.diagnostics, {
+      identifier: remoteFlow.data.uniqueName ?? remoteFlow.data.name ?? remoteFlow.data.id,
+      solutionUniqueName: options.solutionUniqueName,
+      workflowCategory: remoteFlow.data.category,
+      workflowState: remoteFlow.data.workflowState,
     });
+    return fail(
+      [...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics, ...(activationFailure?.diagnostics ?? [])],
+      {
+        supportTier: 'preview',
+        warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
+        suggestedNextActions: activationFailure?.suggestedNextActions,
+        knownLimitations: activationFailure?.knownLimitations,
+        provenance: [
+          {
+            kind: 'official-api',
+            source: 'Dataverse workflows PATCH',
+          },
+        ],
+      }
+    );
   }
 
   return ok(
@@ -2141,6 +2320,83 @@ async function deployLoadedFlowArtifact(
       ],
     }
   );
+}
+
+function detectInPlaceActivationFailure(
+  diagnostics: Diagnostic[],
+  context: {
+    identifier: string;
+    solutionUniqueName?: string;
+    workflowCategory?: number;
+    workflowState?: FlowWorkflowStateLabel;
+  }
+):
+  | {
+      diagnostics: Diagnostic[];
+      suggestedNextActions: string[];
+      knownLimitations: string[];
+    }
+  | undefined {
+  const blocking = diagnostics.find((diagnostic) => {
+    if (diagnostic.code !== 'HTTP_REQUEST_FAILED' || !/\breturned 400\b/.test(diagnostic.message)) {
+      return false;
+    }
+
+    const detail = parseDataverseErrorDetail(diagnostic.detail);
+    return detail?.code === 'DefinitionRequestMissingFields';
+  });
+
+  if (!blocking) {
+    return undefined;
+  }
+
+  const activationTarget = context.identifier;
+  const activateCommand = `pp flow activate ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json`;
+  return {
+    diagnostics: [
+      createDiagnostic(
+        'error',
+        'FLOW_ACTIVATE_DEFINITION_REQUIRED',
+        `Flow ${activationTarget} could not be activated in place because Dataverse requires a full flow definition payload for this workflow update path.`,
+        {
+          source: '@pp/flow',
+          hint: `Capture the current blocker with \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\` and avoid retrying ${activateCommand} until a definition-based activation path is available.`,
+        }
+      ),
+    ],
+    suggestedNextActions: dedupeStrings([
+      `Run \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\` to capture the current workflow state and identifiers.`,
+      context.solutionUniqueName
+        ? `Run \`pp solution sync-status ${context.solutionUniqueName} --environment <alias> --format json\` to confirm whether this draft workflow is still blocking solution export readiness.`
+        : `Inspect the parent solution packaging state before retrying activation if this workflow is meant to unblock a solution export.`,
+    ]),
+    knownLimitations: dedupeStrings([
+      context.workflowCategory === 5
+        ? 'In-place activation for some Dataverse Modern Flow records is not yet supported through the current workflows PATCH path because the platform expects a full definition payload.'
+        : 'In-place activation can fail when the Dataverse workflows PATCH path requires fields that pp does not currently round-trip.',
+      `When Dataverse returns \`DefinitionRequestMissingFields\`, repeating \`${activateCommand}\` without changing the activation path is unlikely to succeed.`,
+    ]),
+  };
+}
+
+function parseDataverseErrorDetail(detail: string | undefined): { code?: string; message?: string } | undefined {
+  if (!detail) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(detail) as Record<string, unknown>;
+    const nestedError =
+      parsed.error && typeof parsed.error === 'object' && !Array.isArray(parsed.error)
+        ? (parsed.error as Record<string, unknown>)
+        : undefined;
+    return {
+      code: readString(nestedError?.code) ?? readString(parsed.code),
+      message: readString(nestedError?.message) ?? readString(parsed.message),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 async function validateFlowArtifactRemoteTargets(
@@ -2350,6 +2606,7 @@ function validateLoadedFlowArtifact(
     );
   }
 
+  diagnostics.push(...validateFlowClientDataDefinitionConsistency(artifact, path));
   diagnostics.push(...validateFlowWorkflowStateMetadata(artifact, path));
   diagnostics.push(...validateFlowWorkflowCategoryMetadata(artifact, path));
   diagnostics.push(...validateFlowWorkflowShellMetadata(artifact, path));
@@ -2516,6 +2773,8 @@ export async function patchFlowArtifact(
     appliedOperations.push(`action:${from}->${to}`);
   }
 
+  synchronizeFlowClientDataDefinition(cloned);
+
   const destination = resolveFlowOutputPath(outPath ?? path);
   await writeJsonFile(destination, cloned as unknown as Parameters<typeof writeJsonFile>[1]);
 
@@ -2533,6 +2792,66 @@ export async function patchFlowArtifact(
       warnings: artifact.warnings,
     }
   );
+}
+
+function validateFlowClientDataDefinitionConsistency(artifact: FlowArtifact, path: string): Diagnostic[] {
+  const clientData = artifact.clientData;
+
+  if (!clientData) {
+    return [];
+  }
+
+  const topLevelDefinition = asRecord(clientData.definition);
+  const nestedDefinition = asRecord(asRecord(clientData.properties)?.definition);
+  const diagnostics: Diagnostic[] = [];
+
+  if (topLevelDefinition && !flowJsonValuesEqual(topLevelDefinition, artifact.definition)) {
+    diagnostics.push(
+      createDiagnostic(
+        'error',
+        'FLOW_CLIENTDATA_DEFINITION_MISMATCH',
+        `Flow artifact ${path} has a stale clientData.definition payload that does not match definition.`,
+        {
+          source: '@pp/flow',
+          hint: 'Re-run `pp flow patch` or `pp flow normalize` to resynchronize the preserved clientData definition copy.',
+        }
+      )
+    );
+  }
+
+  if (nestedDefinition && !flowJsonValuesEqual(nestedDefinition, artifact.definition)) {
+    diagnostics.push(
+      createDiagnostic(
+        'error',
+        'FLOW_CLIENTDATA_PROPERTIES_DEFINITION_MISMATCH',
+        `Flow artifact ${path} has a stale clientData.properties.definition payload that does not match definition.`,
+        {
+          source: '@pp/flow',
+          hint: 'Re-run `pp flow patch` or `pp flow normalize` to resynchronize the preserved clientData definition copy.',
+        }
+      )
+    );
+  }
+
+  return diagnostics;
+}
+
+function flowJsonValuesEqual(left: FlowJsonValue, right: FlowJsonValue): boolean {
+  return stableStringify(left) === stableStringify(right);
+}
+
+function synchronizeFlowClientDataDefinition(artifact: FlowArtifact): void {
+  if (!artifact.clientData) {
+    return;
+  }
+
+  artifact.clientData.definition = cloneJsonValue(artifact.definition);
+
+  const existingProperties = asRecord(artifact.clientData.properties);
+  artifact.clientData.properties = {
+    ...(existingProperties ? cloneJsonValue(existingProperties) : {}),
+    definition: cloneJsonValue(artifact.definition),
+  } as FlowJsonValue;
 }
 
 function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspectResult {
@@ -2561,12 +2880,19 @@ function normalizeRemoteFlow(record: DataverseCloudFlowInspectResult): FlowInspe
   };
 }
 
+function extractRemoteFlowDefinition(clientData: Record<string, FlowJsonValue> | undefined): Record<string, FlowJsonValue> | undefined {
+  return asRecord(clientData?.definition) ?? asRecord(asRecord(clientData?.properties)?.definition);
+}
+
 function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResult<FlowArtifact> {
-  const definition = asRecord(flow.clientData?.definition);
+  const definition = extractRemoteFlowDefinition(flow.clientData);
   const workflowState = resolveSupportedFlowWorkflowState(flow.stateCode, flow.statusCode);
   const workflowMetadata = buildRawFlowWorkflowShellFields(flow.workflowMetadata);
 
   if (!definition) {
+    const clientDataKeys = Object.keys(asRecord(flow.clientData) ?? {});
+    const propertiesKeys = Object.keys(asRecord(asRecord(flow.clientData)?.properties) ?? {});
+
     return fail(
       createDiagnostic(
         'error',
@@ -2574,7 +2900,10 @@ function buildFlowArtifactFromRemoteFlow(flow: FlowInspectResult): OperationResu
         `Flow ${flow.uniqueName ?? flow.name ?? flow.id} does not expose a supported definition payload in workflows.clientdata.`,
         {
           source: '@pp/flow',
-          hint: 'Remote export currently requires workflows.clientdata.definition to be present and JSON-shaped.',
+          hint:
+            clientDataKeys.length > 0 || propertiesKeys.length > 0
+              ? `Remote export checked workflows.clientdata.definition and workflows.clientdata.properties.definition. Top-level keys: ${clientDataKeys.join(', ') || '(none)'}; properties keys: ${propertiesKeys.join(', ') || '(none)'}.`
+              : 'Remote export currently requires workflows.clientdata.definition or workflows.clientdata.properties.definition to be present and JSON-shaped.',
         }
       )
     );
@@ -2715,6 +3044,68 @@ function summarizeFlowRuns(runs: FlowRunSummary[]): FlowRuntimeAnalyticsSummary 
   };
 }
 
+function resolveLatestFlowRunTimestamp(
+  runtimeSummary: FlowRuntimeAnalyticsSummary,
+  latestFailure: FlowRunSummary | undefined
+): string | undefined {
+  const dailyLatest = runtimeSummary.dailyTrends
+    .map((entry) => entry.date)
+    .sort((left, right) => right.localeCompare(left))[0];
+
+  return latestFailure?.startTime ?? (dailyLatest ? `${dailyLatest}T00:00:00.000Z` : undefined);
+}
+
+function summarizeFlowMonitoringHealth(
+  report: FlowDoctorReport,
+  latestRunAt: string | undefined
+): FlowMonitorReport['health'] {
+  if (report.invalidConnectionReferences.length > 0 || report.missingEnvironmentVariables.length > 0) {
+    return {
+      status: 'blocked',
+      telemetryState: report.recentRuns.total > 0 || report.errorGroups.length > 0 ? 'active' : 'blocked',
+      latestRunAt,
+      summary:
+        report.recentRuns.total > 0
+          ? 'Runtime monitoring found dependency blockers that can keep the flow unhealthy even when runs are still arriving.'
+          : 'Runtime monitoring found dependency blockers and no fresh run history, so the deployment still looks blocked rather than healthy.',
+    };
+  }
+
+  if (report.recentRuns.failed > 0 || report.errorGroups.length > 0) {
+    return {
+      status: 'degraded',
+      telemetryState: 'active',
+      latestRunAt,
+      summary: 'Runtime monitoring found recent failed executions or grouped runtime errors in the requested window.',
+    };
+  }
+
+  if (report.recentRuns.total > 0) {
+    return {
+      status: 'healthy',
+      telemetryState: 'active',
+      latestRunAt,
+      summary: 'Runtime monitoring found recent executions without new grouped failures or dependency blockers.',
+    };
+  }
+
+  if (report.flow?.workflowState === 'draft' || report.flow?.workflowState === 'suspended') {
+    return {
+      status: 'inactive',
+      telemetryState: 'quiet',
+      latestRunAt,
+      summary: `The flow is currently ${report.flow.workflowState}, so quiet runtime telemetry is expected until the flow becomes runnable.`,
+    };
+  }
+
+  return {
+    status: 'unknown',
+    telemetryState: 'quiet',
+    latestRunAt,
+    summary: 'No recent runs or grouped failures were returned, so the current window is quiet but not enough to prove the deployment stayed healthy.',
+  };
+}
+
 function normalizeRuntimeStatusLabel(value: string | undefined): string {
   const trimmed = value?.trim();
 
@@ -2740,6 +3131,10 @@ function averageIntegers(values: number[]): number | undefined {
   }
 
   return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function isDefinedNumber(value: number | undefined): value is number {
@@ -3340,9 +3735,17 @@ function buildDataverseFlowWorkflowShellFields(
 }
 
 function buildFlowDeployClientData(artifact: FlowArtifact): string {
+  const existingClientData = artifact.clientData ? cloneJsonValue(artifact.clientData) : {};
+  const existingProperties = asRecord(asRecord(existingClientData).properties);
+
   return stableStringify({
-    ...(artifact.clientData ? cloneJsonValue(artifact.clientData) : {}),
+    ...existingClientData,
+    schemaVersion: readNumber(asRecord(existingClientData).schemaVersion) ?? 1,
     definition: cloneJsonValue(artifact.definition),
+    properties: {
+      ...(existingProperties ? cloneJsonValue(existingProperties) : {}),
+      definition: cloneJsonValue(artifact.definition),
+    },
   });
 }
 
@@ -4740,13 +5143,18 @@ function readConnectorActionContract(value: unknown, nodePath: string): FlowConn
   const inputs = asRecord(record?.inputs);
   const host = asRecord(inputs?.host);
   const connection = asRecord(host?.connection);
-  const connectionName = readString(connection?.name);
+  const connectionName = readString(connection?.name) ?? readString(host?.connectionName);
+  const connectionPath = readString(connection?.name)
+    ? `definition.${nodePath}.inputs.host.connection.name`
+    : readString(host?.connectionName)
+      ? `definition.${nodePath}.inputs.host.connectionName`
+      : undefined;
 
   return {
     apiId: readString(host?.apiId) ?? readString(asRecord(host?.api)?.id),
-    operationId: readString(inputs?.operationId) ?? readString(record?.operationId),
+    operationId: readString(inputs?.operationId) ?? readString(host?.operationId) ?? readString(record?.operationId),
     connectionReferenceName: extractConnectionReferenceName(connectionName),
-    connectionPath: connectionName ? `definition.${nodePath}.inputs.host.connection.name` : undefined,
+    connectionPath,
     connectionReferenceSupported: Boolean(extractConnectionReferenceName(connectionName)),
   };
 }
@@ -4761,7 +5169,11 @@ function extractConnectionReferenceName(value: string | undefined): string | und
     /^parameters\(\s*['"]\$connections['"]\s*\)\s*\[\s*['"]([^'"]+)['"]\s*\]\s*\[\s*['"]connectionId['"]\s*\]$/i
   );
 
-  return match?.[1];
+  if (match?.[1]) {
+    return match[1];
+  }
+
+  return /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(expression) ? expression : undefined;
 }
 
 function resolveSupportedConnectorOperation(

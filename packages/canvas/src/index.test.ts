@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve as resolvePath } from 'node:path';
@@ -49,6 +50,14 @@ async function createZip(sourceDir: string, outPath: string): Promise<void> {
   });
 
   expect(result.status).toBe(0);
+}
+
+async function writeSolutionExportMetadata(root: string, managed = false): Promise<void> {
+  await writeFile(
+    join(root, 'solution.xml'),
+    `<ImportExportXml><SolutionManifest><UniqueName>Core</UniqueName><Version>1.0.0.0</Version><Managed>${managed ? '1' : '0'}</Managed></SolutionManifest></ImportExportXml>`,
+    'utf8'
+  );
 }
 
 async function writeCanvasApp(
@@ -356,6 +365,59 @@ describe('canvas template registries', () => {
     expect(written.templates[0]?.contentHash).toMatch(/[a-f0-9]{64}/);
   });
 
+  it('imports exported References/Templates.json payloads as strict-capable registries', async () => {
+    const dir = await createTempDir();
+    const sourcePath = join(dir, 'Templates.json');
+
+    await writeFile(
+      sourcePath,
+      JSON.stringify(
+        {
+          UsedTemplates: [
+            {
+              Name: 'Button',
+              Version: '2.2.0',
+              Template:
+                '<widget xmlns="http://openajax.org/metadata" xmlns:appMagic="http://schemas.microsoft.com/appMagic" id="http://microsoft.com/appmagic/button" name="button" version="2.2.0"><properties><property name="Text" datatype="String" defaultValue="&quot;Button&quot;" isExpr="true"><appMagic:category>data</appMagic:category></property></properties><appMagic:includeProperties><appMagic:includeProperty name="X" defaultValue="0" /><appMagic:includeProperty name="Y" defaultValue="0" /></appMagic:includeProperties></widget>',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const imported = await importCanvasTemplateRegistry({
+      sourcePath,
+    });
+
+    expect(imported.success).toBe(true);
+    expect(imported.data?.templates[0]).toMatchObject({
+      templateName: 'Button',
+      templateVersion: '2.2.0',
+      aliases: {
+        constructors: ['Classic/Button'],
+        yamlNames: ['Button'],
+      },
+      files: {
+        'References/Templates.json': {
+          name: 'Button',
+          version: '2.2.0',
+        },
+      },
+    });
+    expect(imported.data?.supportMatrix).toEqual([
+      {
+        templateName: 'Button',
+        version: '2.2.0',
+        status: 'supported',
+        modes: ['strict', 'registry'],
+        notes: ['Imported from an exported References/Templates.json payload.'],
+      },
+    ]);
+  });
+
   it('enforces deterministic build-mode resolution across seeded and registry bundles', () => {
     const seededBundle: CanvasRegistryBundle = {
       sources: [],
@@ -491,6 +553,7 @@ describe('remote canvas app workflows', () => {
     const solutionRoot = join(dir, 'solution');
     await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
     await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), 'fixture-msapp', 'utf8');
+    await writeSolutionExportMetadata(solutionRoot);
     const solutionZip = join(dir, 'Core.zip');
     await createZip(solutionRoot, solutionZip);
 
@@ -537,6 +600,134 @@ describe('remote canvas app workflows', () => {
     expect(await readFile(outPath, 'utf8')).toBe('fixture-msapp');
   });
 
+  it('auto-resolves a unique containing solution before downloading a remote canvas app', async () => {
+    const dir = await createTempDir();
+    const solutionRoot = join(dir, 'solution');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), 'fixture-msapp', 'utf8');
+    await writeSolutionExportMetadata(solutionRoot);
+    const solutionZip = join(dir, 'Core.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'canvasapps') {
+          return ok(
+            [
+              {
+                canvasappid: 'canvas-1',
+                displayname: 'Harness Canvas',
+                name: 'crd_HarnessCanvas',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                objectid: 'canvas-1',
+                _solutionid_value: 'sol-1',
+                componenttype: 300,
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'solutions') {
+          return ok(
+            [
+              {
+                solutionid: 'sol-1',
+                uniquename: 'Core',
+                friendlyname: 'Core Solution',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+      invokeAction: async <T>(name: string): Promise<OperationResult<{ body?: T }>> => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const outPath = join(dir, 'downloaded', 'Harness Canvas.msapp');
+    const result = await service.downloadRemote('Harness Canvas', {
+      outPath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      solutionUniqueName: 'Core',
+      solutionResolution: {
+        status: 'ready',
+        autoResolved: true,
+        resolvedSolutionUniqueName: 'Core',
+      },
+    });
+    expect(await readFile(outPath, 'utf8')).toBe('fixture-msapp');
+  });
+
+  it('reports when a remote canvas app is not yet attached to a solution for download', async () => {
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'canvasapps') {
+          return ok(
+            [
+              {
+                canvasappid: 'canvas-1',
+                displayname: 'Harness Canvas',
+                name: 'crd_HarnessCanvas',
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.downloadRemote('Harness Canvas', {});
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_REMOTE_DOWNLOAD_SOLUTION_REQUIRED',
+        }),
+      ])
+    );
+  });
+
   it('downloads and extracts a remote canvas app with normalized archive paths', async () => {
     const dir = await createTempDir();
     const msappRoot = join(dir, 'msapp');
@@ -551,6 +742,7 @@ describe('remote canvas app workflows', () => {
     const solutionRoot = join(dir, 'solution');
     await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
     await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    await writeSolutionExportMetadata(solutionRoot);
 
     const solutionZip = join(dir, 'Core.zip');
     await createZip(solutionRoot, solutionZip);
@@ -601,6 +793,128 @@ describe('remote canvas app workflows', () => {
     expect(await readFile(join(extractedPath, 'Controls', '1.json'), 'utf8')).toBe('{"Name":"App"}');
   });
 
+  it('proves remote canvas bindings from the exported app source', async () => {
+    const dir = await createTempDir();
+    const msappRoot = join(dir, 'msapp');
+    await mkdir(join(msappRoot, 'Src'), { recursive: true });
+    await mkdir(join(msappRoot, 'References'), { recursive: true });
+    await writeFile(join(msappRoot, 'Src', 'App.pa.yaml'), 'App:\n  Properties:\n    Theme: =PowerAppsTheme\n', 'utf8');
+    await writeFile(
+      join(msappRoot, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Gallery1:',
+        "          Control: Gallery@2.15.0",
+        '          Properties:',
+        "            Items: ='PP Harness Projects'",
+        '      - Title1:',
+        '          Control: Label@2.5.1',
+        '          Properties:',
+        '            Text: =ThisItem.Name',
+      ].join('\n') + '\n',
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'PP Harness Projects',
+              Type: 'Table',
+              DatasetName: 'default.cds',
+              EntityName: 'pph34135_projects',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const msappPath = join(dir, 'Harness Canvas.msapp');
+    await createZip(msappRoot, msappPath);
+
+    const solutionRoot = join(dir, 'solution');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    await writeSolutionExportMetadata(solutionRoot);
+
+    const solutionZip = join(dir, 'Core.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.proveRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      expectations: [
+        {
+          controlPath: 'Screen1/Gallery1',
+          property: 'Items',
+          expectedValue: "='PP Harness Projects'",
+        },
+        {
+          controlPath: 'Screen1/Title1',
+          property: 'Text',
+          expectedValue: '=ThisItem.Name',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      valid: true,
+      appId: 'canvas-1',
+      screenCount: 1,
+      controlCount: 2,
+      dataSources: ['PP Harness Projects'],
+      expectations: [
+        {
+          controlPath: 'Screen1/Gallery1',
+          property: 'Items',
+          found: true,
+          matched: true,
+          actualValueText: "='PP Harness Projects'",
+        },
+        {
+          controlPath: 'Screen1/Title1',
+          property: 'Text',
+          found: true,
+          matched: true,
+          actualValueText: '=ThisItem.Name',
+        },
+      ],
+    });
+  });
+
   it('attaches a remote canvas app to a solution through the typed canvas service', async () => {
     const service = new CanvasService(createRemoteCanvasStubDataverseClient());
 
@@ -618,6 +932,251 @@ describe('remote canvas app workflows', () => {
       },
       addRequiredComponents: true,
     });
+  });
+
+  it('emits a guided mismatch diagnostic for failed remote proof expectations', async () => {
+    const dir = await createTempDir();
+    const msappRoot = join(dir, 'msapp-source-mismatch');
+    await mkdir(join(msappRoot, 'Src'), { recursive: true });
+    await mkdir(join(msappRoot, 'References'), { recursive: true });
+    await writeFile(join(msappRoot, 'Src', 'App.pa.yaml'), 'App:\n  Properties:\n    Theme: =PowerAppsTheme\n', 'utf8');
+    await writeFile(
+      join(msappRoot, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Gallery1:',
+        '          Control: Gallery@2.15.0',
+        '          Properties:',
+        "            Items: ='PP Harness Projects'",
+      ].join('\n') + '\n',
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'PP Harness Projects',
+              Type: 'Table',
+              DatasetName: 'default.cds',
+              EntityName: 'pph34135_projects',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const msappPath = join(dir, 'Harness Canvas mismatch.msapp');
+    await createZip(msappRoot, msappPath);
+
+    const solutionRoot = join(dir, 'solution-mismatch');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    await writeSolutionExportMetadata(solutionRoot);
+
+    const solutionZip = join(dir, 'Core-mismatch.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.proveRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      expectations: [
+        {
+          controlPath: 'Screen1/Gallery1',
+          property: 'Items',
+          expectedValue: '=Accounts',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.valid).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_REMOTE_PROOF_MISMATCH',
+          detail: expect.stringContaining("Screen1/Gallery1.Items: expected =Accounts, actual ='PP Harness Projects'"),
+        }),
+      ])
+    );
+  });
+
+  it('prefers harvested control rules when exported YAML conflicts with harvested control metadata', async () => {
+    const dir = await createTempDir();
+    const msappRoot = join(dir, 'msapp-source-conflict');
+    await mkdir(join(msappRoot, 'Src'), { recursive: true });
+    await mkdir(join(msappRoot, 'References'), { recursive: true });
+    await mkdir(join(msappRoot, 'Controls'), { recursive: true });
+    await writeFile(join(msappRoot, 'Src', 'App.pa.yaml'), 'App:\n  Properties:\n    Theme: =PowerAppsTheme\n', 'utf8');
+    await writeFile(
+      join(msappRoot, 'Src', 'Screen1.pa.yaml'),
+      [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Gallery1:',
+        '          Control: Gallery@2.15.0',
+        '          Properties:',
+        '            Items: =Accounts',
+      ].join('\n') + '\n',
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'Controls', '4.json'),
+      JSON.stringify(
+        {
+          TopParent: {
+            Type: 'ControlInfo',
+            Name: 'Screen1',
+            Template: {
+              Name: 'screen',
+              Version: '1.0',
+            },
+            Children: [
+              {
+                Type: 'ControlInfo',
+                Name: 'Gallery1',
+                Parent: 'Screen1',
+                Template: {
+                  Name: 'Gallery',
+                  Version: '2.15.0',
+                },
+                Rules: [
+                  {
+                    Property: 'Items',
+                    InvariantScript: "='PP Harness Projects'",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await writeFile(
+      join(msappRoot, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'PP Harness Projects',
+              Type: 'Table',
+              DatasetName: 'default.cds',
+              EntityName: 'pph34135_projects',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const msappPath = join(dir, 'Harness Canvas conflict.msapp');
+    await createZip(msappRoot, msappPath);
+
+    const solutionRoot = join(dir, 'solution-conflict');
+    await mkdir(join(solutionRoot, 'CanvasApps'), { recursive: true });
+    await writeFile(join(solutionRoot, 'CanvasApps', 'crd_HarnessCanvas.msapp'), await readFile(msappPath));
+    await writeSolutionExportMetadata(solutionRoot);
+
+    const solutionZip = join(dir, 'Core-conflict.zip');
+    await createZip(solutionRoot, solutionZip);
+
+    const service = new CanvasService({
+      ...createRemoteCanvasStubDataverseClient(),
+      invokeAction: async <T>(name: string) => {
+        if (name === 'ExportSolution') {
+          return ok(
+            {
+              body: {
+                ExportSolutionFile: (await readFile(solutionZip)).toString('base64'),
+              } as T,
+            },
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return ok(
+          {
+            body: {} as T,
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.proveRemote('Harness Canvas', {
+      solutionUniqueName: 'Core',
+      expectations: [
+        {
+          controlPath: 'Screen1/Gallery1',
+          property: 'Items',
+          expectedValue: "='PP Harness Projects'",
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.expectations).toMatchObject([
+      {
+        controlPath: 'Screen1/Gallery1',
+        property: 'Items',
+        found: true,
+        matched: true,
+        evidence: 'harvested',
+        sourceActualValueText: '=Accounts',
+        harvestedActualValueText: "='PP Harness Projects'",
+        actualValueText: "='PP Harness Projects'",
+        conflict: true,
+      },
+    ]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_REMOTE_PROOF_SOURCE_CONFLICT',
+        }),
+      ])
+    );
   });
 });
 
@@ -790,6 +1349,95 @@ describe('canvas app workflows', () => {
     ]);
   });
 
+  it('reports unresolved data-source references during validation', async () => {
+    const dir = await createTempDir();
+    const registryPath = join(dir, 'controls.json');
+
+    await writeFile(
+      registryPath,
+      JSON.stringify(
+        {
+          templates: [
+            {
+              templateName: 'Gallery',
+              templateVersion: '1.0.0',
+              provenance: {
+                source: 'catalog',
+              },
+            },
+          ],
+          supportMatrix: [
+            {
+              templateName: 'Gallery',
+              version: '1.*',
+              status: 'supported',
+              modes: ['strict'],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const appPath = await writeCanvasApp(dir, {
+      name: 'BrokenBindingsCanvas',
+      screens: [
+        {
+          name: 'Home',
+          file: 'screens/Home.json',
+          controls: [
+            {
+              name: 'Gallery1',
+              templateName: 'Gallery',
+              templateVersion: '1.0.0',
+              properties: {
+                Items: '=MissingHarnessSource',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await mkdir(join(appPath, 'References'), { recursive: true });
+    await writeFile(
+      join(appPath, 'References', 'DataSources.json'),
+      JSON.stringify(
+        {
+          DataSources: [
+            {
+              Name: 'Accounts',
+              EntityName: 'account',
+              Type: 'Table',
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateCanvasApp(appPath, {
+      root: dir,
+      registries: ['./controls.json'],
+      mode: 'strict',
+    });
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CANVAS_DATA_SOURCE_REFERENCE_UNRESOLVED',
+          message: 'Formula property Items on Home/Gallery1 references unresolved data source MissingHarnessSource.',
+        }),
+      ])
+    );
+  });
+
   it('builds a deterministic package and diffs canvas source trees', async () => {
     const dir = await createTempDir();
     const registryPath = join(dir, 'controls.json');
@@ -895,6 +1543,9 @@ describe('canvas app workflows', () => {
     expect(build.success).toBe(true);
     expect(build.data?.outPath).toBe(join(dir, 'dist', 'CanvasOne.msapp'));
     expect(build.data?.packageHash).toMatch(/[a-f0-9]{64}/);
+    expect(build.data?.outFileSha256).toBe(
+      createHash('sha256').update(await readFile(join(dir, 'dist', 'CanvasOne.msapp'))).digest('hex'),
+    );
 
     const packageDocument = JSON.parse(await readFile(join(dir, 'dist', 'CanvasOne.msapp'), 'utf8')) as {
       kind: string;

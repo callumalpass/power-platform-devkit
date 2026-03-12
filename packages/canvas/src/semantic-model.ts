@@ -448,7 +448,7 @@ function resolveIdentifierBinding(
     };
   }
 
-  if (/^(var|loc|gbl)/i.test(node.name)) {
+  if (/^(var|loc|gbl|col)/i.test(node.name)) {
     return {
       kind: 'variable',
       name: node.name,

@@ -1,4 +1,4 @@
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import {
   createDiagnostic,
@@ -139,12 +139,19 @@ export interface ProjectInspectContractSummary {
   editableAssetRoots: string[];
   solutionSourceRoot: string;
   canonicalBundlePath: string;
+  assetPlacementGuidance: ProjectAssetPlacementGuidance[];
   defaultTarget: ProjectContractTarget;
   activeTarget: ProjectContractTarget;
   stageMappings: ProjectContractStageMapping[];
   environmentAliasProvenance?: string;
   bundleLifecycleSummary: string;
   deploymentRouteSummary: string;
+}
+
+export interface ProjectAssetPlacementGuidance {
+  asset: string;
+  root: string;
+  expectation: string;
 }
 
 export interface ProjectInitOptions {
@@ -225,6 +232,7 @@ export interface ProjectContractSummary {
   editableAssetRoots: string[];
   solutionSourceRoot: string;
   canonicalBundlePath: string;
+  assetPlacementGuidance: ProjectAssetPlacementGuidance[];
   defaultTarget: ProjectContractTarget;
   activeTarget: ProjectContractTarget;
   stageMappings: ProjectContractStageMapping[];
@@ -301,6 +309,10 @@ export interface ProjectDoctorReport {
   contract: ProjectContractSummary;
   topology: ProjectDoctorTopologySummary;
   checks: ProjectDoctorCheck[];
+  checkGroups?: {
+    localLayout: ProjectDoctorCheck[];
+    externalTargeting: ProjectDoctorCheck[];
+  };
 }
 
 export interface ProjectFeedbackObservation {
@@ -350,6 +362,7 @@ interface SecretResolution {
   value?: string;
   provider?: string;
   reference: string;
+  variableName?: string;
   diagnostics: Diagnostic[];
 }
 
@@ -379,7 +392,7 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
   });
   const layout = buildProjectInitLayoutGuidance(solution);
   const topology = resolveProjectTopology(config, stage).topology;
-  const contract = buildProjectContractSummary(config, topology, {
+  const contract = finalizeProjectContractSummary(buildProjectContractSummary(config, topology, {
     profile: layout.scaffoldProfile,
     editableAssetRoots: layout.scaffoldedAssetRoots,
     normalizedAssets: {
@@ -389,7 +402,7 @@ export function planProjectInit(root = process.cwd(), options: ProjectInitOption
       solutionBundle: layout.recommendedBundlePath,
       solutions: 'solutions',
     },
-  });
+  }));
   const preview = buildProjectInitPreview(configFilename, layout, contract);
 
   return {
@@ -569,7 +582,9 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
 
   const assets = project?.assets ?? (await inspectAssets(resolvedRoot, {}));
   const layout = assessProjectLayout(project?.root ?? resolvedRoot, assets, project?.config);
-  const contract = buildProjectContractSummary(project?.config ?? {}, project?.topology ?? { stages: {} }, layout);
+  const contract = finalizeProjectContractSummary(
+    buildProjectContractSummary(project?.config ?? {}, project?.topology ?? { stages: {} }, layout)
+  );
   const topologySummary = buildProjectDoctorTopologySummary(contract);
   const canonicalBundlePresent =
     layout.generatedBundlePaths.includes(contract.canonicalBundlePath) ||
@@ -589,6 +604,13 @@ export async function doctorProject(root = process.cwd(), options: ProjectDiscov
       path: asset.path,
       hint: asset.exists ? undefined : `Create ${relative(resolvedRoot, asset.path)} or update the project assets map if this repo uses a different layout.`,
     });
+
+    if (asset.exists && asset.kind === 'directory') {
+      const emptyRootCheck = await buildEmptyAssetRootCheck(asset, contract, resolvedRoot);
+      if (emptyRootCheck) {
+        checks.push(emptyRootCheck);
+      }
+    }
   }
 
   if (project?.configPath) {
@@ -743,7 +765,7 @@ export async function feedbackProject(
 
   const project = inspection.data;
   const layout = assessProjectLayout(project.root, project.assets, project.config);
-  const contract = buildProjectContractSummary(project.config, project.topology, layout);
+  const contract = finalizeProjectContractSummary(buildProjectContractSummary(project.config, project.topology, layout));
   const unresolvedRequiredParameters = Object.values(project.parameters)
     .filter((parameter) => parameter.definition.required && !parameter.hasValue)
     .map((parameter) => parameter.name)
@@ -948,6 +970,7 @@ export function resolveProjectParameters(
     let source: ResolvedProjectParameter['source'] = 'missing';
     let value: ResolvedProjectParameter['value'];
     let resolvedBy: string | undefined;
+    let secretResolution: SecretResolution | undefined;
     const sensitive = definition.secretRef !== undefined;
 
     if (definition.value !== undefined) {
@@ -961,13 +984,13 @@ export function resolveProjectParameters(
         value = coerceValue(rawValue, type);
       }
     } else if (definition.secretRef) {
-      const secret = secretResolver(definition.secretRef);
-      diagnostics.push(...secret.diagnostics);
+      secretResolution = secretResolver(definition.secretRef);
+      diagnostics.push(...secretResolution.diagnostics);
 
-      if (secret.found && secret.value !== undefined) {
+      if (secretResolution.found && secretResolution.value !== undefined) {
         source = 'secret';
-        value = coerceValue(secret.value, type);
-        resolvedBy = secret.provider;
+        value = coerceValue(secretResolution.value, type);
+        resolvedBy = secretResolution.provider;
       }
     }
 
@@ -982,7 +1005,7 @@ export function resolveProjectParameters(
           {
             source: '@pp/project',
             hint: definition.secretRef
-              ? `Resolve secret ref ${definition.secretRef} or provide an explicit value override.`
+              ? buildMissingSecretHint(definition.secretRef, secretResolution?.variableName)
               : definition.fromEnv
                 ? `Set ${definition.fromEnv} or provide an explicit value in the project config.`
                 : 'Provide a value in the project config or a supported mapping.',
@@ -1060,7 +1083,7 @@ export function summarizeProject(context: ProjectContext): ProjectSummary {
 
 export function summarizeProjectContract(context: ProjectContext): ProjectInspectContractSummary {
   const layout = assessProjectLayout(context.root, context.assets, context.config);
-  const contract = buildProjectContractSummary(context.config, context.topology, layout);
+  const contract = finalizeProjectContractSummary(buildProjectContractSummary(context.config, context.topology, layout));
   const canonicalBundlePresent =
     layout.generatedBundlePaths.includes(contract.canonicalBundlePath) ||
     context.assets.some((asset) => asset.exists && asset.path === contract.canonicalBundlePath);
@@ -1472,6 +1495,7 @@ function resolveEnvironmentSecret(
     value,
     provider,
     reference,
+    variableName,
     diagnostics: value === undefined
       ? [
           createDiagnostic('info', 'PROJECT_SECRET_LOOKUP_MISS', `Secret ref ${reference} did not resolve from ${provider}`, {
@@ -1480,6 +1504,14 @@ function resolveEnvironmentSecret(
         ]
       : [],
   };
+}
+
+function buildMissingSecretHint(reference: string, variableName?: string): string {
+  if (variableName) {
+    return `Resolve secret ref ${reference} (expected env var ${variableName}) or provide an explicit value override.`;
+  }
+
+  return `Resolve secret ref ${reference} or provide an explicit value override.`;
 }
 
 async function inspectAssets(root: string, configuredAssets: Record<string, string>): Promise<ProjectAsset[]> {
@@ -1697,6 +1729,38 @@ function buildDoctorSuggestedNextActions(
   return actions;
 }
 
+async function buildEmptyAssetRootCheck(
+  asset: ProjectAsset,
+  contract: ProjectContractSummary,
+  projectRoot: string
+): Promise<ProjectDoctorCheck | undefined> {
+  if (!['apps', 'flows', 'solutions'].includes(asset.name)) {
+    return undefined;
+  }
+
+  const entries = await readdir(asset.path);
+  if (entries.length > 0) {
+    return undefined;
+  }
+
+  const guidance = contract.assetPlacementGuidance.find((entry) => entry.asset === asset.name);
+  const relativePath = relative(projectRoot, asset.path) || '.';
+  const expectation =
+    asset.name === 'apps'
+      ? `Create app-specific source under \`${asset.name}/<app>/\` so the local layout proves where new app assets belong.`
+      : asset.name === 'flows'
+        ? `Create flow-specific source under \`${asset.name}/<flow>/\` so the local layout proves where new flow assets belong.`
+        : `Create unpacked solution source under \`${asset.name}/<solution>/\` so the repo reflects a concrete solution-source contract.`;
+
+  return {
+    status: 'warn',
+    code: 'PROJECT_DOCTOR_ASSET_ROOT_EMPTY',
+    message: `Asset root ${relativePath} exists for ${asset.name}, but it is still empty and does not yet prove the expected per-asset layout.`,
+    path: asset.path,
+    hint: guidance?.expectation ?? expectation,
+  };
+}
+
 function buildProjectContractSummary(
   config: ProjectConfig,
   topology: ResolvedProjectTopology,
@@ -1716,6 +1780,7 @@ function buildProjectContractSummary(
     editableAssetRoots: layout.editableAssetRoots,
     solutionSourceRoot,
     canonicalBundlePath,
+    assetPlacementGuidance: [],
     defaultTarget,
     activeTarget,
     stageMappings: Object.values(topology.stages)
@@ -1736,6 +1801,46 @@ function buildProjectContractSummary(
         parameterOverrides: stage.parameterOverrides,
       })),
   };
+}
+
+function finalizeProjectContractSummary(contract: ProjectContractSummary): ProjectContractSummary {
+  return {
+    ...contract,
+    assetPlacementGuidance: buildProjectAssetPlacementGuidance(contract),
+  };
+}
+
+function buildProjectAssetPlacementGuidance(contract: ProjectContractSummary): ProjectAssetPlacementGuidance[] {
+  return [
+    {
+      asset: 'apps',
+      root: 'apps',
+      expectation:
+        'Place editable canvas-app or other app source under app-specific subfolders in `apps/`; keep generated solution bundles out of this root.',
+    },
+    {
+      asset: 'flows',
+      root: 'flows',
+      expectation:
+        'Place editable flow source under flow-specific subfolders in `flows/` so repo-local flow artifacts stay separate from solution bundles.',
+    },
+    {
+      asset: 'solutions',
+      root: contract.solutionSourceRoot,
+      expectation:
+        `Keep unpacked solution source trees under \`${contract.solutionSourceRoot}/<solution>/\`; treat zip files inside \`${contract.solutionSourceRoot}/\` as generated or stale output, not canonical source.`,
+    },
+    {
+      asset: 'docs',
+      root: 'docs',
+      expectation: 'Keep repo-local runbooks, provenance notes, and workflow docs under `docs/` so project context stays with the source tree.',
+    },
+    {
+      asset: 'solutionBundle',
+      root: dirname(contract.canonicalBundlePath).replaceAll('\\', '/'),
+      expectation: `Write generated solution zip output to \`${contract.canonicalBundlePath}\` so packaged artifacts stay outside editable source roots.`,
+    },
+  ];
 }
 
 function buildProjectDoctorTopologySummary(contract: ProjectContractSummary): ProjectDoctorTopologySummary {
@@ -2008,3 +2113,4 @@ function coerceValue(rawValue: string, type: ParameterType): PrimitiveValue {
 }
 
 export * from './provider-targets';
+export * from './init';

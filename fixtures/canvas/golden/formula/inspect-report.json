@@ -230,14 +230,9 @@
             ]
           },
           "contentHash": "df571778d09215de8132a20386290a5302d0c573c8afd93472a69cf670ca710c",
-          "files": {
-            "Controls/Button.json": {
-              "defaults": {
-                "Text": "\"Button\""
-              },
-              "kind": "button"
-            }
-          },
+          "files": [
+            "Controls/Button.json"
+          ],
           "provenance": {
             "acquiredAt": "2026-03-10T00:00:00.000Z",
             "importedFrom": "<REPO_ROOT>/fixtures/canvas/apps/formula-app/seed.templates.json",
@@ -286,12 +281,9 @@
             ]
           },
           "contentHash": "91eb6c7870e9f1883b2009988b9b50589af936ad8b4ed42f076d7221cbebe8a0",
-          "files": {
-            "Controls/GroupContainer.json": {
-              "kind": "container",
-              "layout": "vertical"
-            }
-          },
+          "files": [
+            "Controls/GroupContainer.json"
+          ],
           "provenance": {
             "acquiredAt": "2026-03-10T00:00:00.000Z",
             "importedFrom": "<REPO_ROOT>/fixtures/canvas/registries/runtime-registry.json",
@@ -338,14 +330,9 @@
             ]
           },
           "contentHash": "cfb279aa5b91d1909ca3aabeeec404411b63bb27c92a58b21b3a9f6533916991",
-          "files": {
-            "Controls/Label.json": {
-              "defaults": {
-                "Text": "\"Label\""
-              },
-              "kind": "label"
-            }
-          },
+          "files": [
+            "Controls/Label.json"
+          ],
           "provenance": {
             "acquiredAt": "2026-03-10T00:00:00.000Z",
             "importedFrom": "<REPO_ROOT>/fixtures/canvas/registries/runtime-registry.json",
@@ -389,14 +376,9 @@
             ]
           },
           "contentHash": "6a90623d58feda1f67c3838df7a4ad38c69e819c086140ff06b46ee8f540c1a8",
-          "files": {
-            "Controls/ModernText.json": {
-              "defaults": {
-                "Text": "\"Text\""
-              },
-              "kind": "modern-text"
-            }
-          },
+          "files": [
+            "Controls/ModernText.json"
+          ],
           "provenance": {
             "acquiredAt": "2026-03-10T00:00:00.000Z",
             "importedFrom": "<REPO_ROOT>/fixtures/canvas/registries/runtime-registry.json",

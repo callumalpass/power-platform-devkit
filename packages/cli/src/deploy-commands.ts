@@ -5,12 +5,13 @@ import {
   executeDeploy,
   executeDeployPlan,
   executeReleaseManifest,
+  inspectDeployTargetResolution,
   type DeployPlan,
   type ReleaseManifest,
 } from '@pp/deploy';
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
 import { discoverProject } from '@pp/project';
-import type { CliOutputFormat } from './contract';
+import { createSuccessPayload, type CliOutputFormat } from './contract';
 import YAML from 'yaml';
 
 type OutputFormat = CliOutputFormat;
@@ -22,6 +23,7 @@ interface DeployCommandDependencies {
   outputFormat(args: string[], fallback: OutputFormat): OutputFormat;
   readProjectDiscoveryOptions(args: string[]): OperationResult<DiscoveryOptions>;
   printFailure(result: OperationResult<unknown>): number;
+  printFailureWithMachinePayload?(result: OperationResult<unknown>, format: OutputFormat): number;
   printByFormat(value: unknown, format: OutputFormat): void;
   printResultDiagnostics(result: OperationResult<unknown>, format: OutputFormat): void;
   readFlag(args: string[], name: string): string | undefined;
@@ -47,15 +49,55 @@ export async function runDeployPlanCommand(args: string[], deps: DeployCommandDe
     return deps.printFailure(project);
   }
 
+  const stageNotFound = project.diagnostics.find((diagnostic) => diagnostic.code === 'PROJECT_STAGE_NOT_FOUND');
+  if (stageNotFound) {
+    const availableStages = Object.keys(project.data.topology.stages).sort();
+    const result = fail(stageNotFound, {
+      supportTier: project.supportTier,
+      warnings: project.warnings,
+      suggestedNextActions:
+        availableStages.length > 0
+          ? [`Use one of the configured project stages instead: ${availableStages.join(', ')}.`]
+          : ['Define at least one stage in project topology or omit `--stage` to use the default target.'],
+      details: {
+        requestedStage: discoveryOptions.data.stage,
+        projectRoot: project.data.root,
+        defaultStage: project.data.topology.defaultStage,
+        selectedStage: project.data.topology.selectedStage,
+        activeEnvironment: project.data.topology.activeEnvironment,
+        activeSolution: project.data.topology.activeSolution?.uniqueName,
+        availableStages,
+      },
+    });
+
+    return deps.printFailureWithMachinePayload ? deps.printFailureWithMachinePayload(result, format) : deps.printFailure(result);
+  }
+
   const plan = buildDeployPlan(project.data);
+  const targetInspection = plan.success && plan.data ? await inspectDeployTargetResolution(plan.data.target) : ok(undefined);
 
   if (!plan.success || !plan.data) {
     return deps.printFailure(plan);
   }
 
-  deps.printByFormat(plan.data, format);
+  deps.printByFormat(
+    createSuccessPayload(plan.data, {
+      diagnostics: [...project.diagnostics, ...plan.diagnostics, ...targetInspection.diagnostics],
+      warnings: [...project.warnings, ...plan.warnings, ...targetInspection.warnings],
+      supportTier: plan.supportTier,
+      suggestedNextActions: [
+        ...(project.suggestedNextActions ?? []),
+        ...(plan.suggestedNextActions ?? []),
+        ...(targetInspection.suggestedNextActions ?? []),
+      ],
+      provenance: [...(project.provenance ?? []), ...(plan.provenance ?? []), ...(targetInspection.provenance ?? [])],
+      knownLimitations: [...(project.knownLimitations ?? []), ...(plan.knownLimitations ?? []), ...(targetInspection.knownLimitations ?? [])],
+    }),
+    format
+  );
   deps.printResultDiagnostics(project, format);
   deps.printResultDiagnostics(plan, format);
+  deps.printResultDiagnostics(targetInspection, format);
   return 0;
 }
 

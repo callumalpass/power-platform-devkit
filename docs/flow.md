@@ -20,6 +20,7 @@ Inspect a remote flow by name, id, or unique name:
 ```bash
 pp flow inspect "Invoice Sync" --env dev
 pp flow inspect crd_InvoiceSync --env dev --solution Core
+pp flow activate crd_InvoiceSync --env dev --solution Core
 pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote
 pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --target-solution Core
 pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --solution-package --managed-solution-package --holding-solution --no-publish-workflows
@@ -40,6 +41,12 @@ The current remote slice intentionally targets Dataverse `workflows` plus
 solution-component filtering, bounded export/deploy/create flows, and a bounded
 remote-to-remote promotion path. It does not yet claim a full
 solution-packaged import/export surface.
+
+When a solution-scoped cloud flow is stuck in `draft` or `suspended`, use
+`pp flow activate <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME]`
+to re-apply that remote flow back into the same environment with workflow state
+forced to `activated`. This is the shortest remediation path when
+`pp solution publish` or `pp solution sync-status` shows a blocked workflow.
 
 ## Runtime commands
 
@@ -70,6 +77,22 @@ Current behavior:
   buckets, and a first runtime-to-source correlation slice that maps supported
   connection-reference or environment-variable evidence back to normalized
   action/trigger nodes
+- when a flow has no recent runs because it is still `draft`/`suspended` and a
+  required connection reference is invalid, `flow doctor` now says that
+  directly instead of only returning the raw state and dependency fields side by
+  side
+
+When you want a higher-level health summary for a quiet or partially blocked
+flow, use `flow monitor`:
+
+```bash
+pp flow monitor "Invoice Sync" --env dev --solution Core --since 2h --format json
+```
+
+`flow monitor` wraps the doctor report with a health status (`healthy`,
+`degraded`, `blocked`, `inactive`, or `unknown`) plus a short summary that
+explains whether quiet telemetry is expected, suspicious, or blocked by known
+dependency issues.
 
 Known limits in this slice:
 

@@ -28,7 +28,7 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
 
     const updated = {
       ...records[index],
-      ...entity,
+      ...normalizeFixtureUpdateEntity(table, entity),
     };
     state.set(table, records.map((record, recordIndex) => (recordIndex === index ? updated : record)));
     return true;
@@ -159,6 +159,27 @@ export function createFixtureDataverseClient(fixture: DataverseFixture): Dataver
       );
     },
   } as unknown as DataverseClient;
+}
+
+function normalizeFixtureUpdateEntity(table: string, entity: Record<string, unknown>): Record<string, unknown> {
+  if (table !== 'solutions') {
+    return entity;
+  }
+
+  const publisherBind = entity['publisherid@odata.bind'];
+  if (typeof publisherBind !== 'string') {
+    return entity;
+  }
+
+  const match = publisherBind.match(/^\/publishers\(([^)]+)\)$/);
+  if (!match) {
+    return entity;
+  }
+
+  return {
+    ...entity,
+    _publisherid_value: match[1],
+  };
 }
 
 function resolveFixtureQueryAllRecords(queryAllState: Map<string, unknown[]>, queryState: Map<string, unknown[]>, table: string): unknown[] {

@@ -158,6 +158,7 @@ export interface EnvironmentGroupHandlers<TConfigOptions> {
   runEnvironmentList(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentAdd(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentInspect(configOptions: TConfigOptions, args: string[]): Promise<number>;
+  runEnvironmentBaseline(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentResolveMakerId(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentCleanupPlan(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentReset(configOptions: TConfigOptions, args: string[]): Promise<number>;
@@ -195,6 +196,12 @@ export async function runEnvironmentGroup<TConfigOptions>(
         return 0;
       }
       return handlers.runEnvironmentInspect(configOptions, args);
+    case 'baseline':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printEnvironmentBaselineHelp();
+        return 0;
+      }
+      return handlers.runEnvironmentBaseline(configOptions, args);
     case 'resolve-maker-id':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printEnvironmentResolveMakerIdHelp();
@@ -234,6 +241,14 @@ export interface ProjectGroupHandlers {
   runProjectInspect(args: string[]): Promise<number>;
 }
 
+export interface InitGroupHandlers {
+  runInitStart(args: string[]): Promise<number>;
+  runInitStatus(args: string[]): Promise<number>;
+  runInitResume(args: string[]): Promise<number>;
+  runInitAnswer(args: string[]): Promise<number>;
+  runInitCancel(args: string[]): Promise<number>;
+}
+
 export async function runProjectGroup(
   command: string | undefined,
   args: string[],
@@ -271,6 +286,53 @@ export async function runProjectGroup(
       return handlers.runProjectInspect(args);
     default:
       cliHelp.printHelp();
+      return 1;
+  }
+}
+
+export async function runInitGroup(command: string | undefined, args: string[], handlers: InitGroupHandlers): Promise<number> {
+  const knownSubcommands = new Set(['start', 'status', 'resume', 'answer', 'cancel', 'help', '--help']);
+
+  if (!command || !knownSubcommands.has(command) || command === 'start') {
+    const startArgs = !command || command === 'start' ? args : [command, ...args];
+    if (startArgs.includes('--help') || startArgs.includes('help')) {
+      cliHelp.printInitHelp();
+      return 0;
+    }
+    return handlers.runInitStart(startArgs);
+  }
+
+  switch (command) {
+    case 'help':
+    case '--help':
+      cliHelp.printInitHelp();
+      return 0;
+    case 'status':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printInitStatusHelp();
+        return 0;
+      }
+      return handlers.runInitStatus(args);
+    case 'resume':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printInitResumeHelp();
+        return 0;
+      }
+      return handlers.runInitResume(args);
+    case 'answer':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printInitAnswerHelp();
+        return 0;
+      }
+      return handlers.runInitAnswer(args);
+    case 'cancel':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printInitCancelHelp();
+        return 0;
+      }
+      return handlers.runInitCancel(args);
+    default:
+      cliHelp.printInitHelp();
       return 1;
   }
 }
@@ -543,6 +605,10 @@ export async function runDataverseGroup(
       }
       return handlers.runDataverseRows(args);
     case 'query':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printDataverseQueryHelp();
+        return 0;
+      }
       return handlers.runDataverseQuery(args);
     case 'get':
       return handlers.runDataverseGet(args);
@@ -568,7 +634,11 @@ export interface SolutionGroupHandlers {
   runSolutionCreate(args: string[]): Promise<number>;
   runSolutionDelete(args: string[]): Promise<number>;
   runSolutionSetMetadata(args: string[]): Promise<number>;
+  runSolutionPublish(args: string[]): Promise<number>;
+  runSolutionSyncStatus(args: string[]): Promise<number>;
+  runSolutionCheckpoint(args: string[]): Promise<number>;
   runSolutionList(args: string[]): Promise<number>;
+  runSolutionPublishers(args: string[]): Promise<number>;
   runSolutionInspect(args: string[]): Promise<number>;
   runSolutionComponents(args: string[]): Promise<number>;
   runSolutionDependencies(args: string[]): Promise<number>;
@@ -605,12 +675,36 @@ export async function runSolutionGroup(
         return 0;
       }
       return handlers.runSolutionSetMetadata(args);
+    case 'publish':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionPublishHelp();
+        return 0;
+      }
+      return handlers.runSolutionPublish(args);
+    case 'sync-status':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionSyncStatusHelp();
+        return 0;
+      }
+      return handlers.runSolutionSyncStatus(args);
+    case 'checkpoint':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionCheckpointHelp();
+        return 0;
+      }
+      return handlers.runSolutionCheckpoint(args);
     case 'list':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printSolutionListHelp();
         return 0;
       }
       return handlers.runSolutionList(args);
+    case 'publishers':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionPublishersHelp();
+        return 0;
+      }
+      return handlers.runSolutionPublishers(args);
     case 'inspect':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printSolutionInspectHelp();
@@ -632,10 +726,18 @@ export async function runSolutionGroup(
     case 'analyze':
       return handlers.runSolutionAnalyze(args);
     case 'compare':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionCompareHelp();
+        return 0;
+      }
       return handlers.runSolutionCompare(args);
     case 'export':
       return handlers.runSolutionExport(args);
     case 'import':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printSolutionImportHelp();
+        return 0;
+      }
       return handlers.runSolutionImport(args);
     case 'pack':
       return handlers.runSolutionPack(args);
@@ -648,8 +750,10 @@ export async function runSolutionGroup(
 }
 
 export interface ConnectionReferenceGroupHandlers {
+  runConnectionReferenceCreate(args: string[]): Promise<number>;
   runConnectionReferenceList(args: string[]): Promise<number>;
   runConnectionReferenceInspect(args: string[]): Promise<number>;
+  runConnectionReferenceSet(args: string[]): Promise<number>;
   runConnectionReferenceValidate(args: string[]): Promise<number>;
 }
 
@@ -664,6 +768,12 @@ export async function runConnectionReferenceGroup(
   }
 
   switch (command) {
+    case 'create':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printConnectionReferenceCreateHelp();
+        return 0;
+      }
+      return handlers.runConnectionReferenceCreate(args);
     case 'list':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printConnectionReferenceListHelp();
@@ -676,6 +786,12 @@ export async function runConnectionReferenceGroup(
         return 0;
       }
       return handlers.runConnectionReferenceInspect(args);
+    case 'set':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printConnectionReferenceSetHelp();
+        return 0;
+      }
+      return handlers.runConnectionReferenceSet(args);
     case 'validate':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printConnectionReferenceValidateHelp();
@@ -739,8 +855,10 @@ export async function runEnvironmentVariableGroup(
 export interface CanvasGroupHandlers {
   runCanvasAttach(args: string[]): Promise<number>;
   runCanvasDownload(args: string[]): Promise<number>;
+  runCanvasImport(args: string[]): Promise<number>;
   runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number>;
   runCanvasList(args: string[]): Promise<number>;
+  runCanvasAccess(args: string[]): Promise<number>;
   runCanvasTemplates(args: string[]): Promise<number>;
   runCanvasWorkspace(args: string[]): Promise<number>;
   runCanvasPatch(args: string[]): Promise<number>;
@@ -785,13 +903,19 @@ export async function runCanvasGroup(
         cliHelp.printCanvasImportHelp();
         return 0;
       }
-      return handlers.runCanvasUnsupportedRemoteMutation('import', args);
+      return handlers.runCanvasImport(args);
     case 'list':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printCanvasListHelp();
         return 0;
       }
       return handlers.runCanvasList(args);
+    case 'access':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printCanvasAccessHelp();
+        return 0;
+      }
+      return handlers.runCanvasAccess(args);
     case 'templates':
       return handlers.runCanvasTemplates(args);
     case 'workspace':
@@ -822,6 +946,7 @@ export interface FlowGroupHandlers {
   runFlowList(args: string[]): Promise<number>;
   runFlowInspect(args: string[]): Promise<number>;
   runFlowExport(args: string[]): Promise<number>;
+  runFlowActivate(args: string[]): Promise<number>;
   runFlowPromote(args: string[]): Promise<number>;
   runFlowUnpack(args: string[]): Promise<number>;
   runFlowPack(args: string[]): Promise<number>;
@@ -831,9 +956,11 @@ export interface FlowGroupHandlers {
   runFlowGraph(args: string[]): Promise<number>;
   runFlowPatch(args: string[]): Promise<number>;
   runFlowRuns(args: string[]): Promise<number>;
+  runFlowMonitor(args: string[]): Promise<number>;
   runFlowErrors(args: string[]): Promise<number>;
   runFlowConnrefs(args: string[]): Promise<number>;
   runFlowDoctor(args: string[]): Promise<number>;
+  runFlowAccess(args: string[]): Promise<number>;
 }
 
 export async function runFlowGroup(
@@ -865,6 +992,12 @@ export async function runFlowGroup(
         return 0;
       }
       return handlers.runFlowExport(args);
+    case 'activate':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printFlowActivateHelp();
+        return 0;
+      }
+      return handlers.runFlowActivate(args);
     case 'promote':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printFlowPromoteHelp();
@@ -919,6 +1052,12 @@ export async function runFlowGroup(
         return 0;
       }
       return handlers.runFlowRuns(args);
+    case 'monitor':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printFlowMonitorHelp();
+        return 0;
+      }
+      return handlers.runFlowMonitor(args);
     case 'errors':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printFlowErrorsHelp();
@@ -937,6 +1076,12 @@ export async function runFlowGroup(
         return 0;
       }
       return handlers.runFlowDoctor(args);
+    case 'access':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printFlowAccessHelp();
+        return 0;
+      }
+      return handlers.runFlowAccess(args);
     default:
       cliHelp.printFlowHelp();
       return 1;
@@ -948,6 +1093,7 @@ export interface ModelGroupHandlers {
   runModelAttach(args: string[]): Promise<number>;
   runModelList(args: string[]): Promise<number>;
   runModelInspect(args: string[]): Promise<number>;
+  runModelAccess(args: string[]): Promise<number>;
   runModelComposition(args: string[]): Promise<number>;
   runModelImpact(args: string[]): Promise<number>;
   runModelSitemap(args: string[]): Promise<number>;
@@ -976,6 +1122,12 @@ export async function runModelGroup(
       return handlers.runModelList(args);
     case 'inspect':
       return handlers.runModelInspect(args);
+    case 'access':
+      if (args.includes('--help') || args.includes('help')) {
+        cliHelp.printModelAccessHelp();
+        return 0;
+      }
+      return handlers.runModelAccess(args);
     case 'composition':
       return handlers.runModelComposition(args);
     case 'impact':

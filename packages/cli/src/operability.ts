@@ -12,13 +12,13 @@ export const CLI_VERSION = packageJson.version;
 
 export const COMMAND_TREE = {
   auth: ['profile', 'browser-profile', 'login', 'token'],
-  env: ['list', 'add', 'inspect', 'resolve-maker-id', 'cleanup-plan', 'reset', 'cleanup', 'remove'],
+  env: ['list', 'add', 'inspect', 'baseline', 'resolve-maker-id', 'cleanup-plan', 'reset', 'cleanup', 'remove'],
   dv: ['whoami', 'request', 'action', 'function', 'batch', 'rows', 'query', 'get', 'create', 'update', 'delete', 'metadata'],
   solution: ['create', 'delete', 'set-metadata', 'list', 'inspect', 'components', 'compare'],
-  connref: ['list', 'inspect', 'validate'],
+  connref: ['create', 'list', 'inspect', 'set', 'validate'],
   envvar: ['list', 'inspect', 'set'],
   canvas: ['list', 'inspect', 'create', 'import', 'validate', 'lint', 'build', 'diff', 'templates', 'workspace', 'patch'],
-  flow: ['list', 'inspect', 'unpack', 'normalize', 'validate', 'patch', 'doctor'],
+  flow: ['list', 'inspect', 'unpack', 'normalize', 'validate', 'patch', 'doctor', 'monitor'],
   model: ['list', 'inspect', 'sitemap', 'forms', 'views', 'dependencies', 'impact'],
   project: ['init', 'doctor', 'feedback', 'inspect'],
   analysis: ['report', 'context', 'portfolio', 'drift', 'usage', 'policy'],

@@ -2,7 +2,7 @@ import { cp, mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { buildDeployPlan, executeDeploy, executeDeployPlan, resolveDeployBindings, type DeployPlan } from './index';
+import { buildDeployPlan, executeDeploy, executeDeployPlan, inspectDeployTargetResolution, resolveDeployBindings, type DeployPlan } from './index';
 import { discoverProject } from '@pp/project';
 import { createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
 import { expectGoldenJson, mapSnapshotStrings, repoRoot, resolveRepoPath } from '../../../test/golden';
@@ -82,6 +82,88 @@ async function writeValidFlowArtifact(path: string): Promise<void> {
 }
 
 describe('deploy fixture-backed goldens', () => {
+  it('surfaces unresolved target aliases and empty-slice reasons for operation-free deploy plans', async () => {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'pp-deploy-empty-'));
+    await Promise.all([
+      mkdir(join(fixtureRoot, 'apps')),
+      mkdir(join(fixtureRoot, 'flows')),
+      mkdir(join(fixtureRoot, 'solutions')),
+      mkdir(join(fixtureRoot, 'docs')),
+    ]);
+    await writeFile(
+      join(fixtureRoot, 'pp.config.yaml'),
+      [
+        'name: Empty Deploy Fixture',
+        'defaults:',
+        '  stage: dev',
+        '  environment: dev',
+        '  solution: Core',
+        'solutions:',
+        '  Core:',
+        '    environment: dev',
+        '    uniqueName: Core',
+        'assets:',
+        '  apps: apps',
+        '  flows: flows',
+        '  solutions: solutions',
+        '  docs: docs',
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev:',
+        '      environment: dev',
+        '      solution: Core',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const discovery = await discoverProject(fixtureRoot);
+
+    expect(discovery.success).toBe(true);
+    expect(discovery.data).toBeDefined();
+
+    const plan = buildDeployPlan(discovery.data!);
+
+    expect(plan.success).toBe(true);
+    expect(plan.data?.operations).toEqual([]);
+    expect(plan.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DEPLOY_PLAN_NO_SUPPORTED_OPERATIONS',
+        }),
+      ])
+    );
+
+    mockDataverseResolution({});
+
+    const targetInspection = await inspectDeployTargetResolution(plan.data!.target);
+    expect(targetInspection.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DEPLOY_TARGET_ENVIRONMENT_UNRESOLVED',
+        }),
+      ])
+    );
+
+    const preview = await executeDeploy(discovery.data!, {
+      mode: 'plan',
+    });
+
+    expect(preview.success).toBe(true);
+    expect(preview.data?.preflight.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DEPLOY_TARGET_ENVIRONMENT_UNRESOLVED',
+          status: 'fail',
+        }),
+        expect.objectContaining({
+          code: 'DEPLOY_PREFLIGHT_NO_SUPPORTED_OPERATIONS',
+          status: 'warn',
+        }),
+      ])
+    );
+  });
+
   it('captures deploy plans from the committed analysis fixture project', async () => {
     const fixtureRoot = resolveRepoPath('fixtures', 'analysis', 'project');
     const discovery = await discoverProject(fixtureRoot, {

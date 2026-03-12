@@ -131,6 +131,105 @@ async function writeUnpackedCanvasFixture(
   return appRoot;
 }
 
+async function writeFxCompatibilityCanvasFixture(
+  root: string,
+  options: {
+    screenYaml: string;
+  }
+): Promise<string> {
+  const appRoot = join(root, 'FxCompatCanvas');
+  await mkdir(join(appRoot, 'Other', 'Src'), { recursive: true });
+  await mkdir(join(appRoot, 'Src'), { recursive: true });
+  await mkdir(join(appRoot, 'pkgs'), { recursive: true });
+
+  await writeFile(
+    join(appRoot, 'Other', 'Src', 'App.pa.yaml'),
+    [
+      'App:',
+      '  Properties:',
+      '    Theme: =PowerAppsTheme',
+      '',
+    ].join('\n'),
+    'utf8'
+  );
+  await writeFile(join(appRoot, 'Other', 'Src', 'Screen1.pa.yaml'), options.screenYaml, 'utf8');
+  await writeFile(
+    join(appRoot, 'Other', 'Src', '_EditorState.pa.yaml'),
+    ['EditorState:', '  ScreensOrder:', '    - Screen1', ''].join('\n'),
+    'utf8'
+  );
+  await writeFile(
+    join(appRoot, 'Src', 'App.fx.yaml'),
+    ['App As appinfo:', '    Theme: =PowerAppsTheme', ''].join('\n'),
+    'utf8'
+  );
+  await writeFile(join(appRoot, 'Src', 'Screen1.fx.yaml'), 'Screen1 As screen:\n', 'utf8');
+  await writeFile(
+    join(appRoot, 'CanvasManifest.json'),
+    JSON.stringify(
+      {
+        FormatVersion: '0.24',
+        Header: {
+          DocVersion: '1.349',
+          MinVersionToLoad: '1.349',
+          MSAppStructureVersion: '2.4.0',
+        },
+        Properties: {
+          AppVersion: '1.0.0',
+          Name: 'FxCompatCanvas',
+          OriginatingVersion: '1.349',
+        },
+        ScreenOrder: ['Screen1'],
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  await writeFile(
+    join(appRoot, 'ControlTemplates.json'),
+    JSON.stringify(
+      {
+        button: {
+          Name: 'button',
+          Id: 'http://microsoft.com/appmagic/button',
+          Version: '2.2.0',
+          FirstParty: true,
+          IsComponentTemplate: false,
+          IsPremiumPcfControl: false,
+          IsWidgetTemplate: true,
+          OverridableProperties: {},
+        },
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  await writeFile(
+    join(appRoot, 'pkgs', 'button_2.2.0.xml'),
+    [
+      '<widget xmlns="http://openajax.org/metadata" xmlns:appMagic="http://schemas.microsoft.com/appMagic" id="http://microsoft.com/appmagic/button" name="button" version="2.2.0">',
+      '  <properties>',
+      '    <property name="Text" datatype="String" defaultValue="&quot;Button&quot;" isExpr="true">',
+      '      <appMagic:category>data</appMagic:category>',
+      '    </property>',
+      '    <property name="OnSelect" datatype="Behavior" defaultValue="" isExpr="true">',
+      '      <appMagic:category>behavior</appMagic:category>',
+      '    </property>',
+      '  </properties>',
+      '  <appMagic:includeProperties>',
+      '    <appMagic:includeProperty name="X" defaultValue="0" />',
+      '    <appMagic:includeProperty name="Y" defaultValue="0" />',
+      '  </appMagic:includeProperties>',
+      '</widget>',
+    ].join(''),
+    'utf8'
+  );
+
+  return appRoot;
+}
+
 function createClassicButtonRegistry(): Record<string, unknown> {
   return {
     schemaVersion: 1,
@@ -462,5 +561,83 @@ describe('canvas pa.yaml source support', () => {
         },
       ])
     );
+  });
+
+  it('loads App.fx.yaml unpacks through the embedded Other/Src compatibility slice', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeFxCompatibilityCanvasFixture(dir, {
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Compat"',
+        '',
+      ].join('\n'),
+    });
+
+    const source = await loadCanvasSource(appRoot);
+
+    expect(source.success).toBe(true);
+    expect(source.data?.kind).toBe('pa-yaml-unpacked');
+    expect(source.data?.manifestPath.replaceAll('\\', '/')).toContain('/Other/Src/App.pa.yaml');
+    expect(source.data?.embeddedRegistryPaths?.map((path) => path.replaceAll('\\', '/'))).toContain(
+      `${appRoot.replaceAll('\\', '/')}/ControlTemplates.json`
+    );
+    expect(source.warnings.some((warning) => warning.code === 'CANVAS_PA_YAML_COMPATIBILITY_SLICE_USED')).toBe(true);
+  });
+
+  it('validates and builds App.fx.yaml unpacks with embedded control-template metadata', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeFxCompatibilityCanvasFixture(dir, {
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Compat"',
+        '            OnSelect: =Notify("ok")',
+        '            X: =10',
+        '',
+      ].join('\n'),
+    });
+    const outPath = join(dir, 'dist', 'FxCompatCanvas.msapp');
+
+    const validation = await validateCanvasApp(appRoot, {
+      mode: 'strict',
+    });
+    const build = await buildCanvasApp(appRoot, {
+      mode: 'strict',
+      outPath,
+    });
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(true);
+    expect(build.success).toBe(true);
+
+    const unzipDir = join(dir, 'unzipped-fx');
+    await mkdir(unzipDir, { recursive: true });
+    const unzipResult = spawnSync('unzip', ['-o', outPath, '-d', unzipDir], {
+      encoding: 'utf8',
+    });
+
+    expect(unzipResult.status).toBe(0);
+
+    const appYaml = await readFile(join(unzipDir, 'Src', 'App.pa.yaml'), 'utf8');
+    const templates = JSON.parse(await readFile(join(unzipDir, 'References', 'Templates.json'), 'utf8')) as {
+      UsedTemplates: Array<{ Name: string; Version: string }>;
+    };
+
+    expect(appYaml).toContain('App:');
+    expect(templates.UsedTemplates).toMatchObject([
+      {
+        Name: 'button',
+        Version: '2.2.0',
+      },
+    ]);
   });
 });

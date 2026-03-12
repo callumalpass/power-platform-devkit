@@ -1,12 +1,15 @@
 {
   "category": 5,
-  "clientdata": "{\n  \"definition\": {\n    \"actions\": {\n      \"ComposePayload\": {\n        \"inputs\": {\n          \"details\": {\n            \"channel\": \"email\"\n          },\n          \"message\": \"@{parameters('ApiBaseUrl')}\",\n          \"target\": \"@{environmentVariables('pp_ApiUrl')}\"\n        },\n        \"type\": \"Compose\"\n      }\n    },\n    \"parameters\": {\n      \"$connections\": {\n        \"value\": {\n          \"shared_office365\": {\n            \"apiId\": \"/providers/microsoft.powerapps/apis/shared_office365\",\n            \"connectionId\": \"/connections/office365\",\n            \"connectionReferenceLogicalName\": \"shared_office365\"\n          }\n        }\n      },\n      \"ApiBaseUrl\": {\n        \"defaultValue\": \"https://api.example.test\"\n      },\n      \"RetryCount\": {\n        \"defaultValue\": 3\n      }\n    }\n  }\n}",
+  "clientdata": "{\n  \"definition\": {\n    \"actions\": {\n      \"ComposePayload\": {\n        \"inputs\": {\n          \"details\": {\n            \"channel\": \"email\"\n          },\n          \"message\": \"@{parameters('ApiBaseUrl')}\",\n          \"target\": \"@{environmentVariables('pp_ApiUrl')}\"\n        },\n        \"type\": \"Compose\"\n      }\n    },\n    \"parameters\": {\n      \"$connections\": {\n        \"value\": {\n          \"shared_office365\": {\n            \"apiId\": \"/providers/microsoft.powerapps/apis/shared_office365\",\n            \"connectionId\": \"/connections/office365\",\n            \"connectionReferenceLogicalName\": \"shared_office365\"\n          }\n        }\n      },\n      \"ApiBaseUrl\": {\n        \"defaultValue\": \"https://api.example.test\"\n      },\n      \"RetryCount\": {\n        \"defaultValue\": 3\n      }\n    }\n  },\n  \"properties\": {\n    \"definition\": {\n      \"actions\": {\n        \"ComposePayload\": {\n          \"inputs\": {\n            \"details\": {\n              \"channel\": \"email\"\n            },\n            \"message\": \"@{parameters('ApiBaseUrl')}\",\n            \"target\": \"@{environmentVariables('pp_ApiUrl')}\"\n          },\n          \"type\": \"Compose\"\n        }\n      },\n      \"parameters\": {\n        \"$connections\": {\n          \"value\": {\n            \"shared_office365\": {\n              \"apiId\": \"/providers/microsoft.powerapps/apis/shared_office365\",\n              \"connectionId\": \"/connections/office365\",\n              \"connectionReferenceLogicalName\": \"shared_office365\"\n            }\n          }\n        },\n        \"ApiBaseUrl\": {\n          \"defaultValue\": \"https://api.example.test\"\n        },\n        \"RetryCount\": {\n          \"defaultValue\": 3\n        }\n      }\n    }\n  },\n  \"schemaVersion\": 1\n}",
   "description": "Synchronize invoice payloads to downstream systems.",
   "extraTopLevel": {
     "preserve": true,
     "source": "fixture"
   },
+  "mode": 0,
   "name": "Invoice Flow",
+  "ondemand": false,
+  "primaryentity": "none",
   "properties": {
     "category": 5,
     "definition": {
@@ -42,12 +45,17 @@
     },
     "description": "Synchronize invoice payloads to downstream systems.",
     "displayName": "Invoice Flow",
+    "mode": 0,
     "name": "Invoice Flow",
+    "ondemand": false,
+    "primaryentity": "none",
     "statecode": 1,
     "statuscode": 2,
+    "type": 1,
     "uniquename": "crd_InvoiceFlow"
   },
   "statecode": 1,
   "statuscode": 2,
+  "type": 1,
   "uniquename": "crd_InvoiceFlow"
 }

@@ -298,6 +298,98 @@ describe('FlowService', () => {
     });
   });
 
+  it('exports a remote flow when the live definition is nested under clientData.properties.definition', async () => {
+    const tempDir = await createTempDir();
+    const outPath = join(tempDir, 'remote-flow-nested');
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-nested-1',
+                name: 'Nested Invoice Sync',
+                uniquename: 'crd_NestedInvoiceSync',
+                category: 5,
+                type: 1,
+                mode: 0,
+                ondemand: false,
+                primaryentity: 'none',
+                statecode: 0,
+                statuscode: 1,
+                clientdata: JSON.stringify({
+                  properties: {
+                    definition: {
+                      actions: {
+                        SendMail: {
+                          inputs: {
+                            subject: 'nested',
+                          },
+                        },
+                      },
+                    },
+                    connectionReferences: {
+                      shared_commondataserviceforapps: {
+                        connection: {
+                          connectionReferenceLogicalName: 'msdyn_Dataverse',
+                        },
+                      },
+                    },
+                  },
+                }),
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'flow-nested-1',
+                componenttype: 29,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+    } as unknown as DataverseClient;
+    const service = new FlowService(client);
+
+    const result = await service.exportArtifact('Nested Invoice Sync', outPath, {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    const exported = JSON.parse(await readFile(join(outPath, 'flow.json'), 'utf8')) as Record<string, unknown>;
+    expect(exported).toMatchObject({
+      metadata: {
+        name: 'Nested Invoice Sync',
+        uniqueName: 'crd_NestedInvoiceSync',
+      },
+      definition: {
+        actions: {
+          SendMail: {
+            inputs: {
+              subject: 'nested',
+            },
+          },
+        },
+      },
+    });
+  });
+
   it('deploys a validated local flow artifact into an existing remote workflow', async () => {
     const updates: Array<{ table: string; id: string; entity: Record<string, unknown>; solutionUniqueName?: string }> = [];
     const baseClient = createStubDataverseClient();
@@ -596,6 +688,13 @@ describe('FlowService', () => {
       ondemand: false,
       primaryentity: 'none',
     });
+    expect(JSON.parse(String(creates[0]?.clientdata))).toMatchObject({
+      schemaVersion: 1,
+      definition: expect.any(Object),
+      properties: {
+        definition: expect.any(Object),
+      },
+    });
   });
 
   it('creates a bounded remote workflow when the target is missing and create-if-missing is enabled', async () => {
@@ -705,6 +804,7 @@ describe('FlowService', () => {
       statuscode: 2,
     });
     expect(JSON.parse(String(creates[0]?.entity.clientdata))).toMatchObject({
+      schemaVersion: 1,
       definition: {
         actions: {
           ComposePayload: {
@@ -1111,6 +1211,68 @@ describe('FlowService', () => {
         statuscode: 1,
       },
     });
+  });
+
+  it('translates DefinitionRequestMissingFields into an explicit in-place activation limitation', async () => {
+    const sourceClient = createStubDataverseClient();
+    const targetClient = {
+      ...createStubDataverseClient(),
+      update: async () =>
+        ({
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'PATCH workflows(target-flow-1) returned 400',
+              detail: JSON.stringify({
+                error: {
+                  code: 'DefinitionRequestMissingFields',
+                  message: "The definition request is missing required field 'definition'. ",
+                },
+              }),
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        } as OperationResult<never>),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'target-flow-1',
+                name: 'Invoice Sync',
+                uniquename: 'crd_InvoiceSync',
+                category: 5,
+                statecode: 0,
+                statuscode: 1,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return createStubDataverseClient().queryAll(options);
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(sourceClient).promoteArtifact('Invoice Sync', {
+      targetDataverseClient: targetClient,
+      workflowState: 'activated',
+      target: 'crd_InvoiceSync',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('FLOW_ACTIVATE_DEFINITION_REQUIRED');
+    expect(result.suggestedNextActions).toContain(
+      'Run `pp flow inspect crd_InvoiceSync --environment <alias> --format json` to capture the current workflow state and identifiers.'
+    );
+    expect(result.knownLimitations).toContain(
+      'In-place activation for some Dataverse Modern Flow records is not yet supported through the current workflows PATCH path because the platform expects a full definition payload.'
+    );
   });
 
   it('blocks artifact-mode promotion when the resolved target has a different unique name', async () => {
@@ -2801,6 +2963,10 @@ describe('FlowService', () => {
       solutionUniqueName: 'Core',
       since: '7d',
     });
+    const monitor = await service.monitor('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
 
     expect(runs.success).toBe(true);
     expect(runs.data).toHaveLength(2);
@@ -2856,6 +3022,203 @@ describe('FlowService', () => {
     expect(doctor.data?.missingEnvironmentVariables).toHaveLength(1);
     expect(doctor.data?.findings).toContain('1 of 2 recent runs failed (50.0%).');
     expect(doctor.data?.findings).toContain('Environment variable pp_ApiUrl does not have an effective value.');
+    expect(monitor.success).toBe(true);
+    expect(monitor.data).toMatchObject({
+      observationWindow: '7d',
+      health: {
+        status: 'blocked',
+        telemetryState: 'active',
+      },
+      recentRuns: {
+        total: 2,
+        failed: 1,
+      },
+    });
+    expect(monitor.data?.findings).toContain(
+      'Runtime monitoring found dependency blockers that can keep the flow unhealthy even when runs are still arriving.'
+    );
+  });
+
+  it('classifies quiet draft flows as blocked when dependency health is still broken', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
+
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Quiet Flow',
+                category: 5,
+                statecode: 0,
+                statuscode: 1,
+                clientdata: JSON.stringify({
+                  definition: {
+                    parameters: {
+                      '$connections': {
+                        value: {
+                          shared_office365: {
+                            connectionReferenceLogicalName: 'shared_office365',
+                          },
+                        },
+                      },
+                    },
+                  },
+                }),
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        if (options.table === 'flowruns') {
+          return ok([] as T[], { supportTier: 'preview' });
+        }
+
+        return baseClient.queryAll(options);
+      },
+    } as DataverseClient;
+
+    const service = new FlowService(client);
+    const doctor = await service.doctor('Quiet Flow', {
+      since: '2h',
+    });
+    const monitor = await service.monitor('Quiet Flow', {
+      since: '2h',
+    });
+
+    expect(doctor.success).toBe(true);
+    expect(doctor.data?.findings).toContain(
+      'No recent flow runs were returned because the flow is still draft and connection reference shared_office365 is not runnable yet.'
+    );
+    expect(monitor.success).toBe(true);
+    expect(monitor.data).toMatchObject({
+      health: {
+        status: 'blocked',
+        telemetryState: 'blocked',
+      },
+      recentRuns: {
+        total: 0,
+        failed: 0,
+      },
+    });
+    expect(monitor.data?.findings).toContain(
+      'Runtime monitoring found dependency blockers and no fresh run history, so the deployment still looks blocked rather than healthy.'
+    );
+  });
+
+  it('reports connection references even when flowrun rows omit workflowname', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
+
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'flowruns') {
+          return ok(
+            [
+              {
+                flowrunid: 'run-1',
+                workflowid: 'flow-1',
+                status: 'Failed',
+                starttime: '2026-03-09T09:00:00.000Z',
+                errorcode: 'ConnectorAuthFailed',
+                errormessage: 'shared_office365 connection is not authorized',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+    } as unknown as DataverseClient;
+
+    const connrefs = await new FlowService(client).connrefs('Invoice Sync', {
+      solutionUniqueName: 'Core',
+      since: '7d',
+    });
+
+    expect(connrefs.success).toBe(true);
+    expect(connrefs.data?.connectionReferences[0]).toMatchObject({
+      name: 'shared_office365',
+      recentFailures: 1,
+    });
+  });
+
+  it('validates connector actions that use host.connectionName and host.operationId from remote inspect output', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'flow.json');
+
+    await writeFile(
+      artifactPath,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Remote Inspect Shape Flow',
+            connectionReferences: [
+              {
+                name: 'shared_office365',
+                connectionReferenceLogicalName: 'shared_office365',
+                apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+              },
+            ],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            parameters: {
+              '$connections': {
+                value: {
+                  shared_office365: {
+                    connectionReferenceLogicalName: 'shared_office365',
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connectionId: '/connections/office365',
+                  },
+                },
+              },
+            },
+            actions: {
+              SendMail: {
+                type: 'OpenApiConnection',
+                inputs: {
+                  host: {
+                    apiId: '/providers/microsoft.powerapps/apis/shared_office365',
+                    connectionName: 'shared_office365',
+                    operationId: 'SendEmailV2',
+                  },
+                  parameters: {
+                    'emailMessage/To': 'agent@example.test',
+                    'emailMessage/Subject': 'Subject',
+                    'emailMessage/Body': 'Body',
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(true);
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('FLOW_CONNECTOR_CONNECTION_REFERENCE_MISSING');
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('FLOW_CONNECTOR_CONNECTION_REFERENCE_UNSUPPORTED');
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('FLOW_CONNECTOR_OPERATION_ID_MISSING');
   });
 
   it('validates supported semantic references and reliability settings locally', async () => {
@@ -4669,5 +5032,154 @@ describe('FlowService', () => {
         code: 'FLOW_PATCH_ENVIRONMENT_VARIABLE_TARGET_EXISTS',
       }),
     ]);
+  });
+
+  it('keeps preserved clientData definition mirrors in sync when patching canonical artifacts', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Patch Mirror Sync',
+            displayName: 'Patch Mirror Sync',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            actions: {
+              ComposeHarnessUrl: {
+                type: 'Compose',
+                inputs: {
+                  message: 'before',
+                },
+              },
+            },
+          },
+          clientData: {
+            schemaVersion: 1,
+            definition: {
+              actions: {
+                ComposeHarnessUrl: {
+                  type: 'Compose',
+                  inputs: {
+                    message: 'before',
+                  },
+                },
+              },
+            },
+            properties: {
+              definition: {
+                actions: {
+                  ComposeHarnessUrl: {
+                    type: 'Compose',
+                    inputs: {
+                      message: 'before',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const patched = await patchFlowArtifact(artifactPath, {
+      values: {
+        'actions.ComposeHarnessUrl.inputs.message': 'after',
+      },
+    });
+    const saved = JSON.parse(await readFile(join(artifactPath, 'flow.json'), 'utf8')) as {
+      definition: { actions: { ComposeHarnessUrl: { inputs: { message: string } } } };
+      clientData: {
+        definition: { actions: { ComposeHarnessUrl: { inputs: { message: string } } } };
+        properties: { definition: { actions: { ComposeHarnessUrl: { inputs: { message: string } } } } };
+      };
+    };
+
+    expect(patched.success).toBe(true);
+    expect(saved.definition.actions.ComposeHarnessUrl.inputs.message).toBe('after');
+    expect(saved.clientData.definition.actions.ComposeHarnessUrl.inputs.message).toBe('after');
+    expect(saved.clientData.properties.definition.actions.ComposeHarnessUrl.inputs.message).toBe('after');
+  });
+
+  it('reports stale preserved clientData definition mirrors during validation', async () => {
+    const dir = await createTempDir();
+    const artifactPath = join(dir, 'artifact');
+    await mkdir(artifactPath, { recursive: true });
+    await writeFile(
+      join(artifactPath, 'flow.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: 'pp.flow.artifact',
+          metadata: {
+            name: 'Validation Mirror Drift',
+            displayName: 'Validation Mirror Drift',
+            connectionReferences: [],
+            parameters: {},
+            environmentVariables: [],
+          },
+          definition: {
+            actions: {
+              ComposeHarnessUrl: {
+                type: 'Compose',
+                inputs: {
+                  message: 'fresh',
+                },
+              },
+            },
+          },
+          clientData: {
+            schemaVersion: 1,
+            definition: {
+              actions: {
+                ComposeHarnessUrl: {
+                  type: 'Compose',
+                  inputs: {
+                    message: 'stale-top-level',
+                  },
+                },
+              },
+            },
+            properties: {
+              definition: {
+                actions: {
+                  ComposeHarnessUrl: {
+                    type: 'Compose',
+                    inputs: {
+                      message: 'stale-nested',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const validation = await validateFlowArtifact(artifactPath);
+
+    expect(validation.success).toBe(true);
+    expect(validation.data?.valid).toBe(false);
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(
+      expect.arrayContaining([
+        'FLOW_CLIENTDATA_DEFINITION_MISMATCH',
+        'FLOW_CLIENTDATA_PROPERTIES_DEFINITION_MISMATCH',
+      ])
+    );
   });
 });

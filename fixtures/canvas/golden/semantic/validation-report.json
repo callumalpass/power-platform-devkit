@@ -111,14 +111,9 @@
               ]
             },
             "contentHash": "df571778d09215de8132a20386290a5302d0c573c8afd93472a69cf670ca710c",
-            "files": {
-              "Controls/Button.json": {
-                "defaults": {
-                  "Text": "\"Button\""
-                },
-                "kind": "button"
-              }
-            },
+            "files": [
+              "Controls/Button.json"
+            ],
             "provenance": {
               "acquiredAt": "2026-03-10T00:00:00.000Z",
               "importedFrom": "<REPO_ROOT>/fixtures/canvas/apps/diagnostic-app/seed.templates.json",
@@ -180,12 +175,9 @@
               ]
             },
             "contentHash": "91eb6c7870e9f1883b2009988b9b50589af936ad8b4ed42f076d7221cbebe8a0",
-            "files": {
-              "Controls/GroupContainer.json": {
-                "kind": "container",
-                "layout": "vertical"
-              }
-            },
+            "files": [
+              "Controls/GroupContainer.json"
+            ],
             "provenance": {
               "acquiredAt": "2026-03-10T00:00:00.000Z",
               "importedFrom": "<REPO_ROOT>/fixtures/canvas/registries/runtime-registry.json",
@@ -232,14 +224,9 @@
               ]
             },
             "contentHash": "cfb279aa5b91d1909ca3aabeeec404411b63bb27c92a58b21b3a9f6533916991",
-            "files": {
-              "Controls/Label.json": {
-                "defaults": {
-                  "Text": "\"Label\""
-                },
-                "kind": "label"
-              }
-            },
+            "files": [
+              "Controls/Label.json"
+            ],
             "provenance": {
               "acquiredAt": "2026-03-10T00:00:00.000Z",
               "importedFrom": "<REPO_ROOT>/fixtures/canvas/registries/runtime-registry.json",
@@ -286,14 +273,9 @@
               ]
             },
             "contentHash": "e77e5f594753769bd35787133c6f850a9b850ee2dbd2e2fe04cfd463e7a8fd19",
-            "files": {
-              "Controls/LegacyBadge.json": {
-                "defaults": {
-                  "Text": "\"Legacy\""
-                },
-                "kind": "legacy-badge"
-              }
-            },
+            "files": [
+              "Controls/LegacyBadge.json"
+            ],
             "provenance": {
               "acquiredAt": "2026-03-10T00:00:00.000Z",
               "importedFrom": "<REPO_ROOT>/fixtures/canvas/registries/semantic-registry.json",

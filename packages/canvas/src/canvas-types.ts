@@ -194,6 +194,22 @@ export interface CanvasTemplateResolution {
   support: CanvasSupportResolution;
 }
 
+export interface CanvasTemplateReportRecord {
+  templateName: string;
+  templateVersion: string;
+  contentHash: string;
+  aliases?: CanvasTemplateAliases;
+  files: string[];
+  provenance: CanvasTemplateProvenance;
+}
+
+export interface CanvasTemplateReportResolution {
+  requested: CanvasTemplateLookup;
+  template?: CanvasTemplateReportRecord;
+  matchedBy?: CanvasTemplateMatchType;
+  support: CanvasSupportResolution;
+}
+
 export interface CanvasTemplateRegistryInspectReport {
   path: string;
   hash: string;
@@ -261,7 +277,7 @@ export interface CanvasTemplateRegistryRefreshResult {
 
 export interface CanvasTemplateRequirementResolution {
   mode: CanvasBuildMode;
-  resolutions: CanvasTemplateResolution[];
+  resolutions: CanvasTemplateReportResolution[];
   missing: CanvasTemplateLookup[];
   supported: boolean;
 }
@@ -435,11 +451,42 @@ export interface CanvasInspectReport extends CanvasValidationReport {
   controls: CanvasControlSummary[];
 }
 
+export interface CanvasRemoteProofExpectation {
+  controlPath: string;
+  property: string;
+  expectedValue: string;
+}
+
+export interface CanvasRemoteProofCheck {
+  controlPath: string;
+  property: string;
+  found: boolean;
+  matched: boolean;
+  expectedValue: string;
+  actualValue?: CanvasJsonValue;
+  actualValueText?: string;
+  sourceActualValueText?: string;
+  harvestedActualValueText?: string;
+  evidence?: 'source' | 'harvested';
+  conflict?: boolean;
+}
+
+export interface CanvasRemoteProofReport {
+  valid: boolean;
+  appId: string;
+  sourceHash: string;
+  screenCount: number;
+  controlCount: number;
+  dataSources: string[];
+  expectations: CanvasRemoteProofCheck[];
+}
+
 export interface CanvasBuildResult {
   outPath: string;
   mode: CanvasBuildMode;
   sourceHash: string;
   templateHash: string;
   packageHash: string;
+  outFileSha256: string;
   supported: boolean;
 }

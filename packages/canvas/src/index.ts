@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { readJsonFile, sha256Hex, stableStringify, writeJsonFile } from '@pp/artifacts';
@@ -36,6 +36,9 @@ import type {
   CanvasRegistryBundle,
   CanvasRegistryImportRequest,
   CanvasRegistryLoadOptions,
+  CanvasRemoteProofCheck,
+  CanvasRemoteProofExpectation,
+  CanvasRemoteProofReport,
   CanvasRegistrySourceSummary,
   CanvasRelationshipMetadata,
   CanvasScreenDefinition,
@@ -51,6 +54,8 @@ import type {
   CanvasTemplateLookup,
   CanvasTemplateMatchType,
   CanvasTemplateProvenance,
+  CanvasTemplateReportRecord,
+  CanvasTemplateReportResolution,
   CanvasTemplateRecord,
   CanvasTemplateRegistryAuditReport,
   CanvasTemplateRegistryDiffResult,
@@ -70,7 +75,7 @@ import type {
 } from './canvas-types';
 import { type CanvasDataSourceSummary, loadCanvasPaYamlSource, resolveCanvasPaYamlRoot, type CanvasSourceReadOptions } from './pa-yaml';
 import { parsePowerFxExpression } from './power-fx';
-import { buildCanvasSemanticModel, collectCanvasFormulaChecks } from './semantic-model';
+import { buildCanvasSemanticModel, collectCanvasFormulaChecks, type CanvasFormulaSemantic } from './semantic-model';
 import { buildCanvasTemplateSurface } from './template-surface';
 export type {
   CanvasBuildMode,
@@ -96,6 +101,9 @@ export type {
   CanvasRegistryBundle,
   CanvasRegistryImportRequest,
   CanvasRegistryLoadOptions,
+  CanvasRemoteProofCheck,
+  CanvasRemoteProofExpectation,
+  CanvasRemoteProofReport,
   CanvasRegistrySourceSummary,
   CanvasRelationshipMetadata,
   CanvasScreenDefinition,
@@ -111,6 +119,8 @@ export type {
   CanvasTemplateLookup,
   CanvasTemplateMatchType,
   CanvasTemplateProvenance,
+  CanvasTemplateReportRecord,
+  CanvasTemplateReportResolution,
   CanvasTemplateRecord,
   CanvasTemplateRegistryAuditReport,
   CanvasTemplateRegistryDiffResult,
@@ -221,6 +231,9 @@ export type CanvasAppSummary = DataverseCanvasAppSummary & {
   inSolution?: boolean;
 };
 
+const CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT_MS = 30_000;
+const CANVAS_REMOTE_PROGRESS_HEARTBEAT_MS = 10_000;
+
 export interface CanvasRemoteDownloadResult {
   app: CanvasAppSummary;
   solutionUniqueName: string;
@@ -229,9 +242,52 @@ export interface CanvasRemoteDownloadResult {
   availableEntries: string[];
   extractedPath?: string;
   extractedEntries?: string[];
+  solutionResolution: CanvasRemoteDownloadResolution;
 }
 
 export type CanvasRemoteAttachResult = CanvasAppAttachResult;
+export interface CanvasRemoteImportResult {
+  app: CanvasAppSummary;
+  solutionUniqueName: string;
+  sourcePath: string;
+  importedEntry: string;
+  availableEntries: string[];
+  importOptions: {
+    publishWorkflows: boolean;
+    overwriteUnmanagedCustomizations: boolean;
+  };
+}
+
+export type CanvasRemoteDownloadStage =
+  | 'resolve-app'
+  | 'export-solution'
+  | 'read-solution-archive'
+  | 'extract-solution-archive'
+  | 'replace-msapp'
+  | 'rebuild-solution'
+  | 'import-solution'
+  | 'write-msapp'
+  | 'extract-source';
+
+export interface CanvasRemoteDownloadProgressEvent {
+  stage: CanvasRemoteDownloadStage;
+  detail?: string;
+}
+
+export interface CanvasRemoteDownloadCandidateSolution {
+  solutionId: string;
+  uniqueName?: string;
+  friendlyName?: string;
+  isManaged?: boolean;
+}
+
+export interface CanvasRemoteDownloadResolution {
+  status: 'ready' | 'requires-solution-membership' | 'solution-ambiguous';
+  requestedSolutionUniqueName?: string;
+  resolvedSolutionUniqueName?: string;
+  autoResolved: boolean;
+  candidateSolutions: CanvasRemoteDownloadCandidateSolution[];
+}
 
 interface CanvasTemplateCandidate {
   template: CanvasTemplateRecord;
@@ -439,14 +495,12 @@ export class CanvasService {
     });
   }
 
-  async downloadRemote(
+  async planRemoteDownload(
     identifier: string,
     options: {
-      solutionUniqueName: string;
-      outPath?: string;
-      extractToDirectory?: string;
-    }
-  ): Promise<OperationResult<CanvasRemoteDownloadResult>> {
+      solutionUniqueName?: string;
+    } = {}
+  ): Promise<OperationResult<{ app: CanvasAppSummary; resolution: CanvasRemoteDownloadResolution } | undefined>> {
     if (!this.dataverseClient) {
       return fail(
         createDiagnostic('error', 'CANVAS_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote canvas app download.', {
@@ -460,36 +514,190 @@ export class CanvasService {
     });
 
     if (!app.success) {
-      return app as unknown as OperationResult<CanvasRemoteDownloadResult>;
+      return app as unknown as OperationResult<{ app: CanvasAppSummary; resolution: CanvasRemoteDownloadResolution } | undefined>;
     }
 
     if (!app.data) {
+      return ok(undefined, {
+        supportTier: 'preview',
+        diagnostics: app.diagnostics,
+        warnings: app.warnings,
+      });
+    }
+
+    if (options.solutionUniqueName) {
+      return ok(
+        {
+          app: app.data,
+          resolution: {
+            status: 'ready',
+            requestedSolutionUniqueName: options.solutionUniqueName,
+            resolvedSolutionUniqueName: options.solutionUniqueName,
+            autoResolved: false,
+            candidateSolutions: [],
+          },
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: app.diagnostics,
+          warnings: app.warnings,
+        }
+      );
+    }
+
+    const containingSolutions = await this.listContainingSolutions(app.data.id);
+
+    if (!containingSolutions.success || !containingSolutions.data) {
+      return containingSolutions as unknown as OperationResult<{ app: CanvasAppSummary; resolution: CanvasRemoteDownloadResolution } | undefined>;
+    }
+
+    const candidates = containingSolutions.data;
+    const readyCandidate = candidates.length === 1 ? candidates[0] : undefined;
+
+    return ok(
+      {
+        app: app.data,
+        resolution: {
+          status:
+            candidates.length === 0
+              ? 'requires-solution-membership'
+              : candidates.length === 1 && readyCandidate?.uniqueName
+                ? 'ready'
+                : 'solution-ambiguous',
+          resolvedSolutionUniqueName: readyCandidate?.uniqueName,
+          autoResolved: Boolean(readyCandidate?.uniqueName),
+          candidateSolutions: candidates,
+        },
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(app.diagnostics, containingSolutions.diagnostics),
+        warnings: mergeDiagnosticLists(app.warnings, containingSolutions.warnings),
+      }
+    );
+  }
+
+  async downloadRemote(
+    identifier: string,
+    options: {
+      solutionUniqueName?: string;
+      outPath?: string;
+      extractToDirectory?: string;
+      onProgress?: (event: CanvasRemoteDownloadProgressEvent) => void | Promise<void>;
+    }
+  ): Promise<OperationResult<CanvasRemoteDownloadResult>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote canvas app download.', {
+          source: '@pp/canvas',
+        })
+      );
+    }
+
+    await options.onProgress?.({
+      stage: 'resolve-app',
+      detail: options.solutionUniqueName
+        ? `Resolving canvas app ${identifier} in solution ${options.solutionUniqueName}.`
+        : `Resolving canvas app ${identifier} and its containing solution.`,
+    });
+    const planned = await this.planRemoteDownload(identifier, {
+      solutionUniqueName: options.solutionUniqueName,
+    });
+
+    if (!planned.success) {
+      return planned as unknown as OperationResult<CanvasRemoteDownloadResult>;
+    }
+
+    if (!planned.data) {
         return fail(
           [
-            ...app.diagnostics,
-            createDiagnostic('error', 'CANVAS_REMOTE_NOT_FOUND', `Canvas app ${identifier} was not found in solution ${options.solutionUniqueName}.`, {
+            ...planned.diagnostics,
+            createDiagnostic('error', 'CANVAS_REMOTE_NOT_FOUND', `Canvas app ${identifier} was not found${options.solutionUniqueName ? ` in solution ${options.solutionUniqueName}` : ''}.`, {
               source: '@pp/canvas',
             }),
           ],
           {
             supportTier: 'preview',
-            warnings: app.warnings,
+            warnings: planned.warnings,
           }
         );
+    }
+
+    const app = planned.data.app;
+    const solutionResolution = planned.data.resolution;
+    const resolvedSolutionUniqueName = solutionResolution.resolvedSolutionUniqueName;
+
+    if (solutionResolution.status === 'requires-solution-membership' || !resolvedSolutionUniqueName) {
+      return fail(
+        [
+          ...planned.diagnostics,
+          createDiagnostic(
+            'error',
+            'CANVAS_REMOTE_DOWNLOAD_SOLUTION_REQUIRED',
+            `Canvas app ${identifier} is discoverable in the target environment but not currently downloadable because it is not attached to an exportable solution.`,
+            {
+              source: '@pp/canvas',
+              hint: 'Attach the app to a solution first, or retry with --solution when you know the correct containing solution.',
+            }
+          ),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: planned.warnings,
+        }
+      );
+    }
+
+    if (solutionResolution.status === 'solution-ambiguous') {
+      return fail(
+        [
+          ...planned.diagnostics,
+          createDiagnostic(
+            'error',
+            'CANVAS_REMOTE_DOWNLOAD_SOLUTION_AMBIGUOUS',
+            `Canvas app ${identifier} belongs to multiple solutions, so pp needs an explicit --solution to choose the correct export package.`,
+            {
+              source: '@pp/canvas',
+              detail: solutionResolution.candidateSolutions
+                .map((candidate) => candidate.uniqueName ?? candidate.solutionId)
+                .join(', '),
+              hint: 'Retry with --solution <unique-name> to pick the intended containing solution.',
+            }
+          ),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: planned.warnings,
+        }
+      );
     }
 
     const exportRoot = await mkdtemp(join(tmpdir(), 'pp-canvas-remote-download-'));
 
     try {
-      const packagePath = join(exportRoot, `${options.solutionUniqueName}.zip`);
-      const exported = await new SolutionService(this.dataverseClient).exportSolution(options.solutionUniqueName, {
-        outPath: packagePath,
+      const packagePath = join(exportRoot, `${resolvedSolutionUniqueName}.zip`);
+      await options.onProgress?.({
+        stage: 'export-solution',
+        detail: `Exporting solution ${resolvedSolutionUniqueName}.${solutionResolution.autoResolved ? ' (auto-resolved from solution membership)' : ''}`,
       });
+      const stopExportHeartbeat = startCanvasRemoteProgressHeartbeat(options.onProgress, 'export-solution', `Still exporting solution ${resolvedSolutionUniqueName}...`);
+      let exported: Awaited<ReturnType<SolutionService['exportSolution']>>;
+      try {
+        exported = await new SolutionService(this.dataverseClient).exportSolution(resolvedSolutionUniqueName, {
+          outPath: packagePath,
+        });
+      } finally {
+        stopExportHeartbeat();
+      }
 
       if (!exported.success || !exported.data) {
         return exported as unknown as OperationResult<CanvasRemoteDownloadResult>;
       }
 
+      await options.onProgress?.({
+        stage: 'read-solution-archive',
+        detail: `Inspecting CanvasApps entries from exported solution ${resolvedSolutionUniqueName}.`,
+      });
       const listedEntries = await listZipEntries(packagePath);
 
       if (!listedEntries.success || !listedEntries.data) {
@@ -501,12 +709,12 @@ export class CanvasService {
       if (availableEntries.length === 0) {
         return fail(
           [
-            ...app.diagnostics,
+            ...planned.diagnostics,
             ...exported.diagnostics,
             createDiagnostic(
               'error',
               'CANVAS_REMOTE_EXPORT_MISSING_MSAPP',
-              `Solution ${options.solutionUniqueName} exported successfully but did not contain any CanvasApps/*.msapp entries.`,
+              `Solution ${resolvedSolutionUniqueName} exported successfully but did not contain any CanvasApps/*.msapp entries.`,
               {
                 source: '@pp/canvas',
                 path: packagePath,
@@ -516,22 +724,22 @@ export class CanvasService {
           ],
           {
             supportTier: 'preview',
-            warnings: [...app.warnings, ...exported.warnings],
+            warnings: [...planned.warnings, ...exported.warnings],
           }
         );
       }
 
-      const matchedEntry = resolveCanvasMsappEntry(app.data, availableEntries);
+      const matchedEntry = resolveCanvasMsappEntry(app, availableEntries);
 
       if (!matchedEntry) {
         return fail(
           [
-            ...app.diagnostics,
+            ...planned.diagnostics,
             ...exported.diagnostics,
             createDiagnostic(
               'error',
               'CANVAS_REMOTE_EXPORT_ENTRY_AMBIGUOUS',
-              `Could not map canvas app ${identifier} to a single CanvasApps/*.msapp entry in solution ${options.solutionUniqueName}.`,
+              `Could not map canvas app ${identifier} to a single CanvasApps/*.msapp entry in solution ${resolvedSolutionUniqueName}.`,
               {
                 source: '@pp/canvas',
                 hint: `Available entries: ${availableEntries.join(', ')}`,
@@ -540,7 +748,7 @@ export class CanvasService {
           ],
           {
             supportTier: 'preview',
-            warnings: [...app.warnings, ...exported.warnings],
+            warnings: [...planned.warnings, ...exported.warnings],
           }
         );
       }
@@ -551,7 +759,11 @@ export class CanvasService {
         return content as unknown as OperationResult<CanvasRemoteDownloadResult>;
       }
 
-      const outPath = resolve(options.outPath ?? `${defaultCanvasDownloadBaseName(app.data)}.msapp`);
+      const outPath = resolve(options.outPath ?? `${defaultCanvasDownloadBaseName(app)}.msapp`);
+      await options.onProgress?.({
+        stage: 'write-msapp',
+        detail: `Writing ${matchedEntry} to ${outPath}.`,
+      });
       await mkdir(dirname(outPath), { recursive: true });
       await writeFile(outPath, content.data);
 
@@ -559,6 +771,10 @@ export class CanvasService {
       let extractedEntries: string[] | undefined;
 
       if (options.extractToDirectory) {
+        await options.onProgress?.({
+          stage: 'extract-source',
+          detail: `Extracting ${outPath} into ${resolve(options.extractToDirectory)}.`,
+        });
         const extracted = await extractCanvasArchive(outPath, resolve(options.extractToDirectory));
 
         if (!extracted.success || !extracted.data) {
@@ -571,18 +787,19 @@ export class CanvasService {
 
       return ok(
         {
-          app: app.data,
-          solutionUniqueName: options.solutionUniqueName,
+          app,
+          solutionUniqueName: resolvedSolutionUniqueName,
           outPath,
           exportedEntry: matchedEntry,
           availableEntries,
           extractedPath,
           extractedEntries,
+          solutionResolution,
         },
         {
           supportTier: 'preview',
-          diagnostics: [...app.diagnostics, ...exported.diagnostics],
-          warnings: [...app.warnings, ...exported.warnings],
+          diagnostics: [...planned.diagnostics, ...exported.diagnostics],
+          warnings: [...planned.warnings, ...exported.warnings],
           provenance: [
             {
               kind: 'official-api',
@@ -593,6 +810,76 @@ export class CanvasService {
       );
     } finally {
       await rm(exportRoot, { recursive: true, force: true });
+    }
+  }
+
+  async proveRemote(
+    identifier: string,
+    options: {
+      solutionUniqueName: string;
+      expectations: CanvasRemoteProofExpectation[];
+    }
+  ): Promise<OperationResult<CanvasRemoteProofReport>> {
+    const proofRoot = await mkdtemp(join(tmpdir(), 'pp-canvas-remote-proof-'));
+
+    try {
+      const downloaded = await this.downloadRemote(identifier, {
+        solutionUniqueName: options.solutionUniqueName,
+        outPath: join(proofRoot, 'remote.msapp'),
+        extractToDirectory: join(proofRoot, 'source'),
+      });
+
+      if (!downloaded.success || !downloaded.data?.extractedPath) {
+        return downloaded as unknown as OperationResult<CanvasRemoteProofReport>;
+      }
+
+      const loaded = await loadCanvasSource(downloaded.data.extractedPath);
+
+      if (!loaded.success || !loaded.data) {
+        return loaded as unknown as OperationResult<CanvasRemoteProofReport>;
+      }
+
+      const harvestedProofs = await loadHarvestedCanvasPropertyProofs(downloaded.data.extractedPath);
+
+      if (!harvestedProofs.success || !harvestedProofs.data) {
+        return harvestedProofs as unknown as OperationResult<CanvasRemoteProofReport>;
+      }
+
+      const expectations = options.expectations.map((expectation) =>
+        buildCanvasRemoteProofCheck(loaded.data, expectation, harvestedProofs.data.get(buildCanvasProofKey(expectation.controlPath, expectation.property)))
+      );
+      const mismatchDiagnostics = buildCanvasRemoteProofDiagnostics(expectations);
+      const conflictDiagnostics = buildCanvasRemoteProofConflictDiagnostics(expectations);
+
+      return ok(
+        {
+          valid: expectations.every((expectation) => expectation.matched),
+          appId: downloaded.data.app.id,
+          sourceHash: loaded.data.sourceHash,
+          screenCount: loaded.data.screens.length,
+          controlCount: loaded.data.controls.length,
+          dataSources: uniqueSorted((loaded.data.dataSources ?? []).map((source) => source.name)),
+          expectations,
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: [...downloaded.diagnostics, ...loaded.diagnostics, ...mismatchDiagnostics, ...conflictDiagnostics],
+          warnings: [...downloaded.warnings, ...loaded.warnings, ...harvestedProofs.warnings],
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse ExportSolution',
+            },
+            {
+              kind: 'inferred',
+              source: '@pp/canvas remote proof',
+              detail: 'Proof expectations were evaluated from the exported remote canvas source tree, preferring harvested control rules when exported YAML and control metadata disagree.',
+            },
+          ],
+        }
+      );
+    } finally {
+      await rm(proofRoot, { recursive: true, force: true });
     }
   }
 
@@ -615,10 +902,456 @@ export class CanvasService {
       addRequiredComponents: options.addRequiredComponents,
     });
   }
+
+  async importRemote(
+    identifier: string,
+    options: {
+      solutionUniqueName: string;
+      importPath: string;
+      publishWorkflows?: boolean;
+      overwriteUnmanagedCustomizations?: boolean;
+      onProgress?: (event: CanvasRemoteDownloadProgressEvent) => void | Promise<void>;
+    }
+  ): Promise<OperationResult<CanvasRemoteImportResult>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote canvas app import.', {
+          source: '@pp/canvas',
+        })
+      );
+    }
+
+    const sourcePath = resolve(options.importPath);
+    let sourceBytes: Buffer;
+    try {
+      sourceBytes = await readFile(sourcePath);
+    } catch (error) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_IMPORT_SOURCE_READ_FAILED', `Failed to read canvas app package ${sourcePath}.`, {
+          source: '@pp/canvas',
+          path: sourcePath,
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      );
+    }
+
+    await options.onProgress?.({
+      stage: 'resolve-app',
+      detail: `Resolving target canvas app ${identifier} in solution ${options.solutionUniqueName}.`,
+    });
+    const planned = await this.planRemoteDownload(identifier, {
+      solutionUniqueName: options.solutionUniqueName,
+    });
+
+    if (!planned.success) {
+      return planned as unknown as OperationResult<CanvasRemoteImportResult>;
+    }
+
+    if (!planned.data) {
+      return fail(
+        [
+          ...planned.diagnostics,
+          createDiagnostic(
+            'error',
+            'CANVAS_REMOTE_IMPORT_TARGET_NOT_FOUND',
+            `Canvas app ${identifier} was not found in solution ${options.solutionUniqueName}.`,
+            {
+              source: '@pp/canvas',
+              hint: 'Run `pp canvas list --environment <alias> --solution <unique-name>` to pick the exact app to replace.',
+            }
+          ),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: planned.warnings,
+        }
+      );
+    }
+
+    const app = planned.data.app;
+    const exportRoot = await mkdtemp(join(tmpdir(), 'pp-canvas-remote-import-'));
+
+    try {
+      const packagePath = join(exportRoot, `${options.solutionUniqueName}.zip`);
+      await options.onProgress?.({
+        stage: 'export-solution',
+        detail: `Exporting solution ${options.solutionUniqueName} before replacing ${app.displayName ?? app.name ?? app.id}.`,
+      });
+      const exported = await new SolutionService(this.dataverseClient).exportSolution(options.solutionUniqueName, {
+        outPath: packagePath,
+      });
+
+      if (!exported.success || !exported.data) {
+        return exported as unknown as OperationResult<CanvasRemoteImportResult>;
+      }
+
+      await options.onProgress?.({
+        stage: 'read-solution-archive',
+        detail: `Inspecting CanvasApps entries from exported solution ${options.solutionUniqueName}.`,
+      });
+      const listedEntries = await listZipEntries(packagePath);
+
+      if (!listedEntries.success || !listedEntries.data) {
+        return listedEntries as unknown as OperationResult<CanvasRemoteImportResult>;
+      }
+
+      const availableEntries = listedEntries.data.filter((entry) => /^CanvasApps\/.+\.msapp$/i.test(entry));
+
+      if (availableEntries.length === 0) {
+        return fail(
+          [
+            ...planned.diagnostics,
+            ...exported.diagnostics,
+            createDiagnostic(
+              'error',
+              'CANVAS_REMOTE_IMPORT_EXPORT_MISSING_MSAPP',
+              `Solution ${options.solutionUniqueName} exported successfully but did not contain any CanvasApps/*.msapp entries.`,
+              {
+                source: '@pp/canvas',
+                path: packagePath,
+                hint: 'Confirm the target app is part of the specified solution and has been saved into solution-aware exportable state.',
+              }
+            ),
+          ],
+          {
+            supportTier: 'preview',
+            warnings: [...planned.warnings, ...exported.warnings],
+          }
+        );
+      }
+
+      const matchedEntry = resolveCanvasMsappEntry(app, availableEntries);
+
+      if (!matchedEntry) {
+        return fail(
+          [
+            ...planned.diagnostics,
+            ...exported.diagnostics,
+            createDiagnostic(
+              'error',
+              'CANVAS_REMOTE_IMPORT_ENTRY_AMBIGUOUS',
+              `Could not map canvas app ${identifier} to a single CanvasApps/*.msapp entry in solution ${options.solutionUniqueName}.`,
+              {
+                source: '@pp/canvas',
+                hint: `Available entries: ${availableEntries.join(', ')}`,
+              }
+            ),
+          ],
+          {
+            supportTier: 'preview',
+            warnings: [...planned.warnings, ...exported.warnings],
+          }
+        );
+      }
+
+      const unpackedRoot = join(exportRoot, 'solution');
+      await options.onProgress?.({
+        stage: 'extract-solution-archive',
+        detail: `Extracting ${options.solutionUniqueName} for in-place canvas replacement.`,
+      });
+      const extracted = await extractZipArchive(packagePath, unpackedRoot);
+
+      if (!extracted.success) {
+        return extracted as unknown as OperationResult<CanvasRemoteImportResult>;
+      }
+
+      await options.onProgress?.({
+        stage: 'replace-msapp',
+        detail: `Replacing ${matchedEntry} with ${sourcePath}.`,
+      });
+      const entryPath = join(unpackedRoot, ...matchedEntry.split('/'));
+      await mkdir(dirname(entryPath), { recursive: true });
+      await writeFile(entryPath, sourceBytes);
+
+      await rm(packagePath, { force: true });
+      await options.onProgress?.({
+        stage: 'rebuild-solution',
+        detail: `Repacking ${options.solutionUniqueName} after the canvas replacement.`,
+      });
+      const rebuilt = await createZipArchive(unpackedRoot, packagePath);
+
+      if (!rebuilt.success) {
+        return rebuilt as unknown as OperationResult<CanvasRemoteImportResult>;
+      }
+
+      const importOptions = {
+        publishWorkflows: options.publishWorkflows ?? true,
+        overwriteUnmanagedCustomizations: options.overwriteUnmanagedCustomizations ?? false,
+      };
+      await options.onProgress?.({
+        stage: 'import-solution',
+        detail: `Importing the rebuilt ${options.solutionUniqueName} package back into Dataverse.`,
+      });
+      const imported = await new SolutionService(this.dataverseClient).importSolution(packagePath, importOptions);
+
+      if (!imported.success || !imported.data) {
+        return imported as unknown as OperationResult<CanvasRemoteImportResult>;
+      }
+
+      return ok(
+        {
+          app,
+          solutionUniqueName: options.solutionUniqueName,
+          sourcePath,
+          importedEntry: matchedEntry,
+          availableEntries,
+          importOptions,
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: mergeDiagnosticLists(planned.diagnostics, exported.diagnostics, imported.diagnostics),
+          warnings: mergeDiagnosticLists(planned.warnings, exported.warnings, imported.warnings),
+          provenance: [
+            {
+              kind: 'official-api',
+              source: 'Dataverse ExportSolution',
+            },
+            {
+              kind: 'official-api',
+              source: 'Dataverse ImportSolution',
+            },
+          ],
+        }
+      );
+    } finally {
+      await rm(exportRoot, { recursive: true, force: true });
+    }
+  }
+
+  private async listContainingSolutions(appId: string): Promise<OperationResult<CanvasRemoteDownloadCandidateSolution[]>> {
+    const membership = await this.dataverseClient.queryAll<{ _solutionid_value?: string; solutionid?: string }>({
+      table: 'solutioncomponents',
+      select: ['_solutionid_value', 'solutionid'],
+      filter: `objectid eq ${appId} and componenttype eq 300`,
+    });
+
+    if (!membership.success) {
+      return membership as unknown as OperationResult<CanvasRemoteDownloadCandidateSolution[]>;
+    }
+
+    const solutionIds = uniqueSorted(
+      (membership.data ?? [])
+        .map((record) => record._solutionid_value ?? record.solutionid)
+        .filter((value): value is string => Boolean(value))
+    );
+
+    if (solutionIds.length === 0) {
+      return ok([], {
+        supportTier: 'preview',
+        diagnostics: membership.diagnostics,
+        warnings: membership.warnings,
+      });
+    }
+
+    const solutionFilter = solutionIds.map((solutionId) => `solutionid eq ${solutionId}`).join(' or ');
+    const solutions = await this.dataverseClient.queryAll<{
+      solutionid: string;
+      uniquename?: string;
+      friendlyname?: string;
+      ismanaged?: boolean;
+    }>({
+      table: 'solutions',
+      select: ['solutionid', 'uniquename', 'friendlyname', 'ismanaged'],
+      filter: solutionFilter,
+    });
+
+    if (!solutions.success) {
+      return solutions as unknown as OperationResult<CanvasRemoteDownloadCandidateSolution[]>;
+    }
+
+    const byId = new Map((solutions.data ?? []).map((solution) => [solution.solutionid, solution]));
+    const candidates = solutionIds.map((solutionId) => {
+      const solution = byId.get(solutionId);
+      return {
+        solutionId,
+        uniqueName: solution?.uniquename,
+        friendlyName: solution?.friendlyname,
+        isManaged: solution?.ismanaged,
+      };
+    });
+
+    return ok(candidates, {
+      supportTier: 'preview',
+      diagnostics: mergeDiagnosticLists(membership.diagnostics, solutions.diagnostics),
+      warnings: mergeDiagnosticLists(membership.warnings, solutions.warnings),
+    });
+  }
 }
 
 function defaultCanvasDownloadBaseName(app: CanvasAppSummary): string {
   return sanitizeCanvasArtifactName(app.displayName ?? app.name ?? app.id);
+}
+
+function buildCanvasRemoteProofCheck(
+  source: CanvasSourceModel,
+  expectation: CanvasRemoteProofExpectation,
+  harvestedActualValueText?: string
+): CanvasRemoteProofCheck {
+  const control = findCanvasControlByPath(source, expectation.controlPath);
+  const actualValue = control?.properties[expectation.property];
+  const sourceActualValueText = actualValue === undefined ? undefined : formatCanvasProofValue(actualValue);
+  const actualValueText = harvestedActualValueText ?? sourceActualValueText;
+  const conflict =
+    harvestedActualValueText !== undefined &&
+    sourceActualValueText !== undefined &&
+    harvestedActualValueText !== sourceActualValueText;
+
+  return {
+    controlPath: expectation.controlPath,
+    property: expectation.property,
+    found: actualValueText !== undefined,
+    matched: actualValueText === expectation.expectedValue,
+    expectedValue: expectation.expectedValue,
+    actualValue: harvestedActualValueText !== undefined ? harvestedActualValueText : actualValue,
+    actualValueText,
+    sourceActualValueText,
+    harvestedActualValueText,
+    evidence: harvestedActualValueText !== undefined ? 'harvested' : sourceActualValueText !== undefined ? 'source' : undefined,
+    conflict,
+  };
+}
+
+function buildCanvasRemoteProofDiagnostics(expectations: CanvasRemoteProofCheck[]): Diagnostic[] {
+  const mismatches = expectations.filter((expectation) => !expectation.matched);
+
+  if (mismatches.length === 0) {
+    return [];
+  }
+
+  const detail = mismatches
+    .map((expectation) =>
+      expectation.found
+        ? `${expectation.controlPath}.${expectation.property}: expected ${expectation.expectedValue}, actual ${expectation.actualValueText ?? '<missing>'}`
+        : `${expectation.controlPath}.${expectation.property}: control property was not found; expected ${expectation.expectedValue}`
+    )
+    .join('\n');
+
+  return [
+    createDiagnostic(
+      'warning',
+      'CANVAS_REMOTE_PROOF_MISMATCH',
+      `Remote canvas proof found ${mismatches.length} unmatched expectation${mismatches.length === 1 ? '' : 's'}.`,
+      {
+        source: '@pp/canvas remote proof',
+        detail,
+        hint: 'Re-run with the returned proof payload to compare actualValueText against the expected control path and property.',
+      }
+    ),
+  ];
+}
+
+function buildCanvasRemoteProofConflictDiagnostics(expectations: CanvasRemoteProofCheck[]): Diagnostic[] {
+  return expectations
+    .filter((expectation) => expectation.conflict)
+    .map((expectation) =>
+      createDiagnostic(
+        'warning',
+        'CANVAS_REMOTE_PROOF_SOURCE_CONFLICT',
+        `Remote canvas proof found conflicting exported values for ${expectation.controlPath}.${expectation.property}.`,
+        {
+          source: '@pp/canvas remote proof',
+          detail: `Source YAML: ${expectation.sourceActualValueText ?? '<missing>'}\nHarvested Controls: ${expectation.harvestedActualValueText ?? '<missing>'}`,
+          hint: 'The proof result used harvested Controls/*.json rule metadata because it more directly reflects the exported runtime control binding.',
+        }
+      )
+    );
+}
+
+function formatCanvasProofValue(value: CanvasJsonValue): string {
+  return typeof value === 'string' ? value : stableStringify(value as Parameters<typeof stableStringify>[0]);
+}
+
+function buildCanvasProofKey(controlPath: string, property: string): string {
+  return `${controlPath}::${property}`.toLowerCase();
+}
+
+function startCanvasRemoteProgressHeartbeat(
+  onProgress: ((event: CanvasRemoteDownloadProgressEvent) => void | Promise<void>) | undefined,
+  stage: CanvasRemoteDownloadStage,
+  detail: string
+): () => void {
+  if (!onProgress) {
+    return () => {};
+  }
+
+  const timer = setInterval(() => {
+    void onProgress({
+      stage,
+      detail,
+    });
+  }, CANVAS_REMOTE_PROGRESS_HEARTBEAT_MS);
+
+  return () => clearInterval(timer);
+}
+
+async function loadHarvestedCanvasPropertyProofs(root: string): Promise<OperationResult<Map<string, string>>> {
+  const controlsDir = join(root, 'Controls');
+
+  try {
+    const directory = await stat(controlsDir);
+    if (!directory.isDirectory()) {
+      return ok(new Map(), {
+        supportTier: 'preview',
+      });
+    }
+  } catch {
+    return ok(new Map(), {
+      supportTier: 'preview',
+    });
+  }
+
+  const files = await readdir(controlsDir, { withFileTypes: true });
+  const proofs = new Map<string, string>();
+
+  for (const file of files) {
+    if (!file.isFile() || !file.name.endsWith('.json')) {
+      continue;
+    }
+
+    const document = await readJsonFile<unknown>(join(controlsDir, file.name));
+    collectHarvestedCanvasPropertyProofs(document, [], proofs);
+  }
+
+  return ok(proofs, {
+    supportTier: 'preview',
+  });
+}
+
+function collectHarvestedCanvasPropertyProofs(value: unknown, path: string[], proofs: Map<string, string>): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectHarvestedCanvasPropertyProofs(item, path, proofs);
+    }
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  const template = isRecord(value.Template) ? value.Template : undefined;
+  const controlName = readStringValue(value.Name);
+  const isControlInfo = readStringValue(value.Type) === 'ControlInfo' && template;
+  const nextPath = isControlInfo && controlName ? [...path, controlName] : path;
+
+  if (isControlInfo && nextPath.length > 0 && Array.isArray(value.Rules)) {
+    for (const rule of value.Rules) {
+      if (!isRecord(rule)) {
+        continue;
+      }
+
+      const property = readStringValue(rule.Property);
+      const invariantScript = readStringValue(rule.InvariantScript);
+
+      if (property && invariantScript !== undefined) {
+        proofs.set(buildCanvasProofKey(nextPath.join('/'), property), invariantScript);
+      }
+    }
+  }
+
+  for (const nested of Object.values(value)) {
+    collectHarvestedCanvasPropertyProofs(nested, nextPath, proofs);
+  }
 }
 
 function resolveCanvasMsappEntry(app: CanvasAppSummary, entries: string[]): string | undefined {
@@ -654,6 +1387,10 @@ function sanitizeCanvasArtifactName(value: string): string {
 
 function normalizeCanvasArtifactToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagnostic[] {
+  return lists.flatMap((list) => list ?? []);
 }
 
 async function extractCanvasArchive(
@@ -733,6 +1470,13 @@ async function extractCanvasArchive(
   }
 }
 
+export async function extractCanvasMsappArchive(
+  packagePath: string,
+  outPath: string
+): Promise<OperationResult<{ outPath: string; entries: string[] }>> {
+  return extractCanvasArchive(packagePath, outPath);
+}
+
 function normalizeCanvasArchiveEntryPath(entry: string): OperationResult<string> {
   const normalized = entry.replaceAll('\\', '/').replace(/^\/+/, '').trim();
 
@@ -810,17 +1554,65 @@ async function extractZipArchive(packagePath: string, outPath: string): Promise<
   });
 }
 
-async function runCommand(command: string, args: string[]): Promise<OperationResult<Buffer>> {
+async function createZipArchive(sourceDir: string, outPath: string): Promise<OperationResult<undefined>> {
+  const result = await runCommand('zip', ['-rqX', outPath, '.'], {
+    cwd: sourceDir,
+  });
+
+  if (!result.success) {
+    return result as unknown as OperationResult<undefined>;
+  }
+
+  return ok(undefined, {
+    supportTier: 'preview',
+    diagnostics: result.diagnostics,
+    warnings: result.warnings,
+  });
+}
+
+async function runCommand(command: string, args: string[], options: { cwd?: string } = {}): Promise<OperationResult<Buffer>> {
   return new Promise((resolvePromise) => {
+    let settled = false;
     const child = spawn(command, args, {
+      cwd: options.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      child.kill('SIGKILL');
+      resolvePromise(
+        fail(
+          createDiagnostic(
+            'error',
+            'CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT',
+            `${command} timed out after ${CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT_MS}ms.`,
+            {
+              source: '@pp/canvas',
+              hint: `Command: ${command} ${args.join(' ')}`.trim(),
+            }
+          ),
+          {
+            supportTier: 'preview',
+          }
+        )
+      );
+    }, CANVAS_REMOTE_ZIP_COMMAND_TIMEOUT_MS);
 
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-    child.on('error', (error) =>
+    child.on('error', (error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
       resolvePromise(
         fail(
           createDiagnostic('error', 'CANVAS_REMOTE_ZIP_TOOL_UNAVAILABLE', `Failed to execute ${command}.`, {
@@ -831,9 +1623,15 @@ async function runCommand(command: string, args: string[]): Promise<OperationRes
             supportTier: 'preview',
           }
         )
-      )
-    );
+      );
+    });
     child.on('close', (code) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
       if (code !== 0) {
         resolvePromise(
           fail(
@@ -856,6 +1654,14 @@ async function runCommand(command: string, args: string[]): Promise<OperationRes
       );
     });
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readStringValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 export async function loadCanvasTemplateRegistryBundle(
@@ -1456,6 +2262,7 @@ export async function buildCanvasApp(
   } = {}
 ): Promise<OperationResult<CanvasBuildResult>> {
   const prepared = await prepareCanvasValidation(path, options);
+  const outPath = options.outPath ?? (prepared.success && prepared.data ? resolve(prepared.data.source.root, 'dist', `${prepared.data.source.manifest.name}.msapp`) : undefined);
 
   if (!prepared.success || !prepared.data) {
     return prepared as unknown as OperationResult<CanvasBuildResult>;
@@ -1469,6 +2276,11 @@ export async function buildCanvasApp(
             source: '@pp/canvas',
           }),
       {
+        details: {
+          ...prepared.data.report,
+          buildable: false,
+          outPath,
+        },
         supportTier: 'preview',
         warnings: prepared.data.warnings,
       }
@@ -1484,9 +2296,6 @@ export async function buildCanvasApp(
       contentHash: resolution.template.contentHash,
       matchedBy: resolution.matchedBy,
     }));
-  const outPath =
-    options.outPath ?? resolve(prepared.data.source.root, 'dist', `${prepared.data.source.manifest.name}.msapp`);
-
   if (prepared.data.source.kind === 'pa-yaml-unpacked') {
     const nativeBuild = await buildCanvasMsappFromUnpackedSource(
       prepared.data.source,
@@ -1520,6 +2329,7 @@ export async function buildCanvasApp(
     templates: resolvedTemplates,
   };
   const packageHash = sha256Hex(stringifyCanvasJson(packagePayload));
+  const outFileSha256 = sha256Hex(stableStringify(packagePayload as unknown as Parameters<typeof writeJsonFile>[1]) + '\n');
 
   await writeJsonFile(outPath, packagePayload as unknown as Parameters<typeof writeJsonFile>[1]);
 
@@ -1530,6 +2340,7 @@ export async function buildCanvasApp(
       sourceHash: prepared.data.source.sourceHash,
       templateHash: sha256Hex(stringifyCanvasJson(resolvedTemplates)),
       packageHash,
+      outFileSha256,
       supported: true,
     },
     {
@@ -2423,6 +3234,37 @@ export function resolveCanvasTemplateRequirements(
   };
 }
 
+function summarizeCanvasTemplateForReport(template: CanvasTemplateRecord): CanvasTemplateReportRecord {
+  return {
+    templateName: template.templateName,
+    templateVersion: template.templateVersion,
+    contentHash: template.contentHash,
+    aliases: template.aliases,
+    files: Object.keys(template.files ?? {}).sort((left, right) => left.localeCompare(right)),
+    provenance: template.provenance,
+  };
+}
+
+function summarizeCanvasTemplateRequirementResolution(
+  resolution: CanvasTemplateResolution
+): CanvasTemplateReportResolution {
+  return {
+    requested: resolution.requested,
+    matchedBy: resolution.matchedBy,
+    support: resolution.support,
+    ...(resolution.template ? { template: summarizeCanvasTemplateForReport(resolution.template) } : {}),
+  };
+}
+
+function buildCanvasTemplateRequirementReport(
+  templateRequirements: CanvasTemplateRequirementResolution
+): CanvasTemplateRequirementResolution {
+  return {
+    ...templateRequirements,
+    resolutions: templateRequirements.resolutions.map(summarizeCanvasTemplateRequirementResolution),
+  };
+}
+
 export function resolveCanvasSupport(
   supportMatrix: CanvasSupportMatrixEntry[],
   templateName: string,
@@ -2525,6 +3367,7 @@ async function prepareCanvasValidation(
           }
         )
       ),
+    ...collectUnresolvedDataSourceDiagnostics(semanticModel.formulas),
     ...invalidPropertyChecks
       .map((property) =>
         createDiagnostic(
@@ -2589,7 +3432,7 @@ async function prepareCanvasValidation(
           seedRegistryPath: source.data.seedRegistryPath,
         },
         ...(source.data.dataSources && source.data.dataSources.length > 0 ? { dataSources: source.data.dataSources } : {}),
-        templateRequirements,
+        templateRequirements: buildCanvasTemplateRequirementReport(templateRequirements),
         unresolvedTemplates,
         unsupportedTemplates,
         formulas,
@@ -2607,6 +3450,41 @@ async function prepareCanvasValidation(
   );
 }
 
+function collectUnresolvedDataSourceDiagnostics(formulas: CanvasFormulaSemantic[]): Diagnostic[] {
+  const dataSourceProperties = new Set(['items', 'datasource']);
+
+  return formulas.flatMap((formula) => {
+    if (!dataSourceProperties.has(formula.property.toLowerCase())) {
+      return [];
+    }
+
+    const hasResolvedDataSource = formula.bindings.some((binding) => binding.kind === 'dataSource' && binding.resolved);
+    if (hasResolvedDataSource) {
+      return [];
+    }
+
+    const unresolvedNames = Array.from(
+      new Set(
+        formula.bindings
+          .filter((binding) => binding.kind === 'unresolved' && binding.name.trim().length > 0)
+          .map((binding) => binding.name)
+      )
+    );
+
+    return unresolvedNames.map((name) =>
+      createDiagnostic(
+        'error',
+        'CANVAS_DATA_SOURCE_REFERENCE_UNRESOLVED',
+        `Formula property ${formula.property} on ${formula.controlPath} references unresolved data source ${name}.`,
+        {
+          source: '@pp/canvas',
+          hint: 'Add the data source to References/DataSources.json or update the formula to use an existing source.',
+        }
+      )
+    );
+  });
+}
+
 async function loadCanvasTemplateRegistryDocument(path: string): Promise<OperationResult<LoadedRegistryDocument>> {
   try {
     await stat(path);
@@ -2622,6 +3500,25 @@ async function loadCanvasTemplateRegistryDocument(path: string): Promise<Operati
 
   if (!document.success || document.data === undefined) {
     return document as unknown as OperationResult<LoadedRegistryDocument>;
+  }
+
+  if (basename(path).toLowerCase() === 'controltemplates.json') {
+    const controlTemplates = await normalizeCanvasControlTemplatesCatalog(document.data, path);
+
+    if (controlTemplates.success && controlTemplates.data) {
+      return ok(
+        {
+          path,
+          hash: sha256Hex(stringifyCanvasJson(controlTemplates.data)),
+          document: controlTemplates.data,
+        },
+        {
+          supportTier: 'preview',
+          diagnostics: controlTemplates.diagnostics,
+          warnings: controlTemplates.warnings,
+        }
+      );
+    }
   }
 
   const normalized = normalizeCanvasTemplateRegistry(document.data, path);
@@ -2642,6 +3539,142 @@ async function loadCanvasTemplateRegistryDocument(path: string): Promise<Operati
       warnings: normalized.warnings,
     }
   );
+}
+
+async function normalizeCanvasControlTemplatesCatalog(
+  value: unknown,
+  sourcePath: string
+): Promise<OperationResult<CanvasTemplateRegistryDocument>> {
+  const objectValue = asRecord(value);
+
+  if (!objectValue) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_TEMPLATE_REGISTRY_INVALID', `Canvas template registry ${sourcePath} must be a JSON object.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  const templates: CanvasTemplateRecord[] = [];
+  const supportMatrix: CanvasSupportMatrixEntry[] = [];
+  const warnings: Diagnostic[] = [];
+  const pkgsDir = join(dirname(sourcePath), 'pkgs');
+
+  for (const [entryName, rawTemplate] of Object.entries(objectValue).sort(([left], [right]) => left.localeCompare(right))) {
+    const template = asRecord(rawTemplate);
+    const templateVersion = readString(template?.Version) ?? readString(template?.version);
+
+    if (!template || !templateVersion) {
+      continue;
+    }
+
+    const canonicalName = canonicalizeControlTemplateName(entryName, template);
+    const xmlBaseName = (readString(template.Name) ?? entryName).replaceAll('/', '_');
+    const xmlPath = join(pkgsDir, `${xmlBaseName}_${templateVersion}.xml`);
+    const templateXml = (await fileExists(xmlPath)) ? await readFile(xmlPath, 'utf8') : undefined;
+
+    if (!templateXml) {
+      warnings.push(
+        createDiagnostic(
+          'warning',
+          'CANVAS_CONTROL_TEMPLATE_XML_MISSING',
+          `Canvas control template ${canonicalName}@${templateVersion} did not include sibling pkgs XML at ${xmlPath}.`,
+          {
+            source: '@pp/canvas',
+            hint: 'Build and strict property validation will stay limited until the unpack includes the matching pkgs/*.xml template payload.',
+          }
+        )
+      );
+    }
+
+    const aliases = buildControlTemplateAliases(entryName, canonicalName);
+    const normalized = normalizeTemplateRecord(
+      {
+        templateName: canonicalName,
+        templateVersion,
+        aliases,
+        files: {
+          'Controls/EmbeddedTemplate.json': template,
+          ...(templateXml
+            ? {
+                'References/Templates.json': {
+                  name: canonicalName,
+                  version: templateVersion,
+                  templateXml,
+                },
+              }
+            : {}),
+        },
+        provenance: {
+          kind: 'official-artifact',
+          source: 'UnpackedControlTemplates',
+          importedFrom: sourcePath,
+          sourceArtifact: basename(sourcePath),
+        },
+      },
+      sourcePath
+    );
+
+    if (!normalized.success || !normalized.data) {
+      return normalized as OperationResult<CanvasTemplateRegistryDocument>;
+    }
+
+    templates.push(normalized.data);
+    supportMatrix.push({
+      templateName: canonicalName,
+      version: templateVersion,
+      status: 'supported',
+      modes: ['strict', 'registry'],
+      notes: ['Imported from an unpacked ControlTemplates.json catalog and sibling pkgs/*.xml template payloads.'],
+    });
+  }
+
+  if (templates.length === 0) {
+    return fail(
+      createDiagnostic('error', 'CANVAS_TEMPLATE_REGISTRY_EMPTY', `Canvas template registry ${sourcePath} did not contain any templates.`, {
+        source: '@pp/canvas',
+      })
+    );
+  }
+
+  return ok(
+    {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      templates: templates.sort(compareTemplates),
+      supportMatrix,
+    },
+    {
+      supportTier: 'preview',
+      warnings,
+    }
+  );
+}
+
+function canonicalizeControlTemplateName(entryName: string, template: Record<string, unknown>): string {
+  const rawName = readString(template.Name) ?? entryName;
+  const id = readString(template.Id)?.toLowerCase() ?? '';
+
+  if (id.includes('/icon') || rawName.toLowerCase() === 'icon') {
+    return 'icon';
+  }
+
+  return rawName;
+}
+
+function buildControlTemplateAliases(entryName: string, canonicalName: string): CanvasTemplateAliases {
+  const yamlNames = uniqueSorted([entryName, canonicalName]);
+  const constructors = uniqueSorted(inferRawTemplateConstructors(canonicalName));
+
+  if (normalizeName(canonicalName) === normalizeName('icon') && !constructors.includes('Classic/Icon')) {
+    constructors.push('Classic/Icon');
+    constructors.sort((left, right) => left.localeCompare(right));
+  }
+
+  return {
+    yamlNames,
+    constructors,
+  };
 }
 
 async function resolveCanvasManifestPath(path: string): Promise<OperationResult<string>> {
@@ -3279,14 +4312,15 @@ function normalizeCanvasTemplateRegistry(
     );
   }
 
-  const templatesValue = objectValue.templates ?? objectValue.controlTemplates ?? objectValue.entries ?? value;
+  const rawUsedTemplates = normalizeRawUsedTemplatesCatalog(objectValue, sourcePath);
+  const templatesValue = rawUsedTemplates?.templates ?? objectValue.templates ?? objectValue.controlTemplates ?? objectValue.entries ?? value;
   const templates = normalizeTemplateList(templatesValue, sourcePath, provenanceOverride);
 
   if (!templates.success || !templates.data) {
     return templates as unknown as OperationResult<CanvasTemplateRegistryDocument>;
   }
 
-  const supportMatrixValue = objectValue.supportMatrix ?? objectValue.support ?? [];
+  const supportMatrixValue = objectValue.supportMatrix ?? objectValue.support ?? rawUsedTemplates?.supportMatrix ?? [];
   const supportMatrix = normalizeSupportMatrix(supportMatrixValue);
 
   if (!supportMatrix.success || !supportMatrix.data) {
@@ -3308,6 +4342,76 @@ function normalizeCanvasTemplateRegistry(
       warnings: [],
     }
   );
+}
+
+function normalizeRawUsedTemplatesCatalog(
+  value: Record<string, unknown>,
+  sourcePath: string
+): { templates: unknown[]; supportMatrix: unknown[] } | undefined {
+  const usedTemplates = Array.isArray(value.UsedTemplates) ? value.UsedTemplates : undefined;
+
+  if (!usedTemplates || usedTemplates.length === 0) {
+    return undefined;
+  }
+
+  return {
+    templates: usedTemplates.map((entry) => {
+      const template = asRecord(entry) ?? {};
+      const templateName = readString(template.Name) ?? readString(template.name);
+      const templateVersion = readString(template.Version) ?? readString(template.version);
+      const templateXml = readString(template.Template) ?? readString(template.template);
+
+      return {
+        templateName,
+        templateVersion,
+        aliases: {
+          yamlNames: templateName ? [templateName] : [],
+          constructors: inferRawTemplateConstructors(templateName),
+        },
+        files: {
+          'References/Templates.json': {
+            name: templateName,
+            version: templateVersion,
+            templateXml,
+          },
+        },
+        provenance: {
+          sourceArtifact: basename(sourcePath),
+        },
+      };
+    }),
+    supportMatrix: usedTemplates.map((entry) => {
+      const template = asRecord(entry) ?? {};
+      const templateName = readString(template.Name) ?? readString(template.name);
+      const templateVersion = readString(template.Version) ?? readString(template.version);
+
+      return {
+        templateName,
+        version: templateVersion,
+        supported: true,
+        modes: ['strict', 'registry'],
+        notes: ['Imported from an exported References/Templates.json payload.'],
+      };
+    }),
+  };
+}
+
+function inferRawTemplateConstructors(templateName: string | undefined): string[] {
+  if (!templateName) {
+    return [];
+  }
+
+  if (templateName.includes('/')) {
+    return [templateName];
+  }
+
+  const normalized = templateName
+    .split(/[^A-Za-z0-9]+/g)
+    .filter((segment) => segment.length > 0)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join('');
+
+  return normalized.length > 0 ? [`Classic/${normalized}`] : [];
 }
 
 function normalizeTemplateList(

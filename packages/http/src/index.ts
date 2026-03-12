@@ -23,6 +23,7 @@ export interface HttpRequestOptions {
   headers?: Record<string, string>;
   authenticated?: boolean;
   responseType?: HttpResponseType;
+  timeoutMs?: number;
 }
 
 export interface HttpError extends Error {
@@ -48,6 +49,7 @@ export class HttpClient {
   }
 
   async request<T>(request: HttpRequestOptions): Promise<OperationResult<HttpResponse<T>>> {
+    const requestDescription = describeRequest(this.options.baseUrl, request);
     try {
       const response = await this.perform(request);
       const parsed = await readResponse<T>(response, request.responseType ?? 'json');
@@ -87,8 +89,8 @@ export class HttpClient {
           error instanceof Error ? error.message : 'Unknown HTTP error',
           {
             source: '@pp/http',
-            hint: readErrorHint(error),
-            detail: readErrorDetail(error),
+            hint: readErrorHint(error) ?? createUnhandledRequestHint(error),
+            detail: joinDetailParts(readErrorDetail(error), requestDescription, describeRetryBudget(this.retries)),
           }
         ),
         {
@@ -158,11 +160,40 @@ export class HttpClient {
     }
 
     for (let attempt = 0; attempt <= this.retries; attempt += 1) {
-      const response = await fetch(url, {
-        method: request.method ?? 'GET',
-        headers,
-        body,
-      });
+      let timedOut = false;
+      const controller = request.timeoutMs && request.timeoutMs > 0 ? new AbortController() : undefined;
+      const timeoutHandle =
+        controller && request.timeoutMs
+          ? setTimeout(() => {
+              timedOut = true;
+              controller.abort();
+            }, request.timeoutMs)
+          : undefined;
+
+      let response: Response;
+
+      try {
+        response = await fetch(url, {
+          method: request.method ?? 'GET',
+          headers,
+          body,
+          ...(controller ? { signal: controller.signal } : {}),
+        });
+      } catch (error) {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+
+        if (timedOut) {
+          throw createRequestTimeoutError(request, request.timeoutMs ?? 0);
+        }
+
+        throw error;
+      }
+
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
 
       if (!shouldRetry(response.status) || attempt === this.retries) {
         return response;
@@ -173,6 +204,12 @@ export class HttpClient {
 
     throw new Error('Unreachable retry state');
   }
+}
+
+function describeRequest(baseUrl: string | undefined, request: HttpRequestOptions): string {
+  const url = new URL(request.path, baseUrl);
+  applyQuery(url.searchParams, request.query);
+  return `${request.method ?? 'GET'} ${url.toString()}`;
 }
 
 function applyQuery(searchParams: URLSearchParams, query: Record<string, HttpQueryValue> | undefined): void {
@@ -220,6 +257,37 @@ function readErrorStringField(error: unknown, field: 'code' | 'hint' | 'detail')
 
   const value = (error as Record<string, unknown>)[field];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function createUnhandledRequestHint(error: unknown): string | undefined {
+  const code = readErrorCode(error);
+  const message = error instanceof Error ? error.message : String(error ?? '');
+
+  if (code === 'HTTP_UNHANDLED_ERROR' || /fetch failed/i.test(message) || /network/i.test(message)) {
+    return 'Retry once to rule out a transient network/auth issue. If the failure repeats, capture the request context from the diagnostic detail and inspect upstream service health.';
+  }
+
+  return undefined;
+}
+
+function joinDetailParts(...parts: Array<string | undefined>): string | undefined {
+  const filtered = parts.filter((value): value is string => Boolean(value && value.length > 0));
+  return filtered.length > 0 ? filtered.join(' ') : undefined;
+}
+
+function describeRetryBudget(retries: number): string {
+  return `Attempted up to ${retries + 1} request time(s) including retries.`;
+}
+
+function createRequestTimeoutError(request: HttpRequestOptions, timeoutMs: number): Error & { code: string; hint: string; detail: string } {
+  const method = request.method ?? 'GET';
+  const message = `${method} ${request.path} timed out after ${timeoutMs}ms`;
+
+  return Object.assign(new Error(message), {
+    code: 'HTTP_REQUEST_TIMEOUT',
+    hint: 'Increase the request timeout when the remote action is expected to run for longer, or retry to confirm whether the endpoint is stalled.',
+    detail: `The request exceeded the configured ${timeoutMs}ms timeout before the server returned a response.`,
+  });
 }
 
 function resolveRequestBody(request: HttpRequestOptions): SupportedRequestBody | undefined {

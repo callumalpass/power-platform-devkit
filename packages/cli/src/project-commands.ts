@@ -9,12 +9,15 @@ import {
   summarizeResolvedParameter,
   type ProjectContext,
   type ProjectDoctorReport,
+  type ProjectDoctorCheck,
   type ProjectFeedbackReport,
   type ProjectInitPlan,
   type ProjectInitResult,
 } from '@pp/project';
-import type { OperationResult } from '@pp/diagnostics';
+import { createDiagnostic, fail, type OperationResult } from '@pp/diagnostics';
+import type { ConfigStoreOptions } from '@pp/config';
 import { createMutationPreview, readMutationFlags, renderOutput, type CliOutputFormat } from './contract';
+import { buildProjectRelationshipSummary } from './relationship-context';
 
 type OutputFormat = CliOutputFormat;
 
@@ -28,7 +31,9 @@ interface ProjectCommandDependencies {
   resolveInvocationPath(path?: string): string;
   outputFormat(args: string[], fallback: OutputFormat): OutputFormat;
   readProjectDiscoveryOptions(args: string[]): OperationResult<ProjectDiscoveryInput>;
+  readConfigOptions(args: string[]): ConfigStoreOptions;
   printFailure(result: OperationResult<unknown>): number;
+  printFailureWithMachinePayload(result: OperationResult<unknown>, format: OutputFormat): number;
   printByFormat(value: unknown, format: OutputFormat): void;
   isMachineReadableOutputFormat(format: OutputFormat): boolean;
   printResultDiagnostics(result: OperationResult<unknown>, format: OutputFormat): void;
@@ -52,11 +57,39 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
     return deps.printFailure(project);
   }
 
+  const relationships = await buildProjectRelationshipSummary(project.data, deps.readConfigOptions(args));
+  const requestedStage = discoveryOptions.data.stage;
+  const stageNotFound = project.diagnostics.find((diagnostic) => diagnostic.code === 'PROJECT_STAGE_NOT_FOUND');
+
+  if (requestedStage && stageNotFound) {
+    const failure = fail(
+      createDiagnostic('error', 'PROJECT_STAGE_NOT_FOUND', `Requested stage ${requestedStage} is not defined in project topology`, {
+        source: '@pp/project',
+      }),
+      {
+        supportTier: project.supportTier,
+        details: {
+          requestedStage,
+          projectRoot: project.data.root,
+          defaultStage: project.data.topology.defaultStage,
+          activeEnvironment: project.data.topology.activeEnvironment,
+          activeSolution: project.data.topology.activeSolution?.uniqueName,
+          availableStages: Object.keys(project.data.topology.stages).sort((left, right) => left.localeCompare(right)),
+        },
+        suggestedNextActions: buildProjectInspectSuggestedNextActions(relationships, requestedStage),
+      }
+    );
+
+    return deps.printFailureWithMachinePayload(failure, format);
+  }
+
+  const suggestedNextActions = buildProjectInspectSuggestedNextActions(relationships);
   const payload = {
     success: true,
     canonicalProjectRoot: project.data.root,
     summary: summarizeProject(project.data),
     contract: summarizeProjectContract(project.data),
+    relationships,
     discovery:
       project.data.discovery.usedDefaultLayout || project.data.discovery.autoSelectedProjectRoot ? project.data.discovery : undefined,
     topology: project.data.topology,
@@ -70,14 +103,14 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
     docs: project.data.docs,
     diagnostics: project.diagnostics,
     warnings: project.warnings,
-    suggestedNextActions: project.suggestedNextActions ?? [],
+    suggestedNextActions,
     supportTier: project.supportTier,
     provenance: project.provenance,
     knownLimitations: project.knownLimitations,
   };
 
   if (format === 'table' || format === 'markdown') {
-    process.stdout.write(renderProjectInspectOutput(project.data, format));
+    process.stdout.write(renderProjectInspectOutput(project.data, relationships, format));
   } else {
     deps.printByFormat(payload, format);
   }
@@ -85,6 +118,54 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
     deps.printResultDiagnostics(project, format);
   }
   return 0;
+}
+
+function buildProjectInspectSuggestedNextActions(
+  relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>,
+  requestedStage?: string
+): string[] {
+  const actions: string[] = [];
+  const activeRelationship = relationships.stageRelationships.find((stage) => stage.stage === relationships.selectedStage) ?? relationships.stageRelationships[0];
+  const environmentAlias = activeRelationship?.environmentAlias;
+  const configuredStages = relationships.stageRelationships.map((stage) => stage.stage).filter((stage) => stage && stage !== '<unset>');
+
+  if (requestedStage) {
+    actions.push(`Choose one of the configured project stages instead: ${configuredStages.join(', ') || '<none>'}.`);
+    actions.push('Re-run `pp project inspect --format json` without `--stage` to inspect the default project target.');
+  }
+
+  if (!requestedStage && configuredStages.length > 1) {
+    const explicitStages = configuredStages.filter((stage) => stage !== relationships.selectedStage);
+    actions.push(
+      `Project topology exposes multiple stages (${configuredStages.join(', ')}); re-run \`pp project inspect --stage <stage> --format json\` before mutating a non-default environment target.`
+    );
+    for (const stage of explicitStages) {
+      actions.push(`Run \`pp project inspect --stage ${stage} --format json\` to inspect that stage's environment and solution mapping explicitly.`);
+    }
+  }
+
+  if (environmentAlias && (activeRelationship?.environmentStatus !== 'configured' || activeRelationship?.authProfileStatus !== 'configured')) {
+    actions.push(`Run \`pp env inspect ${environmentAlias} --format json\` to inspect the external environment registry entry for alias ${environmentAlias}.`);
+  }
+
+  if (activeRelationship?.authProfile && activeRelationship.authProfileStatus === 'missing') {
+    actions.push(
+      `Run \`pp auth profile inspect ${activeRelationship.authProfile} --format json\` to verify the auth profile bound to environment alias ${environmentAlias ?? '<alias>'}.`
+    );
+  }
+
+  if (
+    environmentAlias &&
+    activeRelationship?.environmentDefaultSolution &&
+    activeRelationship.solutionUniqueName &&
+    activeRelationship.solutionAlignment === 'mismatch'
+  ) {
+    actions.push(
+      `Environment alias ${environmentAlias} defaults to solution ${activeRelationship.environmentDefaultSolution}, but the selected project stage targets ${activeRelationship.solutionUniqueName}; re-run \`pp project inspect --stage <stage> --format json\` or update \`pp.config.yaml\` if this workflow should follow the registry default.`
+    );
+  }
+
+  return [...new Set(actions)];
 }
 
 export async function runProjectInitCommand(args: string[], deps: ProjectCommandDependencies): Promise<number> {
@@ -144,14 +225,18 @@ export async function runProjectDoctorCommand(args: string[], deps: ProjectComma
   if (!result.success || !result.data) {
     return deps.printFailure(result);
   }
+  const project = await discoverProject(root, discoveryOptions.data);
+  const relationships =
+    project.success && project.data ? await buildProjectRelationshipSummary(project.data, deps.readConfigOptions(args)) : undefined;
+  const enrichedReport = enrichProjectDoctorReport(result.data, relationships);
 
   if (format === 'table' || format === 'markdown') {
-    process.stdout.write(renderProjectDoctorOutput(result.data, format));
+    process.stdout.write(renderProjectDoctorOutput(enrichedReport, format));
   } else {
     deps.printByFormat(
       {
         success: true,
-        ...result.data,
+        ...enrichedReport,
         diagnostics: result.diagnostics,
         warnings: result.warnings,
         suggestedNextActions: result.suggestedNextActions ?? [],
@@ -281,7 +366,11 @@ function renderProjectInitOutput(
   ].join('\n');
 }
 
-function renderProjectInspectOutput(project: ProjectContext, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
+function renderProjectInspectOutput(
+  project: ProjectContext,
+  relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>,
+  format: Extract<OutputFormat, 'table' | 'markdown'>
+): string {
   const summary = summarizeProject(project);
   const contract = summarizeProjectContract(project);
   const discoveryNote = summarizeProjectDiscoveryNote(project.discovery);
@@ -313,6 +402,11 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
     { field: 'solution source root', value: contract.solutionSourceRoot },
     { field: 'canonical bundle path', value: contract.canonicalBundlePath },
   ];
+  const placementRows = contract.assetPlacementGuidance.map((entry) => ({
+    asset: entry.asset,
+    root: entry.root,
+    expectation: entry.expectation,
+  }));
 
   if (format === 'table') {
     return [
@@ -322,9 +416,14 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
       '',
       `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
       `Deployment route: ${contract.deploymentRouteSummary}`,
+      `Resolved relationship: ${relationships.activeRelationshipSummary}`,
+      `Project auth usage: ${relationships.authProfileUsageSummary}`,
       '',
       'Assets',
       renderOutput(assetRows, 'table').trimEnd(),
+      '',
+      'Placement guidance',
+      renderOutput(placementRows, 'table').trimEnd(),
       '',
       'Parameters',
       renderOutput(parameterRows, 'table').trimEnd(),
@@ -351,9 +450,14 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
     '',
     `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
     `Deployment route: ${contract.deploymentRouteSummary}`,
+    `Resolved relationship: ${relationships.activeRelationshipSummary}`,
+    `Project auth usage: ${relationships.authProfileUsageSummary}`,
     '',
     '## Assets',
     ...assetRows.map((row) => `- \`${row.asset}\` (${row.kind}, exists=${row.exists}): \`${row.path}\``),
+    '',
+    '## Placement Guidance',
+    ...placementRows.map((row) => `- \`${row.asset}\` -> \`${row.root}\`: ${row.expectation}`),
     '',
     '## Parameters',
     ...(parameterRows.length > 0
@@ -366,7 +470,12 @@ function renderProjectInspectOutput(project: ProjectContext, format: Extract<Out
   ].join('\n');
 }
 
-function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
+function renderProjectDoctorOutput(
+  report: ProjectDoctorReport & {
+    relationships?: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>;
+  },
+  format: Extract<OutputFormat, 'table' | 'markdown'>
+): string {
   const summaryRows = [
     { field: 'inspected path', value: report.inspectedPath },
     { field: 'canonical project root', value: report.canonicalProjectRoot },
@@ -379,11 +488,29 @@ function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<
     { field: 'active target', value: report.summary.activeTargetSummary },
   ];
   const discoveryNote = summarizeProjectDiscoveryNote(report.discovery);
+  const checkGroups = report.checkGroups ?? categorizeProjectDoctorChecks(report.checks);
   const checkRows = report.checks.map((check) => ({
     status: check.status,
     code: check.code,
     message: check.message,
     path: check.path ?? '',
+  }));
+  const localCheckRows = checkGroups.localLayout.map((check) => ({
+    status: check.status,
+    code: check.code,
+    message: check.message,
+    path: check.path ?? '',
+  }));
+  const externalCheckRows = checkGroups.externalTargeting.map((check) => ({
+    status: check.status,
+    code: check.code,
+    message: check.message,
+    path: check.path ?? '',
+  }));
+  const placementRows = report.contract.assetPlacementGuidance.map((entry) => ({
+    asset: entry.asset,
+    root: entry.root,
+    expectation: entry.expectation,
   }));
 
   if (format === 'table') {
@@ -393,9 +520,18 @@ function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<
       discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
       report.summary.environmentAliasProvenance ? '' : undefined,
       report.summary.environmentAliasProvenance ? `Environment alias provenance: ${report.summary.environmentAliasProvenance}` : undefined,
+      report.relationships ? `Resolved relationship: ${report.relationships.activeRelationshipSummary}` : undefined,
+      report.relationships ? `Project auth usage: ${report.relationships.authProfileUsageSummary}` : undefined,
       '',
       'Deployment route',
       ...report.summary.deploymentRouteSteps.map((step, index) => `${index + 1}. ${step}`),
+      '',
+      'Placement guidance',
+      renderOutput(placementRows, 'table').trimEnd(),
+      '',
+      'Local layout checks',
+      renderOutput(localCheckRows, 'table').trimEnd(),
+      ...(externalCheckRows.length > 0 ? ['', 'External target checks', renderOutput(externalCheckRows, 'table').trimEnd()] : []),
       '',
       `Bundle lifecycle: ${report.summary.bundleLifecycleSummary}`,
       '',
@@ -421,16 +557,94 @@ function renderProjectDoctorOutput(report: ProjectDoctorReport, format: Extract<
     `- Selected stage: \`${report.topology.selectedStage ?? '<unset>'}\``,
     `- Active target: ${report.summary.activeTargetSummary}`,
     ...(report.summary.environmentAliasProvenance ? [`- Environment alias provenance: ${report.summary.environmentAliasProvenance}`] : []),
+    ...(report.relationships ? [`- Resolved relationship: ${report.relationships.activeRelationshipSummary}`] : []),
+    ...(report.relationships ? [`- Project auth usage: ${report.relationships.authProfileUsageSummary}`] : []),
     `- Bundle lifecycle: ${report.summary.bundleLifecycleSummary}`,
     ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
     '',
     '## Deployment Route',
     ...report.summary.deploymentRouteSteps.map((step, index) => `${index + 1}. ${step}`),
     '',
+    '## Placement Guidance',
+    ...placementRows.map((row) => `- \`${row.asset}\` -> \`${row.root}\`: ${row.expectation}`),
+    '',
+    '## Local Layout Checks',
+    ...checkGroups.localLayout.map((check) => `- \`${check.status}\` \`${check.code}\`: ${check.message}`),
+    ...(checkGroups.externalTargeting.length > 0
+      ? ['', '## External Target Checks', ...checkGroups.externalTargeting.map((check) => `- \`${check.status}\` \`${check.code}\`: ${check.message}`)]
+      : []),
+    '',
     '## Checks',
     ...report.checks.map((check) => `- \`${check.status}\` \`${check.code}\`: ${check.message}`),
     '',
   ].join('\n');
+}
+
+function enrichProjectDoctorReport(
+  report: ProjectDoctorReport,
+  relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>> | undefined
+): ProjectDoctorReport & { relationships?: Awaited<ReturnType<typeof buildProjectRelationshipSummary>> } {
+  const relationshipChecks = (relationships?.stageRelationships ?? []).flatMap((stage) => {
+    const checks = [];
+
+    if (stage.environmentStatus === 'missing') {
+      checks.push({
+        status: 'warn' as const,
+        code: 'PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED',
+        message: `Stage ${stage.stage} points to environment alias ${stage.environmentAlias}, but that alias is not configured in the active pp environment registry.`,
+        hint: `Add the alias with \`pp env add ${stage.environmentAlias} --url <dataverse-url> --profile <auth-profile>\`.`,
+      });
+    }
+
+    if (stage.authProfileStatus === 'missing') {
+      checks.push({
+        status: 'warn' as const,
+        code: 'PROJECT_DOCTOR_AUTH_PROFILE_UNRESOLVED',
+        message: `Stage ${stage.stage} resolves environment alias ${stage.environmentAlias}, but its auth profile ${stage.authProfile} is missing from the active pp auth registry.`,
+        hint: `Create or restore auth profile ${stage.authProfile} before relying on that stage target.`,
+      });
+    }
+
+    checks.push({
+      status: 'info' as const,
+      code: 'PROJECT_DOCTOR_RELATIONSHIP_CHAIN',
+      message: stage.summary,
+    });
+
+    return checks;
+  });
+
+  const authUsageCheck = relationships
+    ? {
+        status: relationships.authProfileNames.length <= 1 ? ('info' as const) : ('warn' as const),
+        code: 'PROJECT_DOCTOR_AUTH_PROFILE_USAGE',
+        message: relationships.authProfileUsageSummary,
+      }
+    : undefined;
+
+  return {
+    ...report,
+    checks: [...report.checks, ...relationshipChecks, ...(authUsageCheck ? [authUsageCheck] : [])],
+    checkGroups: categorizeProjectDoctorChecks([...report.checks, ...relationshipChecks, ...(authUsageCheck ? [authUsageCheck] : [])]),
+    relationships,
+  };
+}
+
+function categorizeProjectDoctorChecks(checks: ProjectDoctorCheck[]): {
+  localLayout: ProjectDoctorCheck[];
+  externalTargeting: ProjectDoctorCheck[];
+} {
+  const externalCodes = new Set([
+    'PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED',
+    'PROJECT_DOCTOR_AUTH_PROFILE_UNRESOLVED',
+    'PROJECT_DOCTOR_RELATIONSHIP_CHAIN',
+    'PROJECT_DOCTOR_AUTH_PROFILE_USAGE',
+  ]);
+
+  return {
+    localLayout: checks.filter((check) => !externalCodes.has(check.code)),
+    externalTargeting: checks.filter((check) => externalCodes.has(check.code)),
+  };
 }
 
 function renderProjectFeedbackOutput(report: ProjectFeedbackReport, format: Extract<OutputFormat, 'table' | 'markdown'>): string {

@@ -1,6 +1,17 @@
-import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
-import { SolutionService, type SolutionAnalysis } from '@pp/solution';
-import type { CliOutputFormat } from './contract';
+import type { Dirent } from 'node:fs';
+import { readdir, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, join, resolve } from 'node:path';
+import { stableStringify } from '@pp/artifacts';
+import { buildCanvasApp, extractCanvasMsappArchive } from '@pp/canvas';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult, type ProvenanceRecord } from '@pp/diagnostics';
+import {
+  SolutionService,
+  type SolutionAnalysis,
+  type SolutionPublishProgressEvent,
+  type SolutionReleaseManifest,
+  type SolutionSummary,
+} from '@pp/solution';
+import { createMutationPreview, createSuccessPayload, readMutationFlags, type CliOutputFormat } from './contract';
 
 type OutputFormat = CliOutputFormat;
 type SolutionCompareInputKind = 'environment' | 'zip' | 'folder';
@@ -13,8 +24,49 @@ interface SolutionCompareInput {
 interface ResolutionData {
   environment: {
     alias: string;
+    url?: string;
   };
   client: unknown;
+}
+
+interface SolutionUnpackCanvasExtraction {
+  msappPath: string;
+  extractedPath: string;
+  extractedEntries: string[];
+}
+
+interface SolutionPackCanvasRebuild {
+  extractedPath: string;
+  msappPath: string;
+  packageHash?: string;
+  outFileSha256?: string;
+  templateHash?: string;
+  sourceHash?: string;
+  mode?: string;
+  supported?: boolean;
+}
+
+interface SolutionCheckpointDocument {
+  schemaVersion: 1;
+  kind: 'pp-solution-checkpoint';
+  generatedAt: string;
+  environment: {
+    alias: string;
+    url?: string;
+    pacOrganizationUrl?: string;
+  };
+  solution: {
+    uniqueName: string;
+    packageType: 'managed' | 'unmanaged';
+    export: unknown;
+    manifestPath?: string;
+    rollbackCandidateVersion?: string;
+  };
+  inspection: {
+    solution: unknown;
+    components: unknown[];
+    componentCount: number;
+  };
 }
 
 interface SolutionCommandDependencies {
@@ -50,6 +102,23 @@ export async function runSolutionListCommand(args: string[], deps: SolutionComma
     uniqueName: deps.readFlag(args, '--unique-name'),
     prefix: deps.readFlag(args, '--prefix'),
   });
+
+  if (!result.success) {
+    return deps.printFailure(result);
+  }
+
+  deps.printByFormat(result.data ?? [], deps.outputFormat(args, 'json'));
+  return 0;
+}
+
+export async function runSolutionPublishersCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
+  const resolution = await deps.resolveDataverseClientForCli(args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+
+  const service = new SolutionService(resolution.data.client as never);
+  const result = await service.listPublishers();
 
   if (!result.success) {
     return deps.printFailure(result);
@@ -133,7 +202,18 @@ export async function runSolutionDeleteCommand(args: string[], deps: SolutionCom
   }
 
   deps.printWarnings(result);
-  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  deps.printByFormat(
+    {
+      ...result.data,
+      verification: {
+        inspectCommand: `pp solution inspect ${uniqueName} --environment ${resolution.data.environment.alias} --format json`,
+        absentSignal: 'SOLUTION_NOT_FOUND',
+        detail:
+          'Managed uninstall can continue server-side after delete acceptance. Re-run the inspect command until it returns SOLUTION_NOT_FOUND when you need an authoritative completion check.',
+      },
+    },
+    deps.outputFormat(args, 'json')
+  );
   return 0;
 }
 
@@ -153,10 +233,22 @@ export async function runSolutionInspectCommand(args: string[], deps: SolutionCo
     return deps.printFailure(result);
   }
   if (!result.data) {
-    return deps.printFailure(fail(createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`)));
+    return deps.printFailure(
+      fail(
+        [...result.diagnostics, createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${uniqueName} was not found.`)],
+        {
+          supportTier: result.supportTier,
+          warnings: result.warnings,
+          suggestedNextActions: [
+            `Run \`pp solution list --environment ${resolution.data.environment.alias} --format json\` to confirm the available solution unique names.`,
+            `Run \`pp env inspect ${resolution.data.environment.alias} --format json\` to confirm the target environment alias before retrying.`,
+          ],
+        }
+      )
+    );
   }
 
-  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  deps.printByFormat(createSuccessPayload(result.data, result), deps.outputFormat(args, 'json'));
   return 0;
 }
 
@@ -198,6 +290,147 @@ export async function runSolutionSetMetadataCommand(args: string[], deps: Soluti
     return deps.printFailure(result);
   }
 
+  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  return 0;
+}
+
+export async function runSolutionPublishCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
+  const uniqueName = deps.positionalArgs(args)[0];
+  if (!uniqueName) {
+    return deps.printFailure(
+      deps.argumentFailure(
+        'SOLUTION_PUBLISH_ARGS_REQUIRED',
+        'Usage: solution publish <uniqueName> --environment <alias> [--wait-for-export] [--timeout-ms N] [--poll-interval-ms N] [--managed] [--out PATH] [--manifest FILE]'
+      )
+    );
+  }
+
+  const waitForExport = args.includes('--wait-for-export');
+  const timeoutMs = readOptionalPositiveIntegerFlag(args, '--timeout-ms', deps);
+  if (!timeoutMs.success) {
+    return deps.printFailure(timeoutMs);
+  }
+  const pollIntervalMs = readOptionalPositiveIntegerFlag(args, '--poll-interval-ms', deps);
+  if (!pollIntervalMs.success) {
+    return deps.printFailure(pollIntervalMs);
+  }
+
+  const resolution = await deps.resolveDataverseClientForCli(args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+
+  const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));
+  const preview = deps.maybeHandleMutationPreview(args, 'json', 'solution.publish', {
+    environment: resolution.data.environment.alias,
+    uniqueName,
+    waitForExport,
+    ...(timeoutMs.data !== undefined ? { timeoutMs: timeoutMs.data } : {}),
+    ...(pollIntervalMs.data !== undefined ? { pollIntervalMs: pollIntervalMs.data } : {}),
+    managed: args.includes('--managed'),
+    ...(outputTarget.outPath ? { outPath: outputTarget.outPath } : {}),
+    ...(outputTarget.outDir ? { outDir: outputTarget.outDir } : {}),
+  });
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const result = await new SolutionService(resolution.data.client as never).publish(uniqueName, {
+    waitForExport,
+    timeoutMs: timeoutMs.data,
+    pollIntervalMs: pollIntervalMs.data,
+    onProgress: waitForExport
+      ? (event) => {
+          process.stderr.write(renderSolutionPublishProgress(uniqueName, event));
+        }
+      : undefined,
+    exportOptions: waitForExport
+      ? {
+          managed: args.includes('--managed'),
+          outPath: outputTarget.outPath,
+          outDir: outputTarget.outDir,
+          manifestPath: deps.readFlag(args, '--manifest'),
+        }
+      : undefined,
+  });
+
+  if (!result.success) {
+    return deps.printFailure(result);
+  }
+
+  deps.printWarnings(result);
+  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  return 0;
+}
+
+function renderSolutionPublishProgress(uniqueName: string, event: SolutionPublishProgressEvent): string {
+  if (event.stage === 'accepted') {
+    return `Waiting for publish checkpoint: solution ${uniqueName} accepted PublishAllXml; polling for export readiness for up to ${event.timeoutMs ?? 0}ms.\n`;
+  }
+
+  if (event.stage === 'polling') {
+    const parts = [
+      `Waiting for publish checkpoint: attempt ${event.attempt ?? 0}, elapsed ${event.elapsedMs ?? 0}ms, remaining ${event.remainingMs ?? 0}ms.`,
+    ];
+    if (event.latestExportDiagnostic) {
+      parts.push(`Latest export diagnostic ${event.latestExportDiagnostic.code}: ${event.latestExportDiagnostic.message}.`);
+    }
+    if (event.readBack) {
+      const canvasSummary = event.readBack.canvasApps
+        .map((app) => `${app.name ?? app.logicalName ?? app.id}=lastPublishTime:${app.lastPublishTime ?? 'unknown'}`)
+        .join(', ');
+      const workflowSummary = event.readBack.workflows
+        .map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id}=${workflow.workflowState ?? 'unknown'}`)
+        .join(', ');
+      const modelSummary = event.readBack.modelDrivenApps
+        .map((app) => `${app.name ?? app.uniqueName ?? app.id}=publishedOn:${app.publishedOn ?? 'unknown'}`)
+        .join(', ');
+      if (canvasSummary) {
+        parts.push(`Observed canvas apps: ${canvasSummary}.`);
+      }
+      if (workflowSummary) {
+        parts.push(`Observed workflows: ${workflowSummary}.`);
+      }
+      if (modelSummary) {
+        parts.push(`Observed model apps: ${modelSummary}.`);
+      }
+    }
+    return `${parts.join(' ')}\n`;
+  }
+
+  return `Publish checkpoint confirmed for solution ${uniqueName} after ${event.elapsedMs ?? 0}ms on attempt ${event.attempt ?? 0}.\n`;
+}
+
+export async function runSolutionSyncStatusCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
+  const uniqueName = deps.positionalArgs(args)[0];
+  if (!uniqueName) {
+    return deps.printFailure(
+      deps.argumentFailure(
+        'SOLUTION_SYNC_STATUS_ARGS_REQUIRED',
+        'Usage: solution sync-status <uniqueName> --environment <alias> [--skip-export-check] [--managed] [--out PATH] [--manifest FILE]'
+      )
+    );
+  }
+
+  const resolution = await deps.resolveDataverseClientForCli(args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+
+  const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));
+  const result = await new SolutionService(resolution.data.client as never).syncStatus(uniqueName, {
+    includeExportCheck: !args.includes('--skip-export-check'),
+    managed: args.includes('--managed'),
+    outPath: outputTarget.outPath,
+    outDir: outputTarget.outDir,
+    manifestPath: deps.readFlag(args, '--manifest'),
+  });
+
+  if (!result.success) {
+    return deps.printFailure(result);
+  }
+
+  deps.printWarnings(result);
   deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
   return 0;
 }
@@ -258,6 +491,7 @@ export async function runSolutionAnalyzeCommand(args: string[], deps: SolutionCo
 
 export async function runSolutionCompareCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
   const uniqueName = deps.positionalArgs(args)[0];
+  const includeModelComposition = args.includes('--include-model-composition');
   const sourceInput = readSolutionCompareInput(args, 'source', deps);
 
   if (!sourceInput.success || !sourceInput.data) {
@@ -279,13 +513,27 @@ export async function runSolutionCompareCommand(args: string[], deps: SolutionCo
     );
   }
 
-  const sourceAnalysis = await resolveSolutionCompareAnalysis(args, 'source', sourceInput.data, uniqueName, deps);
+  const sourceAnalysis = await resolveSolutionCompareAnalysis(
+    args,
+    'source',
+    sourceInput.data,
+    uniqueName,
+    deps,
+    includeModelComposition
+  );
 
   if (!sourceAnalysis.success || !sourceAnalysis.data) {
     return deps.printFailure(sourceAnalysis);
   }
 
-  const targetAnalysis = await resolveSolutionCompareAnalysis(args, 'target', targetInput.data, uniqueName, deps);
+  const targetAnalysis = await resolveSolutionCompareAnalysis(
+    args,
+    'target',
+    targetInput.data,
+    uniqueName,
+    deps,
+    includeModelComposition
+  );
 
   if (!targetAnalysis.success || !targetAnalysis.data) {
     return deps.printFailure(targetAnalysis);
@@ -343,6 +591,89 @@ export async function runSolutionExportCommand(args: string[], deps: SolutionCom
   return 0;
 }
 
+export async function runSolutionCheckpointCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
+  const uniqueName = deps.positionalArgs(args)[0];
+  if (!uniqueName) {
+    return deps.printFailure(
+      deps.argumentFailure(
+        'SOLUTION_CHECKPOINT_ARGS_REQUIRED',
+        'Usage: solution checkpoint <uniqueName> --environment <alias> [--out PATH] [--managed] [--manifest FILE] [--checkpoint FILE]'
+      )
+    );
+  }
+
+  const resolution = await deps.resolveDataverseClientForCli(args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+
+  const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));
+  const packageType = args.includes('--managed') ? 'managed' : 'unmanaged';
+  const preview = deps.maybeHandleMutationPreview(args, 'json', 'solution.checkpoint', {
+    environment: resolution.data.environment.alias,
+    uniqueName,
+    packageType,
+    ...(outputTarget.outPath ? { outPath: outputTarget.outPath } : {}),
+    ...(outputTarget.outDir ? { outDir: outputTarget.outDir } : {}),
+  });
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const service = new SolutionService(resolution.data.client as never);
+  const exported = await service.exportSolution(uniqueName, {
+    managed: args.includes('--managed'),
+    outPath: outputTarget.outPath,
+    outDir: outputTarget.outDir,
+    manifestPath: deps.readFlag(args, '--manifest'),
+  });
+  if (!exported.success || !exported.data) {
+    return deps.printFailure(exported);
+  }
+
+  const components = await service.components(uniqueName);
+  if (!components.success || !components.data) {
+    return deps.printFailure(components);
+  }
+
+  const checkpointDocument: SolutionCheckpointDocument = {
+    schemaVersion: 1,
+    kind: 'pp-solution-checkpoint',
+    generatedAt: new Date().toISOString(),
+    environment: {
+      alias: resolution.data.environment.alias,
+      url: resolution.data.environment.url,
+      pacOrganizationUrl: derivePacOrganizationUrl(resolution.data.environment.url),
+    },
+    solution: {
+      uniqueName,
+      packageType,
+      export: exported.data,
+      manifestPath: exported.data.manifestPath,
+      rollbackCandidateVersion: exported.data.manifest?.recovery?.rollbackCandidateVersion ?? exported.data.solution.version,
+    },
+    inspection: {
+      solution: exported.data.solution,
+      components: components.data,
+      componentCount: components.data.length,
+    },
+  };
+
+  const checkpointPath = resolveSolutionCheckpointPath(exported.data.artifact.path, deps.readFlag(args, '--checkpoint'));
+  await writeFile(checkpointPath, stableStringify(checkpointDocument as unknown as Parameters<typeof stableStringify>[0]) + '\n', 'utf8');
+
+  deps.printWarnings(exported);
+  deps.printWarnings(components);
+  deps.printByFormat(
+    {
+      ...checkpointDocument,
+      checkpointPath,
+    },
+    deps.outputFormat(args, 'json')
+  );
+  return 0;
+}
+
 export async function runSolutionImportCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
   const packagePath = deps.positionalArgs(args)[0];
   if (!packagePath) {
@@ -356,6 +687,18 @@ export async function runSolutionImportCommand(args: string[], deps: SolutionCom
   const resolution = await deps.resolveDataverseClientForCli(args);
   if (!resolution.success || !resolution.data) {
     return deps.printFailure(resolution);
+  }
+  const mutation = readMutationFlags(args);
+  if (!mutation.success || !mutation.data) {
+    return deps.printFailure(mutation);
+  }
+  if (mutation.data.plan) {
+    const preview = await buildSolutionImportPlanPreview(packagePath, args, resolution.data.environment.alias, resolution.data.client as never, deps);
+    if (!preview.success || !preview.data) {
+      return deps.printFailure(preview);
+    }
+    deps.printByFormat(preview.data, deps.outputFormat(args, 'json'));
+    return 0;
   }
   const preview = deps.maybeHandleMutationPreview(args, 'json', 'solution.import', {
     environment: resolution.data.environment.alias,
@@ -379,10 +722,313 @@ export async function runSolutionImportCommand(args: string[], deps: SolutionCom
   return 0;
 }
 
+type SolutionImportPlanStatus =
+  | 'manifest-missing'
+  | 'target-absent'
+  | 'same-version-managed-installed'
+  | 'managed-upgrade-candidate'
+  | 'managed-version-downgrade'
+  | 'managed-over-unmanaged-installed'
+  | 'unmanaged-update-candidate'
+  | 'unmanaged-over-managed-installed'
+  | 'target-version-unknown';
+
+interface SolutionImportPlanCompatibility {
+  status: SolutionImportPlanStatus;
+  summary: string;
+  sameVersion?: boolean;
+  versionComparison?: 'older' | 'equal' | 'newer' | 'unknown';
+  recommendedWorkflow: 'direct-import' | 'holding-upgrade' | 'review-target-first';
+}
+
+async function buildSolutionImportPlanPreview(
+  packagePath: string,
+  args: string[],
+  environmentAlias: string,
+  client: unknown,
+  deps: SolutionCommandDependencies
+): Promise<OperationResult<Record<string, unknown>>> {
+  const resolvedPackagePath = resolve(packagePath);
+  const importOptions = {
+    publishWorkflows: !args.includes('--no-publish-workflows'),
+    overwriteUnmanagedCustomizations: args.includes('--overwrite-unmanaged-customizations'),
+    holdingSolution: args.includes('--holding-solution'),
+    skipProductUpdateDependencies: args.includes('--skip-product-update-dependencies'),
+    importJobId: deps.readFlag(args, '--import-job-id'),
+  };
+  const manifestPath = resolveAdjacentSolutionManifestPath(resolvedPackagePath);
+  const manifest = await deps.createLocalSolutionService().readReleaseManifest(manifestPath);
+
+  if (!manifest.success) {
+    return manifest as unknown as OperationResult<Record<string, unknown>>;
+  }
+
+  const targetSolutionUniqueName = manifest.data?.solution.uniqueName;
+  let targetState: Record<string, unknown> | undefined;
+  let compatibility: SolutionImportPlanCompatibility;
+  const suggestedNextActions: string[] = [];
+  const provenance: ProvenanceRecord[] = [];
+  const knownLimitations = [
+    'Import planning uses the adjacent pp release manifest plus a live target solution inspect; it does not run server-side dependency or upgrade simulation.',
+  ];
+
+  if (manifest.data) {
+    provenance.push({ kind: 'official-artifact', source: 'pp solution release manifest' });
+    suggestedNextActions.push(
+      `Run \`pp solution inspect ${manifest.data.solution.uniqueName} --environment ${environmentAlias} --format json\` to re-check live target state immediately before applying the import.`
+    );
+  } else {
+    knownLimitations.push('Without a release manifest, pp cannot infer package type, solution unique name, or version from the zip during plan mode.');
+  }
+
+  if (!manifest.data) {
+    compatibility = {
+      status: 'manifest-missing',
+      summary:
+        'No adjacent `.pp-solution.json` release manifest was found, so plan mode cannot describe the target solution state, package type, or version compatibility.',
+      recommendedWorkflow: 'review-target-first',
+    };
+    suggestedNextActions.push(
+      'Export or pack the solution with `pp` first so the package has an adjacent `.pp-solution.json` release manifest for plan mode.',
+      `Re-run \`pp solution import ${resolvedPackagePath} --environment ${environmentAlias} --plan --format json\` after the manifest exists.`
+    );
+  } else {
+    const releaseManifest = manifest.data;
+    const inspect = await new SolutionService(client as never).inspect(releaseManifest.solution.uniqueName);
+    if (!inspect.success) {
+      return inspect as unknown as OperationResult<Record<string, unknown>>;
+    }
+
+    provenance.push({ kind: 'official-api', source: 'Dataverse solution inspect' });
+    targetState = inspect.data
+      ? {
+          found: true,
+          uniqueName: inspect.data.uniquename,
+          version: inspect.data.version,
+          isManaged: inspect.data.ismanaged ?? false,
+        }
+      : {
+          found: false,
+          uniqueName: releaseManifest.solution.uniqueName,
+        };
+    compatibility = classifySolutionImportCompatibility(releaseManifest, inspect.data);
+    suggestedNextActions.push(...suggestedActionsForSolutionImportPlan(releaseManifest, environmentAlias, compatibility));
+  }
+
+  const payload = createMutationPreview(
+    'solution.import',
+    mutationPlanFlags(),
+    {
+      environment: environmentAlias,
+      packagePath: resolvedPackagePath,
+      ...(targetSolutionUniqueName ? { solutionUniqueName: targetSolutionUniqueName } : {}),
+    },
+    {
+      importOptions,
+      package: manifest.data
+        ? {
+            manifestPath,
+            available: true,
+            uniqueName: manifest.data.solution.uniqueName,
+            friendlyName: manifest.data.solution.friendlyName,
+            version: manifest.data.solution.version,
+            packageType: manifest.data.solution.packageType,
+            sourceEnvironmentUrl: manifest.data.source?.environmentUrl,
+          }
+        : {
+            manifestPath,
+            available: false,
+          },
+    },
+    {
+      supportTier: 'preview',
+      suggestedNextActions: uniqueStrings(suggestedNextActions),
+      provenance,
+      knownLimitations,
+    }
+  ) as Record<string, unknown>;
+  payload.analysis = {
+    compatibility,
+    ...(targetState ? { targetState } : {}),
+  };
+
+  return ok(payload, {
+    supportTier: 'preview',
+  });
+}
+
+function classifySolutionImportCompatibility(
+  manifest: SolutionReleaseManifest,
+  targetSolution: Pick<SolutionSummary, 'uniquename' | 'version' | 'ismanaged'> | undefined
+): SolutionImportPlanCompatibility {
+  if (!targetSolution) {
+    return {
+      status: 'target-absent',
+      summary: `Target environment does not currently have ${manifest.solution.uniqueName} installed, so this import would behave like a new ${manifest.solution.packageType} install.`,
+      recommendedWorkflow: 'direct-import',
+    };
+  }
+
+  const packageType = manifest.solution.packageType;
+  const targetManaged = targetSolution.ismanaged ?? false;
+  const versionComparison = compareSolutionVersions(manifest.solution.version, targetSolution.version);
+  const sameVersion = versionComparison === 'equal';
+
+  if (packageType === 'managed' && targetManaged) {
+    if (sameVersion) {
+      return {
+        status: 'same-version-managed-installed',
+        sameVersion: true,
+        versionComparison,
+        summary: `Target already has managed ${manifest.solution.uniqueName} at the same version (${targetSolution.version ?? 'unknown'}), so plan mode cannot prove whether re-import would no-op, reinstall, or require a staged upgrade path.`,
+        recommendedWorkflow: 'review-target-first',
+      };
+    }
+    if (versionComparison === 'older' || versionComparison === 'unknown') {
+      return {
+        status: versionComparison === 'older' ? 'managed-upgrade-candidate' : 'target-version-unknown',
+        sameVersion: false,
+        versionComparison,
+        summary:
+          versionComparison === 'older'
+            ? `Target already has managed ${manifest.solution.uniqueName} at ${targetSolution.version}; importing ${manifest.solution.version ?? 'the package'} looks like an upgrade candidate.`
+            : `Target already has managed ${manifest.solution.uniqueName}, but one side has no comparable version, so pp cannot prove whether a staged upgrade path is required.`,
+        recommendedWorkflow: versionComparison === 'older' ? 'holding-upgrade' : 'review-target-first',
+      };
+    }
+    return {
+      status: 'managed-version-downgrade',
+      sameVersion: false,
+      versionComparison,
+      summary: `Target already has managed ${manifest.solution.uniqueName} at ${targetSolution.version}, which is newer than the package version ${manifest.solution.version ?? 'unknown'}.`,
+      recommendedWorkflow: 'review-target-first',
+    };
+  }
+
+  if (packageType === 'managed' && !targetManaged) {
+    return {
+      status: 'managed-over-unmanaged-installed',
+      sameVersion,
+      versionComparison,
+      summary: `Target currently has unmanaged ${manifest.solution.uniqueName}, so importing a managed package over it is not a standard in-place promotion path.`,
+      recommendedWorkflow: 'review-target-first',
+    };
+  }
+
+  if (packageType === 'unmanaged' && targetManaged) {
+    return {
+      status: 'unmanaged-over-managed-installed',
+      sameVersion,
+      versionComparison,
+      summary: `Target currently has managed ${manifest.solution.uniqueName}, so importing an unmanaged package over it is likely the wrong ALM path.`,
+      recommendedWorkflow: 'review-target-first',
+    };
+  }
+
+  return {
+    status: versionComparison === 'unknown' ? 'target-version-unknown' : 'unmanaged-update-candidate',
+    sameVersion,
+    versionComparison,
+    summary:
+      versionComparison === 'unknown'
+        ? `Target already has unmanaged ${manifest.solution.uniqueName}, but one side has no comparable version metadata.`
+        : `Target already has unmanaged ${manifest.solution.uniqueName}; this looks like a standard unmanaged update path.`,
+    recommendedWorkflow: 'direct-import',
+  };
+}
+
+function suggestedActionsForSolutionImportPlan(
+  manifest: SolutionReleaseManifest,
+  environmentAlias: string,
+  compatibility: SolutionImportPlanCompatibility
+): string[] {
+  const inspectCommand = `pp solution inspect ${manifest.solution.uniqueName} --environment ${environmentAlias} --format json`;
+  switch (compatibility.status) {
+    case 'target-absent':
+    case 'unmanaged-update-candidate':
+      return [
+        `Apply the import when ready with \`pp solution import <path.zip> --environment ${environmentAlias} --format json\`.`,
+        `Keep ${inspectCommand} handy for the post-import state check.`,
+      ];
+    case 'managed-upgrade-candidate':
+      return [
+        `For a staged managed upgrade, start with \`pp solution import <path.zip> --environment ${environmentAlias} --holding-solution --format json\`.`,
+        `After the holding import, use the platform upgrade path to complete the promotion and then re-run ${inspectCommand}.`,
+      ];
+    case 'same-version-managed-installed':
+      return [
+        `${inspectCommand} confirms the current managed target version before you decide whether to skip, bump the version, or use a staged upgrade path.`,
+        `If you intentionally need a staged retry, start from \`pp solution import <path.zip> --environment ${environmentAlias} --holding-solution --format json\` once the package version is clearly newer.`,
+        'If the package is meant to supersede the installed build, export or pack a new versioned artifact first so the plan no longer looks like a same-version re-import.',
+      ];
+    case 'managed-over-unmanaged-installed':
+    case 'unmanaged-over-managed-installed':
+    case 'managed-version-downgrade':
+    case 'target-version-unknown':
+    case 'manifest-missing':
+    default:
+      return [
+        `${inspectCommand} is the first check to confirm the live target before attempting a risky import path.`,
+        'Review the package provenance and target ALM state before applying the import.',
+      ];
+  }
+}
+
+function compareSolutionVersions(
+  sourceVersion: string | undefined,
+  targetVersion: string | undefined
+): 'older' | 'equal' | 'newer' | 'unknown' {
+  if (!sourceVersion || !targetVersion) {
+    return 'unknown';
+  }
+
+  const source = sourceVersion.split('.').map((segment) => Number(segment));
+  const target = targetVersion.split('.').map((segment) => Number(segment));
+  const width = Math.max(source.length, target.length);
+
+  for (let index = 0; index < width; index += 1) {
+    const left = source[index] ?? 0;
+    const right = target[index] ?? 0;
+    if (!Number.isFinite(left) || !Number.isFinite(right)) {
+      return 'unknown';
+    }
+    if (left > right) {
+      return 'older';
+    }
+    if (left < right) {
+      return 'newer';
+    }
+  }
+
+  return 'equal';
+}
+
+function resolveAdjacentSolutionManifestPath(packagePath: string): string {
+  return extname(packagePath).toLowerCase() === '.zip' ? packagePath.replace(/\.zip$/i, '.pp-solution.json') : `${packagePath}.pp-solution.json`;
+}
+
+function mutationPlanFlags(): { mode: 'plan'; dryRun: false; plan: true; yes: false } {
+  return {
+    mode: 'plan',
+    dryRun: false,
+    plan: true,
+    yes: false,
+  };
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
 export async function runSolutionPackCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
   const sourceFolder = deps.positionalArgs(args)[0];
   if (!sourceFolder) {
-    return deps.printFailure(deps.argumentFailure('SOLUTION_PACK_ARGS_REQUIRED', 'Usage: solution pack <folder> --out <file.zip> [--package-type managed|unmanaged|both] [--pac PATH]'));
+    return deps.printFailure(
+      deps.argumentFailure(
+        'SOLUTION_PACK_ARGS_REQUIRED',
+        'Usage: solution pack <folder> --out <file.zip> [--package-type managed|unmanaged|both] [--rebuild-canvas-apps] [--pac PATH]'
+      )
+    );
   }
   const outPath = deps.readFlag(args, '--out');
   if (!outPath) {
@@ -396,6 +1042,12 @@ export async function runSolutionPackCommand(args: string[], deps: SolutionComma
   if (preview !== undefined) {
     return preview;
   }
+  const rebuiltCanvasApps = args.includes('--rebuild-canvas-apps')
+    ? await rebuildCanvasAppsForSolutionPack(resolve(sourceFolder))
+    : undefined;
+  if (rebuiltCanvasApps && !rebuiltCanvasApps.success) {
+    return deps.printFailure(rebuiltCanvasApps);
+  }
   const result = await deps.createLocalSolutionService().pack(sourceFolder, {
     outPath,
     packageType: packageType.data,
@@ -405,9 +1057,95 @@ export async function runSolutionPackCommand(args: string[], deps: SolutionComma
   if (!result.success) {
     return deps.printFailure(result);
   }
+  if (rebuiltCanvasApps) {
+    deps.printWarnings(rebuiltCanvasApps);
+  }
   deps.printWarnings(result);
-  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  deps.printByFormat(
+    rebuiltCanvasApps?.data ? { ...result.data, rebuiltCanvasApps: rebuiltCanvasApps.data } : result.data,
+    deps.outputFormat(args, 'json')
+  );
   return 0;
+}
+
+async function rebuildCanvasAppsForSolutionPack(sourceFolder: string): Promise<OperationResult<SolutionPackCanvasRebuild[]>> {
+  const canvasAppsDir = join(sourceFolder, 'CanvasApps');
+  let entries: Dirent[];
+
+  try {
+    entries = await readdir(canvasAppsDir, { encoding: 'utf8', withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return ok([], {
+        supportTier: 'preview',
+      });
+    }
+
+    return fail(
+      createDiagnostic('error', 'SOLUTION_PACK_CANVAS_SCAN_FAILED', `Failed to enumerate extracted canvas apps under ${canvasAppsDir}.`, {
+        source: '@pp/cli',
+        hint: error instanceof Error ? error.message : undefined,
+      }),
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  const extractedDirs = entries.filter((entry) => entry.isDirectory()).sort((left, right) => left.name.localeCompare(right.name));
+  const diagnostics: Diagnostic[] = [];
+  const warnings: Diagnostic[] = [];
+  const rebuilt: SolutionPackCanvasRebuild[] = [];
+
+  for (const entry of extractedDirs) {
+    const extractedPath = join(canvasAppsDir, entry.name);
+    const msappPath = join(canvasAppsDir, `${entry.name}.msapp`);
+    await rm(msappPath, { force: true }).catch(() => undefined);
+    const result = await buildCanvasApp(extractedPath, {
+      outPath: msappPath,
+    });
+
+    if (!result.success || !result.data) {
+      return result as unknown as OperationResult<SolutionPackCanvasRebuild[]>;
+    }
+
+    diagnostics.push(...result.diagnostics);
+    warnings.push(...result.warnings);
+    rebuilt.push({
+      extractedPath,
+      msappPath,
+      packageHash: result.data.packageHash,
+      outFileSha256: result.data.outFileSha256,
+      templateHash: result.data.templateHash,
+      sourceHash: result.data.sourceHash,
+      mode: result.data.mode,
+      supported: result.data.supported,
+    });
+  }
+
+  return ok(rebuilt, {
+    supportTier: 'preview',
+    diagnostics,
+    warnings,
+  });
+}
+
+function readOptionalPositiveIntegerFlag(
+  args: string[],
+  flagName: string,
+  deps: Pick<SolutionCommandDependencies, 'readFlag' | 'argumentFailure'>
+): OperationResult<number | undefined> {
+  const raw = deps.readFlag(args, flagName);
+  if (raw === undefined) {
+    return ok(undefined);
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return deps.argumentFailure('SOLUTION_PUBLISH_FLAG_INVALID', `${flagName} must be a positive integer.`);
+  }
+
+  return ok(parsed);
 }
 
 export async function runSolutionUnpackCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
@@ -416,7 +1154,7 @@ export async function runSolutionUnpackCommand(args: string[], deps: SolutionCom
     return deps.printFailure(
       deps.argumentFailure(
         'SOLUTION_UNPACK_ARGS_REQUIRED',
-        'Usage: solution unpack <path.zip> --out <dir> [--package-type managed|unmanaged|both] [--allow-delete] [--pac PATH]'
+        'Usage: solution unpack <path.zip> --out <dir> [--package-type managed|unmanaged|both] [--allow-delete] [--extract-canvas-apps] [--pac PATH]'
       )
     );
   }
@@ -442,9 +1180,97 @@ export async function runSolutionUnpackCommand(args: string[], deps: SolutionCom
   if (!result.success) {
     return deps.printFailure(result);
   }
+  const extractedCanvasApps = args.includes('--extract-canvas-apps')
+    ? await extractCanvasAppsFromUnpackedSolution(resolve(outDir))
+    : undefined;
+
+  if (extractedCanvasApps && !extractedCanvasApps.success) {
+    return deps.printFailure(extractedCanvasApps);
+  }
+
   deps.printWarnings(result);
-  deps.printByFormat(result.data, deps.outputFormat(args, 'json'));
+  deps.printByFormat(
+    extractedCanvasApps?.data ? { ...result.data, extractedCanvasApps: extractedCanvasApps.data } : result.data,
+    deps.outputFormat(args, 'json')
+  );
   return 0;
+}
+
+async function extractCanvasAppsFromUnpackedSolution(unpackedRoot: string): Promise<OperationResult<SolutionUnpackCanvasExtraction[]>> {
+  const canvasAppsDir = join(unpackedRoot, 'CanvasApps');
+  let entries: Dirent[];
+
+  try {
+    entries = await readdir(canvasAppsDir, { encoding: 'utf8', withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return ok([], {
+        supportTier: 'preview',
+      });
+    }
+
+    return fail(
+      createDiagnostic('error', 'SOLUTION_UNPACK_CANVAS_SCAN_FAILED', `Failed to enumerate canvas apps under ${canvasAppsDir}.`, {
+        source: '@pp/cli',
+        hint: error instanceof Error ? error.message : undefined,
+      }),
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
+
+  const msappPaths = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.msapp'))
+    .map((entry) => join(canvasAppsDir, entry.name))
+    .sort((left, right) => left.localeCompare(right));
+
+  const extracted: SolutionUnpackCanvasExtraction[] = [];
+
+  for (const msappPath of msappPaths) {
+    const extractedPath = join(canvasAppsDir, basename(msappPath, extname(msappPath)));
+    const result = await extractCanvasMsappArchive(msappPath, extractedPath);
+
+    if (!result.success || !result.data) {
+      return result as unknown as OperationResult<SolutionUnpackCanvasExtraction[]>;
+    }
+
+    extracted.push({
+      msappPath,
+      extractedPath: result.data.outPath,
+      extractedEntries: result.data.entries,
+    });
+  }
+
+  return ok(extracted, {
+    supportTier: 'preview',
+  });
+}
+
+function resolveSolutionCheckpointPath(packagePath: string, explicitPath: string | undefined): string {
+  if (explicitPath) {
+    return resolve(explicitPath);
+  }
+
+  const extension = extname(packagePath);
+  const base = extension ? packagePath.slice(0, -extension.length) : packagePath;
+  return resolve(dirname(packagePath), `${basename(base)}.pp-checkpoint.json`);
+}
+
+function derivePacOrganizationUrl(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('.api.')) {
+      parsed.hostname = parsed.hostname.replace('.api.', '.');
+    }
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return undefined;
+  }
 }
 
 function readSolutionCompareInput(
@@ -484,7 +1310,8 @@ async function resolveSolutionCompareAnalysis(
   side: 'source' | 'target',
   input: SolutionCompareInput,
   uniqueName: string | undefined,
-  deps: Pick<SolutionCommandDependencies, 'argumentFailure' | 'resolveDataverseClientByFlag' | 'readFlag'>
+  deps: Pick<SolutionCommandDependencies, 'argumentFailure' | 'resolveDataverseClientByFlag' | 'readFlag'>,
+  includeModelComposition: boolean
 ): Promise<OperationResult<SolutionAnalysis>> {
   if (input.kind === 'environment') {
     if (!uniqueName) {
@@ -509,7 +1336,9 @@ async function resolveSolutionCompareAnalysis(
       return resolution as unknown as OperationResult<SolutionAnalysis>;
     }
 
-    const analysis = await new SolutionService(resolution.data.client as never).analyze(uniqueName);
+    const analysis = await new SolutionService(resolution.data.client as never).analyze(uniqueName, {
+      includeModelComposition,
+    });
 
     if (!analysis.success) {
       return analysis as OperationResult<SolutionAnalysis>;

@@ -117,6 +117,42 @@ describe('discoverProject', () => {
     expect(result.data?.parameters.apiToken?.hasValue).toBe(true);
   });
 
+  it('reports the derived secret environment variable when a required secret is missing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pp-project-secret-miss-'));
+    await writeFile(
+      join(root, 'pp.config.yaml'),
+      [
+        'parameters:',
+        '  apiToken:',
+        '    secretRef: app_token',
+        '    required: true',
+        'secrets:',
+        '  defaultProvider: pipeline',
+        '  providers:',
+        '    pipeline:',
+        '      kind: env',
+        '      prefix: PP_SECRET_',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const result = await discoverProject(root, {
+      environment: {
+        PP_SECRET_app_token: undefined,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'PROJECT_PARAMETER_SECRET_MISSING',
+          hint: 'Resolve secret ref app_token (expected env var PP_SECRET_app_token) or provide an explicit value override.',
+        }),
+      ])
+    );
+  });
+
   it('scaffolds a minimal project config and default asset directories', async () => {
     const root = await mkdtemp(join(tmpdir(), 'pp-project-init-'));
     const plan = planProjectInit(root, {
@@ -218,6 +254,38 @@ describe('discoverProject', () => {
       editableAssetRoots: ['apps', 'flows', 'solutions', 'docs'],
       solutionSourceRoot: 'solutions',
       canonicalBundlePath: 'artifacts/solutions/CoreLifecycle.zip',
+      assetPlacementGuidance: [
+        {
+          asset: 'apps',
+          root: 'apps',
+          expectation:
+            'Place editable canvas-app or other app source under app-specific subfolders in `apps/`; keep generated solution bundles out of this root.',
+        },
+        {
+          asset: 'flows',
+          root: 'flows',
+          expectation:
+            'Place editable flow source under flow-specific subfolders in `flows/` so repo-local flow artifacts stay separate from solution bundles.',
+        },
+        {
+          asset: 'solutions',
+          root: 'solutions',
+          expectation:
+            'Keep unpacked solution source trees under `solutions/<solution>/`; treat zip files inside `solutions/` as generated or stale output, not canonical source.',
+        },
+        {
+          asset: 'docs',
+          root: 'docs',
+          expectation:
+            'Keep repo-local runbooks, provenance notes, and workflow docs under `docs/` so project context stays with the source tree.',
+        },
+        {
+          asset: 'solutionBundle',
+          root: 'artifacts/solutions',
+          expectation:
+            'Write generated solution zip output to `artifacts/solutions/CoreLifecycle.zip` so packaged artifacts stay outside editable source roots.',
+        },
+      ],
       defaultTarget: {
         stage: 'dev',
         environmentAlias: 'sandbox',
@@ -269,6 +337,7 @@ describe('discoverProject', () => {
     expect(doctor.data?.summary.bundlePlacementSummary).toBe(
       'No generated bundle is currently present. When you create one, write it to artifacts/solutions/CoreLifecycle.zip and keep solutions for unpacked source.'
     );
+    expect(doctor.data?.checks.filter((check) => check.code === 'PROJECT_DOCTOR_ASSET_ROOT_EMPTY')).toHaveLength(3);
     expect(doctor.data?.summary.activeTargetSummary).toBe(
       'Active target: stage dev -> environment sandbox -> solution CoreLifecycle (CoreLifecycle)'
     );
@@ -326,6 +395,7 @@ describe('discoverProject', () => {
         parameterOverrides: [],
       },
     ]);
+    expect(doctor.data?.contract.assetPlacementGuidance).toEqual(result.data?.contract.assetPlacementGuidance);
   });
 
   it('reports layout problems and missing required parameters through doctorProject', async () => {
@@ -447,6 +517,12 @@ describe('discoverProject', () => {
     );
     expect(report.data?.layout.generatedBundlePaths).toContain('solutions/Core.zip');
     expect(report.data?.checks.some((check) => check.code === 'PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE')).toBe(true);
+    expect(report.data?.contract.assetPlacementGuidance).toContainEqual({
+      asset: 'solutions',
+      root: 'solutions',
+      expectation:
+        'Keep unpacked solution source trees under `solutions/<solution>/`; treat zip files inside `solutions/` as generated or stale output, not canonical source.',
+    });
     expect(report.data?.checks.find((check) => check.code === 'PROJECT_DOCTOR_LAYOUT_INLINE_BUNDLE')).toMatchObject({
       message: 'Non-canonical generated bundle detected in editable source space at solutions/Core.zip.',
       hint: 'Treat inline zip files as generated artifact output, not authoritative source. Rebuild or move packaged zips to `artifacts/solutions/core.zip` and reserve `solutions/` for unpacked solution source.',

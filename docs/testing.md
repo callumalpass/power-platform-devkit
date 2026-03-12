@@ -77,6 +77,23 @@ PP_SMOKE_PROFILE=test-user pnpm smoke:live
 PP_CONFIG_DIR=./.tmp/pp-config pnpm smoke:live
 ```
 
+Add scenario-specific assertions when you want the smoke evidence to prove a
+particular solution, canvas app, or filtered row instead of only generic
+environment reachability:
+
+```bash
+EXPECTATIONS=$(cat <<'EOF'
+{"solutionUniqueName":"HarnessSolution","canvas":{"identifier":"demo","solutionUniqueName":"HarnessSolution"},"rows":[{"table":"pp_projects","filter":"pp_name eq 'Harness Project Seed 20260311A'","label":"project seed"}]}
+EOF
+)
+PP_SMOKE_EXPECTATIONS_JSON="$EXPECTATIONS" pnpm smoke:live
+```
+
+The smoke runner accepts both legacy raw-array command output and the current
+success-envelope machine-readable payloads (`data`, `results`, `runs`), so the
+scenario assertions keep working even when the underlying `pp` command emits
+metadata alongside the row data.
+
 The GitHub Actions workflow bootstraps a repo-local config directory before
 running `pnpm smoke:live`. Configure these repository secrets for
 `.github/workflows/live-smoke.yml`:

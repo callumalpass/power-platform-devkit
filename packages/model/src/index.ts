@@ -492,7 +492,7 @@ export class ModelService {
     }
 
     const [components, forms, views, sitemaps, tables] = await Promise.all([
-      appService.components(app.id),
+      this.loadInspectableComponents(appService, app),
       appService.forms(),
       appService.views(),
       appService.sitemaps(),
@@ -552,6 +552,37 @@ export class ModelService {
       supportTier: 'preview',
       diagnostics: mergeDiagnostics(apps.diagnostics, components.diagnostics, forms.diagnostics, views.diagnostics, sitemaps.diagnostics, tables.diagnostics),
       warnings: mergeDiagnostics(apps.warnings, components.warnings, forms.warnings, views.warnings, sitemaps.warnings, tables.warnings),
+    });
+  }
+
+  private async loadInspectableComponents(
+    appService: ModelDrivenAppService,
+    app: ModelAppSummary
+  ): Promise<OperationResult<ModelDrivenAppComponentSummary[]>> {
+    const components = await appService.components(app.id);
+
+    if (components.success) {
+      return ok(components.data ?? [], {
+        supportTier: 'preview',
+        diagnostics: components.diagnostics,
+        warnings: components.warnings,
+      });
+    }
+
+    const warning = createDiagnostic(
+      'warning',
+      'MODEL_COMPONENTS_UNAVAILABLE',
+      `Model-driven app component inspection was unavailable for ${app.name ?? app.uniqueName ?? app.id}; returning the app shell without composition rows.`,
+      {
+        source: '@pp/model',
+        detail: components.diagnostics.map((diagnostic) => diagnostic.message).join('\n') || undefined,
+        hint: 'Retry against a tenant that exposes appmodulecomponents, or use `pp solution components <solution>` to confirm the app module membership.',
+      }
+    );
+
+    return ok([], {
+      supportTier: 'preview',
+      warnings: [warning],
     });
   }
 }

@@ -1,10 +1,11 @@
+import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient, EntityDefinition } from '@pp/dataverse';
-import { SolutionService, type SolutionCommandInvocation, type SolutionCommandResult } from './index';
+import { SolutionService, type SolutionCommandInvocation, type SolutionCommandResult, type SolutionPublishProgressEvent } from './index';
 
 interface StubData {
   solution: {
@@ -35,6 +36,10 @@ interface StubData {
   connectionReferences?: Array<Record<string, unknown>>;
   environmentVariableDefinitions?: Array<Record<string, unknown>>;
   environmentVariableValues?: Array<Record<string, unknown>>;
+  canvasApps?: Array<Record<string, unknown>>;
+  workflows?: Array<Record<string, unknown>>;
+  webResources?: Array<Record<string, unknown>>;
+  sitemaps?: Array<Record<string, unknown>>;
   modelApps?: Array<Record<string, unknown>>;
   modelComponents?: Array<Record<string, unknown>>;
   modelForms?: Array<Record<string, unknown>>;
@@ -55,6 +60,50 @@ async function createTempDir(): Promise<string> {
   const path = await mkdtemp(join(tmpdir(), 'pp-solution-'));
   tempDirs.push(path);
   return path;
+}
+
+async function createSolutionArchive(path: string, managed: boolean): Promise<void> {
+  const root = await createTempDir();
+  await writeFile(
+    join(root, 'Solution.xml'),
+    [
+      '<ImportExportXml>',
+      '  <SolutionManifest>',
+      `    <UniqueName>Core</UniqueName>`,
+      `    <Version>1.2.3.4</Version>`,
+      `    <Managed>${managed ? '1' : '0'}</Managed>`,
+      '  </SolutionManifest>',
+      '</ImportExportXml>',
+      '',
+    ].join('\n'),
+    'utf8'
+  );
+
+  const zipResult = spawnSync('zip', ['-rqX', path, '.'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  expect(zipResult.status).toBe(0);
+}
+
+function readManagedFlagFromArchive(path: string): string {
+  const listResult = spawnSync('unzip', ['-Z1', path], {
+    encoding: 'utf8',
+  });
+  expect(listResult.status).toBe(0);
+  const metadataEntry = listResult.stdout
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.toLowerCase().endsWith('solution.xml') || entry.toLowerCase().endsWith('other.xml'));
+  expect(metadataEntry).toBeTruthy();
+  const readResult = spawnSync('unzip', ['-p', path, metadataEntry!], {
+    encoding: 'utf8',
+  });
+  expect(readResult.status).toBe(0);
+  const managedMatch = readResult.stdout.match(/<Managed>([^<]+)<\/Managed>/i);
+  expect(managedMatch?.[1]).toBeTruthy();
+  return managedMatch![1]!;
 }
 
 function createStubClient(data: StubData): DataverseClient {
@@ -119,6 +168,14 @@ function createStubClient(data: StubData): DataverseClient {
           return ok((data.environmentVariableDefinitions ?? []) as T[], { supportTier: 'preview' });
         case 'environmentvariablevalues':
           return ok((data.environmentVariableValues ?? []) as T[], { supportTier: 'preview' });
+        case 'canvasapps':
+          return ok((data.canvasApps ?? []) as T[], { supportTier: 'preview' });
+        case 'workflows':
+          return ok((data.workflows ?? []) as T[], { supportTier: 'preview' });
+        case 'webresourceset':
+          return ok((data.webResources ?? []) as T[], { supportTier: 'preview' });
+        case 'sitemaps':
+          return ok((data.sitemaps ?? data.modelSitemaps ?? []) as T[], { supportTier: 'preview' });
         case 'appmodules':
           return ok((data.modelApps ?? []) as T[], { supportTier: 'preview' });
         case 'appmodulecomponents':
@@ -127,8 +184,6 @@ function createStubClient(data: StubData): DataverseClient {
           return ok((data.modelForms ?? []) as T[], { supportTier: 'preview' });
         case 'savedqueries':
           return ok((data.modelViews ?? []) as T[], { supportTier: 'preview' });
-        case 'sitemaps':
-          return ok((data.modelSitemaps ?? []) as T[], { supportTier: 'preview' });
         default:
           return ok([] as T[], { supportTier: 'preview' });
       }
@@ -492,8 +547,8 @@ describe('SolutionService', () => {
           },
           {
             solutioncomponentid: 'comp-2',
-            objectid: 'ref-1',
-            componenttype: 371,
+            objectid: 'canvas-1',
+            componenttype: 300,
           },
           {
             solutioncomponentid: 'comp-3',
@@ -506,25 +561,94 @@ describe('SolutionService', () => {
             dependencyid: 'dep-1',
             dependentcomponentobjectid: 'obj-1',
             dependentcomponenttype: 80,
-            requiredcomponentobjectid: 'obj-missing',
-            requiredcomponenttype: 24,
+            requiredcomponentobjectid: 'entity-1',
+            requiredcomponenttype: 1,
+          },
+          {
+            dependencyid: 'dep-2',
+            dependentcomponentobjectid: 'obj-1',
+            dependentcomponenttype: 80,
+            requiredcomponentobjectid: 'webres-1',
+            requiredcomponenttype: 61,
+          },
+          {
+            dependencyid: 'dep-3',
+            dependentcomponentobjectid: 'canvas-1',
+            dependentcomponenttype: 300,
+            requiredcomponentobjectid: 'site-1',
+            requiredcomponenttype: 62,
+          },
+        ],
+        canvasApps: [
+          {
+            canvasappid: 'canvas-1',
+            displayname: 'Shell App',
+            name: 'ShellApp',
+          },
+        ],
+        modelApps: [
+          {
+            appmoduleid: 'obj-1',
+            uniquename: 'Core',
+            name: 'Core',
+          },
+        ],
+        webResources: [
+          {
+            webresourceid: 'webres-1',
+            name: 'pp_/icons/nav.svg',
+            displayname: 'Navigation Icon',
+          },
+        ],
+        sitemaps: [
+          {
+            sitemapid: 'site-1',
+            sitemapname: 'Sales Hub sitemap',
+          },
+        ],
+        tables: [
+          {
+            MetadataId: 'entity-1',
+            LogicalName: 'account',
+            SchemaName: 'Account',
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
           },
         ],
       })
     );
 
-    const components = await service.components('Core');
     const dependencies = await service.dependencies('Core');
 
-    expect(components.success).toBe(true);
-    expect(components.data?.[0]).toMatchObject({
-      componentTypeLabel: 'app-module',
-    });
     expect(dependencies.success).toBe(true);
-    expect(dependencies.data?.[0]).toMatchObject({
-      missingRequiredComponent: true,
-      requiredComponentTypeLabel: 'form',
-    });
+    expect(dependencies.data).toEqual([
+      expect.objectContaining({
+        missingRequiredComponent: true,
+        requiredComponentTypeLabel: 'entity',
+        requiredComponentName: 'Account',
+        requiredComponentLogicalName: 'account',
+        requiredComponentTable: 'account',
+        dependentComponentTypeLabel: 'app-module',
+      }),
+      expect.objectContaining({
+        missingRequiredComponent: true,
+        requiredComponentTypeLabel: 'web-resource',
+        requiredComponentName: 'Navigation Icon',
+        requiredComponentLogicalName: 'pp_/icons/nav.svg',
+        dependentComponentName: 'Core',
+      }),
+      expect.objectContaining({
+        missingRequiredComponent: true,
+        requiredComponentTypeLabel: 'site-map',
+        requiredComponentName: 'Sales Hub sitemap',
+        dependentComponentTypeLabel: 'canvas-app',
+        dependentComponentName: 'Shell App',
+        dependentComponentLogicalName: 'ShellApp',
+      }),
+    ]);
   });
 
   it('lists all solution pages and can narrow results by prefix or unique name', async () => {
@@ -580,11 +704,11 @@ describe('SolutionService', () => {
     ]);
   });
 
-  it('pushes solution list prefix filters down to the Dataverse query', async () => {
-    const queryAllCalls: Array<{ table: string; filter?: string }> = [];
+  it('pushes solution list prefix filters down to the Dataverse query and requests exportability metadata', async () => {
+    const queryAllCalls: Array<{ table: string; filter?: string; select?: string[] }> = [];
     const service = new SolutionService({
       query: async <T>(): Promise<OperationResult<T[]>> => ok([] as T[], { supportTier: 'preview' }),
-      queryAll: async <T>(options: { table: string; filter?: string }): Promise<OperationResult<T[]>> => {
+      queryAll: async <T>(options: { table: string; filter?: string; select?: string[] }): Promise<OperationResult<T[]>> => {
         queryAllCalls.push(options);
         return ok(
           [
@@ -593,6 +717,7 @@ describe('SolutionService', () => {
               uniquename: 'ppHarness20260310T233219225Z',
               friendlyname: 'PP Harness 20260310T233219225Z',
               version: '1.0.0.0',
+              ismanaged: false,
             },
           ] as T[],
           { supportTier: 'preview' }
@@ -611,6 +736,7 @@ describe('SolutionService', () => {
     expect(queryAllCalls).toEqual([
       expect.objectContaining({
         table: 'solutions',
+        select: ['solutionid', 'uniquename', 'friendlyname', 'version', 'ismanaged'],
         filter: "(startswith(uniquename,'ppHarness20260310T233219225Z') or startswith(friendlyname,'ppHarness20260310T233219225Z'))",
       }),
     ]);
@@ -792,6 +918,125 @@ describe('SolutionService', () => {
     });
   });
 
+  it('adds an explicit hint for unknown dependency component types', async () => {
+    const client = createStubClient({
+      solution: {
+        solutionid: 'solution-1',
+        uniquename: 'Harness',
+        friendlyname: 'Harness',
+        version: '1.0.0.0',
+      },
+      components: [
+        {
+          solutioncomponentid: 'component-1',
+          objectid: 'workflow-1',
+          componenttype: 29,
+        },
+      ],
+      dependencies: [
+        {
+          dependencyid: 'dep-unknown',
+          requiredcomponentobjectid: 'missing-1',
+          requiredcomponenttype: 10154,
+          dependentcomponentobjectid: 'workflow-1',
+          dependentcomponenttype: 29,
+        },
+      ],
+    });
+    const service = new SolutionService(client);
+
+    const result = await service.dependencies('Harness');
+
+    expect(result.success).toBe(true);
+    expect(result.data?.[0]).toMatchObject({
+      requiredComponentTypeLabel: 'component-10154',
+      requiredComponentTypeHint:
+        'Unknown Dataverse solution component type 10154. Inspect the dependency in Maker or solution component metadata to identify the blocker.',
+    });
+  });
+
+  it('skips model composition during analyze when the app still has unresolved solution dependencies', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        components: [
+          {
+            solutioncomponentid: 'comp-1',
+            objectid: 'app-1',
+            componenttype: 80,
+          },
+        ],
+        dependencies: [
+          {
+            dependencyid: 'dep-1',
+            dependentcomponentobjectid: 'app-1',
+            dependentcomponenttype: 80,
+            requiredcomponentobjectid: 'missing-site-map',
+            requiredcomponenttype: 62,
+          },
+        ],
+        connectionReferences: [],
+        environmentVariableDefinitions: [],
+        environmentVariableValues: [],
+        modelApps: [
+          {
+            appmoduleid: 'app-1',
+            uniquename: 'SalesHub',
+            name: 'Sales Hub',
+          },
+        ],
+        modelComponents: [
+          {
+            appmodulecomponentid: 'model-comp-app-table',
+            componenttype: 1,
+            objectid: 'entity-1',
+            _appmoduleidunique_value: 'app-1',
+          },
+        ],
+        tables: [
+          {
+            MetadataId: 'entity-1',
+            LogicalName: 'account',
+            SchemaName: 'Account',
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Account',
+              },
+            },
+          },
+        ],
+      })
+    );
+
+    const result = await service.analyze('Core');
+
+    expect(result.success).toBe(true);
+    expect(result.data?.modelDriven.apps).toEqual([
+      {
+        appId: 'app-1',
+        uniqueName: 'SalesHub',
+        name: 'Sales Hub',
+        compositionSkippedReason: 'Skipped model composition because the app still has unresolved solution dependencies.',
+      },
+    ]);
+    expect(result.data?.modelDriven.summary).toMatchObject({
+      appCount: 1,
+      artifactCount: 0,
+      missingArtifactCount: 0,
+    });
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_MODEL_ANALYZE_SKIPPED_UNRESOLVED_DEPENDENCIES',
+        }),
+      ])
+    );
+  });
+
   it('compares the same solution across environments', async () => {
     const source = new SolutionService(
       createStubClient({
@@ -934,6 +1179,54 @@ describe('SolutionService', () => {
         artifactsOnlyInTarget: ['view:view-1'],
       }),
     ]);
+  });
+
+  it('can skip model composition during analysis for faster compare flows', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        components: [
+          {
+            solutioncomponentid: 'comp-1',
+            objectid: 'obj-1',
+            componenttype: 80,
+          },
+        ],
+        dependencies: [],
+        connectionReferences: [],
+        environmentVariableDefinitions: [],
+        environmentVariableValues: [],
+        modelApps: [
+          {
+            appmoduleid: 'obj-1',
+            uniquename: 'SalesHub',
+            name: 'Sales Hub',
+          },
+        ],
+      })
+    );
+
+    const result = await service.analyze('Core', { includeModelComposition: false });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.modelDriven.apps).toEqual([
+      {
+        appId: 'obj-1',
+        uniqueName: 'SalesHub',
+        name: 'Sales Hub',
+        compositionSkippedReason:
+          'Skipped model composition during solution compare; rerun with --include-model-composition for app-level artifact drift.',
+      },
+    ]);
+    expect(result.data?.modelDriven.summary).toEqual({
+      appCount: 1,
+      artifactCount: 0,
+      missingArtifactCount: 0,
+    });
   });
 
   it('creates a solution through the solutions entity set', async () => {
@@ -1224,10 +1517,792 @@ describe('SolutionService', () => {
       PublishWorkflows: true,
       HoldingSolution: false,
       SkipProductUpdateDependencies: false,
+      ImportJobId: expect.any(String),
       CustomizationFile: Buffer.from('managed-content').toString('base64'),
     });
     expect(result.data?.packageType).toBe('managed');
     expect(result.data?.manifest?.solution.uniqueName).toBe('Core');
+    expect(result.data?.options.importJobId).toEqual(expect.any(String));
+  });
+
+  it('normalizes exported package metadata when Dataverse returns the wrong managed flag', async () => {
+    const tempDir = await createTempDir();
+    const upstreamPath = join(tempDir, 'upstream-managed.zip');
+    await createSolutionArchive(upstreamPath, true);
+    const upstreamBytes = await readFile(upstreamPath);
+
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core Solution',
+          version: '1.2.3.4',
+          ismanaged: false,
+        },
+        components: [],
+        dependencies: [],
+        exportPayloadBase64: upstreamBytes.toString('base64'),
+      })
+    );
+
+    const result = await service.exportSolution('Core', {
+      outDir: tempDir,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.packageType).toBe('unmanaged');
+    expect(result.data?.manifest?.solution.packageType).toBe('unmanaged');
+    expect(readManagedFlagFromArchive(result.data!.artifact.path)).toBe('0');
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_EXPORT_PACKAGE_TYPE_NORMALIZED',
+      })
+    );
+  });
+
+  it('publishes a solution through PublishAllXml and warns when no sync checkpoint is requested', async () => {
+    const requests: Array<{ path: string; body: Record<string, unknown> | undefined }> = [];
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+        },
+        components: [
+          { solutioncomponentid: 'comp-canvas', objectid: 'canvas-1', componenttype: 300 },
+          { solutioncomponentid: 'comp-flow', objectid: 'flow-1', componenttype: 29 },
+        ],
+        dependencies: [],
+        canvasApps: [
+          {
+            canvasappid: 'canvas-1',
+            displayname: 'Harness Canvas',
+            name: 'crd_HarnessCanvas',
+            lastpublishtime: '2026-03-11T18:06:20.000Z',
+          },
+        ],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+            category: 5,
+            statecode: 0,
+            statuscode: 1,
+          },
+        ],
+        requestRecorder: requests,
+      })
+    );
+
+    const result = await service.publish('Core');
+
+    expect(result.success).toBe(true);
+    expect(requests[0]?.path).toBe('PublishAllXml');
+    expect(requests[0]?.body).toEqual({});
+    expect(result.data).toMatchObject({
+      published: true,
+      waitForExport: false,
+      synchronization: {
+        kind: 'none',
+        confirmed: false,
+      },
+      blockers: [
+        {
+          kind: 'workflow-state',
+          componentType: 'workflow',
+          id: 'flow-1',
+          name: 'Harness Flow',
+          logicalName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+          reason: 'Workflow Harness Flow is still draft, so solution export readiness remains blocked.',
+        },
+      ],
+      readBack: {
+        summary: {
+          componentCount: 2,
+          canvasAppCount: 1,
+          workflowCount: 1,
+          modelDrivenAppCount: 0,
+        },
+        canvasApps: [
+          expect.objectContaining({
+            id: 'canvas-1',
+            lastPublishTime: '2026-03-11T18:06:20.000Z',
+          }),
+        ],
+        workflows: [
+          expect.objectContaining({
+            id: 'flow-1',
+            workflowState: 'draft',
+          }),
+        ],
+      },
+    });
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
+        detail: expect.stringContaining('Harness Flow state=draft'),
+        hint: expect.stringContaining('pp flow inspect crd_HarnessFlow --environment <alias> --solution Core --format json'),
+      })
+    );
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_PUBLISH_SYNC_NOT_CONFIRMED',
+        detail: expect.stringContaining('Harness Flow state=draft'),
+        hint: expect.stringContaining('pp flow inspect crd_HarnessFlow --environment <alias> --solution Core --format json'),
+      })
+    );
+  });
+
+  it('publishes a solution and waits for an export checkpoint when requested', async () => {
+    const tempDir = await createTempDir();
+    const upstreamPath = join(tempDir, 'upstream.zip');
+    await createSolutionArchive(upstreamPath, false);
+    const upstreamBytes = await readFile(upstreamPath);
+    const requests: Array<{ path: string; body: Record<string, unknown> | undefined }> = [];
+    const progress: Array<{ stage: string; attempt?: number }> = [];
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+          version: '1.0.0.0',
+        },
+        components: [
+          { solutioncomponentid: 'comp-canvas', objectid: 'canvas-1', componenttype: 300 },
+          { solutioncomponentid: 'comp-flow', objectid: 'flow-1', componenttype: 29 },
+        ],
+        dependencies: [],
+        canvasApps: [
+          {
+            canvasappid: 'canvas-1',
+            displayname: 'Harness Canvas',
+            name: 'crd_HarnessCanvas',
+            lastpublishtime: '2026-03-11T18:06:20.000Z',
+          },
+        ],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+            category: 5,
+            statecode: 1,
+            statuscode: 2,
+          },
+        ],
+        exportPayloadBase64: upstreamBytes.toString('base64'),
+        requestRecorder: requests,
+      })
+    );
+
+    const result = await service.publish('Core', {
+      waitForExport: true,
+      timeoutMs: 5_000,
+      pollIntervalMs: 1_000,
+      onProgress: (event) => {
+        progress.push({ stage: event.stage, attempt: event.attempt });
+      },
+      exportOptions: {
+        outPath: join(tempDir, 'Core.zip'),
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml', 'ExportSolution']);
+    expect(progress).toEqual([
+      { stage: 'accepted', attempt: undefined },
+      { stage: 'polling', attempt: 1 },
+      { stage: 'confirmed', attempt: 1 },
+    ]);
+    expect(result.data).toMatchObject({
+      published: true,
+      waitForExport: true,
+      synchronization: {
+        kind: 'solution-export',
+        confirmed: true,
+        attempts: 1,
+      },
+      blockers: [],
+      export: {
+        packageType: 'unmanaged',
+      },
+      readBack: {
+        summary: {
+          componentCount: 2,
+          canvasAppCount: 1,
+          workflowCount: 1,
+          modelDrivenAppCount: 0,
+          componentTypeCounts: {
+            'canvas-app': 1,
+            workflow: 1,
+          },
+        },
+        canvasApps: [
+          {
+            id: 'canvas-1',
+            name: 'Harness Canvas',
+            logicalName: 'crd_HarnessCanvas',
+            lastPublishTime: '2026-03-11T18:06:20.000Z',
+          },
+        ],
+        workflows: [
+          {
+            id: 'flow-1',
+            name: 'Harness Flow',
+            logicalName: 'crd_HarnessFlow',
+            category: 5,
+            workflowState: 'activated',
+          },
+        ],
+      },
+    });
+  });
+
+  it('reports sync status with readback and a successful export probe', async () => {
+    const tempDir = await createTempDir();
+    const upstreamPath = join(tempDir, 'upstream.zip');
+    await createSolutionArchive(upstreamPath, false);
+    const upstreamBytes = await readFile(upstreamPath);
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+          version: '1.0.0.0',
+        },
+        components: [
+          { solutioncomponentid: 'comp-canvas', objectid: 'canvas-1', componenttype: 300 },
+          { solutioncomponentid: 'comp-flow', objectid: 'flow-1', componenttype: 29 },
+          { solutioncomponentid: 'comp-model', objectid: 'app-1', componenttype: 80 },
+        ],
+        dependencies: [],
+        canvasApps: [
+          {
+            canvasappid: 'canvas-1',
+            displayname: 'Harness Canvas',
+            name: 'crd_HarnessCanvas',
+            lastpublishtime: '2026-03-11T18:06:20.000Z',
+          },
+        ],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+            category: 5,
+            statecode: 1,
+            statuscode: 2,
+          },
+        ],
+        modelApps: [
+          {
+            appmoduleid: 'app-1',
+            name: 'Harness Hub',
+            uniquename: 'crd_HarnessHub',
+            statecode: 0,
+            publishedon: '2026-03-11T18:07:00.000Z',
+          },
+        ],
+        exportPayloadBase64: upstreamBytes.toString('base64'),
+      })
+    );
+
+    const result = await service.syncStatus('Core', {
+      outPath: join(tempDir, 'Core.zip'),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      synchronization: {
+        kind: 'solution-export',
+        confirmed: true,
+      },
+      blockers: [],
+      readBack: {
+        summary: {
+          componentCount: 3,
+          canvasAppCount: 1,
+          workflowCount: 1,
+          modelDrivenAppCount: 1,
+        },
+        modelDrivenApps: [
+          {
+            id: 'app-1',
+            name: 'Harness Hub',
+            uniqueName: 'crd_HarnessHub',
+            stateCode: 0,
+            publishedOn: '2026-03-11T18:07:00.000Z',
+          },
+        ],
+      },
+      exportCheck: {
+        attempted: true,
+        confirmed: true,
+      },
+    });
+  });
+
+  it('reports sync status export probe failures without failing the status command', async () => {
+    const service = new SolutionService({
+      ...createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+        },
+        components: [
+          {
+            solutioncomponentid: 'comp-workflow',
+            objectid: 'flow-1',
+            componenttype: 29,
+          },
+        ],
+        dependencies: [],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+            category: 5,
+            statecode: 0,
+            statuscode: 1,
+          },
+        ],
+      }),
+      invokeAction: async (name: string) =>
+        name === 'ExportSolution'
+          ? ({
+              success: false,
+              diagnostics: [
+                {
+                  level: 'error',
+                  code: 'HTTP_REQUEST_FAILED',
+                  message: 'POST ExportSolution returned 405',
+                },
+              ],
+              warnings: [],
+              supportTier: 'preview',
+            } as OperationResult<never>)
+          : ({
+              success: true,
+              data: {
+                status: 204,
+                headers: {},
+              },
+              diagnostics: [],
+              warnings: [],
+              supportTier: 'preview',
+            } as OperationResult<unknown>),
+    } as unknown as DataverseClient);
+
+    const result = await service.syncStatus('Core');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      synchronization: {
+        confirmed: false,
+      },
+      blockers: [
+        expect.objectContaining({
+          kind: 'workflow-state',
+          componentType: 'workflow',
+          id: 'flow-1',
+          logicalName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+        }),
+      ],
+      exportCheck: {
+        attempted: true,
+        confirmed: false,
+        failure: {
+          diagnostics: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'HTTP_REQUEST_FAILED',
+            }),
+          ]),
+          warnings: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'SOLUTION_EXPORT_WORKFLOW_CONTEXT',
+            }),
+          ]),
+        },
+      },
+    });
+    expect(result.data?.exportCheck.failure?.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
+        detail: expect.stringContaining('Harness Flow state=draft'),
+      })
+    );
+    expect(result.data?.exportCheck.failure?.suggestedNextActions).toContain(
+      'If crd_HarnessFlow should already be runnable, activate it in place with `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json`.'
+    );
+  });
+
+  it('includes the previous export failure and readback in subsequent publish polling events', async () => {
+    let exportAttempts = 0;
+    const progress: SolutionPublishProgressEvent[] = [];
+    const tempDir = await createTempDir();
+    const upstreamPath = join(tempDir, 'upstream.zip');
+    await createSolutionArchive(upstreamPath, false);
+    const upstreamBytes = await readFile(upstreamPath);
+    const service = new SolutionService({
+      ...createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+          version: '1.0.0.0',
+        },
+        components: [
+          { solutioncomponentid: 'comp-flow', objectid: 'flow-1', componenttype: 29 },
+        ],
+        dependencies: [],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+            category: 5,
+            statecode: 0,
+            statuscode: 1,
+          },
+        ],
+      }),
+      invokeAction: async (name: string, parameters: Record<string, unknown> | undefined, options: unknown) => {
+        if (name === 'ExportSolution' && exportAttempts++ === 0) {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'POST ExportSolution returned 405',
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        return createStubClient({
+          solution: {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+            friendlyname: 'Core',
+            version: '1.0.0.0',
+          },
+          components: [{ solutioncomponentid: 'comp-flow', objectid: 'flow-1', componenttype: 29 }],
+          dependencies: [],
+          workflows: [
+            {
+              workflowid: 'flow-1',
+              name: 'Harness Flow',
+              uniquename: 'crd_HarnessFlow',
+              category: 5,
+              statecode: 1,
+              statuscode: 2,
+            },
+          ],
+          exportPayloadBase64: upstreamBytes.toString('base64'),
+        }).invokeAction(name, parameters, options as never);
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.publish('Core', {
+      waitForExport: true,
+      timeoutMs: 5_000,
+      pollIntervalMs: 1_000,
+      onProgress: (event) => {
+        progress.push(event);
+      },
+      exportOptions: {
+        outPath: join(tempDir, 'Core.zip'),
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(progress).toContainEqual(
+      expect.objectContaining({
+        stage: 'polling',
+        attempt: 2,
+        latestExportDiagnostic: expect.objectContaining({
+          code: expect.any(String),
+          message: expect.any(String),
+        }),
+        readBack: expect.objectContaining({
+          workflows: [
+            expect.objectContaining({
+              workflowState: 'draft',
+            }),
+          ],
+        }),
+      })
+    );
+  });
+
+  it('includes the last observed readback in publish timeout warnings', async () => {
+    const service = new SolutionService({
+      ...createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+        },
+        components: [
+          { solutioncomponentid: 'comp-canvas', objectid: 'canvas-1', componenttype: 300 },
+          { solutioncomponentid: 'comp-flow', objectid: 'flow-1', componenttype: 29 },
+        ],
+        dependencies: [],
+        canvasApps: [
+          {
+            canvasappid: 'canvas-1',
+            displayname: 'Harness Canvas',
+            name: 'crd_HarnessCanvas',
+            lastpublishtime: '2026-03-11T18:06:20.000Z',
+          },
+        ],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+            category: 5,
+            statecode: 0,
+            statuscode: 1,
+          },
+        ],
+      }),
+      invokeAction: async (name: string) =>
+        name === 'PublishAllXml'
+          ? ({
+              success: true,
+              data: {
+                status: 204,
+                headers: {},
+              },
+              diagnostics: [],
+              warnings: [],
+              supportTier: 'preview',
+            } as OperationResult<unknown>)
+          : ({
+              success: false,
+              diagnostics: [
+                {
+                  level: 'error',
+                  code: 'HTTP_REQUEST_FAILED',
+                  message: 'POST ExportSolution returned 500',
+                },
+              ],
+              warnings: [],
+              supportTier: 'preview',
+            } as OperationResult<never>),
+    } as unknown as DataverseClient);
+
+    const result = await service.publish('Core', {
+      waitForExport: true,
+      timeoutMs: 1_000,
+      pollIntervalMs: 1_000,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
+        detail: expect.stringContaining('Harness Flow state=draft'),
+        hint: expect.stringContaining('pp flow inspect crd_HarnessFlow --environment <alias> --solution Core --format json'),
+      })
+    );
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_PUBLISH_LAST_READBACK',
+        detail: expect.stringContaining('Harness Canvas lastPublishTime=2026-03-11T18:06:20.000Z'),
+      })
+    );
+    expect(result.suggestedNextActions).toContain(
+      'If crd_HarnessFlow should already be runnable, activate it in place with `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json`.'
+    );
+    expect(result.suggestedNextActions).toContain(
+      'Run `pp solution sync-status Core --environment <alias> --format json` to capture component read-back and the current export probe in one response.'
+    );
+  });
+
+  it('enriches solution table components with logical names and entity set names', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        components: [
+          {
+            solutioncomponentid: 'comp-table',
+            objectid: 'entity-1',
+            componenttype: 1,
+            ismetadata: true,
+          },
+          {
+            solutioncomponentid: 'comp-flow',
+            objectid: 'flow-1',
+            componenttype: 29,
+          },
+        ],
+        dependencies: [],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+          },
+        ],
+        tables: [
+          {
+            MetadataId: 'entity-1',
+            LogicalName: 'pph34135_project',
+            SchemaName: 'pph34135_project',
+            EntitySetName: 'pph34135_projects',
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Project',
+              },
+            },
+          },
+        ],
+      })
+    );
+
+    const result = await service.components('Core');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: 'comp-table',
+        componentType: 1,
+        componentTypeLabel: 'entity',
+        objectId: 'entity-1',
+        name: 'Project',
+        logicalName: 'pph34135_project',
+        table: 'pph34135_project',
+        entitySetName: 'pph34135_projects',
+      }),
+      expect.objectContaining({
+        id: 'comp-flow',
+        componentType: 29,
+        componentTypeLabel: 'workflow',
+        objectId: 'flow-1',
+        name: 'Harness Flow',
+        logicalName: 'crd_HarnessFlow',
+      }),
+    ]);
+  });
+
+  it('caps each export checkpoint attempt to the remaining publish timeout budget', async () => {
+    const tempDir = await createTempDir();
+    const upstreamPath = join(tempDir, 'upstream.zip');
+    await createSolutionArchive(upstreamPath, false);
+    const upstreamBytes = await readFile(upstreamPath);
+    const actionOptions: Array<Record<string, unknown> | undefined> = [];
+    const baseClient = createStubClient({
+      solution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+        friendlyname: 'Core',
+        version: '1.0.0.0',
+      },
+      components: [],
+      dependencies: [],
+      exportPayloadBase64: upstreamBytes.toString('base64'),
+    });
+    const service = new SolutionService({
+      ...baseClient,
+      invokeAction: async <T>(name: string, parameters?: Record<string, unknown>, options?: { timeoutMs?: number }) => {
+        actionOptions.push(name === 'ExportSolution' ? options : undefined);
+
+        return baseClient.invokeAction<T>(name, parameters, options);
+      },
+    } as unknown as DataverseClient);
+
+    const result = await service.publish('Core', {
+      waitForExport: true,
+      timeoutMs: 5_000,
+      pollIntervalMs: 1_000,
+      exportOptions: {
+        outPath: join(tempDir, 'Core.zip'),
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(actionOptions).toContainEqual(expect.objectContaining({ timeoutMs: expect.any(Number) }));
+    expect((actionOptions.find((entry) => entry?.timeoutMs !== undefined)?.timeoutMs as number)).toBeLessThanOrEqual(5_000);
+  });
+
+  it('adds workflow packaging context when ExportSolution fails for a solution with workflow components', async () => {
+    const service = new SolutionService({
+      ...createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          friendlyname: 'Core',
+        },
+        components: [
+          {
+            solutioncomponentid: 'comp-workflow',
+            objectid: 'flow-1',
+            componenttype: 29,
+          },
+        ],
+        dependencies: [],
+        workflows: [
+          {
+            workflowid: 'flow-1',
+            name: 'Harness Flow',
+            uniquename: 'crd_HarnessFlow',
+            category: 5,
+            statecode: 0,
+            statuscode: 1,
+          },
+        ],
+      }),
+      invokeAction: async () =>
+        ({
+          success: false,
+          diagnostics: [
+            {
+              level: 'error',
+              code: 'HTTP_REQUEST_FAILED',
+              message: 'POST ExportSolution returned 405',
+            },
+          ],
+          warnings: [],
+          supportTier: 'preview',
+        }) as OperationResult<never>,
+    } as unknown as DataverseClient);
+
+    const result = await service.exportSolution('Core');
+
+    expect(result.success).toBe(false);
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_EXPORT_WORKFLOW_CONTEXT',
+        detail: expect.stringContaining('Harness Flow [id=flow-1; category=5; state=draft]'),
+      })
+    );
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_EXPORT_BLOCKED_WORKFLOW_STATE',
+        detail: expect.stringContaining('Harness Flow state=draft'),
+        hint: expect.stringContaining('pp flow inspect crd_HarnessFlow --environment <alias> --solution Core --format json'),
+      })
+    );
+    expect(result.suggestedNextActions).toContain(
+      'If crd_HarnessFlow should already be runnable, activate it in place with `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json`.'
+    );
   });
 
   it('packs and unpacks solution artifacts through the command runner seam', async () => {
