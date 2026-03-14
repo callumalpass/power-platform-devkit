@@ -186,6 +186,7 @@ describe('AuthService', () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
     const auth = new AuthService({ configDir });
     const originalWaylandDisplay = process.env.WAYLAND_DISPLAY;
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
     process.env.WAYLAND_DISPLAY = 'wayland-0';
 
@@ -195,6 +196,9 @@ describe('AuthService', () => {
         expect(request.redirectUri).toBeUndefined();
         expect(request.loginHint).toBe('user@example.com');
         expect(request.scopes).toEqual(['https://example.crm.dynamics.com/user_impersonation']);
+        await request.openBrowser?.(
+          'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=test&scope=https%3A%2F%2Fexample.crm.dynamics.com%2Fuser_impersonation'
+        );
         return {
           accessToken: 'token-value',
           account: {
@@ -221,6 +225,9 @@ describe('AuthService', () => {
       expect(result.success).toBe(true);
       expect(result.data?.token).toBe('token-value');
       expect(interactiveSpy).toHaveBeenCalledOnce();
+      expect(stderrSpy).toHaveBeenCalledWith(
+        'Open this URL in a browser if the automatic launch fails: https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=test&scope=https%3A%2F%2Fexample.crm.dynamics.com%2Fuser_impersonation\n'
+      );
     } finally {
       if (originalWaylandDisplay === undefined) {
         delete process.env.WAYLAND_DISPLAY;

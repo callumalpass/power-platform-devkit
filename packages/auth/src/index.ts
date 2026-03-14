@@ -853,7 +853,16 @@ async function acquireTokenInteractively(
     scopes,
     prompt: resolvePrompt(profile.type === 'user' ? profile.prompt : undefined),
     loginHint: profile.loginHint,
-    openBrowser: browserProfile ? async (url) => openManagedBrowser(url, browserProfile, options) : openSystemBrowser,
+    openBrowser: async (url) => {
+      process.stderr.write(`Open this URL in a browser if the automatic launch fails: ${url}\n`);
+
+      if (browserProfile) {
+        await openManagedBrowser(url, browserProfile, options);
+        return;
+      }
+
+      await openSystemBrowser(url);
+    },
     successTemplate: 'Authentication complete. You can close this window.',
     errorTemplate: 'Authentication failed. You can close this window.',
   });
