@@ -1,7 +1,6 @@
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getGlobalConfigDir, getGlobalConfigFilePath, getMsalCacheDir, type ConfigStoreOptions } from '@pp/config';
 import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { discoverProject } from '@pp/project';
@@ -26,7 +25,7 @@ export const COMMAND_TREE = {
   sharepoint: ['site', 'list', 'file', 'permissions'],
   powerbi: ['workspace', 'dataset', 'report'],
   diagnostics: ['doctor', 'bundle'],
-  completion: ['bash', 'zsh', 'fish'],
+  completion: ['bash', 'zsh', 'fish', 'pwsh'],
 } as const satisfies Record<string, readonly string[]>;
 
 export const TOP_LEVEL_COMMANDS = [...Object.keys(COMMAND_TREE), 'version'] as const;
@@ -93,29 +92,43 @@ export interface OperabilityDoctorReport {
   suggestedNextActions: string[];
 }
 
-function resolveCurrentModulePath(metaUrl: string): string | undefined {
-  if (typeof __filename === 'string') {
-    return __filename;
+function resolveCurrentModulePath(): string | undefined {
+  return typeof __filename === 'string' ? __filename : undefined;
+}
+
+function resolveCliArgvEntryPath(): string | undefined {
+  const entryPath = process.argv[1];
+
+  if (!entryPath) {
+    return undefined;
   }
 
   try {
-    return fileURLToPath(metaUrl);
+    const resolved = resolve(entryPath);
+    const normalized = resolved.replaceAll('\\', '/');
+    return normalized.includes('/packages/cli/src/') || normalized.includes('/packages/cli/dist/') ? resolved : undefined;
   } catch {
     return undefined;
   }
 }
 
 function resolveCliPackageRoot(): string {
-  const modulePath = resolveCurrentModulePath(import.meta.url);
+  const argvEntryPath = resolveCliArgvEntryPath();
+
+  if (argvEntryPath) {
+    return dirname(dirname(argvEntryPath));
+  }
+
+  const modulePath = resolveCurrentModulePath();
 
   if (modulePath) {
     return dirname(resolve(modulePath, '..', '..', 'package.json'));
   }
 
-  return dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
+  return resolve(process.cwd(), 'packages', 'cli');
 }
 
-export function renderCompletionScript(shell: 'bash' | 'zsh' | 'fish'): string {
+export function renderCompletionScript(shell: 'bash' | 'zsh' | 'fish' | 'pwsh'): string {
   switch (shell) {
     case 'bash':
       return renderBashCompletion();
@@ -123,6 +136,8 @@ export function renderCompletionScript(shell: 'bash' | 'zsh' | 'fish'): string {
       return renderZshCompletion();
     case 'fish':
       return renderFishCompletion();
+    case 'pwsh':
+      return renderPwshCompletion();
   }
 }
 
@@ -251,7 +266,7 @@ export async function collectOperabilityBundle(
         packageName: CLI_PACKAGE_NAME,
         version: CLI_VERSION,
         packageRoot: resolveCliPackageRoot(),
-        entryPath: resolveCurrentModulePath(import.meta.url) ?? fileURLToPath(import.meta.url),
+        entryPath: resolveCliArgvEntryPath() ?? resolveCurrentModulePath() ?? process.execPath,
       },
       runtime: {
         nodeVersion: process.version,
@@ -398,12 +413,47 @@ function renderFishCompletion(): string {
   return lines.join('\n');
 }
 
+function renderPwshCompletion(): string {
+  const topLevel = TOP_LEVEL_COMMANDS.map((value) => `'${value}'`).join(', ');
+  const groups = Object.entries(COMMAND_TREE)
+    .map(([name, subcommands]) => {
+      const rendered = subcommands.map((value) => `'${value}'`).join(', ');
+      return `    '${name}' { $candidates = @(${rendered}) }`;
+    })
+    .join('\n');
+
+  return [
+    '# PowerShell completion for pp',
+    'Register-ArgumentCompleter -Native -CommandName pp -ScriptBlock {',
+    '  param($wordToComplete, $commandAst, $cursorPosition)',
+    '  $tokens = @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { $_.Extent.Text })',
+    `  $topLevel = @(${topLevel})`,
+    '  if ($tokens.Count -le 1) {',
+    '    $candidates = $topLevel',
+    '  } else {',
+    '    switch ($tokens[0]) {',
+    groups,
+    '      default { $candidates = @() }',
+    '    }',
+    '  }',
+    '  foreach ($candidate in $candidates) {',
+    '    if ($candidate -like "$wordToComplete*") {',
+    "      [System.Management.Automation.CompletionResult]::new($candidate, $candidate, 'ParameterValue', $candidate)",
+    '    }',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+}
+
 function suggestNextActions(options: {
   pathExists: boolean;
   projectDiscovered: boolean;
   configFileExists: boolean;
 }): string[] {
-  const actions = [`pp version`, `pp completion zsh > ~/.zfunc/_pp`];
+  const completionAction =
+    process.platform === 'win32' ? 'pp completion pwsh | Out-String | Invoke-Expression' : 'pp completion zsh > ~/.zfunc/_pp';
+  const actions = [`pp version`, completionAction];
 
   if (!options.configFileExists) {
     actions.push('pp auth profile list --config-dir ~/.config/pp');

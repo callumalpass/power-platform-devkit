@@ -2,10 +2,10 @@ import { cp, mkdtemp, mkdir, readFile, readdir, rm, stat, unlink, writeFile } fr
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { sha256Hex } from '@pp/artifacts';
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
 import type { CanvasBuildResult, CanvasControlDefinition, CanvasSourceModel, CanvasTemplateRequirementResolution } from './canvas-types';
+import { createZipArchive } from './archive';
 import { buildCanvasTemplateSurface } from './template-surface';
 
 interface GeneratedControlInfoFile {
@@ -120,16 +120,13 @@ export async function buildCanvasMsappFromUnpackedSource(
     await writeFile(editorStatePath, renderEditorStateYaml(source.screens.map((screen) => screen.name)), 'utf8');
     await updateHeaderTimestamp(headerPath);
 
-    const zipResult = spawnSync('zip', ['-rqX', outPath, '.'], {
-      cwd: tempRoot,
-      encoding: 'utf8',
-    });
+    const zipped = await createZipArchive(tempRoot, outPath);
 
-    if (zipResult.status !== 0) {
+    if (!zipped.success) {
       return fail(
         createDiagnostic('error', 'CANVAS_NATIVE_BUILD_ZIP_FAILED', `Failed to package ${outPath} as an .msapp archive.`, {
           source: '@pp/canvas',
-          detail: (zipResult.stderr || zipResult.stdout).trim() || '<no output>',
+          detail: zipped.diagnostics[0]?.hint ?? zipped.diagnostics[0]?.message ?? '<no output>',
         })
       );
     }

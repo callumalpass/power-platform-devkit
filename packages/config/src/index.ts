@@ -10,6 +10,8 @@ export type OutputMode = 'table' | 'json' | 'yaml' | 'ndjson' | 'markdown' | 'ra
 export type ParameterType = 'string' | 'number' | 'boolean';
 export type AuthProfileType = 'static-token' | 'environment-token' | 'client-secret' | 'user' | 'device-code';
 export type BrowserProfileKind = 'chrome' | 'edge' | 'chromium' | 'custom';
+export type EnvironmentAccessMode = 'read-write' | 'read-only';
+export type EnvironmentOperationIntent = 'read' | 'write';
 
 const primitiveValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 
@@ -164,6 +166,10 @@ const browserProfileSchema = z.object({
   lastBootstrappedAt: z.string().datetime().optional(),
 });
 
+const environmentAccessPolicySchema = z.object({
+  mode: z.enum(['read-write', 'read-only']).optional(),
+});
+
 const storedAuthProfileSchema = z.discriminatedUnion('type', [
   staticTokenProfileSchema,
   environmentTokenProfileSchema,
@@ -183,6 +189,7 @@ const environmentAliasSchema = z.object({
   defaultSolution: z.string().optional(),
   makerEnvironmentId: z.string().optional(),
   apiPath: z.string().optional(),
+  access: environmentAccessPolicySchema.optional(),
 });
 
 const globalConfigSchema = z.object({
@@ -203,6 +210,7 @@ export type ProjectSecretProvider = z.infer<typeof secretProviderSchema>;
 export type ProjectSecretsConfig = z.infer<typeof projectSecretsSchema>;
 export type ProjectConfig = z.infer<typeof projectConfigSchema>;
 export type BrowserProfile = z.infer<typeof browserProfileSchema>;
+export type EnvironmentAccessPolicy = z.infer<typeof environmentAccessPolicySchema>;
 export type StoredAuthProfile = z.infer<typeof storedAuthProfileSchema>;
 export type EnvironmentAlias = z.infer<typeof environmentAliasSchema>;
 export type GlobalConfig = z.output<typeof globalConfigSchema>;
@@ -214,6 +222,13 @@ export interface LocatedConfig<T> {
 
 export interface ConfigStoreOptions {
   configDir?: string;
+}
+
+export interface EnvironmentAccessRequest {
+  environmentAlias: string;
+  intent: EnvironmentOperationIntent;
+  operation: string;
+  surface: 'cli' | 'mcp';
 }
 
 export const PROJECT_CONFIG_FILENAMES = ['pp.config.json', 'pp.config.yaml', 'pp.config.yml'];
@@ -642,6 +657,68 @@ export async function getEnvironmentAlias(
     diagnostics: config.diagnostics,
     warnings: config.warnings,
   });
+}
+
+export function resolveEnvironmentAccessMode(environment: EnvironmentAlias | undefined): EnvironmentAccessMode {
+  return environment?.access?.mode ?? 'read-write';
+}
+
+export async function checkEnvironmentAccess(
+  request: EnvironmentAccessRequest,
+  options: ConfigStoreOptions = {}
+): Promise<OperationResult<{ allowed: true; mode: EnvironmentAccessMode }>> {
+  const environment = await getEnvironmentAlias(request.environmentAlias, options);
+
+  if (!environment.success) {
+    return environment as unknown as OperationResult<{ allowed: true; mode: EnvironmentAccessMode }>;
+  }
+
+  if (!environment.data) {
+    return ok(
+      {
+        allowed: true,
+        mode: 'read-write',
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: environment.diagnostics,
+        warnings: environment.warnings,
+      }
+    );
+  }
+
+  const mode = resolveEnvironmentAccessMode(environment.data);
+
+  if (request.intent === 'write' && mode === 'read-only') {
+    return fail(
+      createDiagnostic(
+        'error',
+        'ENVIRONMENT_WRITE_BLOCKED',
+        `Environment alias ${request.environmentAlias} is configured read-only and does not allow write operation ${request.operation}.`,
+        {
+          source: '@pp/config',
+          hint: 'Use a read-write environment, switch to a read-only workflow, or change the environment access policy intentionally.',
+          detail: `Surface=${request.surface}; mode=${mode}; intent=${request.intent}.`,
+        }
+      ),
+      {
+        supportTier: 'preview',
+        warnings: environment.warnings,
+      }
+    );
+  }
+
+  return ok(
+    {
+      allowed: true,
+      mode,
+    },
+    {
+      supportTier: 'preview',
+      diagnostics: environment.diagnostics,
+      warnings: environment.warnings,
+    }
+  );
 }
 
 export async function saveEnvironmentAlias(

@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { fileURLToPath } from 'node:url';
 import { renderMarkdownPortfolioReport, renderMarkdownReport, generateContextPack, generatePortfolioReport } from '@pp/analysis';
 import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
@@ -28,6 +27,7 @@ import {
   type CliOutputFormat,
 } from './contract';
 import {
+  checkEnvironmentAccess,
   getEnvironmentAlias,
   listEnvironments,
   removeEnvironmentAlias,
@@ -200,6 +200,7 @@ import { dispatchMainCommand } from './routing';
 
 type OutputFormat = CliOutputFormat;
 type AttributeListView = Extract<AttributeMetadataView, 'common' | 'raw'>;
+type EnvironmentWriteGuardResult = number | undefined;
 interface CanvasCliContext {
   path: string;
   options: {
@@ -2114,16 +2115,23 @@ async function runDataverseWhoAmI(args: string[]): Promise<number> {
 }
 
 async function runDataverseRequest(args: string[]): Promise<number> {
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
   const path = readFlag(args, '--path');
 
   if (!path) {
     return printFailure(argumentFailure('DV_REQUEST_PATH_REQUIRED', '--path is required.'));
+  }
+
+  const method = (readFlag(args, '--method') ?? 'GET').toUpperCase();
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'dv.request', method !== 'GET');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
   }
 
   const responseType = (readFlag(args, '--response-type') ?? 'json') as 'json' | 'text' | 'void';
@@ -2133,8 +2141,8 @@ async function runDataverseRequest(args: string[]): Promise<number> {
     return printFailure(body);
   }
 
-  if ((readFlag(args, '--method') ?? 'GET').toUpperCase() !== 'GET') {
-    const preview = maybeHandleMutationPreview(args, 'json', 'dv.request', { path, method: readFlag(args, '--method') ?? 'GET' }, body.data);
+  if (method !== 'GET') {
+    const preview = maybeHandleMutationPreview(args, 'json', 'dv.request', { path, method }, body.data);
 
     if (preview !== undefined) {
       return preview;
@@ -2143,7 +2151,7 @@ async function runDataverseRequest(args: string[]): Promise<number> {
 
   const response = await resolution.data.client.request<unknown>({
     path,
-    method: readFlag(args, '--method') ?? 'GET',
+    method,
     body: body.data,
     responseType,
     headers: readHeaderFlags(args),
@@ -2169,6 +2177,12 @@ async function runDataverseAction(args: string[]): Promise<number> {
 
   if (!name) {
     return printFailure(argumentFailure('DV_ACTION_NAME_REQUIRED', 'Usage: dv action <name> --environment <alias> [--body JSON|--body-file FILE]'));
+  }
+
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'dv.action');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2263,16 +2277,23 @@ async function runDataverseFunction(args: string[]): Promise<number> {
 }
 
 async function runDataverseBatch(args: string[]): Promise<number> {
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
   const batch = await readDataverseBatchArgument(args);
 
   if (!batch.success || !batch.data) {
     return printFailure(batch);
+  }
+
+  const hasMutation = batch.data.some((request) => (request.method ?? 'GET').toUpperCase() !== 'GET');
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'dv.batch', hasMutation);
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
   }
 
   const preview = maybeHandleMutationPreview(
@@ -2381,16 +2402,22 @@ async function runDataverseRowsExport(args: string[]): Promise<number> {
 }
 
 async function runDataverseRowsApply(args: string[]): Promise<number> {
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
   const plan = await readDataverseRowsApplyArgument(args);
 
   if (!plan.success || !plan.data) {
     return printFailure(plan);
+  }
+
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'dv.rows.apply');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
   }
 
   const preview = maybeHandleMutationPreview(
@@ -2518,6 +2545,12 @@ async function runDataverseCreate(args: string[]): Promise<number> {
     return printFailure(argumentFailure('DV_TABLE_REQUIRED', 'Table logical name is required.'));
   }
 
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'dv.create');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
   const resolution = await resolveDataverseClientForCli(args);
 
   if (!resolution.success || !resolution.data) {
@@ -2564,6 +2597,12 @@ async function runDataverseUpdate(args: string[]): Promise<number> {
 
   if (!table || !id) {
     return printFailure(argumentFailure('DV_UPDATE_ARGS_REQUIRED', 'Usage: dv update <table> <id> --environment <alias> --body <json>'));
+  }
+
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'dv.update');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -2619,6 +2658,12 @@ async function runDataverseDelete(args: string[]): Promise<number> {
     return printFailure(argumentFailure('DV_DELETE_ARGS_REQUIRED', 'Usage: dv delete <table> <id> --environment <alias>'));
   }
 
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'dv.delete');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
   const resolution = await resolveDataverseClientForCli(args);
 
   if (!resolution.success || !resolution.data) {
@@ -2653,6 +2698,26 @@ async function runDataverseMetadata(args: string[]): Promise<number> {
         'Use `dv metadata tables`, `dv metadata table <logicalName>`, `dv metadata columns <table>`, `dv metadata column <table> <column>`, `dv metadata option-set <name>`, `dv metadata relationship <schemaName>`, `dv metadata snapshot ...`, `dv metadata diff`, `dv metadata schema ...`, `dv metadata init ...`, `dv metadata apply`, `dv metadata create-table`, `dv metadata update-table`, `dv metadata add-column`, `dv metadata update-column`, `dv metadata create-option-set`, `dv metadata update-option-set`, `dv metadata create-relationship`, `dv metadata update-relationship`, `dv metadata create-many-to-many`, or `dv metadata create-customer-relationship`.'
       )
     );
+  }
+
+  if (new Set([
+    'apply',
+    'create-table',
+    'update-table',
+    'add-column',
+    'update-column',
+    'create-option-set',
+    'update-option-set',
+    'create-relationship',
+    'update-relationship',
+    'create-many-to-many',
+    'create-customer-relationship',
+  ]).has(action)) {
+    const accessCheck = await enforceWriteAccessForCliArgs(args, `dv.metadata.${action}`);
+
+    if (accessCheck !== undefined) {
+      return accessCheck;
+    }
   }
 
   if (action === 'tables') {
@@ -3802,6 +3867,12 @@ async function runSolutionPublishers(args: string[]): Promise<number> {
 }
 
 async function runSolutionCreate(args: string[]): Promise<number> {
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'solution.create');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
   return runSolutionCreateCommand(args, {
     positionalArgs,
     readFlag,
@@ -3837,6 +3908,12 @@ async function runSolutionCheckpoint(args: string[]): Promise<number> {
 }
 
 async function runSolutionDelete(args: string[]): Promise<number> {
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'solution.delete');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
   return runSolutionDeleteCommand(args, {
     positionalArgs,
     readFlag,
@@ -3871,6 +3948,12 @@ async function runSolutionInspect(args: string[]): Promise<number> {
 }
 
 async function runSolutionSetMetadata(args: string[]): Promise<number> {
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'solution.set-metadata');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
   return runSolutionSetMetadataCommand(args, {
     positionalArgs,
     readFlag,
@@ -3888,6 +3971,12 @@ async function runSolutionSetMetadata(args: string[]): Promise<number> {
 }
 
 async function runSolutionPublish(args: string[]): Promise<number> {
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'solution.publish');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
   return runSolutionPublishCommand(args, {
     positionalArgs,
     readFlag,
@@ -4008,6 +4097,12 @@ async function runSolutionExport(args: string[]): Promise<number> {
 }
 
 async function runSolutionImport(args: string[]): Promise<number> {
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'solution.import');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
   return runSolutionImportCommand(args, {
     positionalArgs,
     readFlag,
@@ -4090,6 +4185,12 @@ async function runConnectionReferenceCreate(args: string[]): Promise<number> {
         'Usage: connref create <logicalName> --environment <alias> --connection-id CONNECTION_ID [--display-name NAME] [--connector-id CONNECTOR_ID] [--custom-connector-id CONNECTOR_ID]'
       )
     );
+  }
+
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'connref.create');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4177,6 +4278,12 @@ async function runConnectionReferenceSet(args: string[]): Promise<number> {
         'Usage: connref set <logicalName|displayName|id> --environment <alias> --connection-id CONNECTION_ID'
       )
     );
+  }
+
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'connref.set');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4269,6 +4376,12 @@ async function runEnvironmentVariableCreate(args: string[]): Promise<number> {
         'Usage: envvar create <schemaName> --environment <alias> [--display-name NAME] [--default-value VALUE] [--type string|number|boolean|json|data-source|secret]'
       )
     );
+  }
+
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'envvar.create');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -4400,6 +4513,12 @@ async function runEnvironmentVariableSet(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure('ENVVAR_SET_ARGS_REQUIRED', 'Usage: envvar set <schemaName|displayName|id> --environment <alias> --value VALUE')
     );
+  }
+
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'envvar.set');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
   }
 
   const resolution = await resolveDataverseClientForCli(args);
@@ -7772,6 +7891,44 @@ function readEnvironmentAlias(args: string[]): string | undefined {
   return readFlag(args, '--environment');
 }
 
+async function enforceWriteAccessForCliArgs(
+  args: string[],
+  operation: string,
+  isWrite = true
+): Promise<EnvironmentWriteGuardResult> {
+  if (!isWrite) {
+    return undefined;
+  }
+
+  const mutation = readMutationFlags(args);
+
+  if (mutation.success && mutation.data?.mode !== 'apply') {
+    return undefined;
+  }
+
+  const environmentAlias = readEnvironmentAlias(args);
+
+  if (!environmentAlias) {
+    return undefined;
+  }
+
+  const access = await checkEnvironmentAccess(
+    {
+      environmentAlias,
+      intent: 'write',
+      operation,
+      surface: 'cli',
+    },
+    readConfigOptions(args)
+  );
+
+  if (!access.success) {
+    return printFailure(access);
+  }
+
+  return undefined;
+}
+
 function readCanvasTemplateImportProvenance(args: string[]): Partial<CanvasTemplateProvenance> | undefined {
   const provenance: Partial<CanvasTemplateProvenance> = {
     kind: readFlag(args, '--kind') as CanvasTemplateProvenance['kind'] | undefined,
@@ -9065,34 +9222,30 @@ function readFlowWorkflowStateFlag(args: string[]): OperationResult<FlowWorkflow
   return argumentFailure('FLOW_WORKFLOW_STATE_INVALID', 'Use --workflow-state draft, activated, or suspended.');
 }
 
-function isDirectExecution(metaUrl: string): boolean {
+function isDirectExecution(): boolean {
   const entryPath = process.argv[1];
-  const modulePath = resolveCurrentModulePath(metaUrl);
 
-  if (!entryPath || !modulePath) {
+  if (!entryPath) {
     return false;
   }
 
   try {
-    return realpathSync(modulePath) === realpathSync(resolvePath(entryPath));
+    const resolvedEntryPath = realpathSync(resolvePath(entryPath)).replaceAll('\\', '/');
+    return (
+      resolvedEntryPath.endsWith('/packages/cli/src/index.ts') ||
+      resolvedEntryPath.endsWith('/packages/cli/dist/index.js') ||
+      resolvedEntryPath.endsWith('/packages/cli/dist/index.cjs')
+    );
   } catch {
     return false;
   }
 }
 
-function resolveCurrentModulePath(metaUrl: string): string | undefined {
-  if (typeof __filename === 'string') {
-    return __filename;
-  }
-
-  try {
-    return fileURLToPath(metaUrl);
-  } catch {
-    return undefined;
-  }
+function resolveCurrentModulePath(): string | undefined {
+  return typeof __filename === 'string' ? __filename : undefined;
 }
 
-if (isDirectExecution(import.meta.url)) {
+if (isDirectExecution()) {
   main(process.argv.slice(2)).then((code) => {
     process.exitCode = code;
   });

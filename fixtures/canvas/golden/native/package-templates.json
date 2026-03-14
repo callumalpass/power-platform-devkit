@@ -2,7 +2,7 @@
   "UsedTemplates": [
     {
       "Name": "Button",
-      "Template": "",
+      "Template": "<widget xmlns=\"http://openajax.org/metadata\" xmlns:appMagic=\"http://schemas.microsoft.com/appMagic\" id=\"http://microsoft.com/appmagic/button\" name=\"button\" version=\"2.2.0\">  <properties>    <property name=\"Text\" datatype=\"String\" defaultValue=\"&quot;Button&quot;\" isExpr=\"true\">      <appMagic:category>data</appMagic:category>    </property>    <property name=\"OnSelect\" datatype=\"Behavior\" defaultValue=\"\" isExpr=\"true\">      <appMagic:category>behavior</appMagic:category>    </property>  </properties>  <appMagic:includeProperties>    <appMagic:includeProperty name=\"X\" defaultValue=\"0\" />    <appMagic:includeProperty name=\"Y\" defaultValue=\"0\" />    <appMagic:includeProperty name=\"Width\" defaultValue=\"120\" />    <appMagic:includeProperty name=\"Height\" defaultValue=\"40\" />  </appMagic:includeProperties></widget>",
       "Version": "2.2.0"
     }
   ]

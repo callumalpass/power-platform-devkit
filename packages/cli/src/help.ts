@@ -1789,7 +1789,7 @@ export function printAnalysisContextHelp(): void {
 export function printCompletionHelp(): void {
   process.stdout.write(
     [
-      'Usage: completion <bash|zsh|fish>',
+      'Usage: completion <bash|zsh|fish|pwsh>',
       '',
       'Status:',
       '  Emits a shell completion script for `pp`.',
@@ -1798,6 +1798,7 @@ export function printCompletionHelp(): void {
       '  pp completion zsh > ~/.zfunc/_pp',
       '  autoload -U compinit && compinit',
       '  pp completion fish > ~/.config/fish/completions/pp.fish',
+      '  pp completion pwsh | Out-String | Invoke-Expression',
       '',
       'Notes:',
       '  - Completion covers top-level commands plus the next subcommand layer.',

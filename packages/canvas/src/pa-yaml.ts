@@ -129,10 +129,7 @@ export async function loadCanvasPaYamlSource(path: string, options: CanvasSource
   const appProperties = normalizePropertyRecord(appNode.Properties);
   const appSource = createNodeSourceInfo(`app:${basename(root)}`, appFile, appDocument.data.contents, appYamlMap);
   const appPropertySpans = collectPropertySpans(appYamlMap.get('Properties', true), appFile, appDocument.data.contents);
-  const screenFiles = (await readdir(srcDir, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.pa.yaml') && !entry.name.startsWith('_') && entry.name !== 'App.pa.yaml')
-    .map((entry) => entry.name)
-    .sort((left, right) => left.localeCompare(right));
+  const screenFiles = await collectCanvasScreenFiles(srcDir);
 
   if (screenFiles.length === 0) {
     return fail(
@@ -152,19 +149,23 @@ export async function loadCanvasPaYamlSource(path: string, options: CanvasSource
       return screenDocument as unknown as OperationResult<CanvasSourceModel>;
     }
 
-    const screenRoot = asRecord(screenDocument.data.data);
-    const screensNode = asRecord(screenRoot?.Screens);
-    const screensYaml = getTopLevelMapping(screenDocument.data.document, 'Screens');
+    const parsedScreens = resolveScreenMappings(screenDocument.data);
 
-    if (!screensNode || !screensYaml || Object.keys(screensNode).length === 0) {
+    if (!parsedScreens || Object.keys(parsedScreens.screensNode).length === 0) {
       return fail(
-        createDiagnostic('error', 'CANVAS_PA_YAML_SCREEN_INVALID', `Canvas screen source ${screenPath} must contain a top-level Screens mapping.`, {
+        createDiagnostic(
+          'error',
+          'CANVAS_PA_YAML_SCREEN_INVALID',
+          `Canvas screen source ${screenPath} must contain a top-level screen mapping or Screens mapping.`,
+          {
           source: '@pp/canvas',
-        })
+          }
+        )
       );
     }
 
     const screenFile = relative(root, screenPath).replaceAll('\\', '/');
+    const { screensNode, screensYaml } = parsedScreens;
 
     for (const [screenName, screenValue] of Object.entries(screensNode)) {
       const screenNode = asRecord(screenValue);
@@ -233,7 +234,7 @@ export async function loadCanvasPaYamlSource(path: string, options: CanvasSource
         `${control.templateName}@${control.templateVersion}`,
         {
           name: control.templateName,
-          version: control.templateVersion,
+          version: control.templateVersion || undefined,
         },
       ])
     ).values()
@@ -439,7 +440,13 @@ function splitControlType(value: string): { constructorName: string; templateVer
   const atIndex = value.lastIndexOf('@');
 
   if (atIndex <= 0 || atIndex === value.length - 1) {
-    return undefined;
+    const constructorName = value.trim();
+    return constructorName.length > 0
+      ? {
+          constructorName,
+          templateVersion: '',
+        }
+      : undefined;
   }
 
   const constructorName = value.slice(0, atIndex).trim();
@@ -570,6 +577,66 @@ function getTopLevelMapping(document: Document.Parsed, key: string): YAMLMap<unk
 
   const pair = findPairByStringKey(root, key);
   return pair && isMap(pair.value) ? pair.value : undefined;
+}
+
+async function collectCanvasScreenFiles(srcDir: string): Promise<string[]> {
+  const topLevelEntries = await readdir(srcDir, { withFileTypes: true });
+  const files = topLevelEntries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.pa.yaml') && !entry.name.startsWith('_') && entry.name !== 'App.pa.yaml')
+    .map((entry) => entry.name);
+
+  const screensDir = topLevelEntries.find((entry) => entry.isDirectory() && entry.name === 'Screens');
+
+  if (screensDir) {
+    files.push(...(await collectCanvasScreenFilesFromSubdir(join(srcDir, screensDir.name), 'Screens')));
+  }
+
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
+async function collectCanvasScreenFilesFromSubdir(dir: string, prefix: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.pa.yaml') && !entry.name.startsWith('_'))
+    .map((entry) => join(prefix, entry.name));
+  const nested = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => collectCanvasScreenFilesFromSubdir(join(dir, entry.name), join(prefix, entry.name)))
+  );
+  return [...files, ...nested.flat()].sort((left, right) => left.localeCompare(right));
+}
+
+function resolveScreenMappings(
+  file: LoadedYamlFile
+): { screensNode: Record<string, unknown>; screensYaml: YAMLMap<unknown, unknown> } | undefined {
+  const screenRoot = asRecord(file.data);
+  const wrappedScreensNode = asRecord(screenRoot?.Screens);
+  const wrappedScreensYaml = getTopLevelMapping(file.document, 'Screens');
+
+  if (wrappedScreensNode && wrappedScreensYaml) {
+    return {
+      screensNode: wrappedScreensNode,
+      screensYaml: wrappedScreensYaml,
+    };
+  }
+
+  const root = file.document.contents;
+
+  if (!screenRoot || !root || !isMap(root) || root.items.length === 0) {
+    return undefined;
+  }
+
+  const rootEntries = Object.entries(screenRoot).filter(([, value]) => asRecord(value));
+
+  if (rootEntries.length === 0) {
+    return undefined;
+  }
+
+  return {
+    screensNode: Object.fromEntries(rootEntries),
+    screensYaml: root,
+  };
 }
 
 function findPairByStringKey(map: YAMLMap<unknown, unknown>, key: string): Pair<unknown, unknown> | undefined {

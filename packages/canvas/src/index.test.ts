@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,6 +5,7 @@ import { join, resolve as resolvePath } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
+import { createZipArchive } from './archive';
 import {
   applyCanvasPatch,
   buildCanvasApp,
@@ -44,12 +44,8 @@ async function createTempDir(): Promise<string> {
 }
 
 async function createZip(sourceDir: string, outPath: string): Promise<void> {
-  const result = spawnSync('zip', ['-rqX', outPath, '.'], {
-    cwd: sourceDir,
-    encoding: 'utf8',
-  });
-
-  expect(result.status).toBe(0);
+  const result = await createZipArchive(sourceDir, outPath);
+  expect(result.success).toBe(true);
 }
 
 async function writeSolutionExportMetadata(root: string, managed = false): Promise<void> {
@@ -414,6 +410,65 @@ describe('canvas template registries', () => {
         status: 'supported',
         modes: ['strict', 'registry'],
         notes: ['Imported from an exported References/Templates.json payload.'],
+      },
+    ]);
+  });
+
+  it('imports exported References/Templates.json PCF payloads as strict-capable registries', async () => {
+    const dir = await createTempDir();
+    const sourcePath = join(dir, 'Templates.json');
+
+    await writeFile(
+      sourcePath,
+      JSON.stringify(
+        {
+          UsedTemplates: [],
+          PcfTemplates: [
+            {
+              Name: 'PowerApps_CoreControls_TextCanvas',
+              Version: '0.0.21',
+              PcfConversions: [
+                {
+                  From: '0.0.17',
+                  To: '0.0.18',
+                  Action: [{ Name: 'Font', Type: 'add' }],
+                },
+              ],
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const imported = await importCanvasTemplateRegistry({
+      sourcePath,
+    });
+
+    expect(imported.success).toBe(true);
+    expect(imported.data?.templates[0]).toMatchObject({
+      templateName: 'PowerApps_CoreControls_TextCanvas',
+      templateVersion: '0.0.21',
+      aliases: {
+        constructors: ['Classic/PowerAppsCoreControlsTextCanvas'],
+        yamlNames: ['PowerApps_CoreControls_TextCanvas'],
+      },
+      files: {
+        'References/Templates.json': {
+          name: 'PowerApps_CoreControls_TextCanvas',
+          version: '0.0.21',
+        },
+      },
+    });
+    expect(imported.data?.supportMatrix).toEqual([
+      {
+        templateName: 'PowerApps_CoreControls_TextCanvas',
+        version: '0.0.21',
+        status: 'supported',
+        modes: ['strict', 'registry'],
+        notes: ['Imported from an exported References/Templates.json PCF payload.'],
       },
     ]);
   });

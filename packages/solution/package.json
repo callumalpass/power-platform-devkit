@@ -15,13 +15,14 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm,cjs --clean",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@pp/artifacts": "workspace:*",
     "@pp/dataverse": "workspace:*",
     "@pp/diagnostics": "workspace:*",
-    "@pp/model": "workspace:*"
+    "@pp/model": "workspace:*",
+    "adm-zip": "^0.5.16"
   }
 }

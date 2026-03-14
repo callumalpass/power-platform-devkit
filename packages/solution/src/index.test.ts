@@ -1,8 +1,8 @@
-import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import AdmZip from 'adm-zip';
 import { createDiagnostic, ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient, EntityDefinition } from '@pp/dataverse';
 import { SolutionService, type SolutionCommandInvocation, type SolutionCommandResult, type SolutionPublishProgressEvent } from './index';
@@ -64,6 +64,7 @@ async function createTempDir(): Promise<string> {
 
 async function createSolutionArchive(path: string, managed: boolean): Promise<void> {
   const root = await createTempDir();
+  const zip = new AdmZip();
   await writeFile(
     join(root, 'Solution.xml'),
     [
@@ -78,30 +79,19 @@ async function createSolutionArchive(path: string, managed: boolean): Promise<vo
     ].join('\n'),
     'utf8'
   );
-
-  const zipResult = spawnSync('zip', ['-rqX', path, '.'], {
-    cwd: root,
-    encoding: 'utf8',
-  });
-
-  expect(zipResult.status).toBe(0);
+  zip.addLocalFile(join(root, 'Solution.xml'));
+  zip.writeZip(path);
 }
 
 function readManagedFlagFromArchive(path: string): string {
-  const listResult = spawnSync('unzip', ['-Z1', path], {
-    encoding: 'utf8',
-  });
-  expect(listResult.status).toBe(0);
-  const metadataEntry = listResult.stdout
-    .split(/\r?\n/)
-    .map((entry) => entry.trim())
+  const zip = new AdmZip(path);
+  const metadataEntry = zip
+    .getEntries()
+    .map((entry) => entry.entryName)
     .find((entry) => entry.toLowerCase().endsWith('solution.xml') || entry.toLowerCase().endsWith('other.xml'));
   expect(metadataEntry).toBeTruthy();
-  const readResult = spawnSync('unzip', ['-p', path, metadataEntry!], {
-    encoding: 'utf8',
-  });
-  expect(readResult.status).toBe(0);
-  const managedMatch = readResult.stdout.match(/<Managed>([^<]+)<\/Managed>/i);
+  const content = zip.readAsText(metadataEntry!);
+  const managedMatch = content.match(/<Managed>([^<]+)<\/Managed>/i);
   expect(managedMatch?.[1]).toBeTruthy();
   return managedMatch![1]!;
 }

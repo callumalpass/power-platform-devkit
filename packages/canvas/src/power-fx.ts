@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
 import { ChildProcessWithoutNullStreams, spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { PowerFxAstNode } from './semantic-model';
 
 interface ParseResult {
@@ -155,11 +154,7 @@ function getBridgeDllPath(): string {
 }
 
 function getCanvasPackageRoot(): string {
-  if (typeof __filename === 'string') {
-    return join(dirname(__filename), '..');
-  }
-
-  return join(dirname(fileURLToPath(import.meta.url)), '..');
+  return join(dirname(__filename), '..');
 }
 
 function getBridgeSession(): PowerFxBridgeSession {

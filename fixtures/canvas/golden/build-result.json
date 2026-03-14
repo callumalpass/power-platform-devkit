@@ -1,7 +1,7 @@
 {
   "mode": "strict",
-  "outPath": "<TMP_DIR>/FixtureCanvas.msapp",
   "outFileSha256": "bfb938261629c363dc304d6dd2ebf0f072b62200a2a93ce59dbb733a972c6396",
+  "outPath": "<TMP_DIR>/FixtureCanvas.msapp",
   "packageHash": "cf50b83c25ce392197c4750faa0cf5cca8e9f419c5a3866f5507d6919bf83a10",
   "sourceHash": "fd037e682b8d5a9984da54fc061000d582ac5b5dd5da21796c532722419f020f",
   "supported": true,

@@ -63,7 +63,14 @@ describe('@pp/mcp', () => {
     return client;
   }
 
-  async function writeFixtureConfig(configDir: string): Promise<void> {
+  async function writeFixtureConfig(
+    configDir: string,
+    options: {
+      readOnlyEnvironments?: string[];
+    } = {}
+  ): Promise<void> {
+    const readOnlyEnvironments = new Set(options.readOnlyEnvironments ?? []);
+
     await mkdir(configDir, { recursive: true });
     await writeFile(
       join(configDir, 'config.json'),
@@ -83,6 +90,13 @@ describe('@pp/mcp', () => {
               authProfile: 'fixture-user',
               defaultSolution: 'CoreDev',
               makerEnvironmentId: '00000000-0000-0000-0000-000000000001',
+              ...(readOnlyEnvironments.has('dev')
+                ? {
+                    access: {
+                      mode: 'read-only',
+                    },
+                  }
+                : {}),
             },
             test: {
               alias: 'test',
@@ -90,6 +104,13 @@ describe('@pp/mcp', () => {
               authProfile: 'fixture-user',
               defaultSolution: 'CoreTest',
               makerEnvironmentId: '00000000-0000-0000-0000-000000000002',
+              ...(readOnlyEnvironments.has('test')
+                ? {
+                    access: {
+                      mode: 'read-only',
+                    },
+                  }
+                : {}),
             },
           },
           preferences: {},
@@ -113,6 +134,33 @@ describe('@pp/mcp', () => {
     );
     expect(result.knownLimitations).toContain(
       'MCP solution inspect can still fail before Dataverse returns a response when the underlying HTTP transport reports fetch failed.',
+    );
+  });
+
+  it('blocks MCP write tools against read-only environments', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir, {
+      readOnlyEnvironments: ['dev'],
+    });
+    const result = await executeDataverseCreate(
+      {
+        environment: 'dev',
+        configDir,
+        table: 'accounts',
+        body: {
+          name: 'Blocked',
+        },
+      },
+      {}
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'ENVIRONMENT_WRITE_BLOCKED',
+        }),
+      ])
     );
   });
 

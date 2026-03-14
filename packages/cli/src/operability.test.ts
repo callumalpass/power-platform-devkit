@@ -27,13 +27,17 @@ describe('operability helpers', () => {
     const bash = renderCompletionScript('bash');
     const zsh = renderCompletionScript('zsh');
     const fish = renderCompletionScript('fish');
+    const pwsh = renderCompletionScript('pwsh');
 
     expect(bash).toContain('complete -F _pp_complete pp');
     expect(bash).toContain('diagnostics) COMPREPLY=( $(compgen -W "doctor bundle"');
     expect(zsh).toContain('#compdef pp');
     expect(zsh).toContain("compadd -- 'doctor' 'bundle'");
     expect(fish).toContain('complete -c pp -n "__fish_use_subcommand" -a "diagnostics"');
-    expect(fish).toContain('complete -c pp -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"');
+    expect(fish).toContain('complete -c pp -n "__fish_seen_subcommand_from completion" -a "bash zsh fish pwsh"');
+    expect(pwsh).toContain('Register-ArgumentCompleter -Native -CommandName pp');
+    expect(pwsh).toContain("'diagnostics'");
+    expect(pwsh).toContain("'pwsh'");
   });
 
   it('collects a warning-only doctor report for a non-project directory', async () => {

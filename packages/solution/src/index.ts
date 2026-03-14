@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/
 import { createHash, randomUUID } from 'node:crypto';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import AdmZip from 'adm-zip';
 import { stableStringify } from '@pp/artifacts';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult, type ProvenanceRecord } from '@pp/diagnostics';
 import { ModelService, type ModelCompositionResult } from '@pp/model';
@@ -4634,126 +4635,106 @@ function rewriteManagedTag(
 }
 
 async function listZipEntries(packagePath: string): Promise<OperationResult<string[]>> {
-  const result = await runArchiveCommand('unzip', ['-Z1', packagePath]);
-
-  if (!result.success || result.data === undefined) {
-    return result as unknown as OperationResult<string[]>;
+  try {
+    const zip = new AdmZip(packagePath);
+    return ok(
+      zip
+        .getEntries()
+        .map((entry: { entryName: string }) => entry.entryName)
+        .filter((entry) => entry.length > 0),
+      {
+        supportTier: 'preview',
+      }
+    );
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'SOLUTION_ARCHIVE_COMMAND_FAILED', 'Failed to read solution archive.', {
+        source: '@pp/solution',
+        detail: error instanceof Error ? error.message : String(error),
+        hint: 'Inspect the archive path and contents, then retry.',
+      }),
+      {
+        supportTier: 'preview',
+      }
+    );
   }
-
-  return ok(
-    result.data
-      .toString('utf8')
-      .split(/\r?\n/)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0),
-    {
-      supportTier: 'preview',
-      diagnostics: result.diagnostics,
-      warnings: result.warnings,
-    }
-  );
 }
 
 async function extractZipEntry(packagePath: string, entry: string): Promise<OperationResult<Buffer>> {
-  return runArchiveCommand('unzip', ['-p', packagePath, entry]);
+  try {
+    const zip = new AdmZip(packagePath);
+    const archiveEntry = zip.getEntry(entry);
+
+    if (!archiveEntry) {
+      return fail(
+        createDiagnostic('error', 'SOLUTION_ARCHIVE_COMMAND_FAILED', `Archive entry ${entry} was not found.`, {
+          source: '@pp/solution',
+          path: packagePath,
+        }),
+        {
+          supportTier: 'preview',
+        }
+      );
+    }
+
+    return ok(archiveEntry.getData(), {
+      supportTier: 'preview',
+    });
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'SOLUTION_ARCHIVE_COMMAND_FAILED', 'Failed to read solution archive entry.', {
+        source: '@pp/solution',
+        detail: error instanceof Error ? error.message : String(error),
+        hint: 'Inspect the archive path and contents, then retry.',
+      }),
+      {
+        supportTier: 'preview',
+      }
+    );
+  }
 }
 
 async function extractZipArchive(packagePath: string, outDir: string): Promise<OperationResult<undefined>> {
-  const result = await runArchiveCommand('unzip', ['-qq', packagePath, '-d', outDir]);
-
-  if (!result.success) {
-    return result as unknown as OperationResult<undefined>;
+  try {
+    const zip = new AdmZip(packagePath);
+    zip.extractAllTo(outDir, true, true);
+    return ok(undefined, {
+      supportTier: 'preview',
+    });
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'SOLUTION_ARCHIVE_COMMAND_FAILED', 'Failed to extract solution archive.', {
+        source: '@pp/solution',
+        detail: error instanceof Error ? error.message : String(error),
+        hint: 'Inspect the archive path and contents, then retry.',
+      }),
+      {
+        supportTier: 'preview',
+      }
+    );
   }
-
-  return ok(undefined, {
-    supportTier: 'preview',
-    diagnostics: result.diagnostics,
-    warnings: result.warnings,
-  });
 }
 
 async function createZipArchive(sourceDir: string, outPath: string): Promise<OperationResult<undefined>> {
-  const result = await runArchiveCommand('zip', ['-rqX', outPath, '.'], {
-    cwd: sourceDir,
-  });
-
-  if (!result.success) {
-    return result as unknown as OperationResult<undefined>;
+  try {
+    const zip = new AdmZip();
+    zip.addLocalFolder(sourceDir, '');
+    zip.writeZip(outPath);
+    return ok(undefined, {
+      supportTier: 'preview',
+    });
+  } catch (error) {
+    return fail(
+      createDiagnostic('error', 'SOLUTION_ARCHIVE_COMMAND_FAILED', 'Failed to create solution archive.', {
+        source: '@pp/solution',
+        detail: error instanceof Error ? error.message : String(error),
+        hint: 'Inspect the source folder and destination path, then retry.',
+      }),
+      {
+        supportTier: 'preview',
+      }
+    );
   }
-
-  return ok(undefined, {
-    supportTier: 'preview',
-    diagnostics: result.diagnostics,
-    warnings: result.warnings,
-  });
-}
-
-async function runArchiveCommand(
-  command: string,
-  args: string[],
-  options: {
-    cwd?: string;
-  } = {}
-): Promise<OperationResult<Buffer>> {
-  return new Promise((resolvePromise) => {
-    let settled = false;
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-
-    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-    child.on('error', (error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolvePromise(
-        fail(
-          createDiagnostic('error', 'SOLUTION_ARCHIVE_COMMAND_FAILED', `Failed to run ${command}.`, {
-            source: '@pp/solution',
-            detail: error.message,
-            hint: `Install ${command} and retry.`,
-          }),
-          {
-            supportTier: 'preview',
-          }
-        )
-      );
-    });
-    child.on('close', (code) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      const stdoutBuffer = Buffer.concat(stdout);
-      const stderrBuffer = Buffer.concat(stderr);
-
-      if (code === 0) {
-        resolvePromise(
-          ok(stdoutBuffer, {
-            supportTier: 'preview',
-          })
-        );
-        return;
-      }
-
-      resolvePromise(
-        fail(
-          createDiagnostic('error', 'SOLUTION_ARCHIVE_COMMAND_FAILED', `${command} exited with code ${code ?? 'unknown'}.`, {
-            source: '@pp/solution',
-            detail: stderrBuffer.toString('utf8').trim() || stdoutBuffer.toString('utf8').trim() || undefined,
-          }),
-          {
-            supportTier: 'preview',
-          }
-        )
-      );
-    });
-  });
 }
 
 function createReleaseManifest(

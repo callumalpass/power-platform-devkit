@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm,cjs --clean",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "generate:connector-registry": "tsx scripts/generate-connector-operation-registry.ts",
     "typecheck": "tsc --noEmit"
   },

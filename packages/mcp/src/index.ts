@@ -7,7 +7,7 @@ import { stableStringify } from '@pp/artifacts';
 import { generateContextPack, generatePortfolioReport, type AnalysisContextPack } from '@pp/analysis';
 import { AuthService, summarizeProfile } from '@pp/auth';
 import { CanvasService } from '@pp/canvas';
-import { getEnvironmentAlias, listEnvironments, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
+import { checkEnvironmentAccess, getEnvironmentAlias, listEnvironments, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
 import {
   ConnectionReferenceService,
   EnvironmentVariableService,
@@ -104,6 +104,11 @@ interface ResolvedRemoteRuntime {
       ? C
       : never
     : never;
+}
+
+interface RemoteAccessRequest {
+  intent: 'read' | 'write';
+  operation: string;
 }
 
 interface EnvironmentCleanupCandidate {
@@ -1228,7 +1233,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: readOnlyAnnotations('List Solutions'),
     },
     async ({ prefix, uniqueName, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.solution.create' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult('pp.solution.list', resolution, readOnlyPolicy());
@@ -1254,7 +1259,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: readOnlyAnnotations('Inspect Solution'),
     },
     async ({ uniqueName, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.solution.set-metadata' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult('pp.solution.inspect', resolution, readOnlyPolicy());
@@ -1303,7 +1308,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: readOnlyAnnotations('Preflight Solution Export Readiness'),
     },
     async ({ uniqueName, managed, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.solution.publish' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult('pp.solution.sync-status', resolution, readOnlyPolicy());
@@ -1327,7 +1332,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: controlledMutationAnnotations('Create Solution'),
     },
     async ({ uniqueName, friendlyName, version, description, publisherId, publisherUniqueName, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.solution.import' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult(
@@ -1368,7 +1373,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: controlledMutationAnnotations('Set Solution Metadata'),
     },
     async ({ uniqueName, version, publisherId, publisherUniqueName, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.flow.activate' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult(
@@ -1407,7 +1412,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: controlledMutationAnnotations('Publish Solution'),
     },
     async ({ uniqueName, waitForExport, timeoutMs, pollIntervalMs, managed, outPath, manifestPath, requestTimeoutMs, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.flow.deploy' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult(
@@ -1453,7 +1458,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: controlledMutationAnnotations('Export Solution'),
     },
     async ({ uniqueName, outPath, manifestPath, managed, requestTimeoutMs, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.model-app.create' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult(
@@ -1488,7 +1493,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: controlledMutationAnnotations('Import Solution'),
     },
     async ({ packagePath, publishWorkflows, overwriteUnmanagedCustomizations, holdingSolution, skipProductUpdateDependencies, importJobId, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.model-app.attach' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult(
@@ -1587,7 +1592,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: readOnlyAnnotations('Inspect Dataverse Table Metadata'),
     },
     async ({ logicalName, view, select, expand, includeAnnotations, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.canvas-app.attach' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult('pp.dataverse.metadata.table', resolution, readOnlyPolicy());
@@ -1628,7 +1633,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       annotations: readOnlyAnnotations('Inspect Dataverse Relationship Metadata'),
     },
     async ({ schemaName, kind, view, select, expand, includeAnnotations, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
+      const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.canvas-app.import' });
 
       if (!resolution.success || !resolution.data) {
         return toToolResult('pp.dataverse.metadata.relationship', resolution, readOnlyPolicy());
@@ -3714,7 +3719,7 @@ export async function executeEnvironmentCleanup(
     });
   }
 
-  const resolution = await resolveRemoteRuntime(args, defaults);
+  const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.environment.cleanup' });
 
   if (!resolution.success || !resolution.data) {
     return resolution as unknown as OperationResult<EnvironmentCleanupExecutionResult>;
@@ -4269,7 +4274,7 @@ export async function executeDataverseDelete(
     result: unknown;
   }>
 > {
-  const resolution = await resolveRemoteRuntime(args, defaults);
+  const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.dataverse.delete' });
 
   if (!resolution.success || !resolution.data) {
     return resolution as unknown as OperationResult<{
@@ -4339,7 +4344,7 @@ export async function executeDataverseCreate(
     result: unknown;
   }>
 > {
-  const resolution = await resolveRemoteRuntime(args, defaults);
+  const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.dataverse.create' });
 
   if (!resolution.success || !resolution.data) {
     return resolution as unknown as OperationResult<{
@@ -4469,7 +4474,7 @@ export async function executeDataverseMetadataApply(
     );
   }
 
-  const resolution = await resolveRemoteRuntime(args, defaults);
+  const resolution = await resolveRemoteRuntime(args, defaults, { intent: 'write', operation: 'pp.dataverse.metadata.apply' });
 
   if (!resolution.success || !resolution.data) {
     return resolution as unknown as OperationResult<{
@@ -4689,10 +4694,29 @@ function derivePacOrganizationUrl(url: string | undefined): string | undefined {
   }
 }
 
-async function resolveRemoteRuntime(args: RemoteToolArgs, defaults: PpMcpServerOptions): Promise<OperationResult<ResolvedRemoteRuntime>> {
+async function resolveRemoteRuntime(
+  args: RemoteToolArgs,
+  defaults: PpMcpServerOptions,
+  accessRequest: RemoteAccessRequest = { intent: 'read', operation: 'mcp.read' }
+): Promise<OperationResult<ResolvedRemoteRuntime>> {
   const allowInteractiveAuth = args.allowInteractiveAuth ?? defaults.allowInteractiveAuth ?? false;
+  const configOptions = readConfigOptions(args.configDir, defaults);
+  const access = await checkEnvironmentAccess(
+    {
+      environmentAlias: args.environment,
+      intent: accessRequest.intent,
+      operation: accessRequest.operation,
+      surface: 'mcp',
+    },
+    configOptions
+  );
+
+  if (!access.success) {
+    return access as unknown as OperationResult<ResolvedRemoteRuntime>;
+  }
+
   const resolution = await resolveDataverseClient(args.environment, {
-    ...readConfigOptions(args.configDir, defaults),
+    ...configOptions,
     publicClientLoginOptions: {
       allowInteractive: allowInteractiveAuth,
     },

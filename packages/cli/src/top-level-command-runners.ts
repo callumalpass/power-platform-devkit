@@ -47,7 +47,7 @@ interface CommonCliDeps {
   positionalArgs(args: string[]): string[];
   printByFormat(value: unknown, format: CliOutputFormat): void;
   printFailure(result: ReturnType<typeof fail<CliOutputFormat>>): number;
-  renderCompletionScript(shell: 'bash' | 'zsh' | 'fish'): string;
+  renderCompletionScript(shell: 'bash' | 'zsh' | 'fish' | 'pwsh'): string;
   cliPackageName: string;
   cliVersion: string;
 }
@@ -128,22 +128,22 @@ export function createTopLevelCommandRunners(common: CommonCliDeps, groups: Grou
   }
 
   async function runCompletion(args: string[]): Promise<number> {
-    const shell = common.positionalArgs(args)[0] as 'bash' | 'zsh' | 'fish' | undefined;
+    const shell = common.positionalArgs(args)[0] as 'bash' | 'zsh' | 'fish' | 'pwsh' | undefined;
 
     if (!shell || args.includes('--help') || args.includes('help')) {
       cliHelp.printCompletionHelp();
       return shell ? 0 : 1;
     }
 
-    if (shell !== 'bash' && shell !== 'zsh' && shell !== 'fish') {
+    if (shell !== 'bash' && shell !== 'zsh' && shell !== 'fish' && shell !== 'pwsh') {
       return common.printFailure(
         fail(
           createDiagnostic('error', 'COMPLETION_SHELL_UNSUPPORTED', `Unsupported completion shell ${shell}.`, {
             source: '@pp/cli',
-            hint: 'Use one of: bash, zsh, fish.',
+            hint: 'Use one of: bash, zsh, fish, pwsh.',
           }),
           {
-            suggestedNextActions: ['pp completion bash', 'pp completion zsh', 'pp completion fish'],
+            suggestedNextActions: ['pp completion bash', 'pp completion zsh', 'pp completion fish', 'pp completion pwsh'],
           }
         )
       );

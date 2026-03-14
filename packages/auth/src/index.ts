@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { accessSync, constants as fsConstants } from 'node:fs';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import {
   ConfidentialClientApplication,
   PromptValue,
@@ -1241,7 +1241,7 @@ export function buildSystemBrowserCommand(
 
   if (platform === 'win32') {
     // `cmd start` treats `&` as a command separator unless the URL is quoted.
-    return ['cmd', ['/c', 'start', '', `"${url}"`]];
+    return [process.env.ComSpec ?? 'cmd.exe', ['/c', 'start', '', `"${url}"`]];
   }
 
   return ['xdg-open', [url]];
@@ -1273,20 +1273,34 @@ function resolveBrowserCommand(profile: BrowserProfile, platform: NodeJS.Platfor
       return platform === 'darwin'
         ? 'open'
         : platform === 'win32'
-          ? 'chrome'
+          ? resolveWindowsBrowserCommand(
+              [
+                join('Google', 'Chrome', 'Application', 'chrome.exe'),
+                join('Chromium', 'Application', 'chrome.exe'),
+              ],
+              ['chrome.exe', 'chrome'],
+              'chrome'
+            )
           : resolveLinuxBrowserCommand(['google-chrome', 'google-chrome-stable'], 'google-chrome');
     case 'chromium':
       return platform === 'darwin'
         ? 'open'
         : platform === 'win32'
-          ? 'chromium'
+          ? resolveWindowsBrowserCommand(
+              [
+                join('Chromium', 'Application', 'chrome.exe'),
+                join('Chromium', 'Application', 'chromium.exe'),
+              ],
+              ['chromium.exe', 'chromium', 'chrome.exe', 'chrome'],
+              'chromium'
+            )
           : resolveLinuxBrowserCommand(['chromium', 'chromium-browser'], 'chromium');
     case 'edge':
     default:
       return platform === 'darwin'
         ? 'open'
         : platform === 'win32'
-          ? 'msedge'
+          ? resolveWindowsBrowserCommand([join('Microsoft', 'Edge', 'Application', 'msedge.exe')], ['msedge.exe', 'msedge'], 'msedge')
           : resolveLinuxBrowserCommand(['microsoft-edge', 'microsoft-edge-stable'], 'microsoft-edge');
   }
 }
@@ -1301,29 +1315,88 @@ function resolveLinuxBrowserCommand(candidates: string[], fallback: string): str
   return fallback;
 }
 
-function commandExists(command: string): boolean {
+function commandExists(command: string, platform: NodeJS.Platform = process.platform): boolean {
+  return resolveCommandOnPath(command, platform) !== undefined;
+}
+
+function resolveCommandOnPath(command: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  if (isAbsolute(command) || command.includes('/') || command.includes('\\')) {
+    return fileExistsForExecution(command, platform) ? command : undefined;
+  }
+
   const pathValue = process.env.PATH;
 
   if (!pathValue) {
-    return false;
+    return undefined;
   }
 
-  for (const entry of pathValue.split(':')) {
+  const candidates = platform === 'win32' ? buildWindowsExecutableCandidates(command) : [command];
+
+  const pathEntries = pathValue.split(platform === 'win32' ? ';' : delimiter);
+
+  for (const entry of pathEntries) {
     if (!entry) {
       continue;
     }
 
-    const target = join(entry, command);
+    for (const candidate of candidates) {
+      const target = join(entry, candidate);
 
-    try {
-      accessSync(target, fsConstants.X_OK);
-      return true;
-    } catch {
-      // Continue scanning PATH entries.
+      if (fileExistsForExecution(target, platform)) {
+        return target;
+      }
     }
   }
 
-  return false;
+  return undefined;
+}
+
+function fileExistsForExecution(target: string, platform: NodeJS.Platform): boolean {
+  try {
+    accessSync(target, platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildWindowsExecutableCandidates(command: string): string[] {
+  if (/\.[^./\\]+$/.test(command)) {
+    return [command];
+  }
+
+  const pathExtValue = process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD';
+  const pathExtEntries = pathExtValue
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => (entry.startsWith('.') ? entry : `.${entry}`));
+
+  return [command, ...pathExtEntries.map((extension) => `${command}${extension.toLowerCase()}`)];
+}
+
+function resolveWindowsBrowserCommand(installRelativePaths: string[], commands: string[], fallback: string): string {
+  for (const baseDir of [process.env.LOCALAPPDATA, process.env.ProgramFiles, process.env['ProgramFiles(x86)']]) {
+    if (!baseDir) {
+      continue;
+    }
+
+    for (const relativePath of installRelativePaths) {
+      const target = join(baseDir, relativePath);
+
+      if (fileExistsForExecution(target, 'win32')) {
+        return target;
+      }
+    }
+  }
+
+  for (const command of commands) {
+    if (commandExists(command, 'win32')) {
+      return command;
+    }
+  }
+
+  return fallback;
 }
 
 function isMissingFileError(error: unknown): boolean {

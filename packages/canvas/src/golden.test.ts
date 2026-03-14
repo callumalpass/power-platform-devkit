@@ -1,8 +1,8 @@
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
+import AdmZip from 'adm-zip';
 import { readJsonFile } from '@pp/artifacts';
 import { ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient } from '@pp/dataverse';
@@ -46,11 +46,7 @@ function normalizeImportedRegistryRoundTrip<T>(value: T, ...tempPaths: string[])
 async function unzipCanvasPackage(packagePath: string, root: string): Promise<string> {
   const unzipDir = join(root, 'unzipped');
   await mkdir(unzipDir, { recursive: true });
-  const unzipResult = spawnSync('unzip', ['-o', packagePath, '-d', unzipDir], {
-    encoding: 'utf8',
-  });
-
-  expect(unzipResult.status).toBe(0);
+  new AdmZip(packagePath).extractAllTo(unzipDir, true, true);
   return unzipDir;
 }
 

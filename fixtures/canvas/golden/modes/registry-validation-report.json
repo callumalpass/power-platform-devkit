@@ -185,7 +185,7 @@
   "diagnostics": [
     {
       "code": "CANVAS_TEMPLATE_METADATA_MISSING",
-      "hint": "Provide seeded metadata or load a matching template registry.",
+      "hint": "Inspect seed.templates.json to confirm it includes every required control template, or retry with --mode seeded if formula-only validation is sufficient for this legacy manifest.",
       "level": "error",
       "message": "Template metadata for Button@1.0.0 was not resolved for Home/Layout/Submit.",
       "source": "@pp/canvas"

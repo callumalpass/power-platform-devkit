@@ -1,10 +1,10 @@
 import { access, chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { expect, vi } from 'vitest';
 import type { DataverseFixture } from '../../../test/dataverse-fixture';
 import { mapSnapshotStrings, repoRoot } from '../../../test/golden';
+import { createZipArchive, extractZipArchive } from '../../canvas/src/archive';
 import { main } from './index';
 
 export const tempDirs: string[] = [];
@@ -35,13 +35,8 @@ export async function createSolutionArchive(path: string, managed: boolean): Pro
     ].join('\n'),
     'utf8'
   );
-
-  const zipResult = spawnSync('zip', ['-rqX', path, '.'], {
-    cwd: root,
-    encoding: 'utf8',
-  });
-
-  expect(zipResult.status).toBe(0);
+  const created = await createZipArchive(root, path);
+  expect(created.success).toBe(true);
 }
 
 export async function writePortfolioFixtureProject(
@@ -359,21 +354,29 @@ export function normalizeImportedRegistryRoundTrip<T>(value: T, ...tempPaths: st
 export async function unzipCanvasPackage(packagePath: string, root: string): Promise<string> {
   const unzipDir = join(root, 'unzipped');
   await mkdir(unzipDir, { recursive: true });
-  const unzipResult = spawnSync('unzip', ['-o', packagePath, '-d', unzipDir], {
-    encoding: 'utf8',
-  });
-
-  expect(unzipResult.status).toBe(0);
+  const extracted = await extractZipArchive(packagePath, unzipDir);
+  expect(extracted.success).toBe(true);
   return unzipDir;
 }
 
 export async function createZipPackage(sourceDir: string, outPath: string): Promise<void> {
-  const zipResult = spawnSync('zip', ['-rqX', outPath, '.'], {
-    cwd: sourceDir,
-    encoding: 'utf8',
-  });
+  const created = await createZipArchive(sourceDir, outPath);
+  expect(created.success).toBe(true);
+}
 
-  expect(zipResult.status).toBe(0);
+export async function writeNodeCommandFixture(basePath: string, bodyLines: string[]): Promise<string> {
+  const scriptPath = basePath.endsWith('.js') ? basePath : `${basePath}.js`;
+  const scriptBody = ['#!/usr/bin/env node', ...bodyLines, ''].join('\n');
+  await writeFile(scriptPath, scriptBody, 'utf8');
+
+  if (process.platform === 'win32') {
+    const commandPath = scriptPath.replace(/\.js$/i, '.cmd');
+    await writeFile(commandPath, `@echo off\r\n"${process.execPath}" "%~dp0\\${basename(scriptPath)}" %*\r\n`, 'utf8');
+    return commandPath;
+  }
+
+  await chmod(scriptPath, 0o755);
+  return scriptPath;
 }
 
 export async function writeSolutionExportMetadata(root: string, managed = false): Promise<void> {

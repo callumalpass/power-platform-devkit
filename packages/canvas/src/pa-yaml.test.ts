@@ -1,8 +1,8 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import AdmZip from 'adm-zip';
 import { buildCanvasApp, buildCanvasSemanticModel, lintCanvasApp, loadCanvasSource, validateCanvasApp } from './index';
 
 const tempDirs: string[] = [];
@@ -22,6 +22,7 @@ async function writeUnpackedCanvasFixture(
   options: {
     screenYaml: string;
     registry: Record<string, unknown>;
+    screenRelativePath?: string;
   }
 ): Promise<string> {
   const appRoot = join(root, 'YamlCanvas');
@@ -41,7 +42,9 @@ async function writeUnpackedCanvasFixture(
     ].join('\n'),
     'utf8'
   );
-  await writeFile(join(appRoot, 'Src', 'Screen1.pa.yaml'), options.screenYaml, 'utf8');
+  const screenRelativePath = options.screenRelativePath ?? join('Src', 'Screen1.pa.yaml');
+  await mkdir(join(appRoot, dirname(screenRelativePath)), { recursive: true });
+  await writeFile(join(appRoot, screenRelativePath), options.screenYaml, 'utf8');
   await writeFile(
     join(appRoot, 'Src', '_EditorState.pa.yaml'),
     ['EditorState:', '  ScreensOrder:', '    - Screen1', ''].join('\n'),
@@ -323,6 +326,136 @@ describe('canvas pa.yaml source support', () => {
     });
   });
 
+  it('loads unpacked pa.yaml screens without a Screens wrapper', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'HelloScreen:',
+        '  Control: Screen',
+        '  Properties:',
+        '    LoadingSpinnerColor: =RGBA(56, 96, 178, 1)',
+        '  Children:',
+        '    - TextCanvas1:',
+        '        Control: PowerApps_CoreControls_TextCanvas@1.0.0',
+        '        Properties:',
+        '          Text: ="Hello Power Apps!"',
+        '',
+      ].join('\n'),
+      registry: {
+        schemaVersion: 1,
+        templates: [
+          {
+            templateName: 'TextCanvas',
+            templateVersion: '1.0.0',
+            aliases: {
+              constructors: ['PowerApps_CoreControls_TextCanvas'],
+            },
+            files: {
+              'References/Templates.json': {
+                name: 'TextCanvas',
+                version: '1.0.0',
+                templateXml:
+                  '<widget xmlns="http://openajax.org/metadata" xmlns:appMagic="http://schemas.microsoft.com/appMagic" id="http://microsoft.com/appmagic/textcanvas" name="textcanvas" version="1.0.0"></widget>',
+              },
+            },
+            provenance: {
+              source: 'test-registry',
+            },
+          },
+        ],
+        supportMatrix: [
+          {
+            templateName: 'TextCanvas',
+            version: '1.0.0',
+            status: 'supported',
+            modes: ['strict', 'registry'],
+          },
+        ],
+      },
+    });
+
+    const source = await loadCanvasSource(appRoot);
+
+    expect(source.success).toBe(true);
+    expect(source.data?.screens.map((screen) => screen.name)).toEqual(['HelloScreen']);
+    expect(source.data?.controls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'HelloScreen/TextCanvas1',
+          templateName: 'PowerApps_CoreControls_TextCanvas',
+          templateVersion: '1.0.0',
+        }),
+      ])
+    );
+  });
+
+  it('accepts versionless control constructors from unpacked pa.yaml sources', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'HelloScreen:',
+        '  Control: Screen',
+        '  Children:',
+        '    - TextCanvas1:',
+        '        Control: PowerApps_CoreControls_TextCanvas',
+        '        Properties:',
+        '          Text: ="Hello Power Apps!"',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+
+    const source = await loadCanvasSource(appRoot);
+
+    expect(source.success).toBe(true);
+    expect(source.data?.controls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'HelloScreen/TextCanvas1',
+          templateName: 'PowerApps_CoreControls_TextCanvas',
+          templateVersion: '',
+        }),
+      ])
+    );
+    expect(source.data?.templateRequirements).toEqual([
+      {
+        name: 'PowerApps_CoreControls_TextCanvas',
+      },
+    ]);
+  });
+
+  it('loads unpacked pa.yaml screens from Src/Screens', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'Screen1:',
+        '  Control: Screen',
+        '  Children:',
+        '    - Button1:',
+        '        Control: Classic/Button@2.2.0',
+        '        Properties:',
+        '          Text: ="Nested"',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+      screenRelativePath: join('Src', 'Screens', 'Screen1.pa.yaml'),
+    });
+
+    const source = await loadCanvasSource(appRoot);
+
+    expect(source.success).toBe(true);
+    expect(source.data?.screens.map((screen) => screen.file.replaceAll('\\', '/'))).toEqual(['Src/Screens/Screen1.pa.yaml']);
+    expect(source.data?.controls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'Screen1/Button1',
+          templateName: 'Classic/Button',
+          templateVersion: '2.2.0',
+        }),
+      ])
+    );
+  });
+
   it('validates control properties against harvested template metadata', async () => {
     const dir = await createTempDir();
     const appRoot = await writeUnpackedCanvasFixture(dir, {
@@ -384,7 +517,7 @@ describe('canvas pa.yaml source support', () => {
     expect(source.data?.screens[0]?.controls[0]?.source?.propertySpans?.Text?.start.line).toBe(7);
     expect(source.data?.metadataCatalog?.entities.map((entity) => entity.name)).toEqual(['Accounts', 'Contacts']);
 
-    const semantic = buildCanvasSemanticModel(source.data!);
+    const semantic = await buildCanvasSemanticModel(source.data!);
     const textFormula = semantic.formulas.find((formula) => formula.property === 'Text');
     const onSelectFormula = semantic.formulas.find((formula) => formula.property === 'OnSelect');
 
@@ -420,7 +553,7 @@ describe('canvas pa.yaml source support', () => {
     });
 
     const source = await loadCanvasSource(appRoot);
-    const semantic = buildCanvasSemanticModel(source.data!);
+    const semantic = await buildCanvasSemanticModel(source.data!);
 
     expect(semantic.formulas[0]).toMatchObject({
       property: 'OnSelect',
@@ -520,11 +653,7 @@ describe('canvas pa.yaml source support', () => {
 
     const unzipDir = join(dir, 'unzipped');
     await mkdir(unzipDir, { recursive: true });
-    const unzipResult = spawnSync('unzip', ['-o', outPath, '-d', unzipDir], {
-      encoding: 'utf8',
-    });
-
-    expect(unzipResult.status).toBe(0);
+    new AdmZip(outPath).extractAllTo(unzipDir, true, true);
 
     const templates = JSON.parse(await readFile(join(unzipDir, 'References', 'Templates.json'), 'utf8')) as {
       UsedTemplates: Array<{ Name: string; Version: string }>;
@@ -621,11 +750,7 @@ describe('canvas pa.yaml source support', () => {
 
     const unzipDir = join(dir, 'unzipped-fx');
     await mkdir(unzipDir, { recursive: true });
-    const unzipResult = spawnSync('unzip', ['-o', outPath, '-d', unzipDir], {
-      encoding: 'utf8',
-    });
-
-    expect(unzipResult.status).toBe(0);
+    new AdmZip(outPath).extractAllTo(unzipDir, true, true);
 
     const appYaml = await readFile(join(unzipDir, 'Src', 'App.pa.yaml'), 'utf8');
     const templates = JSON.parse(await readFile(join(unzipDir, 'References', 'Templates.json'), 'utf8')) as {

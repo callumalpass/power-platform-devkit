@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -28,6 +28,7 @@ import {
   runCli,
   tempDirs,
   unzipCanvasPackage,
+  writeNodeCommandFixture,
   writePortfolioFixtureProject,
   writeSolutionExportMetadata,
   writeUnpackedCanvasFixture,
@@ -88,6 +89,7 @@ describe('cli fixture-backed workflows', () => {
   it('prints version, completion, and diagnostics help as first-class product commands', async () => {
     const version = await runCli(['version', '--format', 'raw']);
     const completion = await runCli(['completion', 'bash']);
+    const completionPwsh = await runCli(['completion', 'pwsh']);
     const diagnosticsHelp = await runCli(['diagnostics', '--help']);
 
     expect(version.code).toBe(0);
@@ -98,6 +100,9 @@ describe('cli fixture-backed workflows', () => {
     expect(completion.stderr).toBe('');
     expect(completion.stdout).toContain('complete -F _pp_complete pp');
     expect(completion.stdout).toContain('diagnostics');
+    expect(completionPwsh.code).toBe(0);
+    expect(completionPwsh.stderr).toBe('');
+    expect(completionPwsh.stdout).toContain('Register-ArgumentCompleter -Native -CommandName pp');
 
     expect(diagnosticsHelp.code).toBe(0);
     expect(diagnosticsHelp.stderr).toBe('');
@@ -4526,7 +4531,12 @@ describe('cli fixture-backed workflows', () => {
 
   it('rebuilds extracted canvas apps during solution pack when requested', async () => {
     const tempDir = await createTempDir();
-    const pacPath = join(tempDir, 'fake-pac.js');
+    const pacPath = await writeNodeCommandFixture(join(tempDir, 'fake-pac'), [
+      "const { writeFileSync } = require('node:fs');",
+      'const args = process.argv.slice(2);',
+      "const zipfile = args[args.indexOf('--zipfile') + 1];",
+      "if (args[1] === 'pack') writeFileSync(zipfile, 'cli-packed');",
+    ]);
     const solutionDir = join(tempDir, 'solution');
     const packedPath = join(tempDir, 'Harness.zip');
     const canvasDir = await writeUnpackedCanvasFixture(join(solutionDir, 'CanvasApps'), {
@@ -4549,19 +4559,6 @@ describe('cli fixture-backed workflows', () => {
 
     await writeFile(join(solutionDir, 'Other.xml'), '<ImportExportXml />', 'utf8');
     await writeFile(join(solutionDir, 'CanvasApps', 'HarnessCanvas.msapp'), 'stale-msapp', 'utf8');
-    await writeFile(
-      pacPath,
-      [
-        '#!/usr/bin/env node',
-        "const { writeFileSync } = require('node:fs');",
-        'const args = process.argv.slice(2);',
-        "const zipfile = args[args.indexOf('--zipfile') + 1];",
-        "if (args[1] === 'pack') writeFileSync(zipfile, 'cli-packed');",
-      ].join('\n'),
-      'utf8'
-    );
-    await chmod(pacPath, 0o755);
-
     const packResult = await runCli([
       'solution',
       'pack',
@@ -7681,7 +7678,16 @@ describe('cli fixture-backed workflows', () => {
       resolveRepoPath('fixtures', 'solution', 'runtime', 'core-solution-envs.json')
     )) as SolutionFixtureEnvironments;
     const tempDir = await createTempDir();
-    const pacPath = join(tempDir, 'fake-pac.js');
+    const pacPath = await writeNodeCommandFixture(join(tempDir, 'fake-pac'), [
+      "const { mkdirSync, writeFileSync } = require('node:fs');",
+      'const args = process.argv.slice(2);',
+      "if (args[1] === 'unpack') {",
+      "  const folder = args[args.indexOf('--folder') + 1];",
+      "  mkdirSync(folder, { recursive: true });",
+      "  writeFileSync(`${folder}/Other.xml`, '<ImportExportXml><SolutionManifest><UniqueName>Core</UniqueName><Version>9.9.9.9</Version></SolutionManifest></ImportExportXml>');",
+      "  writeFileSync(`${folder}/customizations.xml`, '<Artifact />');",
+      '}',
+    ]);
     const packagePath = join(tempDir, 'Core_managed.zip');
     const manifestPath = join(tempDir, 'Core_managed.pp-solution.json');
 
@@ -7702,23 +7708,6 @@ describe('cli fixture-backed workflows', () => {
       }),
       'utf8'
     );
-    await writeFile(
-      pacPath,
-      [
-        '#!/usr/bin/env node',
-        "const { mkdirSync, writeFileSync } = require('node:fs');",
-        'const args = process.argv.slice(2);',
-        "if (args[1] === 'unpack') {",
-        "  const folder = args[args.indexOf('--folder') + 1];",
-        "  mkdirSync(folder, { recursive: true });",
-        "  writeFileSync(`${folder}/Other.xml`, '<ImportExportXml><SolutionManifest><UniqueName>Core</UniqueName><Version>9.9.9.9</Version></SolutionManifest></ImportExportXml>');",
-        "  writeFileSync(`${folder}/customizations.xml`, '<Artifact />');",
-        '}',
-      ].join('\n'),
-      'utf8'
-    );
-    await chmod(pacPath, 0o755);
-
     mockDataverseResolution({
       source: createFixtureDataverseClient(fixture.source),
     });
@@ -9527,24 +9516,16 @@ describe('cli fixture-backed workflows', () => {
 
   it('packs and unpacks solution artifacts through the CLI entrypoint', async () => {
     const tempDir = await createTempDir();
-    const pacPath = join(tempDir, 'fake-pac.js');
+    const pacPath = await writeNodeCommandFixture(join(tempDir, 'fake-pac'), [
+      "const { mkdirSync, writeFileSync } = require('node:fs');",
+      'const args = process.argv.slice(2);',
+      "const zipfile = args[args.indexOf('--zipfile') + 1];",
+      "const folder = args[args.indexOf('--folder') + 1];",
+      "if (args[1] === 'pack') writeFileSync(zipfile, 'cli-packed');",
+      "if (args[1] === 'unpack') { mkdirSync(folder, { recursive: true }); writeFileSync(`${folder}/Other.xml`, '<ImportExportXml />'); }",
+    ]);
     const packedPath = join(tempDir, 'Harness.zip');
     const unpackDir = join(tempDir, 'unpacked');
-
-    await writeFile(
-      pacPath,
-      [
-        '#!/usr/bin/env node',
-        "const { mkdirSync, writeFileSync } = require('node:fs');",
-        'const args = process.argv.slice(2);',
-        "const zipfile = args[args.indexOf('--zipfile') + 1];",
-        "const folder = args[args.indexOf('--folder') + 1];",
-        "if (args[1] === 'pack') writeFileSync(zipfile, 'cli-packed');",
-        "if (args[1] === 'unpack') { mkdirSync(folder, { recursive: true }); writeFileSync(`${folder}/Other.xml`, '<ImportExportXml />'); }",
-      ].join('\n'),
-      'utf8'
-    );
-    await chmod(pacPath, 0o755);
 
     const packResult = await runCli([
       'solution',
@@ -9597,27 +9578,19 @@ describe('cli fixture-backed workflows', () => {
 
   it('infers the solution unpack package type when the flag is omitted', async () => {
     const tempDir = await createTempDir();
-    const pacPath = join(tempDir, 'fake-pac.js');
+    const pacPath = await writeNodeCommandFixture(join(tempDir, 'fake-pac'), [
+      "const { mkdirSync, writeFileSync } = require('node:fs');",
+      'const args = process.argv.slice(2);',
+      "const packageType = args[args.indexOf('--packagetype') + 1];",
+      "const folder = args[args.indexOf('--folder') + 1];",
+      "if (args[1] !== 'unpack') process.exit(1);",
+      "if (packageType !== 'Unmanaged') { console.error(`unexpected package type: ${packageType}`); process.exit(2); }",
+      "mkdirSync(folder, { recursive: true });",
+      "writeFileSync(`${folder}/Other.xml`, '<ImportExportXml />');",
+    ]);
     const packedPath = join(tempDir, 'Harness_unmanaged.zip');
     const unpackDir = join(tempDir, 'unpacked');
     await createSolutionArchive(packedPath, false);
-
-    await writeFile(
-      pacPath,
-      [
-        '#!/usr/bin/env node',
-        "const { mkdirSync, writeFileSync } = require('node:fs');",
-        'const args = process.argv.slice(2);',
-        "const packageType = args[args.indexOf('--packagetype') + 1];",
-        "const folder = args[args.indexOf('--folder') + 1];",
-        "if (args[1] !== 'unpack') process.exit(1);",
-        "if (packageType !== 'Unmanaged') { console.error(`unexpected package type: ${packageType}`); process.exit(2); }",
-        "mkdirSync(folder, { recursive: true });",
-        "writeFileSync(`${folder}/Other.xml`, '<ImportExportXml />');",
-      ].join('\n'),
-      'utf8'
-    );
-    await chmod(pacPath, 0o755);
 
     const unpackResult = await runCli([
       'solution',
@@ -9644,11 +9617,19 @@ describe('cli fixture-backed workflows', () => {
 
   it('unpacks solution canvas apps into editable source trees when requested', async () => {
     const tempDir = await createTempDir();
-    const pacPath = join(tempDir, 'fake-pac.js');
     const packedPath = join(tempDir, 'Harness.zip');
     const unpackDir = join(tempDir, 'unpacked');
     const msappSourceDir = join(tempDir, 'msapp-source');
     const msappPath = join(tempDir, 'Harness Canvas.msapp');
+    const pacPath = await writeNodeCommandFixture(join(tempDir, 'fake-pac'), [
+      "const { mkdirSync, writeFileSync, copyFileSync } = require('node:fs');",
+      'const args = process.argv.slice(2);',
+      "const zipfile = args[args.indexOf('--zipfile') + 1];",
+      "const folder = args[args.indexOf('--folder') + 1];",
+      `const msappPath = ${JSON.stringify(msappPath)};`,
+      "if (args[1] === 'pack') writeFileSync(zipfile, 'cli-packed');",
+      "if (args[1] === 'unpack') { mkdirSync(`${folder}/CanvasApps`, { recursive: true }); writeFileSync(`${folder}/Other.xml`, '<ImportExportXml />'); copyFileSync(msappPath, `${folder}/CanvasApps/crd_HarnessCanvas.msapp`); }",
+    ]);
 
     await mkdir(msappSourceDir, { recursive: true });
     await writeFile(join(msappSourceDir, 'Header.json'), '{"schemaVersion":1}', 'utf8');
@@ -9656,22 +9637,7 @@ describe('cli fixture-backed workflows', () => {
     await writeFile(join(msappSourceDir, 'Controls\\1.json'), '{"Name":"App"}', 'utf8');
     await createZipPackage(msappSourceDir, msappPath);
 
-    await writeFile(
-      pacPath,
-      [
-        '#!/usr/bin/env node',
-        "const { mkdirSync, writeFileSync, copyFileSync } = require('node:fs');",
-        'const args = process.argv.slice(2);',
-        "const zipfile = args[args.indexOf('--zipfile') + 1];",
-        "const folder = args[args.indexOf('--folder') + 1];",
-        `const msappPath = ${JSON.stringify(msappPath)};`,
-        "if (args[1] === 'pack') writeFileSync(zipfile, 'cli-packed');",
-        "if (args[1] === 'unpack') { mkdirSync(`${folder}/CanvasApps`, { recursive: true }); writeFileSync(`${folder}/Other.xml`, '<ImportExportXml />'); copyFileSync(msappPath, `${folder}/CanvasApps/crd_HarnessCanvas.msapp`); }",
-      ].join('\n'),
-      'utf8'
-    );
-    await chmod(pacPath, 0o755);
-    await writeFile(packedPath, 'placeholder-solution-zip', 'utf8');
+    await createSolutionArchive(packedPath, false);
 
     const unpackResult = await runCli([
       'solution',
@@ -12360,6 +12326,130 @@ describe('cli fixture-backed workflows', () => {
         uniqueName: 'ServiceHub',
         name: 'Service Hub',
       },
+    });
+  });
+
+  it('blocks Dataverse write commands against read-only environments', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'prod-user': {
+              name: 'prod-user',
+              type: 'user',
+            },
+          },
+          browserProfiles: {},
+          environments: {
+            prod: {
+              alias: 'prod',
+              url: 'https://prod.crm.dynamics.com',
+              authProfile: 'prod-user',
+              access: {
+                mode: 'read-only',
+              },
+            },
+          },
+          preferences: {},
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const result = await runCli([
+      'dv',
+      'update',
+      'accounts',
+      '00000000-0000-0000-0000-000000000001',
+      '--env',
+      'prod',
+      '--config-dir',
+      configDir,
+      '--body',
+      '{"name":"Blocked"}',
+      '--format',
+      'json',
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      success: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: 'ENVIRONMENT_WRITE_BLOCKED',
+          message: expect.stringContaining('configured read-only'),
+        }),
+      ],
+    });
+  });
+
+  it('allows Dataverse read commands against read-only environments', async () => {
+    const configDir = await createTempDir();
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          authProfiles: {
+            'prod-user': {
+              name: 'prod-user',
+              type: 'user',
+            },
+          },
+          browserProfiles: {},
+          environments: {
+            prod: {
+              alias: 'prod',
+              url: 'https://prod.crm.dynamics.com',
+              authProfile: 'prod-user',
+              access: {
+                mode: 'read-only',
+              },
+            },
+          },
+          preferences: {},
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    mockDataverseResolution({
+      prod: createFixtureDataverseClient({
+        accounts: [
+          {
+            accountid: '00000000-0000-0000-0000-000000000001',
+            name: 'Allowed Read',
+          },
+        ],
+      }),
+    });
+
+    const result = await runCli([
+      'dv',
+      'query',
+      'accounts',
+      '--env',
+      'prod',
+      '--config-dir',
+      configDir,
+      '--select',
+      'accountid,name',
+      '--format',
+      'json',
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      success: true,
     });
   });
 });

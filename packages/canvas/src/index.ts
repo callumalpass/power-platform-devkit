@@ -3501,9 +3501,10 @@ async function prepareCanvasValidation(
           {
             source: '@pp/canvas',
           }
-        )
+      )
       ),
     ...collectUnresolvedDataSourceDiagnostics(semanticModel.formulas),
+    ...collectUnresolvedMetadataReferenceDiagnostics(semanticModel.formulas),
     ...invalidPropertyChecks
       .map((property) =>
         createDiagnostic(
@@ -3619,6 +3620,30 @@ function collectUnresolvedDataSourceDiagnostics(formulas: CanvasFormulaSemantic[
         {
           source: '@pp/canvas',
           hint: 'Add the data source to References/DataSources.json or update the formula to use an existing source.',
+        }
+      )
+    );
+  });
+}
+
+function collectUnresolvedMetadataReferenceDiagnostics(formulas: CanvasFormulaSemantic[]): Diagnostic[] {
+  return formulas.flatMap((formula) => {
+    const unresolvedNames = Array.from(
+      new Set(
+        formula.bindings
+          .filter((binding) => binding.metadataBacked && !binding.resolved && binding.name.trim().length > 0)
+          .map((binding) => binding.name)
+      )
+    );
+
+    return unresolvedNames.map((name) =>
+      createDiagnostic(
+        'error',
+        'CANVAS_METADATA_REFERENCE_UNRESOLVED',
+        `Metadata-backed reference ${name} in ${formula.property} on ${formula.controlPath} could not be resolved.`,
+        {
+          source: '@pp/canvas',
+          hint: 'Update the formula to use an existing column, relationship, or option value from the referenced data source metadata.',
         }
       )
     );
@@ -4574,17 +4599,60 @@ function normalizeRawUsedTemplatesCatalog(
   sourcePath: string
 ): { templates: unknown[]; supportMatrix: unknown[] } | undefined {
   const usedTemplates = Array.isArray(value.UsedTemplates) ? value.UsedTemplates : undefined;
+  const pcfTemplates = Array.isArray(value.PcfTemplates) ? value.PcfTemplates : undefined;
 
-  if (!usedTemplates || usedTemplates.length === 0) {
+  if (usedTemplates && usedTemplates.length > 0) {
+    return {
+      templates: usedTemplates.map((entry) => {
+        const template = asRecord(entry) ?? {};
+        const templateName = readString(template.Name) ?? readString(template.name);
+        const templateVersion = readString(template.Version) ?? readString(template.version);
+        const templateXml = readString(template.Template) ?? readString(template.template);
+
+        return {
+          templateName,
+          templateVersion,
+          aliases: {
+            yamlNames: templateName ? [templateName] : [],
+            constructors: inferRawTemplateConstructors(templateName),
+          },
+          files: {
+            'References/Templates.json': {
+              name: templateName,
+              version: templateVersion,
+              templateXml,
+            },
+          },
+          provenance: {
+            sourceArtifact: basename(sourcePath),
+          },
+        };
+      }),
+      supportMatrix: usedTemplates.map((entry) => {
+        const template = asRecord(entry) ?? {};
+        const templateName = readString(template.Name) ?? readString(template.name);
+        const templateVersion = readString(template.Version) ?? readString(template.version);
+
+        return {
+          templateName,
+          version: templateVersion,
+          supported: true,
+          modes: ['strict', 'registry'],
+          notes: ['Imported from an exported References/Templates.json payload.'],
+        };
+      }),
+    };
+  }
+
+  if (!pcfTemplates || pcfTemplates.length === 0) {
     return undefined;
   }
 
   return {
-    templates: usedTemplates.map((entry) => {
+    templates: pcfTemplates.map((entry) => {
       const template = asRecord(entry) ?? {};
       const templateName = readString(template.Name) ?? readString(template.name);
       const templateVersion = readString(template.Version) ?? readString(template.version);
-      const templateXml = readString(template.Template) ?? readString(template.template);
 
       return {
         templateName,
@@ -4597,7 +4665,7 @@ function normalizeRawUsedTemplatesCatalog(
           'References/Templates.json': {
             name: templateName,
             version: templateVersion,
-            templateXml,
+            pcfConversions: template.PcfConversions,
           },
         },
         provenance: {
@@ -4605,7 +4673,7 @@ function normalizeRawUsedTemplatesCatalog(
         },
       };
     }),
-    supportMatrix: usedTemplates.map((entry) => {
+    supportMatrix: pcfTemplates.map((entry) => {
       const template = asRecord(entry) ?? {};
       const templateName = readString(template.Name) ?? readString(template.name);
       const templateVersion = readString(template.Version) ?? readString(template.version);
@@ -4615,7 +4683,7 @@ function normalizeRawUsedTemplatesCatalog(
         version: templateVersion,
         supported: true,
         modes: ['strict', 'registry'],
-        notes: ['Imported from an exported References/Templates.json payload.'],
+        notes: ['Imported from an exported References/Templates.json PCF payload.'],
       };
     }),
   };

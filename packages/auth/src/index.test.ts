@@ -173,7 +173,7 @@ describe('AuthService', () => {
       'win32'
     );
 
-    expect(command).toBe('cmd');
+    expect(command).toBe(process.env.ComSpec ?? 'cmd.exe');
     expect(args).toEqual([
       '/c',
       'start',
@@ -743,6 +743,34 @@ describe('AuthService', () => {
       expect(edgeSpec.command).toBe('microsoft-edge-stable');
     } finally {
       process.env.PATH = originalPath;
+    }
+  });
+
+  it('resolves Windows browser commands from semicolon-delimited PATH entries', async () => {
+    const browserBinDir = await mkdtemp(join(tmpdir(), 'pp-browser-win-bin-'));
+    const originalPath = process.env.PATH;
+    const originalPathExt = process.env.PATHEXT;
+
+    await writeFile(join(browserBinDir, 'chrome.exe'), '', 'utf8');
+
+    try {
+      process.env.PATH = [browserBinDir, 'C:\\Windows\\System32'].join(';');
+      process.env.PATHEXT = '.EXE;.CMD';
+
+      const chromeSpec = buildBrowserLaunchSpec(
+        {
+          name: 'tenant-chrome',
+          kind: 'chrome',
+        },
+        'https://login.microsoftonline.com',
+        {},
+        'win32'
+      );
+
+      expect(chromeSpec.command).toBe('chrome.exe');
+    } finally {
+      process.env.PATH = originalPath;
+      process.env.PATHEXT = originalPathExt;
     }
   });
 
