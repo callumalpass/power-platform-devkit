@@ -70,9 +70,11 @@ describe('cli fixture-backed workflows', () => {
     expect(stdout.join('')).toContain('  auth          manage auth profiles, browser profiles, login, and tokens');
     expect(stdout.join('')).toContain('  env           manage Dataverse environment aliases');
     expect(stdout.join('')).toContain('  solution      inspect and mutate solutions');
+    expect(stdout.join('')).toContain('  mcp           stdio MCP server hosting');
     expect(stdout.join('')).toContain('  diagnostics   install/config/project diagnostics');
     expect(stdout.join('')).toContain('pp auth profile add-user --name work');
     expect(stdout.join('')).toContain('pp env add dev --url https://contoso.crm.dynamics.com --profile work');
+    expect(stdout.join('')).toContain('pp mcp serve --project .');
     expect(stdout.join('')).toContain('Use `pp env --help` to browse alias lifecycle commands before choosing `env add`, `env inspect`, or bootstrap cleanup flows.');
     expect(stdout.join('')).toContain(
       '`auth profile add-env` means "read a token from an environment variable", not "register a Dataverse environment alias".'
@@ -100,6 +102,7 @@ describe('cli fixture-backed workflows', () => {
     expect(completion.stderr).toBe('');
     expect(completion.stdout).toContain('complete -F _pp_complete pp');
     expect(completion.stdout).toContain('diagnostics');
+    expect(completion.stdout).toContain('mcp');
     expect(completionPwsh.code).toBe(0);
     expect(completionPwsh.stderr).toBe('');
     expect(completionPwsh.stdout).toContain('Register-ArgumentCompleter -Native -CommandName pp');
@@ -108,6 +111,22 @@ describe('cli fixture-backed workflows', () => {
     expect(diagnosticsHelp.stderr).toBe('');
     expect(diagnosticsHelp.stdout).toContain('Usage: diagnostics <doctor|bundle> [path] [options]');
     expect(diagnosticsHelp.stdout).toContain('pp diagnostics bundle ./repo --format json > pp-diagnostics.json');
+  });
+
+  it('prints MCP help from the main CLI entrypoint', async () => {
+    const mcpHelp = await runCli(['mcp', '--help']);
+    const mcpServeHelp = await runCli(['mcp', 'serve', '--help']);
+
+    expect(mcpHelp.code).toBe(0);
+    expect(mcpHelp.stderr).toBe('');
+    expect(mcpHelp.stdout).toContain('Usage: mcp <serve> [options]');
+    expect(mcpHelp.stdout).toContain('pp mcp serve --project .');
+
+    expect(mcpServeHelp.code).toBe(0);
+    expect(mcpServeHelp.stderr).toBe('');
+    expect(mcpServeHelp.stdout).toContain('Usage: mcp serve [--project path] [--config-dir path] [--allow-interactive-auth]');
+    expect(mcpServeHelp.stdout).toContain('"command": "pp"');
+    expect(mcpServeHelp.stdout).toContain('"args": ["mcp", "serve", "--project", "."]');
   });
 
   it('prints canvas-specific help with remote workflow guidance', async () => {
@@ -378,6 +397,8 @@ describe('cli fixture-backed workflows', () => {
     const before = await readdir(tempDir);
 
     const projectHelp = await runCli(['project', '--help']);
+    const projectSolutionHelp = await runCli(['project', 'solution', '--help']);
+    const projectSolutionPullHelp = await runCli(['project', 'solution', 'pull', '--help']);
     const initHelp = await runCli(['project', 'init', tempDir, '--help']);
     const doctorHelp = await runCli(['project', 'doctor', tempDir, '--help']);
     const feedbackHelp = await runCli(['project', 'feedback', tempDir, '--help']);
@@ -392,6 +413,20 @@ describe('cli fixture-backed workflows', () => {
     expect(projectHelp.stdout).toContain('doctor [path]');
     expect(projectHelp.stdout).toContain('feedback [path]');
     expect(projectHelp.stdout).toContain('inspect [path]');
+    expect(projectHelp.stdout).toContain('solution <command>');
+
+    expect(projectSolutionHelp.code).toBe(0);
+    expect(projectSolutionHelp.stderr).toBe('');
+    expect(projectSolutionHelp.stdout).toContain('Usage: project solution <command> [options]');
+    expect(projectSolutionHelp.stdout).toContain('pull [path]');
+
+    expect(projectSolutionPullHelp.code).toBe(0);
+    expect(projectSolutionPullHelp.stderr).toBe('');
+    expect(projectSolutionPullHelp.stdout).toContain(
+      'Usage: project solution pull [path] [--stage STAGE] [--unpack] [--out PATH] [--unpack-out PATH] [--managed] [options]'
+    );
+    expect(projectSolutionPullHelp.stdout).toContain('Exports the resolved solution to the canonical bundle path');
+    expect(projectSolutionPullHelp.stdout).toContain('Uses project-relative paths for `--out`, `--unpack-out`, and `--manifest`');
 
     expect(initHelp.code).toBe(0);
     expect(initHelp.stderr).toBe('');
@@ -1272,6 +1307,99 @@ describe('cli fixture-backed workflows', () => {
     expect(initPlan.stdout).toContain(
       '`project init` creates `artifacts/solutions/` but leaves `artifacts/solutions/CoreLifecycle.zip` absent until a later pack/export step writes the bundle.'
     );
+  });
+
+  it('pulls the active project solution into canonical bundle and source paths', async () => {
+    const tempDir = await createTempDir();
+    const msappSourceDir = join(tempDir, 'msapp-source');
+    const msappPath = join(tempDir, 'Harness Canvas.msapp');
+    const pacPath = await writeNodeCommandFixture(join(tempDir, 'fake-pac'), [
+      "const { mkdirSync, writeFileSync, copyFileSync } = require('node:fs');",
+      'const args = process.argv.slice(2);',
+      "const folder = args[args.indexOf('--folder') + 1];",
+      `const msappPath = ${JSON.stringify(msappPath)};`,
+      "if (args[1] !== 'unpack') process.exit(1);",
+      "mkdirSync(`${folder}/CanvasApps`, { recursive: true });",
+      "writeFileSync(`${folder}/Other.xml`, '<ImportExportXml />');",
+      "copyFileSync(msappPath, `${folder}/CanvasApps/crd_HarnessCanvas.msapp`);",
+    ]);
+    const upstreamPath = join(tempDir, 'upstream.zip');
+    await createSolutionArchive(upstreamPath, false);
+    const upstreamBytes = await readFile(upstreamPath);
+    await mkdir(msappSourceDir, { recursive: true });
+    await writeFile(join(msappSourceDir, 'Header.json'), '{"schemaVersion":1}', 'utf8');
+    await writeFile(join(msappSourceDir, 'Src\\App.pa.yaml'), 'App:\n', 'utf8');
+    await writeFile(join(msappSourceDir, 'Controls\\1.json'), '{"Name":"App"}', 'utf8');
+    await createZipPackage(msappSourceDir, msappPath);
+
+    await runCli(['project', 'init', tempDir, '--name', 'HarnessDemo', '--env', 'source', '--solution', 'Core', '--format', 'json']);
+
+    const client = {
+      query: async <T>(options: { table: string }) =>
+        ok(
+          options.table === 'solutions'
+            ? ([{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core', version: '1.0.0.0' }] as T[])
+            : ([] as T[]),
+          { supportTier: 'preview' }
+        ),
+      queryAll: async <T>() => ok([] as T[], { supportTier: 'preview' }),
+      invokeAction: async <T>(name: string) =>
+        ok(
+          {
+            status: 200,
+            headers: {},
+            body:
+              name === 'ExportSolution'
+                ? ({
+                    ExportSolutionFile: upstreamBytes.toString('base64'),
+                  } as T)
+                : ({} as T),
+          },
+          { supportTier: 'preview' }
+        ),
+    } as unknown as DataverseClient;
+
+    mockDataverseResolution({
+      source: {
+        environment: {
+          alias: 'source',
+          url: 'https://fixture.api.crm.dynamics.com',
+        },
+        client,
+      },
+    });
+
+    const result = await runCli(['project', 'solution', 'pull', '--unpack', '--extract-canvas-apps', '--pac', pacPath, '--format', 'json'], {
+      cwd: tempDir,
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+
+    const artifactPath = join(tempDir, 'artifacts', 'solutions', 'Core.zip');
+    const unpackedPath = join(tempDir, 'solutions', 'Core');
+    const parsed = JSON.parse(result.stdout);
+
+    expect(parsed).toMatchObject({
+      projectRoot: tempDir,
+      environmentAlias: 'source',
+      solutionAlias: 'Core',
+      solutionUniqueName: 'Core',
+      packageType: 'unmanaged',
+      artifactPath,
+      manifestPath: join(tempDir, 'artifacts', 'solutions', 'Core.pp-solution.json'),
+      unpackedPath,
+      extractedCanvasApps: [
+        {
+          msappPath: join(unpackedPath, 'CanvasApps', 'crd_HarnessCanvas.msapp'),
+          extractedPath: join(unpackedPath, 'CanvasApps', 'crd_HarnessCanvas'),
+          extractedEntries: ['Controls/1.json', 'Header.json', 'Src/App.pa.yaml'],
+        },
+      ],
+    });
+    await access(artifactPath);
+    await access(join(unpackedPath, 'Other.xml'));
+    expect(await readFile(join(unpackedPath, 'CanvasApps', 'crd_HarnessCanvas', 'Src', 'App.pa.yaml'), 'utf8')).toBe('App:\n');
   });
 
   it('resolves relative project init targets from INIT_CWD when running from the package directory', async () => {

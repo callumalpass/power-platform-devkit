@@ -1,7 +1,7 @@
 import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, win32 as win32Path } from 'node:path';
 import { createDiagnostic, fail, ok, withWarning, type OperationResult } from '@pp/diagnostics';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
@@ -231,6 +231,11 @@ export interface EnvironmentAccessRequest {
   surface: 'cli' | 'mcp';
 }
 
+export interface GlobalConfigPathEnvironment {
+  APPDATA?: string;
+  XDG_CONFIG_HOME?: string;
+}
+
 export const PROJECT_CONFIG_FILENAMES = ['pp.config.json', 'pp.config.yaml', 'pp.config.yml'];
 export const GLOBAL_CONFIG_FILENAMES = ['config.json', 'config.yaml', 'config.yml'];
 const PROJECT_CONFIG_DISCOVERY_MAX_DEPTH = 4;
@@ -246,8 +251,24 @@ const PROJECT_CONFIG_DISCOVERY_IGNORED_DIRS = new Set([
   'coverage',
 ]);
 
+export function getDefaultGlobalConfigDir(
+  platform: NodeJS.Platform = process.platform,
+  env: GlobalConfigPathEnvironment = process.env,
+  homeDirectory: string = homedir()
+): string {
+  if (platform === 'win32') {
+    return win32Path.resolve(env.APPDATA ? win32Path.join(env.APPDATA, 'pp') : win32Path.join(homeDirectory, 'AppData', 'Roaming', 'pp'));
+  }
+
+  if (env.XDG_CONFIG_HOME) {
+    return resolve(join(env.XDG_CONFIG_HOME, 'pp'));
+  }
+
+  return resolve(join(homeDirectory, '.config', 'pp'));
+}
+
 export function getGlobalConfigDir(options: ConfigStoreOptions = {}): string {
-  return resolve(options.configDir ?? join(homedir(), '.config', 'pp'));
+  return resolve(options.configDir ?? getDefaultGlobalConfigDir());
 }
 
 export function getGlobalConfigFilePath(options: ConfigStoreOptions = {}): string {

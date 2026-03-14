@@ -7,6 +7,7 @@ interface ProjectHandlers {
   runProjectDoctor(args: string[]): Promise<number>;
   runProjectFeedback(args: string[]): Promise<number>;
   runProjectInspect(args: string[]): Promise<number>;
+  runProjectSolutionPull(args: string[]): Promise<number>;
 }
 
 interface AnalysisHandlers {

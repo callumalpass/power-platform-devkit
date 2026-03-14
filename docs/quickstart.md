@@ -184,4 +184,4 @@ pp auth profile list --config-dir ./.tmp/pp-config
 pp env list --config-dir ./.tmp/pp-config
 ```
 
-By default, global config lives under `~/.config/pp/config.json`.
+By default, global config lives under `%APPDATA%\\pp\\config.json` on Windows and `~/.config/pp/config.json` on macOS/Linux.

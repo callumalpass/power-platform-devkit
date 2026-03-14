@@ -244,7 +244,7 @@ From there, move into the domain docs rather than relying on `--help` alone:
 
 ## Auth and environments
 
-Global config is stored in `~/.config/pp/config.json` by default. Use `--config-dir` on auth and environment commands when you want an isolated config store for testing or automation.
+Global config is stored in `%APPDATA%\pp\config.json` on Windows and `~/.config/pp/config.json` on macOS/Linux by default. Use `--config-dir` on auth and environment commands when you want an isolated config store for testing or automation.
 
 Examples:
 

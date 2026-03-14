@@ -48,6 +48,7 @@
     "@pp/diagnostics": "workspace:*",
     "@pp/flow": "workspace:*",
     "@pp/http": "workspace:*",
+    "@pp/mcp": "workspace:*",
     "@pp/model": "workspace:*",
     "@pp/powerbi": "workspace:*",
     "@pp/project": "workspace:*",

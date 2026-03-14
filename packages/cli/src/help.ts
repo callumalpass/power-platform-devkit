@@ -1632,6 +1632,7 @@ export function printProjectHelp(): void {
       '  doctor [path]               validate project config, assets, and required inputs',
       '  feedback [path]             capture conceptual project feedback and derive follow-up tasks',
       '  inspect [path]              inspect resolved project topology and asset roots',
+      '  solution <command>          project-aware solution sync into canonical local paths',
       '',
       'Examples:',
       '  pp project init ./demo --name Demo --environment dev --solution Core',
@@ -1642,6 +1643,72 @@ export function printProjectHelp(): void {
       'Notes:',
       '  - Use `pp project init --plan` or `--dry-run` to preview scaffold changes without writing files.',
       '  - `pp project doctor`, `pp project feedback`, and `pp project inspect` are read-only local-structure workflows.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printProjectSolutionHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: project solution <command> [options]',
+      '',
+      'Commands:',
+      '  pull [path]                 export the active project solution into canonical local artifact paths',
+      '',
+      'Examples:',
+      '  pp project solution pull',
+      '  pp project solution pull ./demo --stage prod --unpack --format json',
+      '',
+      'Notes:',
+      '  - Resolves the active stage, environment alias, and solution target from `pp.config.yaml`.',
+      '  - Keeps packaged exports under `artifacts/solutions/` and optional unpacked source under `solutions/` by default.',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printProjectSolutionPullHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: project solution pull [path] [--stage STAGE] [--unpack] [--out PATH] [--unpack-out PATH] [--managed] [options]',
+      '',
+      'Status:',
+      '  Pulls the active project solution from Dataverse into canonical local project paths.',
+      '',
+      'Behavior:',
+      '  - Discovers the project from `[path]` or the current working directory, then resolves the active stage, environment alias, and solution target from project topology.',
+      '  - Exports the resolved solution to the canonical bundle path from the project contract unless `--out` overrides it.',
+      '  - With `--unpack`, unpacks the exported zip into the canonical solution source root unless `--unpack-out` overrides it.',
+      '  - Uses project-relative paths for `--out`, `--unpack-out`, and `--manifest` unless an absolute path is provided.',
+      '',
+      'Choose this when:',
+      '  - You want one project-aware command that refreshes the local packaged solution artifact and optionally the unpacked source tree.',
+      '',
+      'Choose `pp solution export` instead when:',
+      '  - You need a low-level environment-scoped export that should not depend on project topology or canonical project paths.',
+      '',
+      'Options:',
+      '  --stage STAGE              Resolve the project target through a specific stage',
+      '  --unpack                   Unpack the exported zip into the canonical solution source root',
+      '  --out PATH                 Write the solution zip to PATH instead of the canonical bundle path',
+      '  --unpack-out PATH          Unpack into PATH instead of the canonical solution source root',
+      '  --manifest FILE            Write the release manifest to FILE instead of next to the zip',
+      '  --managed                  Export a managed package instead of the default unmanaged package',
+      '  --allow-delete             Allow `solution unpack` to delete and replace an existing unpack target',
+      '  --extract-canvas-apps      Expand CanvasApps/*.msapp into editable source while unpacking',
+      '  --pac PATH                 Use a specific `pac` executable for unpacking',
+      '  --dry-run                  Render a mutation preview without side effects',
+      '  --plan                     Render a mutation plan without side effects',
+      '',
+      'Examples:',
+      '  pp project solution pull',
+      '  pp project solution pull --stage prod --managed',
+      '  pp project solution pull --unpack --extract-canvas-apps --pac ./bin/pac',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1803,6 +1870,58 @@ export function printCompletionHelp(): void {
       'Notes:',
       '  - Completion covers top-level commands plus the next subcommand layer.',
       '  - Redirect the output into your shell completion directory; `pp` does not edit shell startup files for you.',
+      '',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printMcpHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: mcp <serve> [options]',
+      '',
+      'Commands:',
+      '  serve                      run the pp MCP server over stdio for an MCP host',
+      '',
+      'Examples:',
+      '  pp mcp serve --project .',
+      '  pp mcp serve --config-dir "%APPDATA%\\\\pp" --project .',
+      '',
+      'Notes:',
+      '  - Start this from an MCP host configuration; it is not intended to run as a background Windows service.',
+      '  - The process stays attached to the MCP client over stdio and exits when the client disconnects.',
+      '',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printMcpServeHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: mcp serve [--project path] [--config-dir path] [--allow-interactive-auth]',
+      '',
+      'Status:',
+      '  Runs the pp stdio MCP server for on-demand host-managed sessions.',
+      '',
+      'Behavior:',
+      '  - Uses stdin/stdout as the MCP transport.',
+      '  - Resolves the project root from `--project`, defaulting to the current invocation root.',
+      '  - Uses the default pp config directory unless `--config-dir` overrides it.',
+      '  - Interactive auth stays disabled unless `--allow-interactive-auth` is set.',
+      '',
+      'Examples:',
+      '  pp mcp serve --project .',
+      '  pp mcp serve --config-dir "%APPDATA%\\\\pp" --project .',
+      '',
+      'Host config example:',
+      '  {',
+      '    "mcpServers": {',
+      '      "pp": {',
+      '        "command": "pp",',
+      '        "args": ["mcp", "serve", "--project", "."]',
+      '      }',
+      '    }',
+      '  }',
       '',
     ].join('\n') + '\n'
   );

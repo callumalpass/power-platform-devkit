@@ -30,7 +30,7 @@ interface ResolutionData {
   client: unknown;
 }
 
-interface SolutionUnpackCanvasExtraction {
+export interface SolutionUnpackCanvasExtraction {
   msappPath: string;
   extractedPath: string;
   extractedEntries: string[];
@@ -1296,7 +1296,9 @@ function readOptionalSolutionPackageTypeFlag(
   return deps.argumentFailure('SOLUTION_PACKAGE_TYPE_INVALID', 'Use --package-type managed, unmanaged, or both.');
 }
 
-async function extractCanvasAppsFromUnpackedSolution(unpackedRoot: string): Promise<OperationResult<SolutionUnpackCanvasExtraction[]>> {
+export async function extractCanvasAppsFromUnpackedSolution(
+  unpackedRoot: string
+): Promise<OperationResult<SolutionUnpackCanvasExtraction[]>> {
   const canvasAppsDir = join(unpackedRoot, 'CanvasApps');
   let entries: Dirent[];
 

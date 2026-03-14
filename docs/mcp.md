@@ -1,6 +1,6 @@
 # MCP
 
-`@pp/mcp` ships a runnable stdio MCP server for both read-first inspection and
+`pp` ships a runnable stdio MCP server for both read-first inspection and
 controlled deploy automation.
 
 ## What it exposes
@@ -56,17 +56,47 @@ Every tool returns a structured envelope that preserves:
 
 ## Running the server
 
-From source:
+From source through the main CLI:
 
 ```bash
-pnpm --filter @pp/mcp build
-node packages/mcp/dist/server.js --config-dir ~/.config/pp --project .
+pnpm --filter @pp/cli build
+node packages/cli/dist/index.cjs mcp serve --project .
 ```
 
-With the package bin after linking or installation:
+With the installed CLI:
 
 ```bash
-pp-mcp --config-dir ~/.config/pp --project .
+pp mcp serve --project .
+```
+
+When `pp` is installed through a Windows MSI, the MCP host should still launch
+`pp mcp serve` on demand over `stdio`; `pp` does not need a permanent Windows
+service.
+
+Example host configuration:
+
+```json
+{
+  "mcpServers": {
+    "pp": {
+      "command": "pp",
+      "args": ["mcp", "serve", "--project", "."]
+    }
+  }
+}
+```
+
+If you need an explicit config root in a Windows host config, use:
+
+```json
+{
+  "mcpServers": {
+    "pp": {
+      "command": "pp",
+      "args": ["mcp", "serve", "--config-dir", "%APPDATA%\\\\pp", "--project", "."]
+    }
+  }
+}
 ```
 
 ## Safety and mutation boundary

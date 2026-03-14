@@ -5,6 +5,7 @@ import * as cliHelp from './help';
 export interface MainGroupHandlers {
   runVersion(args: string[]): Promise<number>;
   runCompletion(args: string[]): Promise<number>;
+  runMcp(command: string | undefined, args: string[]): Promise<number>;
   runDiagnostics(command: string | undefined, args: string[]): Promise<number>;
   runInit(command: string | undefined, args: string[]): Promise<number>;
   runAuth(command: string | undefined, args: string[]): Promise<number>;
@@ -51,6 +52,10 @@ export async function dispatchMainCommand(argv: string[], handlers: MainGroupHan
 
   if (group === 'diagnostics') {
     return handlers.runDiagnostics(command, rest);
+  }
+
+  if (group === 'mcp') {
+    return handlers.runMcp(command, rest);
   }
 
   if (group === 'init') {

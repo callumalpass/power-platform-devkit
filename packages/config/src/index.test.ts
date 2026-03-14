@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   checkEnvironmentAccess,
+  getDefaultGlobalConfigDir,
   loadGlobalConfigOrDefault,
   saveBrowserProfile,
   saveAuthProfile,
@@ -119,5 +120,15 @@ describe('global config store', () => {
     expect(blocked.diagnostics[0]?.code).toBe('ENVIRONMENT_WRITE_BLOCKED');
     expect(allowed.success).toBe(true);
     expect(allowed.data?.mode).toBe('read-only');
+  });
+
+  it('uses %APPDATA% on Windows for the default global config directory', () => {
+    expect(getDefaultGlobalConfigDir('win32', { APPDATA: 'C:\\Users\\alice\\AppData\\Roaming' }, '/home/ignored')).toBe(
+      'C:\\Users\\alice\\AppData\\Roaming\\pp'
+    );
+  });
+
+  it('uses XDG_CONFIG_HOME on non-Windows platforms when available', () => {
+    expect(getDefaultGlobalConfigDir('linux', { XDG_CONFIG_HOME: '/tmp/xdg-config' }, '/home/alice')).toBe('/tmp/xdg-config/pp');
   });
 });

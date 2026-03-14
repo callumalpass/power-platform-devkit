@@ -12,7 +12,8 @@ That split makes it practical to manage several users, several service principal
 By default:
 
 ```text
-~/.config/pp/config.json
+Windows: %APPDATA%\pp\config.json
+macOS/Linux: ~/.config/pp/config.json
 ```
 
 Override per command with:
@@ -168,7 +169,8 @@ Behavior:
 - if `--config-dir` points at a repo-local directory, browser profiles become
   repo-scoped
 - otherwise they live under the user config root, typically
-  `~/.config/pp/browser-profiles/<name>`
+  `%APPDATA%\pp\browser-profiles\<name>` on Windows or
+  `~/.config/pp/browser-profiles/<name>` on macOS/Linux
 - browser-backed auth still falls back safely to normal behavior when no
   browser profile is configured
 

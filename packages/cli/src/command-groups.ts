@@ -239,6 +239,7 @@ export interface ProjectGroupHandlers {
   runProjectDoctor(args: string[]): Promise<number>;
   runProjectFeedback(args: string[]): Promise<number>;
   runProjectInspect(args: string[]): Promise<number>;
+  runProjectSolutionPull(args: string[]): Promise<number>;
 }
 
 export interface InitGroupHandlers {
@@ -260,6 +261,26 @@ export async function runProjectGroup(
   }
 
   switch (command) {
+    case 'solution': {
+      const [action, ...rest] = args;
+
+      if (!action || action === 'help' || action === '--help') {
+        cliHelp.printProjectSolutionHelp();
+        return 0;
+      }
+
+      switch (action) {
+        case 'pull':
+          if (rest.includes('--help') || rest.includes('help')) {
+            cliHelp.printProjectSolutionPullHelp();
+            return 0;
+          }
+          return handlers.runProjectSolutionPull(rest);
+        default:
+          cliHelp.printProjectSolutionHelp();
+          return 1;
+      }
+    }
     case 'init':
       if (args.includes('--help') || args.includes('help')) {
         cliHelp.printProjectInitHelp();

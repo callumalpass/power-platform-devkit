@@ -75,6 +75,7 @@ import {
 import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } from '@pp/diagnostics';
 import { FlowService, type FlowMonitorReport, type FlowPatchDocument, type FlowWorkflowStateLabel } from '@pp/flow';
 import { HttpClient } from '@pp/http';
+import { startReadFirstMcpServer } from '@pp/mcp';
 import { ModelService, type ModelArtifactMutationKind, type ModelInspectResult } from '@pp/model';
 import { PowerBiClient } from '@pp/powerbi';
 import {
@@ -141,6 +142,7 @@ import {
   runProjectFeedbackCommand,
   runProjectInitCommand,
   runProjectInspectCommand,
+  runProjectSolutionPullCommand,
 } from './project-commands';
 import {
   runAnalysisContextCommand,
@@ -282,6 +284,7 @@ export async function main(argv: string[]): Promise<number> {
   return dispatchMainCommand(argv, {
     runVersion: topLevelCommandRunners.runVersion,
     runCompletion: topLevelCommandRunners.runCompletion,
+    runMcp,
     runDiagnostics,
     runInit,
     runAuth,
@@ -308,7 +311,45 @@ async function runProject(command: string | undefined, args: string[]): Promise<
     runProjectDoctor,
     runProjectFeedback,
     runProjectInspect,
+    runProjectSolutionPull,
   });
+}
+
+async function runMcp(command: string | undefined, args: string[]): Promise<number> {
+  if (!command || command === 'help' || command === '--help') {
+    cliHelp.printMcpHelp();
+    return 0;
+  }
+
+  if (command !== 'serve') {
+    cliHelp.printMcpHelp();
+    return 1;
+  }
+
+  if (args.includes('--help') || args.includes('help')) {
+    cliHelp.printMcpServeHelp();
+    return 0;
+  }
+
+  const { server } = await startReadFirstMcpServer({
+    configDir: readConfigOptions(args).configDir,
+    projectPath: resolveOptionalInvocationPath(readFlag(args, '--project')),
+    allowInteractiveAuth: hasFlag(args, '--allow-interactive-auth'),
+  });
+
+  const shutdown = async () => {
+    await server.close();
+    process.exit(0);
+  };
+
+  process.once('SIGINT', () => {
+    void shutdown();
+  });
+  process.once('SIGTERM', () => {
+    void shutdown();
+  });
+
+  return 0;
 }
 
 async function runInit(command: string | undefined, args: string[]): Promise<number> {
@@ -1549,6 +1590,32 @@ async function runProjectInspect(args: string[]): Promise<number> {
     readFlag,
     readEnvironmentAlias,
     hasFlag,
+  });
+}
+
+async function runProjectSolutionPull(args: string[]): Promise<number> {
+  return runProjectSolutionPullCommand(args, {
+    positionalArgs,
+    resolveInvocationPath,
+    outputFormat,
+    readProjectDiscoveryOptions,
+    readConfigOptions,
+    printFailure,
+    printFailureWithMachinePayload,
+    printByFormat,
+    isMachineReadableOutputFormat,
+    printResultDiagnostics,
+    readFlag,
+    readEnvironmentAlias,
+    hasFlag,
+    maybeHandleMutationPreview,
+    resolveDataverseClientForEnvironmentAlias: async (environmentAlias: string, commandArgs: string[]) =>
+      resolveDataverseClient(environmentAlias, {
+        ...readConfigOptions(commandArgs),
+        publicClientLoginOptions: readPublicClientLoginOptions(commandArgs),
+      }),
+    createLocalSolutionService,
+    argumentFailure,
   });
 }
 

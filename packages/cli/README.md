@@ -46,6 +46,18 @@ pp diagnostics bundle --format json > pp-diagnostics.json
 `diagnostics bundle` emits a structured snapshot that is suitable for CI
 artifacts or support triage.
 
+## MCP
+
+Run the stdio MCP server through the main CLI entrypoint:
+
+```bash
+pp mcp serve --project .
+```
+
+This is the preferred host command for packaged installs, including a future
+Windows MSI, because the MCP client can start `pp` on demand instead of
+requiring a separate long-running service.
+
 ## Commands
 
 Start with:

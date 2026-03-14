@@ -22,6 +22,7 @@ export const COMMAND_TREE = {
   project: ['init', 'doctor', 'feedback', 'inspect'],
   analysis: ['report', 'context', 'portfolio', 'drift', 'usage', 'policy'],
   deploy: ['plan', 'apply', 'release'],
+  mcp: ['serve'],
   sharepoint: ['site', 'list', 'file', 'permissions'],
   powerbi: ['workspace', 'dataset', 'report'],
   diagnostics: ['doctor', 'bundle'],
@@ -456,7 +457,7 @@ function suggestNextActions(options: {
   const actions = [`pp version`, completionAction];
 
   if (!options.configFileExists) {
-    actions.push('pp auth profile list --config-dir ~/.config/pp');
+    actions.push(`pp auth profile list --config-dir "${getGlobalConfigDir()}"`);
   }
 
   if (options.pathExists && options.projectDiscovered) {

@@ -1,3 +1,10 @@
+import { isAbsolute, join, resolve } from 'node:path';
+import {
+  SolutionService,
+  type SolutionExportResult,
+  type SolutionService as LocalSolutionService,
+  type SolutionUnpackResult,
+} from '@pp/solution';
 import {
   compareProjectRuntimeTarget,
   discoverProject,
@@ -20,6 +27,7 @@ import { createDiagnostic, fail, type OperationResult } from '@pp/diagnostics';
 import type { ConfigStoreOptions } from '@pp/config';
 import { createMutationPreview, readMutationFlags, renderOutput, type CliOutputFormat } from './contract';
 import { buildProjectRelationshipSummary } from './relationship-context';
+import { extractCanvasAppsFromUnpackedSolution, type SolutionUnpackCanvasExtraction } from './solution-commands';
 
 type OutputFormat = CliOutputFormat;
 
@@ -44,6 +52,19 @@ interface ProjectCommandDependencies {
   readFlag(args: string[], name: string): string | undefined;
   readEnvironmentAlias(args: string[]): string | undefined;
   hasFlag(args: string[], name: string): boolean;
+  maybeHandleMutationPreview?(
+    args: string[],
+    fallbackFormat: OutputFormat,
+    action: string,
+    target: Record<string, unknown>,
+    input?: unknown
+  ): number | undefined;
+  resolveDataverseClientForEnvironmentAlias?(
+    environmentAlias: string,
+    args: string[]
+  ): Promise<OperationResult<{ environment: { alias: string; url?: string }; client: unknown }>>;
+  createLocalSolutionService?(): LocalSolutionService;
+  argumentFailure?(code: string, message: string): OperationResult<never>;
 }
 
 export async function runProjectInspectCommand(args: string[], deps: ProjectCommandDependencies): Promise<number> {
@@ -297,6 +318,189 @@ export async function runProjectFeedbackCommand(args: string[], deps: ProjectCom
     deps.printResultDiagnostics(result, format);
   }
   return 0;
+}
+
+export async function runProjectSolutionPullCommand(args: string[], deps: ProjectCommandDependencies): Promise<number> {
+  const path = deps.resolveInvocationPath(deps.positionalArgs(args)[0]);
+  const format = deps.outputFormat(args, 'json');
+  const discoveryOptions = deps.readProjectDiscoveryOptions(args);
+
+  if (!discoveryOptions.success || !discoveryOptions.data) {
+    return deps.printFailure(discoveryOptions);
+  }
+
+  const project = await discoverProject(path, discoveryOptions.data);
+
+  if (!project.success || !project.data) {
+    return deps.printFailure(project);
+  }
+
+  const activeEnvironment = project.data.topology.activeEnvironment;
+  const activeSolution = project.data.topology.activeSolution;
+
+  if (!activeEnvironment || !activeSolution) {
+    return deps.printFailure(
+      fail(
+        createDiagnostic(
+          'error',
+          'PROJECT_SOLUTION_PULL_TARGET_UNRESOLVED',
+          'Project solution pull requires a resolved project environment alias and solution target.',
+          {
+            source: '@pp/cli',
+            path: project.data.root,
+          }
+        ),
+        {
+          supportTier: project.supportTier,
+          warnings: project.warnings,
+          details: {
+            projectRoot: project.data.root,
+            selectedStage: project.data.topology.selectedStage,
+            activeEnvironment,
+            activeSolution: activeSolution?.uniqueName,
+          },
+          suggestedNextActions: [
+            'Set `defaults.environment` and `defaults.solution` in `pp.config.yaml`, or choose a stage that resolves both targets.',
+            'Run `pp project inspect --format json` to confirm the active project stage, environment alias, and solution mapping before retrying.',
+          ],
+          provenance: project.provenance,
+          knownLimitations: project.knownLimitations,
+        }
+      )
+    );
+  }
+
+  if (!deps.resolveDataverseClientForEnvironmentAlias || !deps.createLocalSolutionService || !deps.maybeHandleMutationPreview) {
+    return deps.printFailure(
+      deps.argumentFailure
+        ? deps.argumentFailure('PROJECT_SOLUTION_PULL_NOT_SUPPORTED', 'Project solution pull is not available in this CLI wiring.')
+        : fail(createDiagnostic('error', 'PROJECT_SOLUTION_PULL_NOT_SUPPORTED', 'Project solution pull is not available in this CLI wiring.'))
+    );
+  }
+
+  const contract = summarizeProjectContract(project.data);
+  const unpack = deps.hasFlag(args, '--unpack');
+  const outPath = resolveProjectCommandPath(project.data.root, deps.readFlag(args, '--out') ?? contract.canonicalBundlePath);
+  const unpackPath = unpack
+    ? resolveProjectCommandPath(project.data.root, deps.readFlag(args, '--unpack-out') ?? join(contract.solutionSourceRoot, activeSolution.alias))
+    : undefined;
+  const manifestPath = resolveOptionalProjectCommandPath(project.data.root, deps.readFlag(args, '--manifest'));
+
+  const preview = deps.maybeHandleMutationPreview(
+    args,
+    'json',
+    'project.solution.pull',
+    {
+      projectRoot: project.data.root,
+      stage: project.data.topology.selectedStage,
+      environmentAlias: activeEnvironment,
+      solutionAlias: activeSolution.alias,
+      solutionUniqueName: activeSolution.uniqueName,
+      outPath,
+      manifestPath,
+      unpack,
+      unpackPath,
+      managed: deps.hasFlag(args, '--managed'),
+    },
+    {
+      contract,
+      projectRoot: project.data.root,
+    }
+  );
+  if (preview !== undefined) {
+    return preview;
+  }
+
+  const resolution = await deps.resolveDataverseClientForEnvironmentAlias(activeEnvironment, args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+
+  const exportResult = await new SolutionService(resolution.data.client as never).exportSolution(activeSolution.uniqueName, {
+    managed: deps.hasFlag(args, '--managed'),
+    outPath,
+    manifestPath,
+  });
+  if (!exportResult.success || !exportResult.data) {
+    return deps.printFailure(exportResult);
+  }
+
+  let unpackResult: OperationResult<SolutionUnpackResult> | undefined;
+  let extractedCanvasApps: OperationResult<SolutionUnpackCanvasExtraction[]> | undefined;
+
+  if (unpackPath) {
+    unpackResult = await deps.createLocalSolutionService().unpack(exportResult.data.artifact.path, {
+      outDir: unpackPath,
+      packageType: exportResult.data.packageType,
+      allowDelete: deps.hasFlag(args, '--allow-delete'),
+      pacExecutable: deps.readFlag(args, '--pac'),
+    });
+
+    if (!unpackResult.success || !unpackResult.data) {
+      return deps.printFailure(unpackResult);
+    }
+
+    if (deps.hasFlag(args, '--extract-canvas-apps')) {
+      extractedCanvasApps = await extractCanvasAppsFromUnpackedSolution(unpackPath);
+
+      if (!extractedCanvasApps.success || !extractedCanvasApps.data) {
+        return deps.printFailure(extractedCanvasApps);
+      }
+    }
+  }
+
+  const payload = buildProjectSolutionPullPayload(
+    project.data,
+    resolution.data.environment.alias,
+    activeSolution.alias,
+    exportResult.data,
+    unpackResult?.data,
+    extractedCanvasApps?.data
+  );
+  deps.printByFormat(payload, format);
+  if (!deps.isMachineReadableOutputFormat(format)) {
+    deps.printResultDiagnostics(exportResult, format);
+    if (unpackResult) {
+      deps.printResultDiagnostics(unpackResult, format);
+    }
+    if (extractedCanvasApps) {
+      deps.printResultDiagnostics(extractedCanvasApps, format);
+    }
+  }
+  return 0;
+}
+
+function buildProjectSolutionPullPayload(
+  project: ProjectContext,
+  environmentAlias: string,
+  solutionAlias: string,
+  exportResult: SolutionExportResult,
+  unpackResult?: SolutionUnpackResult,
+  extractedCanvasApps?: SolutionUnpackCanvasExtraction[]
+): Record<string, unknown> {
+  return {
+    projectRoot: project.root,
+    stage: project.topology.selectedStage,
+    environmentAlias,
+    solutionAlias,
+    solutionUniqueName: exportResult.solution.uniquename,
+    packageType: exportResult.packageType,
+    artifactPath: exportResult.artifact.path,
+    manifestPath: exportResult.manifestPath,
+    unpackedPath: unpackResult?.unpackedRoot.path,
+    extractedCanvasApps,
+    artifact: exportResult.artifact,
+    manifest: exportResult.manifest,
+    unpackedRoot: unpackResult?.unpackedRoot,
+  };
+}
+
+function resolveProjectCommandPath(projectRoot: string, path: string): string {
+  return isAbsolute(path) ? path : resolve(projectRoot, path);
+}
+
+function resolveOptionalProjectCommandPath(projectRoot: string, path: string | undefined): string | undefined {
+  return path ? resolveProjectCommandPath(projectRoot, path) : undefined;
 }
 
 function renderProjectInitOutput(
