@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "kind": "pp.flow.artifact",
+  "metadata": {
+    "name": "PP Harness 092209 Env Probe",
+    "displayName": "PP Harness 092209 Env Probe",
+    "description": "Harness flow that reads the run-scoped environment variable value for run 20260313T092209253Z.",
+    "uniqueName": "pp_Harness092209EnvProbe",
+    "category": 5,
+    "workflowMetadata": {
+      "type": 1,
+      "mode": 0,
+      "onDemand": false,
+      "primaryEntity": "none"
+    },
+    "parameters": {
+      "ApiBaseUrl": "https://current.example.invalid/20260313T092209253Z"
+    },
+    "environmentVariables": [
+      "pp_Harness092209ApiBaseUrl"
+    ]
+  },
+  "definition": {
+    "parameters": {
+      "ApiBaseUrl": {
+        "defaultValue": "https://current.example.invalid/20260313T092209253Z"
+      }
+    },
+    "triggers": {
+      "Manual": {
+        "type": "Request"
+      }
+    },
+    "actions": {
+      "ComposeEnvSummary": {
+        "type": "Compose",
+        "inputs": "@{concat('artifact=', parameters('ApiBaseUrl'), '; env=', environmentVariables('pp_Harness092209ApiBaseUrl'))}"
+      }
+    }
+  },
+  "clientData": {
+    "properties": {
+      "definition": {
+        "parameters": {
+          "ApiBaseUrl": {
+            "defaultValue": "https://current.example.invalid/20260313T092209253Z"
+          }
+        },
+        "triggers": {
+          "Manual": {
+            "type": "Request"
+          }
+        },
+        "actions": {
+          "ComposeEnvSummary": {
+            "type": "Compose",
+            "inputs": "@{concat('artifact=', parameters('ApiBaseUrl'), '; env=', environmentVariables('pp_Harness092209ApiBaseUrl'))}"
+          }
+        }
+      }
+    },
+    "schemaVersion": 1
+  }
+}

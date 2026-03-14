@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "kind": "pp.flow.artifact",
+  "metadata": {
+    "name": "PP Harness 222533 Env Probe",
+    "displayName": "PP Harness 222533 Env Probe",
+    "description": "Harness flow that reads the run-scoped environment variable value for run 20260312T222533735Z.",
+    "uniqueName": "pp_Harness222533EnvProbe",
+    "category": 5,
+    "workflowMetadata": {
+      "type": 1,
+      "mode": 0,
+      "onDemand": false,
+      "primaryEntity": "none"
+    },
+    "parameters": {
+      "ApiBaseUrl": "https://org6c9dcfff.api.crm6.dynamics.com/api/data/v9.2"
+    },
+    "environmentVariables": [
+      "pp_HarnessApiUrl_20260312T222533735Z"
+    ]
+  },
+  "definition": {
+    "parameters": {
+      "ApiBaseUrl": {
+        "defaultValue": "https://org6c9dcfff.api.crm6.dynamics.com/api/data/v9.2"
+      }
+    },
+    "triggers": {
+      "Manual": {
+        "type": "Request"
+      }
+    },
+    "actions": {
+      "ComposeEnvSummary": {
+        "type": "Compose",
+        "inputs": "@{concat('artifact=', parameters('ApiBaseUrl'), '; env=', environmentVariables('pp_HarnessApiUrl_20260312T222533735Z'))}"
+      }
+    }
+  },
+  "clientData": {
+    "properties": {
+      "definition": {
+        "parameters": {
+          "ApiBaseUrl": {
+            "defaultValue": "https://org6c9dcfff.api.crm6.dynamics.com/api/data/v9.2"
+          }
+        },
+        "triggers": {
+          "Manual": {
+            "type": "Request"
+          }
+        },
+        "actions": {
+          "ComposeEnvSummary": {
+            "type": "Compose",
+            "inputs": "@{concat('artifact=', parameters('ApiBaseUrl'), '; env=', environmentVariables('pp_HarnessApiUrl_20260312T222533735Z'))}"
+          }
+        }
+      }
+    }
+  }
+}
