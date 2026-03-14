@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -19,12 +19,15 @@ import {
   parseManyToManyRelationshipCreateSpec,
   parseManyToManyRelationshipUpdateSpec,
   parseMetadataApplyPlan,
+  normalizeEntityDefinition,
+  normalizeRelationshipDefinition,
   parseOneToManyRelationshipCreateSpec,
   parseOneToManyRelationshipUpdateSpec,
   parseTableCreateSpec,
   parseTableUpdateSpec,
   resolveDataverseClient,
   type ConnectionReferenceSummary,
+  type DataverseClient,
   type DataverseMetadataApplyResult,
   type EnvironmentVariableSummary,
   type MetadataApplyPlan,
@@ -35,6 +38,7 @@ import { FlowService, type FlowMonitorReport } from '@pp/flow';
 import { ModelService, type ModelAppSummary, type ModelInspectResult } from '@pp/model';
 import {
   cancelInitSession,
+  compareProjectRuntimeTarget,
   discoverProject,
   doctorProject,
   feedbackProject,
@@ -215,6 +219,11 @@ interface SolutionCheckpointDocument {
     components: unknown[];
     componentCount: number;
   };
+}
+
+interface ToolResultLocalWrite {
+  kind: 'tool-result-json';
+  path: string;
 }
 
 interface AuthProfileInspectResult {
@@ -418,6 +427,7 @@ const flowActivateSchema = solutionScopeSchema.extend({
 const flowDeploySchema = flowMutationSchema.extend({
   inputPath: z.string().min(1),
   createIfMissing: z.boolean().optional(),
+  resultOutPath: z.string().min(1).optional(),
 });
 
 const flowExportSchema = solutionScopeSchema.extend({
@@ -429,8 +439,28 @@ const canvasInspectSchema = solutionScopeSchema.extend({
   identifier: z.string().min(1).optional(),
 });
 
+const modelInspectSchema = solutionScopeSchema.extend({
+  identifier: z.string().min(1).optional(),
+});
+
+const modelCreateSchema = solutionScopeSchema.extend({
+  uniqueName: z.string().min(1),
+  name: z.string().min(1).optional(),
+});
+
+const modelAttachSchema = solutionScopeSchema.extend({
+  identifier: z.string().min(1),
+  solutionUniqueName: z.string().min(1),
+  addRequiredComponents: z.boolean().optional(),
+});
+
 const canvasAccessSchema = solutionScopeSchema.extend({
   identifier: z.string().min(1),
+});
+
+const canvasAttachPlanSchema = solutionScopeSchema.extend({
+  identifier: z.string().min(1),
+  solutionUniqueName: z.string().min(1),
 });
 
 const canvasAttachSchema = solutionScopeSchema.extend({
@@ -482,6 +512,23 @@ const dataverseMetadataApplySchema = solutionScopeSchema.extend({
   manifestPath: z.string().min(1),
   mode: z.enum(['dry-run', 'apply']).optional(),
   publish: z.boolean().optional(),
+});
+
+const dataverseMetadataTableInspectSchema = remoteBaseSchema.extend({
+  logicalName: z.string().min(1),
+  view: z.enum(['normalized', 'raw']).optional(),
+  select: z.array(z.string().min(1)).optional(),
+  expand: z.array(z.string().min(1)).optional(),
+  includeAnnotations: z.array(z.string().min(1)).optional(),
+});
+
+const dataverseMetadataRelationshipInspectSchema = remoteBaseSchema.extend({
+  schemaName: z.string().min(1),
+  kind: z.enum(['auto', 'one-to-many', 'many-to-many']).optional(),
+  view: z.enum(['normalized', 'raw']).optional(),
+  select: z.array(z.string().min(1)).optional(),
+  expand: z.array(z.string().min(1)).optional(),
+  includeAnnotations: z.array(z.string().min(1)).optional(),
 });
 
 const solutionCreateSchema = remoteBaseSchema.extend({
@@ -559,6 +606,7 @@ const dataverseCreateSchema = remoteBaseSchema.extend({
 const projectScopeSchema = z.object({
   projectPath: z.string().min(1).optional(),
   stage: z.string().min(1).optional(),
+  environmentAlias: z.string().min(1).optional(),
 });
 
 const portfolioScopeSchema = z.object({
@@ -650,7 +698,7 @@ export const initialMcpTools: McpToolDefinition[] = [
   {
     name: 'pp.solution.create',
     title: 'Create Solution',
-    description: 'Create one unmanaged solution shell in a configured Dataverse environment with an explicit publisher binding.',
+    description: 'Create one unmanaged solution shell in a configured Dataverse environment with explicit or inferable publisher binding.',
   },
   {
     name: 'pp.solution.set-metadata',
@@ -681,6 +729,16 @@ export const initialMcpTools: McpToolDefinition[] = [
     name: 'pp.dataverse.metadata.apply',
     title: 'Apply Dataverse Metadata Manifest',
     description: 'Preview or apply one repo-local Dataverse metadata manifest for tables, columns, option sets, and relationships.',
+  },
+  {
+    name: 'pp.dataverse.metadata.table',
+    title: 'Inspect Dataverse Table Metadata',
+    description: 'Inspect one Dataverse table definition through MCP with normalized or raw metadata output.',
+  },
+  {
+    name: 'pp.dataverse.metadata.relationship',
+    title: 'Inspect Dataverse Relationship Metadata',
+    description: 'Inspect one Dataverse relationship definition through MCP with normalized or raw metadata output.',
   },
   {
     name: 'pp.dataverse.query',
@@ -740,7 +798,7 @@ export const initialMcpTools: McpToolDefinition[] = [
   {
     name: 'pp.flow.deploy',
     title: 'Deploy Flow Artifact',
-    description: 'Create or update one remote flow from a local artifact path, with optional solution scoping and create-if-missing behavior.',
+    description: 'Create or update one remote flow from a local artifact path, including solution-scoped create-if-missing authoring plus workflow-state follow-up guidance.',
   },
   {
     name: 'pp.flow.export',
@@ -763,6 +821,16 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'List model-driven apps or inspect one app with forms, views, tables, and dependencies.',
   },
   {
+    name: 'pp.model-app.create',
+    title: 'Create Model-Driven App',
+    description: 'Create one model-driven app through the MCP mutation surface with optional solution attachment.',
+  },
+  {
+    name: 'pp.model-app.attach',
+    title: 'Attach Model-Driven App',
+    description: 'Attach one existing model-driven app to a solution through the MCP mutation surface.',
+  },
+  {
     name: 'pp.canvas-app.inspect',
     title: 'Inspect Canvas Apps',
     description: 'List remote canvas apps or inspect one canvas app within an optional solution scope.',
@@ -771,6 +839,11 @@ export const initialMcpTools: McpToolDefinition[] = [
     name: 'pp.canvas-app.access',
     title: 'Inspect Canvas Access',
     description: 'Inspect ownership and explicit share state for one remote canvas app within an optional solution scope.',
+  },
+  {
+    name: 'pp.canvas-app.plan-attach',
+    title: 'Plan Canvas App Attach',
+    description: 'Preview one remote canvas app attach against a target solution without mutating Dataverse.',
   },
   {
     name: 'pp.canvas-app.attach',
@@ -907,20 +980,30 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.solution.list',
       'pp.solution.inspect',
       'pp.solution.compare',
+      'pp.dataverse.metadata.table',
+      'pp.dataverse.metadata.relationship',
       'pp.dataverse.query',
       'pp.dataverse.whoami',
       'pp.flow.inspect',
       'pp.flow.connrefs',
       'pp.canvas-app.inspect',
       'pp.canvas-app.access',
+      'pp.canvas-app.plan-attach',
       'pp.connection-reference.inspect',
       'pp.environment-variable.inspect',
       'pp.model-app.inspect',
     ],
     mutationToolsAvailable: true,
-    mutationTools: ['pp.environment.cleanup', 'pp.dataverse.metadata.apply', 'pp.dataverse.create', 'pp.dataverse.delete'],
+    mutationTools: [
+      'pp.environment.cleanup',
+      'pp.dataverse.metadata.apply',
+      'pp.dataverse.create',
+      'pp.dataverse.delete',
+      'pp.model-app.create',
+      'pp.model-app.attach',
+    ],
     notes:
-      'The MCP Dataverse surface stays inspect-first but now includes bounded bootstrap cleanup by run prefix, manifest-driven metadata apply for repo-local schema specs, explicit single-row create/delete, alongside solution/environment inspection, Dataverse queries that auto-resolve logical names like `solution` to entity sets like `solutions`, and harmless identity reads via pp.dataverse.whoami.',
+      'The MCP Dataverse surface stays inspect-first but now includes bounded bootstrap cleanup by run prefix, manifest-driven metadata apply for repo-local schema specs, first-class table/relationship metadata inspection, explicit single-row create/delete, alongside solution/environment inspection, Dataverse queries that auto-resolve logical names like `solution` to entity sets like `solutions`, and harmless identity reads via pp.dataverse.whoami.',
   },
   {
     name: 'solution-lifecycle',
@@ -930,7 +1013,7 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     mutationToolsAvailable: true,
     mutationTools: ['pp.solution.create', 'pp.solution.set-metadata', 'pp.solution.publish', 'pp.solution.export', 'pp.solution.import', 'pp.solution.checkpoint'],
     notes:
-      'Use solution list/inspect/compare to choose a publisher-backed shell and assess cross-environment drift, pp.solution.create to create one bounded unmanaged solution when needed, pp.solution.set-metadata to update version or publisher bindings in place, pp.solution.publish to trigger PublishAllXml plus the same export-backed confirmation path used by the CLI, pp.solution.sync-status to capture publish readback plus one export-backed readiness probe, pp.solution.import to apply one explicit package artifact, and pp.solution.checkpoint to capture one rollback-oriented pre-import export plus inventory bundle.',
+      'Use solution list/inspect/compare to choose a publisher-backed shell and assess cross-environment drift, pp.solution.create to create one bounded unmanaged solution when needed with explicit or inferable publisher binding, pp.solution.set-metadata to update version or publisher bindings in place, pp.solution.publish to trigger PublishAllXml plus the same export-backed confirmation path used by the CLI, pp.solution.sync-status to capture publish readback plus one export-backed readiness probe, pp.solution.import to apply one explicit package artifact, and pp.solution.checkpoint to capture one rollback-oriented pre-import export plus inventory bundle.',
   },
   {
     name: 'flow-lifecycle',
@@ -940,17 +1023,27 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     mutationToolsAvailable: true,
     mutationTools: ['pp.flow.activate', 'pp.flow.deploy', 'pp.flow.export'],
     notes:
-      'Use pp.flow.inspect to discover or inspect remote cloud flows inside one environment, pp.flow.runs/errors/doctor for the core runtime evidence slices, pp.flow.connrefs to map runtime/dependency health back to connection references and environment variables, pp.flow.monitor to capture one higher-level runtime follow-up summary, pp.flow.activate for one bounded in-place remediation attempt on draft solution flows, and pp.flow.deploy or pp.flow.export to keep remote flow authoring inside the MCP surface.',
+      'Use pp.flow.inspect to discover or inspect remote cloud flows inside one environment, pp.flow.runs/errors/doctor for the core runtime evidence slices, pp.flow.connrefs to map runtime/dependency health back to connection references and environment variables, pp.flow.monitor to capture one higher-level runtime follow-up summary, pp.flow.activate for one bounded in-place remediation attempt on draft solution flows, and pp.flow.deploy with createIfMissing=true when you need to create or update one explicit solution-scoped flow artifact inside MCP while still getting workflow-state follow-up guidance in the result.',
+  },
+  {
+    name: 'model-lifecycle',
+    kind: 'platform',
+    supportTier: 'preview',
+    readTools: ['pp.model-app.inspect', 'pp.domain.list'],
+    mutationToolsAvailable: true,
+    mutationTools: ['pp.model-app.create', 'pp.model-app.attach'],
+    notes:
+      'Use pp.model-app.inspect to discover or inspect model-driven apps inside one environment or solution scope, pp.model-app.create to provision one model-driven app with optional solution attachment, and pp.model-app.attach to keep existing-app solution attachment inside the MCP surface.',
   },
   {
     name: 'canvas-lifecycle',
     kind: 'platform',
     supportTier: 'preview',
-    readTools: ['pp.canvas-app.inspect', 'pp.canvas-app.access', 'pp.domain.list'],
+    readTools: ['pp.canvas-app.inspect', 'pp.canvas-app.access', 'pp.canvas-app.plan-attach', 'pp.domain.list'],
     mutationToolsAvailable: true,
     mutationTools: ['pp.canvas-app.attach', 'pp.canvas-app.download', 'pp.canvas-app.import'],
     notes:
-      'Use pp.canvas-app.inspect to discover or inspect remote canvas apps inside one environment or solution scope, pp.canvas-app.access to inspect ownership and explicit share state, pp.canvas-app.download to export one remote `.msapp` with optional extracted source output, pp.canvas-app.import to replace one remote app from one explicit local `.msapp`, and pp.canvas-app.attach to keep bounded remote solution attachment inside MCP with post-attach solution-impact readback.',
+      'Use pp.canvas-app.inspect to discover or inspect remote canvas apps inside one environment or solution scope, pp.canvas-app.access to inspect ownership and explicit share state, pp.canvas-app.plan-attach to preview target-solution baseline plus containing-solution context before mutating, pp.canvas-app.download to export one remote `.msapp` with optional extracted source output, pp.canvas-app.import to replace one remote app from one explicit local `.msapp`, and pp.canvas-app.attach to keep bounded remote solution attachment inside MCP with post-attach solution-impact readback.',
   },
   {
     name: 'flow-local-artifacts',
@@ -986,8 +1079,11 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
             'pp.solution.import',
             'pp.solution.checkpoint',
             'pp.dataverse.metadata.apply',
+            'pp.model-app.create',
+            'pp.model-app.attach',
             'pp.flow.deploy',
             'pp.flow.export',
+            'pp.canvas-app.plan-attach',
             'pp.canvas-app.attach',
             'pp.canvas-app.download',
             'pp.canvas-app.import',
@@ -1000,6 +1096,8 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.dataverse.metadata.apply',
       'pp.dataverse.create',
       'pp.dataverse.delete',
+      'pp.model-app.create',
+      'pp.model-app.attach',
       'pp.init.start',
       'pp.init.answer',
       'pp.init.resume',
@@ -1223,7 +1321,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     'pp.solution.create',
     {
       title: 'Create Solution',
-      description: 'Create one unmanaged solution shell in a configured Dataverse environment with an explicit publisher binding.',
+      description: 'Create one unmanaged solution shell in a configured Dataverse environment with explicit or inferable publisher binding.',
       inputSchema: solutionCreateSchema,
       outputSchema: outputEnvelopeSchema,
       annotations: controlledMutationAnnotations('Create Solution'),
@@ -1236,7 +1334,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
           'pp.solution.create',
           resolution,
           remoteMutationPolicy(
-            'This tool performs one bounded Dataverse solution create action for one explicit unique name and publisher binding.',
+            'This tool performs one bounded Dataverse solution create action for one explicit unique name and explicit or inferred publisher binding.',
             false,
           ),
         );
@@ -1253,7 +1351,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         'pp.solution.create',
         result,
         remoteMutationPolicy(
-          'This tool performs one bounded Dataverse solution create action for one explicit unique name and publisher binding.',
+          'This tool performs one bounded Dataverse solution create action for one explicit unique name and explicit or inferred publisher binding.',
           false,
         ),
       );
@@ -1475,6 +1573,89 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         previewableRemoteMutationPolicy(
           'This tool reads one explicit repo-local metadata manifest, previews the ordered operations on dry-run, or applies that bounded manifest to one environment.',
         ),
+      );
+    }
+  );
+
+  server.registerTool(
+    'pp.dataverse.metadata.table',
+    {
+      title: 'Inspect Dataverse Table Metadata',
+      description: 'Inspect one Dataverse table definition through MCP with normalized or raw metadata output.',
+      inputSchema: dataverseMetadataTableInspectSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Dataverse Table Metadata'),
+    },
+    async ({ logicalName, view, select, expand, includeAnnotations, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult('pp.dataverse.metadata.table', resolution, readOnlyPolicy());
+      }
+
+      const result = await resolution.data.client.getTable(logicalName, {
+        select,
+        expand,
+        includeAnnotations,
+      });
+
+      if (!result.success || !result.data) {
+        return toToolResult('pp.dataverse.metadata.table', result, readOnlyPolicy());
+      }
+
+      return toToolResult(
+        'pp.dataverse.metadata.table',
+        ok(view === 'raw' ? result.data : normalizeEntityDefinition(result.data), {
+          supportTier: result.supportTier,
+          diagnostics: result.diagnostics,
+          warnings: result.warnings,
+          provenance: result.provenance,
+          suggestedNextActions: result.suggestedNextActions,
+          knownLimitations: result.knownLimitations,
+        }),
+        readOnlyPolicy(),
+      );
+    }
+  );
+
+  server.registerTool(
+    'pp.dataverse.metadata.relationship',
+    {
+      title: 'Inspect Dataverse Relationship Metadata',
+      description: 'Inspect one Dataverse relationship definition through MCP with normalized or raw metadata output.',
+      inputSchema: dataverseMetadataRelationshipInspectSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Dataverse Relationship Metadata'),
+    },
+    async ({ schemaName, kind, view, select, expand, includeAnnotations, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult('pp.dataverse.metadata.relationship', resolution, readOnlyPolicy());
+      }
+
+      const result = await resolution.data.client.getRelationship(schemaName, {
+        kind,
+        select,
+        expand,
+        includeAnnotations,
+      });
+
+      if (!result.success || !result.data) {
+        return toToolResult('pp.dataverse.metadata.relationship', result, readOnlyPolicy());
+      }
+
+      return toToolResult(
+        'pp.dataverse.metadata.relationship',
+        ok(view === 'raw' ? result.data : normalizeRelationshipDefinition(result.data), {
+          supportTier: result.supportTier,
+          diagnostics: result.diagnostics,
+          warnings: result.warnings,
+          provenance: result.provenance,
+          suggestedNextActions: result.suggestedNextActions,
+          knownLimitations: result.knownLimitations,
+        }),
+        readOnlyPolicy(),
       );
     }
   );
@@ -1795,12 +1976,13 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     'pp.flow.deploy',
     {
       title: 'Deploy Flow Artifact',
-      description: 'Create or update one remote flow from a local artifact path, with optional solution scoping and create-if-missing behavior.',
+      description:
+        'Create or update one remote flow from a local artifact path, including solution-scoped create-if-missing authoring plus returned workflow-state/readiness follow-up guidance and optional run-local JSON receipt output.',
       inputSchema: flowDeploySchema,
       outputSchema: outputEnvelopeSchema,
       annotations: controlledMutationAnnotations('Deploy Flow Artifact'),
     },
-    async ({ inputPath, solutionUniqueName, target, createIfMissing, workflowState, ...args }) => {
+    async ({ inputPath, solutionUniqueName, target, createIfMissing, workflowState, resultOutPath, ...args }) => {
       const resolution = await resolveRemoteRuntime(args, defaults);
 
       if (!resolution.success || !resolution.data) {
@@ -1814,13 +1996,14 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         );
       }
 
-      const result = await new FlowService(resolution.data.client).deployArtifact(resolveWorkspacePath(inputPath, resolveProjectPath(undefined, defaults)), {
+      const workspaceRoot = resolveProjectPath(undefined, defaults);
+      const result = await new FlowService(resolution.data.client).deployArtifact(resolveWorkspacePath(inputPath, workspaceRoot), {
         solutionUniqueName,
         target,
         createIfMissing,
         workflowState,
       });
-      return toToolResult(
+      let toolResult = toToolResult(
         'pp.flow.deploy',
         result,
         remoteMutationPolicy(
@@ -1828,7 +2011,23 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
           false,
         ),
       );
-    }
+
+      if (resultOutPath) {
+        const resolvedResultPath = resolveWorkspacePath(resultOutPath, workspaceRoot);
+        await mkdir(dirname(resolvedResultPath), { recursive: true });
+        await writeFile(
+          resolvedResultPath,
+          stableStringify(toolResult.structuredContent as Record<string, unknown>) + '\n',
+          'utf8',
+        );
+        toolResult = appendToolResultLocalWrite(toolResult, {
+          kind: 'tool-result-json',
+          path: resolvedResultPath,
+        });
+      }
+
+      return toolResult;
+    },
   );
 
   server.registerTool(
@@ -1925,9 +2124,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     {
       title: 'Inspect Model-Driven Apps',
       description: 'List model-driven apps or inspect one app with forms, views, tables, and dependencies.',
-      inputSchema: solutionScopeSchema.extend({
-        identifier: z.string().min(1).optional(),
-      }),
+      inputSchema: modelInspectSchema,
       outputSchema: outputEnvelopeSchema,
       annotations: readOnlyAnnotations('Inspect Model-Driven Apps'),
     },
@@ -1944,6 +2141,82 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }
 
       return toToolResult('pp.model-app.inspect', await service.list({ solutionUniqueName }), readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.model-app.create',
+    {
+      title: 'Create Model-Driven App',
+      description: 'Create one model-driven app through the MCP mutation surface with optional solution attachment.',
+      inputSchema: modelCreateSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Create Model-Driven App'),
+    },
+    async ({ uniqueName, name, solutionUniqueName, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult(
+          'pp.model-app.create',
+          resolution,
+          remoteMutationPolicy(
+            'This tool creates one explicit model-driven app in one named environment and can attach it to one named solution when requested.',
+            false,
+          ),
+        );
+      }
+
+      const result = await new ModelService(resolution.data.client).create(uniqueName, {
+        name,
+        solutionUniqueName,
+      });
+      return toToolResult(
+        'pp.model-app.create',
+        result,
+        remoteMutationPolicy(
+          'This tool creates one explicit model-driven app in one named environment and can attach it to one named solution when requested.',
+          false,
+        ),
+      );
+    }
+  );
+
+  server.registerTool(
+    'pp.model-app.attach',
+    {
+      title: 'Attach Model-Driven App',
+      description: 'Attach one existing model-driven app to a solution through the MCP mutation surface.',
+      inputSchema: modelAttachSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Attach Model-Driven App'),
+    },
+    async ({ identifier, solutionUniqueName, addRequiredComponents, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult(
+          'pp.model-app.attach',
+          resolution,
+          remoteMutationPolicy(
+            'This tool attaches one existing model-driven app to one named solution inside one named environment.',
+            false,
+          ),
+        );
+      }
+
+      const result = await new ModelService(resolution.data.client).attach(identifier, {
+        solutionUniqueName,
+        addRequiredComponents,
+      });
+      return toToolResult(
+        'pp.model-app.attach',
+        result,
+        remoteMutationPolicy(
+          'This tool attaches one existing model-driven app to one named solution inside one named environment.',
+          false,
+        ),
+      );
     }
   );
 
@@ -1997,6 +2270,32 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
+    'pp.canvas-app.plan-attach',
+    {
+      title: 'Plan Canvas App Attach',
+      description: 'Preview one remote canvas app attach against a target solution without mutating Dataverse.',
+      inputSchema: canvasAttachPlanSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Plan Canvas App Attach'),
+    },
+    async ({ identifier, solutionUniqueName, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult('pp.canvas-app.plan-attach', resolution, readOnlyPolicy());
+      }
+
+      return toToolResult(
+        'pp.canvas-app.plan-attach',
+        await new CanvasService(resolution.data.client).planRemoteAttach(identifier, {
+          solutionUniqueName,
+        }),
+        readOnlyPolicy()
+      );
+    }
+  );
+
+  server.registerTool(
     'pp.canvas-app.attach',
     {
       title: 'Attach Canvas App',
@@ -2043,7 +2342,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       outputSchema: outputEnvelopeSchema,
       annotations: readOnlyAnnotations('Inspect Project'),
     },
-    async ({ projectPath, stage }) => {
+    async ({ projectPath, stage, environmentAlias }) => {
       const result = await discoverProject(resolveProjectPath(projectPath, defaults), {
         stage,
         environment: process.env,
@@ -2051,13 +2350,17 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       if (!result.success || !result.data) {
         return toToolResult('pp.project.inspect', result, readOnlyPolicy());
       }
-
+      const configOptions = readConfigOptions(undefined, defaults);
+      const targetComparison = environmentAlias
+        ? await compareProjectRuntimeTarget(result.data, environmentAlias, configOptions)
+        : undefined;
       return toToolResult(
         'pp.project.inspect',
         ok(
           {
             summary: summarizeProject(result.data),
             contract: summarizeProjectContract(result.data),
+            targetComparison,
             ...result.data,
           },
           {
@@ -2083,12 +2386,46 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       outputSchema: outputEnvelopeSchema,
       annotations: readOnlyAnnotations('Doctor Project'),
     },
-    async ({ projectPath, stage }) => {
-      const result = await doctorProject(resolveProjectPath(projectPath, defaults), {
+    async ({ projectPath, stage, environmentAlias }) => {
+      const resolvedProjectPath = resolveProjectPath(projectPath, defaults);
+      const result = await doctorProject(resolvedProjectPath, {
         stage,
         environment: process.env,
       });
-      return toToolResult('pp.project.doctor', result, readOnlyPolicy());
+      if (!result.success || !result.data) {
+        return toToolResult('pp.project.doctor', result, readOnlyPolicy());
+      }
+
+      const project =
+        environmentAlias !== undefined
+          ? await discoverProject(resolvedProjectPath, {
+              stage,
+              environment: process.env,
+            })
+          : undefined;
+      const targetComparison =
+        environmentAlias && project?.success && project.data
+          ? await compareProjectRuntimeTarget(project.data, environmentAlias, readConfigOptions(undefined, defaults))
+          : undefined;
+
+      return toToolResult(
+        'pp.project.doctor',
+        ok(
+          {
+            ...result.data,
+            targetComparison,
+          },
+          {
+            diagnostics: result.diagnostics,
+            warnings: result.warnings,
+            supportTier: result.supportTier,
+            suggestedNextActions: result.suggestedNextActions,
+            provenance: result.provenance,
+            knownLimitations: result.knownLimitations,
+          }
+        ),
+        readOnlyPolicy()
+      );
     }
   );
 
@@ -2101,12 +2438,46 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       outputSchema: outputEnvelopeSchema,
       annotations: readOnlyAnnotations('Project Feedback'),
     },
-    async ({ projectPath, stage }) => {
-      const result = await feedbackProject(resolveProjectPath(projectPath, defaults), {
+    async ({ projectPath, stage, environmentAlias }) => {
+      const resolvedProjectPath = resolveProjectPath(projectPath, defaults);
+      const result = await feedbackProject(resolvedProjectPath, {
         stage,
         environment: process.env,
       });
-      return toToolResult('pp.project.feedback', result, readOnlyPolicy());
+      if (!result.success || !result.data) {
+        return toToolResult('pp.project.feedback', result, readOnlyPolicy());
+      }
+
+      const project =
+        environmentAlias !== undefined
+          ? await discoverProject(resolvedProjectPath, {
+              stage,
+              environment: process.env,
+            })
+          : undefined;
+      const targetComparison =
+        environmentAlias && project?.success && project.data
+          ? await compareProjectRuntimeTarget(project.data, environmentAlias, readConfigOptions(undefined, defaults))
+          : undefined;
+
+      return toToolResult(
+        'pp.project.feedback',
+        ok(
+          {
+            ...result.data,
+            targetComparison,
+          },
+          {
+            diagnostics: result.diagnostics,
+            warnings: result.warnings,
+            supportTier: result.supportTier,
+            suggestedNextActions: result.suggestedNextActions,
+            provenance: result.provenance,
+            knownLimitations: result.knownLimitations,
+          }
+        ),
+        readOnlyPolicy()
+      );
     }
   );
 
@@ -2297,7 +2668,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       outputSchema: outputEnvelopeSchema,
       annotations: readOnlyAnnotations('Generate Analysis Context'),
     },
-    async ({ projectPath, stage, focusAsset }) => {
+    async ({ projectPath, stage, focusAsset, environmentAlias }) => {
       const project = await discoverProject(resolveProjectPath(projectPath, defaults), {
         stage,
         environment: process.env,
@@ -2308,7 +2679,32 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }
 
       const result = generateContextPack(project.data, focusAsset);
-      return toToolResult('pp.analysis.context', result, readOnlyPolicy());
+      if (!result.success || !result.data) {
+        return toToolResult('pp.analysis.context', result, readOnlyPolicy());
+      }
+
+      const targetComparison = environmentAlias
+        ? await compareProjectRuntimeTarget(project.data, environmentAlias, readConfigOptions(undefined, defaults))
+        : undefined;
+
+      return toToolResult(
+        'pp.analysis.context',
+        ok(
+          {
+            ...result.data,
+            targetComparison,
+          },
+          {
+            diagnostics: result.diagnostics,
+            warnings: result.warnings,
+            supportTier: result.supportTier,
+            suggestedNextActions: result.suggestedNextActions,
+            provenance: result.provenance,
+            knownLimitations: result.knownLimitations,
+          }
+        ),
+        readOnlyPolicy()
+      );
     }
   );
 
@@ -3426,6 +3822,7 @@ async function listEnvironmentCleanupAssetCandidates(
   if (!containedIds.success || !containedIds.data) {
     return containedIds as unknown as OperationResult<EnvironmentCleanupAssetCandidate[]>;
   }
+  const containedAssetIds = containedIds.data;
 
   const [canvasApps, flows, modelApps, connectionReferences, environmentVariables] = await Promise.all([
     new CanvasService(client).listRemote(),
@@ -3470,7 +3867,7 @@ async function listEnvironmentCleanupAssetCandidates(
 
   const candidates: EnvironmentCleanupAssetCandidate[] = [
     ...(canvasApps.data ?? [])
-      .filter((app) => !containedIds.data.canvasApps.has(app.id))
+      .filter((app) => !containedAssetIds.canvasApps.has(app.id))
       .map((app) =>
         createCleanupAssetCandidate(
           'canvas-app',
@@ -3484,7 +3881,7 @@ async function listEnvironmentCleanupAssetCandidates(
       )
       .filter((value): value is EnvironmentCleanupAssetCandidate => Boolean(value)),
     ...(flows.data ?? [])
-      .filter((flow) => !containedIds.data.flows.has(flow.id))
+      .filter((flow) => !containedAssetIds.flows.has(flow.id))
       .map((flow) =>
         createCleanupAssetCandidate(
           'cloud-flow',
@@ -3498,7 +3895,7 @@ async function listEnvironmentCleanupAssetCandidates(
       )
       .filter((value): value is EnvironmentCleanupAssetCandidate => Boolean(value)),
     ...(modelApps.data ?? [])
-      .filter((app) => !containedIds.data.modelApps.has(app.id))
+      .filter((app) => !containedAssetIds.modelApps.has(app.id))
       .map((app) =>
         createCleanupAssetCandidate(
           'model-app',
@@ -3512,7 +3909,7 @@ async function listEnvironmentCleanupAssetCandidates(
       )
       .filter((value): value is EnvironmentCleanupAssetCandidate => Boolean(value)),
     ...(connectionReferences.data ?? [])
-      .filter((reference) => !containedIds.data.connectionReferences.has(reference.id))
+      .filter((reference) => !containedAssetIds.connectionReferences.has(reference.id))
       .map((reference) =>
         createCleanupAssetCandidate(
           'connection-reference',
@@ -3526,7 +3923,7 @@ async function listEnvironmentCleanupAssetCandidates(
       )
       .filter((value): value is EnvironmentCleanupAssetCandidate => Boolean(value)),
     ...(environmentVariables.data ?? [])
-      .filter((variable) => !containedIds.data.environmentVariables.has(variable.definitionId))
+      .filter((variable) => !containedAssetIds.environmentVariables.has(variable.definitionId))
       .map((variable) =>
         createCleanupAssetCandidate(
           'environment-variable',
@@ -4348,6 +4745,41 @@ function toToolResult<T>(toolName: string, result: OperationResult<T>, mutationP
     ],
     structuredContent: envelope,
     isError: forceError,
+  };
+}
+
+function appendToolResultLocalWrite(
+  toolResult: ReturnType<typeof toToolResult>,
+  localWrite: ToolResultLocalWrite,
+): ReturnType<typeof toToolResult> {
+  const structuredContent = toolResult.structuredContent as Record<string, unknown>;
+  const existingLocalWrites = Array.isArray(structuredContent.localWrites)
+    ? (structuredContent.localWrites as unknown[]).filter(
+        (entry): entry is ToolResultLocalWrite =>
+          Boolean(entry) &&
+          typeof entry === 'object' &&
+          (entry as { kind?: unknown }).kind === 'tool-result-json' &&
+          typeof (entry as { path?: unknown }).path === 'string',
+      )
+    : [];
+  const data =
+    structuredContent.data && typeof structuredContent.data === 'object' && !Array.isArray(structuredContent.data)
+      ? {
+          ...(structuredContent.data as Record<string, unknown>),
+          resultLog: {
+            kind: localWrite.kind,
+            path: localWrite.path,
+          },
+        }
+      : structuredContent.data;
+
+  return {
+    ...toolResult,
+    structuredContent: {
+      ...structuredContent,
+      ...(data !== undefined ? { data } : {}),
+      localWrites: [...existingLocalWrites, localWrite],
+    },
   };
 }
 

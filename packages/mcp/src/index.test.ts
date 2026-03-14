@@ -9,6 +9,7 @@ import { CanvasService } from '@pp/canvas';
 import { createDiagnostic, fail, ok } from '@pp/diagnostics';
 import { ConnectionReferenceService } from '@pp/dataverse';
 import { FlowService } from '@pp/flow';
+import { ModelService } from '@pp/model';
 import { SolutionService } from '@pp/solution';
 import { resolveRepoPath } from '../../../test/golden';
 import { createFixtureDataverseClient, mockDataverseResolution } from '../../../test/dataverse-fixture';
@@ -83,6 +84,13 @@ describe('@pp/mcp', () => {
               defaultSolution: 'CoreDev',
               makerEnvironmentId: '00000000-0000-0000-0000-000000000001',
             },
+            test: {
+              alias: 'test',
+              url: 'https://test.crm.dynamics.com',
+              authProfile: 'fixture-user',
+              defaultSolution: 'CoreTest',
+              makerEnvironmentId: '00000000-0000-0000-0000-000000000002',
+            },
           },
           preferences: {},
         },
@@ -140,10 +148,14 @@ describe('@pp/mcp', () => {
         'pp.solution.import',
         'pp.solution.checkpoint',
         'pp.dataverse.metadata.apply',
+        'pp.dataverse.metadata.table',
+        'pp.dataverse.metadata.relationship',
         'pp.dataverse.query',
         'pp.dataverse.create',
         'pp.dataverse.delete',
         'pp.dataverse.whoami',
+        'pp.model-app.create',
+        'pp.model-app.attach',
         'pp.flow.inspect',
         'pp.flow.connrefs',
         'pp.flow.runs',
@@ -155,6 +167,7 @@ describe('@pp/mcp', () => {
         'pp.flow.export',
         'pp.canvas-app.inspect',
         'pp.canvas-app.access',
+        'pp.canvas-app.plan-attach',
         'pp.canvas-app.attach',
         'pp.connection-reference.inspect',
         'pp.environment-variable.inspect',
@@ -199,7 +212,9 @@ describe('@pp/mcp', () => {
 
     const project = await client.callTool({
       name: 'pp.project.inspect',
-      arguments: {},
+      arguments: {
+        environmentAlias: 'test',
+      },
     });
     expect(project.isError).toBeFalsy();
     expect(project.structuredContent).toMatchObject({
@@ -214,6 +229,9 @@ describe('@pp/mcp', () => {
     expect(
       (project.structuredContent as { data: { contract: { deploymentRouteSummary: string } } }).data.contract.deploymentRouteSummary
     ).toContain('environment alias');
+    expect((project.structuredContent as { data: { targetComparison: { relationship: string } } }).data.targetComparison.relationship).toBe(
+      'unmapped'
+    );
 
     const doctor = await client.callTool({
       name: 'pp.project.doctor',
@@ -243,6 +261,7 @@ describe('@pp/mcp', () => {
       name: 'pp.analysis.context',
       arguments: {
         focusAsset: 'solution:core',
+        environmentAlias: 'test',
       },
     });
     expect(analysis.isError).toBeFalsy();
@@ -252,6 +271,9 @@ describe('@pp/mcp', () => {
         name: 'pp.analysis.context',
       },
     });
+    expect((analysis.structuredContent as { data: { targetComparison: { requestedEnvironmentAlias: string } } }).data.targetComparison.requestedEnvironmentAlias).toBe(
+      'test'
+    );
     expect((analysis.structuredContent as { data: { focusAsset: string } }).data.focusAsset).toBe('solution:core');
 
     const portfolio = await client.callTool({
@@ -282,10 +304,19 @@ describe('@pp/mcp', () => {
         expect.objectContaining({
           name: 'dataverse',
           mutationToolsAvailable: true,
-          mutationTools: expect.arrayContaining(['pp.environment.cleanup', 'pp.dataverse.metadata.apply', 'pp.dataverse.create', 'pp.dataverse.delete']),
+          mutationTools: expect.arrayContaining([
+            'pp.environment.cleanup',
+            'pp.dataverse.metadata.apply',
+            'pp.dataverse.create',
+            'pp.dataverse.delete',
+            'pp.model-app.create',
+            'pp.model-app.attach',
+          ]),
           readTools: expect.arrayContaining([
             'pp.environment.cleanup-plan',
             'pp.solution.compare',
+            'pp.dataverse.metadata.table',
+            'pp.dataverse.metadata.relationship',
             'pp.dataverse.query',
             'pp.dataverse.whoami',
             'pp.flow.inspect',
@@ -296,8 +327,13 @@ describe('@pp/mcp', () => {
         }),
         expect.objectContaining({
           name: 'dataverse',
-          readTools: expect.arrayContaining(['pp.dataverse.query', 'pp.dataverse.whoami']),
-          notes: expect.stringContaining('logical names like `solution`'),
+          readTools: expect.arrayContaining([
+            'pp.dataverse.metadata.table',
+            'pp.dataverse.metadata.relationship',
+            'pp.dataverse.query',
+            'pp.dataverse.whoami',
+          ]),
+          notes: expect.stringContaining('first-class table/relationship metadata inspection'),
         }),
         expect.objectContaining({
           name: 'solution-lifecycle',
@@ -323,9 +359,16 @@ describe('@pp/mcp', () => {
         expect.objectContaining({
           name: 'canvas-lifecycle',
           mutationToolsAvailable: true,
-          readTools: expect.arrayContaining(['pp.canvas-app.inspect']),
+          readTools: expect.arrayContaining(['pp.canvas-app.inspect', 'pp.canvas-app.plan-attach']),
           mutationTools: expect.arrayContaining(['pp.canvas-app.attach', 'pp.canvas-app.download', 'pp.canvas-app.import']),
           notes: expect.stringContaining('remote `.msapp`'),
+        }),
+        expect.objectContaining({
+          name: 'model-lifecycle',
+          mutationToolsAvailable: true,
+          readTools: expect.arrayContaining(['pp.model-app.inspect']),
+          mutationTools: expect.arrayContaining(['pp.model-app.create', 'pp.model-app.attach']),
+          notes: expect.stringContaining('optional solution attachment'),
         }),
         expect.objectContaining({
           name: 'flow-local-artifacts',
@@ -345,6 +388,8 @@ describe('@pp/mcp', () => {
             'pp.dataverse.metadata.apply',
             'pp.dataverse.create',
             'pp.dataverse.delete',
+            'pp.model-app.create',
+            'pp.model-app.attach',
             'pp.solution.create',
             'pp.solution.set-metadata',
             'pp.solution.publish',
@@ -419,6 +464,266 @@ describe('@pp/mcp', () => {
     expect(listSpy).toHaveBeenCalledWith({
       prefix: 'ppHarness20260312T205428716Z',
       uniqueName: 'ppHarness20260312T205428716ZShell',
+    });
+  });
+
+  it('inspects Dataverse table metadata through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    const getTable = vi.fn().mockResolvedValue(
+      ok(
+        {
+          LogicalName: 'pp_project',
+          SchemaName: 'pp_Project',
+          DisplayName: {
+            UserLocalizedLabel: {
+              Label: 'Project',
+            },
+          },
+          DisplayCollectionName: {
+            UserLocalizedLabel: {
+              Label: 'Projects',
+            },
+          },
+          PrimaryIdAttribute: 'pp_projectid',
+          PrimaryNameAttribute: 'pp_name',
+          EntitySetName: 'pp_projects',
+          OwnershipType: 'UserOwned',
+          IsCustomEntity: true,
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    mockDataverseResolution({
+      dev: {
+        getTable,
+      } as never,
+    });
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.dataverse.metadata.table'].handler({
+      environment: 'dev',
+      logicalName: 'pp_project',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.dataverse.metadata.table',
+        mutationPolicy: {
+          mode: 'read-only',
+          mutationsExposed: false,
+        },
+      },
+      data: {
+        logicalName: 'pp_project',
+        schemaName: 'pp_Project',
+        displayName: 'Project',
+        pluralDisplayName: 'Projects',
+      },
+    });
+    expect(getTable).toHaveBeenCalledWith('pp_project', {
+      select: undefined,
+      expand: undefined,
+      includeAnnotations: undefined,
+    });
+  });
+
+  it('inspects Dataverse relationship metadata through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    const getRelationship = vi.fn().mockResolvedValue(
+      ok(
+        {
+          SchemaName: 'pp_project_task',
+          '@odata.type': '#Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata',
+          RelationshipType: 'OneToManyRelationship',
+          ReferencedEntity: 'pp_project',
+          ReferencedAttribute: 'pp_projectid',
+          ReferencingEntity: 'pp_task',
+          ReferencingAttribute: 'pp_projectid',
+          Lookup: {
+            LogicalName: 'pp_projectid',
+            SchemaName: 'pp_ProjectId',
+            DisplayName: {
+              UserLocalizedLabel: {
+                Label: 'Project',
+              },
+            },
+          },
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    mockDataverseResolution({
+      dev: {
+        getRelationship,
+      } as never,
+    });
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.dataverse.metadata.relationship'].handler({
+      environment: 'dev',
+      schemaName: 'pp_project_task',
+      kind: 'one-to-many',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.dataverse.metadata.relationship',
+        mutationPolicy: {
+          mode: 'read-only',
+          mutationsExposed: false,
+        },
+      },
+      data: {
+        schemaName: 'pp_project_task',
+        relationshipType: 'one-to-many',
+        referencedEntity: 'pp_project',
+        referencingEntity: 'pp_task',
+        lookupSchemaName: 'pp_ProjectId',
+      },
+    });
+    expect(getRelationship).toHaveBeenCalledWith('pp_project_task', {
+      kind: 'one-to-many',
+      select: undefined,
+      expand: undefined,
+      includeAnnotations: undefined,
+    });
+  });
+
+  it('creates a model-driven app through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const createSpy = vi.spyOn(ModelService.prototype, 'create').mockResolvedValue(
+      ok(
+        {
+          id: 'app-1',
+          uniqueName: 'HarnessApp',
+          name: 'Harness App',
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.model-app.create'].handler({
+      environment: 'dev',
+      uniqueName: 'HarnessApp',
+      name: 'Harness App',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.model-app.create',
+        mutationPolicy: {
+          mode: 'controlled',
+          mutationsExposed: true,
+        },
+      },
+      data: {
+        uniqueName: 'HarnessApp',
+        name: 'Harness App',
+      },
+    });
+    expect(createSpy).toHaveBeenCalledWith('HarnessApp', {
+      name: 'Harness App',
+      solutionUniqueName: 'Core',
+    });
+  });
+
+  it('attaches a model-driven app through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const attachSpy = vi.spyOn(ModelService.prototype, 'attach').mockResolvedValue(
+      ok(
+        {
+          attached: true,
+          solutionUniqueName: 'Core',
+          addRequiredComponents: false,
+          app: {
+            id: 'app-1',
+            uniqueName: 'HarnessApp',
+            name: 'Harness App',
+          },
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.model-app.attach'].handler({
+      environment: 'dev',
+      identifier: 'Harness App',
+      solutionUniqueName: 'Core',
+      addRequiredComponents: false,
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.model-app.attach',
+        mutationPolicy: {
+          mode: 'controlled',
+          mutationsExposed: true,
+        },
+      },
+      data: {
+        attached: true,
+        solutionUniqueName: 'Core',
+        addRequiredComponents: false,
+      },
+    });
+    expect(attachSpy).toHaveBeenCalledWith('Harness App', {
+      solutionUniqueName: 'Core',
+      addRequiredComponents: false,
     });
   });
 
@@ -571,6 +876,107 @@ describe('@pp/mcp', () => {
     });
   });
 
+  it('writes a durable JSON receipt when flow deploy is given resultOutPath through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    const outputDir = await mkdtemp(join(tmpdir(), 'pp-mcp-flow-deploy-'));
+    const resultOutPath = join(outputDir, 'logs', 'deploy-result.json');
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const deploySpy = vi.spyOn(FlowService.prototype, 'deployArtifact').mockResolvedValue(
+      ok(
+        {
+          path: '/tmp/source-flow.json',
+          targetIdentifier: 'crd_HarnessFlow',
+          operation: 'created',
+          target: {
+            id: 'flow-1',
+            uniqueName: 'crd_HarnessFlow',
+            workflowState: 'draft',
+            solutionUniqueName: 'Core',
+          },
+          updatedFields: ['clientdata', 'name'],
+          summary: {
+            path: '/tmp/source-flow.json',
+            normalized: true,
+            name: 'Harness Flow',
+            definitionHash: 'abc123',
+            connectionReferenceCount: 0,
+            parameterCount: 1,
+            environmentVariableCount: 1,
+          },
+          validation: {
+            valid: true,
+            warningCount: 0,
+          },
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.flow.deploy'].handler({
+      environment: 'dev',
+      inputPath: '/tmp/source-flow.json',
+      solutionUniqueName: 'Core',
+      createIfMissing: true,
+      resultOutPath,
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.flow.deploy',
+      },
+      data: {
+        operation: 'created',
+        target: {
+          uniqueName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+        },
+        resultLog: {
+          kind: 'tool-result-json',
+          path: resultOutPath,
+        },
+      },
+      localWrites: [
+        {
+          kind: 'tool-result-json',
+          path: resultOutPath,
+        },
+      ],
+    });
+    expect(deploySpy).toHaveBeenCalledWith('/tmp/source-flow.json', {
+      solutionUniqueName: 'Core',
+      target: undefined,
+      createIfMissing: true,
+      workflowState: undefined,
+    });
+
+    const receipt = JSON.parse(await readFile(resultOutPath, 'utf8')) as Record<string, unknown>;
+    expect(receipt).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.flow.deploy',
+      },
+      data: {
+        operation: 'created',
+        targetIdentifier: 'crd_HarnessFlow',
+      },
+    });
+    expect(receipt).not.toHaveProperty('localWrites');
+  });
+
   it('downloads a remote canvas app through the MCP tool surface', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
     await writeFixtureConfig(configDir);
@@ -683,6 +1089,138 @@ describe('@pp/mcp', () => {
     });
     expect(accessSpy).toHaveBeenCalledWith('Harness Canvas', {
       solutionUniqueName: 'Core',
+    });
+  });
+
+  it('plans a remote canvas attach through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const attachPlanSpy = vi.spyOn(CanvasService.prototype, 'planRemoteAttach').mockResolvedValue(
+      ok(
+        {
+          app: {
+            id: 'canvas-1',
+            name: 'crd_HarnessCanvas',
+            displayName: 'Harness Canvas',
+          },
+          targetSolution: {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+            friendlyname: 'Core Solution',
+            version: '1.0.0.0',
+            ismanaged: false,
+          },
+          alreadyInTargetSolution: true,
+          containingSolutions: [
+            {
+              solutionId: 'sol-1',
+              uniqueName: 'Core',
+              friendlyName: 'Core Solution',
+            },
+          ],
+          targetSolutionBaseline: {
+            components: [],
+            missingDependencies: [],
+            summary: {
+              componentCount: 2,
+              canvasAppCount: 1,
+              missingDependencyCount: 0,
+            },
+          },
+          previewLimitations: ['read-only preview'],
+        },
+        {
+          supportTier: 'preview',
+          knownLimitations: ['read-only preview'],
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.canvas-app.plan-attach'].handler({
+      environment: 'dev',
+      identifier: 'Harness Canvas',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.canvas-app.plan-attach',
+      },
+      data: {
+        alreadyInTargetSolution: true,
+        targetSolution: {
+          uniquename: 'Core',
+        },
+      },
+      knownLimitations: ['read-only preview'],
+    });
+    expect(attachPlanSpy).toHaveBeenCalledWith('Harness Canvas', {
+      solutionUniqueName: 'Core',
+    });
+  });
+
+  it('infers the publisher during solution create through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({
+        query: {
+          publishers: [
+            {
+              publisherid: 'pub-1',
+              uniquename: 'DefaultPublisher',
+              friendlyname: 'Default Publisher',
+              customizationprefix: 'new',
+            },
+            {
+              publisherid: 'pub-2',
+              uniquename: 'pp',
+              friendlyname: 'Power Platform',
+              customizationprefix: 'pp',
+            },
+          ],
+        },
+      }),
+    });
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.solution.create'].handler({
+      environment: 'dev',
+      uniqueName: 'ppHarnessShell',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.solution.create',
+      },
+      data: {
+        uniquename: 'ppHarnessShell',
+      },
+      warnings: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_PUBLISHER_INFERRED',
+        }),
+      ]),
     });
   });
 
@@ -1116,8 +1654,8 @@ describe('@pp/mcp', () => {
       resolvedEnvironmentUrl: 'https://example.crm.dynamics.com',
       targetResource: 'https://example.crm.dynamics.com',
       relationships: {
-        environmentAliases: ['dev'],
-        environmentCount: 1,
+        environmentAliases: ['dev', 'test'],
+        environmentCount: 2,
       },
     });
     expect(result.suggestedNextActions).toContain(
@@ -1141,8 +1679,8 @@ describe('@pp/mcp', () => {
           name: 'fixture-user',
           type: 'user',
           relationships: {
-            environmentAliases: ['dev'],
-            environmentCount: 1,
+            environmentAliases: ['dev', 'test'],
+            environmentCount: 2,
           },
         }),
       ]),
