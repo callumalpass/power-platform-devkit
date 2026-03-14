@@ -2931,6 +2931,10 @@ export class ConnectionReferenceService {
 
     const invalidCount = validation.filter((entry) => !entry.valid).length;
     const validCount = validation.length - invalidCount;
+    const warnings =
+      validation.length === 0
+        ? references.warnings.filter((warning) => warning.code !== 'DATAVERSE_QUERY_EMPTY_RESULT_AMBIGUOUS_SCOPE')
+        : references.warnings;
 
     return ok(
       validation,
@@ -2961,7 +2965,7 @@ export class ConnectionReferenceService {
             ),
           ]
         ),
-        warnings: references.warnings,
+        warnings,
       }
     );
   }
@@ -3337,7 +3341,47 @@ export class EnvironmentVariableService {
       return variable as unknown as OperationResult<EnvironmentVariableSummary>;
     }
 
-    if (!variable.data) {
+    let target = variable.data;
+    let diagnostics = variable.diagnostics;
+    let warnings = variable.warnings;
+    let suggestedNextActions = variable.suggestedNextActions ?? [];
+
+    if (!target && options.solutionUniqueName) {
+      const broaderScope = await this.inspect(identifier);
+
+      if (!broaderScope.success) {
+        return broaderScope as unknown as OperationResult<EnvironmentVariableSummary>;
+      }
+
+      if (broaderScope.data) {
+        target = broaderScope.data;
+        diagnostics = mergeDiagnosticLists(
+          variable.diagnostics,
+          broaderScope.diagnostics,
+          [
+            createDiagnostic(
+              'warning',
+              'DATAVERSE_ENVVAR_SET_SCOPE_FALLBACK',
+              `Environment variable ${identifier} was not yet visible in solution ${options.solutionUniqueName}, so pp reused the environment-scoped definition for this write.`,
+              {
+                source: '@pp/dataverse',
+                hint: `Re-run \`pp envvar inspect ${identifier} --environment <alias> --solution ${options.solutionUniqueName} --format json\` if you need confirmation that solution-scoped visibility has caught up after the write.`,
+              }
+            ),
+          ]
+        );
+        warnings = mergeDiagnosticLists(variable.warnings, broaderScope.warnings).filter(
+          (warning) => warning.code !== 'DATAVERSE_QUERY_EMPTY_RESULT_AMBIGUOUS_SCOPE'
+        );
+        suggestedNextActions = uniqueStrings([
+          ...suggestedNextActions,
+          ...(broaderScope.suggestedNextActions ?? []),
+          `Re-run \`pp envvar inspect ${identifier} --environment <alias> --solution ${options.solutionUniqueName} --format json\` if you need fresh proof that the definition is now visible in the requested solution scope.`,
+        ]);
+      }
+    }
+
+    if (!target) {
       return fail(
         createDiagnostic('error', 'DATAVERSE_ENVVAR_NOT_FOUND', `Environment variable ${identifier} was not found.`, {
           source: '@pp/dataverse',
@@ -3345,11 +3389,11 @@ export class EnvironmentVariableService {
       );
     }
 
-    const writeResult = variable.data.valueId
-      ? await this.dataverseClient.update('environmentvariablevalues', variable.data.valueId, { value })
+    const writeResult = target.valueId
+      ? await this.dataverseClient.update('environmentvariablevalues', target.valueId, { value })
       : await this.dataverseClient.create('environmentvariablevalues', {
           value,
-          'EnvironmentVariableDefinitionId@odata.bind': `/environmentvariabledefinitions(${variable.data.definitionId})`,
+          'EnvironmentVariableDefinitionId@odata.bind': `/environmentvariabledefinitions(${target.definitionId})`,
         });
 
     if (!writeResult.success) {
@@ -3358,16 +3402,17 @@ export class EnvironmentVariableService {
 
     return ok(
       {
-        ...variable.data,
+        ...target,
         currentValue: value,
         effectiveValue: value,
-        valueId: variable.data.valueId ?? writeResult.data?.entityId,
+        valueId: target.valueId ?? writeResult.data?.entityId,
         hasCurrentValue: true,
       },
       {
         supportTier: 'preview',
-        diagnostics: mergeDiagnosticLists(variable.diagnostics, writeResult.diagnostics),
-        warnings: mergeDiagnosticLists(variable.warnings, writeResult.warnings),
+        diagnostics: mergeDiagnosticLists(diagnostics, writeResult.diagnostics),
+        warnings: mergeDiagnosticLists(warnings, writeResult.warnings),
+        suggestedNextActions,
       }
     );
   }
@@ -3898,7 +3943,9 @@ export class ModelDrivenAppService {
     createResult: OperationResult<DataverseWriteResult<ModelDrivenAppRecord>>
   ): Promise<OperationResult<ModelDrivenAppSummary>> {
     const createFailure = createResult.diagnostics.find(
-      (diagnostic) => diagnostic.code === 'HTTP_REQUEST_FAILED' && extractHttpStatusCode(diagnostic.message) === 400
+      (diagnostic) =>
+        diagnostic.code === 'HTTP_REQUEST_FAILED' &&
+        [400, 404].includes(extractHttpStatusCode(diagnostic.message) ?? Number.NaN)
     );
 
     if (!createFailure) {
@@ -3960,7 +4007,7 @@ export class ModelDrivenAppService {
           uniqueName,
           requestedName,
           solutionUniqueName: options.solutionUniqueName,
-          httpStatus: 400,
+          httpStatus: extractHttpStatusCode(createFailure.message),
           dataverseErrorCode: parsedError?.code,
           dataverseErrorMessage: parsedError?.message,
           persistedApp: persistedApp

@@ -2479,6 +2479,64 @@ describe('ALM services', () => {
     expect(result.data?.[0]?.diagnostics.map((diagnostic) => diagnostic.code)).toContain('DATAVERSE_CONNREF_ROW_INFERRED');
   });
 
+  it('suppresses ambiguous empty-scope warnings when solution-scoped connection-reference validation confirms zero results', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.validate({ solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_SCOPE_EMPTY',
+          message: 'No connection references were found in solution Core.',
+        }),
+        expect.objectContaining({
+          code: 'DATAVERSE_CONNREF_VALIDATE_EMPTY',
+          message: 'Validated 0 connection references; no references were found in solution Core.',
+        }),
+      ])
+    );
+    expect(result.warnings.map((warning) => warning.code)).not.toContain('DATAVERSE_QUERY_EMPTY_RESULT_AMBIGUOUS_SCOPE');
+  });
+
   it('queries connection references with the live display-name column', async () => {
     const httpClient = new FakeHttpClient([
       ok({
@@ -3328,6 +3386,106 @@ describe('ALM services', () => {
     );
     expect(httpClient.requests.at(-1)?.method).toBe('PATCH');
     expect(httpClient.requests.at(-1)?.path).toBe('environmentvariablevalues(val-1)');
+  });
+
+  it('falls back to the environment-scoped definition when solution-scoped envvar set cannot see a newly created definition yet', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariabledefinitionid: 'def-1',
+              schemaname: 'pp_ApiUrl',
+              displayname: 'API URL',
+              defaultvalue: 'https://default.example.test',
+              type: 'String',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              environmentvariabledefinitionid: 'def-1',
+              schemaname: 'pp_ApiUrl',
+              displayname: 'API URL',
+              defaultvalue: 'https://default.example.test',
+              type: 'String',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 204,
+        headers: {},
+        entityId: 'val-1',
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new EnvironmentVariableService(client);
+
+    const result = await service.setValue('pp_ApiUrl', 'https://next.example.test', { solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      definitionId: 'def-1',
+      currentValue: 'https://next.example.test',
+      effectiveValue: 'https://next.example.test',
+      hasCurrentValue: true,
+    });
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_ENVVAR_SET_SCOPE_FALLBACK',
+        }),
+      ])
+    );
+    expect(result.warnings.map((warning) => warning.code)).not.toContain('DATAVERSE_QUERY_EMPTY_RESULT_AMBIGUOUS_SCOPE');
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        'Re-run `pp envvar inspect pp_ApiUrl --environment <alias> --solution Core --format json` if you need fresh proof that the definition is now visible in the requested solution scope.',
+      ])
+    );
+    expect(httpClient.requests.at(-1)?.method).toBe('POST');
+    expect(httpClient.requests.at(-1)?.path).toBe('environmentvariablevalues');
   });
 
   it('updates an existing connection reference binding', async () => {
@@ -4452,6 +4610,64 @@ describe('normalizeMetadataQueryOptions', () => {
       'appmodules',
       'appmodules?%24select=appmoduleid%2Cuniquename%2Cname%2Cappmoduleversion%2Cstatecode%2Cpublishedon',
     ]);
+  });
+
+  it('enriches appmodule create 404 failures with post-create readback guidance', async () => {
+    const httpClient = new FakeHttpClient([
+      fail(
+        createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'POST appmodules returned 404', {
+          source: '@pp/http',
+          detail: JSON.stringify({
+            error: {
+              code: '0x80040217',
+              message: "Entity 'appmodule' With Id = missing-app-id Does Not Exist",
+            },
+          }),
+        })
+      ),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ModelDrivenAppService(client);
+
+    const result = await service.create('MissingHub', {
+      name: 'Missing Hub',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'DATAVERSE_MODEL_APP_CREATE_FAILED',
+          detail: expect.stringContaining("Dataverse message: Entity 'appmodule' With Id = missing-app-id Does Not Exist."),
+        }),
+        expect.objectContaining({
+          code: 'HTTP_REQUEST_FAILED',
+          message: 'POST appmodules returned 404',
+        }),
+      ])
+    );
+    expect(result.details).toMatchObject({
+      category: 'model-app-create-failed',
+      uniqueName: 'MissingHub',
+      solutionUniqueName: 'Core',
+      httpStatus: 404,
+      dataverseErrorCode: '0x80040217',
+      dataverseErrorMessage: "Entity 'appmodule' With Id = missing-app-id Does Not Exist",
+    });
+    expect(result.suggestedNextActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('capturing the Dataverse error detail'),
+        'Run `pp model list --environment <alias> --format json` to confirm whether the target unique name already exists before changing names or retrying.',
+      ])
+    );
   });
 
   it('rejects unsupported metadata count requests', () => {
