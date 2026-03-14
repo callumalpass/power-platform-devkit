@@ -702,7 +702,7 @@ pp solution publish Core --env dev
 pp solution publish Core --env dev --wait-for-export --out ./artifacts/Core.zip
 ```
 
-`pp solution publish --format json` also returns a `progress` history, `readBack`, a machine-readable `blockers` list, and an `exportCheck` result from one immediate export-backed sync probe so the publish response itself shows whether export readiness was confirmed, timed out after polling, or is still blocked on packaged workflow state. Workflow blockers now also carry remediation metadata so modern-flow blockers can say explicitly that MCP and CLI share the same bounded activation route, while making the remaining `FLOW_ACTIVATE_DEFINITION_REQUIRED` limitation explicit when Dataverse still rejects that path.
+`pp solution publish --format json` also returns a `progress` history, `readBack`, a machine-readable `blockers` list, a top-level `readiness` assessment, and an `exportCheck` result from one immediate export-backed sync probe so the publish response itself shows whether export readiness was confirmed, timed out after polling, or is still blocked on packaged workflow state. Workflow blockers now carry remediation metadata that names the primary MCP/CLI activation route plus any richer pp-native alternatives such as `pp.flow.deploy`, while explicitly calling out when `FLOW_ACTIVATE_DEFINITION_REQUIRED` means `pp` has no further native completion path for that draft modern flow.
 
 Inspect solution inventory and preflight facts:
 

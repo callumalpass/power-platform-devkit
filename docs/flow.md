@@ -18,10 +18,10 @@ pp flow list --env dev --solution Core
 Inspect a remote flow by name, id, or unique name:
 
 ```bash
-pp flow inspect "Invoice Sync" --env dev
-pp flow inspect crd_InvoiceSync --env dev --solution Core
+pp flow inspect "Invoice Sync" --env dev --no-interactive-auth
+pp flow inspect crd_InvoiceSync --env dev --solution Core --no-interactive-auth
 pp flow activate crd_InvoiceSync --env dev --solution Core
-pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote
+pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote --no-interactive-auth
 pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --target-solution Core
 pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --solution-package --managed-solution-package --holding-solution --no-publish-workflows
 ```
@@ -61,7 +61,7 @@ the target environment.
 ```bash
 pp flow runs "Invoice Sync" --env dev --since 7d
 pp flow errors "Invoice Sync" --env dev --group-by connectionReference
-pp flow connrefs "Invoice Sync" --env dev --solution Core
+pp flow connrefs "Invoice Sync" --env dev --solution Core --no-interactive-auth
 pp flow doctor "Invoice Sync" --env dev --solution Core --since 7d
 ```
 
@@ -165,7 +165,7 @@ The normalizer accepts either:
 
 ```bash
 pp flow unpack ./exports/invoice-flow.json --out ./flows/invoice
-pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote
+pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote --no-interactive-auth
 pp flow inspect ./flows/invoice
 pp flow normalize ./flows/invoice
 pp flow validate ./flows/invoice
@@ -315,7 +315,10 @@ The current pack/deploy boundary is:
 - create-if-missing currently requires artifact `metadata.uniqueName`, creates
   only a bounded workflow shell (`category`, `name`, `description`,
   `uniquename`, `type`, `mode`, `ondemand`, `primaryentity`,
-  `statecode`/`statuscode` when present, plus normalized `clientdata`), and
+  `statecode`/`statuscode` when present, plus normalized `clientdata`); the
+  create payload now always mirrors the definition into both
+  `clientdata.definition` and `clientdata.properties.definition` so canonical
+  local artifacts stay deployable without manual export-shape edits; it still
   fails explicitly instead of guessing if the same flow already exists outside
   the requested solution filter
 - solution-packaged import/export and broader workflow metadata or state

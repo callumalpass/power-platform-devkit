@@ -124,8 +124,9 @@ pp-mcp --config-dir ~/.config/pp --project .
   flow and preserves the same structured blocker diagnostics used by the CLI
   when Dataverse rejects the update path.
 - `pp.flow.deploy` takes one explicit local artifact path and one named remote
-  environment, with optional `solutionUniqueName`, `target`, and
-  `createIfMissing` controls for bounded remote authoring.
+  environment, with optional `solutionUniqueName`, `target`,
+  `createIfMissing`, and `resultOutPath` controls for bounded remote
+  authoring plus a durable run-local JSON receipt.
 - `pp.flow.export` takes one explicit remote flow identifier and one explicit
   local output path for post-create inspection or patching.
 - `pp.canvas-app.inspect` lists remote canvas apps or resolves one app inside an
@@ -339,7 +340,8 @@ Deploy one local flow artifact into a solution-scoped remote target:
     "inputPath": "flows/invoice/flow.json",
     "solutionUniqueName": "Core",
     "createIfMissing": true,
-    "workflowState": "draft"
+    "workflowState": "draft",
+    "resultOutPath": ".ops/runs/example/logs/flow-deploy.json"
   }
 }
 ```
