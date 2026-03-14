@@ -955,6 +955,8 @@ async function acquireTokenByDeviceCode(
   const result = await app.acquireTokenByDeviceCode({
     scopes,
     deviceCodeCallback: (response) => {
+      process.stderr.write(`Open this URL in a browser: ${response.verificationUri}\n`);
+      process.stderr.write(`Enter this code: ${response.userCode}\n`);
       process.stderr.write(`${response.message}\n`);
     },
   });
@@ -1215,14 +1217,25 @@ export async function launchBrowserProfile(
 }
 
 async function openSystemBrowser(url: string): Promise<void> {
-  const [command, args] =
-    process.platform === 'darwin'
-      ? ['open', [url]]
-      : process.platform === 'win32'
-        ? ['cmd', ['/c', 'start', '', url]]
-        : ['xdg-open', [url]];
+  const [command, args] = buildSystemBrowserCommand(url, process.platform);
 
   await spawnDetached(command, args);
+}
+
+export function buildSystemBrowserCommand(
+  url: string,
+  platform: NodeJS.Platform = process.platform
+): [command: string, args: string[]] {
+  if (platform === 'darwin') {
+    return ['open', [url]];
+  }
+
+  if (platform === 'win32') {
+    // `cmd start` treats `&` as a command separator unless the URL is quoted.
+    return ['cmd', ['/c', 'start', '', `"${url}"`]];
+  }
+
+  return ['xdg-open', [url]];
 }
 
 async function spawnDetached(command: string, args: string[]): Promise<void> {

@@ -8,6 +8,7 @@ import {
   DEFAULT_BROWSER_BOOTSTRAP_URL,
   DEFAULT_PUBLIC_CLIENT_ID,
   buildBrowserLaunchSpec,
+  buildSystemBrowserCommand,
   createTokenProvider,
   resolveBrowserProfileDirectory,
   summarizeBrowserProfile,
@@ -166,6 +167,21 @@ describe('AuthService', () => {
     expect(spec.args.at(-1)).toBe('https://login.microsoftonline.com');
   });
 
+  it('quotes Windows system-browser urls so OAuth query parameters survive cmd parsing', () => {
+    const [command, args] = buildSystemBrowserCommand(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=test&scope=https%3A%2F%2Fexample.crm.dynamics.com%2Fuser_impersonation',
+      'win32'
+    );
+
+    expect(command).toBe('cmd');
+    expect(args).toEqual([
+      '/c',
+      'start',
+      '',
+      '"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=test&scope=https%3A%2F%2Fexample.crm.dynamics.com%2Fuser_impersonation"',
+    ]);
+  });
+
   it('does not send redirectUri in interactive auth requests', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-'));
     const auth = new AuthService({ configDir });
@@ -259,6 +275,9 @@ describe('AuthService', () => {
     expect(result.data?.token).toBe('token-value');
     expect(deviceCodeSpy).toHaveBeenCalledOnce();
     expect(stderrSpy).toHaveBeenCalledWith('Please authenticate as: user@example.com\n');
+    expect(stderrSpy).toHaveBeenCalledWith('Open this URL in a browser: https://microsoft.com/devicelogin\n');
+    expect(stderrSpy).toHaveBeenCalledWith('Enter this code: ABC-123\n');
+    expect(stderrSpy).toHaveBeenCalledWith('Authenticate\n');
   });
 
   it('returns a specific diagnostic when the token cache is corrupt', async () => {
