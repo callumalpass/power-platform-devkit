@@ -10,7 +10,9 @@ import {
 } from '@pp/diagnostics';
 import {
   findDescendantProjectConfigs,
+  getEnvironmentAlias,
   loadProjectConfig,
+  type ConfigStoreOptions,
   type ParameterType,
   type ProjectConfig,
   type ProjectParameterDefinition,
@@ -236,6 +238,20 @@ export interface ProjectContractSummary {
   defaultTarget: ProjectContractTarget;
   activeTarget: ProjectContractTarget;
   stageMappings: ProjectContractStageMapping[];
+}
+
+export interface ProjectRuntimeTargetComparison {
+  requestedEnvironmentAlias: string;
+  requestedEnvironmentConfigured: boolean;
+  requestedEnvironmentUrl?: string;
+  requestedEnvironmentDefaultSolution?: string;
+  selectedStage?: string;
+  selectedStageEnvironmentAlias?: string;
+  selectedStageMatchesRequested: boolean;
+  matchingStages: string[];
+  relationship: 'aligned' | 'alternate-stage' | 'unmapped' | 'missing-registry-entry';
+  summary: string;
+  guidance: string[];
 }
 
 export interface ProjectDoctorTopologyStageSummary {
@@ -1094,6 +1110,87 @@ export function summarizeProjectContract(context: ProjectContext): ProjectInspec
     environmentAliasProvenance: describeProjectEnvironmentAliasProvenance(contract.activeTarget, context.configPath),
     bundleLifecycleSummary: describeProjectBundleLifecycle(contract, canonicalBundlePresent),
     deploymentRouteSummary: deploymentRouteSteps.join(' '),
+  };
+}
+
+export async function compareProjectRuntimeTarget(
+  context: ProjectContext,
+  requestedEnvironmentAlias: string,
+  configOptions: ConfigStoreOptions
+): Promise<ProjectRuntimeTargetComparison> {
+  const normalizedAlias = requestedEnvironmentAlias.trim();
+  const contract = summarizeProjectContract(context);
+  const selectedStage = contract.activeTarget.stage;
+  const selectedStageEnvironmentAlias = contract.activeTarget.environmentAlias;
+  const matchingStages = contract.stageMappings
+    .filter((stage) => stage.environmentAlias === normalizedAlias)
+    .map((stage) => stage.stage ?? '<unset>');
+  const requestedEnvironment = await getEnvironmentAlias(normalizedAlias, configOptions);
+  const requestedEnvironmentData = requestedEnvironment.success ? requestedEnvironment.data : undefined;
+  const selectedStageMatchesRequested = selectedStageEnvironmentAlias === normalizedAlias;
+
+  if (selectedStageMatchesRequested) {
+    return {
+      requestedEnvironmentAlias: normalizedAlias,
+      requestedEnvironmentConfigured: Boolean(requestedEnvironmentData),
+      requestedEnvironmentUrl: requestedEnvironmentData?.url,
+      requestedEnvironmentDefaultSolution: requestedEnvironmentData?.defaultSolution,
+      selectedStage,
+      selectedStageEnvironmentAlias,
+      selectedStageMatchesRequested: true,
+      matchingStages,
+      relationship: 'aligned',
+      summary: requestedEnvironmentData
+        ? `Selected project stage ${selectedStage ?? '<unset>'} already targets environment alias ${normalizedAlias}, which resolves in the external registry to ${requestedEnvironmentData.url}.`
+        : `Selected project stage ${selectedStage ?? '<unset>'} already targets environment alias ${normalizedAlias}.`,
+      guidance: [],
+    };
+  }
+
+  if (matchingStages.length > 0) {
+    return {
+      requestedEnvironmentAlias: normalizedAlias,
+      requestedEnvironmentConfigured: Boolean(requestedEnvironmentData),
+      requestedEnvironmentUrl: requestedEnvironmentData?.url,
+      requestedEnvironmentDefaultSolution: requestedEnvironmentData?.defaultSolution,
+      selectedStage,
+      selectedStageEnvironmentAlias,
+      selectedStageMatchesRequested: false,
+      matchingStages,
+      relationship: 'alternate-stage',
+      summary: `Requested runtime environment alias ${normalizedAlias} does not match the selected project target ${selectedStageEnvironmentAlias ?? '<unset>'}, but it is mapped by project stage${matchingStages.length === 1 ? '' : 's'} ${matchingStages.join(', ')}.`,
+      guidance: [`Re-run the project-aware workflow with stage ${matchingStages[0]} when the runtime target should be ${normalizedAlias}.`],
+    };
+  }
+
+  if (!requestedEnvironmentData) {
+    return {
+      requestedEnvironmentAlias: normalizedAlias,
+      requestedEnvironmentConfigured: false,
+      selectedStage,
+      selectedStageEnvironmentAlias,
+      selectedStageMatchesRequested: false,
+      matchingStages,
+      relationship: 'missing-registry-entry',
+      summary: `Requested runtime environment alias ${normalizedAlias} is not configured in the active pp environment registry, and the selected project stage ${selectedStage ?? '<unset>'} still targets ${selectedStageEnvironmentAlias ?? '<unset>'}.`,
+      guidance: [`Add or restore environment alias ${normalizedAlias} before relying on it for cross-environment planning.`],
+    };
+  }
+
+  return {
+    requestedEnvironmentAlias: normalizedAlias,
+    requestedEnvironmentConfigured: true,
+    requestedEnvironmentUrl: requestedEnvironmentData.url,
+    requestedEnvironmentDefaultSolution: requestedEnvironmentData.defaultSolution,
+    selectedStage,
+    selectedStageEnvironmentAlias,
+    selectedStageMatchesRequested: false,
+    matchingStages,
+    relationship: 'unmapped',
+    summary: `Requested runtime environment alias ${normalizedAlias} resolves in the external registry, but no configured project stage maps to it; the selected stage ${selectedStage ?? '<unset>'} still targets ${selectedStageEnvironmentAlias ?? '<unset>'}.`,
+    guidance: [
+      `Add a project stage that maps to environment alias ${normalizedAlias}, or keep treating the runtime target as an explicit cross-environment override.`,
+    ],
   };
 }
 
