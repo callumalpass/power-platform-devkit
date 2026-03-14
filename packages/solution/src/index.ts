@@ -60,6 +60,7 @@ interface PublisherSummary {
   publisherid: string;
   uniquename?: string;
   friendlyname?: string;
+  customizationprefix?: string;
 }
 
 interface SolutionInspectRecord {
@@ -345,6 +346,7 @@ export interface SolutionPublishWorkflowReadback {
   workflowState?: string;
   stateCode?: number;
   statusCode?: number;
+  definitionAvailable?: boolean;
 }
 
 export interface SolutionPublishReadbackSummary {
@@ -355,8 +357,30 @@ export interface SolutionPublishReadbackSummary {
   modelDrivenAppCount: number;
 }
 
+export interface SolutionPublishReadbackSignals {
+  canvasApps: {
+    total: number;
+    published: number;
+    unknown: number;
+  };
+  workflows: {
+    total: number;
+    activated: number;
+    draft: number;
+    suspended: number;
+    other: number;
+    blocked: number;
+  };
+  modelDrivenApps: {
+    total: number;
+    published: number;
+    unknown: number;
+  };
+}
+
 export interface SolutionPublishReadback {
   summary: SolutionPublishReadbackSummary;
+  signals: SolutionPublishReadbackSignals;
   canvasApps: SolutionPublishCanvasReadback[];
   workflows: SolutionPublishWorkflowReadback[];
   modelDrivenApps: SolutionPublishModelDrivenAppReadback[];
@@ -390,17 +414,6 @@ export interface SolutionSyncStatusExportCheck {
 export interface SolutionSyncStatusOptions extends SolutionExportOptions {
   includeExportCheck?: boolean;
   onProgress?: (event: SolutionSyncStatusProgressEvent) => void;
-}
-
-export interface SolutionSyncStatusResult {
-  solution: SolutionSummary;
-  synchronization: {
-    kind: 'solution-export';
-    confirmed: boolean;
-  };
-  blockers: SolutionSyncStatusBlocker[];
-  readBack: SolutionPublishReadback;
-  exportCheck: SolutionSyncStatusExportCheck;
 }
 
 export interface SolutionManagedStateContradictionDetails {
@@ -446,14 +459,62 @@ export interface SolutionSyncStatusBlocker {
   workflowState?: string;
   stateCode?: number;
   statusCode?: number;
+  definitionAvailable?: boolean;
   reason: string;
   remediation?: {
     kind: 'inspect-only' | 'activate-in-place';
     mcpMutationAvailable: boolean;
+    mcpTool?: {
+      name: 'pp.flow.activate' | 'pp.flow.deploy';
+      arguments: Record<string, string>;
+    };
+    alternativeMcpTools?: Array<{
+      name: 'pp.flow.activate' | 'pp.flow.deploy';
+      arguments: Record<string, string>;
+      summary: string;
+    }>;
     cliCommand?: string;
+    alternativeCliCommands?: string[];
     limitationCode?: string;
     summary: string;
   };
+}
+
+function buildModernFlowActivationLimitationSummary(identifier: string, solutionUniqueName: string): string {
+  return `Use MCP \`pp.flow.activate\` or \`pp flow activate ${identifier} --environment <alias> --solution ${solutionUniqueName} --format json\` for one bounded in-session activation attempt. If you also have the local artifact, \`pp.flow.deploy\` can redeploy it back to ${identifier} in the same solution, but if either path returns \`FLOW_ACTIVATE_DEFINITION_REQUIRED\`, \`pp\` does not currently have another native completion path from draft modern flow to export-ready synchronized solution for this workflow.`;
+}
+
+export interface SolutionReadinessAssessment {
+  state: 'ready' | 'blocked' | 'unconfirmed';
+  summary: string;
+  exportReadinessConfirmed: boolean;
+  blockerCount: number;
+  publishAccepted?: boolean;
+  prePublishBlockerCount?: number;
+  unchangedFromPrePublish?: boolean;
+  primaryBlocker?: {
+    kind: 'workflow-state';
+    componentType: 'workflow';
+    id: string;
+    name?: string;
+    logicalName?: string;
+    workflowState?: string;
+    definitionAvailable?: boolean;
+    reason: string;
+    remediation?: SolutionSyncStatusBlocker['remediation'];
+  };
+}
+
+export interface SolutionSyncStatusResult {
+  solution: SolutionSummary;
+  synchronization: {
+    kind: 'solution-export';
+    confirmed: boolean;
+  };
+  readiness: SolutionReadinessAssessment;
+  blockers: SolutionSyncStatusBlocker[];
+  readBack: SolutionPublishReadback;
+  exportCheck: SolutionSyncStatusExportCheck;
 }
 
 export interface SolutionPublishResult {
@@ -471,9 +532,17 @@ export interface SolutionPublishResult {
     attempts?: number;
     elapsedMs?: number;
   };
+  readiness?: SolutionReadinessAssessment;
   readBack?: SolutionPublishReadback;
   blockers?: SolutionSyncStatusBlocker[];
   exportCheck?: SolutionSyncStatusExportCheck;
+}
+
+interface SolutionPublishPrecheckContext {
+  readBack?: SolutionPublishReadback;
+  blockers: SolutionSyncStatusBlocker[];
+  warnings: Diagnostic[];
+  provenance: ProvenanceRecord[];
 }
 
 export interface SolutionPackOptions {
@@ -577,7 +646,9 @@ export class SolutionService {
   async create(uniqueName: string, options: SolutionCreateOptions = {}): Promise<OperationResult<SolutionSummary>> {
     const availablePublishers =
       options.publisherId || options.publisherUniqueName ? undefined : await this.loadPublisherSummaries();
-    const publisherId = options.publisherId ?? (await this.resolvePublisherId(options.publisherUniqueName));
+    const inferredPublisher =
+      !options.publisherId && !options.publisherUniqueName ? this.inferCreatePublisher(uniqueName, availablePublishers) : undefined;
+    const publisherId = options.publisherId ?? inferredPublisher?.publisherid ?? (await this.resolvePublisherId(options.publisherUniqueName));
 
     if (!publisherId) {
       const publisherSummary = this.formatPublisherList(availablePublishers);
@@ -639,7 +710,25 @@ export class SolutionService {
       {
         supportTier: 'preview',
         diagnostics: createResult.diagnostics,
-        warnings: createResult.warnings,
+        warnings: [
+          ...createResult.warnings,
+          ...(inferredPublisher
+            ? [
+                createDiagnostic(
+                  'warning',
+                  'SOLUTION_PUBLISHER_INFERRED',
+                  `Inferred publisher ${inferredPublisher.uniquename ?? inferredPublisher.publisherid} from solution unique name ${uniqueName}.`,
+                  {
+                    source: '@pp/solution',
+                    detail: inferredPublisher.customizationprefix
+                      ? `Matched publisher customization prefix ${inferredPublisher.customizationprefix}.`
+                      : undefined,
+                    hint: 'Pass --publisher-unique-name or --publisher-id to override the inferred publisher.',
+                  }
+                ),
+              ]
+            : []),
+        ],
       }
     );
   }
@@ -1588,6 +1677,8 @@ export class SolutionService {
       });
     }
 
+    const prePublish = await this.collectPublishPrecheckContext(uniqueName);
+
     const publishResult = await this.dataverseClient.invokeAction<void>(
       'PublishAllXml',
       {},
@@ -1633,6 +1724,13 @@ export class SolutionService {
         });
       }
       const blockingWorkflowActions = buildBlockingWorkflowSuggestedNextActions(uniqueName, syncStatus.data.readBack);
+      const readiness = buildSolutionReadinessAssessment(
+        uniqueName,
+        syncStatus.data.blockers,
+        syncStatus.data.exportCheck,
+        { publishAccepted: true, prePublishBlockers: prePublish.blockers }
+      );
+      const unchangedBlockerWarning = buildUnchangedPublishBlockerWarning(uniqueName, prePublish.blockers, syncStatus.data.blockers);
       return ok(
         {
           solution: solution.data,
@@ -1643,6 +1741,7 @@ export class SolutionService {
           },
           waitForExport: false,
           synchronization: syncStatus.data.synchronization,
+          readiness,
           readBack: syncStatus.data.readBack,
           blockers: syncStatus.data.blockers,
           exportCheck: syncStatus.data.exportCheck,
@@ -1653,11 +1752,13 @@ export class SolutionService {
           warnings: prioritizeExportReadinessWarnings(
             mergeDiagnosticLists(
               solution.warnings,
+              prePublish.warnings,
               publishResult.warnings,
               syncStatus.warnings,
               buildBlockingWorkflowWarning(uniqueName, syncStatus.data.readBack)
                 ? [buildBlockingWorkflowWarning(uniqueName, syncStatus.data.readBack)!]
                 : undefined,
+              unchangedBlockerWarning ? [unchangedBlockerWarning] : undefined,
               syncStatus.data.exportCheck.confirmed
                 ? undefined
                 : [
@@ -1681,6 +1782,7 @@ export class SolutionService {
               kind: 'official-api',
               source: 'Dataverse PublishAllXml',
             },
+            ...prePublish.provenance,
             ...(syncStatus.provenance ?? []),
           ],
         }
@@ -1728,6 +1830,8 @@ export class SolutionService {
         readBack: lastObservedReadBack,
       });
       if (blockedWorkflowExportCheck) {
+        const blockers = buildSolutionSyncStatusBlockers(lastObservedReadBack);
+        const unchangedBlockerWarning = buildUnchangedPublishBlockerWarning(uniqueName, prePublish.blockers, blockers);
         return fail(
           [
             createDiagnostic(
@@ -1759,12 +1863,22 @@ export class SolutionService {
                 attempts,
                 elapsedMs: Date.now() - startedAt,
               },
-              blockers: buildSolutionSyncStatusBlockers(lastObservedReadBack),
+              readiness: buildSolutionReadinessAssessment(uniqueName, blockers, blockedWorkflowExportCheck, {
+                publishAccepted: true,
+                prePublishBlockers: prePublish.blockers,
+              }),
+              blockers,
               readBack: lastObservedReadBack,
               exportCheck: blockedWorkflowExportCheck,
             },
             warnings: prioritizeExportReadinessWarnings(
-              mergeDiagnosticLists(solution.warnings, publishResult.warnings, blockedWorkflowExportCheck.failure?.warnings)
+              mergeDiagnosticLists(
+                solution.warnings,
+                prePublish.warnings,
+                publishResult.warnings,
+                blockedWorkflowExportCheck.failure?.warnings,
+                unchangedBlockerWarning ? [unchangedBlockerWarning] : undefined
+              )
             ),
             suggestedNextActions: blockedWorkflowExportCheck.failure?.suggestedNextActions,
             provenance: [
@@ -1772,6 +1886,7 @@ export class SolutionService {
                 kind: 'official-api',
                 source: 'Dataverse PublishAllXml',
               },
+              ...prePublish.provenance,
             ],
           }
         );
@@ -1813,12 +1928,19 @@ export class SolutionService {
           {
             supportTier: 'preview',
             diagnostics: mergeDiagnosticLists(solution.diagnostics, publishResult.diagnostics, lastExportResult.diagnostics),
-            warnings: mergeDiagnosticLists(solution.warnings, publishResult.warnings, lastExportResult.warnings, readBack?.warnings),
+            warnings: mergeDiagnosticLists(
+              solution.warnings,
+              prePublish.warnings,
+              publishResult.warnings,
+              lastExportResult.warnings,
+              readBack?.warnings
+            ),
             provenance: [
               {
                 kind: 'official-api',
                 source: 'Dataverse PublishAllXml',
               },
+              ...prePublish.provenance,
               {
                 kind: 'official-api',
                 source: 'Dataverse ExportSolution',
@@ -1847,6 +1969,20 @@ export class SolutionService {
     }
 
     const lastExportSplit = splitWarningDiagnostics(lastExportResult?.diagnostics);
+    const finalBlockers = buildSolutionSyncStatusBlockers(lastObservedReadBack);
+    const finalExportCheck: SolutionSyncStatusExportCheck = {
+      attempted: true,
+      confirmed: false,
+      packageType: options.exportOptions?.managed ? 'managed' : 'unmanaged',
+      failure: lastExportResult
+        ? {
+            ...normalizeExportCheckFailure(lastExportResult.diagnostics, lastExportResult.warnings),
+            suggestedNextActions: lastExportResult.suggestedNextActions,
+            details: lastExportResult.details,
+          }
+        : undefined,
+    };
+    const unchangedBlockerWarning = buildUnchangedPublishBlockerWarning(uniqueName, prePublish.blockers, finalBlockers);
     return fail(
       mergeDiagnosticLists(
         [
@@ -1880,30 +2016,25 @@ export class SolutionService {
             attempts,
             elapsedMs: Date.now() - startedAt,
           },
-          blockers: buildSolutionSyncStatusBlockers(lastObservedReadBack),
+          readiness: buildSolutionReadinessAssessment(uniqueName, finalBlockers, finalExportCheck, {
+            publishAccepted: true,
+            prePublishBlockers: prePublish.blockers,
+          }),
+          blockers: finalBlockers,
           readBack: lastObservedReadBack,
-          exportCheck: {
-            attempted: true,
-            confirmed: false,
-            packageType: options.exportOptions?.managed ? 'managed' : 'unmanaged',
-            failure: lastExportResult
-              ? {
-                  ...normalizeExportCheckFailure(lastExportResult.diagnostics, lastExportResult.warnings),
-                  suggestedNextActions: lastExportResult.suggestedNextActions,
-                  details: lastExportResult.details,
-                }
-              : undefined,
-          },
+          exportCheck: finalExportCheck,
         },
         warnings: prioritizeExportReadinessWarnings(
           mergeDiagnosticLists(
             solution.warnings,
+            prePublish.warnings,
             publishResult.warnings,
             lastExportSplit.warnings,
             lastExportResult?.warnings,
             buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)
               ? [buildBlockingWorkflowWarning(uniqueName, lastObservedReadBack)!]
               : undefined,
+            unchangedBlockerWarning ? [unchangedBlockerWarning] : undefined,
             lastObservedReadBack
               ? [
                   createDiagnostic(
@@ -1931,6 +2062,7 @@ export class SolutionService {
             kind: 'official-api',
             source: 'Dataverse PublishAllXml',
           },
+          ...prePublish.provenance,
           {
             kind: 'official-api',
             source: 'Dataverse ExportSolution',
@@ -2075,6 +2207,7 @@ export class SolutionService {
       }
     }
 
+    const blockers = buildSolutionSyncStatusBlockers(readBackResult.data);
     return ok(
       {
         solution: solution.data,
@@ -2082,7 +2215,8 @@ export class SolutionService {
           kind: 'solution-export',
           confirmed: exportCheck.confirmed,
         },
-        blockers: buildSolutionSyncStatusBlockers(readBackResult.data),
+        readiness: buildSolutionReadinessAssessment(uniqueName, blockers, exportCheck),
+        blockers,
         readBack: readBackResult.data,
         exportCheck,
       },
@@ -2097,6 +2231,24 @@ export class SolutionService {
         ],
       }
     );
+  }
+
+  private async collectPublishPrecheckContext(uniqueName: string): Promise<SolutionPublishPrecheckContext> {
+    const readBack = await this.describePublishReadBack(uniqueName);
+    if (!readBack?.data) {
+      return {
+        blockers: [],
+        warnings: [],
+        provenance: [],
+      };
+    }
+
+    return {
+      readBack: readBack.data,
+      blockers: buildSolutionSyncStatusBlockers(readBack.data),
+      warnings: readBack.warnings ?? [],
+      provenance: readBack.provenance ?? [],
+    };
   }
 
   private async buildMissingSolutionSuggestions(uniqueName: string): Promise<string[]> {
@@ -2208,7 +2360,7 @@ export class SolutionService {
       if (workflow.category === 5) {
         return [
           ...sharedActions,
-          `Treat ${identifier} as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP \`pp.flow.activate\`, but current in-place activation can still fail with \`FLOW_ACTIVATE_DEFINITION_REQUIRED\` for this Dataverse workflow path.`,
+          buildModernFlowActivationLimitationSummary(identifier, uniqueName),
         ];
       }
 
@@ -2313,12 +2465,20 @@ export class SolutionService {
         'canvasappid',
         ['canvasappid', 'displayname', 'name', 'lastpublishtime']
       ),
-      queryAllOrEmpty<{ workflowid: string; name?: string; uniquename?: string; category?: number; statecode?: number; statuscode?: number }>(
+      queryAllOrEmpty<{
+        workflowid: string;
+        name?: string;
+        uniquename?: string;
+        category?: number;
+        statecode?: number;
+        statuscode?: number;
+        clientdata?: string;
+      }>(
         this.dataverseClient,
         workflowIds,
         'workflows',
         'workflowid',
-        ['workflowid', 'name', 'uniquename', 'category', 'statecode', 'statuscode']
+        ['workflowid', 'name', 'uniquename', 'category', 'statecode', 'statuscode', 'clientdata']
       ),
       queryAllOrEmpty<{ appmoduleid: string; name?: string; uniquename?: string; statecode?: number; publishedon?: string }>(
         this.dataverseClient,
@@ -2339,6 +2499,36 @@ export class SolutionService {
       );
     }
 
+    const readBackCanvasApps = (canvasApps.data ?? [])
+      .map((app) => ({
+        id: app.canvasappid,
+        name: app.displayname ?? app.name,
+        logicalName: app.name,
+        lastPublishTime: app.lastpublishtime,
+      }))
+      .sort(compareNamedReadBackItems);
+    const readBackWorkflows = (workflows.data ?? [])
+      .map((workflow) => ({
+        id: workflow.workflowid,
+        name: workflow.name ?? workflow.uniquename,
+        logicalName: workflow.uniquename,
+        category: workflow.category,
+        workflowState: describeWorkflowState(workflow.statecode, workflow.statuscode),
+        stateCode: workflow.statecode,
+        statusCode: workflow.statuscode,
+        definitionAvailable: hasWorkflowDefinition(workflow.clientdata),
+      }))
+      .sort(compareNamedReadBackItems);
+    const readBackModelDrivenApps = (modelDrivenApps.data ?? [])
+      .map((app) => ({
+        id: app.appmoduleid,
+        name: app.name ?? app.uniquename,
+        uniqueName: app.uniquename,
+        stateCode: app.statecode,
+        publishedOn: app.publishedon,
+      }))
+      .sort(compareNamedReadBackItems);
+
     return ok(
       {
         summary: {
@@ -2348,34 +2538,10 @@ export class SolutionService {
           workflowCount: workflows.data?.length ?? 0,
           modelDrivenAppCount: modelDrivenApps.data?.length ?? 0,
         },
-        canvasApps: (canvasApps.data ?? [])
-          .map((app) => ({
-            id: app.canvasappid,
-            name: app.displayname ?? app.name,
-            logicalName: app.name,
-            lastPublishTime: app.lastpublishtime,
-          }))
-          .sort(compareNamedReadBackItems),
-        workflows: (workflows.data ?? [])
-          .map((workflow) => ({
-            id: workflow.workflowid,
-            name: workflow.name ?? workflow.uniquename,
-            logicalName: workflow.uniquename,
-            category: workflow.category,
-            workflowState: describeWorkflowState(workflow.statecode, workflow.statuscode),
-            stateCode: workflow.statecode,
-            statusCode: workflow.statuscode,
-          }))
-          .sort(compareNamedReadBackItems),
-        modelDrivenApps: (modelDrivenApps.data ?? [])
-          .map((app) => ({
-            id: app.appmoduleid,
-            name: app.name ?? app.uniquename,
-            uniqueName: app.uniquename,
-            stateCode: app.statecode,
-            publishedOn: app.publishedon,
-          }))
-          .sort(compareNamedReadBackItems),
+        signals: summarizePublishReadBackSignals(readBackCanvasApps, readBackWorkflows, readBackModelDrivenApps),
+        canvasApps: readBackCanvasApps,
+        workflows: readBackWorkflows,
+        modelDrivenApps: readBackModelDrivenApps,
       },
       {
         supportTier: 'preview',
@@ -2679,7 +2845,7 @@ export class SolutionService {
   private async loadPublisherSummaries(): Promise<PublisherSummary[]> {
     const publishers = await this.dataverseClient.query<PublisherSummary>({
       table: 'publishers',
-      select: ['publisherid', 'uniquename', 'friendlyname'],
+      select: ['publisherid', 'uniquename', 'friendlyname', 'customizationprefix'],
       top: 10,
     });
 
@@ -2703,6 +2869,31 @@ export class SolutionService {
           : `${label} (${publisher.publisherid})`;
       })
       .join(', ');
+  }
+
+  private inferCreatePublisher(uniqueName: string, publishers: PublisherSummary[] | undefined): PublisherSummary | undefined {
+    if (!publishers?.length) {
+      return undefined;
+    }
+
+    const normalizedUniqueName = uniqueName.trim().toLowerCase();
+    if (!normalizedUniqueName) {
+      return undefined;
+    }
+
+    const matches = publishers
+      .filter((publisher) => publisher.customizationprefix?.trim())
+      .filter((publisher) => normalizedUniqueName.startsWith(publisher.customizationprefix!.trim().toLowerCase()))
+      .sort((left, right) => (right.customizationprefix?.length ?? 0) - (left.customizationprefix?.length ?? 0));
+
+    if (matches.length === 0) {
+      return publishers.length === 1 ? publishers[0] : undefined;
+    }
+
+    const bestPrefixLength = matches[0]?.customizationprefix?.trim().length ?? 0;
+    const bestMatches = matches.filter((publisher) => (publisher.customizationprefix?.trim().length ?? 0) === bestPrefixLength);
+
+    return bestMatches.length === 1 ? bestMatches[0] : undefined;
   }
 
   private buildPublisherSuggestions(uniqueName: string, publishers: PublisherSummary[] | undefined): string[] {
@@ -3005,6 +3196,27 @@ function describePublishReadBackSummary(readBack: SolutionPublishReadback | unde
   }
 
   const parts: string[] = [];
+  const canvasSignals = readBack.signals.canvasApps;
+  const workflowSignals = readBack.signals.workflows;
+  const modelSignals = readBack.signals.modelDrivenApps;
+
+  if (canvasSignals.total > 0 || workflowSignals.total > 0 || modelSignals.total > 0) {
+    parts.push(
+      [
+        canvasSignals.total > 0
+          ? `canvas publish observed=${canvasSignals.published}/${canvasSignals.total}${canvasSignals.unknown > 0 ? ` unknown=${canvasSignals.unknown}` : ''}`
+          : undefined,
+        workflowSignals.total > 0
+          ? `workflow activation observed=${workflowSignals.activated}/${workflowSignals.total}${workflowSignals.blocked > 0 ? ` blocked=${workflowSignals.blocked}` : ''}${workflowSignals.other > 0 ? ` other=${workflowSignals.other}` : ''}`
+          : undefined,
+        modelSignals.total > 0
+          ? `model-driven publish observed=${modelSignals.published}/${modelSignals.total}${modelSignals.unknown > 0 ? ` unknown=${modelSignals.unknown}` : ''}`
+          : undefined,
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join(' | ')
+    );
+  }
 
   if (readBack.canvasApps.length > 0) {
     parts.push(
@@ -3033,6 +3245,39 @@ function describePublishReadBackSummary(readBack: SolutionPublishReadback | unde
   return parts.length > 0 ? parts.join(' | ') : undefined;
 }
 
+function summarizePublishReadBackSignals(
+  canvasApps: SolutionPublishCanvasReadback[],
+  workflows: SolutionPublishWorkflowReadback[],
+  modelDrivenApps: SolutionPublishModelDrivenAppReadback[]
+): SolutionPublishReadbackSignals {
+  return {
+    canvasApps: {
+      total: canvasApps.length,
+      published: canvasApps.filter((app) => Boolean(app.lastPublishTime)).length,
+      unknown: canvasApps.filter((app) => !app.lastPublishTime).length,
+    },
+    workflows: {
+      total: workflows.length,
+      activated: workflows.filter((workflow) => workflow.workflowState === 'activated').length,
+      draft: workflows.filter((workflow) => workflow.workflowState === 'draft').length,
+      suspended: workflows.filter((workflow) => workflow.workflowState === 'suspended').length,
+      other: workflows.filter(
+        (workflow) =>
+          workflow.workflowState !== undefined &&
+          workflow.workflowState !== 'activated' &&
+          workflow.workflowState !== 'draft' &&
+          workflow.workflowState !== 'suspended'
+      ).length,
+      blocked: workflows.filter((workflow) => workflow.workflowState === 'draft' || workflow.workflowState === 'suspended').length,
+    },
+    modelDrivenApps: {
+      total: modelDrivenApps.length,
+      published: modelDrivenApps.filter((app) => Boolean(app.publishedOn)).length,
+      unknown: modelDrivenApps.filter((app) => !app.publishedOn).length,
+    },
+  };
+}
+
 function getBlockingWorkflowReadBacks(readBack: SolutionPublishReadback | undefined): SolutionPublishWorkflowReadback[] {
   return (readBack?.workflows ?? []).filter(
     (workflow) => workflow.workflowState === 'draft' || workflow.workflowState === 'suspended'
@@ -3053,12 +3298,19 @@ function isModernFlowReadBack(workflow: SolutionPublishWorkflowReadback): boolea
 
 function describeWorkflowReadBackState(workflow: SolutionPublishWorkflowReadback): string {
   const state = workflow.workflowState ?? 'unknown';
+  const definitionLabel =
+    workflow.definitionAvailable === undefined ? undefined : `definitionAvailable=${workflow.definitionAvailable ? 'true' : 'false'}`;
 
   if (workflow.stateCode === undefined && workflow.statusCode === undefined) {
-    return state;
+    return definitionLabel ? `${state} (${definitionLabel})` : state;
   }
 
-  return `${state} (statecode=${workflow.stateCode ?? 'unknown'}, statuscode=${workflow.statusCode ?? 'unknown'})`;
+  const parts = [
+    `statecode=${workflow.stateCode ?? 'unknown'}`,
+    `statuscode=${workflow.statusCode ?? 'unknown'}`,
+    ...(definitionLabel ? [definitionLabel] : []),
+  ];
+  return `${state} (${parts.join(', ')})`;
 }
 
 function buildWorkflowInspectFilter(workflow: {
@@ -3085,6 +3337,34 @@ function buildWorkflowInspectFilter(workflow: {
   }
 
   return clauses.length === 1 ? clauses[0] : `(${clauses.join(' or ')})`;
+}
+
+function buildWorkflowBlockerReason(workflow: SolutionPublishWorkflowReadback): string {
+  const label = workflow.name ?? workflow.logicalName ?? workflow.id;
+  const definitionDetail =
+    workflow.definitionAvailable === true
+      ? ' even though the workflow definition payload is available in Dataverse'
+      : workflow.definitionAvailable === false
+        ? ' and Dataverse readback does not expose a workflow definition payload'
+        : '';
+  return `Workflow ${label} is still ${describeWorkflowReadBackState(workflow)}${definitionDetail}, so solution export readiness remains blocked.`;
+}
+
+function hasWorkflowDefinition(clientdata: string | undefined): boolean {
+  if (!clientdata) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(clientdata) as { definition?: unknown; properties?: { definition?: unknown } };
+    return isJsonRecord(parsed.definition) || isJsonRecord(parsed.properties?.definition);
+  } catch {
+    return false;
+  }
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function buildBlockingWorkflowSuggestedNextActions(
@@ -3114,7 +3394,7 @@ function buildBlockingWorkflowSuggestedNextActions(
     if (isModernFlowReadBack(workflow)) {
       return [
         ...sharedActions,
-        `Treat ${identifier} as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP \`pp.flow.activate\`, but current in-place activation can still fail with \`FLOW_ACTIVATE_DEFINITION_REQUIRED\` for this Dataverse workflow path.`,
+        buildModernFlowActivationLimitationSummary(identifier, solutionUniqueName),
       ];
     }
 
@@ -3147,6 +3427,28 @@ function buildBlockingWorkflowWarning(
         .map((workflow) => `${workflow.name ?? workflow.logicalName ?? workflow.id} state=${describeWorkflowReadBackState(workflow)}`)
         .join('; '),
       hint: buildBlockingWorkflowSuggestedNextActions(solutionUniqueName, readBack)[0],
+    }
+  );
+}
+
+function buildUnchangedPublishBlockerWarning(
+  solutionUniqueName: string,
+  prePublishBlockers: SolutionSyncStatusBlocker[],
+  postPublishBlockers: SolutionSyncStatusBlocker[]
+): Diagnostic | undefined {
+  const unchanged = postPublishBlockers.filter((blocker) => findEquivalentWorkflowBlocker(blocker, prePublishBlockers));
+  if (unchanged.length === 0) {
+    return undefined;
+  }
+
+  return createDiagnostic(
+    'warning',
+    'SOLUTION_PUBLISH_BLOCKERS_UNCHANGED',
+    `PublishAllXml for solution ${solutionUniqueName} completed, but the same workflow blockers observed before publish still remain afterward.`,
+    {
+      source: '@pp/solution',
+      detail: unchanged.map(describeWorkflowBlockerForComparison).join('; '),
+      hint: unchanged[0]?.remediation?.cliCommand ?? `Run \`pp solution sync-status ${solutionUniqueName} --environment <alias> --format json\` to inspect the remaining blockers.`,
     }
   );
 }
@@ -3199,23 +3501,180 @@ function buildSolutionSyncStatusBlockers(readBack: SolutionPublishReadback | und
     workflowState: workflow.workflowState,
     stateCode: workflow.stateCode,
     statusCode: workflow.statusCode,
-    reason: `Workflow ${workflow.name ?? workflow.logicalName ?? workflow.id} is still ${describeWorkflowReadBackState(workflow)}, so solution export readiness remains blocked.`,
+    definitionAvailable: workflow.definitionAvailable,
+    reason: buildWorkflowBlockerReason(workflow),
     remediation: isModernFlowReadBack(workflow)
       ? {
-          kind: 'inspect-only',
-          mcpMutationAvailable: false,
+          kind: 'activate-in-place',
+          mcpMutationAvailable: true,
+          mcpTool: {
+            name: 'pp.flow.activate',
+            arguments: {
+              environment: '<alias>',
+              identifier: formatWorkflowIdentifier(workflow),
+              solutionUniqueName: '<solution>',
+            },
+          },
+          alternativeMcpTools: [
+            {
+              name: 'pp.flow.deploy',
+              arguments: {
+                environment: '<alias>',
+                path: '<local-flow-artifact>',
+                solutionUniqueName: '<solution>',
+                target: formatWorkflowIdentifier(workflow),
+                workflowState: 'activated',
+              },
+              summary:
+                'Redeploy the local flow artifact back onto this workflow when you need a richer pp-native retry than in-place activation alone.',
+            },
+          ],
           cliCommand: `pp flow activate ${formatWorkflowIdentifier(workflow)} --environment <alias> --solution <solution> --format json`,
+          alternativeCliCommands: [
+            `pp flow deploy <local-flow-artifact> --environment <alias> --solution <solution> --target ${formatWorkflowIdentifier(workflow)} --workflow-state activated --format json`,
+          ],
           limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
-          summary:
-            'Modern Flow blocker is diagnosable through pp solution/flow inspect surfaces, but pp does not yet expose MCP activation and the current CLI in-place activation path can still fail for this Dataverse workflow update route.',
+          summary: buildModernFlowActivationLimitationSummary(formatWorkflowIdentifier(workflow), '<solution>'),
         }
       : {
           kind: 'activate-in-place',
-          mcpMutationAvailable: false,
+          mcpMutationAvailable: true,
+          mcpTool: {
+            name: 'pp.flow.activate',
+            arguments: {
+              environment: '<alias>',
+              identifier: formatWorkflowIdentifier(workflow),
+              solutionUniqueName: '<solution>',
+            },
+          },
           cliCommand: `pp flow activate ${formatWorkflowIdentifier(workflow)} --environment <alias> --solution <solution> --format json`,
-          summary: 'Retry in-place activation through the CLI when this workflow should already be runnable.',
+          summary:
+            'Retry in-place activation through MCP `pp.flow.activate` or the CLI when this workflow should already be runnable.',
         },
   }));
+}
+
+function findEquivalentWorkflowBlocker(
+  blocker: SolutionSyncStatusBlocker,
+  candidates: ReadonlyArray<SolutionSyncStatusBlocker>
+): SolutionSyncStatusBlocker | undefined {
+  return candidates.find((candidate) => (
+    candidate.kind === 'workflow-state' &&
+    blocker.kind === 'workflow-state' &&
+    candidate.componentType === blocker.componentType &&
+    candidate.id === blocker.id &&
+    candidate.logicalName === blocker.logicalName &&
+    candidate.workflowState === blocker.workflowState &&
+    candidate.definitionAvailable === blocker.definitionAvailable
+  ));
+}
+
+function describeWorkflowBlockerForComparison(blocker: SolutionSyncStatusBlocker): string {
+  const definitionDetail =
+    blocker.definitionAvailable === true
+      ? 'definitionAvailable=true'
+      : blocker.definitionAvailable === false
+        ? 'definitionAvailable=false'
+        : 'definitionAvailable=unknown';
+  return `${describeWorkflowBlockerLabel(blocker)} state=${blocker.workflowState ?? 'unknown'} (${definitionDetail})`;
+}
+
+function describeWorkflowBlockerLabel(blocker: SolutionSyncStatusBlocker): string {
+  return blocker.name ?? blocker.logicalName ?? blocker.id;
+}
+
+function buildSolutionReadinessAssessment(
+  solutionUniqueName: string,
+  blockers: SolutionSyncStatusBlocker[],
+  exportCheck: SolutionSyncStatusExportCheck,
+  options: {
+    publishAccepted?: boolean;
+    prePublishBlockers?: SolutionSyncStatusBlocker[];
+  } = {}
+): SolutionReadinessAssessment {
+  const primaryBlocker = blockers[0];
+  const publishPrefix = options.publishAccepted
+    ? `PublishAllXml was accepted for solution ${solutionUniqueName}, but`
+    : `Solution ${solutionUniqueName}`;
+  const prePublishPrimaryBlocker = primaryBlocker
+    ? findEquivalentWorkflowBlocker(primaryBlocker, options.prePublishBlockers ?? [])
+    : undefined;
+  const prePublishBlockerCount = options.prePublishBlockers?.length;
+
+  if (primaryBlocker) {
+    const primaryDefinitionDetail =
+      primaryBlocker.definitionAvailable === true
+        ? ' even though Dataverse readback shows definitionAvailable=true'
+        : primaryBlocker.definitionAvailable === false
+          ? ' and Dataverse readback still shows definitionAvailable=false'
+          : '';
+    return {
+      state: 'blocked',
+      summary:
+        prePublishPrimaryBlocker && options.publishAccepted
+          ? `${publishPrefix} export readiness is still blocked by the same workflow ${describeWorkflowBlockerLabel(primaryBlocker)} in state ${primaryBlocker.workflowState ?? 'unknown'}${primaryDefinitionDetail}; that blocker was already present before publish.`
+          : `${publishPrefix} export readiness is still blocked by workflow ${describeWorkflowBlockerLabel(primaryBlocker)} in state ${primaryBlocker.workflowState ?? 'unknown'}${primaryDefinitionDetail}.`,
+      exportReadinessConfirmed: false,
+      blockerCount: blockers.length,
+      ...(options.publishAccepted !== undefined ? { publishAccepted: options.publishAccepted } : {}),
+      ...(prePublishBlockerCount !== undefined ? { prePublishBlockerCount } : {}),
+      ...(prePublishPrimaryBlocker ? { unchangedFromPrePublish: true } : {}),
+      primaryBlocker: {
+        kind: primaryBlocker.kind,
+        componentType: primaryBlocker.componentType,
+        id: primaryBlocker.id,
+        name: primaryBlocker.name,
+        logicalName: primaryBlocker.logicalName,
+        workflowState: primaryBlocker.workflowState,
+        definitionAvailable: primaryBlocker.definitionAvailable,
+        reason: primaryBlocker.reason,
+        remediation: primaryBlocker.remediation,
+      },
+    };
+  }
+
+  if (exportCheck.confirmed) {
+    return {
+      state: 'ready',
+      summary: options.publishAccepted
+        ? prePublishBlockerCount && prePublishBlockerCount > 0
+          ? `PublishAllXml was accepted for solution ${solutionUniqueName}, and export readiness is confirmed after clearing ${prePublishBlockerCount} pre-publish workflow blocker${prePublishBlockerCount === 1 ? '' : 's'}.`
+          : `PublishAllXml was accepted for solution ${solutionUniqueName}, and export readiness is confirmed.`
+        : `Solution ${solutionUniqueName} is export-ready.`,
+      exportReadinessConfirmed: true,
+      blockerCount: 0,
+      ...(options.publishAccepted !== undefined ? { publishAccepted: options.publishAccepted } : {}),
+      ...(prePublishBlockerCount !== undefined ? { prePublishBlockerCount } : {}),
+    };
+  }
+
+  if (!exportCheck.attempted) {
+    return {
+      state: 'unconfirmed',
+      summary: options.publishAccepted
+        ? prePublishBlockerCount && prePublishBlockerCount > 0
+          ? `PublishAllXml was accepted for solution ${solutionUniqueName}, and pre-publish workflow blockers no longer appear in readback, but export readiness is still unconfirmed because no export probe completed.`
+          : `PublishAllXml was accepted for solution ${solutionUniqueName}, but export readiness is still unconfirmed because no export probe completed.`
+        : `Solution ${solutionUniqueName} read-back completed, but export readiness is still unconfirmed because no export probe completed.`,
+      exportReadinessConfirmed: false,
+      blockerCount: 0,
+      ...(options.publishAccepted !== undefined ? { publishAccepted: options.publishAccepted } : {}),
+      ...(prePublishBlockerCount !== undefined ? { prePublishBlockerCount } : {}),
+    };
+  }
+
+  return {
+    state: 'unconfirmed',
+    summary: options.publishAccepted
+      ? prePublishBlockerCount && prePublishBlockerCount > 0
+        ? `PublishAllXml was accepted for solution ${solutionUniqueName}, and pre-publish workflow blockers no longer appear in readback, but the immediate export-backed synchronization probe did not confirm readiness.`
+        : `PublishAllXml was accepted for solution ${solutionUniqueName}, but the immediate export-backed synchronization probe did not confirm readiness.`
+      : `Solution ${solutionUniqueName} has no explicit packaged workflow blockers, but the export probe still did not confirm readiness.`,
+    exportReadinessConfirmed: false,
+    blockerCount: 0,
+    ...(options.publishAccepted !== undefined ? { publishAccepted: options.publishAccepted } : {}),
+    ...(prePublishBlockerCount !== undefined ? { prePublishBlockerCount } : {}),
+  };
 }
 
 function applyDependencyComponentResolutions(

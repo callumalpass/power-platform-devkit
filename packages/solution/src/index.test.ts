@@ -1492,6 +1492,49 @@ describe('SolutionService', () => {
     );
   });
 
+  it('infers the publisher from the solution unique-name prefix when the match is unambiguous', async () => {
+    const service = new SolutionService(
+      createStubClient({
+        solution: {
+          solutionid: 'sol-1',
+          uniquename: 'Core',
+          version: '1.0.0.0',
+        },
+        publishers: [
+          {
+            publisherid: 'pub-1',
+            uniquename: 'DefaultPublisher',
+            friendlyname: 'Default Publisher',
+            customizationprefix: 'new',
+          },
+          {
+            publisherid: 'pub-2',
+            uniquename: 'pp',
+            friendlyname: 'Power Platform',
+            customizationprefix: 'pp',
+          },
+        ],
+        components: [],
+        dependencies: [],
+      })
+    );
+
+    const result = await service.create('ppHarnessShell');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      uniquename: 'ppHarnessShell',
+    });
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOLUTION_PUBLISHER_INFERRED',
+          message: 'Inferred publisher pp from solution unique name ppHarnessShell.',
+        }),
+      ])
+    );
+  });
+
   it('updates solution version and publisher through a first-class metadata flow', async () => {
     const service = new SolutionService(
       createStubClient({
@@ -1784,6 +1827,13 @@ describe('SolutionService', () => {
         kind: 'solution-export',
         confirmed: false,
       },
+      readiness: {
+        state: 'unconfirmed',
+        exportReadinessConfirmed: false,
+        blockerCount: 0,
+        publishAccepted: true,
+        summary: 'PublishAllXml was accepted for solution Core, but the immediate export-backed synchronization probe did not confirm readiness.',
+      },
       exportCheck: {
         attempted: true,
         confirmed: false,
@@ -1805,6 +1855,26 @@ describe('SolutionService', () => {
           workflowCount: 1,
           modelDrivenAppCount: 0,
         },
+        signals: {
+          canvasApps: {
+            total: 1,
+            published: 1,
+            unknown: 0,
+          },
+          workflows: {
+            total: 1,
+            activated: 1,
+            draft: 0,
+            suspended: 0,
+            other: 0,
+            blocked: 0,
+          },
+          modelDrivenApps: {
+            total: 0,
+            published: 0,
+            unknown: 0,
+          },
+        },
         canvasApps: [
           expect.objectContaining({
             id: 'canvas-1',
@@ -1824,7 +1894,9 @@ describe('SolutionService', () => {
         code: 'SOLUTION_PUBLISH_SYNC_NOT_CONFIRMED',
         message:
           'Publish for solution Core was accepted, but an immediate export-backed synchronization probe still did not confirm readiness.',
-        detail: expect.stringContaining('Harness Flow state=activated (statecode=1, statuscode=2)'),
+        detail: expect.stringMatching(
+          /canvas publish observed=1\/1 \| workflow activation observed=1\/1.*Harness Flow state=activated \(statecode=1, statuscode=2, definitionAvailable=false\)/
+        ),
         hint: expect.stringContaining('pp solution publish Core --environment <alias> --wait-for-export'),
       })
     );
@@ -2056,6 +2128,11 @@ describe('SolutionService', () => {
             category: 5,
             statecode: 0,
             statuscode: 1,
+            clientdata: JSON.stringify({
+              definition: {
+                actions: {},
+              },
+            }),
           },
         ],
         requestRecorder,
@@ -2088,6 +2165,18 @@ describe('SolutionService', () => {
       synchronization: {
         confirmed: false,
       },
+      readiness: {
+        state: 'blocked',
+        exportReadinessConfirmed: false,
+        blockerCount: 1,
+        summary:
+          'Solution Core export readiness is still blocked by workflow Harness Flow in state draft even though Dataverse readback shows definitionAvailable=true.',
+        primaryBlocker: {
+          logicalName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+          definitionAvailable: true,
+        },
+      },
       blockers: [
         expect.objectContaining({
           kind: 'workflow-state',
@@ -2096,9 +2185,35 @@ describe('SolutionService', () => {
           category: 5,
           logicalName: 'crd_HarnessFlow',
           workflowState: 'draft',
+          definitionAvailable: true,
           remediation: expect.objectContaining({
-            kind: 'inspect-only',
-            mcpMutationAvailable: false,
+            kind: 'activate-in-place',
+            mcpMutationAvailable: true,
+            mcpTool: {
+              name: 'pp.flow.activate',
+              arguments: {
+                environment: '<alias>',
+                identifier: 'crd_HarnessFlow',
+                solutionUniqueName: '<solution>',
+              },
+            },
+            alternativeMcpTools: [
+              {
+                name: 'pp.flow.deploy',
+                arguments: {
+                  environment: '<alias>',
+                  path: '<local-flow-artifact>',
+                  solutionUniqueName: '<solution>',
+                  target: 'crd_HarnessFlow',
+                  workflowState: 'activated',
+                },
+                summary: expect.stringContaining('Redeploy the local flow artifact'),
+              },
+            ],
+            cliCommand: 'pp flow activate crd_HarnessFlow --environment <alias> --solution <solution> --format json',
+            alternativeCliCommands: [
+              'pp flow deploy <local-flow-artifact> --environment <alias> --solution <solution> --target crd_HarnessFlow --workflow-state activated --format json',
+            ],
             limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
           }),
         }),
@@ -2119,14 +2234,14 @@ describe('SolutionService', () => {
     expect(result.data?.exportCheck.failure?.warnings).toContainEqual(
       expect.objectContaining({
         code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
-        detail: expect.stringContaining('Harness Flow state=draft (statecode=0, statuscode=1)'),
+        detail: expect.stringContaining('Harness Flow state=draft (statecode=0, statuscode=1, definitionAvailable=true)'),
       })
     );
     expect(result.data?.exportCheck.failure?.suggestedNextActions).toContain(
       "Run `pp dv query workflows --environment <alias> --filter \"(workflowid eq flow-1 or uniquename eq 'crd_HarnessFlow' or name eq 'Harness Flow')\" --select workflowid,name,uniquename,category,statecode,statuscode --format json` to inspect the raw Dataverse workflow rows for this blocker without relying on unsupported solution scoping."
     );
     expect(result.data?.exportCheck.failure?.suggestedNextActions).toContain(
-      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP `pp.flow.activate`, but current in-place activation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
+      'Use MCP `pp.flow.activate` or `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json` for one bounded in-session activation attempt. If you also have the local artifact, `pp.flow.deploy` can redeploy it back to crd_HarnessFlow in the same solution, but if either path returns `FLOW_ACTIVATE_DEFINITION_REQUIRED`, `pp` does not currently have another native completion path from draft modern flow to export-ready synchronized solution for this workflow.'
     );
   });
 
@@ -2152,6 +2267,11 @@ describe('SolutionService', () => {
             category: 5,
             statecode: 0,
             statuscode: 1,
+            clientdata: JSON.stringify({
+              definition: {
+                actions: {},
+              },
+            }),
           },
         ],
         requestRecorder,
@@ -2201,13 +2321,48 @@ describe('SolutionService', () => {
         confirmed: false,
         attempts: 1,
       },
+      readiness: {
+        state: 'blocked',
+        publishAccepted: true,
+        prePublishBlockerCount: 1,
+        unchangedFromPrePublish: true,
+        summary:
+          'PublishAllXml was accepted for solution Core, but export readiness is still blocked by the same workflow Harness Flow in state draft even though Dataverse readback shows definitionAvailable=true; that blocker was already present before publish.',
+      },
       blockers: [
         expect.objectContaining({
           category: 5,
           logicalName: 'crd_HarnessFlow',
           workflowState: 'draft',
+          definitionAvailable: true,
           remediation: expect.objectContaining({
-            kind: 'inspect-only',
+            kind: 'activate-in-place',
+            mcpMutationAvailable: true,
+            mcpTool: {
+              name: 'pp.flow.activate',
+              arguments: {
+                environment: '<alias>',
+                identifier: 'crd_HarnessFlow',
+                solutionUniqueName: '<solution>',
+              },
+            },
+            alternativeMcpTools: [
+              {
+                name: 'pp.flow.deploy',
+                arguments: {
+                  environment: '<alias>',
+                  path: '<local-flow-artifact>',
+                  solutionUniqueName: '<solution>',
+                  target: 'crd_HarnessFlow',
+                  workflowState: 'activated',
+                },
+                summary: expect.stringContaining('Redeploy the local flow artifact'),
+              },
+            ],
+            cliCommand: 'pp flow activate crd_HarnessFlow --environment <alias> --solution <solution> --format json',
+            alternativeCliCommands: [
+              'pp flow deploy <local-flow-artifact> --environment <alias> --solution <solution> --target crd_HarnessFlow --workflow-state activated --format json',
+            ],
             limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
           }),
         }),
@@ -2225,7 +2380,7 @@ describe('SolutionService', () => {
       },
     });
     expect(result.suggestedNextActions).toContain(
-      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP `pp.flow.activate`, but current in-place activation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
+      'Use MCP `pp.flow.activate` or `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json` for one bounded in-session activation attempt. If you also have the local artifact, `pp.flow.deploy` can redeploy it back to crd_HarnessFlow in the same solution, but if either path returns `FLOW_ACTIVATE_DEFINITION_REQUIRED`, `pp` does not currently have another native completion path from draft modern flow to export-ready synchronized solution for this workflow.'
     );
   });
 
@@ -2442,6 +2597,12 @@ describe('SolutionService', () => {
         },
       },
     });
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_PUBLISH_BLOCKERS_UNCHANGED',
+        detail: 'Harness Flow state=draft (definitionAvailable=true)',
+      })
+    );
   });
 
   it('suggests a related visible unmanaged solution when publish targets a missing solution', async () => {
@@ -2723,7 +2884,7 @@ describe('SolutionService', () => {
       "Run `pp dv query workflows --environment <alias> --filter \"(workflowid eq flow-1 or uniquename eq 'crd_HarnessFlow' or name eq 'Harness Flow')\" --select workflowid,name,uniquename,category,statecode,statuscode --format json` to inspect the raw Dataverse workflow rows for this blocker without relying on unsupported solution scoping."
     );
     expect(result.suggestedNextActions).toContain(
-      'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP `pp.flow.activate`, but current in-place activation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.'
+      'Use MCP `pp.flow.activate` or `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json` for one bounded in-session activation attempt. If you also have the local artifact, `pp.flow.deploy` can redeploy it back to crd_HarnessFlow in the same solution, but if either path returns `FLOW_ACTIVATE_DEFINITION_REQUIRED`, `pp` does not currently have another native completion path from draft modern flow to export-ready synchronized solution for this workflow.'
     );
   });
 
