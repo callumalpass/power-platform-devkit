@@ -934,6 +934,141 @@ describe('remote canvas app workflows', () => {
     });
   });
 
+  it('plans a remote canvas attach with target baseline and containing-solution context', async () => {
+    const service = new CanvasService({
+      query: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'solutions') {
+          return ok(
+            [
+              {
+                solutionid: 'sol-1',
+                uniquename: 'Core',
+                friendlyname: 'Core Solution',
+                version: '1.0.0.0',
+                ismanaged: false,
+              },
+            ] as T[],
+            { supportTier: 'preview' }
+          );
+        }
+
+        return ok([] as T[], { supportTier: 'preview' });
+      },
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        switch (options.table) {
+          case 'canvasapps':
+            return ok(
+              [
+                {
+                  canvasappid: 'canvas-1',
+                  displayname: 'Harness Canvas',
+                  name: 'crd_HarnessCanvas',
+                },
+              ] as T[],
+              { supportTier: 'preview' }
+            );
+          case 'solutioncomponents':
+            return ok(
+              [
+                { solutioncomponentid: 'comp-canvas', objectid: 'canvas-1', componenttype: 300, _solutionid_value: 'sol-1' },
+                { solutioncomponentid: 'comp-entity', objectid: 'entity-project', componenttype: 1, _solutionid_value: 'sol-1' },
+              ] as T[],
+              { supportTier: 'preview' }
+            );
+          case 'dependencies':
+            return ok(
+              [
+                {
+                  dependencyid: 'dep-1',
+                  dependencytype: 0,
+                  requiredcomponentobjectid: 'entity-account',
+                  requiredcomponenttype: 1,
+                  dependentcomponentobjectid: 'canvas-1',
+                  dependentcomponenttype: 300,
+                },
+              ] as T[],
+              { supportTier: 'preview' }
+            );
+          case 'solutions':
+            return ok(
+              [
+                {
+                  solutionid: 'sol-1',
+                  uniquename: 'Core',
+                  friendlyname: 'Core Solution',
+                  ismanaged: false,
+                },
+              ] as T[],
+              { supportTier: 'preview' }
+            );
+          default:
+            return ok([] as T[], { supportTier: 'preview' });
+        }
+      },
+      listTables: async () =>
+        ok(
+          [
+            { MetadataId: 'entity-project', LogicalName: 'pp_project', SchemaName: 'pp_Project', DisplayName: { UserLocalizedLabel: { Label: 'PP Harness Project' } } },
+            { MetadataId: 'entity-account', LogicalName: 'account', SchemaName: 'Account', DisplayName: { UserLocalizedLabel: { Label: 'Account' } } },
+          ],
+          { supportTier: 'preview' }
+        ),
+      invokeAction: async () =>
+        ok(
+          {
+            status: 200,
+            headers: {},
+            body: {},
+          },
+          { supportTier: 'preview' }
+        ),
+    } as unknown as DataverseClient);
+
+    const result = await service.planRemoteAttach('Harness Canvas', {
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      app: {
+        id: 'canvas-1',
+        displayName: 'Harness Canvas',
+      },
+      targetSolution: {
+        solutionid: 'sol-1',
+        uniquename: 'Core',
+        friendlyname: 'Core Solution',
+        version: '1.0.0.0',
+      },
+      alreadyInTargetSolution: true,
+      containingSolutions: [
+        {
+          solutionId: 'sol-1',
+          uniqueName: 'Core',
+          friendlyName: 'Core Solution',
+        },
+      ],
+      targetSolutionBaseline: {
+        summary: {
+          componentCount: 2,
+          canvasAppCount: 1,
+          missingDependencyCount: 1,
+        },
+        missingDependencies: [
+          {
+            requiredComponentLogicalName: 'account',
+            missingRequiredComponent: true,
+          },
+        ],
+      },
+    });
+    expect(result.knownLimitations).toEqual(
+      expect.arrayContaining([
+        'This preview is read-only and cannot predict the exact component set Dataverse will add during AddSolutionComponent.',
+      ])
+    );
+  });
+
   it('summarizes added components and missing dependencies after remote canvas attach', async () => {
     let attached = false;
     const service = new CanvasService({

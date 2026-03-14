@@ -10,7 +10,7 @@ import {
   type DataverseClient,
 } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, withWarning, type Diagnostic, type OperationResult, type ProvenanceClass } from '@pp/diagnostics';
-import { SolutionService, type SolutionComponentSummary, type SolutionDependencySummary } from '@pp/solution';
+import { SolutionService, type SolutionComponentSummary, type SolutionDependencySummary, type SolutionSummary } from '@pp/solution';
 import { buildCanvasMsappFromUnpackedSource } from './msapp-build';
 import { createZipArchive, extractCanvasMsappArchive, extractZipArchive, extractZipEntry, listZipEntries, mergeDiagnosticLists } from './archive';
 import type {
@@ -262,6 +262,23 @@ export interface CanvasRemoteAttachImpact {
 
 export interface CanvasRemoteAttachResult extends CanvasAppAttachResult {
   solutionImpact?: CanvasRemoteAttachImpact;
+}
+
+export interface CanvasRemoteAttachPlanResult {
+  app: CanvasAppSummary;
+  targetSolution: Pick<SolutionSummary, 'solutionid' | 'uniquename' | 'friendlyname' | 'version' | 'ismanaged'>;
+  alreadyInTargetSolution: boolean;
+  containingSolutions: CanvasRemoteDownloadCandidateSolution[];
+  targetSolutionBaseline: {
+    components: SolutionComponentSummary[];
+    missingDependencies: SolutionDependencySummary[];
+    summary: {
+      componentCount: number;
+      canvasAppCount: number;
+      missingDependencyCount: number;
+    };
+  };
+  previewLimitations: string[];
 }
 
 export interface CanvasRemoteImportResult {
@@ -1039,6 +1056,143 @@ export class CanvasService {
         diagnostics,
         warnings,
         suggestedNextActions: suggestedNextActions.length > 0 ? uniqueSorted(suggestedNextActions) : undefined,
+      }
+    );
+  }
+
+  async planRemoteAttach(
+    identifier: string,
+    options: {
+      solutionUniqueName: string;
+    }
+  ): Promise<OperationResult<CanvasRemoteAttachPlanResult | undefined>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'CANVAS_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for remote canvas app attach planning.', {
+          source: '@pp/canvas',
+        })
+      );
+    }
+
+    const solutionService = new SolutionService(this.dataverseClient);
+    const [app, targetSolution, targetComponents, targetDependencies] = await Promise.all([
+      this.inspectRemote(identifier),
+      solutionService.inspect(options.solutionUniqueName),
+      solutionService.components(options.solutionUniqueName),
+      solutionService.dependencies(options.solutionUniqueName),
+    ]);
+
+    if (!app.success) {
+      return app as unknown as OperationResult<CanvasRemoteAttachPlanResult | undefined>;
+    }
+
+    if (!targetSolution.success) {
+      return targetSolution as unknown as OperationResult<CanvasRemoteAttachPlanResult | undefined>;
+    }
+
+    if (!targetComponents.success) {
+      return targetComponents as unknown as OperationResult<CanvasRemoteAttachPlanResult | undefined>;
+    }
+
+    if (!targetDependencies.success) {
+      return targetDependencies as unknown as OperationResult<CanvasRemoteAttachPlanResult | undefined>;
+    }
+
+    if (!app.data) {
+      return ok(undefined, {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(
+          app.diagnostics,
+          targetSolution.diagnostics,
+          targetComponents.diagnostics,
+          targetDependencies.diagnostics
+        ),
+        warnings: mergeDiagnosticLists(app.warnings, targetSolution.warnings, targetComponents.warnings, targetDependencies.warnings),
+      });
+    }
+
+    if (!targetSolution.data) {
+      return fail(
+        [
+          ...mergeDiagnosticLists(app.diagnostics, targetSolution.diagnostics, targetComponents.diagnostics, targetDependencies.diagnostics),
+          createDiagnostic('error', 'SOLUTION_NOT_FOUND', `Solution ${options.solutionUniqueName} was not found.`, {
+            source: '@pp/canvas',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: mergeDiagnosticLists(app.warnings, targetSolution.warnings, targetComponents.warnings, targetDependencies.warnings),
+        }
+      );
+    }
+
+    const containingSolutions = await this.listContainingSolutions(app.data.id);
+
+    if (!containingSolutions.success || !containingSolutions.data) {
+      return containingSolutions as unknown as OperationResult<CanvasRemoteAttachPlanResult | undefined>;
+    }
+
+    const components = targetComponents.data ?? [];
+    const dependencies = targetDependencies.data ?? [];
+    const alreadyInTargetSolution = components.some(
+      (component) => component.componentType === 300 && component.objectId === app.data?.id
+    );
+    const previewLimitations = [
+      'This preview is read-only and cannot predict the exact component set Dataverse will add during AddSolutionComponent.',
+      'Required-component expansion and any new missing dependencies remain authoritative only after a real attach plus post-attach solution readback.',
+    ];
+
+    return ok(
+      {
+        app: app.data,
+        targetSolution: {
+          solutionid: targetSolution.data.solutionid,
+          uniquename: targetSolution.data.uniquename,
+          friendlyname: targetSolution.data.friendlyname,
+          version: targetSolution.data.version,
+          ismanaged: targetSolution.data.ismanaged,
+        },
+        alreadyInTargetSolution,
+        containingSolutions: containingSolutions.data,
+        targetSolutionBaseline: {
+          components,
+          missingDependencies: dependencies.filter((dependency) => dependency.missingRequiredComponent),
+          summary: {
+            componentCount: components.length,
+            canvasAppCount: components.filter((component) => component.componentType === 300).length,
+            missingDependencyCount: dependencies.filter((dependency) => dependency.missingRequiredComponent).length,
+          },
+        },
+        previewLimitations,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(
+          app.diagnostics,
+          targetSolution.diagnostics,
+          targetComponents.diagnostics,
+          targetDependencies.diagnostics,
+          containingSolutions.diagnostics
+        ),
+        warnings: mergeDiagnosticLists(
+          app.warnings,
+          targetSolution.warnings,
+          targetComponents.warnings,
+          targetDependencies.warnings,
+          containingSolutions.warnings
+        ),
+        suggestedNextActions: uniqueSorted(
+          [
+            alreadyInTargetSolution
+              ? `Canvas app ${app.data.displayName ?? app.data.name ?? app.data.id} is already in solution ${options.solutionUniqueName}; prefer \`pp canvas inspect ${JSON.stringify(app.data.displayName ?? app.data.name ?? app.data.id)} --environment <alias> --solution ${options.solutionUniqueName}\` for readback instead of re-attaching.`
+              : undefined,
+            containingSolutions.data.length > 0
+              ? `Inspect containing solutions with \`pp canvas inspect ${JSON.stringify(app.data.displayName ?? app.data.name ?? app.data.id)} --environment <alias>\` before attaching when you need to compare candidate solution context.`
+              : undefined,
+            `Use \`pp canvas attach ${JSON.stringify(app.data.displayName ?? app.data.name ?? app.data.id)} --environment <alias> --solution ${options.solutionUniqueName}\` only when you are ready to mutate the target solution.`,
+          ].filter((value): value is string => Boolean(value))
+        ),
+        knownLimitations: previewLimitations,
       }
     );
   }
