@@ -7,5 +7,8 @@ coverage
 .ops/harness/runs/
 .ops/harness/runner/
 .ops/harness/config/browser-profiles/test-canvas-harvest/
+.ops/github-canvas-corpus/Kiwi-Power-App-For-Students/
+.ops/github-canvas-corpus/PowerApps-Samples/
+.ops/github-canvas-corpus/PowerApps-Tooling/
 packages/canvas/powerfx-bridge/bin/
 packages/canvas/powerfx-bridge/obj/
