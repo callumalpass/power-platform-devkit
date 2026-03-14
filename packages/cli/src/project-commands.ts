@@ -1,4 +1,5 @@
 import {
+  compareProjectRuntimeTarget,
   discoverProject,
   doctorProject,
   feedbackProject,
@@ -13,6 +14,7 @@ import {
   type ProjectFeedbackReport,
   type ProjectInitPlan,
   type ProjectInitResult,
+  type ProjectRuntimeTargetComparison,
 } from '@pp/project';
 import { createDiagnostic, fail, type OperationResult } from '@pp/diagnostics';
 import type { ConfigStoreOptions } from '@pp/config';
@@ -25,6 +27,8 @@ interface ProjectDiscoveryInput {
   stage?: string;
   parameterOverrides?: Record<string, string>;
 }
+
+type ProjectTargetComparison = ProjectRuntimeTargetComparison | undefined;
 
 interface ProjectCommandDependencies {
   positionalArgs(args: string[]): string[];
@@ -57,7 +61,9 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
     return deps.printFailure(project);
   }
 
-  const relationships = await buildProjectRelationshipSummary(project.data, deps.readConfigOptions(args));
+  const configOptions = deps.readConfigOptions(args);
+  const relationships = await buildProjectRelationshipSummary(project.data, configOptions);
+  const targetComparison = await resolveProjectTargetComparison(project.data, deps.readEnvironmentAlias(args), configOptions);
   const requestedStage = discoveryOptions.data.stage;
   const stageNotFound = project.diagnostics.find((diagnostic) => diagnostic.code === 'PROJECT_STAGE_NOT_FOUND');
 
@@ -76,14 +82,14 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
           activeSolution: project.data.topology.activeSolution?.uniqueName,
           availableStages: Object.keys(project.data.topology.stages).sort((left, right) => left.localeCompare(right)),
         },
-        suggestedNextActions: buildProjectInspectSuggestedNextActions(relationships, requestedStage),
+    suggestedNextActions: buildProjectInspectSuggestedNextActions(relationships, requestedStage, targetComparison),
       }
     );
 
     return deps.printFailureWithMachinePayload(failure, format);
   }
 
-  const suggestedNextActions = buildProjectInspectSuggestedNextActions(relationships);
+  const suggestedNextActions = buildProjectInspectSuggestedNextActions(relationships, undefined, targetComparison);
   const payload = {
     success: true,
     canonicalProjectRoot: project.data.root,
@@ -94,6 +100,7 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
       project.data.discovery.usedDefaultLayout || project.data.discovery.autoSelectedProjectRoot ? project.data.discovery : undefined,
     topology: project.data.topology,
     providerBindings: project.data.providerBindings,
+    targetComparison,
     parameters: Object.fromEntries(
       Object.values(project.data.parameters).map((parameter) => [parameter.name, summarizeResolvedParameter(parameter)])
     ),
@@ -110,7 +117,7 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
   };
 
   if (format === 'table' || format === 'markdown') {
-    process.stdout.write(renderProjectInspectOutput(project.data, relationships, format));
+    process.stdout.write(renderProjectInspectOutput(project.data, relationships, targetComparison, format));
   } else {
     deps.printByFormat(payload, format);
   }
@@ -122,7 +129,8 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
 
 function buildProjectInspectSuggestedNextActions(
   relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>,
-  requestedStage?: string
+  requestedStage?: string,
+  targetComparison?: ProjectTargetComparison
 ): string[] {
   const actions: string[] = [];
   const activeRelationship = relationships.stageRelationships.find((stage) => stage.stage === relationships.selectedStage) ?? relationships.stageRelationships[0];
@@ -163,6 +171,10 @@ function buildProjectInspectSuggestedNextActions(
     actions.push(
       `Environment alias ${environmentAlias} defaults to solution ${activeRelationship.environmentDefaultSolution}, but the selected project stage targets ${activeRelationship.solutionUniqueName}; re-run \`pp project inspect --stage <stage> --format json\` or update \`pp.config.yaml\` if this workflow should follow the registry default.`
     );
+  }
+
+  for (const guidance of targetComparison?.guidance ?? []) {
+    actions.push(guidance);
   }
 
   return [...new Set(actions)];
@@ -226,9 +238,11 @@ export async function runProjectDoctorCommand(args: string[], deps: ProjectComma
     return deps.printFailure(result);
   }
   const project = await discoverProject(root, discoveryOptions.data);
-  const relationships =
-    project.success && project.data ? await buildProjectRelationshipSummary(project.data, deps.readConfigOptions(args)) : undefined;
-  const enrichedReport = enrichProjectDoctorReport(result.data, relationships);
+  const configOptions = deps.readConfigOptions(args);
+  const relationships = project.success && project.data ? await buildProjectRelationshipSummary(project.data, configOptions) : undefined;
+  const targetComparison =
+    project.success && project.data ? await resolveProjectTargetComparison(project.data, deps.readEnvironmentAlias(args), configOptions) : undefined;
+  const enrichedReport = enrichProjectDoctorReport(result.data, relationships, targetComparison);
 
   if (format === 'table' || format === 'markdown') {
     process.stdout.write(renderProjectDoctorOutput(enrichedReport, format));
@@ -268,10 +282,16 @@ export async function runProjectFeedbackCommand(args: string[], deps: ProjectCom
     return deps.printFailure(result);
   }
 
+  const project = await discoverProject(root, discoveryOptions.data);
+  const targetComparison =
+    project.success && project.data
+      ? await resolveProjectTargetComparison(project.data, deps.readEnvironmentAlias(args), deps.readConfigOptions(args))
+      : undefined;
+
   if (format === 'table' || format === 'markdown') {
-    process.stdout.write(renderProjectFeedbackOutput(result.data, format));
+    process.stdout.write(renderProjectFeedbackOutput(result.data, targetComparison, format));
   } else {
-    deps.printByFormat(result.data, format);
+    deps.printByFormat({ ...result.data, targetComparison }, format);
   }
   if (!deps.isMachineReadableOutputFormat(format)) {
     deps.printResultDiagnostics(result, format);
@@ -369,6 +389,7 @@ function renderProjectInitOutput(
 function renderProjectInspectOutput(
   project: ProjectContext,
   relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>,
+  targetComparison: ProjectTargetComparison,
   format: Extract<OutputFormat, 'table' | 'markdown'>
 ): string {
   const summary = summarizeProject(project);
@@ -417,6 +438,7 @@ function renderProjectInspectOutput(
       `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
       `Deployment route: ${contract.deploymentRouteSummary}`,
       `Resolved relationship: ${relationships.activeRelationshipSummary}`,
+      ...(targetComparison ? [`Runtime target comparison: ${targetComparison.summary}`] : []),
       `Project auth usage: ${relationships.authProfileUsageSummary}`,
       '',
       'Assets',
@@ -451,6 +473,7 @@ function renderProjectInspectOutput(
     `Layout contract: editable assets belong under ${contract.editableAssetRoots.join(', ') || '<none>'}; keep unpacked solution source in ${contract.solutionSourceRoot}; write generated solution zips to ${contract.canonicalBundlePath}.`,
     `Deployment route: ${contract.deploymentRouteSummary}`,
     `Resolved relationship: ${relationships.activeRelationshipSummary}`,
+    ...(targetComparison ? [`Runtime target comparison: ${targetComparison.summary}`] : []),
     `Project auth usage: ${relationships.authProfileUsageSummary}`,
     '',
     '## Assets',
@@ -473,6 +496,7 @@ function renderProjectInspectOutput(
 function renderProjectDoctorOutput(
   report: ProjectDoctorReport & {
     relationships?: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>;
+    targetComparison?: ProjectTargetComparison;
   },
   format: Extract<OutputFormat, 'table' | 'markdown'>
 ): string {
@@ -521,6 +545,7 @@ function renderProjectDoctorOutput(
       report.summary.environmentAliasProvenance ? '' : undefined,
       report.summary.environmentAliasProvenance ? `Environment alias provenance: ${report.summary.environmentAliasProvenance}` : undefined,
       report.relationships ? `Resolved relationship: ${report.relationships.activeRelationshipSummary}` : undefined,
+      report.targetComparison ? `Runtime target comparison: ${report.targetComparison.summary}` : undefined,
       report.relationships ? `Project auth usage: ${report.relationships.authProfileUsageSummary}` : undefined,
       '',
       'Deployment route',
@@ -558,6 +583,7 @@ function renderProjectDoctorOutput(
     `- Active target: ${report.summary.activeTargetSummary}`,
     ...(report.summary.environmentAliasProvenance ? [`- Environment alias provenance: ${report.summary.environmentAliasProvenance}`] : []),
     ...(report.relationships ? [`- Resolved relationship: ${report.relationships.activeRelationshipSummary}`] : []),
+    ...(report.targetComparison ? [`- Runtime target comparison: ${report.targetComparison.summary}`] : []),
     ...(report.relationships ? [`- Project auth usage: ${report.relationships.authProfileUsageSummary}`] : []),
     `- Bundle lifecycle: ${report.summary.bundleLifecycleSummary}`,
     ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
@@ -582,8 +608,9 @@ function renderProjectDoctorOutput(
 
 function enrichProjectDoctorReport(
   report: ProjectDoctorReport,
-  relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>> | undefined
-): ProjectDoctorReport & { relationships?: Awaited<ReturnType<typeof buildProjectRelationshipSummary>> } {
+  relationships: Awaited<ReturnType<typeof buildProjectRelationshipSummary>> | undefined,
+  targetComparison: ProjectTargetComparison
+): ProjectDoctorReport & { relationships?: Awaited<ReturnType<typeof buildProjectRelationshipSummary>>; targetComparison?: ProjectTargetComparison } {
   const relationshipChecks = (relationships?.stageRelationships ?? []).flatMap((stage) => {
     const checks = [];
 
@@ -622,11 +649,27 @@ function enrichProjectDoctorReport(
       }
     : undefined;
 
+  const targetComparisonCheck = targetComparison
+    ? {
+        status:
+          targetComparison.relationship === 'aligned' ? ('pass' as const) : targetComparison.relationship === 'alternate-stage' ? ('warn' as const) : ('warn' as const),
+        code: 'PROJECT_DOCTOR_RUNTIME_TARGET_COMPARISON',
+        message: targetComparison.summary,
+        hint: targetComparison.guidance[0],
+      }
+    : undefined;
+
   return {
     ...report,
-    checks: [...report.checks, ...relationshipChecks, ...(authUsageCheck ? [authUsageCheck] : [])],
-    checkGroups: categorizeProjectDoctorChecks([...report.checks, ...relationshipChecks, ...(authUsageCheck ? [authUsageCheck] : [])]),
+    checks: [...report.checks, ...relationshipChecks, ...(authUsageCheck ? [authUsageCheck] : []), ...(targetComparisonCheck ? [targetComparisonCheck] : [])],
+    checkGroups: categorizeProjectDoctorChecks([
+      ...report.checks,
+      ...relationshipChecks,
+      ...(authUsageCheck ? [authUsageCheck] : []),
+      ...(targetComparisonCheck ? [targetComparisonCheck] : []),
+    ]),
     relationships,
+    targetComparison,
   };
 }
 
@@ -639,6 +682,7 @@ function categorizeProjectDoctorChecks(checks: ProjectDoctorCheck[]): {
     'PROJECT_DOCTOR_AUTH_PROFILE_UNRESOLVED',
     'PROJECT_DOCTOR_RELATIONSHIP_CHAIN',
     'PROJECT_DOCTOR_AUTH_PROFILE_USAGE',
+    'PROJECT_DOCTOR_RUNTIME_TARGET_COMPARISON',
   ]);
 
   return {
@@ -647,7 +691,11 @@ function categorizeProjectDoctorChecks(checks: ProjectDoctorCheck[]): {
   };
 }
 
-function renderProjectFeedbackOutput(report: ProjectFeedbackReport, format: Extract<OutputFormat, 'table' | 'markdown'>): string {
+function renderProjectFeedbackOutput(
+  report: ProjectFeedbackReport,
+  targetComparison: ProjectTargetComparison,
+  format: Extract<OutputFormat, 'table' | 'markdown'>
+): string {
   const summaryRows = [
     { field: 'inspected path', value: report.inspectedPath },
     { field: 'canonical project root', value: report.canonicalProjectRoot },
@@ -675,6 +723,8 @@ function renderProjectFeedbackOutput(report: ProjectFeedbackReport, format: Extr
       renderOutput(summaryRows, 'table').trimEnd(),
       discoveryNote ? '' : undefined,
       discoveryNote ? `Discovery: ${discoveryNote}` : undefined,
+      targetComparison ? '' : undefined,
+      targetComparison ? `Runtime target comparison: ${targetComparison.summary}` : undefined,
       '',
       'Deployment route',
       ...report.summary.deploymentRouteSteps.map((step, index) => `${index + 1}. ${step}`),
@@ -705,6 +755,7 @@ function renderProjectFeedbackOutput(report: ProjectFeedbackReport, format: Extr
     `- Bundle placement: \`${report.summary.bundlePlacementStatus}\``,
     `- Bundle placement summary: ${report.summary.bundlePlacementSummary}`,
     `- Deployment route: ${report.summary.deploymentRouteSummary}`,
+    ...(targetComparison ? [`- Runtime target comparison: ${targetComparison.summary}`] : []),
     ...(discoveryNote ? ['', `Discovery: ${discoveryNote}`] : []),
     '',
     '## Deployment Route',
@@ -753,4 +804,16 @@ function formatProjectContractTarget(target: {
   solutionUniqueName?: string;
 }): string {
   return `stage ${target.stage ?? '<unset>'} -> environment ${target.environmentAlias ?? '<unset>'} -> solution ${target.solutionUniqueName ?? target.solutionAlias ?? '<unset>'}`;
+}
+
+async function resolveProjectTargetComparison(
+  project: ProjectContext,
+  requestedEnvironmentAlias: string | undefined,
+  configOptions: ConfigStoreOptions
+): Promise<ProjectTargetComparison> {
+  if (!requestedEnvironmentAlias) {
+    return undefined;
+  }
+
+  return compareProjectRuntimeTarget(project, requestedEnvironmentAlias, configOptions);
 }

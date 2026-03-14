@@ -1612,10 +1612,12 @@ async function runAnalysisReport(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     printResultDiagnostics,
     readFlag,
+    readEnvironmentAlias,
     readRepeatedFlags,
     readAnalysisPortfolioProjectPaths,
   });
@@ -1628,10 +1630,12 @@ async function runAnalysisContext(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     printResultDiagnostics,
     readFlag,
+    readEnvironmentAlias,
     readRepeatedFlags,
     readAnalysisPortfolioProjectPaths,
   });
@@ -1644,10 +1648,12 @@ async function runAnalysisPortfolio(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     printResultDiagnostics,
     readFlag,
+    readEnvironmentAlias,
     readRepeatedFlags,
     readAnalysisPortfolioProjectPaths,
   });
@@ -1660,10 +1666,12 @@ async function runAnalysisDrift(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     printResultDiagnostics,
     readFlag,
+    readEnvironmentAlias,
     readRepeatedFlags,
     readAnalysisPortfolioProjectPaths,
   });
@@ -1676,10 +1684,12 @@ async function runAnalysisUsage(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     printResultDiagnostics,
     readFlag,
+    readEnvironmentAlias,
     readRepeatedFlags,
     readAnalysisPortfolioProjectPaths,
   });
@@ -1692,10 +1702,12 @@ async function runAnalysisPolicy(args: string[]): Promise<number> {
     resolveInvocationPath,
     outputFormat,
     readProjectDiscoveryOptions,
+    readConfigOptions,
     printFailure,
     printByFormat,
     printResultDiagnostics,
     readFlag,
+    readEnvironmentAlias,
     readRepeatedFlags,
     readAnalysisPortfolioProjectPaths,
   });
@@ -4832,25 +4844,72 @@ async function runCanvasAttach(args: string[]): Promise<number> {
   }
 
   const addRequiredComponents = hasFlag(args, '--no-add-required-components') ? false : true;
-  const preview = maybeHandleMutationPreview(
-    args,
-    'json',
-    'canvas.attach',
-    {
-      identifier,
-      environment: resolution.data.environment.alias,
-      solution: solutionUniqueName,
-    },
-    {
-      addRequiredComponents,
-    }
-  );
+  const mutation = readMutationFlags(args);
 
-  if (preview !== undefined) {
-    return preview;
+  if (!mutation.success || !mutation.data) {
+    return printFailure(mutation);
   }
 
-  const result = await new CanvasService(resolution.data.client).attachRemote(identifier, {
+  if (mutation.data.mode === 'dry-run') {
+    printByFormat(
+      createMutationPreview(
+        'canvas.attach',
+        mutation.data,
+        {
+          identifier,
+          environment: resolution.data.environment.alias,
+          solution: solutionUniqueName,
+        },
+        {
+          addRequiredComponents,
+        }
+      ),
+      outputFormat(args, 'json')
+    );
+    return 0;
+  }
+
+  const service = new CanvasService(resolution.data.client);
+
+  if (mutation.data.mode === 'plan') {
+    const result = await service.planRemoteAttach(identifier, {
+      solutionUniqueName,
+    });
+
+    if (!result.success) {
+      return printFailure(result);
+    }
+
+    if (!result.data) {
+      return printFailure(fail(createDiagnostic('error', 'CANVAS_REMOTE_NOT_FOUND', `Canvas app ${identifier} was not found.`)));
+    }
+
+    printByFormat(
+      createSuccessPayload(
+        {
+          action: 'canvas.attach',
+          mode: 'plan',
+          confirmed: false,
+          willMutate: false,
+          target: {
+            identifier,
+            environment: resolution.data.environment.alias,
+            solution: solutionUniqueName,
+          },
+          input: {
+            addRequiredComponents,
+          },
+          preview: result.data,
+        },
+        result
+      ),
+      outputFormat(args, 'json')
+    );
+    printResultDiagnostics(result, outputFormat(args, 'json'));
+    return 0;
+  }
+
+  const result = await service.attachRemote(identifier, {
     solutionUniqueName,
     addRequiredComponents,
   });

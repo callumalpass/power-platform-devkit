@@ -333,7 +333,7 @@ function unwrapCollectionEnvelope(value: unknown): unknown {
   }
 
   const [, collection] = dataEntries[0] ?? [];
-  return Array.isArray(collection) ? collection : value;
+  return Array.isArray(collection) && collection.length > 0 ? collection : value;
 }
 
 function collectHeaders(records: Array<Record<string, unknown>>): string[] {

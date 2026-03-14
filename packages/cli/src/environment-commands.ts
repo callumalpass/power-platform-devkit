@@ -1,4 +1,5 @@
 import { AuthService, summarizeBrowserProfile, summarizeProfile, type AuthProfile } from '@pp/auth';
+import { CanvasService } from '@pp/canvas';
 import type { BrowserProfile } from '@pp/config';
 import {
   getEnvironmentAlias,
@@ -8,8 +9,10 @@ import {
   type ConfigStoreOptions,
   type EnvironmentAlias,
 } from '@pp/config';
-import { resolveDataverseClient } from '@pp/dataverse';
+import { ConnectionReferenceService, EnvironmentVariableService, resolveDataverseClient, type DataverseClient } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
+import { FlowService } from '@pp/flow';
+import { ModelService } from '@pp/model';
 import { SolutionService } from '@pp/solution';
 import { createMutationPreview, createSuccessPayload, readMutationFlags, type CliOutputFormat } from './contract';
 import { buildEnvironmentProjectUsageSummary } from './relationship-context';
@@ -17,6 +20,31 @@ import { buildEnvironmentProjectUsageSummary } from './relationship-context';
 type OutputFormat = CliOutputFormat;
 const BROWSER_BOOTSTRAP_STALE_AFTER_HOURS = 24;
 const BROWSER_BOOTSTRAP_STALE_AFTER_MS = BROWSER_BOOTSTRAP_STALE_AFTER_HOURS * 60 * 60 * 1000;
+const ENVIRONMENT_CLEANUP_RESCAN_LIMIT = 3;
+
+interface EnvironmentCleanupCandidate {
+  solutionid: string;
+  uniquename: string;
+  friendlyname?: string;
+  version?: string;
+  ismanaged?: boolean;
+}
+
+type EnvironmentCleanupAssetKind =
+  | 'canvas-app'
+  | 'cloud-flow'
+  | 'model-app'
+  | 'connection-reference'
+  | 'environment-variable';
+
+interface EnvironmentCleanupAssetCandidate {
+  kind: EnvironmentCleanupAssetKind;
+  table: 'canvasapps' | 'workflows' | 'appmodules' | 'connectionreferences' | 'environmentvariabledefinitions';
+  id: string;
+  primaryName: string;
+  secondaryName?: string;
+  matchedFields: string[];
+}
 
 interface EnvironmentCommandDependencies {
   positionalArgs(args: string[]): string[];
@@ -232,7 +260,11 @@ export async function runEnvironmentBaselineCommand(
         remoteResetSupported: cleanupPlan.data.remoteResetSupported,
         readyForBootstrap,
         cleanupCandidates: cleanupPlan.data.cleanupCandidates,
+        assetCandidates: cleanupPlan.data.assetCandidates,
         candidateCount: cleanupPlan.data.candidateCount,
+        solutionCandidateCount: cleanupPlan.data.solutionCandidateCount,
+        assetCandidateCount: cleanupPlan.data.assetCandidateCount,
+        candidateSummary: cleanupPlan.data.candidateSummary,
         absenceChecks,
         suggestedNextActions: dedupeStringArray(suggestedNextActions),
         knownLimitations: cleanupPlan.data.knownLimitations,
@@ -798,9 +830,12 @@ async function runEnvironmentCleanupLike(
       environment: plan.data.environment,
       prefix,
       candidateCount: plan.data.candidateCount,
+      solutionCandidateCount: plan.data.solutionCandidateCount,
+      assetCandidateCount: plan.data.assetCandidateCount,
     },
     {
       cleanupCandidates: plan.data.cleanupCandidates,
+      assetCandidates: plan.data.assetCandidates,
     },
     behavior.deps
   );
@@ -817,46 +852,118 @@ async function runEnvironmentCleanupLike(
 
   const service = new SolutionService(resolution.data.client);
   const deleted: Array<{ removed: boolean; solution: { solutionid: string; uniquename: string; friendlyname?: string; version?: string } }> = [];
+  const deletedAssets: Array<{ removed: boolean; asset: EnvironmentCleanupAssetCandidate }> = [];
   const failures: Array<{ solution: { solutionid: string; uniquename: string; friendlyname?: string; version?: string }; diagnostics: Diagnostic[] }> = [];
+  const assetFailures: Array<{ asset: EnvironmentCleanupAssetCandidate; diagnostics: Diagnostic[] }> = [];
   const warnings: Diagnostic[] = [];
+  const handledSolutionNames = new Set<string>();
+  const handledAssetKeys = new Set<string>();
+  let currentPlan = plan;
 
-  for (const candidate of plan.data.cleanupCandidates) {
-    const result = await service.delete(candidate.uniquename);
-
-    warnings.push(...result.warnings);
-
-    if (!result.success || !result.data) {
-      failures.push({
-        solution: candidate,
-        diagnostics: result.diagnostics,
-      });
-      continue;
+  for (let pass = 0; pass < ENVIRONMENT_CLEANUP_RESCAN_LIMIT; pass += 1) {
+    const currentPlanData = currentPlan.data;
+    if (!currentPlanData) {
+      break;
     }
 
-    deleted.push(result.data);
+    const immediateAssetCandidates = currentPlanData.assetCandidates.filter((candidate) => {
+      const key = `${candidate.table}:${candidate.id}`;
+      if (handledAssetKeys.has(key)) {
+        return false;
+      }
+
+      handledAssetKeys.add(key);
+      return true;
+    });
+
+    for (const candidate of immediateAssetCandidates) {
+      const result = await resolution.data.client.delete(candidate.table, candidate.id);
+
+      if (!result.success) {
+        assetFailures.push({
+          asset: candidate,
+          diagnostics: result.diagnostics,
+        });
+        continue;
+      }
+
+      deletedAssets.push({
+        removed: true,
+        asset: candidate,
+      });
+    }
+
+    const solutionCandidates = currentPlanData.cleanupCandidates.filter((candidate) => {
+      if (handledSolutionNames.has(candidate.uniquename)) {
+        return false;
+      }
+
+      handledSolutionNames.add(candidate.uniquename);
+      return true;
+    });
+
+    let deletedSolutionsThisPass = 0;
+    for (const candidate of solutionCandidates) {
+      const result = await service.delete(candidate.uniquename);
+
+      warnings.push(...result.warnings);
+
+      if (!result.success || !result.data) {
+        failures.push({
+          solution: candidate,
+          diagnostics: result.diagnostics,
+        });
+        continue;
+      }
+
+      deleted.push(result.data);
+      deletedSolutionsThisPass += 1;
+    }
+
+    if (deletedSolutionsThisPass === 0) {
+      break;
+    }
+
+    const rescannedPlan = await buildEnvironmentCleanupPlan(configOptions, alias, prefix);
+    if (!rescannedPlan.success || !rescannedPlan.data) {
+      return behavior.deps.printFailure(rescannedPlan);
+    }
+
+    currentPlan = rescannedPlan;
   }
 
   const summary = {
     environment: plan.data.environment,
     prefix,
     candidateCount: plan.data.candidateCount,
-    deletedCount: deleted.length,
-    failedCount: failures.length,
+    solutionCandidateCount: plan.data.solutionCandidateCount,
+    assetCandidateCount: plan.data.assetCandidateCount,
+    deletedCount: deleted.length + deletedAssets.length,
+    deletedSolutionCount: deleted.length,
+    deletedAssetCount: deletedAssets.length,
+    failedCount: failures.length + assetFailures.length,
     deleted,
+    deletedAssets,
     failures: failures.map((failure) => ({
       solution: failure.solution,
       diagnostics: failure.diagnostics,
     })),
+    assetFailures: assetFailures.map((failure) => ({
+      asset: failure.asset,
+      diagnostics: failure.diagnostics,
+    })),
   };
 
-  if (failures.length > 0) {
+  if (failures.length > 0 || assetFailures.length > 0) {
     return behavior.deps.printFailure(
-      fail(failures.flatMap((failure) => failure.diagnostics), {
+      fail(
+        [...failures.flatMap((failure) => failure.diagnostics), ...assetFailures.flatMap((failure) => failure.diagnostics)],
+        {
         details: summary,
         warnings,
         supportTier: 'preview',
         suggestedNextActions: [
-          'Inspect the failing solution diagnostics to see whether dependencies or managed-state restrictions blocked deletion.',
+          'Inspect the failing cleanup diagnostics to see whether dependencies, managed-state restrictions, or table-specific delete rules blocked deletion.',
           `Re-run \`pp env cleanup-plan ${alias} --prefix ${prefix}\` to confirm which disposable assets remain after \`${behavior.suggestedPlanCommand} ${alias} --prefix ${prefix}\`.`,
         ],
       })
@@ -892,8 +999,12 @@ async function buildEnvironmentCleanupPlan(
       fields: string[];
     };
     remoteResetSupported: boolean;
-    cleanupCandidates: Array<{ solutionid: string; uniquename: string; friendlyname?: string; version?: string }>;
+    cleanupCandidates: EnvironmentCleanupCandidate[];
+    assetCandidates: EnvironmentCleanupAssetCandidate[];
     candidateCount: number;
+    solutionCandidateCount: number;
+    assetCandidateCount: number;
+    candidateSummary: Record<string, number>;
     suggestedNextActions: string[];
     knownLimitations: string[];
   }>
@@ -916,6 +1027,15 @@ async function buildEnvironmentCleanupPlan(
     const friendlyName = solution.friendlyname?.toLowerCase() ?? '';
     return uniqueName.startsWith(normalizedPrefix) || friendlyName.startsWith(normalizedPrefix);
   });
+  const assetCandidates = await listEnvironmentCleanupAssetCandidates(resolution.data.client, prefix, cleanupCandidates);
+
+  if (!assetCandidates.success || !assetCandidates.data) {
+    return assetCandidates as unknown as OperationResult<never>;
+  }
+
+  const solutionCandidateCount = cleanupCandidates.length;
+  const assetCandidateCount = assetCandidates.data.length;
+  const candidateCount = solutionCandidateCount + assetCandidateCount;
 
   return ok(
     {
@@ -929,30 +1049,300 @@ async function buildEnvironmentCleanupPlan(
       prefix,
       matchStrategy: {
         kind: 'case-insensitive-prefix',
-        fields: ['uniquename', 'friendlyname'],
+        fields: ['uniquename', 'friendlyname', 'name', 'displayname', 'schemaname', 'connectionreferencelogicalname'],
       },
       remoteResetSupported: true,
       cleanupCandidates,
-      candidateCount: cleanupCandidates.length,
+      assetCandidates: assetCandidates.data,
+      candidateCount,
+      solutionCandidateCount,
+      assetCandidateCount,
+      candidateSummary: summarizeCleanupCandidates(cleanupCandidates, assetCandidates.data),
       suggestedNextActions:
-        cleanupCandidates.length > 0
+        candidateCount > 0
           ? [
-              'Review the matching solutions before deleting anything remotely.',
-              `Run \`pp env cleanup ${alias} --prefix ${prefix}\` to delete the listed disposable solutions through pp.`,
+              'Review the matching disposable assets before deleting anything remotely.',
+              `Run \`pp env cleanup ${alias} --prefix ${prefix}\` to delete the listed disposable solutions and orphaned prefixed assets through pp.`,
               `Re-run \`pp env cleanup-plan ${alias} --prefix ${prefix}\` to confirm the environment is clean before bootstrap.`,
             ]
           : [
-              'No matching solutions were found for this prefix.',
+              'No matching disposable solutions or orphaned prefixed assets were found for this prefix.',
               'Proceed with bootstrap using the same prefix or generate a new run-scoped prefix if you still want quarantine semantics.',
             ],
-      knownLimitations: [],
+      knownLimitations: [
+        'This bounded cleanup covers disposable solutions plus orphaned prefixed canvas apps, cloud flows, model-driven apps, connection references, and environment variable definitions. Other prefixed asset classes still need their own cleanup surface.',
+      ],
     },
     {
       supportTier: 'preview',
-      diagnostics: solutions.diagnostics,
-      warnings: solutions.warnings,
+      diagnostics: [...solutions.diagnostics, ...assetCandidates.diagnostics],
+      warnings: [...solutions.warnings, ...assetCandidates.warnings],
     }
   );
+}
+
+async function listEnvironmentCleanupAssetCandidates(
+  client: DataverseClient,
+  prefix: string,
+  cleanupCandidates: EnvironmentCleanupCandidate[]
+): Promise<OperationResult<EnvironmentCleanupAssetCandidate[]>> {
+  const normalizedPrefix = prefix.trim().toLowerCase();
+  if (!normalizedPrefix) {
+    return ok([], {
+      supportTier: 'preview',
+    });
+  }
+
+  const containedIds = await listContainedCleanupAssetIds(client, cleanupCandidates);
+  if (!containedIds.success || !containedIds.data) {
+    return containedIds as unknown as OperationResult<EnvironmentCleanupAssetCandidate[]>;
+  }
+  const containedData = containedIds.data;
+
+  const [canvasApps, flows, modelApps, connectionReferences, environmentVariables] = await Promise.all([
+    new CanvasService(client).listRemote(),
+    new FlowService(client).list(),
+    new ModelService(client).list(),
+    new ConnectionReferenceService(client).list(),
+    new EnvironmentVariableService(client).list(),
+  ]);
+
+  const diagnostics = [
+    ...canvasApps.diagnostics,
+    ...flows.diagnostics,
+    ...modelApps.diagnostics,
+    ...connectionReferences.diagnostics,
+    ...environmentVariables.diagnostics,
+    ...containedIds.diagnostics,
+  ];
+  const warnings = filterCleanupEnumerationWarnings([
+    ...canvasApps.warnings,
+    ...flows.warnings,
+    ...modelApps.warnings,
+    ...connectionReferences.warnings,
+    ...environmentVariables.warnings,
+    ...containedIds.warnings,
+  ]);
+
+  if (!canvasApps.success) {
+    return canvasApps as unknown as OperationResult<EnvironmentCleanupAssetCandidate[]>;
+  }
+  if (!flows.success) {
+    return flows as unknown as OperationResult<EnvironmentCleanupAssetCandidate[]>;
+  }
+  if (!modelApps.success) {
+    return modelApps as unknown as OperationResult<EnvironmentCleanupAssetCandidate[]>;
+  }
+  if (!connectionReferences.success) {
+    return connectionReferences as unknown as OperationResult<EnvironmentCleanupAssetCandidate[]>;
+  }
+  if (!environmentVariables.success) {
+    return environmentVariables as unknown as OperationResult<EnvironmentCleanupAssetCandidate[]>;
+  }
+
+  const candidates: EnvironmentCleanupAssetCandidate[] = [
+    ...(canvasApps.data ?? [])
+      .filter((app) => !containedData.canvasApps.has(app.id))
+      .map((app) =>
+        createCleanupAssetCandidate(
+          'canvas-app',
+          'canvasapps',
+          app.id,
+          app.displayName ?? app.name ?? app.id,
+          app.name,
+          normalizedPrefix,
+          { displayname: app.displayName, name: app.name }
+        )
+      )
+      .filter((value): value is EnvironmentCleanupAssetCandidate => Boolean(value)),
+    ...(flows.data ?? [])
+      .filter((flow) => !containedData.flows.has(flow.id))
+      .map((flow) =>
+        createCleanupAssetCandidate(
+          'cloud-flow',
+          'workflows',
+          flow.id,
+          flow.name ?? flow.uniqueName ?? flow.id,
+          flow.uniqueName,
+          normalizedPrefix,
+          { name: flow.name, uniquename: flow.uniqueName }
+        )
+      )
+      .filter((value): value is EnvironmentCleanupAssetCandidate => Boolean(value)),
+    ...(modelApps.data ?? [])
+      .filter((app) => !containedData.modelApps.has(app.id))
+      .map((app) =>
+        createCleanupAssetCandidate(
+          'model-app',
+          'appmodules',
+          app.id,
+          app.name ?? app.uniqueName ?? app.id,
+          app.uniqueName,
+          normalizedPrefix,
+          { name: app.name, uniquename: app.uniqueName }
+        )
+      )
+      .filter((value): value is EnvironmentCleanupAssetCandidate => Boolean(value)),
+    ...(connectionReferences.data ?? [])
+      .filter((reference) => !containedData.connectionReferences.has(reference.id))
+      .map((reference) =>
+        createCleanupAssetCandidate(
+          'connection-reference',
+          'connectionreferences',
+          reference.id,
+          reference.displayName ?? reference.logicalName ?? reference.id,
+          reference.logicalName,
+          normalizedPrefix,
+          { displayname: reference.displayName, connectionreferencelogicalname: reference.logicalName }
+        )
+      )
+      .filter((value): value is EnvironmentCleanupAssetCandidate => Boolean(value)),
+    ...(environmentVariables.data ?? [])
+      .filter((variable) => !containedData.environmentVariables.has(variable.definitionId))
+      .map((variable) =>
+        createCleanupAssetCandidate(
+          'environment-variable',
+          'environmentvariabledefinitions',
+          variable.definitionId,
+          variable.schemaName ?? variable.displayName ?? variable.definitionId,
+          variable.displayName,
+          normalizedPrefix,
+          { schemaname: variable.schemaName, displayname: variable.displayName }
+        )
+      )
+      .filter((value): value is EnvironmentCleanupAssetCandidate => Boolean(value)),
+  ];
+
+  return ok(candidates.sort(compareCleanupAssetCandidates), {
+    supportTier: 'preview',
+    diagnostics,
+    warnings,
+  });
+}
+
+async function listContainedCleanupAssetIds(
+  client: DataverseClient,
+  cleanupCandidates: EnvironmentCleanupCandidate[]
+): Promise<
+  OperationResult<{
+    canvasApps: Set<string>;
+    flows: Set<string>;
+    modelApps: Set<string>;
+    connectionReferences: Set<string>;
+    environmentVariables: Set<string>;
+  }>
+> {
+  const empty = {
+    canvasApps: new Set<string>(),
+    flows: new Set<string>(),
+    modelApps: new Set<string>(),
+    connectionReferences: new Set<string>(),
+    environmentVariables: new Set<string>(),
+  };
+
+  if (cleanupCandidates.length === 0) {
+    return ok(empty, {
+      supportTier: 'preview',
+    });
+  }
+
+  const solutionIds = new Set(cleanupCandidates.map((candidate) => candidate.solutionid));
+  const components = await client.queryAll<{ objectid?: string; componenttype?: number; _solutionid_value?: string }>({
+    table: 'solutioncomponents',
+    select: ['objectid', 'componenttype', '_solutionid_value'],
+  });
+
+  if (!components.success) {
+    return components as unknown as OperationResult<typeof empty>;
+  }
+
+  for (const component of components.data ?? []) {
+    if (!component.objectid || !component._solutionid_value || !solutionIds.has(component._solutionid_value)) {
+      continue;
+    }
+
+    switch (component.componenttype) {
+      case 300:
+        empty.canvasApps.add(component.objectid);
+        break;
+      case 29:
+        empty.flows.add(component.objectid);
+        break;
+      case 80:
+        empty.modelApps.add(component.objectid);
+        break;
+      case 371:
+        empty.connectionReferences.add(component.objectid);
+        break;
+      case 380:
+        empty.environmentVariables.add(component.objectid);
+        break;
+      default:
+        break;
+    }
+  }
+
+  return ok(empty, {
+    supportTier: 'preview',
+    diagnostics: components.diagnostics,
+    warnings: components.warnings,
+  });
+}
+
+function createCleanupAssetCandidate(
+  kind: EnvironmentCleanupAssetKind,
+  table: EnvironmentCleanupAssetCandidate['table'],
+  id: string,
+  primaryName: string,
+  secondaryName: string | undefined,
+  normalizedPrefix: string,
+  fields: Record<string, string | undefined>
+): EnvironmentCleanupAssetCandidate | undefined {
+  const matchedFields = Object.entries(fields)
+    .filter(([, value]) => value?.toLowerCase().startsWith(normalizedPrefix))
+    .map(([field]) => field);
+
+  if (matchedFields.length === 0) {
+    return undefined;
+  }
+
+  return {
+    kind,
+    table,
+    id,
+    primaryName,
+    secondaryName,
+    matchedFields,
+  };
+}
+
+function compareCleanupAssetCandidates(left: EnvironmentCleanupAssetCandidate, right: EnvironmentCleanupAssetCandidate): number {
+  const kindCompare = left.kind.localeCompare(right.kind);
+  if (kindCompare !== 0) {
+    return kindCompare;
+  }
+
+  return left.primaryName.localeCompare(right.primaryName);
+}
+
+function summarizeCleanupCandidates(
+  cleanupCandidates: EnvironmentCleanupCandidate[],
+  assetCandidates: EnvironmentCleanupAssetCandidate[]
+): Record<string, number> {
+  return assetCandidates.reduce<Record<string, number>>(
+    (summary, candidate) => {
+      summary[candidate.kind] = (summary[candidate.kind] ?? 0) + 1;
+      return summary;
+    },
+    {
+      solutions: cleanupCandidates.length,
+      total: cleanupCandidates.length + assetCandidates.length,
+    }
+  );
+}
+
+function filterCleanupEnumerationWarnings(warnings: Diagnostic[]): Diagnostic[] {
+  return warnings.filter((warning) => warning.code !== 'DATAVERSE_CONNREF_OPTIONAL_COLUMNS_UNAVAILABLE');
 }
 
 function maybeHandleMutationPreview(

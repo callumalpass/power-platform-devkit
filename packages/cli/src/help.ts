@@ -162,7 +162,7 @@ export function printCanvasHelp(): void {
 export function printCanvasAttachHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas attach <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [options]',
+      'Usage: canvas attach <displayName|name|id> --environment ALIAS --solution UNIQUE_NAME [--plan|--dry-run] [options]',
       '',
       'Status:',
       '  Attaches an existing remote canvas app to a solution through Dataverse AddSolutionComponent.',
@@ -171,9 +171,12 @@ export function printCanvasAttachHelp(): void {
       '  - Requires `--environment` and `--solution` to resolve the target environment alias and solution.',
       '  - Uses the existing pp Dataverse auth context; it does not shell out to pac.',
       '  - Includes required solution components by default; pass `--no-add-required-components` to opt out.',
+      '  - `--plan` performs a read-only preflight that reports target-solution baseline, current solution membership, and containing-solution context without mutating.',
+      '  - `--dry-run` keeps the generic non-mutating mutation preview contract without live attach planning.',
       '',
       'Examples:',
       '  pp canvas attach "Harness Canvas" --environment dev --solution Core',
+      '  pp canvas attach "Harness Canvas" --environment dev --solution Core --plan --format json',
       '  pp canvas attach crd_HarnessCanvas --environment dev --solution Core --no-add-required-components',
       '',
       'Common output options:',
@@ -203,9 +206,9 @@ export function printEnvironmentHelp(): void {
       '  inspect <alias>              inspect one saved alias',
       '  baseline <alias>             inspect one alias plus bootstrap-reset baseline checks',
       '  resolve-maker-id <alias>     discover and persist the Maker environment id for an alias',
-      '  cleanup-plan <alias>         list disposable solutions matching a run prefix before bootstrap reset',
-      '  reset <alias>                delete disposable solutions matching a run prefix for bootstrap reset',
-      '  cleanup <alias>              delete disposable solutions matching a run prefix',
+      '  cleanup-plan <alias>         list disposable solutions and orphaned prefixed assets before bootstrap reset',
+      '  reset <alias>                delete disposable solutions and orphaned prefixed assets for bootstrap reset',
+      '  cleanup <alias>              delete disposable solutions and orphaned prefixed assets',
       '  remove <alias>               remove one saved alias from local config',
       '',
       'Examples:',
@@ -295,7 +298,7 @@ export function printEnvironmentBaselineHelp(): void {
       '',
       'Behavior:',
       '  - Combines `env inspect` with prefix-scoped reset checks into one non-mutating bootstrap baseline report.',
-      '  - Lists disposable solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
+      '  - Lists disposable solutions plus orphaned prefixed canvas apps, flows, model apps, connection references, and environment variables that match PREFIX, case-insensitively.',
       '  - Optionally verifies that specific prior solutions are absent before the next harness run begins.',
       '  - Returns a `readyForBootstrap` signal plus next-step guidance for `pp env reset` or targeted `pp solution delete` cleanup.',
       '',
@@ -331,9 +334,9 @@ export function printEnvironmentCleanupPlanHelp(): void {
       'Usage: env cleanup-plan <alias> --prefix PREFIX [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       'Behavior:',
-      '  - Lists remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
+      '  - Lists remote disposable solutions plus orphaned prefixed canvas apps, flows, model apps, connection references, and environment variables that match PREFIX, case-insensitively.',
       '  - Intended for harness bootstrap or disposable-environment reset flows where stale disposable harness assets should be removed before reuse.',
-      '  - Returns candidate solutions together with next-step guidance for `pp env reset`.',
+      '  - Returns candidate solutions and orphaned assets together with next-step guidance for `pp env reset`.',
       '  - Follow with `pp env reset <alias> --prefix PREFIX [--dry-run|--plan]` when you are ready to delete the matches.',
       '  - Related commands: env reset <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw], env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
@@ -353,9 +356,9 @@ export function printEnvironmentResetHelp(): void {
       'Usage: env reset <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       'Behavior:',
-      '  - Deletes remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
+      '  - Deletes remote disposable solutions plus orphaned prefixed canvas apps, flows, model apps, connection references, and environment variables that match PREFIX, case-insensitively.',
       '  - Intended as the first-class bootstrap reset command for clearing stale disposable harness assets before environment reuse.',
-      '  - Use `--dry-run` or `--plan` first to preview the matching solutions without mutating the environment.',
+      '  - Use `--dry-run` or `--plan` first to preview the matching disposable solutions and orphaned prefixed assets without mutating the environment.',
       '  - Equivalent remote deletion behavior to `pp env cleanup`, but named for bootstrap/reset workflows.',
       '',
       'Examples:',
@@ -374,8 +377,8 @@ export function printEnvironmentCleanupHelp(): void {
       'Usage: env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]',
       '',
       'Behavior:',
-      '  - Deletes remote solutions whose unique name or friendly name starts with PREFIX, case-insensitively.',
-      '  - Use `--dry-run` or `--plan` first to preview the matching solutions without mutating the environment.',
+      '  - Deletes remote disposable solutions plus orphaned prefixed canvas apps, flows, model apps, connection references, and environment variables that match PREFIX, case-insensitively.',
+      '  - Use `--dry-run` or `--plan` first to preview the matching disposable solutions and orphaned prefixed assets without mutating the environment.',
       '  - Intended for clearing stale disposable harness assets before bootstrap reuses an environment.',
       '',
       'Examples:',
@@ -1002,7 +1005,7 @@ export function printFlowListHelp(): void {
 export function printFlowInspectHelp(): void {
   process.stdout.write(
     [
-      'Usage: flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [options]',
+      'Usage: flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
       '',
       'Modes:',
       '  - Without `--environment`, inspect a local flow artifact on disk.',
@@ -1013,7 +1016,10 @@ export function printFlowInspectHelp(): void {
       '',
       'Examples:',
       '  pp flow inspect ./flows/invoice/flow.json',
-      '  pp flow inspect InvoiceSync --environment dev --solution Core --format json',
+      '  pp flow inspect InvoiceSync --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Auth behavior:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1024,15 +1030,18 @@ export function printFlowInspectHelp(): void {
 export function printFlowExportHelp(): void {
   process.stdout.write(
     [
-      'Usage: flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [options]',
+      'Usage: flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
       '',
       'Behavior:',
       '  - Exports one remote flow artifact into a local file.',
       '  - Use this when you want to move from a live environment into the local validation/editing pipeline.',
       '',
       'Examples:',
-      '  pp flow export InvoiceSync --environment dev --out ./artifacts/invoice-flow.json',
-      '  pp flow export InvoiceSync --environment dev --solution Core --out ./artifacts/invoice-flow.json --dry-run --format json',
+      '  pp flow export InvoiceSync --environment dev --out ./artifacts/invoice-flow.json --no-interactive-auth',
+      '  pp flow export InvoiceSync --environment dev --solution Core --out ./artifacts/invoice-flow.json --dry-run --no-interactive-auth --format json',
+      '',
+      'Auth behavior:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1296,13 +1305,16 @@ export function printFlowErrorsHelp(): void {
 export function printFlowConnrefsHelp(): void {
   process.stdout.write(
     [
-      'Usage: flow connrefs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [options]',
+      'Usage: flow connrefs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--no-interactive-auth] [options]',
       '',
       'Behavior:',
       '  - Reports the connection references used by one remote flow.',
       '',
       'Examples:',
-      '  pp flow connrefs InvoiceSync --environment dev --format json',
+      '  pp flow connrefs InvoiceSync --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Auth behavior:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
@@ -1679,7 +1691,7 @@ export function printProjectInitHelp(): void {
 export function printProjectDoctorHelp(): void {
   process.stdout.write(
     [
-      'Usage: project doctor [path] [--stage STAGE] [--param NAME=VALUE] [options]',
+      'Usage: project doctor [path] [--stage STAGE] [--environment ALIAS] [--param NAME=VALUE] [options]',
       '',
       'Status:',
       '  Validates a local pp project layout.',
@@ -1691,6 +1703,7 @@ export function printProjectDoctorHelp(): void {
       '  - Separates repo-local layout checks from external environment-registry and auth-resolution findings so local shape health is easier to read.',
       '  - Calls out when packaged solution zips live inline under `solutions/` instead of the canonical `artifacts/solutions/` bundle path.',
       '  - Makes the stage -> environment alias -> auth profile -> solution chain explicit when those external relationships can be resolved.',
+      '  - When `--environment ALIAS` is provided, compares the selected repo target with that external runtime alias so cross-environment drift is explicit in one diagnostic.',
       '  - Includes per-root placement guidance for `apps/`, `flows/`, `solutions/`, `docs/`, and the canonical bundle output path.',
       '',
       'Choose this when:',
@@ -1708,7 +1721,7 @@ export function printProjectDoctorHelp(): void {
 export function printProjectFeedbackHelp(): void {
   process.stdout.write(
     [
-      'Usage: project feedback [path] [--stage STAGE] [--param NAME=VALUE] [options]',
+      'Usage: project feedback [path] [--stage STAGE] [--environment ALIAS] [--param NAME=VALUE] [options]',
       '',
       'Status:',
       '  Captures retrospective conceptual feedback for a local pp project.',
@@ -1716,6 +1729,7 @@ export function printProjectFeedbackHelp(): void {
       'Behavior:',
       '  - Reuses the discovered project model to summarize workflow wins, current frictions, and concrete follow-up tasks.',
       '  - Renders the canonical bundle path and stage mappings so retrospectives can stay inside `pp`.',
+      '  - When `--environment ALIAS` is provided, records how the selected project target compares with that external runtime alias.',
       '  - Reads project context without mutating the filesystem.',
       '',
       'Common output options:',
@@ -1727,7 +1741,7 @@ export function printProjectFeedbackHelp(): void {
 export function printProjectInspectHelp(): void {
   process.stdout.write(
     [
-      'Usage: project inspect [path] [--stage STAGE] [--param NAME=VALUE] [options]',
+      'Usage: project inspect [path] [--stage STAGE] [--environment ALIAS] [--param NAME=VALUE] [options]',
       '',
       'Status:',
       '  Inspects resolved local project topology and asset roots.',
@@ -1740,6 +1754,7 @@ export function printProjectInspectHelp(): void {
       '  - Includes per-root placement guidance so agents can tell where new app, flow, solution-source, docs, and bundle artifacts should live without repo archaeology.',
       '  - Pair with `pp project doctor` for layout validation and `pp project init` to scaffold a canonical `apps/`, `flows/`, `solutions/`, and `docs/` workspace.',
       '  - Makes the active stage -> environment alias -> auth profile -> solution relationship explicit when the referenced environment metadata is available.',
+      '  - When `--environment ALIAS` is provided, compares the selected project target with that external runtime alias and reports whether the repo already maps it.',
       '',
       'Choose this when:',
       '  - You want the resolved project model that an agent, analysis command, or deploy workflow will actually see.',
@@ -1753,7 +1768,7 @@ export function printProjectInspectHelp(): void {
 export function printAnalysisContextHelp(): void {
   process.stdout.write(
     [
-      'Usage: analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [options]',
+      'Usage: analysis context [--project path] [--asset assetRef] [--stage STAGE] [--environment ALIAS] [--param NAME=VALUE] [options]',
       '',
       'Status:',
       '  Captures analysis-ready project context for agent and automation workflows.',
@@ -1761,6 +1776,7 @@ export function printAnalysisContextHelp(): void {
       'Behavior:',
       '  - Resolves the local project model and emits discovery, topology, provider binding, parameter, asset, and deploy-plan context in one payload.',
       '  - Reports the inspected path, resolved project root, and any descendant auto-selection directly in the structured output.',
+      '  - When `--environment ALIAS` is provided, adds a repo-target versus runtime-target comparison so cross-environment planning does not require manual reconciliation.',
       '  - Reads project context without mutating the filesystem.',
       '  - Relative `--project` paths resolve from the invocation root (`INIT_CWD` when wrapped by pnpm), not from `packages/cli`.',
       '',

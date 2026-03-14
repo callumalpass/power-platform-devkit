@@ -398,7 +398,7 @@ describe('cli fixture-backed workflows', () => {
 
     expect(doctorHelp.code).toBe(0);
     expect(doctorHelp.stderr).toBe('');
-    expect(doctorHelp.stdout).toContain('Usage: project doctor [path] [--stage STAGE] [--param NAME=VALUE] [options]');
+    expect(doctorHelp.stdout).toContain('Usage: project doctor [path] [--stage STAGE] [--environment ALIAS] [--param NAME=VALUE] [options]');
     expect(doctorHelp.stdout).toContain('Reads project context without mutating the filesystem.');
     expect(doctorHelp.stdout).toContain('Machine-readable formats emit one payload on stdout');
     expect(doctorHelp.stdout).toContain('Separates repo-local layout checks from external environment-registry and auth-resolution findings');
@@ -406,13 +406,13 @@ describe('cli fixture-backed workflows', () => {
 
     expect(feedbackHelp.code).toBe(0);
     expect(feedbackHelp.stderr).toBe('');
-    expect(feedbackHelp.stdout).toContain('Usage: project feedback [path] [--stage STAGE] [--param NAME=VALUE] [options]');
+    expect(feedbackHelp.stdout).toContain('Usage: project feedback [path] [--stage STAGE] [--environment ALIAS] [--param NAME=VALUE] [options]');
     expect(feedbackHelp.stdout).toContain('Captures retrospective conceptual feedback for a local pp project.');
     expect(feedbackHelp.stdout).toContain('can stay inside `pp`.');
 
     expect(inspectHelp.code).toBe(0);
     expect(inspectHelp.stderr).toBe('');
-    expect(inspectHelp.stdout).toContain('Usage: project inspect [path] [--stage STAGE] [--param NAME=VALUE] [options]');
+    expect(inspectHelp.stdout).toContain('Usage: project inspect [path] [--stage STAGE] [--environment ALIAS] [--param NAME=VALUE] [options]');
     expect(inspectHelp.stdout).toContain('Reads project context without mutating the filesystem.');
     expect(inspectHelp.stdout).toContain('Auto-selects the lone descendant `pp.config.*` under the inspected path');
     expect(inspectHelp.stdout).toContain('generated solution zips belong under `artifacts/solutions/`');
@@ -494,7 +494,7 @@ describe('cli fixture-backed workflows', () => {
     expect(createHelp.code).toBe(0);
     expect(createHelp.stderr).toBe('');
     expect(createHelp.stdout).toContain(
-      'Usage: solution create <uniqueName> --environment ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)'
+      'Usage: solution create <uniqueName> --environment ALIAS [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] [--publisher-id GUID | --publisher-unique-name NAME]'
     );
     expect(createHelp.stdout).toContain('`--help` only prints this text and never validates the solution name or environment flags.');
     expect(createHelp.stdout).not.toContain('SOLUTION_CREATE_ARGS_REQUIRED');
@@ -1907,6 +1907,118 @@ describe('cli fixture-backed workflows', () => {
       suggestedNextActions: expect.arrayContaining([
         'Environment alias test defaults to solution ppHarnessShell, but the selected project stage targets Core; re-run `pp project inspect --stage <stage> --format json` or update `pp.config.yaml` if this workflow should follow the registry default.',
       ]),
+    });
+  });
+
+  it('surfaces explicit runtime-target comparisons across project and analysis outputs', async () => {
+    const tempDir = await createTempDir();
+    const configDir = await createTempDir();
+    await writeFile(
+      join(tempDir, 'pp.config.yaml'),
+      [
+        'name: staged-fixture',
+        'defaults:',
+        '  environment: dev',
+        '  solution: core',
+        'solutions:',
+        '  core:',
+        '    environment: dev',
+        '    uniqueName: Core',
+        'assets:',
+        '  solutions: solutions',
+        'topology:',
+        '  defaultStage: dev',
+        '  stages:',
+        '    dev:',
+        '      environment: dev',
+        '      solution: core',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    await mkdir(join(tempDir, 'solutions'), { recursive: true });
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      join(configDir, 'config.json'),
+      JSON.stringify(
+        {
+          environments: {
+            dev: {
+              alias: 'dev',
+              url: 'https://dev.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+            test: {
+              alias: 'test',
+              url: 'https://test.crm.dynamics.com',
+              authProfile: 'fixture-user',
+            },
+          },
+          authProfiles: {
+            'fixture-user': {
+              name: 'fixture-user',
+              type: 'user',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const inspect = await runCli(['project', 'inspect', tempDir, '--environment', 'test', '--config-dir', configDir, '--format', 'json']);
+    const doctor = await runCli(['project', 'doctor', tempDir, '--environment', 'test', '--config-dir', configDir, '--format', 'json']);
+    const feedback = await runCli(['project', 'feedback', tempDir, '--environment', 'test', '--config-dir', configDir, '--format', 'json']);
+    const analysis = await runCli([
+      'analysis',
+      'context',
+      '--project',
+      tempDir,
+      '--environment',
+      'test',
+      '--config-dir',
+      configDir,
+      '--format',
+      'json',
+    ]);
+
+    expect(inspect.code).toBe(0);
+    expect(doctor.code).toBe(0);
+    expect(feedback.code).toBe(0);
+    expect(analysis.code).toBe(0);
+    expect(JSON.parse(inspect.stdout)).toMatchObject({
+      targetComparison: {
+        requestedEnvironmentAlias: 'test',
+        selectedStageEnvironmentAlias: 'dev',
+        relationship: 'unmapped',
+      },
+      suggestedNextActions: expect.arrayContaining([
+        'Add a project stage that maps to environment alias test, or keep treating the runtime target as an explicit cross-environment override.',
+      ]),
+    });
+    expect(JSON.parse(doctor.stdout)).toMatchObject({
+      targetComparison: {
+        requestedEnvironmentAlias: 'test',
+        relationship: 'unmapped',
+      },
+      checks: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'PROJECT_DOCTOR_RUNTIME_TARGET_COMPARISON',
+        }),
+      ]),
+    });
+    expect(JSON.parse(feedback.stdout)).toMatchObject({
+      targetComparison: {
+        requestedEnvironmentAlias: 'test',
+        relationship: 'unmapped',
+      },
+    });
+    expect(JSON.parse(analysis.stdout)).toMatchObject({
+      targetComparison: {
+        requestedEnvironmentAlias: 'test',
+        relationship: 'unmapped',
+      },
     });
   });
 
@@ -5942,6 +6054,100 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('emits runnability follow-up guidance when flow deploy leaves the workflow in draft state', async () => {
+    const client = createFixtureDataverseClient({
+      query: {
+        solutions: [
+          {
+            solutionid: 'sol-1',
+            uniquename: 'Core',
+          },
+        ],
+      },
+      queryAll: {
+        workflows: [],
+        solutioncomponents: [
+          {
+            solutioncomponentid: 'comp-2',
+            objectid: 'ref-1',
+            componenttype: 371,
+          },
+          {
+            solutioncomponentid: 'comp-3',
+            objectid: 'env-1',
+            componenttype: 380,
+          },
+        ],
+        connectionreferences: [
+          {
+            connectionreferenceid: 'ref-1',
+            connectionreferencelogicalname: 'shared_office365',
+            connectorid: '/providers/microsoft.powerapps/apis/shared_office365',
+            connectionid: '/connections/office365',
+            _solutionid_value: 'sol-1',
+          },
+        ],
+        environmentvariabledefinitions: [
+          {
+            environmentvariabledefinitionid: 'env-1',
+            schemaname: 'pp_ApiUrl',
+            defaultvalue: 'https://api.example.test',
+            _solutionid_value: 'sol-1',
+          },
+        ],
+        environmentvariablevalues: [
+          {
+            environmentvariablevalueid: 'env-value-1',
+            value: 'https://api.example.test',
+            _environmentvariabledefinitionid_value: 'env-1',
+            statecode: 0,
+          },
+        ],
+      },
+    });
+
+    mockDataverseResolution({
+      fixture: client,
+    });
+
+    const deploy = await runCli([
+      'flow',
+      'deploy',
+      resolveRepoPath('fixtures', 'flow', 'raw', 'invoice-flow.raw.json'),
+      '--env',
+      'fixture',
+      '--solution',
+      'Core',
+      '--create-if-missing',
+      '--workflow-state',
+      'draft',
+      '--format',
+      'json',
+    ]);
+
+    expect(deploy.code).toBe(0);
+    expect(JSON.parse(deploy.stdout)).toMatchObject({
+      operation: 'created',
+      target: {
+        uniqueName: 'crd_InvoiceFlow',
+        workflowState: 'draft',
+        solutionUniqueName: 'Core',
+      },
+    });
+    expect(JSON.parse(deploy.stderr)).toMatchObject({
+      success: true,
+      warnings: [
+        expect.objectContaining({
+          code: 'FLOW_DEPLOY_TARGET_NOT_RUNNABLE',
+        }),
+      ],
+      suggestedNextActions: expect.arrayContaining([
+        'Run `pp flow activate crd_InvoiceFlow --environment <alias> --solution Core --format json` for one bounded in-place activation attempt when this workflow should already be runnable.',
+        'Run `pp solution sync-status Core --environment <alias> --format json` to confirm whether this draft workflow is still blocking solution export readiness.',
+      ]),
+    });
+  });
+
   it('promotes a remote flow between environments through the CLI entrypoint', async () => {
     const sourceClient = createFixtureDataverseClient({
       query: {
@@ -6208,11 +6414,25 @@ describe('cli fixture-backed workflows', () => {
       {
         solutionUniqueName: undefined,
         entity: {
+          clientdata: expect.any(String),
           statecode: 1,
           statuscode: 2,
         },
       },
     ]);
+    expect(JSON.parse(String(updateCalls[0]?.entity.clientdata))).toMatchObject({
+      properties: {
+        definition: {
+          actions: {
+            SendMail: {
+              inputs: {
+                subject: "@{parameters('ApiBaseUrl')}",
+              },
+            },
+          },
+        },
+      },
+    });
   });
 
   it('returns post-failure inspect and sync-status details when flow activate cannot activate a solution-scoped flow in place', async () => {
@@ -6335,6 +6555,7 @@ describe('cli fixture-backed workflows', () => {
         }),
       ]),
       details: {
+        activationAttempts: ['normalized-clientdata', 'clientdata-with-top-level-definition', 'state-only', 'statecode-only'],
         flow: {
           id: 'flow-1',
           uniqueName: 'crd_HarnessFlow',
@@ -6350,9 +6571,35 @@ describe('cli fixture-backed workflows', () => {
               category: 5,
               logicalName: 'crd_HarnessFlow',
               workflowState: 'draft',
+              definitionAvailable: true,
               remediation: expect.objectContaining({
-                kind: 'inspect-only',
-                mcpMutationAvailable: false,
+                kind: 'activate-in-place',
+                mcpMutationAvailable: true,
+                mcpTool: {
+                  name: 'pp.flow.activate',
+                  arguments: {
+                    environment: '<alias>',
+                    identifier: 'crd_HarnessFlow',
+                    solutionUniqueName: '<solution>',
+                  },
+                },
+                alternativeMcpTools: [
+                  {
+                    name: 'pp.flow.deploy',
+                    arguments: {
+                      environment: '<alias>',
+                      path: '<local-flow-artifact>',
+                      solutionUniqueName: '<solution>',
+                      target: 'crd_HarnessFlow',
+                      workflowState: 'activated',
+                    },
+                    summary: expect.stringContaining('Redeploy the local flow artifact'),
+                  },
+                ],
+                cliCommand: 'pp flow activate crd_HarnessFlow --environment <alias> --solution <solution> --format json',
+                alternativeCliCommands: [
+                  'pp flow deploy <local-flow-artifact> --environment <alias> --solution <solution> --target crd_HarnessFlow --workflow-state activated --format json',
+                ],
                 limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
               }),
             }),
@@ -6362,6 +6609,7 @@ describe('cli fixture-backed workflows', () => {
               expect.objectContaining({
                 logicalName: 'crd_HarnessFlow',
                 workflowState: 'draft',
+                definitionAvailable: true,
               }),
             ],
           },
@@ -6382,6 +6630,9 @@ describe('cli fixture-backed workflows', () => {
         },
       },
     });
+    expect(activatePayload.knownLimitations).toContain(
+      'pp already retried activation with normalized-clientdata, clientdata-with-top-level-definition, state-only, statecode-only payload strategies for this workflow before surfacing the remaining Dataverse limitation.'
+    );
     expect(activatePayload.details.solutionSyncStatus.exportCheck.failure.diagnostics).toEqual([]);
   });
 
@@ -6512,8 +6763,35 @@ describe('cli fixture-backed workflows', () => {
               category: 5,
               logicalName: 'crd_HarnessFlow',
               workflowState: 'draft',
+              definitionAvailable: true,
               remediation: expect.objectContaining({
-                kind: 'inspect-only',
+                kind: 'activate-in-place',
+                mcpMutationAvailable: true,
+                mcpTool: {
+                  name: 'pp.flow.activate',
+                  arguments: {
+                    environment: '<alias>',
+                    identifier: 'crd_HarnessFlow',
+                    solutionUniqueName: '<solution>',
+                  },
+                },
+                alternativeMcpTools: [
+                  {
+                    name: 'pp.flow.deploy',
+                    arguments: {
+                      environment: '<alias>',
+                      path: '<local-flow-artifact>',
+                      solutionUniqueName: '<solution>',
+                      target: 'crd_HarnessFlow',
+                      workflowState: 'activated',
+                    },
+                    summary: expect.stringContaining('Redeploy the local flow artifact'),
+                  },
+                ],
+                cliCommand: 'pp flow activate crd_HarnessFlow --environment <alias> --solution <solution> --format json',
+                alternativeCliCommands: [
+                  'pp flow deploy <local-flow-artifact> --environment <alias> --solution <solution> --target crd_HarnessFlow --workflow-state activated --format json',
+                ],
                 limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
               }),
             }),
@@ -6523,6 +6801,7 @@ describe('cli fixture-backed workflows', () => {
               expect.objectContaining({
                 logicalName: 'crd_HarnessFlow',
                 workflowState: 'draft',
+                definitionAvailable: true,
               }),
             ],
           },
@@ -6675,7 +6954,33 @@ describe('cli fixture-backed workflows', () => {
               logicalName: 'crd_HarnessFlow',
               workflowState: 'draft',
               remediation: expect.objectContaining({
-                kind: 'inspect-only',
+                kind: 'activate-in-place',
+                mcpMutationAvailable: true,
+                mcpTool: {
+                  name: 'pp.flow.activate',
+                  arguments: {
+                    environment: '<alias>',
+                    identifier: 'crd_HarnessFlow',
+                    solutionUniqueName: '<solution>',
+                  },
+                },
+                alternativeMcpTools: [
+                  {
+                    name: 'pp.flow.deploy',
+                    arguments: {
+                      environment: '<alias>',
+                      path: '<local-flow-artifact>',
+                      solutionUniqueName: '<solution>',
+                      target: 'crd_HarnessFlow',
+                      workflowState: 'activated',
+                    },
+                    summary: expect.stringContaining('Redeploy the local flow artifact'),
+                  },
+                ],
+                cliCommand: 'pp flow activate crd_HarnessFlow --environment <alias> --solution <solution> --format json',
+                alternativeCliCommands: [
+                  'pp flow deploy <local-flow-artifact> --environment <alias> --solution <solution> --target crd_HarnessFlow --workflow-state activated --format json',
+                ],
                 limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
               }),
             }),
@@ -6804,13 +7109,45 @@ describe('cli fixture-backed workflows', () => {
           name: 'PublishAllXml',
           accepted: true,
         },
+        readiness: {
+          state: 'blocked',
+          publishAccepted: true,
+          prePublishBlockerCount: 1,
+          unchangedFromPrePublish: true,
+        },
         blockers: [
           expect.objectContaining({
             category: 5,
             logicalName: 'crd_HarnessFlow',
             workflowState: 'draft',
             remediation: expect.objectContaining({
-              kind: 'inspect-only',
+              kind: 'activate-in-place',
+              mcpMutationAvailable: true,
+              mcpTool: {
+                name: 'pp.flow.activate',
+                arguments: {
+                  environment: '<alias>',
+                  identifier: 'crd_HarnessFlow',
+                  solutionUniqueName: '<solution>',
+                },
+              },
+              alternativeMcpTools: [
+                {
+                  name: 'pp.flow.deploy',
+                  arguments: {
+                    environment: '<alias>',
+                    path: '<local-flow-artifact>',
+                    solutionUniqueName: '<solution>',
+                    target: 'crd_HarnessFlow',
+                    workflowState: 'activated',
+                  },
+                  summary: expect.stringContaining('Redeploy the local flow artifact'),
+                },
+              ],
+              cliCommand: 'pp flow activate crd_HarnessFlow --environment <alias> --solution <solution> --format json',
+              alternativeCliCommands: [
+                'pp flow deploy <local-flow-artifact> --environment <alias> --solution <solution> --target crd_HarnessFlow --workflow-state activated --format json',
+              ],
               limitationCode: 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
             }),
           }),
@@ -6833,6 +7170,12 @@ describe('cli fixture-backed workflows', () => {
     expect(publishPayload.warnings).toContainEqual(
       expect.objectContaining({
         code: 'SOLUTION_SYNC_STATUS_BLOCKED_WORKFLOW_STATE',
+      })
+    );
+    expect(publishPayload.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'SOLUTION_PUBLISH_BLOCKERS_UNCHANGED',
+        detail: expect.stringContaining('Harness Flow state=draft'),
       })
     );
     expect(publishPayload.warnings[0]).toMatchObject({
@@ -8043,13 +8386,14 @@ describe('cli fixture-backed workflows', () => {
 
     expect(list.code).toBe(0);
     expect(list.stderr).toBe('');
-    expect(JSON.parse(list.stdout)).toEqual(
-      expect.arrayContaining([
+    expect(JSON.parse(list.stdout)).toMatchObject({
+      success: true,
+      solutions: expect.arrayContaining([
         expect.objectContaining({
           uniquename: 'Core',
         }),
-      ])
-    );
+      ]),
+    });
   });
 
   it('filters solution list results by prefix and exact unique name', async () => {
@@ -8150,6 +8494,42 @@ describe('cli fixture-backed workflows', () => {
     expect(table.stdout).toContain('friendlyname');
     expect(table.stdout).toContain('Core');
     expect(table.stdout).not.toContain('solutions  [');
+  });
+
+  it('preserves the collection envelope for empty solution list output across json, ndjson, and table', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [],
+        },
+      }),
+    });
+
+    const json = await runCli(['solution', 'list', '--environment', 'source', '--format', 'json']);
+    const ndjson = await runCli(['solution', 'list', '--environment', 'source', '--format', 'ndjson']);
+    const table = await runCli(['solution', 'list', '--environment', 'source', '--format', 'table']);
+
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      success: true,
+      solutions: [],
+    });
+
+    expect(ndjson.code).toBe(0);
+    expect(ndjson.stderr).toBe('');
+    expect(ndjson.stdout.trim()).not.toBe('');
+    expect(ndjson.stdout.trim().split('\n').map((line) => JSON.parse(line))).toEqual([
+      expect.objectContaining({
+        success: true,
+        solutions: [],
+      }),
+    ]);
+
+    expect(table.code).toBe(0);
+    expect(table.stderr).toBe('');
+    expect(table.stdout).toContain('field');
+    expect(table.stdout).toContain('solutions');
+    expect(table.stdout).toContain('[]');
   });
 
   it('dispatches solution list when the argv starts with a wrapper separator', async () => {
@@ -8257,6 +8637,11 @@ describe('cli fixture-backed workflows', () => {
                 category: 5,
                 statecode: 0,
                 statuscode: 1,
+                clientdata: JSON.stringify({
+                  definition: {
+                    actions: {},
+                  },
+                }),
               },
             ] as T[],
             { supportTier: 'preview' }
@@ -8283,6 +8668,11 @@ describe('cli fixture-backed workflows', () => {
                 category: 5,
                 statecode: 0,
                 statuscode: 1,
+                clientdata: JSON.stringify({
+                  definition: {
+                    actions: {},
+                  },
+                }),
               },
             ] as T[],
             { supportTier: 'preview' }
@@ -8331,7 +8721,7 @@ describe('cli fixture-backed workflows', () => {
         }),
       ]),
       suggestedNextActions: expect.arrayContaining([
-        'Treat crd_HarnessFlow as a blocked draft Modern Flow until a supported activation path is available; pp now exposes the same bounded remediation through MCP `pp.flow.activate`, but current in-place activation can still fail with `FLOW_ACTIVATE_DEFINITION_REQUIRED` for this Dataverse workflow path.',
+        'Use MCP `pp.flow.activate` or `pp flow activate crd_HarnessFlow --environment <alias> --solution Core --format json` for one bounded in-session activation attempt. If you also have the local artifact, `pp.flow.deploy` can redeploy it back to crd_HarnessFlow in the same solution, but if either path returns `FLOW_ACTIVATE_DEFINITION_REQUIRED`, `pp` does not currently have another native completion path from draft modern flow to export-ready synchronized solution for this workflow.',
       ]),
       supportTier: 'preview',
     });
@@ -8638,7 +9028,7 @@ describe('cli fixture-backed workflows', () => {
     expect(publishResult.stderr).toContain('Waiting for publish checkpoint: attempt 1');
     expect(publishResult.stderr).toContain('Publish checkpoint confirmed for solution Core');
     expect(await access(exportPath).then(() => true, () => false)).toBe(true);
-    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml', 'ExportSolution']);
+    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml']);
     expect(JSON.parse(publishResult.stdout)).toMatchObject({
       published: true,
       waitForExport: true,
@@ -8646,6 +9036,11 @@ describe('cli fixture-backed workflows', () => {
         kind: 'solution-export',
         confirmed: true,
         attempts: 1,
+      },
+      readiness: {
+        state: 'ready',
+        exportReadinessConfirmed: true,
+        blockerCount: 0,
       },
       blockers: [],
       export: {
@@ -8729,6 +9124,11 @@ describe('cli fixture-backed workflows', () => {
                 category: 5,
                 statecode: 0,
                 statuscode: 1,
+                clientdata: JSON.stringify({
+                  definition: {
+                    actions: {},
+                  },
+                }),
               },
             ] as T[],
             { supportTier: 'preview' }
@@ -8794,7 +9194,7 @@ describe('cli fixture-backed workflows', () => {
     const publishResult = await runCli(['solution', 'publish', 'Core', '--env', 'source', '--format', 'json']);
 
     expect(publishResult.code).toBe(0);
-    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml', 'ExportSolution']);
+    expect(requests.map((request) => request.path)).toEqual(['PublishAllXml']);
     expect(JSON.parse(publishResult.stdout)).toMatchObject({
       published: true,
       waitForExport: false,
@@ -8802,17 +9202,27 @@ describe('cli fixture-backed workflows', () => {
         kind: 'solution-export',
         confirmed: false,
       },
+      readiness: {
+        state: 'blocked',
+        exportReadinessConfirmed: false,
+        blockerCount: 1,
+        publishAccepted: true,
+        prePublishBlockerCount: 1,
+        unchangedFromPrePublish: true,
+        summary:
+          'PublishAllXml was accepted for solution Core, but export readiness is still blocked by the same workflow Harness Flow in state draft even though Dataverse readback shows definitionAvailable=true; that blocker was already present before publish.',
+        primaryBlocker: {
+          logicalName: 'crd_HarnessFlow',
+          workflowState: 'draft',
+          definitionAvailable: true,
+        },
+      },
       exportCheck: {
-        attempted: true,
+        attempted: false,
         confirmed: false,
         packageType: 'unmanaged',
         failure: {
-          diagnostics: [
-            {
-              code: 'HTTP_REQUEST_FAILED',
-              message: 'POST ExportSolution returned 405',
-            },
-          ],
+          diagnostics: [],
         },
       },
       blockers: [
@@ -8823,6 +9233,7 @@ describe('cli fixture-backed workflows', () => {
           name: 'Harness Flow',
           logicalName: 'crd_HarnessFlow',
           workflowState: 'draft',
+          definitionAvailable: true,
         },
       ],
       readBack: {
@@ -8832,10 +9243,31 @@ describe('cli fixture-backed workflows', () => {
           workflowCount: 1,
           modelDrivenAppCount: 1,
         },
+        signals: {
+          canvasApps: {
+            total: 1,
+            published: 1,
+            unknown: 0,
+          },
+          workflows: {
+            total: 1,
+            activated: 0,
+            draft: 1,
+            suspended: 0,
+            other: 0,
+            blocked: 1,
+          },
+          modelDrivenApps: {
+            total: 1,
+            published: 1,
+            unknown: 0,
+          },
+        },
         workflows: [
           {
             id: 'flow-1',
             workflowState: 'draft',
+            definitionAvailable: true,
           },
         ],
         modelDrivenApps: [
@@ -8846,6 +9278,7 @@ describe('cli fixture-backed workflows', () => {
         ],
       },
     });
+    expect(publishResult.stderr).toContain('SOLUTION_PUBLISH_BLOCKERS_UNCHANGED');
   });
 
   it('reports solution sync-status with an export probe and publish readback', async () => {
@@ -8994,6 +9427,12 @@ describe('cli fixture-backed workflows', () => {
       synchronization: {
         kind: 'solution-export',
         confirmed: true,
+      },
+      readiness: {
+        state: 'ready',
+        exportReadinessConfirmed: true,
+        blockerCount: 0,
+        summary: 'Solution Core is export-ready.',
       },
       blockers: [],
       readBack: {
@@ -9510,18 +9949,23 @@ describe('cli fixture-backed workflows', () => {
       prefix: 'ppHarness20260310T073008100Z',
       remoteResetSupported: true,
       candidateCount: 1,
+      solutionCandidateCount: 1,
+      assetCandidateCount: 0,
       cleanupCandidates: [
         {
           solutionid: 'sol-1',
           uniquename: 'ppHarness20260310T073008100ZShell',
         },
       ],
+      assetCandidates: [],
       suggestedNextActions: [
-        'Review the matching solutions before deleting anything remotely.',
-        'Run `pp env cleanup fixture --prefix ppHarness20260310T073008100Z` to delete the listed disposable solutions through pp.',
+        'Review the matching disposable assets before deleting anything remotely.',
+        'Run `pp env cleanup fixture --prefix ppHarness20260310T073008100Z` to delete the listed disposable solutions and orphaned prefixed assets through pp.',
         'Re-run `pp env cleanup-plan fixture --prefix ppHarness20260310T073008100Z` to confirm the environment is clean before bootstrap.',
       ],
-      knownLimitations: [],
+      knownLimitations: [
+        'This bounded cleanup covers disposable solutions plus orphaned prefixed canvas apps, cloud flows, model-driven apps, connection references, and environment variable definitions. Other prefixed asset classes still need their own cleanup surface.',
+      ],
     });
   });
 
@@ -9642,12 +10086,19 @@ describe('cli fixture-backed workflows', () => {
         remoteResetSupported: true,
         readyForBootstrap: false,
         candidateCount: 1,
+        solutionCandidateCount: 1,
+        assetCandidateCount: 0,
         cleanupCandidates: [
           {
             solutionid: 'sol-1',
             uniquename: 'ppHarness20260310T073008100ZShell',
           },
         ],
+        assetCandidates: [],
+        candidateSummary: {
+          solutions: 1,
+          total: 1,
+        },
         absenceChecks: [
           {
             uniqueName: 'LegacyHarnessShell',
@@ -9666,7 +10117,7 @@ describe('cli fixture-backed workflows', () => {
     });
     const parsed = JSON.parse(baseline.stdout) as { baseline: { suggestedNextActions: string[] } };
     expect(parsed.baseline.suggestedNextActions).toContain(
-      'Run `pp env cleanup fixture --prefix ppHarness20260310T073008100Z` to delete the listed disposable solutions through pp.'
+      'Run `pp env cleanup fixture --prefix ppHarness20260310T073008100Z` to delete the listed disposable solutions and orphaned prefixed assets through pp.'
     );
     expect(parsed.baseline.suggestedNextActions).toContain(
       'Delete LegacyHarnessShell with `pp solution delete LegacyHarnessShell --environment fixture` or clear it through the broader reset workflow before bootstrap.'
@@ -9710,7 +10161,9 @@ describe('cli fixture-backed workflows', () => {
     expect(help.code).toBe(0);
     expect(help.stderr).toBe('');
     expect(help.stdout).toContain('env cleanup <alias> --prefix PREFIX [--config-dir path] [--dry-run|--plan] [--format table|json|yaml|ndjson|markdown|raw]');
-    expect(help.stdout).toContain('Use `--dry-run` or `--plan` first to preview the matching solutions without mutating the environment.');
+    expect(help.stdout).toContain(
+      'Use `--dry-run` or `--plan` first to preview the matching disposable solutions and orphaned prefixed assets without mutating the environment.'
+    );
   });
 
   it('prints env group help with cleanup workflow examples', async () => {
@@ -9829,6 +10282,8 @@ describe('cli fixture-backed workflows', () => {
       candidateCount: 1,
       deletedCount: 1,
       failedCount: 0,
+      deletedAssetCount: 0,
+      deletedAssets: [],
       deleted: [
         {
           removed: true,
@@ -9842,6 +10297,81 @@ describe('cli fixture-backed workflows', () => {
     expect(JSON.parse(remaining.stdout)).toMatchObject({
       candidateCount: 0,
       cleanupCandidates: [],
+    });
+  });
+
+  it('rescans after solution deletion so newly orphaned prefixed environment variables are removed in one cleanup pass', async () => {
+    mockDataverseResolution({
+      fixture: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'ppHarness20260313T003102912ZShell',
+              friendlyname: 'ppHarness20260313T003102912Z Shell',
+              version: '1.0.0.0',
+            },
+          ],
+        },
+        queryAll: {
+          solutioncomponents: [
+            {
+              solutioncomponentid: 'sc-1',
+              objectid: 'envvar-orphan',
+              componenttype: 380,
+              _solutionid_value: 'sol-1',
+            },
+          ],
+          environmentvariabledefinitions: [
+            {
+              environmentvariabledefinitionid: 'envvar-orphan',
+              schemaname: 'ppHarness20260313T003102912Z_BaseUrl',
+              displayname: 'ppHarness20260313T003102912Z Base Url',
+            },
+          ],
+          environmentvariablevalues: [],
+        },
+      }),
+    });
+
+    const cleanup = await runCli(['env', 'cleanup', 'fixture', '--prefix', 'ppHarness20260313T003102912Z', '--format', 'json']);
+    const remaining = await runCli(['env', 'cleanup-plan', 'fixture', '--prefix', 'ppHarness20260313T003102912Z', '--format', 'json']);
+
+    expect(cleanup.code).toBe(0);
+    expect(cleanup.stderr).toBe('');
+    expect(JSON.parse(cleanup.stdout)).toMatchObject({
+      prefix: 'ppHarness20260313T003102912Z',
+      candidateCount: 1,
+      solutionCandidateCount: 1,
+      assetCandidateCount: 0,
+      deletedCount: 2,
+      deletedSolutionCount: 1,
+      deletedAssetCount: 1,
+      failedCount: 0,
+      deleted: [
+        {
+          removed: true,
+          solution: {
+            solutionid: 'sol-1',
+            uniquename: 'ppHarness20260313T003102912ZShell',
+          },
+        },
+      ],
+      deletedAssets: [
+        {
+          removed: true,
+          asset: {
+            kind: 'environment-variable',
+            table: 'environmentvariabledefinitions',
+            id: 'envvar-orphan',
+          },
+        },
+      ],
+    });
+    expect(JSON.parse(remaining.stdout)).toMatchObject({
+      candidateCount: 0,
+      cleanupCandidates: [],
+      assetCandidates: [],
     });
   });
 
@@ -9877,6 +10407,8 @@ describe('cli fixture-backed workflows', () => {
       candidateCount: 1,
       deletedCount: 1,
       failedCount: 0,
+      deletedAssetCount: 0,
+      deletedAssets: [],
       deleted: [
         {
           removed: true,
@@ -9922,6 +10454,8 @@ describe('cli fixture-backed workflows', () => {
       target: {
         prefix: 'ppHarness20260310T073008100Z',
         candidateCount: 1,
+        solutionCandidateCount: 1,
+        assetCandidateCount: 0,
       },
       input: {
         cleanupCandidates: [
@@ -9930,6 +10464,7 @@ describe('cli fixture-backed workflows', () => {
             uniquename: 'ppHarness20260310T073008100ZShell',
           },
         ],
+        assetCandidates: [],
       },
     });
     expect(JSON.parse(remaining.stdout)).toMatchObject({
@@ -9966,6 +10501,8 @@ describe('cli fixture-backed workflows', () => {
       target: {
         prefix: 'ppHarness20260310T073008100Z',
         candidateCount: 1,
+        solutionCandidateCount: 1,
+        assetCandidateCount: 0,
       },
       input: {
         cleanupCandidates: [
@@ -9974,6 +10511,7 @@ describe('cli fixture-backed workflows', () => {
             uniquename: 'ppHarness20260310T073008100ZShell',
           },
         ],
+        assetCandidates: [],
       },
     });
     expect(JSON.parse(remaining.stdout)).toMatchObject({
@@ -10331,8 +10869,9 @@ describe('cli fixture-backed workflows', () => {
 
     expect(help.code).toBe(0);
     expect(help.stderr).toBe('');
-    expect(help.stdout).toContain('Usage: analysis context [--project path] [--asset assetRef] [--stage STAGE] [--param NAME=VALUE] [options]');
+    expect(help.stdout).toContain('Usage: analysis context [--project path] [--asset assetRef] [--stage STAGE] [--environment ALIAS] [--param NAME=VALUE] [options]');
     expect(help.stdout).toContain('Reports the inspected path, resolved project root, and any descendant auto-selection directly in the structured output.');
+    expect(help.stdout).toContain('adds a repo-target versus runtime-target comparison');
     expect(help.stdout).toContain('Relative `--project` paths resolve from the invocation root (`INIT_CWD` when wrapped by pnpm)');
     expect(help.stdout).not.toContain('"project"');
   });
@@ -10395,13 +10934,33 @@ describe('cli fixture-backed workflows', () => {
 
     expect(flowInspectHelp.code).toBe(0);
     expect(flowInspectHelp.stderr).toBe('');
+    expect(flowInspectHelp.stdout).toContain(
+      'Usage: flow inspect <name|id|uniqueName|path> [--environment ALIAS] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+    );
     expect(flowInspectHelp.stdout).toContain('Without `--environment`, inspect a local flow artifact on disk.');
     expect(flowInspectHelp.stdout).toContain('With `--environment`, inspect a remote flow by name, id, or unique name.');
+    expect(flowInspectHelp.stdout).toContain('--no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth');
 
     expect(flowActivateHelp.code).toBe(0);
     expect(flowActivateHelp.stderr).toBe('');
     expect(flowActivateHelp.stdout).toContain('Usage: flow activate <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [options]');
     expect(flowActivateHelp.stdout).toContain('A remote flow already exists in one environment, but it is still draft or suspended');
+
+    const flowExportHelp = await runCli(['flow', 'export', '--help']);
+    expect(flowExportHelp.code).toBe(0);
+    expect(flowExportHelp.stderr).toBe('');
+    expect(flowExportHelp.stdout).toContain(
+      'Usage: flow export <name|id|uniqueName> --environment ALIAS --out PATH [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+    );
+    expect(flowExportHelp.stdout).toContain('--no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth');
+
+    const flowConnrefsHelp = await runCli(['flow', 'connrefs', '--help']);
+    expect(flowConnrefsHelp.code).toBe(0);
+    expect(flowConnrefsHelp.stderr).toBe('');
+    expect(flowConnrefsHelp.stdout).toContain(
+      'Usage: flow connrefs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--no-interactive-auth] [options]'
+    );
+    expect(flowConnrefsHelp.stdout).toContain('--no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth');
 
     expect(flowDeployHelp.code).toBe(0);
     expect(flowDeployHelp.stderr).toBe('');
@@ -10784,6 +11343,76 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('renders a bounded read-only plan for remote canvas attach through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core Solution', version: '1.0.0.0', ismanaged: false }],
+        },
+        queryAll: {
+          canvasapps: [
+            {
+              canvasappid: 'canvas-1',
+              displayname: 'Harness Canvas',
+              name: 'crd_HarnessCanvas',
+            },
+          ],
+          solutioncomponents: [
+            { solutioncomponentid: 'comp-canvas', objectid: 'canvas-1', componenttype: 300, _solutionid_value: 'sol-1' },
+            { solutioncomponentid: 'comp-entity', objectid: 'entity-project', componenttype: 1, _solutionid_value: 'sol-1' },
+          ],
+          dependencies: [
+            {
+              dependencyid: 'dep-1',
+              dependencytype: 0,
+              requiredcomponentobjectid: 'entity-account',
+              requiredcomponenttype: 1,
+              dependentcomponentobjectid: 'canvas-1',
+              dependentcomponenttype: 300,
+            },
+          ],
+          solutions: [{ solutionid: 'sol-1', uniquename: 'Core', friendlyname: 'Core Solution', ismanaged: false }],
+        },
+        listTables: [
+          { MetadataId: 'entity-project', LogicalName: 'pp_project', SchemaName: 'pp_Project', DisplayName: { UserLocalizedLabel: { Label: 'PP Harness Project' } } },
+          { MetadataId: 'entity-account', LogicalName: 'account', SchemaName: 'Account', DisplayName: { UserLocalizedLabel: { Label: 'Account' } } },
+        ],
+      }),
+    });
+
+    const attach = await runCli(['canvas', 'attach', 'Harness Canvas', '--env', 'source', '--solution', 'Core', '--plan', '--format', 'json']);
+
+    expect(attach.code).toBe(0);
+    expect(attach.stderr).toBe('');
+    expect(JSON.parse(attach.stdout)).toMatchObject({
+      action: 'canvas.attach',
+      mode: 'plan',
+      willMutate: false,
+      preview: {
+        alreadyInTargetSolution: true,
+        targetSolution: {
+          uniquename: 'Core',
+          friendlyname: 'Core Solution',
+        },
+        containingSolutions: [
+          {
+            uniqueName: 'Core',
+          },
+        ],
+        targetSolutionBaseline: {
+          summary: {
+            componentCount: 2,
+            canvasAppCount: 1,
+            missingDependencyCount: 1,
+          },
+        },
+      },
+      knownLimitations: expect.arrayContaining([
+        'This preview is read-only and cannot predict the exact component set Dataverse will add during AddSolutionComponent.',
+      ]),
+    });
+  });
+
   it('inspects a solution-scoped remote canvas app by display name after attach through the CLI entrypoint', async () => {
     mockDataverseResolution({
       source: createFixtureDataverseClient({
@@ -11035,6 +11664,38 @@ describe('cli fixture-backed workflows', () => {
     expect(create.stderr).toBe('');
   });
 
+  it('infers the publisher during solution creation when the unique-name prefix matches one publisher', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          publishers: [
+            {
+              publisherid: 'pub-1',
+              uniquename: 'DefaultPublisher',
+              friendlyname: 'Default Publisher',
+              customizationprefix: 'new',
+            },
+            {
+              publisherid: 'pub-2',
+              uniquename: 'pp',
+              friendlyname: 'Power Platform',
+              customizationprefix: 'pp',
+            },
+          ],
+        },
+      }),
+    });
+
+    const create = await runCli(['solution', 'create', 'ppHarnessShell', '--env', 'source', '--format', 'json']);
+
+    expect(create.code).toBe(0);
+    expect(JSON.parse(create.stdout)).toMatchObject({
+      solutionid: 'fixture-solutions-1',
+      uniquename: 'ppHarnessShell',
+    });
+    expect(create.stderr).toBe('');
+  });
+
   it('lists available publishers through a first-class solution command', async () => {
     mockDataverseResolution({
       source: createFixtureDataverseClient({
@@ -11059,18 +11720,27 @@ describe('cli fixture-backed workflows', () => {
 
     expect(publishers.code).toBe(0);
     expect(publishers.stderr).toBe('');
-    expect(JSON.parse(publishers.stdout)).toEqual([
-      {
-        publisherid: 'pub-1',
-        uniquename: 'DefaultPublisher',
-        friendlyname: 'Default Publisher',
-      },
-      {
-        publisherid: 'pub-2',
-        uniquename: 'pp',
-        friendlyname: 'Power Platform',
-      },
-    ]);
+    expect(JSON.parse(publishers.stdout)).toEqual({
+      success: true,
+      publishers: [
+        {
+          publisherid: 'pub-1',
+          uniquename: 'DefaultPublisher',
+          friendlyname: 'Default Publisher',
+        },
+        {
+          publisherid: 'pub-2',
+          uniquename: 'pp',
+          friendlyname: 'Power Platform',
+        },
+      ],
+      diagnostics: [],
+      warnings: [],
+      suggestedNextActions: [],
+      supportTier: 'preview',
+      provenance: [],
+      knownLimitations: [],
+    });
   });
 
   it('covers solution metadata updates through the CLI entrypoint', async () => {

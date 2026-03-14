@@ -5,7 +5,8 @@ import {
   renderMarkdownReport,
 } from '@pp/analysis';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
-import { discoverProject, type ProjectContext } from '@pp/project';
+import { compareProjectRuntimeTarget, discoverProject, type ProjectContext } from '@pp/project';
+import type { ConfigStoreOptions } from '@pp/config';
 import type { CliOutputFormat } from './contract';
 
 type OutputFormat = CliOutputFormat;
@@ -18,10 +19,12 @@ interface AnalysisCommandDependencies {
   resolveInvocationPath(path?: string): string;
   outputFormat(args: string[], fallback: OutputFormat): OutputFormat;
   readProjectDiscoveryOptions(args: string[]): OperationResult<DiscoveryOptions>;
+  readConfigOptions(args: string[]): ConfigStoreOptions;
   printFailure(result: OperationResult<unknown>): number;
   printByFormat(value: unknown, format: OutputFormat): void;
   printResultDiagnostics(result: OperationResult<unknown>, format: OutputFormat): void;
   readFlag(args: string[], name: string): string | undefined;
+  readEnvironmentAlias(args: string[]): string | undefined;
   readRepeatedFlags(args: string[], name: string): string[];
   readAnalysisPortfolioProjectPaths(args: string[]): string[];
 }
@@ -81,7 +84,8 @@ export async function runAnalysisContextCommand(args: string[], deps: AnalysisCo
     return deps.printFailure(context);
   }
 
-  deps.printByFormat(context.data, format);
+  const targetComparison = await resolveAnalysisTargetComparison(project.data, deps.readEnvironmentAlias(args), deps.readConfigOptions(args));
+  deps.printByFormat(targetComparison ? { ...context.data, targetComparison } : context.data, format);
   deps.printResultDiagnostics(project, format);
   deps.printResultDiagnostics(context, format);
   return 0;
@@ -119,6 +123,18 @@ export async function runAnalysisPortfolioCommand(args: string[], deps: Analysis
   deps.printResultDiagnostics(projects, format);
   deps.printResultDiagnostics(report, format);
   return 0;
+}
+
+async function resolveAnalysisTargetComparison(
+  project: ProjectContext,
+  requestedEnvironmentAlias: string | undefined,
+  configOptions: ConfigStoreOptions
+): Promise<Awaited<ReturnType<typeof compareProjectRuntimeTarget>> | undefined> {
+  if (!requestedEnvironmentAlias) {
+    return undefined;
+  }
+
+  return compareProjectRuntimeTarget(project, requestedEnvironmentAlias, configOptions);
 }
 
 export async function runAnalysisDriftCommand(args: string[], deps: AnalysisCommandDependencies): Promise<number> {
