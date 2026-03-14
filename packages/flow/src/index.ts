@@ -390,6 +390,78 @@ export interface FlowDeployResult {
   };
 }
 
+function buildFlowDeploySuccessMetadata(
+  result: Pick<FlowDeployResult, 'targetIdentifier' | 'target'>,
+  metadata: {
+    supportTier: 'preview';
+    diagnostics?: Diagnostic[];
+    warnings?: Diagnostic[];
+    knownLimitations?: string[];
+    provenance?: Array<{ kind: 'official-api'; source: string }>;
+  }
+): {
+  supportTier: 'preview';
+  diagnostics?: Diagnostic[];
+  warnings?: Diagnostic[];
+  suggestedNextActions?: string[];
+  knownLimitations?: string[];
+  provenance?: Array<{ kind: 'official-api'; source: string }>;
+} {
+  const runnability = describeFlowDeployRunnabilityFollowUp(result.targetIdentifier, result.target);
+  return {
+    ...metadata,
+    warnings: [...(metadata.warnings ?? []), ...(runnability.warning ? [runnability.warning] : [])],
+    suggestedNextActions: runnability.suggestedNextActions,
+  };
+}
+
+function describeFlowDeployRunnabilityFollowUp(
+  targetIdentifier: string,
+  target: FlowDeployResult['target']
+): {
+  warning?: Diagnostic;
+  suggestedNextActions?: string[];
+} {
+  if (target.workflowState !== 'draft' && target.workflowState !== 'suspended') {
+    return {};
+  }
+
+  const stateLabel = target.workflowState ?? 'unknown';
+  const resolvedIdentifier = target.uniqueName ?? targetIdentifier;
+  const inspectCommand = `pp flow inspect ${resolvedIdentifier} --environment <alias>${target.solutionUniqueName ? ` --solution ${target.solutionUniqueName}` : ''} --format json`;
+  const activateCommand = `pp flow activate ${resolvedIdentifier} --environment <alias>${target.solutionUniqueName ? ` --solution ${target.solutionUniqueName}` : ''} --format json`;
+  const syncStatusCommand = target.solutionUniqueName
+    ? `pp solution sync-status ${target.solutionUniqueName} --environment <alias> --format json`
+    : undefined;
+  const stateParts: string[] = [];
+  if (target.stateCode !== undefined) {
+    stateParts.push(`statecode=${target.stateCode}`);
+  }
+  if (target.statusCode !== undefined) {
+    stateParts.push(`statuscode=${target.statusCode}`);
+  }
+
+  return {
+    warning: createDiagnostic(
+      'warning',
+      'FLOW_DEPLOY_TARGET_NOT_RUNNABLE',
+      `Flow ${target.name ?? resolvedIdentifier} was deployed, but the remote workflow is still ${stateLabel}, so downstream runtime or solution-readiness checks may remain blocked.`,
+      {
+        source: '@pp/flow',
+        detail: `${resolvedIdentifier} state=${stateLabel}${stateParts.length > 0 ? ` (${stateParts.join(', ')})` : ''}`,
+        hint: syncStatusCommand ?? inspectCommand,
+      }
+    ),
+    suggestedNextActions: dedupeStrings([
+      `Run \`${inspectCommand}\` to confirm the remote workflow state and definition availability after deploy.`,
+      `Run \`${activateCommand}\` for one bounded in-place activation attempt when this workflow should already be runnable.`,
+      syncStatusCommand
+        ? `Run \`${syncStatusCommand}\` to confirm whether this ${stateLabel} workflow is still blocking solution export readiness.`
+        : undefined,
+    ].filter((value): value is string => Boolean(value))),
+  };
+}
+
 export interface FlowPromoteOptions {
   sourceSolutionUniqueName?: string;
   targetSolutionUniqueName?: string;
@@ -1855,8 +1927,9 @@ export async function activateRemoteFlow(
     );
   }
 
-  const updateEntity = buildFlowActivationUpdateEntity(activatedArtifact);
-  const update = await options.dataverseClient.update('workflows', sourceFlow.data.id, updateEntity);
+  const activationUpdate = await applyFlowActivationUpdateWithFallbacks(sourceFlow.data.id, activatedArtifact, options.dataverseClient);
+  const attemptedActivationPayloads = activationUpdate.attemptedPayloads;
+  const update = activationUpdate.result;
 
   if (!update.success) {
     const activationFailure = detectInPlaceActivationFailure(update.diagnostics, {
@@ -1872,11 +1945,19 @@ export async function activateRemoteFlow(
     return fail(
       [...validation.diagnostics, ...splitUpdateDiagnostics.diagnostics, ...(activationFailure?.diagnostics ?? [])],
       {
-        ...(activationFailureDetails ? { details: activationFailureDetails } : {}),
+        details: {
+          ...(activationFailureDetails ?? {}),
+          activationAttempts: attemptedActivationPayloads,
+        },
         supportTier: 'preview',
         warnings: [...validation.warnings, ...splitUpdateDiagnostics.warnings, ...update.warnings],
         suggestedNextActions: activationFailure?.suggestedNextActions,
-        knownLimitations: activationFailure?.knownLimitations,
+        knownLimitations: dedupeStrings([
+          ...(activationFailure?.knownLimitations ?? []),
+          attemptedActivationPayloads.length > 1
+            ? `pp already retried activation with ${attemptedActivationPayloads.join(', ')} payload strategies for this workflow before surfacing the remaining Dataverse limitation.`
+            : '',
+        ]),
         provenance: [
           {
             kind: 'official-api',
@@ -2443,30 +2524,32 @@ async function deployLoadedFlowArtifact(
         });
       }
 
+      const createdTarget = {
+        id: create.data?.entity?.workflowid ?? create.data?.entityId ?? '',
+        name: create.data?.entity?.name ?? artifact.metadata.displayName ?? artifact.metadata.name ?? createIdentifier,
+        description: readString(create.data?.entity?.description) ?? artifact.metadata.description,
+        uniqueName: create.data?.entity?.uniquename ?? createIdentifier,
+        category: readNumber(create.data?.entity?.category) ?? resolveSupportedFlowWorkflowCategory(artifact.metadata.category).category,
+        workflowMetadata:
+          normalizeFlowWorkflowShellMetadata({
+            type: create.data?.entity?.type,
+            mode: create.data?.entity?.mode,
+            onDemand: create.data?.entity?.ondemand,
+            primaryEntity: create.data?.entity?.primaryentity,
+          }) ?? resolveSupportedFlowWorkflowShellMetadata(artifact.metadata.workflowMetadata).workflowMetadata,
+        ...resolveFlowResultWorkflowState(
+          readNumber(create.data?.entity?.statecode) ?? artifact.metadata.stateCode,
+          readNumber(create.data?.entity?.statuscode) ?? artifact.metadata.statusCode
+        ),
+        solutionUniqueName: options.solutionUniqueName,
+      };
+
       return ok(
         {
           path,
           targetIdentifier: createIdentifier,
           operation: 'created',
-          target: {
-            id: create.data?.entity?.workflowid ?? create.data?.entityId ?? '',
-            name: create.data?.entity?.name ?? artifact.metadata.displayName ?? artifact.metadata.name ?? createIdentifier,
-            description: readString(create.data?.entity?.description) ?? artifact.metadata.description,
-            uniqueName: create.data?.entity?.uniquename ?? createIdentifier,
-            category: readNumber(create.data?.entity?.category) ?? resolveSupportedFlowWorkflowCategory(artifact.metadata.category).category,
-            workflowMetadata:
-              normalizeFlowWorkflowShellMetadata({
-                type: create.data?.entity?.type,
-                mode: create.data?.entity?.mode,
-                onDemand: create.data?.entity?.ondemand,
-                primaryEntity: create.data?.entity?.primaryentity,
-              }) ?? resolveSupportedFlowWorkflowShellMetadata(artifact.metadata.workflowMetadata).workflowMetadata,
-            ...resolveFlowResultWorkflowState(
-              readNumber(create.data?.entity?.statecode) ?? artifact.metadata.stateCode,
-              readNumber(create.data?.entity?.statuscode) ?? artifact.metadata.statusCode
-            ),
-            solutionUniqueName: options.solutionUniqueName,
-          },
+          target: createdTarget,
           updatedFields: Object.keys(createEntity),
           summary: buildFlowArtifactSummary(path, artifact),
           validation: {
@@ -2474,7 +2557,12 @@ async function deployLoadedFlowArtifact(
             warningCount: validation.warnings.length,
           },
         },
-        {
+        buildFlowDeploySuccessMetadata(
+          {
+            targetIdentifier: createIdentifier,
+            target: createdTarget,
+          },
+          {
           supportTier: 'preview',
           diagnostics: [...diagnostics, ...remoteFlow.diagnostics, ...globalFlow.diagnostics, ...create.diagnostics],
           warnings: [...warnings, ...remoteFlow.warnings, ...globalFlow.warnings, ...create.warnings],
@@ -2488,7 +2576,8 @@ async function deployLoadedFlowArtifact(
               source: 'Dataverse workflows POST',
             },
           ],
-        }
+          }
+        )
       );
     }
 
@@ -2534,16 +2623,28 @@ async function deployLoadedFlowArtifact(
   }
 
   const updateEntity = buildFlowDeployUpdateEntity(artifact);
-  const update = await options.dataverseClient.update(
-    'workflows',
-    remoteFlow.data.id,
-    updateEntity,
-    options.solutionUniqueName
-      ? {
-          solutionUniqueName: options.solutionUniqueName,
-        }
-      : {}
-  );
+  const updateOptions = options.solutionUniqueName
+    ? {
+        solutionUniqueName: options.solutionUniqueName,
+      }
+    : {};
+  let update = await options.dataverseClient.update('workflows', remoteFlow.data.id, updateEntity, updateOptions);
+  let attemptedActivationPayloads: string[] = [];
+
+  if (
+    !update.success &&
+    resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode).stateCode ===
+      FLOW_WORKFLOW_STATE_LABEL_STATE.get('activated')
+  ) {
+    const activationUpdate = await applyFlowActivationUpdateWithFallbacks(remoteFlow.data.id, artifact, options.dataverseClient, updateOptions, {
+      initialAttempt: {
+        payload: 'normalized-clientdata',
+        result: update,
+      },
+    });
+    attemptedActivationPayloads = activationUpdate.attemptedPayloads;
+    update = activationUpdate.result;
+  }
 
   if (!update.success) {
     const activationFailure = detectInPlaceActivationFailure(update.diagnostics, {
@@ -2559,11 +2660,23 @@ async function deployLoadedFlowArtifact(
     return fail(
       [...diagnostics, ...remoteFlow.diagnostics, ...splitUpdateDiagnostics.diagnostics, ...(activationFailure?.diagnostics ?? [])],
       {
-        ...(activationFailureDetails ? { details: activationFailureDetails } : {}),
+        ...(activationFailureDetails || attemptedActivationPayloads.length > 0
+          ? {
+              details: {
+                ...(activationFailureDetails ?? {}),
+                ...(attemptedActivationPayloads.length > 0 ? { activationAttempts: attemptedActivationPayloads } : {}),
+              },
+            }
+          : {}),
         supportTier: 'preview',
         warnings: [...warnings, ...remoteFlow.warnings, ...splitUpdateDiagnostics.warnings, ...update.warnings],
         suggestedNextActions: activationFailure?.suggestedNextActions,
-        knownLimitations: activationFailure?.knownLimitations,
+        knownLimitations: dedupeStrings([
+          ...(activationFailure?.knownLimitations ?? []),
+          attemptedActivationPayloads.length > 1
+            ? `pp already retried activation with ${attemptedActivationPayloads.join(', ')} payload strategies for this workflow before surfacing the remaining Dataverse limitation.`
+            : '',
+        ]),
         provenance: [
           {
             kind: 'official-api',
@@ -2574,23 +2687,25 @@ async function deployLoadedFlowArtifact(
     );
   }
 
+  const updatedTarget = {
+    id: remoteFlow.data.id,
+    name: artifact.metadata.displayName ?? artifact.metadata.name ?? remoteFlow.data.name,
+    description: artifact.metadata.description ?? remoteFlow.data.description,
+    uniqueName: artifact.metadata.uniqueName ?? remoteFlow.data.uniqueName,
+    category: resolveSupportedFlowWorkflowCategory(artifact.metadata.category ?? remoteFlow.data.category).category,
+    workflowMetadata: resolveSupportedFlowWorkflowShellMetadata(
+      artifact.metadata.workflowMetadata ?? remoteFlow.data.workflowMetadata
+    ).workflowMetadata,
+    ...resolveFlowResultWorkflowState(artifact.metadata.stateCode ?? remoteFlow.data.stateCode, artifact.metadata.statusCode ?? remoteFlow.data.statusCode),
+    solutionUniqueName: options.solutionUniqueName,
+  };
+
   return ok(
     {
       path,
       targetIdentifier,
       operation: 'updated',
-      target: {
-        id: remoteFlow.data.id,
-        name: artifact.metadata.displayName ?? artifact.metadata.name ?? remoteFlow.data.name,
-        description: artifact.metadata.description ?? remoteFlow.data.description,
-        uniqueName: artifact.metadata.uniqueName ?? remoteFlow.data.uniqueName,
-        category: resolveSupportedFlowWorkflowCategory(artifact.metadata.category ?? remoteFlow.data.category).category,
-        workflowMetadata: resolveSupportedFlowWorkflowShellMetadata(
-          artifact.metadata.workflowMetadata ?? remoteFlow.data.workflowMetadata
-        ).workflowMetadata,
-        ...resolveFlowResultWorkflowState(artifact.metadata.stateCode ?? remoteFlow.data.stateCode, artifact.metadata.statusCode ?? remoteFlow.data.statusCode),
-        solutionUniqueName: options.solutionUniqueName,
-      },
+      target: updatedTarget,
       updatedFields: Object.keys(updateEntity),
       summary: buildFlowArtifactSummary(path, artifact),
       validation: {
@@ -2598,7 +2713,12 @@ async function deployLoadedFlowArtifact(
         warningCount: validation.warnings.length,
       },
     },
-    {
+    buildFlowDeploySuccessMetadata(
+      {
+        targetIdentifier,
+        target: updatedTarget,
+      },
+      {
       supportTier: 'preview',
       diagnostics: [...diagnostics, ...remoteFlow.diagnostics, ...update.diagnostics],
       warnings: [...warnings, ...remoteFlow.warnings, ...update.warnings],
@@ -2612,7 +2732,8 @@ async function deployLoadedFlowArtifact(
           source: 'Dataverse workflows PATCH',
         },
       ],
-    }
+      }
+    )
   );
 }
 
@@ -2740,6 +2861,9 @@ function detectInPlaceActivationFailure(
         ? 'In-place activation for some Dataverse Modern Flow records is not yet supported through the current workflows PATCH path because the platform expects a full definition payload.'
         : 'In-place activation can fail when the Dataverse workflows PATCH path requires fields that pp does not currently round-trip.',
       `When Dataverse rejects the activation payload because the flow definition shape is incompatible with the workflows PATCH path, repeating \`${activateCommand}\` without changing the activation path is unlikely to succeed.`,
+      context.workflowCategory === 5
+        ? 'If `pp flow activate` and `pp flow deploy --workflow-state activated` both hit `FLOW_ACTIVATE_DEFINITION_REQUIRED`, pp does not currently have another native activation path for that draft modern flow.'
+        : undefined,
     ]),
   };
 }
@@ -2754,6 +2878,89 @@ function isDefinitionPayloadActivationFailure(detail: string | undefined): boole
   }
 
   return /unexpected 'StartObject' node .* property named 'definition'/i.test(detail);
+}
+
+function shouldRetryFlowActivationStateOnly(diagnostics: Diagnostic[]): boolean {
+  return diagnostics.some((diagnostic) => {
+    if (diagnostic.code !== 'HTTP_REQUEST_FAILED') {
+      return false;
+    }
+
+    const parsed = parseDataverseErrorDetail(diagnostic.detail);
+    return isDefinitionPayloadActivationFailureCodeOrMessage(parsed?.code, parsed?.message ?? diagnostic.detail ?? '');
+  });
+}
+
+async function applyFlowActivationUpdateWithFallbacks(
+  workflowId: string,
+  artifact: FlowArtifact,
+  dataverseClient: DataverseClient,
+  updateOptions: { solutionUniqueName?: string } = {},
+  options: {
+    initialAttempt?: {
+      payload: string;
+      result: OperationResult<{
+        status: number;
+        headers: Record<string, string>;
+      }>;
+    };
+  } = {}
+): Promise<{
+  attemptedPayloads: string[];
+  result: OperationResult<{
+    status: number;
+    headers: Record<string, string>;
+  }>;
+}> {
+  const attemptedPayloads = options.initialAttempt ? [options.initialAttempt.payload] : ['normalized-clientdata'];
+  let update =
+    options.initialAttempt?.result ??
+    (await dataverseClient.update('workflows', workflowId, buildFlowActivationUpdateEntity(artifact), updateOptions));
+
+  if (!update.success && shouldRetryFlowActivationWithTopLevelDefinition(update.diagnostics)) {
+    attemptedPayloads.push('clientdata-with-top-level-definition');
+    update = await dataverseClient.update(
+      'workflows',
+      workflowId,
+      buildFlowActivationTopLevelDefinitionUpdateEntity(artifact),
+      updateOptions
+    );
+  }
+
+  if (!update.success && shouldRetryFlowActivationStateOnly(update.diagnostics)) {
+    attemptedPayloads.push('state-only');
+    update = await dataverseClient.update('workflows', workflowId, buildFlowActivationStateOnlyUpdateEntity(artifact), updateOptions);
+  }
+
+  if (!update.success && shouldRetryFlowActivationStateCodeOnly(update.diagnostics, artifact)) {
+    attemptedPayloads.push('statecode-only');
+    update = await dataverseClient.update('workflows', workflowId, buildFlowActivationStateCodeOnlyUpdateEntity(artifact), updateOptions);
+  }
+
+  return {
+    attemptedPayloads,
+    result: update,
+  };
+}
+
+function shouldRetryFlowActivationWithTopLevelDefinition(diagnostics: Diagnostic[]): boolean {
+  return diagnostics.some((diagnostic) => {
+    if (diagnostic.code !== 'HTTP_REQUEST_FAILED') {
+      return false;
+    }
+
+    const parsed = parseDataverseErrorDetail(diagnostic.detail);
+    return parsed?.code === 'DefinitionRequestMissingFields' || /required field 'definition'/i.test(parsed?.message ?? '');
+  });
+}
+
+function shouldRetryFlowActivationStateCodeOnly(diagnostics: Diagnostic[], artifact: FlowArtifact): boolean {
+  const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
+  if (workflowState.stateCode === undefined || workflowState.statusCode === undefined) {
+    return false;
+  }
+
+  return diagnostics.some((diagnostic) => diagnostic.code === 'HTTP_REQUEST_FAILED' && /\breturned 400\b/.test(diagnostic.message));
 }
 
 function isDefinitionPayloadActivationFailureCodeOrMessage(code: string | undefined, message: string | undefined): boolean {
@@ -3758,8 +3965,8 @@ function averageIntegers(values: number[]): number | undefined {
   return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
 }
 
-function dedupeStrings(values: string[]): string[] {
-  return [...new Set(values)];
+function dedupeStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((v): v is string => v !== undefined))];
 }
 
 function isDefinedNumber(value: number | undefined): value is number {
@@ -4360,6 +4567,16 @@ function buildDataverseFlowWorkflowShellFields(
 }
 
 function buildFlowDeployClientData(artifact: FlowArtifact): string {
+  return buildFlowClientData(artifact);
+}
+
+function buildFlowClientData(
+  artifact: FlowArtifact,
+  options: {
+    forceTopLevelDefinition?: boolean;
+    forcePropertiesDefinition?: boolean;
+  } = {}
+): string {
   const existingClientData = artifact.clientData
     ? ((cloneJsonValue(artifact.clientData) as Record<string, FlowJsonValue>) ?? {})
     : {};
@@ -4367,8 +4584,10 @@ function buildFlowDeployClientData(artifact: FlowArtifact): string {
   const existingProperties = asFlowJsonRecord(existingClientDataRecord.properties);
   const hadTopLevelDefinition = asFlowJsonRecord(existingClientDataRecord.definition) !== undefined;
   const hadPropertiesDefinition = existingProperties ? asFlowJsonRecord(existingProperties.definition) !== undefined : false;
-  const includeTopLevelDefinition = hadTopLevelDefinition || (!artifact.clientData && !hadPropertiesDefinition);
-  const includePropertiesDefinition = hadPropertiesDefinition || !includeTopLevelDefinition;
+  const includeTopLevelDefinition =
+    options.forceTopLevelDefinition ?? (hadTopLevelDefinition || (!artifact.clientData && !hadPropertiesDefinition));
+  const includePropertiesDefinition =
+    options.forcePropertiesDefinition ?? (hadPropertiesDefinition || !includeTopLevelDefinition);
 
   return stableStringify({
     ...existingClientDataRecord,
@@ -4399,7 +4618,10 @@ function buildFlowDeployCreateEntity(artifact: FlowArtifact): Record<string, unk
     name: artifact.metadata.displayName ?? artifact.metadata.name ?? artifact.metadata.uniqueName,
     ...(artifact.metadata.description ? { description: artifact.metadata.description } : {}),
     uniquename: artifact.metadata.uniqueName,
-    clientdata: buildFlowDeployClientData(artifact),
+    clientdata: buildFlowClientData(artifact, {
+      forceTopLevelDefinition: true,
+      forcePropertiesDefinition: true,
+    }),
     ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
     ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
   };
@@ -4428,8 +4650,39 @@ function buildFlowActivationUpdateEntity(artifact: FlowArtifact): Record<string,
   const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
 
   return {
+    clientdata: buildFlowDeployClientData(artifact),
     ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
     ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
+  };
+}
+
+function buildFlowActivationTopLevelDefinitionUpdateEntity(artifact: FlowArtifact): Record<string, unknown> {
+  const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
+
+  return {
+    clientdata: buildFlowClientData(artifact, {
+      forceTopLevelDefinition: true,
+      forcePropertiesDefinition: true,
+    }),
+    ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
+    ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
+  };
+}
+
+function buildFlowActivationStateOnlyUpdateEntity(artifact: FlowArtifact): Record<string, unknown> {
+  const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
+
+  return {
+    ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
+    ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
+  };
+}
+
+function buildFlowActivationStateCodeOnlyUpdateEntity(artifact: FlowArtifact): Record<string, unknown> {
+  const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
+
+  return {
+    ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
   };
 }
 

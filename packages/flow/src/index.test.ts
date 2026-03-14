@@ -813,6 +813,198 @@ describe('FlowService', () => {
           },
         },
       },
+      properties: {
+        definition: {
+          actions: {
+            ComposePayload: {
+              type: 'Compose',
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('warns when create-if-missing leaves the deployed workflow in draft state', async () => {
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-2',
+                objectid: 'ref-1',
+                componenttype: 371,
+              },
+              {
+                solutioncomponentid: 'comp-3',
+                objectid: 'env-1',
+                componenttype: 380,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'connectionreferences') {
+          return ok(
+            [
+              {
+                connectionreferenceid: 'ref-1',
+                connectionreferencelogicalname: 'shared_office365',
+                connectorid: '/providers/microsoft.powerapps/apis/shared_office365',
+                connectionid: '/connections/office365',
+                _solutionid_value: 'sol-1',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'environmentvariabledefinitions') {
+          return ok(
+            [
+              {
+                environmentvariabledefinitionid: 'env-1',
+                schemaname: 'pp_ApiUrl',
+                defaultvalue: 'https://api.example.test',
+                _solutionid_value: 'sol-1',
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'environmentvariablevalues') {
+          return ok(
+            [
+              {
+                environmentvariablevalueid: 'env-value-1',
+                value: 'https://api.example.test',
+                _environmentvariabledefinitionid_value: 'env-1',
+                statecode: 0,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+      create: async () =>
+        ok(
+          {
+            status: 204,
+            headers: {},
+            entityId: 'flow-created-draft-1',
+            entity: {
+              workflowid: 'flow-created-draft-1',
+              name: 'Invoice Flow',
+              uniquename: 'crd_InvoiceFlow',
+              category: 5,
+              statecode: 0,
+              statuscode: 1,
+            },
+          },
+          {
+            supportTier: 'preview',
+          }
+        ),
+    } as unknown as DataverseClient;
+    const service = new FlowService(client);
+
+    const result = await service.deployArtifact('fixtures/flow/raw/invoice-flow.raw.json', {
+      solutionUniqueName: 'Core',
+      createIfMissing: true,
+      workflowState: 'draft',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.target).toMatchObject({
+      uniqueName: 'crd_InvoiceFlow',
+      workflowState: 'draft',
+      stateCode: 0,
+      statusCode: 1,
+      solutionUniqueName: 'Core',
+    });
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'FLOW_DEPLOY_TARGET_NOT_RUNNABLE',
+        detail: 'crd_InvoiceFlow state=draft (statecode=0, statuscode=1)',
+      })
+    );
+    expect(result.suggestedNextActions).toContain(
+      'Run `pp flow activate crd_InvoiceFlow --environment <alias> --solution Core --format json` for one bounded in-place activation attempt when this workflow should already be runnable.'
+    );
+    expect(result.suggestedNextActions).toContain(
+      'Run `pp solution sync-status Core --environment <alias> --format json` to confirm whether this draft workflow is still blocking solution export readiness.'
+    );
+  });
+
+  it('adds the nested properties.definition mirror when create-if-missing provisions from a canonical artifact', async () => {
+    const creates: Array<Record<string, unknown>> = [];
+    const client = {
+      ...createStubDataverseClient(),
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows' || options.table === 'solutioncomponents') {
+          return ok([] as T[], {
+            supportTier: 'preview',
+          });
+        }
+
+        return createStubDataverseClient().queryAll(options);
+      },
+      create: async (_table: string, entity: Record<string, unknown>) => {
+        creates.push(entity);
+        return ok(
+          {
+            status: 204,
+            headers: {},
+            entityId: 'created-canonical-flow',
+            entity: {
+              ...entity,
+              workflowid: 'created-canonical-flow',
+              uniquename: 'crd_CanonicalOnlyFlow',
+            },
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await new FlowService(client).deployArtifact('fixtures/flow/raw/invoice-flow.raw.json', {
+      createIfMissing: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(creates).toHaveLength(1);
+    expect(JSON.parse(String(creates[0]?.clientdata))).toMatchObject({
+      definition: expect.objectContaining({
+        actions: expect.any(Object),
+      }),
+      properties: {
+        definition: expect.objectContaining({
+          actions: expect.any(Object),
+        }),
+      },
     });
   });
 
@@ -1263,14 +1455,17 @@ describe('FlowService', () => {
       id: 'flow-1',
       solutionUniqueName: undefined,
       entity: {
+        clientdata: expect.any(String),
         statecode: 1,
         statuscode: 2,
       },
     });
     expect(JSON.parse(String(updates[0]?.entity.clientdata))).toMatchObject({
-      definition: expect.objectContaining({
-        actions: expect.any(Object),
-      }),
+      properties: {
+        definition: expect.objectContaining({
+          actions: expect.any(Object),
+        }),
+      },
     });
   });
 
@@ -1454,6 +1649,12 @@ describe('FlowService', () => {
     expect(result.knownLimitations).toContain(
       'In-place activation for some Dataverse Modern Flow records is not yet supported through the current workflows PATCH path because the platform expects a full definition payload.'
     );
+    expect(result.knownLimitations).toContain(
+      'When Dataverse rejects the activation payload because the flow definition shape is incompatible with the workflows PATCH path, repeating `pp flow activate crd_InvoiceSync --environment <alias> --format json` without changing the activation path is unlikely to succeed.'
+    );
+    expect(result.knownLimitations).toContain(
+      'If `pp flow activate` and `pp flow deploy --workflow-state activated` both hit `FLOW_ACTIVATE_DEFINITION_REQUIRED`, pp does not currently have another native activation path for that draft modern flow.'
+    );
   });
 
   it('includes the normalized definition payload when activating a remote flow in place', async () => {
@@ -1621,7 +1822,7 @@ describe('FlowService', () => {
     expect(JSON.parse(String(updates[0]?.clientdata))).not.toHaveProperty('definition');
   });
 
-  it('uses a state-only payload for the dedicated remote activation entrypoint', async () => {
+  it('prefers a normalized clientdata payload for the dedicated remote activation entrypoint', async () => {
     const updates: Array<Record<string, unknown>> = [];
     const client = {
       ...createStubDataverseClient(),
@@ -1646,6 +1847,136 @@ describe('FlowService', () => {
 
     expect(result.success).toBe(true);
     expect(updates).toEqual([
+      {
+        clientdata: expect.any(String),
+        statecode: 1,
+        statuscode: 2,
+      },
+    ]);
+    expect(JSON.parse(String(updates[0]?.clientdata))).toMatchObject({
+      properties: {
+        definition: expect.objectContaining({
+          actions: expect.any(Object),
+        }),
+      },
+    });
+  });
+
+  it('retries activation with a top-level definition mirror when Dataverse rejects properties.definition-only clientdata', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const client = {
+      ...createStubDataverseClient(),
+      update: async (_table: string, _id: string, entity: Record<string, unknown>) => {
+        updates.push(entity);
+        if (updates.length === 1) {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'PATCH workflows(flow-1) returned 400',
+                detail: JSON.stringify({
+                  error: {
+                    code: 'DefinitionRequestMissingFields',
+                    message: "The definition request is missing required field 'definition'. ",
+                  },
+                }),
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await activateRemoteFlow('Invoice Sync', {
+      dataverseClient: client,
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(updates).toHaveLength(2);
+    expect(JSON.parse(String(updates[0]?.clientdata))).not.toHaveProperty('definition');
+    expect(JSON.parse(String(updates[1]?.clientdata))).toMatchObject({
+      definition: expect.objectContaining({
+        actions: expect.any(Object),
+      }),
+      properties: {
+        definition: expect.objectContaining({
+          actions: expect.any(Object),
+        }),
+      },
+    });
+  });
+
+  it('retries activation with a state-only payload when Dataverse still rejects definition-bearing payloads', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const client = {
+      ...createStubDataverseClient(),
+      update: async (_table: string, _id: string, entity: Record<string, unknown>) => {
+        updates.push(entity);
+        if ('clientdata' in entity) {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'PATCH workflows(flow-1) returned 400',
+                detail: JSON.stringify({
+                  error: {
+                    code: 'DefinitionRequestMissingFields',
+                    message: "The definition request is missing required field 'definition'. ",
+                  },
+                }),
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await activateRemoteFlow('Invoice Sync', {
+      dataverseClient: client,
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(updates).toEqual([
+      {
+        clientdata: expect.any(String),
+        statecode: 1,
+        statuscode: 2,
+      },
+      {
+        clientdata: expect.any(String),
+        statecode: 1,
+        statuscode: 2,
+      },
       {
         statecode: 1,
         statuscode: 2,
@@ -1698,6 +2029,208 @@ describe('FlowService', () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.target.workflowState).toBe('activated');
+  });
+
+  it('activates a remote flow when Dataverse only accepts a statecode-only activation payload', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const client = {
+      ...createStubDataverseClient(),
+      update: async (_table: string, _id: string, entity: Record<string, unknown>) => {
+        updates.push(entity);
+        if ('clientdata' in entity) {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'PATCH workflows(target-flow-1) returned 400',
+                detail: JSON.stringify({
+                  error: {
+                    code: '0x80048d19',
+                    message:
+                      "Error identified in Payload provided by the user for Entity :'', For more information on this error please follow this help link https://go.microsoft.com/fwlink/?linkid=2195293  ---->  InnerException : Microsoft.OData.ODataException: An unexpected 'StartObject' node was found for property named 'definition' when reading from the JSON reader. A 'PrimitiveValue' node was expected.",
+                  },
+                }),
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        if ('statuscode' in entity) {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'PATCH workflows(target-flow-1) returned 400',
+                detail: JSON.stringify({
+                  error: {
+                    code: '0x80040216',
+                    message: 'statuscode cannot be updated alongside this workflow state transition.',
+                  },
+                }),
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+
+    const result = await activateRemoteFlow('Invoice Sync', {
+      dataverseClient: client,
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(updates).toEqual([
+      {
+        clientdata: expect.any(String),
+        statecode: 1,
+        statuscode: 2,
+      },
+      {
+        statecode: 1,
+        statuscode: 2,
+      },
+      {
+        statecode: 1,
+      },
+    ]);
+  });
+
+  it('retries deploy update with activation fallbacks when an activated workflow hits definition-required errors', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const baseClient = createStubDataverseClient();
+    const client = {
+      ...baseClient,
+      queryAll: async <T>(options: { table: string }): Promise<OperationResult<T[]>> => {
+        if (options.table === 'workflows') {
+          return ok(
+            [
+              {
+                workflowid: 'flow-1',
+                name: 'Invoice Flow',
+                description: 'Synchronize invoice payloads to downstream systems.',
+                uniquename: 'crd_InvoiceFlow',
+                category: 5,
+                statecode: 0,
+                statuscode: 1,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        if (options.table === 'solutioncomponents') {
+          return ok(
+            [
+              {
+                solutioncomponentid: 'comp-1',
+                objectid: 'flow-1',
+                componenttype: 29,
+              },
+              {
+                solutioncomponentid: 'comp-2',
+                objectid: 'ref-1',
+                componenttype: 371,
+              },
+              {
+                solutioncomponentid: 'comp-3',
+                objectid: 'env-1',
+                componenttype: 380,
+              },
+            ] as T[],
+            {
+              supportTier: 'preview',
+            }
+          );
+        }
+
+        return baseClient.queryAll(options);
+      },
+      update: async (_table: string, _id: string, entity: Record<string, unknown>) => {
+        updates.push(entity);
+        if ('clientdata' in entity) {
+          return {
+            success: false,
+            diagnostics: [
+              {
+                level: 'error',
+                code: 'HTTP_REQUEST_FAILED',
+                message: 'PATCH workflows(flow-1) returned 400',
+                detail: JSON.stringify({
+                  error: {
+                    code: 'DefinitionRequestMissingFields',
+                    message: "The definition request is missing required field 'definition'. ",
+                  },
+                }),
+              },
+            ],
+            warnings: [],
+            supportTier: 'preview',
+          } as OperationResult<never>;
+        }
+
+        return ok(
+          {
+            status: 204,
+            headers: {},
+          },
+          {
+            supportTier: 'preview',
+          }
+        );
+      },
+    } as unknown as DataverseClient;
+    const service = new FlowService(client);
+
+    const result = await service.deployArtifact('fixtures/flow/raw/invoice-flow.raw.json', {
+      solutionUniqueName: 'Core',
+      workflowState: 'activated',
+    });
+
+    expect(result.success).toBe(true);
+    expect(updates).toEqual([
+      {
+        clientdata: expect.any(String),
+        name: 'Invoice Flow',
+        description: 'Synchronize invoice payloads to downstream systems.',
+        category: 5,
+        type: 1,
+        mode: 0,
+        ondemand: false,
+        primaryentity: 'none',
+        statecode: 1,
+        statuscode: 2,
+      },
+      {
+        clientdata: expect.any(String),
+        statecode: 1,
+        statuscode: 2,
+      },
+      {
+        statecode: 1,
+        statuscode: 2,
+      },
+    ]);
   });
 
   it('blocks artifact-mode promotion when the resolved target has a different unique name', async () => {
