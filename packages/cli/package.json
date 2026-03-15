@@ -32,10 +32,16 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --clean",
+    "build:standalone": "tsup --config tsup.config.standalone.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "prepare": "pnpm build",
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/index.ts"
+  },
+  "pkg": {
+    "scripts": "dist-standalone/index.cjs",
+    "assets": [],
+    "outputPath": "dist-bin"
   },
   "dependencies": {
     "@pp/analysis": "workspace:*",
