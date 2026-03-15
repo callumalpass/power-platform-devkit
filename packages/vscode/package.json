@@ -1,0 +1,60 @@
+{
+  "name": "vscode-pp",
+  "version": "0.1.0",
+  "private": true,
+  "displayName": "Power Platform (pp)",
+  "description": "VS Code extension for Power Platform development with canvas language features, environments, and solutions.",
+  "publisher": "pp",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:pp.config.*",
+    "workspaceContains:**/Src/*.pa.yaml",
+    "workspaceContains:**/flow.json"
+  ],
+  "contributes": {
+    "commands": [
+      { "command": "pp.canvas.lint", "title": "Power Platform: Lint Canvas App" },
+      { "command": "pp.canvas.validate", "title": "Power Platform: Validate Canvas App" },
+      { "command": "pp.canvas.build", "title": "Power Platform: Build Canvas App" },
+      { "command": "pp.environments.refresh", "title": "Power Platform: Refresh Environments" }
+    ],
+    "views": {
+      "explorer": [
+        { "id": "pp.environments", "name": "Power Platform" }
+      ]
+    },
+    "languages": [
+      {
+        "id": "powerapps-yaml",
+        "aliases": ["Power Apps YAML", "pa-yaml"],
+        "extensions": [".pa.yaml"]
+      },
+      {
+        "id": "pp-flow",
+        "aliases": ["Power Automate Flow"],
+        "filenames": ["flow.json"]
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsup --config tsup.config.ts",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pp/canvas": "workspace:*",
+    "@pp/config": "workspace:*",
+    "@pp/auth": "workspace:*",
+    "@pp/diagnostics": "workspace:*",
+    "@pp/flow-language-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.2"
+  }
+}

@@ -1,5 +1,7 @@
 # Project config
 
+This guide explains how to make a repo legible to `pp`.
+
 `pp` discovers project configuration from the nearest:
 
 - `pp.config.json`
@@ -7,6 +9,90 @@
 - `pp.config.yml`
 
 If no config file is found, the project commands still run, but they fall back to defaults and emit a warning.
+
+If you only need the shortest working path, use:
+
+```bash
+pp project init --name demo --env dev --solution Core
+pp project doctor
+pp project inspect
+```
+
+Use the rest of this guide when you need stages, parameters, provider bindings,
+or deeper control over the repo contract.
+
+## What `pp.config.*` is for
+
+The local project file gives `pp` a shared understanding of:
+
+- which environment and solution aliases are the default
+- where app, flow, solution, and docs assets live
+- which parameters must resolve before deploy or analysis can proceed
+- how stage-specific overrides should change those defaults
+- which adjacent systems should be addressable through named provider bindings
+
+Without that shared contract, `pp` can still run many commands, but the project
+analysis and deploy workflows become much less useful.
+
+## Common jobs
+
+Most users only need one of these starting paths:
+
+### Start a new repo model quickly
+
+```bash
+pp project init --name demo --env dev --solution Core
+pp project doctor
+pp project inspect
+```
+
+### Validate an existing repo
+
+```bash
+pp project doctor
+pp project feedback
+pp analysis report
+```
+
+### Add stage-aware deploy targets
+
+```bash
+pp project inspect --stage prod
+pp analysis context --stage prod
+pp deploy plan --stage prod
+```
+
+## Minimal working config
+
+This is the smallest useful config for most repos:
+
+```yaml
+name: demo
+defaults:
+  environment: dev
+  solution: Core
+assets:
+  apps: apps
+  flows: flows
+  solutions: solutions
+providerBindings:
+  primaryDataverse:
+    kind: dataverse
+    target: dev
+```
+
+Add parameters, topology, and provider metadata only when the repo actually
+needs them.
+
+## Recommended reading path in this guide
+
+- stop after [Init and doctor](#init-and-doctor) if you only need a minimal local project
+- read [Shape](#shape) when you need to hand-edit `pp.config.yaml`
+- read [Parameter resolution](#parameter-resolution) and
+  [Topology and stage overrides](#topology-and-stage-overrides) before using
+  `deploy plan` seriously
+- read [Provider bindings](#provider-bindings) when the repo needs SharePoint,
+  Power BI, or other named external targets
 
 ## Init and doctor
 

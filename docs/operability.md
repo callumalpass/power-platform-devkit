@@ -3,6 +3,16 @@
 This guide covers installation, command discovery, diagnostics, packaging, and
 large-repo usage for `pp`.
 
+If you only need a quick operational check:
+
+```bash
+pnpm install
+pp version --format raw
+pp diagnostics doctor
+```
+
+For actual day-to-day product use, read [quickstart.md](quickstart.md) first.
+
 ## Install and package
 
 From source:

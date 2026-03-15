@@ -1,8 +1,34 @@
 # Model-driven apps
 
-The current model module is read-first and Dataverse-backed. It turns
-model-driven apps from opaque solution components into inspectable composition
-objects.
+Model-driven app support in `pp` is Dataverse-backed and useful today for
+inspection, dependency tracing, and a small amount of app record authoring.
+
+It turns model-driven apps from opaque solution components into inspectable
+composition objects.
+
+## Common jobs
+
+Most users come here for one of these jobs:
+
+1. inspect a model-driven app and its composition
+2. inspect sitemap, forms, views, and dependencies
+3. create an app record or attach one to a solution
+
+Use these command paths first:
+
+```bash
+pp model list --env dev
+pp model inspect SalesHub --env dev
+pp model sitemap SalesHub --env dev
+pp model dependencies SalesHub --env dev
+```
+
+If you need authoring:
+
+```bash
+pp model create SalesHub --env dev --name "Sales Hub" --solution Core
+pp model attach SalesHub --env dev --solution Core
+```
 
 ## Commands
 
@@ -61,20 +87,20 @@ warning that the composition is inferred rather than direct membership.
 This keeps the domain language model-focused instead of leaking raw Dataverse
 table names into normal use.
 
-## Current boundary
+## What model support includes today
 
-This tranche now includes a bounded authoring slice for model-driven app
-records themselves:
+Model support includes app-record authoring for:
 
 - solution-aware app creation through `model create`
 - supported solution attachment through `model attach`
 
-It still does not yet claim write support for:
+It does not include:
 
 - sitemap mutation
 - form or view authoring
 - model-driven packaging or deploy orchestration
 
-The goal remains composition visibility and dependency tracing first, with a
-small supported create/attach workflow so callers do not have to drop to raw
-Dataverse appmodule writes.
+That is a deliberate scope choice, not a statement that the whole module is
+fragile. The main value here is composition visibility and dependency tracing,
+with create/attach support so callers do not have to drop to raw Dataverse
+`appmodule` writes for the basic app record lifecycle.

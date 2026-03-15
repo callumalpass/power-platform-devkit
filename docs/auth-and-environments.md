@@ -1,11 +1,25 @@
 # Auth and environments
 
+This guide covers the first thing most `pp` users need to get right:
+authentication and environment targeting.
+
 `pp` separates authentication from environment aliases.
 
 - auth profile: how to acquire a token
 - environment alias: which Dataverse URL to use, and which auth profile should be applied there
 
 That split makes it practical to manage several users, several service principals, and several environments in one local config store.
+
+If you only need the shortest working path, use:
+
+```bash
+pp auth login --name dev-user --resource https://example.crm.dynamics.com
+pp env add --name dev --url https://example.crm.dynamics.com --profile dev-user
+pp dv whoami --env dev
+```
+
+Use the rest of this guide when you need multiple profile types, browser
+profiles, or isolated config directories.
 
 ## Global config location
 

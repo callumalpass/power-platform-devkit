@@ -321,7 +321,7 @@ export async function runProjectFeedbackCommand(args: string[], deps: ProjectCom
 }
 
 export async function runProjectSolutionPullCommand(args: string[], deps: ProjectCommandDependencies): Promise<number> {
-  const path = deps.resolveInvocationPath(deps.positionalArgs(args)[0]);
+  const path = deps.resolveInvocationPath(readLeadingProjectPathArg(args));
   const format = deps.outputFormat(args, 'json');
   const discoveryOptions = deps.readProjectDiscoveryOptions(args);
 
@@ -501,6 +501,11 @@ function resolveProjectCommandPath(projectRoot: string, path: string): string {
 
 function resolveOptionalProjectCommandPath(projectRoot: string, path: string | undefined): string | undefined {
   return path ? resolveProjectCommandPath(projectRoot, path) : undefined;
+}
+
+function readLeadingProjectPathArg(args: string[]): string | undefined {
+  const candidate = args[0];
+  return candidate && !candidate.startsWith('--') ? candidate : undefined;
 }
 
 function renderProjectInitOutput(

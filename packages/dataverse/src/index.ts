@@ -501,6 +501,7 @@ export interface ConnectionReferenceCreateOptions {
   connectorId?: string;
   customConnectorId?: string;
   solutionUniqueName?: string;
+  allowUnbound?: boolean;
 }
 
 export interface ConnectionReferenceValidationResult {
@@ -2813,8 +2814,25 @@ export class ConnectionReferenceService {
     }
 
     const summaries = (records.data ?? [])
-      .filter((record) => !solutionMembers.data || solutionMembers.data.has(record.connectionreferenceid))
-      .map((record) => normalizeConnectionReference(record, solutionId.data && solutionMembers.data?.has(record.connectionreferenceid) ? solutionId.data : undefined));
+      .filter((record) => {
+        if (!solutionMembers.data) {
+          return true;
+        }
+
+        if (solutionMembers.data.has(record.connectionreferenceid)) {
+          return true;
+        }
+
+        return Boolean(solutionId.data && record._solutionid_value === solutionId.data);
+      })
+      .map((record) =>
+        normalizeConnectionReference(
+          record,
+          solutionId.data && (solutionMembers.data?.has(record.connectionreferenceid) || record._solutionid_value === solutionId.data)
+            ? solutionId.data
+            : undefined
+        )
+      );
     const inferredReferences =
       summaries.length === 0 && solutionId.data && options.solutionUniqueName
         ? await inferFlowEmbeddedConnectionReferences(this.dataverseClient, solutionId.data, options.solutionUniqueName)
@@ -2826,7 +2844,15 @@ export class ConnectionReferenceService {
 
     const combinedSummaries =
       summaries.length === 0 && (inferredReferences.data?.length ?? 0) > 0
-        ? inferredReferences.data!.map((logicalName) => buildInferredConnectionReferenceSummary(logicalName, solutionId.data))
+        ? inferredReferences.data!.map((logicalName) => {
+            const matchedRecord = (records.data ?? []).find(
+              (record) => record.connectionreferencelogicalname?.toLowerCase() === logicalName.toLowerCase()
+            );
+
+            return matchedRecord
+              ? normalizeConnectionReference(matchedRecord, solutionId.data)
+              : buildInferredConnectionReferenceSummary(logicalName, solutionId.data);
+          })
         : summaries;
 
     const warnings = mergeDiagnosticLists(records.warnings, solutionId.warnings, solutionMembers.warnings, inferredReferences.warnings).filter(
@@ -3027,7 +3053,7 @@ export class ConnectionReferenceService {
 
   async create(
     logicalName: string,
-    connectionId: string,
+    connectionId: string | undefined,
     options: ConnectionReferenceCreateOptions = {}
   ): Promise<OperationResult<ConnectionReferenceSummary>> {
     if (!options.connectorId && !options.customConnectorId) {
@@ -3048,7 +3074,7 @@ export class ConnectionReferenceService {
       {
         connectionreferencelogicalname: logicalName,
         connectionreferencedisplayname: options.displayName ?? logicalName,
-        connectionid: connectionId,
+        ...(connectionId !== undefined ? { connectionid: connectionId } : {}),
         ...(options.connectorId ? { connectorid: options.connectorId } : {}),
         ...(options.customConnectorId ? { customconnectorid: options.customConnectorId } : {}),
       },

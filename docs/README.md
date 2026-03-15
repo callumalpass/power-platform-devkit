@@ -1,38 +1,91 @@
-# Documentation
+# `pp` Documentation
 
-This folder documents the parts of `pp` that are implemented and usable today.
+These docs should help you use `pp` to do practical work.
 
-Start here:
+The most important workflows in `pp` today are:
 
-- [Quickstart](quickstart.md): build the repo, sign in, register an environment, and run the first Dataverse commands
-- [Architecture](architecture.md): package layout, ownership boundaries, and how the repo fits together
-- [Supported surfaces](supported-surfaces.md): what is stable, preview, experimental, or intentionally bounded
-- [Operability](operability.md): install/package the CLI, enable shell completion, collect diagnostics bundles, and run `pp` safely in larger repos
-- [Auth and environments](auth-and-environments.md): auth profile types, browser login, device code, and environment aliases
-- [Command contract](command-contract.md): shared output formats, mutation flags, and project-scoped CLI overrides
-- [Safety and provenance](safety-and-provenance.md): result metadata expectations, mutation safety rules, and `.ops` task-path conventions
-- [Skills](skills.md): portable agent-skill packaging and the canonical `pp-development` skill layout
-- [Project config](project-config.md): `pp.config.*` structure, parameter resolution, and local analysis commands
-- [Extensions](extensions.md): extension contract, registry policy, compatibility rules, and contribution surfaces
-- [Deploy](deploy.md): deploy plan/apply orchestration, supported mappings, and adapter behavior
-- [Deploy examples](examples/deploy/github-actions-deploy.yml): concrete GitHub Actions, Azure DevOps, and Power Platform Pipelines wrapper templates under `docs/examples/deploy/`
-- [Dataverse and solutions](dataverse-and-solutions.md): `dv` and `solution` commands, query options, and environment setup
-- [Canvas registries](canvas.md): template registry schema, provenance rules, support matrix resolution, and project wiring
-- [Canvas harvesting](canvas-harvesting.md): manual TEST-environment refresh workflow for pinned canvas registries
-- [Flow artifacts](flow.md): remote flow discovery plus unpack/normalize/validate/patch workflows for canonical `flow.json` artifacts
-- [Model-driven apps](model.md): model app composition inspection for sitemaps, forms, views, tables, and dependency tracing
-- [Testing](testing.md): fixture-backed golden lanes, refresh commands, and the manual live smoke path
+- signing in and managing environment aliases
+- inspecting Dataverse and solutions
+- modeling a repo with `pp.config.yaml`
+- planning and applying controlled deploys
 
-Suggested reading order for new contributors:
+The docs below are organized around those jobs first. Architecture, extension
+mechanics, and long-term product spec material are still available, but they
+are reference material, not the starting point.
 
-1. [Quickstart](quickstart.md)
-2. [Architecture](architecture.md)
-3. [Supported surfaces](supported-surfaces.md)
-4. [Project config](project-config.md)
-5. The domain doc for the workflow you are changing
+## Start here
 
-The docs intentionally describe the current implemented surface, not the full long-term architecture in the external spec.
+If you are new to `pp`, read these in order:
 
-Additional planning docs:
+1. [Quickstart](quickstart.md): first successful session from repo checkout to
+   `pp project doctor`, `pp dv whoami`, and `pp solution inspect`
+2. [Auth and environments](auth-and-environments.md): how sign-in works, how
+   to save profiles, and how aliases map commands to Dataverse environments
+3. [Dataverse and solutions](dataverse-and-solutions.md): the core remote
+   workflow in `pp`
+4. [Project config](project-config.md): how to model a repo so analysis and
+   deploy commands share the same contract
+5. [Deploy](deploy.md): how to preview and apply supported deploy operations
 
-- [Engineering toolkit spec copy](specs/power_platform_cli_spec.md): repo-local copy of the long-term architecture and product spec imported from `../pp-demos`
+## Common tasks
+
+Use these guides when you already know the job you need to do:
+
+- [Set up auth and environment aliases](auth-and-environments.md)
+- [Inspect Dataverse tables, rows, and metadata](dataverse-and-solutions.md)
+- [Create, inspect, and export solutions](dataverse-and-solutions.md)
+- [Initialize a repo with `pp.config.yaml`](project-config.md)
+- [Run project diagnostics and analysis](project-config.md)
+- [Plan and apply a deployment](deploy.md)
+- [Install the CLI, package it, and collect diagnostics](operability.md)
+
+## Product boundaries
+
+Read these when you need to understand what is recommended, what is specialized,
+and what is still incomplete:
+
+- [Supported surfaces](supported-surfaces.md): adoption guidance and current
+  limitations
+- [Safety and provenance](safety-and-provenance.md): mutation safety,
+  structured result metadata, and provenance expectations
+- [Command contract](command-contract.md): output formats and shared command
+  behavior
+
+## Domain guides
+
+These are useful after you know the core workflow you want:
+
+- [Canvas](canvas.md): offline inspection, validation, build, diff, workspace
+  inspection, and registry-backed authoring
+- [Canvas harvesting](canvas-harvesting.md): how pinned canvas registries are
+  refreshed from a controlled environment
+- [Flow](flow.md): remote inspection plus local `flow.json` normalize,
+  validate, patch, pack, deploy, and promote workflows
+- [Model-driven apps](model.md): model app inspection and create/attach authoring
+
+## Contributor and platform reference
+
+These are important, but they are not the best first read for a new operator:
+
+- [Architecture](architecture.md): package ownership, layering, and repo shape
+- [Extensions](extensions.md): extension contract, trust policy, and
+  contribution model
+- [MCP](mcp.md): MCP server surface and current tool boundaries
+- [Operability](operability.md): packaging, shell completion, diagnostics, and
+  large-repo usage
+- [Testing](testing.md): fixture refresh and live validation lanes
+- [Skills](skills.md): skill packaging conventions used in this repo
+
+## Planning and spec material
+
+The main docs focus on the implemented surface. Longer-term spec material lives
+separately:
+
+- [Engineering toolkit spec copy](specs/power_platform_cli_spec.md)
+
+## What to expect from these docs
+
+- The docs should tell you what `pp` is good at today.
+- They should prefer task-oriented usage over package inventory.
+- They should be explicit about real limitations.
+- They should treat roadmap or long-term architecture as secondary material.

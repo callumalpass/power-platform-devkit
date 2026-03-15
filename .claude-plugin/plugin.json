@@ -1,0 +1,6 @@
+{
+  "name": "pp-development",
+  "version": "1.0.0",
+  "description": "Agent skills for Power Platform development with the pp CLI — Dataverse, solutions, flows, canvas apps, deploy orchestration, and project management.",
+  "keywords": ["power-platform", "dataverse", "pp", "power-automate", "canvas-apps", "solutions"]
+}

@@ -299,6 +299,52 @@ describe('FlowService', () => {
     });
   });
 
+  it('attaches an existing flow to a solution through AddSolutionComponent', async () => {
+    const invokeAction = vi.fn(async () =>
+      ok(
+        {
+          status: 200,
+          headers: {},
+          body: {},
+        },
+        {
+          supportTier: 'preview',
+        }
+      )
+    );
+    const client = {
+      ...createStubDataverseClient(),
+      invokeAction,
+    } as unknown as DataverseClient;
+    const service = new FlowService(client);
+
+    const result = await service.attach('Invoice Sync', 'Core');
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      attached: true,
+      solutionUniqueName: 'Core',
+      addRequiredComponents: true,
+      flow: {
+        id: 'flow-1',
+        name: 'Invoice Sync',
+        uniqueName: 'crd_InvoiceSync',
+      },
+    });
+    expect(invokeAction).toHaveBeenCalledWith(
+      'AddSolutionComponent',
+      {
+        ComponentId: 'flow-1',
+        ComponentType: 29,
+        SolutionUniqueName: 'Core',
+        AddRequiredComponents: true,
+      },
+      {
+        solutionUniqueName: 'Core',
+      }
+    );
+  });
+
   it('exports a remote flow when the live definition is nested under clientData.properties.definition', async () => {
     const tempDir = await createTempDir();
     const outPath = join(tempDir, 'remote-flow-nested');
@@ -1723,6 +1769,7 @@ describe('FlowService', () => {
     });
     expect(updates[0]).not.toHaveProperty('definition');
     expect(JSON.parse(String(updates[0]?.clientdata))).toMatchObject({
+      schemaVersion: '1.0.0.0',
       properties: {
         definition: {
           actions: {
@@ -1806,7 +1853,7 @@ describe('FlowService', () => {
     });
     expect(updates[0]).not.toHaveProperty('definition');
     expect(JSON.parse(String(updates[0]?.clientdata))).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: '1.0.0.0',
       properties: {
         definition: {
           actions: {
@@ -1854,12 +1901,14 @@ describe('FlowService', () => {
       },
     ]);
     expect(JSON.parse(String(updates[0]?.clientdata))).toMatchObject({
+      schemaVersion: '1.0.0.0',
       properties: {
         definition: expect.objectContaining({
           actions: expect.any(Object),
         }),
       },
     });
+    expect(JSON.parse(String(updates[0]?.clientdata)).properties.definition.parameters.$connections).not.toHaveProperty('value');
   });
 
   it('retries activation with a top-level definition mirror when Dataverse rejects properties.definition-only clientdata', async () => {

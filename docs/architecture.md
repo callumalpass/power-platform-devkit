@@ -1,77 +1,93 @@
 # Architecture
 
-`pp` is a package-first monorepo. The CLI is the main shipped interface, but it
-mostly coordinates narrower workspace packages with explicit contracts rather
-than owning all behavior directly.
+This guide is for contributors who need to understand where behavior belongs in
+the repo. It is not the best starting point for learning how to use `pp`.
+
+If you are trying to get work done with the CLI, start with:
+
+- [quickstart.md](quickstart.md)
+- [dataverse-and-solutions.md](dataverse-and-solutions.md)
+- [project-config.md](project-config.md)
+- [deploy.md](deploy.md)
 
 ## Mental model
 
-The repository has four practical layers:
+`pp` is a package-first monorepo. The CLI is the main shipped interface, but
+most behavior lives in narrower workspace packages with explicit contracts.
 
-1. Core infrastructure and contracts
-2. Domain packages for Power Platform and adjacent providers
-3. Local project analysis and deploy orchestration
-4. Interfaces such as the CLI, MCP server, and CI adapters
+The practical layers are:
 
-That split matters because most user-facing commands are thin compositions of
-the same lower-level services. If you understand which package owns which
-contract, the repo stops feeling larger than it is.
+1. core infrastructure and shared contracts
+2. domain packages for Power Platform and adjacent providers
+3. local project analysis and deploy orchestration
+4. interface layers such as the CLI, MCP server, and CI adapters
+
+That split matters because most user-facing commands are compositions of the
+same underlying services.
 
 ## Package map
 
 Core packages:
 
 - `@pp/auth`: auth profiles, browser-profile management, token acquisition
-- `@pp/config`: persisted config store for auth profiles and environment aliases
-- `@pp/diagnostics`: `OperationResult`, diagnostics, failure/warning helpers
-- `@pp/http`: shared HTTP client helpers
-- `@pp/artifacts`: stable JSON/YAML file IO and artifact helpers
+- `@pp/config`: persisted config for auth profiles and environment aliases
+- `@pp/diagnostics`: `OperationResult`, diagnostics, and failure helpers
+- `@pp/http`: shared HTTP helpers
+- `@pp/artifacts`: stable JSON and YAML artifact IO
 
 Project and orchestration packages:
 
-- `@pp/project`: `pp.config.*` discovery, init, doctor, topology, parameter resolution, provider binding resolution
-- `@pp/analysis`: human and machine-readable project analysis outputs
-- `@pp/deploy`: deploy plan/apply/release orchestration and adapter-facing bindings
-- `@pp/extensions`: extension manifest, registry, compatibility, and trust policy
+- `@pp/project`: `pp.config.*` discovery, init, doctor, topology, parameters,
+  and provider bindings
+- `@pp/analysis`: human and machine-readable project analysis
+- `@pp/deploy`: deploy plan/apply/release orchestration
+- `@pp/extensions`: extension manifest, registry, compatibility, and trust
+  policy
 
 Primary domain packages:
 
-- `@pp/dataverse`: Dataverse client resolution, rows, metadata, connection references, environment variables
-- `@pp/solution`: solution lifecycle, analysis, compare, pack/unpack, import/export
-- `@pp/canvas`: template registries, offline validation/build, diff, LSP, harvesting helpers
-- `@pp/flow`: flow discovery, runtime inspection, normalized local artifact lifecycle, graph and patch helpers
-- `@pp/model`: model-driven app composition and dependency inspection
+- `@pp/dataverse`: Dataverse client resolution, rows, metadata, connection
+  references, and environment variables
+- `@pp/solution`: solution lifecycle, analysis, compare, pack/unpack,
+  import/export
+- `@pp/canvas`: template registries, offline validation/build, diff, LSP, and
+  harvesting helpers
+- `@pp/flow`: flow discovery, runtime inspection, artifact lifecycle, graph,
+  and patch helpers
+- `@pp/model`: model-driven app inspection and dependency tracing
 
 Adjacent provider packages:
 
-- `@pp/sharepoint`: targeted SharePoint inspection surfaces
-- `@pp/powerbi`: targeted Power BI inspection surfaces
+- `@pp/sharepoint`
+- `@pp/powerbi`
 
 Interface and adapter packages:
 
-- `@pp/cli`: `pp` command router and output contract
-- `@pp/mcp`: MCP server entrypoint and tool wiring
+- `@pp/cli`
+- `@pp/mcp`
 - `@pp/adapter-github-actions`
 - `@pp/adapter-azure-devops`
 - `@pp/adapter-power-platform-pipelines`
 
 ## Runtime flow
 
-For a typical CLI command, the path is:
+For a typical CLI command:
 
-1. `@pp/cli` parses argv and output/mutation flags.
-2. It resolves local config or project context through `@pp/config` and `@pp/project`.
-3. It calls a domain package such as `@pp/dataverse`, `@pp/solution`, `@pp/flow`, or `@pp/canvas`.
-4. The result is normalized through `@pp/diagnostics` and rendered with the shared command contract.
+1. `@pp/cli` parses argv and shared output flags.
+2. It resolves config or project state through `@pp/config` and `@pp/project`.
+3. It calls a domain package such as `@pp/dataverse`, `@pp/solution`, or
+   `@pp/flow`.
+4. The result is normalized through `@pp/diagnostics` and rendered through the
+   shared command contract.
 
 For local-only commands such as `project inspect`, `analysis report`, or
-`deploy plan`, the path often stops at `@pp/project`, `@pp/analysis`, and
+`deploy plan`, the path often stops in `@pp/project`, `@pp/analysis`, and
 `@pp/deploy` without touching a live environment.
 
 ## Repo-local project model
 
-`pp` is designed around a repo-local project contract rather than a loose
-collection of independent scripts.
+The repo is organized around a local project contract rather than a loose set
+of scripts.
 
 That project model gives the rest of the stack:
 
@@ -82,34 +98,17 @@ That project model gives the rest of the stack:
 - provider bindings for adjacent systems
 - known asset roots such as `apps/`, `flows/`, `solutions/`, and `docs/`
 
-This is why commands like `project inspect`, `analysis context`, and
-`deploy apply` share language and data instead of each inventing their own
-config format.
+This is why commands such as `project inspect`, `analysis context`, and
+`deploy apply` can share the same language and data.
 
-## Artifact-first domains
+## What matters most in practice
 
-Two domains lean heavily on local canonical artifacts:
+- The strongest current slices are auth/config, Dataverse inspection and
+  metadata authoring, solution lifecycle, project analysis, and deploy
+  planning/apply.
+- Canvas, flow runtime, SharePoint, Power BI, MCP, and extensions are real
+  surfaces, but some are more specialized or still incomplete in parts.
 
-- canvas: pinned template registries plus offline source roots and native `.msapp` packaging
-- flow: canonical `pp.flow.artifact` JSON for normalize, validate, patch, graph, deploy, and promote
-
-This keeps repo workflows deterministic and reviewable. Live environment APIs
-still matter, but they are not the only source of truth for every operation.
-
-## Support boundary
-
-Not every package is equally mature.
-
-- The most production-ready slices are auth/config, Dataverse reads and metadata authoring, solution lifecycle workflows, local project analysis, deploy planning/apply, and the shared CLI contract.
-- Canvas, flow runtime, SharePoint, Power BI, MCP, and extensions are real implemented surfaces, but some areas remain intentionally preview, bounded, or read-first.
-
-Use [supported-surfaces.md](supported-surfaces.md) as the current product
-boundary document.
-
-## Where to go next
-
-- setup and first-run: [quickstart.md](quickstart.md)
-- auth and aliases: [auth-and-environments.md](auth-and-environments.md)
-- project model: [project-config.md](project-config.md)
-- deploy orchestration: [deploy.md](deploy.md)
-- support tiers: [supported-surfaces.md](supported-surfaces.md)
+Use [supported-surfaces.md](supported-surfaces.md) for product adoption
+guidance. Use this architecture guide only when you need to place new code or
+reason about ownership boundaries.

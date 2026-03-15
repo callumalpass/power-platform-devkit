@@ -421,7 +421,7 @@ export function printConnectionReferenceHelp(): void {
       'Usage: connref <command> [options]',
       '',
       'Commands:',
-      '  create <logicalName>        create one connection reference with connector metadata and a bound connection id',
+      '  create <logicalName>        create one connection reference with connector metadata and an optional bound connection id',
       '  list                        list connection references',
       '  inspect <identifier>        inspect one connection reference by logical name, display name, or id',
       '  set <identifier>            update the bound connection id for one connection reference',
@@ -445,14 +445,16 @@ export function printConnectionReferenceHelp(): void {
 export function printConnectionReferenceCreateHelp(): void {
   process.stdout.write(
     [
-      'Usage: connref create <logicalName> --environment ALIAS --connection-id CONNECTION_ID [--display-name NAME] [--connector-id CONNECTOR_ID] [--custom-connector-id CONNECTOR_ID] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
+      'Usage: connref create <logicalName> --environment ALIAS [--connection-id CONNECTION_ID] [--allow-unbound] [--display-name NAME] [--connector-id CONNECTOR_ID] [--custom-connector-id CONNECTOR_ID] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]',
       '',
       'Behavior:',
       '  - Creates one connection reference in the target environment or solution scope.',
       '  - Requires either `--connector-id` or `--custom-connector-id` so the created reference preserves connector metadata.',
+      '  - Pass `--allow-unbound` when you want to create the row first and bind a connection later with `pp connref set`.',
       '',
       'Examples:',
       '  pp connref create pp_shared_sql --environment dev --solution Core --connector-id /providers/Microsoft.PowerApps/apis/shared_sql --connection-id /providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-123',
+      '  pp connref create pp_dataverse --environment dev --solution Core --connector-id /providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps --allow-unbound --format json',
       '  pp connref create pp_shared_custom --environment dev --custom-connector-id custom-connector-guid --connection-id /providers/Microsoft.PowerApps/apis/shared_customapi/connections/shared-custom-123 --no-interactive-auth --format json',
       '',
       'Remote auth option:',
@@ -947,6 +949,7 @@ export function printFlowHelp(): void {
       'Commands:',
       '  list                        list remote flows',
       '  inspect <name|id|...>       inspect a remote flow or a local artifact',
+      '  attach <name|id|...>        attach an existing remote flow to a solution',
       '  export <name|id|...>        export a remote flow artifact',
       '  activate <name|id|...>      activate a remote flow in place',
       '  promote <name|id|...>       move a flow between environments',
@@ -963,6 +966,7 @@ export function printFlowHelp(): void {
       '  connrefs <name|id|...>      inspect connection references used by a flow',
       '  doctor <name|id|...>        summarize remote runtime health and dependencies',
       '  access <name|id|...>        inspect ownership and explicit share state',
+      '  lsp                         start the flow language server over stdio',
       '',
       'How to think about it:',
       '  - Use remote commands when the flow already exists in an environment and you need lifecycle or runtime insight.',
@@ -1017,6 +1021,28 @@ export function printFlowInspectHelp(): void {
       'Examples:',
       '  pp flow inspect ./flows/invoice/flow.json',
       '  pp flow inspect InvoiceSync --environment dev --solution Core --no-interactive-auth --format json',
+      '',
+      'Auth behavior:',
+      '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printFlowAttachHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow attach <name|id|uniqueName> --environment ALIAS --solution UNIQUE_NAME [--no-add-required-components] [--no-interactive-auth] [options]',
+      '',
+      'Behavior:',
+      '  - Attaches an existing remote flow to a solution through Dataverse AddSolutionComponent.',
+      '  - Use this when the workflow already exists outside the solution and you want to package it instead of creating a copy.',
+      '',
+      'Examples:',
+      '  pp flow attach InvoiceSync --environment dev --solution Core',
+      '  pp flow attach crd_InvoiceSync --environment dev --solution Core --no-add-required-components --format json',
       '',
       'Auth behavior:',
       '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
@@ -1352,6 +1378,29 @@ export function printFlowAccessHelp(): void {
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printFlowLspHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow lsp [options]',
+      '',
+      'Behavior:',
+      '  - Starts the Power Automate flow language server over stdio.',
+      '  - Communicates using the Language Server Protocol (LSP).',
+      '  - Suitable for use with VS Code, Neovim (nvim-lspconfig), Helix, Zed, or any LSP client.',
+      '',
+      'Features:',
+      '  - Diagnostics    semantic errors and warnings on save',
+      '  - Symbols        document outline of triggers, scopes, and actions',
+      '  - Hover          action type, connector info, parameter schema',
+      '  - Definition     go-to-definition for runAfter targets and expression references',
+      '  - Completion     operationId, apiId, parameter keys, action names',
+      '',
+      'Examples:',
+      '  pp flow lsp',
     ].join('\n') + '\n'
   );
 }

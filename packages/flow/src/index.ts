@@ -78,6 +78,13 @@ export interface FlowInspectResult extends FlowSummary {
   clientData?: Record<string, FlowJsonValue>;
 }
 
+export interface FlowAttachResult {
+  attached: true;
+  solutionUniqueName: string;
+  addRequiredComponents: boolean;
+  flow: FlowSummary;
+}
+
 interface FlowActivationFailureDetails {
   flow: {
     id: string;
@@ -895,6 +902,74 @@ export class FlowService {
       diagnostics: flows.diagnostics,
       warnings: flows.warnings,
     });
+  }
+
+  async attach(
+    identifier: string,
+    solutionUniqueName: string,
+    options: { addRequiredComponents?: boolean } = {}
+  ): Promise<OperationResult<FlowAttachResult>> {
+    if (!this.dataverseClient) {
+      return fail(
+        createDiagnostic('error', 'FLOW_DATAVERSE_CLIENT_REQUIRED', 'Dataverse client is required for flow solution attachment.', {
+          source: '@pp/flow',
+        })
+      );
+    }
+
+    const flow = await this.inspect(identifier);
+
+    if (!flow.success) {
+      return flow as unknown as OperationResult<FlowAttachResult>;
+    }
+
+    if (!flow.data) {
+      return fail(
+        [
+          ...flow.diagnostics,
+          createDiagnostic('error', 'FLOW_NOT_FOUND', `Flow ${identifier} was not found.`, {
+            source: '@pp/flow',
+          }),
+        ],
+        {
+          supportTier: 'preview',
+          warnings: flow.warnings,
+        }
+      );
+    }
+
+    const normalizedSolutionUniqueName = solutionUniqueName.trim();
+    const addRequiredComponents = options.addRequiredComponents ?? true;
+    const actionResult = await this.dataverseClient.invokeAction(
+      'AddSolutionComponent',
+      {
+        ComponentId: flow.data.id,
+        ComponentType: 29,
+        SolutionUniqueName: normalizedSolutionUniqueName,
+        AddRequiredComponents: addRequiredComponents,
+      },
+      {
+        solutionUniqueName: normalizedSolutionUniqueName,
+      }
+    );
+
+    if (!actionResult.success) {
+      return actionResult as unknown as OperationResult<FlowAttachResult>;
+    }
+
+    return ok(
+      {
+        attached: true,
+        solutionUniqueName: normalizedSolutionUniqueName,
+        addRequiredComponents,
+        flow: flow.data,
+      },
+      {
+        supportTier: 'preview',
+        diagnostics: mergeDiagnosticLists(flow.diagnostics, actionResult.diagnostics),
+        warnings: mergeDiagnosticLists(flow.warnings, actionResult.warnings),
+      }
+    );
   }
 
   async runs(
@@ -2487,12 +2562,17 @@ async function deployLoadedFlowArtifact(
               {
                 source: '@pp/flow',
                 path,
+                hint: `Attach the existing workflow with \`pp flow attach ${createIdentifier} --environment <alias> --solution ${options.solutionUniqueName ?? '<solution>'} --format json\`, or choose a new unique name if you want a solution-scoped copy instead.`,
               }
             ),
           ],
           {
             supportTier: 'preview',
             warnings: [...warnings, ...remoteFlow.warnings, ...globalFlow.warnings],
+            suggestedNextActions: dedupeStrings([
+              `Run \`pp flow attach ${createIdentifier} --environment <alias> --solution ${options.solutionUniqueName ?? '<solution>'} --format json\` to package the existing workflow into the solution.`,
+              `Use a different metadata.uniqueName if you want \`pp flow deploy --create-if-missing\` to create a separate solution-scoped copy instead.`,
+            ]),
           }
         );
       }
@@ -2812,7 +2892,7 @@ function detectInPlaceActivationFailure(
     workflowCategory?: number;
     workflowState?: FlowWorkflowStateLabel;
   }
-):
+): 
   | {
       diagnostics: Diagnostic[];
       suggestedNextActions: string[];
@@ -2829,7 +2909,10 @@ function detectInPlaceActivationFailure(
     }
 
     const detail = parseDataverseErrorDetail(diagnostic.detail);
-    return isDefinitionPayloadActivationFailureCodeOrMessage(detail?.code, detail?.message);
+    return (
+      isDefinitionPayloadActivationFailureCodeOrMessage(detail?.code, detail?.message) ||
+      detail?.code === 'DefinitionRequestUnsupportedSchemaVersion'
+    );
   });
 
   if (!blocking) {
@@ -2842,16 +2925,25 @@ function detectInPlaceActivationFailure(
     diagnostics: [
       createDiagnostic(
         'error',
-        'FLOW_ACTIVATE_DEFINITION_REQUIRED',
-        `Flow ${activationTarget} could not be activated in place because Dataverse requires a full flow definition payload for this workflow update path.`,
+        isUnsupportedSchemaVersionActivationFailure(blocking.detail)
+          ? 'FLOW_ACTIVATE_UNSUPPORTED_SCHEMA_VERSION'
+          : 'FLOW_ACTIVATE_DEFINITION_REQUIRED',
+        isUnsupportedSchemaVersionActivationFailure(blocking.detail)
+          ? `Flow ${activationTarget} could not be updated in place because Dataverse rejected the workflow definition schema version carried by the current clientdata payload.`
+          : `Flow ${activationTarget} could not be activated in place because Dataverse requires a full flow definition payload for this workflow update path.`,
         {
           source: '@pp/flow',
-          hint: `Capture the current blocker with \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\`; if that inspect still reports \`definitionAvailable=true\`, the remaining limitation is the Dataverse activation endpoint rather than missing flow metadata in pp.`,
+          hint: isUnsupportedSchemaVersionActivationFailure(blocking.detail)
+            ? `Capture the current blocker with \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\`; if the flow is still draft with \`definitionAvailable=true\`, create a solution-scoped copy or attach the existing workflow instead of retrying the same PATCH path.`
+            : `Capture the current blocker with \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\`; if that inspect still reports \`definitionAvailable=true\`, the remaining limitation is the Dataverse activation endpoint rather than missing flow metadata in pp.`,
         }
       ),
     ],
     suggestedNextActions: dedupeStrings([
       `Run \`pp flow inspect ${activationTarget} --environment <alias>${context.solutionUniqueName ? ` --solution ${context.solutionUniqueName}` : ''} --format json\` to capture the current workflow state and identifiers.`,
+      context.solutionUniqueName
+        ? `If the flow already exists outside the solution, run \`pp flow attach ${activationTarget} --environment <alias> --solution ${context.solutionUniqueName} --format json\` before retrying packaging work.`
+        : `If packaging is the goal, create a solution-scoped copy instead of retrying the same in-place PATCH path.`,
       context.solutionUniqueName
         ? `Run \`pp solution sync-status ${context.solutionUniqueName} --environment <alias> --format json\` to confirm whether this draft workflow is still blocking solution export readiness.`
         : `Inspect the parent solution packaging state before retrying activation if this workflow is meant to unblock a solution export.`,
@@ -2860,12 +2952,20 @@ function detectInPlaceActivationFailure(
       context.workflowCategory === 5
         ? 'In-place activation for some Dataverse Modern Flow records is not yet supported through the current workflows PATCH path because the platform expects a full definition payload.'
         : 'In-place activation can fail when the Dataverse workflows PATCH path requires fields that pp does not currently round-trip.',
+      isUnsupportedSchemaVersionActivationFailure(blocking.detail)
+        ? 'Dataverse can reject modern-flow updates when workflows.clientdata carries a schema version the workflows PATCH endpoint will not accept; in those cases pp should prefer attach/copy workflows over repeated in-place update retries.'
+        : undefined,
       `When Dataverse rejects the activation payload because the flow definition shape is incompatible with the workflows PATCH path, repeating \`${activateCommand}\` without changing the activation path is unlikely to succeed.`,
       context.workflowCategory === 5
         ? 'If `pp flow activate` and `pp flow deploy --workflow-state activated` both hit `FLOW_ACTIVATE_DEFINITION_REQUIRED`, pp does not currently have another native activation path for that draft modern flow.'
         : undefined,
     ]),
   };
+}
+
+function isUnsupportedSchemaVersionActivationFailure(detail: string | undefined): boolean {
+  const parsed = parseDataverseErrorDetail(detail);
+  return parsed?.code === 'DefinitionRequestUnsupportedSchemaVersion' || /unsupported schema version/i.test(parsed?.message ?? detail ?? '');
 }
 
 function isDefinitionPayloadActivationFailure(detail: string | undefined): boolean {
@@ -3290,6 +3390,24 @@ function validateLoadedFlowArtifact(
       warnings,
     }
   );
+}
+
+export function validateFlowArtifactContent(
+  path: string,
+  content: unknown
+): OperationResult<FlowValidationReport> {
+  if (typeof content !== 'object' || content === null) {
+    return fail(
+      createDiagnostic('error', 'FLOW_ARTIFACT_INVALID', `Flow artifact at ${path} is not a valid JSON object.`, {
+        source: '@pp/flow',
+      })
+    );
+  }
+  return validateLoadedFlowArtifact(path, content as FlowArtifact);
+}
+
+export function buildFlowIR(artifact: FlowArtifact): FlowIntermediateRepresentation {
+  return buildFlowIntermediateRepresentation(artifact);
 }
 
 export async function parseFlowIntermediateRepresentation(
@@ -4575,6 +4693,7 @@ function buildFlowClientData(
   options: {
     forceTopLevelDefinition?: boolean;
     forcePropertiesDefinition?: boolean;
+    stripConnectionParameterValues?: boolean;
   } = {}
 ): string {
   const existingClientData = artifact.clientData
@@ -4588,16 +4707,19 @@ function buildFlowClientData(
     options.forceTopLevelDefinition ?? (hadTopLevelDefinition || (!artifact.clientData && !hadPropertiesDefinition));
   const includePropertiesDefinition =
     options.forcePropertiesDefinition ?? (hadPropertiesDefinition || !includeTopLevelDefinition);
+  const definition = options.stripConnectionParameterValues
+    ? sanitizeFlowDefinitionForWorkflowPatch(artifact.definition)
+    : cloneJsonValue(artifact.definition);
 
   return stableStringify({
     ...existingClientDataRecord,
-    schemaVersion: readNumber(existingClientDataRecord.schemaVersion) ?? 1,
-    ...(includeTopLevelDefinition ? { definition: cloneJsonValue(artifact.definition) } : {}),
+    schemaVersion: resolveFlowClientDataSchemaVersion(existingClientDataRecord.schemaVersion),
+    ...(includeTopLevelDefinition ? { definition } : {}),
     ...(includePropertiesDefinition
       ? {
           properties: {
             ...(existingProperties ? cloneJsonValue(existingProperties) : {}),
-            definition: cloneJsonValue(artifact.definition),
+            definition,
           },
         }
       : existingProperties
@@ -4606,6 +4728,34 @@ function buildFlowClientData(
           }
         : {}),
   });
+}
+
+function resolveFlowClientDataSchemaVersion(value: unknown): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (trimmed && trimmed !== '1') {
+      return trimmed;
+    }
+  }
+
+  if (typeof value === 'number' && value !== 1) {
+    return String(value);
+  }
+
+  return '1.0.0.0';
+}
+
+function sanitizeFlowDefinitionForWorkflowPatch(definition: Record<string, FlowJsonValue>): Record<string, FlowJsonValue> {
+  const cloned = (cloneJsonValue(definition) as Record<string, FlowJsonValue>) ?? {};
+  const parameters = asFlowJsonRecord(cloned.parameters);
+  const connections = parameters ? asFlowJsonRecord(parameters['$connections']) : undefined;
+
+  if (connections && 'value' in connections) {
+    delete connections.value;
+  }
+
+  return cloned;
 }
 
 function buildFlowDeployCreateEntity(artifact: FlowArtifact): Record<string, unknown> {
@@ -4650,7 +4800,9 @@ function buildFlowActivationUpdateEntity(artifact: FlowArtifact): Record<string,
   const workflowState = resolveSupportedFlowWorkflowState(artifact.metadata.stateCode, artifact.metadata.statusCode);
 
   return {
-    clientdata: buildFlowDeployClientData(artifact),
+    clientdata: buildFlowClientData(artifact, {
+      stripConnectionParameterValues: true,
+    }),
     ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
     ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
   };
@@ -4663,6 +4815,7 @@ function buildFlowActivationTopLevelDefinitionUpdateEntity(artifact: FlowArtifac
     clientdata: buildFlowClientData(artifact, {
       forceTopLevelDefinition: true,
       forcePropertiesDefinition: true,
+      stripConnectionParameterValues: true,
     }),
     ...(workflowState.stateCode !== undefined ? { statecode: workflowState.stateCode } : {}),
     ...(workflowState.statusCode !== undefined ? { statuscode: workflowState.statusCode } : {}),
@@ -7044,4 +7197,8 @@ function setFlowPathValue(root: Record<string, FlowJsonValue>, path: string[], v
   if (typeof current === 'object' && current !== null) {
     (current as Record<string, FlowJsonValue>)[finalSegment] = value;
   }
+}
+
+function mergeDiagnosticLists(...lists: Array<Diagnostic[] | undefined>): Diagnostic[] {
+  return lists.flatMap((list) => list ?? []);
 }

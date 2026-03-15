@@ -1,8 +1,38 @@
 # Quickstart
 
-This quickstart assumes you are working from the repo source rather than a globally installed CLI.
+This guide is for the first successful use of `pp` from a repo checkout.
 
-## 1. Install and build
+By the end, you should have:
+
+- a working CLI build
+- a saved auth profile
+- an environment alias
+- proof that Dataverse access works
+- a minimal `pp.config.yaml`
+
+This quickstart uses the implemented, most reliable core of `pp`: auth,
+environment aliases, Dataverse inspection, solution inspection, and local
+project modeling.
+
+## Before you start
+
+This quickstart assumes:
+
+- you are running from the `pp` repo source
+- you have access to a Dataverse environment URL
+- you have permission to sign in to that environment
+
+The commands below use `pp` for brevity. When running from source, use either:
+
+```bash
+pnpm pp -- <command>
+node scripts/run-pp-dev.mjs <command>
+```
+
+Use `pnpm pp -- ...` for interactive work. Use `node scripts/run-pp-dev.mjs ...`
+when you need clean machine-readable stdout.
+
+## 1. Build the CLI
 
 ```bash
 pnpm install
@@ -10,67 +40,47 @@ pnpm build
 pnpm test
 ```
 
-For local development, run commands through the CLI package:
-
-```bash
-pnpm pp -- project doctor
-node scripts/run-pp-dev.mjs project doctor
-```
-
-Once built, you can also call the CLI directly:
-
-```bash
-node packages/cli/dist/index.cjs project doctor
-```
-
-`pnpm install` now prepares the CLI bundle automatically in a normal checkout.
-If install scripts are disabled, run `pnpm --filter @pp/cli build` first.
-
-Sanity-check the packaged CLI surface:
+Sanity-check the CLI:
 
 ```bash
 pp version --format raw
 pp diagnostics doctor
 ```
 
-The examples below use `pp` for brevity.
+If install scripts are disabled in your environment, run:
 
-When you run from source, use either `pnpm pp -- ...` for interactive work or
-`node scripts/run-pp-dev.mjs ...` when you need machine-readable stdout. Both
-keep project discovery anchored to the directory you invoked from instead of
-the `packages/cli` workspace.
+```bash
+pnpm --filter @pp/cli build
+```
 
-If you are new to the repo, read [architecture.md](architecture.md) after this
-quickstart and [supported-surfaces.md](supported-surfaces.md) before adopting a
-workflow that looks preview or experimental.
+## 2. Sign in once and save the profile
 
-## 2. Sign in
-
-Create a reusable named auth profile with browser login:
+Create a reusable auth profile:
 
 ```bash
 pp auth login --name dev-user --resource https://example.crm.dynamics.com
 ```
 
-For ordinary Dataverse login, prefer `--resource` and let `pp` derive the
-standard Dataverse delegated scope. Treat `--scope` as an advanced OAuth
-override for cases where you intentionally need exact scopes.
+For normal Dataverse usage, prefer `--resource`. `pp` derives the usual
+Dataverse delegated scope from that URL.
 
-Useful variants:
-
-- force account selection again:
+Common variants:
 
 ```bash
 pp auth login --name dev-user --resource https://example.crm.dynamics.com --force-prompt
-```
-
-- prefer device code:
-
-```bash
 pp auth login --name build-user --resource https://example.crm.dynamics.com --device-code
 ```
 
+Check that the profile is saved:
+
+```bash
+pp auth profile list
+pp auth profile inspect dev-user
+```
+
 ## 3. Register an environment alias
+
+Bind a short local alias to the environment URL and auth profile:
 
 ```bash
 pp env add --name dev --url https://example.crm.dynamics.com --profile dev-user
@@ -78,60 +88,72 @@ pp env inspect dev
 pp env list
 ```
 
-The alias is what the Dataverse and solution commands use. You do not need to repeat the full environment URL on every command after this.
+After this, most remote commands use `--env dev` instead of repeating the full
+Dataverse URL.
 
-## 4. Call Dataverse
+## 4. Prove Dataverse access works
+
+Start with the safest read path:
 
 ```bash
 pp dv whoami --env dev
 pp dv query accounts --env dev --select name,accountnumber --top 5
-pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
 pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
-pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
-pp dv metadata column account name --env dev
 ```
 
-For metadata listing, `--top` is applied locally after retrieval because Dataverse metadata endpoints do not support server-side `$top`.
-
-You can also create supported schema metadata from YAML or JSON specs:
+If you want one record-level example:
 
 ```bash
-pp dv metadata schema create-table --format json-schema
-pp dv metadata init add-column --kind choice
-pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
-pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
+pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
 ```
 
-## 5. Inspect solutions
+If these succeed, the most important moving parts are already working:
+
+- auth token acquisition
+- environment alias resolution
+- Dataverse client resolution
+- basic command output handling
+
+## 5. Inspect or create a solution
+
+Use solution commands next, because they are another mature core workflow:
+
+```bash
+pp solution list --env dev
+pp solution inspect Core --env dev
+```
+
+If you need to create a test solution:
 
 ```bash
 pp solution create Core --env dev --friendly-name "Core" --publisher-unique-name DefaultPublisher
-pp solution list --env dev
 pp solution inspect Core --env dev
-pp env cleanup-plan dev --prefix ppHarness20260310T013401820Z --format json
-pp env reset dev --prefix ppHarness20260310T013401820Z --dry-run --format json
-pp solution export Core --env dev --out ./artifacts/solutions/Core.zip --plan
-pp solution set-metadata Core --env dev --version 1.2.3.4 --publisher-unique-name DefaultPublisher
 ```
 
-Use the `env cleanup-plan` / `env reset` pair when you need to reset
-run-scoped disposable solutions by prefix before a harness bootstrap reuses an
-environment.
+Export is a useful proof that packaging paths are wired correctly:
 
-## 6. Add a project config
+```bash
+pp solution export Core --env dev --out ./artifacts/solutions/Core.zip --plan
+```
 
-Fastest path:
+## 6. Initialize a local `pp` project
+
+The fastest path is:
 
 ```bash
 pp project init --name demo --env dev --solution Core
 pp project doctor
-pp project feedback
+pp project inspect
 ```
 
-That creates a minimal `pp.config.yaml` plus the default local folders:
-`apps/`, `flows/`, `solutions/`, and `docs/`.
+That gives you a minimal `pp.config.yaml` plus the default local folders:
 
-If you want to start by hand, create `pp.config.yaml`:
+- `apps/`
+- `flows/`
+- `solutions/`
+- `docs/`
+
+If you prefer to start by hand, the smallest useful config is:
 
 ```yaml
 name: demo
@@ -146,42 +168,45 @@ providerBindings:
   primaryDataverse:
     kind: dataverse
     target: dev
-parameters:
-  tenantDomain:
-    type: string
-    fromEnv: PP_TENANT_DOMAIN
-    required: true
-  releaseName:
-    type: string
-    value: preview
 ```
 
-Then inspect the local repo context:
+Useful follow-up commands:
 
 ```bash
 pp project doctor
 pp project feedback
 pp project inspect
 pp analysis report
-pp analysis context --format json
 pp deploy plan
 ```
 
-Deeper workflow docs:
+## 7. Use isolated config for tests or CI
 
-- [auth-and-environments.md](auth-and-environments.md)
-- [dataverse-and-solutions.md](dataverse-and-solutions.md)
-- [canvas.md](canvas.md)
-- [flow.md](flow.md)
-- [deploy.md](deploy.md)
-
-## 7. Use isolated config when needed
-
-For tests or CI, point auth and env commands at a custom config directory:
+For CI, smoke tests, or sandboxed runs, point auth and env commands at a custom
+config directory:
 
 ```bash
 pp auth profile list --config-dir ./.tmp/pp-config
 pp env list --config-dir ./.tmp/pp-config
 ```
 
-By default, global config lives under `%APPDATA%\\pp\\config.json` on Windows and `~/.config/pp/config.json` on macOS/Linux.
+Default global config locations:
+
+```text
+Windows: %APPDATA%\pp\config.json
+macOS/Linux: ~/.config/pp/config.json
+```
+
+## Where to go next
+
+Choose the next guide based on the job you actually need to do:
+
+- [Auth and environments](auth-and-environments.md): more auth profile types,
+  browser profiles, and config isolation
+- [Dataverse and solutions](dataverse-and-solutions.md): broader Dataverse and
+  solution command coverage
+- [Project config](project-config.md): stages, parameters, provider bindings,
+  and project topology
+- [Deploy](deploy.md): preview and apply supported deployment operations
+- [Supported surfaces](supported-surfaces.md): what to use first and what is
+  still incomplete

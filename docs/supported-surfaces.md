@@ -1,90 +1,83 @@
 # Supported surfaces
 
-This guide is the current boundary document for `pp`.
+Use this guide to decide what you should confidently use in `pp` today, what is
+worth using when you need it, and what is still incomplete.
 
-It is intentionally product-facing rather than package-facing: the goal is to
-make it obvious which workflows are stable, which are preview or experimental,
-and where users should still expect rough edges.
+## Recommended for routine use
 
-## Stable core
-
-These are the most complete workflows in the repo today:
+These workflows are the best place to start and should be treated as the core
+of `pp`:
 
 - auth profile management and environment aliases
-- Dataverse read operations and generic Web API access
-- Dataverse metadata inspection plus the current typed metadata create/update slice
-- solution lifecycle commands: create, delete, inspect, components, dependencies, analyze, compare, export/import, pack/unpack, set-metadata
-- local project discovery, `project init`, `project doctor`, `project inspect`, and `project feedback`
-- analysis outputs and deploy plan/apply/release orchestration
-- shared CLI output contract, diagnostics, completion, and support bundles
+- Dataverse reads and generic Web API access
+- Dataverse metadata inspection and the current typed metadata authoring slice
+- solution lifecycle commands
+- local project discovery with `project init`, `project doctor`, and
+  `project inspect`
+- analysis outputs and deploy plan/apply orchestration
+- shared diagnostics, output formatting, and support bundles
 
-These surfaces have the best combination of tests, docs, and end-to-end
-coherence.
+If you are adopting `pp` for real work, start here.
 
-## Preview but usable
+## Good, but more specialized
 
-These areas are implemented and documented, but still intentionally bounded:
+These areas are useful and documented, but they are usually a second step after
+the core workflows above:
 
-- canvas offline inspection, validation, lint, build, diff, workspace inspection, template registry management, and LSP support
-- flow local artifact workflows: unpack, normalize, validate, graph, patch, pack, deploy
-- flow remote discovery, inspect, export, promote, runs, errors, connrefs, and doctor
-- model-driven app composition inspection plus bounded create/solution-attach authoring
-- SharePoint and Power BI targeted inspection commands
+- canvas offline inspection, validation, lint, build, diff, workspace
+  inspection, and template registry management
+- flow local artifact workflows such as unpack, normalize, validate, graph,
+  patch, pack, deploy, and promote
+- flow remote discovery, export, inspect, runs, errors, connrefs, doctor, and
+  monitor
+- model-driven app inspection and create/attach authoring
+- SharePoint and Power BI targeted inspection and deploy-adjacent operations
 - CI adapter wrappers and runner scripts
 - extension registry and contribution contract
 
-Common reasons these remain preview:
+These are not weak areas. They are simply not the first workflows most users
+should learn.
 
-- the underlying product surfaces are inconsistent or partially opaque
-- the repo only claims a bounded mutation slice instead of a full lifecycle
-- some workflows depend on external product behavior that is not fully stable
+## Still incomplete
 
-## Experimental or intentionally incomplete
+These areas should be described plainly as incomplete:
 
-These are real surfaces, but users should expect sharper edges:
+- remote canvas create/import paths that still depend on Maker handoff guidance
+- flow runtime correlation when the required runtime evidence is missing or thin
+- MCP as a broad automation surface beyond the current implemented tool set
+- third-party extension loading outside repo-local or tightly controlled setups
+- packaging and installation ergonomics beyond the current repo-oriented flow
 
-- remote canvas create/import, which still uses Maker handoff guidance or explicit not-yet-implemented diagnostics
-- flow runtime correlation, which depends on runtime tables and supported source payloads being present
-- MCP as a broad automation interface beyond the current controlled surface
-- third-party extension loading beyond repo-local or tightly controlled packages
-- broader packaging/distribution ergonomics beyond the current monorepo and tarball flow
+## Practical adoption order
 
-## Read-first versus mutation-first
+If you want the most reliable path through the product:
 
-`pp` is not mutation-heavy everywhere.
+1. Set up auth profiles and environment aliases.
+2. Use `pp dv ...` and `pp solution ...` for inspection and controlled changes.
+3. Add `pp.config.yaml` and run `pp project doctor`.
+4. Use `pp deploy plan` and `pp deploy apply --dry-run` before live deploys.
+5. Add flow, canvas, or adjacent-provider workflows when the repo needs them.
 
-A useful way to assess risk is:
+## Specific limitations that matter
 
-- mutation-first and reasonably mature: Dataverse metadata, environment variables, connection references, solution lifecycle, deploy apply
-- read-first or bounded mutation: model-driven apps, SharePoint, Power BI, flow runtime, parts of canvas, parts of MCP
+This is the part that should stay concrete:
 
-When a command is mutation-capable, prefer `--dry-run` or `--plan` first when
-available.
+- some live workflows still depend on browser-mediated auth or maker-session
+  bootstrapping
+- a few MCP and CLI flows are still asymmetric in confirmation-heavy paths
+- canvas registry quality depends on the harvested metadata you commit
+- flow remote deploy and promotion focus on the supported artifact and workflow
+  metadata contract, not every possible remote workflow shape
+- SharePoint and Power BI support is focused, not a full authoring suite
+- packaging and install ergonomics are still stronger for repo users than
+  general CLI distribution
 
-## Current rough edges to expect
+## How to read the rest of the docs
 
-- some live workflows still depend on browser-mediated auth or maker-session bootstrapping
-- MCP and CLI are still asymmetric in a few confirmation-heavy paths such as
-  publish/export readiness, cleanup, and parts of flow runtime follow-up
-- canvas registry quality depends on the pinned harvested metadata you commit
-- a successful Dataverse query with zero rows should still be treated as
-  security-ambiguous unless follow-up evidence proves the scope is truly empty
-- flow remote deploy/promotion only carries the normalized supported artifact and bounded workflow metadata
-- SharePoint and Power BI are focused inspection and deploy-adjacent utilities, not full authoring suites
-- packaging and install ergonomics are still source-repo oriented
-
-## Recommended starting paths
-
-If you are deciding where to adopt `pp`, start here:
-
-- repo-local project modeling and diagnostics
-- Dataverse inspection and metadata authoring
-- solution analysis and lifecycle operations
-- deploy planning and controlled apply
-
-Treat these as later or more selective adoption areas:
-
-- canvas authoring/build pipelines
-- flow runtime diagnostics and promotion
-- adjacent provider automation
-- extensions and MCP integrations
+- Start with [quickstart.md](quickstart.md) if you are new.
+- Read [dataverse-and-solutions.md](dataverse-and-solutions.md) for the core
+  remote workflow.
+- Read [project-config.md](project-config.md) and [deploy.md](deploy.md) when
+  you are ready to model a repo and automate changes.
+- Read [architecture.md](architecture.md) only when package ownership or repo
+  layering actually matters to the task in front of you.

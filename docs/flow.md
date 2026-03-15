@@ -1,10 +1,84 @@
 # Flow artifacts
 
-The current flow module is split into two first-class surfaces:
+Use this guide when you already know you need flow-specific work.
+
+Flow support in `pp` is useful today in two main ways:
 
 - Dataverse-backed discovery and inspection for remote flows
 - canonical local `pp.flow.artifact` JSON for unpack, normalize, validate, and
-  bounded patching
+  patching
+
+If you are evaluating `pp` overall, do not start here. Start with
+[quickstart.md](quickstart.md), [dataverse-and-solutions.md](dataverse-and-solutions.md),
+and [supported-surfaces.md](supported-surfaces.md) first. Flow support is
+worth using when you need it, but it is not the first workflow most users
+should learn.
+
+## Common jobs
+
+Most users come here for one of these jobs:
+
+1. inspect a remote cloud flow
+2. export a flow into a local artifact
+3. validate, patch, and repack a local flow artifact
+4. deploy or promote a validated artifact
+5. diagnose recent runtime failures
+
+Use these command paths first:
+
+### Inspect a remote flow
+
+```bash
+pp flow list --env dev
+pp flow inspect "Invoice Sync" --env dev --solution Core --no-interactive-auth
+```
+
+### Move a remote flow into a local artifact workflow
+
+```bash
+pp flow export "Invoice Sync" --env dev --solution Core --out ./flows/invoice-remote --no-interactive-auth
+pp flow validate ./flows/invoice-remote
+pp flow graph ./flows/invoice-remote
+```
+
+### Patch and repack a local artifact
+
+```bash
+pp flow patch ./flows/invoice --file ./patches/invoice.dev.json --out ./flows/invoice-dev
+pp flow validate ./flows/invoice-dev
+pp flow pack ./flows/invoice-dev --out ./dist/invoice-flow.raw.json
+```
+
+### Deploy or promote a validated flow
+
+```bash
+pp flow deploy ./flows/invoice-dev --env dev --solution Core
+pp flow promote "Invoice Sync" --source-environment dev --source-solution Core --target-environment test --target-solution Core
+```
+
+### Inspect runtime health
+
+```bash
+pp flow doctor "Invoice Sync" --env dev --solution Core --since 7d
+pp flow monitor "Invoice Sync" --env dev --solution Core --since 2h --format json
+```
+
+## What flow support is strongest at
+
+The strongest parts of the flow module today are:
+
+- remote inspection and export
+- local artifact normalization, validation, graphing, and patching
+- artifact-based deploy and promote workflows against the supported flow shape
+- runtime summaries such as runs, errors, connrefs, doctor, and monitor
+
+The main limitations are specific, not vague:
+
+- runtime analysis depends on runtime evidence being present and fresh enough
+- deploy and promote work against the supported cloud-flow contract, not every
+  possible workflow shell or imported artifact shape
+- some solution-packaged or Maker-driven workflows still require adjacent tools
+  or manual steps
 
 ## Remote commands
 
@@ -28,8 +102,8 @@ pp flow promote "Invoice Sync" --source-environment dev --source-solution Core -
 
 Current remote inspection returns:
 
-- flow id, name, bounded description metadata, and unique name
-- bounded workflow-shell metadata for `type`, `mode`, `ondemand`, and
+- flow id, name, description metadata, and unique name
+- supported workflow-shell metadata for `type`, `mode`, `ondemand`, and
   `primaryentity` when present
 - normalized workflow state labels plus the underlying state and status codes
 - whether client-definition data was present
@@ -37,26 +111,25 @@ Current remote inspection returns:
 - parameter references
 - environment-variable references detected from expressions
 
-The current remote slice intentionally targets Dataverse `workflows` plus
-solution-component filtering, bounded export/deploy/create flows, and a bounded
-remote-to-remote promotion path. It does not yet claim a full
-solution-packaged import/export surface.
+Remote flow support covers Dataverse `workflows`, solution-component filtering,
+export, deploy, create-if-missing, and remote-to-remote promotion for the
+supported cloud-flow contract. It does not cover every solution-packaged flow
+import/export workflow.
 
 When a solution-scoped cloud flow is stuck in `draft` or `suspended`, use
 `pp flow activate <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME]`
 to re-apply that remote flow back into the same environment with workflow state
 forced to `activated`. This is still the shortest remediation path when
 `pp solution publish` or `pp solution sync-status` shows a blocked workflow,
-and MCP now exposes the same bounded remediation through `pp.flow.activate`.
+and MCP now exposes the same remediation through `pp.flow.activate`.
 When Dataverse still rejects that update path, both surfaces preserve the same
 structured blocker details so the remaining limitation is explicit instead of
 leaving publish readiness ambiguous.
 
 ## Runtime commands
 
-The runtime slice is read-first and currently marked `experimental` because it
-depends on the FlowRun ingestion surface being available and reasonably fresh in
-the target environment.
+Runtime commands are useful when the target environment exposes enough FlowRun
+evidence to analyze recent behavior.
 
 ```bash
 pp flow runs "Invoice Sync" --env dev --since 7d

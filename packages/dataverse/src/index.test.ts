@@ -2479,6 +2479,97 @@ describe('ALM services', () => {
     expect(result.data?.[0]?.diagnostics.map((diagnostic) => diagnostic.code)).toContain('DATAVERSE_CONNREF_ROW_INFERRED');
   });
 
+  it('upgrades inferred solution-scoped connection references to row-backed summaries when a matching row is globally visible', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              solutionid: 'sol-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              connectionreferenceid: 'ref-1',
+              connectionreferencelogicalname: 'msdyn_Dataverse',
+              connectionreferencedisplayname: 'Dataverse',
+              connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+              connectionid: 'conn-1',
+              statecode: 0,
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              objectid: 'flow-1',
+            },
+          ],
+        },
+      }),
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              workflowid: 'flow-1',
+              name: 'Integrated Search API trigger flow',
+              category: 5,
+              clientdata: JSON.stringify({
+                properties: {
+                  connectionReferences: {
+                    shared_commondataserviceforapps: {
+                      connection: {
+                        connectionReferenceLogicalName: 'msdyn_Dataverse',
+                      },
+                    },
+                  },
+                },
+              }),
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.list({ solutionUniqueName: 'Core' });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      expect.objectContaining({
+        id: 'ref-1',
+        kind: 'row',
+        logicalName: 'msdyn_Dataverse',
+        displayName: 'Dataverse',
+        solutionId: 'sol-1',
+        connected: true,
+      }),
+    ]);
+  });
+
   it('suppresses ambiguous empty-scope warnings when solution-scoped connection-reference validation confirms zero results', async () => {
     const httpClient = new FakeHttpClient([
       ok({
@@ -3573,6 +3664,47 @@ describe('ALM services', () => {
       connectionreferencedisplayname: 'Shared SQL',
       connectorid: '/providers/Microsoft.PowerApps/apis/shared_sql',
       connectionid: 'conn-next',
+    });
+  });
+
+  it('creates an unbound connection reference when allowUnbound is enabled', async () => {
+    const httpClient = new FakeHttpClient([
+      ok({
+        status: 204,
+        headers: {
+          'odata-entityid': "https://example.crm.dynamics.com/api/data/v9.2/connectionreferences(ref-2)",
+        },
+        data: {
+          connectionreferenceid: 'ref-2',
+          connectionreferencelogicalname: 'pp_dataverse',
+          connectionreferencedisplayname: 'Dataverse',
+          connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, httpClient);
+    const service = new ConnectionReferenceService(client);
+
+    const result = await service.create('pp_dataverse', undefined, {
+      displayName: 'Dataverse',
+      connectorId: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+      allowUnbound: true,
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      id: 'ref-2',
+      logicalName: 'pp_dataverse',
+      displayName: 'Dataverse',
+      connectorId: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+      connectionId: undefined,
+      connected: false,
+    });
+    expect(httpClient.requests.at(-1)?.body).toEqual({
+      connectionreferencelogicalname: 'pp_dataverse',
+      connectionreferencedisplayname: 'Dataverse',
+      connectorid: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
     });
   });
 });

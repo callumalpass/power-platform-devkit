@@ -1,5 +1,7 @@
 import type { OperationResult } from '@pp/diagnostics';
 import { readOutputFormat, type CliOutputFormat } from './contract';
+import { dispatchCommandRoute } from './command-dispatch';
+import { resolveCommandPath } from './cli-command-spec';
 import * as cliHelp from './help';
 
 export interface MainGroupHandlers {
@@ -36,6 +38,8 @@ export function normalizeCliArgs(argv: string[]): string[] {
 export async function dispatchMainCommand(argv: string[], handlers: MainGroupHandlers): Promise<number> {
   const normalizedArgv = normalizeCliArgs(argv);
   const [group, command, ...rest] = normalizedArgv;
+  const resolved = resolveCommandPath(normalizedArgv);
+  const canonicalGroup = resolved.path[0] ?? group;
 
   if (!group || group === 'help' || group === '--help') {
     cliHelp.printHelp();
@@ -50,15 +54,15 @@ export async function dispatchMainCommand(argv: string[], handlers: MainGroupHan
     return handlers.runCompletion([command, ...rest].filter((value): value is string => value !== undefined));
   }
 
-  if (group === 'diagnostics') {
+  if (canonicalGroup === 'diagnostics') {
     return handlers.runDiagnostics(command, rest);
   }
 
-  if (group === 'mcp') {
+  if (canonicalGroup === 'mcp') {
     return handlers.runMcp(command, rest);
   }
 
-  if (group === 'init') {
+  if (canonicalGroup === 'init') {
     return handlers.runInit(command, rest);
   }
 
@@ -68,40 +72,28 @@ export async function dispatchMainCommand(argv: string[], handlers: MainGroupHan
     return handlers.printFailureForInvalidFormat(requestedFormat);
   }
 
-  switch (group) {
-    case 'auth':
-      return handlers.runAuth(command, rest);
-    case 'env':
-    case 'environment':
-      return handlers.runEnvironment(command, rest);
-    case 'dv':
-      return handlers.runDataverse(command, rest);
-    case 'solution':
-      return handlers.runSolution(command, rest);
-    case 'connref':
-      return handlers.runConnectionReference(command, rest);
-    case 'envvar':
-      return handlers.runEnvironmentVariable(command, rest);
-    case 'canvas':
-      return handlers.runCanvas(command, rest);
-    case 'flow':
-      return handlers.runFlow(command, rest);
-    case 'model':
-      return handlers.runModel(command, rest);
-    case 'project':
-      return handlers.runProject(command, rest);
-    case 'sharepoint':
-      return handlers.runSharePoint(command, rest);
-    case 'powerbi':
-      return handlers.runPowerBi(command, rest);
-    case 'analysis':
-      return handlers.runAnalysis(command, rest);
-    case 'deploy':
-      return handlers.runDeploy(command, rest);
-    default:
-      cliHelp.printHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printHelp,
+      children: [
+        { name: 'auth', delegate: true, run: (args) => handlers.runAuth(args[0], args.slice(1)) },
+        { name: 'env', aliases: ['environment'], delegate: true, run: (args) => handlers.runEnvironment(args[0], args.slice(1)) },
+        { name: 'dv', delegate: true, run: (args) => handlers.runDataverse(args[0], args.slice(1)) },
+        { name: 'solution', delegate: true, run: (args) => handlers.runSolution(args[0], args.slice(1)) },
+        { name: 'connref', delegate: true, run: (args) => handlers.runConnectionReference(args[0], args.slice(1)) },
+        { name: 'envvar', delegate: true, run: (args) => handlers.runEnvironmentVariable(args[0], args.slice(1)) },
+        { name: 'canvas', delegate: true, run: (args) => handlers.runCanvas(args[0], args.slice(1)) },
+        { name: 'flow', delegate: true, run: (args) => handlers.runFlow(args[0], args.slice(1)) },
+        { name: 'model', delegate: true, run: (args) => handlers.runModel(args[0], args.slice(1)) },
+        { name: 'project', delegate: true, run: (args) => handlers.runProject(args[0], args.slice(1)) },
+        { name: 'sharepoint', delegate: true, run: (args) => handlers.runSharePoint(args[0], args.slice(1)) },
+        { name: 'powerbi', delegate: true, run: (args) => handlers.runPowerBi(args[0], args.slice(1)) },
+        { name: 'analysis', delegate: true, run: (args) => handlers.runAnalysis(args[0], args.slice(1)) },
+        { name: 'deploy', delegate: true, run: (args) => handlers.runDeploy(args[0], args.slice(1)) },
+      ],
+    },
+    [canonicalGroup, command, ...rest].filter((value): value is string => value !== undefined)
+  );
 }
 
 function allowsCustomOutputFormat(argv: string[]): boolean {

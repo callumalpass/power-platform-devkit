@@ -1,4 +1,5 @@
 import * as cliHelp from './help';
+import { dispatchCommandRoute } from './command-dispatch';
 
 export interface AuthGroupHandlers<TAuth, TConfigOptions> {
   runAuthProfileList(auth: TAuth, args: string[]): Promise<number>;
@@ -21,137 +22,69 @@ export async function runAuthGroup<TAuth, TConfigOptions>(
   configOptions: TConfigOptions,
   handlers: AuthGroupHandlers<TAuth, TConfigOptions>
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printAuthHelp();
-    return 0;
-  }
-
-  if (command === 'profile') {
-    const [action, ...rest] = args;
-
-    if (!action || action === 'help' || action === '--help') {
-      cliHelp.printAuthProfileHelp();
-      return 0;
-    }
-
-    switch (action) {
-      case 'list':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthProfileListHelp();
-          return 0;
-        }
-        return handlers.runAuthProfileList(auth, rest);
-      case 'inspect':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthProfileInspectHelp();
-          return 0;
-        }
-        return handlers.runAuthProfileInspect(auth, configOptions, rest);
-      case 'add-user':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthProfileAddUserHelp();
-          return 0;
-        }
-        return handlers.runAuthProfileSave(auth, rest, 'user');
-      case 'add-static':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthProfileAddStaticHelp();
-          return 0;
-        }
-        return handlers.runAuthProfileSave(auth, rest, 'static-token');
-      case 'add-env':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthProfileAddEnvHelp();
-          return 0;
-        }
-        return handlers.runAuthProfileSave(auth, rest, 'environment-token');
-      case 'add-client-secret':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthProfileAddClientSecretHelp();
-          return 0;
-        }
-        return handlers.runAuthProfileSave(auth, rest, 'client-secret');
-      case 'add-device-code':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthProfileAddDeviceCodeHelp();
-          return 0;
-        }
-        return handlers.runAuthProfileSave(auth, rest, 'device-code');
-      case 'remove':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthProfileRemoveHelp();
-          return 0;
-        }
-        return handlers.runAuthProfileRemove(auth, rest);
-      default:
-        cliHelp.printAuthProfileHelp();
-        return 1;
-    }
-  }
-
-  if (command === 'browser-profile') {
-    const [action, ...rest] = args;
-
-    if (!action || action === 'help' || action === '--help') {
-      cliHelp.printAuthBrowserProfileHelp();
-      return 0;
-    }
-
-    switch (action) {
-      case 'list':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthBrowserProfileListHelp();
-          return 0;
-        }
-        return handlers.runAuthBrowserProfileList(auth, rest);
-      case 'inspect':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthBrowserProfileInspectHelp();
-          return 0;
-        }
-        return handlers.runAuthBrowserProfileInspect(auth, rest);
-      case 'add':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthBrowserProfileAddHelp();
-          return 0;
-        }
-        return handlers.runAuthBrowserProfileSave(auth, rest);
-      case 'bootstrap':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthBrowserProfileBootstrapHelp();
-          return 0;
-        }
-        return handlers.runAuthBrowserProfileBootstrap(auth, rest);
-      case 'remove':
-        if (rest.includes('--help') || rest.includes('help')) {
-          cliHelp.printAuthBrowserProfileRemoveHelp();
-          return 0;
-        }
-        return handlers.runAuthBrowserProfileRemove(auth, rest);
-      default:
-        cliHelp.printAuthBrowserProfileHelp();
-        return 1;
-    }
-  }
-
-  if (command === 'login') {
-    if (args.includes('--help') || args.includes('help')) {
-      cliHelp.printAuthLoginHelp();
-      return 0;
-    }
-    return handlers.runAuthLogin(auth, args);
-  }
-
-  if (command === 'token') {
-    if (args.includes('--help') || args.includes('help')) {
-      cliHelp.printAuthTokenHelp();
-      return 0;
-    }
-    return handlers.runAuthToken(auth, args);
-  }
-
-  cliHelp.printAuthHelp();
-  return 1;
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printAuthHelp,
+      children: [
+        {
+          name: 'profile',
+          help: cliHelp.printAuthProfileHelp,
+          children: [
+            { name: 'list', help: cliHelp.printAuthProfileListHelp, run: (rest) => handlers.runAuthProfileList(auth, rest) },
+            {
+              name: 'inspect',
+              help: cliHelp.printAuthProfileInspectHelp,
+              run: (rest) => handlers.runAuthProfileInspect(auth, configOptions, rest),
+            },
+            { name: 'add-user', help: cliHelp.printAuthProfileAddUserHelp, run: (rest) => handlers.runAuthProfileSave(auth, rest, 'user') },
+            {
+              name: 'add-static',
+              help: cliHelp.printAuthProfileAddStaticHelp,
+              run: (rest) => handlers.runAuthProfileSave(auth, rest, 'static-token'),
+            },
+            {
+              name: 'add-env',
+              help: cliHelp.printAuthProfileAddEnvHelp,
+              run: (rest) => handlers.runAuthProfileSave(auth, rest, 'environment-token'),
+            },
+            {
+              name: 'add-client-secret',
+              help: cliHelp.printAuthProfileAddClientSecretHelp,
+              run: (rest) => handlers.runAuthProfileSave(auth, rest, 'client-secret'),
+            },
+            {
+              name: 'add-device-code',
+              help: cliHelp.printAuthProfileAddDeviceCodeHelp,
+              run: (rest) => handlers.runAuthProfileSave(auth, rest, 'device-code'),
+            },
+            { name: 'remove', help: cliHelp.printAuthProfileRemoveHelp, run: (rest) => handlers.runAuthProfileRemove(auth, rest) },
+          ],
+        },
+        {
+          name: 'browser-profile',
+          help: cliHelp.printAuthBrowserProfileHelp,
+          children: [
+            { name: 'list', help: cliHelp.printAuthBrowserProfileListHelp, run: (rest) => handlers.runAuthBrowserProfileList(auth, rest) },
+            {
+              name: 'inspect',
+              help: cliHelp.printAuthBrowserProfileInspectHelp,
+              run: (rest) => handlers.runAuthBrowserProfileInspect(auth, rest),
+            },
+            { name: 'add', help: cliHelp.printAuthBrowserProfileAddHelp, run: (rest) => handlers.runAuthBrowserProfileSave(auth, rest) },
+            {
+              name: 'bootstrap',
+              help: cliHelp.printAuthBrowserProfileBootstrapHelp,
+              run: (rest) => handlers.runAuthBrowserProfileBootstrap(auth, rest),
+            },
+            { name: 'remove', help: cliHelp.printAuthBrowserProfileRemoveHelp, run: (rest) => handlers.runAuthBrowserProfileRemove(auth, rest) },
+          ],
+        },
+        { name: 'login', help: cliHelp.printAuthLoginHelp, run: (rest) => handlers.runAuthLogin(auth, rest) },
+        { name: 'token', help: cliHelp.printAuthTokenHelp, run: (rest) => handlers.runAuthToken(auth, rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface EnvironmentGroupHandlers<TConfigOptions> {
@@ -172,66 +105,31 @@ export async function runEnvironmentGroup<TConfigOptions>(
   configOptions: TConfigOptions,
   handlers: EnvironmentGroupHandlers<TConfigOptions>
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printEnvironmentHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentListHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentList(configOptions, args);
-    case 'add':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentAddHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentAdd(configOptions, args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentInspectHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentInspect(configOptions, args);
-    case 'baseline':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentBaselineHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentBaseline(configOptions, args);
-    case 'resolve-maker-id':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentResolveMakerIdHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentResolveMakerId(configOptions, args);
-    case 'cleanup-plan':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentCleanupPlanHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentCleanupPlan(configOptions, args);
-    case 'reset':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentResetHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentReset(configOptions, args);
-    case 'cleanup':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentCleanupHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentCleanup(configOptions, args);
-    case 'remove':
-      return handlers.runEnvironmentRemove(configOptions, args);
-    default:
-      cliHelp.printEnvironmentHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printEnvironmentHelp,
+      children: [
+        { name: 'list', help: cliHelp.printEnvironmentListHelp, run: (rest) => handlers.runEnvironmentList(configOptions, rest) },
+        { name: 'add', help: cliHelp.printEnvironmentAddHelp, run: (rest) => handlers.runEnvironmentAdd(configOptions, rest) },
+        { name: 'inspect', help: cliHelp.printEnvironmentInspectHelp, run: (rest) => handlers.runEnvironmentInspect(configOptions, rest) },
+        { name: 'baseline', help: cliHelp.printEnvironmentBaselineHelp, run: (rest) => handlers.runEnvironmentBaseline(configOptions, rest) },
+        {
+          name: 'resolve-maker-id',
+          help: cliHelp.printEnvironmentResolveMakerIdHelp,
+          run: (rest) => handlers.runEnvironmentResolveMakerId(configOptions, rest),
+        },
+        {
+          name: 'cleanup-plan',
+          help: cliHelp.printEnvironmentCleanupPlanHelp,
+          run: (rest) => handlers.runEnvironmentCleanupPlan(configOptions, rest),
+        },
+        { name: 'reset', help: cliHelp.printEnvironmentResetHelp, run: (rest) => handlers.runEnvironmentReset(configOptions, rest) },
+        { name: 'cleanup', help: cliHelp.printEnvironmentCleanupHelp, run: (rest) => handlers.runEnvironmentCleanup(configOptions, rest) },
+        { name: 'remove', run: (rest) => handlers.runEnvironmentRemove(configOptions, rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface ProjectGroupHandlers {
@@ -255,107 +153,46 @@ export async function runProjectGroup(
   args: string[],
   handlers: ProjectGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printProjectHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'solution': {
-      const [action, ...rest] = args;
-
-      if (!action || action === 'help' || action === '--help') {
-        cliHelp.printProjectSolutionHelp();
-        return 0;
-      }
-
-      switch (action) {
-        case 'pull':
-          if (rest.includes('--help') || rest.includes('help')) {
-            cliHelp.printProjectSolutionPullHelp();
-            return 0;
-          }
-          return handlers.runProjectSolutionPull(rest);
-        default:
-          cliHelp.printProjectSolutionHelp();
-          return 1;
-      }
-    }
-    case 'init':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printProjectInitHelp();
-        return 0;
-      }
-      return handlers.runProjectInit(args);
-    case 'doctor':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printProjectDoctorHelp();
-        return 0;
-      }
-      return handlers.runProjectDoctor(args);
-    case 'feedback':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printProjectFeedbackHelp();
-        return 0;
-      }
-      return handlers.runProjectFeedback(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printProjectInspectHelp();
-        return 0;
-      }
-      return handlers.runProjectInspect(args);
-    default:
-      cliHelp.printHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printProjectHelp,
+      unknownExitCode: 1,
+      children: [
+        {
+          name: 'solution',
+          help: cliHelp.printProjectSolutionHelp,
+          children: [
+            { name: 'pull', help: cliHelp.printProjectSolutionPullHelp, run: (rest) => handlers.runProjectSolutionPull(rest) },
+          ],
+        },
+        { name: 'init', help: cliHelp.printProjectInitHelp, run: (rest) => handlers.runProjectInit(rest) },
+        { name: 'doctor', help: cliHelp.printProjectDoctorHelp, run: (rest) => handlers.runProjectDoctor(rest) },
+        { name: 'feedback', help: cliHelp.printProjectFeedbackHelp, run: (rest) => handlers.runProjectFeedback(rest) },
+        { name: 'inspect', help: cliHelp.printProjectInspectHelp, run: (rest) => handlers.runProjectInspect(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export async function runInitGroup(command: string | undefined, args: string[], handlers: InitGroupHandlers): Promise<number> {
-  const knownSubcommands = new Set(['start', 'status', 'resume', 'answer', 'cancel', 'help', '--help']);
-
-  if (!command || !knownSubcommands.has(command) || command === 'start') {
-    const startArgs = !command || command === 'start' ? args : [command, ...args];
-    if (startArgs.includes('--help') || startArgs.includes('help')) {
-      cliHelp.printInitHelp();
-      return 0;
-    }
-    return handlers.runInitStart(startArgs);
-  }
-
-  switch (command) {
-    case 'help':
-    case '--help':
-      cliHelp.printInitHelp();
-      return 0;
-    case 'status':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printInitStatusHelp();
-        return 0;
-      }
-      return handlers.runInitStatus(args);
-    case 'resume':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printInitResumeHelp();
-        return 0;
-      }
-      return handlers.runInitResume(args);
-    case 'answer':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printInitAnswerHelp();
-        return 0;
-      }
-      return handlers.runInitAnswer(args);
-    case 'cancel':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printInitCancelHelp();
-        return 0;
-      }
-      return handlers.runInitCancel(args);
-    default:
-      cliHelp.printInitHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printInitHelp,
+      children: [
+        { name: 'start', help: cliHelp.printInitHelp, run: (rest) => handlers.runInitStart(rest) },
+        { name: 'status', help: cliHelp.printInitStatusHelp, run: (rest) => handlers.runInitStatus(rest) },
+        { name: 'resume', help: cliHelp.printInitResumeHelp, run: (rest) => handlers.runInitResume(rest) },
+        { name: 'answer', help: cliHelp.printInitAnswerHelp, run: (rest) => handlers.runInitAnswer(rest) },
+        { name: 'cancel', help: cliHelp.printInitCancelHelp, run: (rest) => handlers.runInitCancel(rest) },
+      ],
+      defaultCommand: {
+        run: (rest) => handlers.runInitStart(rest),
+        help: cliHelp.printInitHelp,
+      },
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface AnalysisGroupHandlers {
@@ -372,52 +209,20 @@ export async function runAnalysisGroup(
   args: string[],
   handlers: AnalysisGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printAnalysisHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'report':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printAnalysisReportHelp();
-        return 0;
-      }
-      return handlers.runAnalysisReport(args);
-    case 'context':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printAnalysisContextHelp();
-        return 0;
-      }
-      return handlers.runAnalysisContext(args);
-    case 'portfolio':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printAnalysisPortfolioHelp();
-        return 0;
-      }
-      return handlers.runAnalysisPortfolio(args);
-    case 'drift':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printAnalysisPortfolioViewHelp('drift');
-        return 0;
-      }
-      return handlers.runAnalysisDrift(args);
-    case 'usage':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printAnalysisPortfolioViewHelp('usage');
-        return 0;
-      }
-      return handlers.runAnalysisUsage(args);
-    case 'policy':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printAnalysisPortfolioViewHelp('policy');
-        return 0;
-      }
-      return handlers.runAnalysisPolicy(args);
-    default:
-      cliHelp.printAnalysisHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printAnalysisHelp,
+      children: [
+        { name: 'report', help: cliHelp.printAnalysisReportHelp, run: (rest) => handlers.runAnalysisReport(rest) },
+        { name: 'context', help: cliHelp.printAnalysisContextHelp, run: (rest) => handlers.runAnalysisContext(rest) },
+        { name: 'portfolio', help: cliHelp.printAnalysisPortfolioHelp, run: (rest) => handlers.runAnalysisPortfolio(rest) },
+        { name: 'drift', help: () => cliHelp.printAnalysisPortfolioViewHelp('drift'), run: (rest) => handlers.runAnalysisDrift(rest) },
+        { name: 'usage', help: () => cliHelp.printAnalysisPortfolioViewHelp('usage'), run: (rest) => handlers.runAnalysisUsage(rest) },
+        { name: 'policy', help: () => cliHelp.printAnalysisPortfolioViewHelp('policy'), run: (rest) => handlers.runAnalysisPolicy(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface DeployGroupHandlers {
@@ -431,34 +236,17 @@ export async function runDeployGroup(
   args: string[],
   handlers: DeployGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printDeployHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'plan':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printDeployPlanHelp();
-        return 0;
-      }
-      return handlers.runDeployPlan(args);
-    case 'apply':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printDeployApplyHelp();
-        return 0;
-      }
-      return handlers.runDeployApply(args);
-    case 'release':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printDeployReleaseHelp();
-        return 0;
-      }
-      return handlers.runDeployRelease(args);
-    default:
-      cliHelp.printDeployHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printDeployHelp,
+      children: [
+        { name: 'plan', help: cliHelp.printDeployPlanHelp, run: (rest) => handlers.runDeployPlan(rest) },
+        { name: 'apply', help: cliHelp.printDeployApplyHelp, run: (rest) => handlers.runDeployApply(rest) },
+        { name: 'release', help: cliHelp.printDeployReleaseHelp, run: (rest) => handlers.runDeployRelease(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface DiagnosticsGroupHandlers {
@@ -471,28 +259,16 @@ export async function runDiagnosticsGroup(
   args: string[],
   handlers: DiagnosticsGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printDiagnosticsHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'doctor':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printDiagnosticsDoctorHelp();
-        return 0;
-      }
-      return handlers.runDiagnosticsDoctor(args);
-    case 'bundle':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printDiagnosticsBundleHelp();
-        return 0;
-      }
-      return handlers.runDiagnosticsBundle(args);
-    default:
-      cliHelp.printDiagnosticsHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printDiagnosticsHelp,
+      children: [
+        { name: 'doctor', help: cliHelp.printDiagnosticsDoctorHelp, run: (rest) => handlers.runDiagnosticsDoctor(rest) },
+        { name: 'bundle', help: cliHelp.printDiagnosticsBundleHelp, run: (rest) => handlers.runDiagnosticsBundle(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface SharePointGroupHandlers {
@@ -507,31 +283,34 @@ export async function runSharePointGroup(
   args: string[],
   handlers: SharePointGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printSharePointHelp();
-    return 0;
-  }
-
-  const [action, ...rest] = args;
-
-  if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
-    cliHelp.printSharePointHelp();
-    return 0;
-  }
-
-  switch (`${command} ${action}`) {
-    case 'site inspect':
-      return handlers.runSharePointSiteInspect(rest);
-    case 'list inspect':
-      return handlers.runSharePointListInspect(rest);
-    case 'file inspect':
-      return handlers.runSharePointFileInspect(rest);
-    case 'permissions inspect':
-      return handlers.runSharePointPermissionsInspect(rest);
-    default:
-      cliHelp.printSharePointHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printSharePointHelp,
+      children: [
+        {
+          name: 'site',
+          help: cliHelp.printSharePointHelp,
+          children: [{ name: 'inspect', help: cliHelp.printSharePointHelp, run: (rest) => handlers.runSharePointSiteInspect(rest) }],
+        },
+        {
+          name: 'list',
+          help: cliHelp.printSharePointHelp,
+          children: [{ name: 'inspect', help: cliHelp.printSharePointHelp, run: (rest) => handlers.runSharePointListInspect(rest) }],
+        },
+        {
+          name: 'file',
+          help: cliHelp.printSharePointHelp,
+          children: [{ name: 'inspect', help: cliHelp.printSharePointHelp, run: (rest) => handlers.runSharePointFileInspect(rest) }],
+        },
+        {
+          name: 'permissions',
+          help: cliHelp.printSharePointHelp,
+          children: [{ name: 'inspect', help: cliHelp.printSharePointHelp, run: (rest) => handlers.runSharePointPermissionsInspect(rest) }],
+        },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface PowerBiGroupHandlers {
@@ -545,29 +324,29 @@ export async function runPowerBiGroup(
   args: string[],
   handlers: PowerBiGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printPowerBiHelp();
-    return 0;
-  }
-
-  const [action, ...rest] = args;
-
-  if (!action || action === 'help' || action === '--help' || rest.includes('--help') || rest.includes('help')) {
-    cliHelp.printPowerBiHelp();
-    return 0;
-  }
-
-  switch (`${command} ${action}`) {
-    case 'workspace inspect':
-      return handlers.runPowerBiWorkspaceInspect(rest);
-    case 'dataset inspect':
-      return handlers.runPowerBiDatasetInspect(rest);
-    case 'report inspect':
-      return handlers.runPowerBiReportInspect(rest);
-    default:
-      cliHelp.printPowerBiHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printPowerBiHelp,
+      children: [
+        {
+          name: 'workspace',
+          help: cliHelp.printPowerBiHelp,
+          children: [{ name: 'inspect', help: cliHelp.printPowerBiHelp, run: (rest) => handlers.runPowerBiWorkspaceInspect(rest) }],
+        },
+        {
+          name: 'dataset',
+          help: cliHelp.printPowerBiHelp,
+          children: [{ name: 'inspect', help: cliHelp.printPowerBiHelp, run: (rest) => handlers.runPowerBiDatasetInspect(rest) }],
+        },
+        {
+          name: 'report',
+          help: cliHelp.printPowerBiHelp,
+          children: [{ name: 'inspect', help: cliHelp.printPowerBiHelp, run: (rest) => handlers.runPowerBiReportInspect(rest) }],
+        },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface DataverseGroupHandlers {
@@ -591,68 +370,40 @@ export async function runDataverseGroup(
   args: string[],
   handlers: DataverseGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printDataverseHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'whoami':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printDataverseWhoAmIHelp();
-        return 0;
-      }
-      return handlers.runDataverseWhoAmI(args);
-    case 'request':
-      return handlers.runDataverseRequest(args);
-    case 'action':
-      return handlers.runDataverseAction(args);
-    case 'function':
-      return handlers.runDataverseFunction(args);
-    case 'batch':
-      return handlers.runDataverseBatch(args);
-    case 'rows':
-      if (args.includes('--help') || args.includes('help')) {
-        const [action] = handlers.positionalArgs(args);
-
-        if (action === 'export') {
-          cliHelp.printDataverseRowsExportHelp();
-        } else if (action === 'apply') {
-          cliHelp.printDataverseRowsApplyHelp();
-        } else {
-          cliHelp.printDataverseRowsHelp();
-        }
-        return 0;
-      }
-      return handlers.runDataverseRows(args);
-    case 'query':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printDataverseQueryHelp();
-        return 0;
-      }
-      return handlers.runDataverseQuery(args);
-    case 'get':
-      return handlers.runDataverseGet(args);
-    case 'create':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printDataverseCreateHelp();
-        return 0;
-      }
-      return handlers.runDataverseCreate(args);
-    case 'update':
-      return handlers.runDataverseUpdate(args);
-    case 'delete':
-      return handlers.runDataverseDelete(args);
-    case 'metadata':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printDataverseMetadataHelp();
-        return 0;
-      }
-      return handlers.runDataverseMetadata(args);
-    default:
-      cliHelp.printHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printDataverseHelp,
+      unknownExitCode: 1,
+      children: [
+        { name: 'whoami', help: cliHelp.printDataverseWhoAmIHelp, run: (rest) => handlers.runDataverseWhoAmI(rest) },
+        { name: 'request', run: (rest) => handlers.runDataverseRequest(rest) },
+        { name: 'action', run: (rest) => handlers.runDataverseAction(rest) },
+        { name: 'function', run: (rest) => handlers.runDataverseFunction(rest) },
+        { name: 'batch', run: (rest) => handlers.runDataverseBatch(rest) },
+        {
+          name: 'rows',
+          help: () => {
+            const [action] = handlers.positionalArgs(args);
+            if (action === 'export') {
+              cliHelp.printDataverseRowsExportHelp();
+            } else if (action === 'apply') {
+              cliHelp.printDataverseRowsApplyHelp();
+            } else {
+              cliHelp.printDataverseRowsHelp();
+            }
+          },
+          run: (rest) => handlers.runDataverseRows(rest),
+        },
+        { name: 'query', help: cliHelp.printDataverseQueryHelp, run: (rest) => handlers.runDataverseQuery(rest) },
+        { name: 'get', run: (rest) => handlers.runDataverseGet(rest) },
+        { name: 'create', help: cliHelp.printDataverseCreateHelp, run: (rest) => handlers.runDataverseCreate(rest) },
+        { name: 'update', run: (rest) => handlers.runDataverseUpdate(rest) },
+        { name: 'delete', run: (rest) => handlers.runDataverseDelete(rest) },
+        { name: 'metadata', help: cliHelp.printDataverseMetadataHelp, run: (rest) => handlers.runDataverseMetadata(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface SolutionGroupHandlers {
@@ -680,102 +431,32 @@ export async function runSolutionGroup(
   args: string[],
   handlers: SolutionGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printSolutionHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'create':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionCreateHelp();
-        return 0;
-      }
-      return handlers.runSolutionCreate(args);
-    case 'delete':
-      return handlers.runSolutionDelete(args);
-    case 'set-metadata':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionSetMetadataHelp();
-        return 0;
-      }
-      return handlers.runSolutionSetMetadata(args);
-    case 'publish':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionPublishHelp();
-        return 0;
-      }
-      return handlers.runSolutionPublish(args);
-    case 'sync-status':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionSyncStatusHelp();
-        return 0;
-      }
-      return handlers.runSolutionSyncStatus(args);
-    case 'checkpoint':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionCheckpointHelp();
-        return 0;
-      }
-      return handlers.runSolutionCheckpoint(args);
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionListHelp();
-        return 0;
-      }
-      return handlers.runSolutionList(args);
-    case 'publishers':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionPublishersHelp();
-        return 0;
-      }
-      return handlers.runSolutionPublishers(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionInspectHelp();
-        return 0;
-      }
-      return handlers.runSolutionInspect(args);
-    case 'components':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionComponentsHelp();
-        return 0;
-      }
-      return handlers.runSolutionComponents(args);
-    case 'dependencies':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionDependenciesHelp();
-        return 0;
-      }
-      return handlers.runSolutionDependencies(args);
-    case 'analyze':
-      return handlers.runSolutionAnalyze(args);
-    case 'compare':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionCompareHelp();
-        return 0;
-      }
-      return handlers.runSolutionCompare(args);
-    case 'export':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionExportHelp();
-        return 0;
-      }
-      return handlers.runSolutionExport(args);
-    case 'import':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printSolutionImportHelp();
-        return 0;
-      }
-      return handlers.runSolutionImport(args);
-    case 'pack':
-      return handlers.runSolutionPack(args);
-    case 'unpack':
-      return handlers.runSolutionUnpack(args);
-    default:
-      cliHelp.printHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printSolutionHelp,
+      unknownExitCode: 1,
+      children: [
+        { name: 'create', help: cliHelp.printSolutionCreateHelp, run: (rest) => handlers.runSolutionCreate(rest) },
+        { name: 'delete', run: (rest) => handlers.runSolutionDelete(rest) },
+        { name: 'set-metadata', help: cliHelp.printSolutionSetMetadataHelp, run: (rest) => handlers.runSolutionSetMetadata(rest) },
+        { name: 'publish', help: cliHelp.printSolutionPublishHelp, run: (rest) => handlers.runSolutionPublish(rest) },
+        { name: 'sync-status', help: cliHelp.printSolutionSyncStatusHelp, run: (rest) => handlers.runSolutionSyncStatus(rest) },
+        { name: 'checkpoint', help: cliHelp.printSolutionCheckpointHelp, run: (rest) => handlers.runSolutionCheckpoint(rest) },
+        { name: 'list', help: cliHelp.printSolutionListHelp, run: (rest) => handlers.runSolutionList(rest) },
+        { name: 'publishers', help: cliHelp.printSolutionPublishersHelp, run: (rest) => handlers.runSolutionPublishers(rest) },
+        { name: 'inspect', help: cliHelp.printSolutionInspectHelp, run: (rest) => handlers.runSolutionInspect(rest) },
+        { name: 'components', help: cliHelp.printSolutionComponentsHelp, run: (rest) => handlers.runSolutionComponents(rest) },
+        { name: 'dependencies', help: cliHelp.printSolutionDependenciesHelp, run: (rest) => handlers.runSolutionDependencies(rest) },
+        { name: 'analyze', run: (rest) => handlers.runSolutionAnalyze(rest) },
+        { name: 'compare', help: cliHelp.printSolutionCompareHelp, run: (rest) => handlers.runSolutionCompare(rest) },
+        { name: 'export', help: cliHelp.printSolutionExportHelp, run: (rest) => handlers.runSolutionExport(rest) },
+        { name: 'import', help: cliHelp.printSolutionImportHelp, run: (rest) => handlers.runSolutionImport(rest) },
+        { name: 'pack', run: (rest) => handlers.runSolutionPack(rest) },
+        { name: 'unpack', run: (rest) => handlers.runSolutionUnpack(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface ConnectionReferenceGroupHandlers {
@@ -791,46 +472,20 @@ export async function runConnectionReferenceGroup(
   args: string[],
   handlers: ConnectionReferenceGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printConnectionReferenceHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'create':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printConnectionReferenceCreateHelp();
-        return 0;
-      }
-      return handlers.runConnectionReferenceCreate(args);
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printConnectionReferenceListHelp();
-        return 0;
-      }
-      return handlers.runConnectionReferenceList(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printConnectionReferenceInspectHelp();
-        return 0;
-      }
-      return handlers.runConnectionReferenceInspect(args);
-    case 'set':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printConnectionReferenceSetHelp();
-        return 0;
-      }
-      return handlers.runConnectionReferenceSet(args);
-    case 'validate':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printConnectionReferenceValidateHelp();
-        return 0;
-      }
-      return handlers.runConnectionReferenceValidate(args);
-    default:
-      cliHelp.printHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printConnectionReferenceHelp,
+      unknownExitCode: 1,
+      children: [
+        { name: 'create', help: cliHelp.printConnectionReferenceCreateHelp, run: (rest) => handlers.runConnectionReferenceCreate(rest) },
+        { name: 'list', help: cliHelp.printConnectionReferenceListHelp, run: (rest) => handlers.runConnectionReferenceList(rest) },
+        { name: 'inspect', help: cliHelp.printConnectionReferenceInspectHelp, run: (rest) => handlers.runConnectionReferenceInspect(rest) },
+        { name: 'set', help: cliHelp.printConnectionReferenceSetHelp, run: (rest) => handlers.runConnectionReferenceSet(rest) },
+        { name: 'validate', help: cliHelp.printConnectionReferenceValidateHelp, run: (rest) => handlers.runConnectionReferenceValidate(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface EnvironmentVariableGroupHandlers {
@@ -845,40 +500,19 @@ export async function runEnvironmentVariableGroup(
   args: string[],
   handlers: EnvironmentVariableGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printEnvironmentVariableHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'create':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentVariableCreateHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentVariableCreate(args);
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentVariableListHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentVariableList(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentVariableInspectHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentVariableInspect(args);
-    case 'set':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printEnvironmentVariableSetHelp();
-        return 0;
-      }
-      return handlers.runEnvironmentVariableSet(args);
-    default:
-      cliHelp.printHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printEnvironmentVariableHelp,
+      unknownExitCode: 1,
+      children: [
+        { name: 'create', help: cliHelp.printEnvironmentVariableCreateHelp, run: (rest) => handlers.runEnvironmentVariableCreate(rest) },
+        { name: 'list', help: cliHelp.printEnvironmentVariableListHelp, run: (rest) => handlers.runEnvironmentVariableList(rest) },
+        { name: 'inspect', help: cliHelp.printEnvironmentVariableInspectHelp, run: (rest) => handlers.runEnvironmentVariableInspect(rest) },
+        { name: 'set', help: cliHelp.printEnvironmentVariableSetHelp, run: (rest) => handlers.runEnvironmentVariableSet(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface CanvasGroupHandlers {
@@ -904,95 +538,36 @@ export async function runCanvasGroup(
   args: string[],
   handlers: CanvasGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printCanvasHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'attach':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasAttachHelp();
-        return 0;
-      }
-      return handlers.runCanvasAttach(args);
-    case 'download':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasDownloadHelp();
-        return 0;
-      }
-      return handlers.runCanvasDownload(args);
-    case 'create':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasCreateHelp();
-        return 0;
-      }
-      return handlers.runCanvasUnsupportedRemoteMutation('create', args);
-    case 'import':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasImportHelp();
-        return 0;
-      }
-      return handlers.runCanvasImport(args);
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasListHelp();
-        return 0;
-      }
-      return handlers.runCanvasList(args);
-    case 'probe':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasProbeHelp();
-        return 0;
-      }
-      return handlers.runCanvasProbe(args);
-    case 'access':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasAccessHelp();
-        return 0;
-      }
-      return handlers.runCanvasAccess(args);
-    case 'templates':
-      return handlers.runCanvasTemplates(args);
-    case 'workspace':
-      return handlers.runCanvasWorkspace(args);
-    case 'patch':
-      return handlers.runCanvasPatch(args);
-    case 'lint':
-      return handlers.runCanvasLint(args);
-    case 'validate':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasValidateHelp();
-        return 0;
-      }
-      return handlers.runCanvasValidate(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasInspectHelp();
-        return 0;
-      }
-      return handlers.runCanvasInspect(args);
-    case 'build':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasBuildHelp();
-        return 0;
-      }
-      return handlers.runCanvasBuild(args);
-    case 'diff':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printCanvasDiffHelp();
-        return 0;
-      }
-      return handlers.runCanvasDiff(args);
-    default:
-      cliHelp.printHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printCanvasHelp,
+      unknownExitCode: 1,
+      children: [
+        { name: 'attach', help: cliHelp.printCanvasAttachHelp, run: (rest) => handlers.runCanvasAttach(rest) },
+        { name: 'download', help: cliHelp.printCanvasDownloadHelp, run: (rest) => handlers.runCanvasDownload(rest) },
+        { name: 'create', help: cliHelp.printCanvasCreateHelp, run: (rest) => handlers.runCanvasUnsupportedRemoteMutation('create', rest) },
+        { name: 'import', help: cliHelp.printCanvasImportHelp, run: (rest) => handlers.runCanvasImport(rest) },
+        { name: 'list', help: cliHelp.printCanvasListHelp, run: (rest) => handlers.runCanvasList(rest) },
+        { name: 'probe', help: cliHelp.printCanvasProbeHelp, run: (rest) => handlers.runCanvasProbe(rest) },
+        { name: 'access', help: cliHelp.printCanvasAccessHelp, run: (rest) => handlers.runCanvasAccess(rest) },
+        { name: 'templates', delegate: true, run: (rest) => handlers.runCanvasTemplates(rest) },
+        { name: 'workspace', delegate: true, run: (rest) => handlers.runCanvasWorkspace(rest) },
+        { name: 'patch', delegate: true, run: (rest) => handlers.runCanvasPatch(rest) },
+        { name: 'lint', run: (rest) => handlers.runCanvasLint(rest) },
+        { name: 'validate', help: cliHelp.printCanvasValidateHelp, run: (rest) => handlers.runCanvasValidate(rest) },
+        { name: 'inspect', help: cliHelp.printCanvasInspectHelp, run: (rest) => handlers.runCanvasInspect(rest) },
+        { name: 'build', help: cliHelp.printCanvasBuildHelp, run: (rest) => handlers.runCanvasBuild(rest) },
+        { name: 'diff', help: cliHelp.printCanvasDiffHelp, run: (rest) => handlers.runCanvasDiff(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface FlowGroupHandlers {
   runFlowList(args: string[]): Promise<number>;
   runFlowInspect(args: string[]): Promise<number>;
+  runFlowAttach(args: string[]): Promise<number>;
   runFlowExport(args: string[]): Promise<number>;
   runFlowActivate(args: string[]): Promise<number>;
   runFlowPromote(args: string[]): Promise<number>;
@@ -1009,6 +584,7 @@ export interface FlowGroupHandlers {
   runFlowConnrefs(args: string[]): Promise<number>;
   runFlowDoctor(args: string[]): Promise<number>;
   runFlowAccess(args: string[]): Promise<number>;
+  runFlowLsp(args: string[]): Promise<number>;
 }
 
 export async function runFlowGroup(
@@ -1016,124 +592,34 @@ export async function runFlowGroup(
   args: string[],
   handlers: FlowGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printFlowHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'list':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowListHelp();
-        return 0;
-      }
-      return handlers.runFlowList(args);
-    case 'inspect':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowInspectHelp();
-        return 0;
-      }
-      return handlers.runFlowInspect(args);
-    case 'export':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowExportHelp();
-        return 0;
-      }
-      return handlers.runFlowExport(args);
-    case 'activate':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowActivateHelp();
-        return 0;
-      }
-      return handlers.runFlowActivate(args);
-    case 'promote':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowPromoteHelp();
-        return 0;
-      }
-      return handlers.runFlowPromote(args);
-    case 'unpack':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowUnpackHelp();
-        return 0;
-      }
-      return handlers.runFlowUnpack(args);
-    case 'pack':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowPackHelp();
-        return 0;
-      }
-      return handlers.runFlowPack(args);
-    case 'deploy':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowDeployHelp();
-        return 0;
-      }
-      return handlers.runFlowDeploy(args);
-    case 'normalize':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowNormalizeHelp();
-        return 0;
-      }
-      return handlers.runFlowNormalize(args);
-    case 'validate':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowValidateHelp();
-        return 0;
-      }
-      return handlers.runFlowValidate(args);
-    case 'graph':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowGraphHelp();
-        return 0;
-      }
-      return handlers.runFlowGraph(args);
-    case 'patch':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowPatchHelp();
-        return 0;
-      }
-      return handlers.runFlowPatch(args);
-    case 'runs':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowRunsHelp();
-        return 0;
-      }
-      return handlers.runFlowRuns(args);
-    case 'monitor':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowMonitorHelp();
-        return 0;
-      }
-      return handlers.runFlowMonitor(args);
-    case 'errors':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowErrorsHelp();
-        return 0;
-      }
-      return handlers.runFlowErrors(args);
-    case 'connrefs':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowConnrefsHelp();
-        return 0;
-      }
-      return handlers.runFlowConnrefs(args);
-    case 'doctor':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowDoctorHelp();
-        return 0;
-      }
-      return handlers.runFlowDoctor(args);
-    case 'access':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printFlowAccessHelp();
-        return 0;
-      }
-      return handlers.runFlowAccess(args);
-    default:
-      cliHelp.printFlowHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printFlowHelp,
+      children: [
+        { name: 'list', help: cliHelp.printFlowListHelp, run: (rest) => handlers.runFlowList(rest) },
+        { name: 'inspect', help: cliHelp.printFlowInspectHelp, run: (rest) => handlers.runFlowInspect(rest) },
+        { name: 'attach', help: cliHelp.printFlowAttachHelp, run: (rest) => handlers.runFlowAttach(rest) },
+        { name: 'export', help: cliHelp.printFlowExportHelp, run: (rest) => handlers.runFlowExport(rest) },
+        { name: 'activate', help: cliHelp.printFlowActivateHelp, run: (rest) => handlers.runFlowActivate(rest) },
+        { name: 'promote', help: cliHelp.printFlowPromoteHelp, run: (rest) => handlers.runFlowPromote(rest) },
+        { name: 'unpack', help: cliHelp.printFlowUnpackHelp, run: (rest) => handlers.runFlowUnpack(rest) },
+        { name: 'pack', help: cliHelp.printFlowPackHelp, run: (rest) => handlers.runFlowPack(rest) },
+        { name: 'deploy', help: cliHelp.printFlowDeployHelp, run: (rest) => handlers.runFlowDeploy(rest) },
+        { name: 'normalize', help: cliHelp.printFlowNormalizeHelp, run: (rest) => handlers.runFlowNormalize(rest) },
+        { name: 'validate', help: cliHelp.printFlowValidateHelp, run: (rest) => handlers.runFlowValidate(rest) },
+        { name: 'graph', help: cliHelp.printFlowGraphHelp, run: (rest) => handlers.runFlowGraph(rest) },
+        { name: 'patch', help: cliHelp.printFlowPatchHelp, run: (rest) => handlers.runFlowPatch(rest) },
+        { name: 'runs', help: cliHelp.printFlowRunsHelp, run: (rest) => handlers.runFlowRuns(rest) },
+        { name: 'monitor', help: cliHelp.printFlowMonitorHelp, run: (rest) => handlers.runFlowMonitor(rest) },
+        { name: 'errors', help: cliHelp.printFlowErrorsHelp, run: (rest) => handlers.runFlowErrors(rest) },
+        { name: 'connrefs', help: cliHelp.printFlowConnrefsHelp, run: (rest) => handlers.runFlowConnrefs(rest) },
+        { name: 'doctor', help: cliHelp.printFlowDoctorHelp, run: (rest) => handlers.runFlowDoctor(rest) },
+        { name: 'access', help: cliHelp.printFlowAccessHelp, run: (rest) => handlers.runFlowAccess(rest) },
+        { name: 'lsp', help: cliHelp.printFlowLspHelp, run: (rest) => handlers.runFlowLsp(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }
 
 export interface ModelGroupHandlers {
@@ -1156,42 +642,25 @@ export async function runModelGroup(
   args: string[],
   handlers: ModelGroupHandlers
 ): Promise<number> {
-  if (!command || command === 'help' || command === '--help') {
-    cliHelp.printModelHelp();
-    return 0;
-  }
-
-  switch (command) {
-    case 'create':
-      return handlers.runModelCreate(args);
-    case 'attach':
-      return handlers.runModelAttach(args);
-    case 'list':
-      return handlers.runModelList(args);
-    case 'inspect':
-      return handlers.runModelInspect(args);
-    case 'access':
-      if (args.includes('--help') || args.includes('help')) {
-        cliHelp.printModelAccessHelp();
-        return 0;
-      }
-      return handlers.runModelAccess(args);
-    case 'composition':
-      return handlers.runModelComposition(args);
-    case 'impact':
-      return handlers.runModelImpact(args);
-    case 'sitemap':
-      return handlers.runModelSitemap(args);
-    case 'forms':
-      return handlers.runModelForms(args);
-    case 'views':
-      return handlers.runModelViews(args);
-    case 'dependencies':
-      return handlers.runModelDependencies(args);
-    case 'patch':
-      return handlers.runModelPatch(args);
-    default:
-      cliHelp.printHelp();
-      return 1;
-  }
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printModelHelp,
+      unknownExitCode: 1,
+      children: [
+        { name: 'create', run: (rest) => handlers.runModelCreate(rest) },
+        { name: 'attach', run: (rest) => handlers.runModelAttach(rest) },
+        { name: 'list', run: (rest) => handlers.runModelList(rest) },
+        { name: 'inspect', run: (rest) => handlers.runModelInspect(rest) },
+        { name: 'access', help: cliHelp.printModelAccessHelp, run: (rest) => handlers.runModelAccess(rest) },
+        { name: 'composition', run: (rest) => handlers.runModelComposition(rest) },
+        { name: 'impact', run: (rest) => handlers.runModelImpact(rest) },
+        { name: 'sitemap', run: (rest) => handlers.runModelSitemap(rest) },
+        { name: 'forms', run: (rest) => handlers.runModelForms(rest) },
+        { name: 'views', run: (rest) => handlers.runModelViews(rest) },
+        { name: 'dependencies', run: (rest) => handlers.runModelDependencies(rest) },
+        { name: 'patch', delegate: true, run: (rest) => handlers.runModelPatch(rest) },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
 }

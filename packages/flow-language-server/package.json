@@ -1,0 +1,26 @@
+{
+  "name": "@pp/flow-language-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": { "pp-flow-lsp": "./dist/server.js" },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs" },
+    "./server": { "types": "./dist/server.d.ts", "import": "./dist/server.js", "require": "./dist/server.cjs" }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/server.ts --format esm,cjs --clean",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "@pp/flow": "workspace:*",
+    "@pp/diagnostics": "workspace:*"
+  }
+}

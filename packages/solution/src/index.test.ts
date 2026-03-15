@@ -1,11 +1,17 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AdmZip from 'adm-zip';
 import { createDiagnostic, ok, type OperationResult } from '@pp/diagnostics';
 import type { DataverseClient, EntityDefinition } from '@pp/dataverse';
-import { SolutionService, type SolutionCommandInvocation, type SolutionCommandResult, type SolutionPublishProgressEvent } from './index';
+import {
+  normalizeCommandInvocationForCurrentPlatform,
+  SolutionService,
+  type SolutionCommandInvocation,
+  type SolutionCommandResult,
+  type SolutionPublishProgressEvent,
+} from './index';
 
 interface StubData {
   solution: {
@@ -54,6 +60,10 @@ const tempDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0, tempDirs.length).map((path) => rm(path, { recursive: true, force: true })));
+});
+
+beforeEach(() => {
+  vi.restoreAllMocks();
 });
 
 async function createTempDir(): Promise<string> {
@@ -3114,6 +3124,41 @@ describe('SolutionService', () => {
         cwd: undefined,
       },
     ]);
+  });
+
+  it('launches Windows .cmd pac wrappers through cmd.exe', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const comSpec = process.env.ComSpec;
+    process.env.ComSpec = 'C:\\Windows\\System32\\cmd.exe';
+
+    try {
+      expect(
+        normalizeCommandInvocationForCurrentPlatform({
+          executable: 'C:\\Users\\Callum.Alpass\\AppData\\Local\\Microsoft\\PowerAppsCli\\pac.cmd',
+          args: ['solution', 'unpack', '--zipfile', 'Core.zip'],
+        })
+      ).toEqual({
+        executable: 'C:\\Windows\\System32\\cmd.exe',
+        args: [
+          '/d',
+          '/s',
+          '/c',
+          'C:\\Users\\Callum.Alpass\\AppData\\Local\\Microsoft\\PowerAppsCli\\pac.cmd',
+          'solution',
+          'unpack',
+          '--zipfile',
+          'Core.zip',
+        ],
+        cwd: undefined,
+      });
+    } finally {
+      if (comSpec === undefined) {
+        delete process.env.ComSpec;
+      } else {
+        process.env.ComSpec = comSpec;
+      }
+      platformSpy.mockRestore();
+    }
   });
 
   it('analyzes unpacked local solution artifacts and compares file drift', async () => {

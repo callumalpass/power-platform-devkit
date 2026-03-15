@@ -182,9 +182,18 @@ describe('@pp/mcp', () => {
     expect(tools.tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         'pp.environment.list',
+        'pp.environment.inspect',
+        'pp.environment.add',
         'pp.environment.cleanup-plan',
         'pp.environment.cleanup',
+        'pp.auth-profile.list',
         'pp.auth-profile.inspect',
+        'pp.auth-profile.create',
+        'pp.auth-profile.authenticate',
+        'pp.browser-profile.list',
+        'pp.browser-profile.inspect',
+        'pp.browser-profile.create',
+        'pp.browser-profile.bootstrap',
         'pp.solution.list',
         'pp.solution.inspect',
         'pp.solution.compare',
@@ -217,7 +226,9 @@ describe('@pp/mcp', () => {
         'pp.canvas-app.access',
         'pp.canvas-app.plan-attach',
         'pp.canvas-app.attach',
+        'pp.connection-reference.create',
         'pp.connection-reference.inspect',
+        'pp.connection-reference.set',
         'pp.environment-variable.inspect',
         'pp.model-app.inspect',
         'pp.canvas-app.download',
@@ -225,6 +236,11 @@ describe('@pp/mcp', () => {
         'pp.project.inspect',
         'pp.project.doctor',
         'pp.project.feedback',
+        'pp.setup.start',
+        'pp.setup.status',
+        'pp.setup.answer',
+        'pp.setup.resume',
+        'pp.setup.cancel',
         'pp.init.start',
         'pp.init.status',
         'pp.init.answer',
@@ -346,8 +362,28 @@ describe('@pp/mcp', () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: 'auth',
-          readTools: expect.arrayContaining(['pp.auth-profile.inspect', 'pp.environment.list']),
-          notes: expect.stringContaining('bound auth profile'),
+          readTools: expect.arrayContaining([
+            'pp.auth-profile.list',
+            'pp.auth-profile.inspect',
+            'pp.browser-profile.list',
+            'pp.browser-profile.inspect',
+            'pp.environment.list',
+            'pp.environment.inspect',
+            'pp.setup.status',
+          ]),
+          mutationToolsAvailable: true,
+          mutationTools: expect.arrayContaining([
+            'pp.auth-profile.create',
+            'pp.auth-profile.authenticate',
+            'pp.browser-profile.create',
+            'pp.browser-profile.bootstrap',
+            'pp.environment.add',
+            'pp.setup.start',
+            'pp.setup.answer',
+            'pp.setup.resume',
+            'pp.setup.cancel',
+          ]),
+          notes: expect.stringContaining('interactive auth preferred'),
         }),
         expect.objectContaining({
           name: 'dataverse',
@@ -375,6 +411,8 @@ describe('@pp/mcp', () => {
         }),
         expect.objectContaining({
           name: 'dataverse',
+          mutationToolsAvailable: true,
+          mutationTools: expect.arrayContaining(['pp.connection-reference.create', 'pp.connection-reference.set']),
           readTools: expect.arrayContaining([
             'pp.dataverse.metadata.table',
             'pp.dataverse.metadata.relationship',
@@ -424,9 +462,44 @@ describe('@pp/mcp', () => {
         }),
         expect.objectContaining({
           name: 'project',
-          readTools: expect.arrayContaining(['pp.project.inspect', 'pp.project.doctor', 'pp.project.feedback']),
+          readTools: expect.arrayContaining(['pp.project.inspect', 'pp.project.doctor', 'pp.project.feedback', 'pp.setup.status']),
           mutationToolsAvailable: true,
-          mutationTools: expect.arrayContaining(['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.deploy.plan', 'pp.deploy.apply']),
+          mutationTools: expect.arrayContaining([
+            'pp.setup.start',
+            'pp.setup.answer',
+            'pp.setup.resume',
+            'pp.setup.cancel',
+            'pp.init.start',
+            'pp.init.answer',
+            'pp.init.resume',
+            'pp.init.cancel',
+            'pp.deploy.plan',
+            'pp.deploy.apply',
+          ]),
+        }),
+        expect.objectContaining({
+          name: 'auth',
+          readTools: expect.arrayContaining([
+            'pp.auth-profile.list',
+            'pp.auth-profile.inspect',
+            'pp.browser-profile.list',
+            'pp.browser-profile.inspect',
+            'pp.environment.list',
+            'pp.environment.inspect',
+            'pp.setup.status',
+          ]),
+          mutationToolsAvailable: true,
+          mutationTools: expect.arrayContaining([
+            'pp.auth-profile.create',
+            'pp.auth-profile.authenticate',
+            'pp.browser-profile.create',
+            'pp.browser-profile.bootstrap',
+            'pp.environment.add',
+            'pp.setup.start',
+            'pp.setup.answer',
+            'pp.setup.resume',
+            'pp.setup.cancel',
+          ]),
         }),
         expect.objectContaining({
           name: 'mcp',
@@ -438,6 +511,10 @@ describe('@pp/mcp', () => {
             'pp.dataverse.delete',
             'pp.model-app.create',
             'pp.model-app.attach',
+            'pp.init.start',
+            'pp.init.answer',
+            'pp.init.resume',
+            'pp.init.cancel',
             'pp.solution.create',
             'pp.solution.set-metadata',
             'pp.solution.publish',
@@ -450,6 +527,8 @@ describe('@pp/mcp', () => {
             'pp.canvas-app.attach',
             'pp.canvas-app.download',
             'pp.canvas-app.import',
+            'pp.deploy.plan',
+            'pp.deploy.apply',
           ]),
         }),
       ])
@@ -711,6 +790,125 @@ describe('@pp/mcp', () => {
     });
     expect(createSpy).toHaveBeenCalledWith('HarnessApp', {
       name: 'Harness App',
+      solutionUniqueName: 'Core',
+    });
+  });
+
+  it('creates a connection reference through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const createSpy = vi.spyOn(ConnectionReferenceService.prototype, 'create').mockResolvedValue(
+      ok(
+        {
+          id: 'ref-1',
+          kind: 'row',
+          logicalName: 'pp_shared_sql',
+          displayName: 'Shared SQL',
+          connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+          connectionId: '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-123',
+          connected: true,
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.connection-reference.create'].handler({
+      environment: 'dev',
+      logicalName: 'pp_shared_sql',
+      displayName: 'Shared SQL',
+      connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+      connectionId: '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-123',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.connection-reference.create',
+        mutationPolicy: {
+          mode: 'controlled',
+          mutationsExposed: true,
+        },
+      },
+      data: {
+        logicalName: 'pp_shared_sql',
+        displayName: 'Shared SQL',
+      },
+    });
+    expect(createSpy).toHaveBeenCalledWith('pp_shared_sql', '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-123', {
+      displayName: 'Shared SQL',
+      connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+      customConnectorId: undefined,
+      solutionUniqueName: 'Core',
+    });
+  });
+
+  it('sets a connection reference binding through the MCP tool surface', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
+    await writeFixtureConfig(configDir);
+
+    mockDataverseResolution({
+      dev: createFixtureDataverseClient({}),
+    });
+    const setSpy = vi.spyOn(ConnectionReferenceService.prototype, 'setConnectionId').mockResolvedValue(
+      ok(
+        {
+          id: 'ref-1',
+          kind: 'row',
+          logicalName: 'pp_shared_sql',
+          displayName: 'Shared SQL',
+          connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
+          connectionId: '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456',
+          connected: true,
+        },
+        {
+          supportTier: 'preview',
+        },
+      ),
+    );
+
+    const server = createPpMcpServer({
+      configDir,
+      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+    }) as unknown as {
+      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
+    };
+
+    const result = await server._registeredTools['pp.connection-reference.set'].handler({
+      environment: 'dev',
+      identifier: 'pp_shared_sql',
+      connectionId: '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456',
+      solutionUniqueName: 'Core',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.connection-reference.set',
+        mutationPolicy: {
+          mode: 'controlled',
+          mutationsExposed: true,
+        },
+      },
+      data: {
+        logicalName: 'pp_shared_sql',
+        connectionId: '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456',
+      },
+    });
+    expect(setSpy).toHaveBeenCalledWith('pp_shared_sql', '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456', {
       solutionUniqueName: 'Core',
     });
   });
@@ -2182,6 +2380,142 @@ describe('@pp/mcp', () => {
       data: {
         id: sessionId,
         status: 'completed',
+      },
+    });
+  });
+
+  it('manages local auth, browser, and environment config through MCP tools', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-local-config-'));
+    const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-local-project-'));
+
+    const client = await createClient({
+      configDir,
+      projectPath: projectRoot,
+    });
+
+    const createBrowser = await client.callTool({
+      name: 'pp.browser-profile.create',
+      arguments: {
+        name: 'edge-work',
+        kind: 'edge',
+      },
+    });
+    expect(createBrowser.isError).toBeFalsy();
+    expect(createBrowser.structuredContent).toMatchObject({
+      success: true,
+      tool: { name: 'pp.browser-profile.create' },
+      data: {
+        name: 'edge-work',
+        kind: 'edge',
+      },
+    });
+
+    const createProfile = await client.callTool({
+      name: 'pp.auth-profile.create',
+      arguments: {
+        name: 'work',
+        type: 'user',
+        defaultResource: 'https://example.crm.dynamics.com',
+        browserProfile: 'edge-work',
+      },
+    });
+    expect(createProfile.isError).toBeFalsy();
+    expect(createProfile.structuredContent).toMatchObject({
+      success: true,
+      tool: { name: 'pp.auth-profile.create' },
+      data: {
+        name: 'work',
+        type: 'user',
+        browserProfile: 'edge-work',
+        defaultResource: 'https://example.crm.dynamics.com',
+      },
+    });
+
+    const addEnvironment = await client.callTool({
+      name: 'pp.environment.add',
+      arguments: {
+        alias: 'dev',
+        url: 'https://example.crm.dynamics.com',
+        authProfile: 'work',
+        defaultSolution: 'Core',
+      },
+    });
+    expect(addEnvironment.isError).toBeFalsy();
+    expect(addEnvironment.structuredContent).toMatchObject({
+      success: true,
+      tool: { name: 'pp.environment.add' },
+      data: {
+        alias: 'dev',
+        authProfile: 'work',
+        defaultSolution: 'Core',
+      },
+    });
+
+    const inspectEnvironment = await client.callTool({
+      name: 'pp.environment.inspect',
+      arguments: {
+        alias: 'dev',
+      },
+    });
+    expect(inspectEnvironment.isError).toBeFalsy();
+    expect(inspectEnvironment.structuredContent).toMatchObject({
+      success: true,
+      tool: { name: 'pp.environment.inspect' },
+      data: {
+        alias: 'dev',
+        authProfile: 'work',
+      },
+    });
+
+    const listProfiles = await client.callTool({
+      name: 'pp.auth-profile.list',
+      arguments: {},
+    });
+    expect(listProfiles.isError).toBeFalsy();
+    expect((listProfiles.structuredContent as { data: Array<{ name: string }> }).data).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'work' })])
+    );
+  });
+
+  it('defaults setup sessions to interactive user auth through MCP', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-setup-config-'));
+    const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-setup-project-'));
+
+    const client = await createClient({
+      configDir,
+      projectPath: projectRoot,
+    });
+
+    const started = await client.callTool({
+      name: 'pp.setup.start',
+      arguments: {
+        projectPath: projectRoot,
+        environmentAlias: 'dev',
+        environmentUrl: 'https://example.crm.dynamics.com',
+        authProfileName: 'work',
+        browserProfileName: 'edge-work',
+        projectName: 'demo',
+        solutionName: 'Core',
+      },
+    });
+
+    expect(started.isError).toBeFalsy();
+    expect(started.structuredContent).toMatchObject({
+      success: true,
+      tool: {
+        name: 'pp.setup.start',
+      },
+      data: {
+        status: 'active',
+        answers: {
+          goal: 'full',
+          authMode: 'user',
+          authProfileName: 'work',
+          browserProfileName: 'edge-work',
+        },
+        prompt: {
+          field: 'loginHint',
+        },
       },
     });
   });

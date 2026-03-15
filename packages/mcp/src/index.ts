@@ -5,9 +5,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { stableStringify } from '@pp/artifacts';
 import { generateContextPack, generatePortfolioReport, type AnalysisContextPack } from '@pp/analysis';
-import { AuthService, summarizeProfile } from '@pp/auth';
+import { AuthService, DEFAULT_BROWSER_BOOTSTRAP_URL, summarizeBrowserProfile, summarizeProfile, type AuthProfile, type BrowserProfile } from '@pp/auth';
 import { CanvasService } from '@pp/canvas';
-import { checkEnvironmentAccess, getEnvironmentAlias, listEnvironments, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
+import { checkEnvironmentAccess, getEnvironmentAlias, listEnvironments, saveEnvironmentAlias, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
 import {
   ConnectionReferenceService,
   EnvironmentVariableService,
@@ -453,6 +453,19 @@ const modelCreateSchema = solutionScopeSchema.extend({
   name: z.string().min(1).optional(),
 });
 
+const connectionReferenceCreateSchema = solutionScopeSchema.extend({
+  logicalName: z.string().min(1),
+  connectionId: z.string().min(1),
+  displayName: z.string().min(1).optional(),
+  connectorId: z.string().min(1).optional(),
+  customConnectorId: z.string().min(1).optional(),
+});
+
+const connectionReferenceSetSchema = solutionScopeSchema.extend({
+  identifier: z.string().min(1),
+  connectionId: z.string().min(1),
+});
+
 const modelAttachSchema = solutionScopeSchema.extend({
   identifier: z.string().min(1),
   solutionUniqueName: z.string().min(1),
@@ -577,6 +590,82 @@ const authProfileInspectSchema = z.object({
   configDir: z.string().min(1).optional(),
 });
 
+const authProfileListSchema = z.object({
+  configDir: z.string().min(1).optional(),
+});
+
+const authProfileCreateSchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(['user', 'device-code', 'environment-token', 'client-secret', 'static-token']),
+  configDir: z.string().min(1).optional(),
+  description: z.string().optional(),
+  tenantId: z.string().min(1).optional(),
+  clientId: z.string().min(1).optional(),
+  defaultResource: z.string().url().optional(),
+  scopes: z.array(z.string().min(1)).optional(),
+  loginHint: z.string().optional(),
+  browserProfile: z.string().min(1).optional(),
+  prompt: z.enum(['select_account', 'login', 'consent', 'none']).optional(),
+  fallbackToDeviceCode: z.boolean().optional(),
+  environmentVariable: z.string().min(1).optional(),
+  clientSecretEnv: z.string().min(1).optional(),
+  token: z.string().min(1).optional(),
+});
+
+const authProfileAuthenticateSchema = z.object({
+  name: z.string().min(1),
+  resource: z.string().url().optional(),
+  configDir: z.string().min(1).optional(),
+  allowInteractiveAuth: z.boolean().optional(),
+  forcePrompt: z.boolean().optional(),
+  preferredFlow: z.enum(['interactive', 'device-code']).optional(),
+});
+
+const browserProfileInspectSchema = z.object({
+  name: z.string().min(1),
+  configDir: z.string().min(1).optional(),
+});
+
+const browserProfileListSchema = z.object({
+  configDir: z.string().min(1).optional(),
+});
+
+const browserProfileCreateSchema = z.object({
+  name: z.string().min(1),
+  configDir: z.string().min(1).optional(),
+  description: z.string().optional(),
+  kind: z.enum(['chrome', 'edge', 'chromium', 'custom']).optional(),
+  command: z.string().min(1).optional(),
+  args: z.array(z.string()).optional(),
+  directory: z.string().min(1).optional(),
+});
+
+const browserProfileBootstrapSchema = z.object({
+  name: z.string().min(1),
+  configDir: z.string().min(1).optional(),
+  url: z.string().url().optional(),
+  completed: z.boolean().optional(),
+  completedAt: z.string().optional(),
+});
+
+const environmentInspectSchema = z.object({
+  alias: z.string().min(1),
+  configDir: z.string().min(1).optional(),
+});
+
+const environmentAddSchema = z.object({
+  alias: z.string().min(1),
+  url: z.string().url(),
+  authProfile: z.string().min(1),
+  configDir: z.string().min(1).optional(),
+  tenantId: z.string().min(1).optional(),
+  displayName: z.string().optional(),
+  defaultSolution: z.string().min(1).optional(),
+  makerEnvironmentId: z.string().min(1).optional(),
+  apiPath: z.string().min(1).optional(),
+  accessMode: z.enum(['read-write', 'read-only']).optional(),
+});
+
 const solutionSyncStatusSchema = remoteBaseSchema.extend({
   uniqueName: z.string().min(1),
   managed: z.boolean().optional(),
@@ -646,6 +735,17 @@ const initAnswerSchema = z.object({
   stageName: z.string().min(1).optional(),
 });
 
+const setupStartSchema = initAnswerSchema.extend({
+  projectPath: z.string().min(1).optional(),
+  configDir: z.string().min(1).optional(),
+  allowInteractiveAuth: z.boolean().optional(),
+});
+
+const setupSessionSchema = z.object({
+  sessionId: z.string().uuid(),
+  configDir: z.string().min(1).optional(),
+});
+
 const deployApplySchema = z.object({
   sessionId: z.string().uuid(),
   mode: z.enum(['apply', 'dry-run']).optional(),
@@ -666,6 +766,16 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'List configured Dataverse environment aliases from the local pp config registry.',
   },
   {
+    name: 'pp.environment.inspect',
+    title: 'Inspect Environment',
+    description: 'Inspect one configured Dataverse environment alias from the local pp config registry.',
+  },
+  {
+    name: 'pp.environment.add',
+    title: 'Add Environment',
+    description: 'Create or update one local Dataverse environment alias in the pp config registry.',
+  },
+  {
     name: 'pp.environment.cleanup-plan',
     title: 'Plan Environment Cleanup',
     description: 'List run-scoped disposable solutions that match a prefix before bootstrap cleanup.',
@@ -676,9 +786,44 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'Preview or delete run-scoped disposable solutions that match a prefix for bootstrap reset workflows.',
   },
   {
+    name: 'pp.auth-profile.list',
+    title: 'List Auth Profiles',
+    description: 'List configured auth profiles from the local pp config registry.',
+  },
+  {
     name: 'pp.auth-profile.inspect',
     title: 'Inspect Auth Profile',
     description: 'Inspect one auth profile directly or resolve it from an environment alias for baseline verification.',
+  },
+  {
+    name: 'pp.auth-profile.create',
+    title: 'Create Auth Profile',
+    description: 'Create or update one local auth profile, including interactive-user, device-code, env-var, client-secret, and static-token variants.',
+  },
+  {
+    name: 'pp.auth-profile.authenticate',
+    title: 'Authenticate Auth Profile',
+    description: 'Run one interactive or device-code sign-in for a local public-client auth profile and persist the token cache.',
+  },
+  {
+    name: 'pp.browser-profile.list',
+    title: 'List Browser Profiles',
+    description: 'List configured browser profiles from the local pp config registry.',
+  },
+  {
+    name: 'pp.browser-profile.inspect',
+    title: 'Inspect Browser Profile',
+    description: 'Inspect one configured browser profile from the local pp config registry.',
+  },
+  {
+    name: 'pp.browser-profile.create',
+    title: 'Create Browser Profile',
+    description: 'Create or update one local browser profile for interactive auth and Maker handoff flows.',
+  },
+  {
+    name: 'pp.browser-profile.bootstrap',
+    title: 'Bootstrap Browser Profile',
+    description: 'Launch or mark one browser profile as bootstrapped for Maker-authenticated flows.',
   },
   {
     name: 'pp.solution.list',
@@ -811,9 +956,19 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'Export one remote flow into a local artifact path for repo-local inspection or patching.',
   },
   {
+    name: 'pp.connection-reference.create',
+    title: 'Create Connection Reference',
+    description: 'Create one explicit Dataverse connection reference with connector metadata and optional solution attachment.',
+  },
+  {
     name: 'pp.connection-reference.inspect',
     title: 'Inspect Connection References',
     description: 'List or inspect Dataverse connection references, preserving support tier and diagnostics.',
+  },
+  {
+    name: 'pp.connection-reference.set',
+    title: 'Set Connection Reference Binding',
+    description: 'Update one Dataverse connection reference to point at one explicit connection id.',
   },
   {
     name: 'pp.environment-variable.inspect',
@@ -879,6 +1034,31 @@ export const initialMcpTools: McpToolDefinition[] = [
     name: 'pp.project.feedback',
     title: 'Project Feedback',
     description: 'Capture conceptual feedback about the local project structure without leaving the MCP surface.',
+  },
+  {
+    name: 'pp.setup.start',
+    title: 'Start Setup Session',
+    description: 'Start a guided, resumable pp setup session that defaults to interactive user auth.',
+  },
+  {
+    name: 'pp.setup.status',
+    title: 'Inspect Setup Session',
+    description: 'Inspect the state of a persisted pp setup session.',
+  },
+  {
+    name: 'pp.setup.answer',
+    title: 'Answer Setup Session',
+    description: 'Apply one or more user answers to a persisted pp setup session.',
+  },
+  {
+    name: 'pp.setup.resume',
+    title: 'Resume Setup Session',
+    description: 'Resume a persisted pp setup session after an external step completes.',
+  },
+  {
+    name: 'pp.setup.cancel',
+    title: 'Cancel Setup Session',
+    description: 'Cancel a persisted pp setup session.',
   },
   {
     name: 'pp.init.start',
@@ -956,6 +1136,7 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.project.inspect',
       'pp.project.doctor',
       'pp.project.feedback',
+      'pp.setup.status',
       'pp.init.status',
       'pp.analysis.context',
       'pp.analysis.portfolio',
@@ -964,16 +1145,47 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.analysis.policy',
     ],
     mutationToolsAvailable: true,
-    mutationTools: ['pp.init.start', 'pp.init.answer', 'pp.init.resume', 'pp.init.cancel', 'pp.deploy.plan', 'pp.deploy.apply'],
-    notes: 'Reads local project topology and can drive guided init sessions plus bounded deploy plan-then-apply workflows against the resolved workspace.',
+    mutationTools: [
+      'pp.setup.start',
+      'pp.setup.answer',
+      'pp.setup.resume',
+      'pp.setup.cancel',
+      'pp.init.start',
+      'pp.init.answer',
+      'pp.init.resume',
+      'pp.init.cancel',
+      'pp.deploy.plan',
+      'pp.deploy.apply',
+    ],
+    notes: 'Reads local project topology and can drive guided setup/init sessions plus bounded deploy plan-then-apply workflows against the resolved workspace.',
   },
   {
     name: 'auth',
     kind: 'local-context',
     supportTier: 'preview',
-    readTools: ['pp.auth-profile.inspect', 'pp.environment.list'],
-    mutationToolsAvailable: false,
-    notes: 'Reads local pp auth-profile metadata directly or by resolving an environment alias to its bound auth profile.',
+    readTools: [
+      'pp.auth-profile.list',
+      'pp.auth-profile.inspect',
+      'pp.browser-profile.list',
+      'pp.browser-profile.inspect',
+      'pp.environment.list',
+      'pp.environment.inspect',
+      'pp.setup.status',
+    ],
+    mutationToolsAvailable: true,
+    mutationTools: [
+      'pp.auth-profile.create',
+      'pp.auth-profile.authenticate',
+      'pp.browser-profile.create',
+      'pp.browser-profile.bootstrap',
+      'pp.environment.add',
+      'pp.setup.start',
+      'pp.setup.answer',
+      'pp.setup.resume',
+      'pp.setup.cancel',
+    ],
+    notes:
+      'Manages local pp auth profiles, browser profiles, environment aliases, and guided setup sessions directly from MCP, with interactive auth preferred for human-oriented setup flows.',
   },
   {
     name: 'dataverse',
@@ -1004,6 +1216,8 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.dataverse.metadata.apply',
       'pp.dataverse.create',
       'pp.dataverse.delete',
+      'pp.connection-reference.create',
+      'pp.connection-reference.set',
       'pp.model-app.create',
       'pp.model-app.attach',
     ],
@@ -1173,6 +1387,60 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
+    'pp.environment.inspect',
+    {
+      title: 'Inspect Environment',
+      description: 'Inspect one configured Dataverse environment alias from the local pp config registry.',
+      inputSchema: environmentInspectSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Environment'),
+    },
+    async ({ alias, configDir }) => {
+      const result = await getEnvironmentAlias(alias, readConfigOptions(configDir, defaults));
+
+      if (!result.success || !result.data) {
+        return toToolResult(
+          'pp.environment.inspect',
+          result.success
+            ? fail(
+                createDiagnostic('error', 'ENVIRONMENT_ALIAS_NOT_FOUND', `Environment alias ${alias} was not found.`, {
+                  source: '@pp/mcp',
+                })
+              )
+            : result,
+          readOnlyPolicy()
+        );
+      }
+
+      return toToolResult('pp.environment.inspect', result, readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.environment.add',
+    {
+      title: 'Add Environment',
+      description: 'Create or update one local Dataverse environment alias in the pp config registry.',
+      inputSchema: environmentAddSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Add Environment'),
+    },
+    async ({ alias, url, authProfile, configDir, accessMode, ...rest }) => {
+      const result = await saveEnvironmentAlias(
+        {
+          alias,
+          url,
+          authProfile,
+          ...rest,
+          ...(accessMode ? { access: { mode: accessMode } } : {}),
+        },
+        readConfigOptions(configDir, defaults)
+      );
+      return toToolResult('pp.environment.add', result, localMutationPolicy());
+    }
+  );
+
+  server.registerTool(
     'pp.environment.cleanup-plan',
     {
       title: 'Plan Environment Cleanup',
@@ -1209,6 +1477,38 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
+    'pp.auth-profile.list',
+    {
+      title: 'List Auth Profiles',
+      description: 'List configured auth profiles from the local pp config registry.',
+      inputSchema: authProfileListSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('List Auth Profiles'),
+    },
+    async ({ configDir }) => {
+      const auth = new AuthService(readConfigOptions(configDir, defaults));
+      const result = await auth.listProfiles();
+
+      if (!result.success) {
+        return toToolResult('pp.auth-profile.list', result, readOnlyPolicy());
+      }
+
+      return toToolResult(
+        'pp.auth-profile.list',
+        ok((result.data ?? []).map((profile) => summarizeProfile(profile)), {
+          diagnostics: result.diagnostics,
+          warnings: result.warnings,
+          supportTier: result.supportTier,
+          suggestedNextActions: result.suggestedNextActions,
+          provenance: result.provenance,
+          knownLimitations: result.knownLimitations,
+        }),
+        readOnlyPolicy()
+      );
+    }
+  );
+
+  server.registerTool(
     'pp.auth-profile.inspect',
     {
       title: 'Inspect Auth Profile',
@@ -1220,6 +1520,216 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     async (args) => {
       const result = await inspectAuthProfile(args, defaults);
       return toToolResult('pp.auth-profile.inspect', result, readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.auth-profile.create',
+    {
+      title: 'Create Auth Profile',
+      description: 'Create or update one local auth profile, including interactive-user, device-code, env-var, client-secret, and static-token variants.',
+      inputSchema: authProfileCreateSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Create Auth Profile'),
+    },
+    async ({ configDir, ...input }) => {
+      const auth = new AuthService(readConfigOptions(configDir, defaults));
+      const profile = buildAuthProfileFromToolInput(input);
+
+      if (!profile.success || !profile.data) {
+        return toToolResult('pp.auth-profile.create', profile, localMutationPolicy());
+      }
+
+      const result = await auth.saveProfile(profile.data);
+
+      if (!result.success || !result.data) {
+        return toToolResult('pp.auth-profile.create', result, localMutationPolicy());
+      }
+
+      return toToolResult(
+        'pp.auth-profile.create',
+        ok(summarizeProfile(result.data), {
+          diagnostics: result.diagnostics,
+          warnings: result.warnings,
+          supportTier: result.supportTier,
+          suggestedNextActions: result.suggestedNextActions,
+          provenance: result.provenance,
+          knownLimitations: result.knownLimitations,
+        }),
+        localMutationPolicy()
+      );
+    }
+  );
+
+  server.registerTool(
+    'pp.auth-profile.authenticate',
+    {
+      title: 'Authenticate Auth Profile',
+      description: 'Run one interactive or device-code sign-in for a local public-client auth profile and persist the token cache.',
+      inputSchema: authProfileAuthenticateSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Authenticate Auth Profile'),
+    },
+    async ({ name, resource, configDir, allowInteractiveAuth, forcePrompt, preferredFlow }) => {
+      const auth = new AuthService(readConfigOptions(configDir, defaults));
+      const result = await authenticateAuthProfile(
+        auth,
+        {
+          name,
+          resource,
+          allowInteractiveAuth,
+          forcePrompt,
+          preferredFlow,
+        },
+        defaults
+      );
+      return toToolResult('pp.auth-profile.authenticate', result, localMutationPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.browser-profile.list',
+    {
+      title: 'List Browser Profiles',
+      description: 'List configured browser profiles from the local pp config registry.',
+      inputSchema: browserProfileListSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('List Browser Profiles'),
+    },
+    async ({ configDir }) => {
+      const auth = new AuthService(readConfigOptions(configDir, defaults));
+      const result = await auth.listBrowserProfiles();
+
+      if (!result.success) {
+        return toToolResult('pp.browser-profile.list', result, readOnlyPolicy());
+      }
+
+      return toToolResult(
+        'pp.browser-profile.list',
+        ok((result.data ?? []).map((profile) => summarizeBrowserProfile(profile, readConfigOptions(configDir, defaults))), {
+          diagnostics: result.diagnostics,
+          warnings: result.warnings,
+          supportTier: result.supportTier,
+          suggestedNextActions: result.suggestedNextActions,
+          provenance: result.provenance,
+          knownLimitations: result.knownLimitations,
+        }),
+        readOnlyPolicy()
+      );
+    }
+  );
+
+  server.registerTool(
+    'pp.browser-profile.inspect',
+    {
+      title: 'Inspect Browser Profile',
+      description: 'Inspect one configured browser profile from the local pp config registry.',
+      inputSchema: browserProfileInspectSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Browser Profile'),
+    },
+    async ({ name, configDir }) => {
+      const auth = new AuthService(readConfigOptions(configDir, defaults));
+      const result = await auth.getBrowserProfile(name);
+
+      if (!result.success || !result.data) {
+        return toToolResult(
+          'pp.browser-profile.inspect',
+          result.success
+            ? fail(
+                createDiagnostic('error', 'AUTH_BROWSER_PROFILE_NOT_FOUND', `Browser profile ${name} was not found.`, {
+                  source: '@pp/mcp',
+                })
+              )
+            : result,
+          readOnlyPolicy()
+        );
+      }
+
+      return toToolResult(
+        'pp.browser-profile.inspect',
+        ok(summarizeBrowserProfile(result.data, readConfigOptions(configDir, defaults)), {
+          diagnostics: result.diagnostics,
+          warnings: result.warnings,
+          supportTier: result.supportTier,
+          suggestedNextActions: result.suggestedNextActions,
+          provenance: result.provenance,
+          knownLimitations: result.knownLimitations,
+        }),
+        readOnlyPolicy()
+      );
+    }
+  );
+
+  server.registerTool(
+    'pp.browser-profile.create',
+    {
+      title: 'Create Browser Profile',
+      description: 'Create or update one local browser profile for interactive auth and Maker handoff flows.',
+      inputSchema: browserProfileCreateSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Create Browser Profile'),
+    },
+    async ({ name, configDir, kind, command, args, directory, description }) => {
+      if ((kind ?? 'edge') === 'custom' && !command) {
+        return toToolResult(
+          'pp.browser-profile.create',
+          fail(
+            createDiagnostic('error', 'AUTH_BROWSER_PROFILE_COMMAND_REQUIRED', 'command is required when kind is custom.', {
+              source: '@pp/mcp',
+            })
+          ),
+          localMutationPolicy()
+        );
+      }
+
+      const auth = new AuthService(readConfigOptions(configDir, defaults));
+      const profile: BrowserProfile = {
+        name,
+        kind: kind ?? 'edge',
+        command,
+        args,
+        directory,
+        description,
+      };
+      const result = await auth.saveBrowserProfile(profile);
+
+      if (!result.success || !result.data) {
+        return toToolResult('pp.browser-profile.create', result, localMutationPolicy());
+      }
+
+      return toToolResult(
+        'pp.browser-profile.create',
+        ok(summarizeBrowserProfile(result.data, readConfigOptions(configDir, defaults)), {
+          diagnostics: result.diagnostics,
+          warnings: result.warnings,
+          supportTier: result.supportTier,
+          suggestedNextActions: result.suggestedNextActions,
+          provenance: result.provenance,
+          knownLimitations: result.knownLimitations,
+        }),
+        localMutationPolicy()
+      );
+    }
+  );
+
+  server.registerTool(
+    'pp.browser-profile.bootstrap',
+    {
+      title: 'Bootstrap Browser Profile',
+      description: 'Launch or mark one browser profile as bootstrapped for Maker-authenticated flows.',
+      inputSchema: browserProfileBootstrapSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Bootstrap Browser Profile'),
+    },
+    async ({ name, configDir, url, completed, completedAt }) => {
+      const auth = new AuthService(readConfigOptions(configDir, defaults));
+      const bootstrapUrl = url ?? DEFAULT_BROWSER_BOOTSTRAP_URL;
+      const result =
+        completed === true
+          ? await auth.markBrowserProfileBootstrapped(name, { url: bootstrapUrl, completedAt })
+          : await auth.launchBrowserProfile(name, bootstrapUrl);
+      return toToolResult('pp.browser-profile.bootstrap', result, localMutationPolicy());
     }
   );
 
@@ -2071,6 +2581,46 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
+    'pp.connection-reference.create',
+    {
+      title: 'Create Connection Reference',
+      description: 'Create one Dataverse connection reference with explicit connector metadata and optional solution attachment.',
+      inputSchema: connectionReferenceCreateSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Create Connection Reference'),
+    },
+    async ({ logicalName, connectionId, displayName, connectorId, customConnectorId, solutionUniqueName, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult(
+          'pp.connection-reference.create',
+          resolution,
+          remoteMutationPolicy(
+            'This tool creates one explicit Dataverse connection reference in one named environment and can attach it to one named solution.',
+            false,
+          ),
+        );
+      }
+
+      const result = await new ConnectionReferenceService(resolution.data.client).create(logicalName, connectionId, {
+        displayName,
+        connectorId,
+        customConnectorId,
+        solutionUniqueName,
+      });
+      return toToolResult(
+        'pp.connection-reference.create',
+        result,
+        remoteMutationPolicy(
+          'This tool creates one explicit Dataverse connection reference in one named environment and can attach it to one named solution.',
+          false,
+        ),
+      );
+    }
+  );
+
+  server.registerTool(
     'pp.connection-reference.inspect',
     {
       title: 'Inspect Connection References',
@@ -2094,6 +2644,43 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }
 
       return toToolResult('pp.connection-reference.inspect', await service.list({ solutionUniqueName }), readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.connection-reference.set',
+    {
+      title: 'Set Connection Reference Binding',
+      description: 'Update one Dataverse connection reference to point at one explicit connection id.',
+      inputSchema: connectionReferenceSetSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Set Connection Reference Binding'),
+    },
+    async ({ identifier, connectionId, solutionUniqueName, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult(
+          'pp.connection-reference.set',
+          resolution,
+          remoteMutationPolicy(
+            'This tool updates one explicit Dataverse connection reference binding in one named environment.',
+            false,
+          ),
+        );
+      }
+
+      const result = await new ConnectionReferenceService(resolution.data.client).setConnectionId(identifier, connectionId, {
+        solutionUniqueName,
+      });
+      return toToolResult(
+        'pp.connection-reference.set',
+        result,
+        remoteMutationPolicy(
+          'This tool updates one explicit Dataverse connection reference binding in one named environment.',
+          false,
+        ),
+      );
     }
   );
 
@@ -2572,6 +3159,88 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
+    'pp.setup.start',
+    {
+      title: 'Start Setup Session',
+      description: 'Start a guided, resumable pp setup session that defaults to interactive user auth.',
+      inputSchema: setupStartSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Start Setup Session'),
+    },
+    async ({ projectPath, configDir, allowInteractiveAuth: _allowInteractiveAuth, ...answers }) =>
+      toToolResult(
+        'pp.setup.start',
+        await startInitSession(
+          {
+            root: resolveProjectPath(projectPath, defaults),
+            goal: answers.goal ?? 'full',
+            authMode: answers.authMode ?? 'user',
+            browserProfileKind: answers.browserProfileKind ?? 'edge',
+            ...(answers as Partial<InitSessionAnswers>),
+          },
+          readConfigOptions(configDir, defaults)
+        ),
+        localMutationPolicy()
+      )
+  );
+
+  server.registerTool(
+    'pp.setup.status',
+    {
+      title: 'Inspect Setup Session',
+      description: 'Inspect the current state of a persisted pp setup session.',
+      inputSchema: setupSessionSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect Setup Session'),
+    },
+    async ({ sessionId, configDir }) =>
+      toToolResult('pp.setup.status', await getInitSession(sessionId, readConfigOptions(configDir, defaults)), readOnlyPolicy())
+  );
+
+  server.registerTool(
+    'pp.setup.answer',
+    {
+      title: 'Answer Setup Session',
+      description: 'Apply one or more user answers to a persisted pp setup session.',
+      inputSchema: z.object({
+        sessionId: z.string().uuid(),
+        configDir: z.string().min(1).optional(),
+        answers: initAnswerSchema,
+      }),
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Answer Setup Session'),
+    },
+    async ({ sessionId, configDir, answers }) =>
+      toToolResult('pp.setup.answer', await resumeInitSession(sessionId, { answers }, readConfigOptions(configDir, defaults)), localMutationPolicy())
+  );
+
+  server.registerTool(
+    'pp.setup.resume',
+    {
+      title: 'Resume Setup Session',
+      description: 'Resume a persisted pp setup session after an external step completes.',
+      inputSchema: setupSessionSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Resume Setup Session'),
+    },
+    async ({ sessionId, configDir }) =>
+      toToolResult('pp.setup.resume', await resumeInitSession(sessionId, {}, readConfigOptions(configDir, defaults)), localMutationPolicy())
+  );
+
+  server.registerTool(
+    'pp.setup.cancel',
+    {
+      title: 'Cancel Setup Session',
+      description: 'Cancel a persisted pp setup session.',
+      inputSchema: setupSessionSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: controlledMutationAnnotations('Cancel Setup Session'),
+    },
+    async ({ sessionId, configDir }) =>
+      toToolResult('pp.setup.cancel', await cancelInitSession(sessionId, readConfigOptions(configDir, defaults)), localMutationPolicy())
+  );
+
+  server.registerTool(
     'pp.init.start',
     {
       title: 'Start Init Session',
@@ -2964,6 +3633,152 @@ function readConfigOptions(configDir: string | undefined, defaults: PpMcpServerO
   return {
     configDir: configDir ?? defaults.configDir,
   };
+}
+
+function buildAuthProfileFromToolInput(input: z.infer<typeof authProfileCreateSchema>): OperationResult<AuthProfile> {
+  const base = {
+    name: input.name,
+    description: input.description,
+    tenantId: input.tenantId,
+    clientId: input.clientId,
+    defaultResource: input.defaultResource,
+    scopes: input.scopes,
+  };
+
+  switch (input.type) {
+    case 'user':
+      return ok({
+        ...base,
+        type: 'user',
+        loginHint: input.loginHint,
+        browserProfile: input.browserProfile,
+        prompt: input.prompt,
+        fallbackToDeviceCode: input.fallbackToDeviceCode,
+      });
+    case 'device-code':
+      return ok({
+        ...base,
+        type: 'device-code',
+        loginHint: input.loginHint,
+      });
+    case 'environment-token':
+      if (!input.environmentVariable) {
+        return fail(
+          createDiagnostic('error', 'AUTH_PROFILE_ENV_VAR_REQUIRED', 'environmentVariable is required for environment-token auth profiles.', {
+            source: '@pp/mcp',
+          })
+        );
+      }
+
+      return ok({
+        ...base,
+        type: 'environment-token',
+        environmentVariable: input.environmentVariable,
+      });
+    case 'client-secret':
+      if (!input.tenantId || !input.clientId || !input.clientSecretEnv) {
+        return fail(
+          createDiagnostic(
+            'error',
+            'AUTH_PROFILE_CLIENT_SECRET_FIELDS_REQUIRED',
+            'tenantId, clientId, and clientSecretEnv are required for client-secret auth profiles.',
+            {
+              source: '@pp/mcp',
+            }
+          )
+        );
+      }
+
+      return ok({
+        ...base,
+        type: 'client-secret',
+        tenantId: input.tenantId,
+        clientId: input.clientId,
+        clientSecretEnv: input.clientSecretEnv,
+      });
+    case 'static-token':
+      if (!input.token) {
+        return fail(
+          createDiagnostic('error', 'AUTH_PROFILE_TOKEN_REQUIRED', 'token is required for static-token auth profiles.', {
+            source: '@pp/mcp',
+          })
+        );
+      }
+
+      return ok({
+        ...base,
+        type: 'static-token',
+        token: input.token,
+      });
+  }
+}
+
+async function authenticateAuthProfile(
+  auth: AuthService,
+  args: z.infer<typeof authProfileAuthenticateSchema>,
+  defaults: PpMcpServerOptions
+): Promise<OperationResult<ReturnType<typeof summarizeProfile>>> {
+  const profileResult = await auth.getProfile(args.name);
+
+  if (!profileResult.success || !profileResult.data) {
+    return profileResult.success
+      ? fail(
+          createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${args.name} was not found.`, {
+            source: '@pp/mcp',
+          })
+        )
+      : (profileResult as OperationResult<ReturnType<typeof summarizeProfile>>);
+  }
+
+  if (profileResult.data.type !== 'user' && profileResult.data.type !== 'device-code') {
+    return fail(
+      createDiagnostic(
+        'error',
+        'AUTH_PROFILE_INTERACTIVE_UNSUPPORTED',
+        `Auth profile ${args.name} is type ${profileResult.data.type}; only user and device-code profiles support interactive authentication.`,
+        {
+          source: '@pp/mcp',
+        }
+      )
+    );
+  }
+
+  const resource = args.resource ?? profileResult.data.defaultResource;
+
+  if (!resource) {
+    return fail(
+      createDiagnostic('error', 'AUTH_PROFILE_RESOURCE_REQUIRED', 'resource is required unless the auth profile already has a defaultResource.', {
+        source: '@pp/mcp',
+      })
+    );
+  }
+
+  const allowInteractiveAuth = args.allowInteractiveAuth ?? defaults.allowInteractiveAuth ?? true;
+  const result = await auth.loginProfile(profileResult.data, resource, {
+    allowInteractive: allowInteractiveAuth,
+    forcePrompt: args.forcePrompt,
+    preferredFlow: args.preferredFlow ?? (profileResult.data.type === 'device-code' ? 'device-code' : 'interactive'),
+  });
+
+  if (!result.success || !result.data) {
+    return result as OperationResult<ReturnType<typeof summarizeProfile>>;
+  }
+
+  return ok(
+    {
+      ...summarizeProfile(result.data.profile),
+      authenticatedResource: resource,
+      tokenPersisted: true,
+    },
+    {
+      diagnostics: result.diagnostics,
+      warnings: result.warnings,
+      supportTier: result.supportTier,
+      suggestedNextActions: result.suggestedNextActions,
+      provenance: result.provenance,
+      knownLimitations: result.knownLimitations,
+    }
+  );
 }
 
 function resolveProjectPath(projectPath: string | undefined, defaults: PpMcpServerOptions): string {

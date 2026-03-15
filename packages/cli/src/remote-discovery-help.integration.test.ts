@@ -161,8 +161,9 @@ describe('remote discovery help integration coverage', () => {
     expect(connrefCreateHelp.code).toBe(0);
     expect(connrefCreateHelp.stderr).toBe('');
     expect(connrefCreateHelp.stdout).toContain(
-      'Usage: connref create <logicalName> --environment ALIAS --connection-id CONNECTION_ID [--display-name NAME] [--connector-id CONNECTOR_ID] [--custom-connector-id CONNECTOR_ID] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
+      'Usage: connref create <logicalName> --environment ALIAS [--connection-id CONNECTION_ID] [--allow-unbound] [--display-name NAME] [--connector-id CONNECTOR_ID] [--custom-connector-id CONNECTOR_ID] [--solution UNIQUE_NAME] [--no-interactive-auth] [options]'
     );
+    expect(connrefCreateHelp.stdout).toContain('--allow-unbound');
     expect(connrefCreateHelp.stdout).not.toContain('CONNREF_CREATE_ARGS_REQUIRED');
 
     expect(connrefListHelp.code).toBe(0);

@@ -1,8 +1,71 @@
 # Dataverse and solutions
 
-The current Dataverse surface is environment-alias driven and exposes both generic Web API access and a first useful layer of typed helpers.
+This is the most important remote workflow guide in `pp`.
+
+The current Dataverse surface is environment-alias driven and exposes both
+generic Web API access and a useful layer of typed helpers.
 
 You authenticate once through an auth profile, bind an environment alias to that profile, and then run `dv` or `solution` commands against the alias.
+
+If you are new to `pp`, start with these:
+
+```bash
+pp dv whoami --env dev
+pp dv query accounts --env dev --select name,accountnumber --top 5
+pp solution list --env dev
+pp solution inspect Core --env dev
+```
+
+Use the rest of this guide as command reference once those paths are already
+working.
+
+## Common jobs
+
+Most users come here to do one of these jobs:
+
+1. confirm that auth and environment targeting work
+2. inspect Dataverse rows or metadata
+3. inspect or export a solution
+4. make a small, explicit Dataverse change
+5. drop into lower-level Web API access when the typed helper does not exist
+
+Use these command paths first:
+
+### Confirm access works
+
+```bash
+pp dv whoami --env dev
+pp dv query accounts --env dev --top 5
+pp solution list --env dev
+```
+
+### Inspect Dataverse data safely
+
+```bash
+pp dv query accounts --env dev --select name,accountnumber --top 10
+pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
+pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
+pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
+```
+
+### Inspect solutions
+
+```bash
+pp solution list --env dev
+pp solution inspect Core --env dev
+pp solution export Core --env dev --out ./artifacts/solutions/Core.zip --plan
+```
+
+### Make an explicit change
+
+```bash
+pp dv create accounts --env dev --body '{"name":"Acme"}'
+pp dv update accounts 00000000-0000-0000-0000-000000000001 --env dev --body '{"telephone1":"+1 555 0100"}'
+pp dv delete accounts 00000000-0000-0000-0000-000000000001 --env dev
+```
+
+When you are unsure, prefer read commands first and inspect the resolved output
+before running mutations.
 
 ## Prerequisite
 
@@ -10,6 +73,18 @@ You authenticate once through an auth profile, bind an environment alias to that
 pp auth login --name dev-user --resource https://example.crm.dynamics.com
 pp env add --name dev --url https://example.crm.dynamics.com --profile dev-user
 ```
+
+## Recommended reading path in this guide
+
+Read only the section that matches the job you have:
+
+- start with [`dv whoami`](#dv-whoami) and [`dv query`](#dv-query) for routine inspection
+- jump to [Connection references](#connection-references) or [Environment variables](#environment-variables) for deploy-adjacent Dataverse targets
+- jump to [`dv metadata`](#dv-metadata) for schema inspection and authoring
+- jump to [Solution commands](#solution-commands) for solution lifecycle work
+- use [`dv request`](#dv-request), [`dv action`](#dv-action), or [`dv function`](#dv-function) only when you need lower-level access
+
+## Dataverse command reference
 
 ## `dv whoami`
 

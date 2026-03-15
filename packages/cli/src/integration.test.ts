@@ -91,6 +91,7 @@ describe('cli fixture-backed workflows', () => {
   it('prints version, completion, and diagnostics help as first-class product commands', async () => {
     const version = await runCli(['version', '--format', 'raw']);
     const completion = await runCli(['completion', 'bash']);
+    const completionFish = await runCli(['completion', 'fish']);
     const completionPwsh = await runCli(['completion', 'pwsh']);
     const diagnosticsHelp = await runCli(['diagnostics', '--help']);
 
@@ -103,9 +104,19 @@ describe('cli fixture-backed workflows', () => {
     expect(completion.stdout).toContain('complete -F _pp_complete pp');
     expect(completion.stdout).toContain('diagnostics');
     expect(completion.stdout).toContain('mcp');
+    expect(completion.stdout).toContain("'auth profile')");
+    expect(completion.stdout).toContain('add-user');
+    expect(completion.stdout).toContain('--environment');
+    expect(completion.stdout).toContain('--kind');
+    expect(completionFish.code).toBe(0);
+    expect(completionFish.stderr).toBe('');
+    expect(completionFish.stdout).toContain('function __pp_complete');
+    expect(completionFish.stdout).toContain('case \'canvas patch\'');
     expect(completionPwsh.code).toBe(0);
     expect(completionPwsh.stderr).toBe('');
     expect(completionPwsh.stdout).toContain('Register-ArgumentCompleter -Native -CommandName pp');
+    expect(completionPwsh.stdout).toContain("function Get-PpChildren");
+    expect(completionPwsh.stdout).toContain("'sharepoint site' { @('inspect') }");
 
     expect(diagnosticsHelp.code).toBe(0);
     expect(diagnosticsHelp.stderr).toBe('');
@@ -211,6 +222,30 @@ describe('cli fixture-backed workflows', () => {
     expect(importHelp.stdout).toContain(
       'Run `pp canvas import <file.msapp> --environment <alias> --solution <solution> --target <displayName|name|id>`.'
     );
+  });
+
+  it('routes nested help through the generic command dispatcher', async () => {
+    const authAddUserHelp = await runCli(['auth', 'profile', 'add-user', '--help']);
+    const projectSolutionPullHelp = await runCli(['project', 'solution', 'pull', '--help']);
+    const initDefaultHelp = await runCli(['init', 'start', '--help']);
+    const environmentAliasHelp = await runCli(['environment', 'inspect', '--help']);
+
+    expect(authAddUserHelp.code).toBe(0);
+    expect(authAddUserHelp.stderr).toBe('');
+    expect(authAddUserHelp.stdout).toContain('Usage: auth profile add-user --name NAME');
+
+    expect(projectSolutionPullHelp.code).toBe(0);
+    expect(projectSolutionPullHelp.stderr).toBe('');
+    expect(projectSolutionPullHelp.stdout).toContain('Usage: project solution pull [path]');
+
+    expect(initDefaultHelp.code).toBe(0);
+    expect(initDefaultHelp.stderr).toBe('');
+    expect(initDefaultHelp.stdout).toContain('Usage:');
+    expect(initDefaultHelp.stdout).toContain('init [root] [options]');
+
+    expect(environmentAliasHelp.code).toBe(0);
+    expect(environmentAliasHelp.stderr).toBe('');
+    expect(environmentAliasHelp.stdout).toContain('Usage: env inspect <alias>');
   });
 
   it('prints stable help for remote canvas discovery commands', async () => {
@@ -1311,9 +1346,10 @@ describe('cli fixture-backed workflows', () => {
 
   it('pulls the active project solution into canonical bundle and source paths', async () => {
     const tempDir = await createTempDir();
+    const pacDir = await createTempDir();
     const msappSourceDir = join(tempDir, 'msapp-source');
     const msappPath = join(tempDir, 'Harness Canvas.msapp');
-    const pacPath = await writeNodeCommandFixture(join(tempDir, 'fake-pac'), [
+    const pacPath = await writeNodeCommandFixture(join(pacDir, 'fake-pac'), [
       "const { mkdirSync, writeFileSync, copyFileSync } = require('node:fs');",
       'const args = process.argv.slice(2);',
       "const folder = args[args.indexOf('--folder') + 1];",
@@ -11015,6 +11051,7 @@ describe('cli fixture-backed workflows', () => {
   it('scopes flow help and keeps local-vs-remote guidance discoverable', async () => {
     const flowHelp = await runCli(['flow', '--help']);
     const flowInspectHelp = await runCli(['flow', 'inspect', '--help']);
+    const flowAttachHelp = await runCli(['flow', 'attach', '--help']);
     const flowActivateHelp = await runCli(['flow', 'activate', '--help']);
     const flowDeployHelp = await runCli(['flow', 'deploy', '--help']);
     const flowPromoteHelp = await runCli(['flow', 'promote', '--help']);
@@ -11034,6 +11071,13 @@ describe('cli fixture-backed workflows', () => {
     expect(flowInspectHelp.stdout).toContain('Without `--environment`, inspect a local flow artifact on disk.');
     expect(flowInspectHelp.stdout).toContain('With `--environment`, inspect a remote flow by name, id, or unique name.');
     expect(flowInspectHelp.stdout).toContain('--no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth');
+
+    expect(flowAttachHelp.code).toBe(0);
+    expect(flowAttachHelp.stderr).toBe('');
+    expect(flowAttachHelp.stdout).toContain(
+      'Usage: flow attach <name|id|uniqueName> --environment ALIAS --solution UNIQUE_NAME [--no-add-required-components] [--no-interactive-auth] [options]'
+    );
+    expect(flowAttachHelp.stdout).toContain('Dataverse AddSolutionComponent');
 
     expect(flowActivateHelp.code).toBe(0);
     expect(flowActivateHelp.stderr).toBe('');
@@ -12172,6 +12216,95 @@ describe('cli fixture-backed workflows', () => {
       connectorId: '/providers/Microsoft.PowerApps/apis/shared_sql',
       connectionId: '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456',
       connected: true,
+    });
+  });
+
+  it('creates an unbound connection reference through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        queryAll: {
+          connectionreferences: [],
+        },
+      }),
+    });
+
+    const created = await runCli([
+      'connref',
+      'create',
+      'pp_dataverse',
+      '--env',
+      'source',
+      '--display-name',
+      'Dataverse',
+      '--connector-id',
+      '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+      '--allow-unbound',
+      '--format',
+      'json',
+    ]);
+
+    expect(created.code).toBe(0);
+    expect(created.stderr).toBe('');
+    expect(JSON.parse(created.stdout)).toMatchObject({
+      logicalName: 'pp_dataverse',
+      displayName: 'Dataverse',
+      connectorId: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+      connected: false,
+    });
+  });
+
+  it('attaches an existing flow to a solution through the CLI entrypoint', async () => {
+    mockDataverseResolution({
+      source: createFixtureDataverseClient({
+        query: {
+          solutions: [
+            {
+              solutionid: 'solution-1',
+              uniquename: 'Core',
+            },
+          ],
+        },
+        queryAll: {
+          workflows: [
+            {
+              workflowid: 'flow-1',
+              name: 'Invoice Sync',
+              uniquename: 'crd_InvoiceSync',
+              category: 5,
+              statecode: 1,
+              statuscode: 2,
+              clientdata: JSON.stringify({ definition: { actions: {} } }),
+            },
+          ],
+          solutioncomponents: [],
+        },
+      }),
+    });
+
+    const attached = await runCli([
+      'flow',
+      'attach',
+      'Invoice Sync',
+      '--env',
+      'source',
+      '--solution',
+      'Core',
+      '--format',
+      'json',
+    ]);
+
+    expect(attached.code).toBe(0);
+    expect(attached.stderr).toBe('');
+    expect(JSON.parse(attached.stdout)).toMatchObject({
+      success: true,
+      attached: true,
+      solutionUniqueName: 'Core',
+      addRequiredComponents: true,
+      flow: expect.objectContaining({
+        id: 'flow-1',
+        name: 'Invoice Sync',
+        uniqueName: 'crd_InvoiceSync',
+      }),
     });
   });
 

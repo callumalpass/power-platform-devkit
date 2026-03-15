@@ -2991,7 +2991,8 @@ class DefaultSolutionCommandRunner implements SolutionCommandRunner {
     return new Promise((resolvePromise) => {
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
-      const child = spawn(invocation.executable, invocation.args, {
+      const spawnInvocation = normalizeCommandInvocationForCurrentPlatform(invocation);
+      const child = spawn(spawnInvocation.executable, spawnInvocation.args, {
         cwd: invocation.cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -3052,6 +3053,18 @@ class DefaultSolutionCommandRunner implements SolutionCommandRunner {
       });
     });
   }
+}
+
+export function normalizeCommandInvocationForCurrentPlatform(invocation: SolutionCommandInvocation): SolutionCommandInvocation {
+  if (process.platform !== 'win32' || !/\.(cmd|bat)$/i.test(invocation.executable)) {
+    return invocation;
+  }
+
+  return {
+    executable: process.env.ComSpec ?? 'cmd.exe',
+    args: ['/d', '/s', '/c', invocation.executable, ...invocation.args],
+    cwd: invocation.cwd,
+  };
 }
 
 function normalizeSolutionComponent(component: SolutionComponentRecord): SolutionComponentSummary {

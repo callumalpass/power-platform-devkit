@@ -29,12 +29,14 @@
       "@pp/model": ["packages/model/src/index.ts"],
       "@pp/artifacts": ["packages/artifacts/src/index.ts"],
       "@pp/canvas": ["packages/canvas/src/index.ts"],
+      "@pp/canvas/lsp": ["packages/canvas/src/lsp.ts"],
       "@pp/flow": ["packages/flow/src/index.ts"],
       "@pp/analysis": ["packages/analysis/src/index.ts"],
       "@pp/sharepoint": ["packages/sharepoint/src/index.ts"],
       "@pp/powerbi": ["packages/powerbi/src/index.ts"],
       "@pp/deploy": ["packages/deploy/src/index.ts"],
       "@pp/mcp": ["packages/mcp/src/index.ts"],
+      "@pp/flow-language-server": ["packages/flow-language-server/src/index.ts"],
       "@pp/cli": ["packages/cli/src/index.ts"]
     }
   }

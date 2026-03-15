@@ -1,7 +1,10 @@
 # Canvas registries
 
-Canvas support starts with pinned template metadata. The current `@pp/canvas`
-surface now includes:
+Canvas support in `pp` starts with pinned template metadata. It is strongest at
+offline inspection, validation, build, diff, and registry-backed source
+resolution.
+
+The current `@pp/canvas` surface includes:
 
 - remote canvas-app listing and inspection through Dataverse
 - template registry documents and support-matrix resolution
@@ -16,6 +19,61 @@ surface now includes:
 Live registry refresh is documented separately in
 [`docs/canvas-harvesting.md`](./canvas-harvesting.md). Normal `pp canvas`
 commands consume committed registries; they do not perform live harvesting.
+
+## Common jobs
+
+Most users come here for one of these jobs:
+
+1. inspect or validate a local canvas source tree
+2. build a deterministic `.msapp` from a repo-local source root
+3. inspect or diff template registries
+4. inspect a remote canvas app before deciding on a manual or adjacent workflow
+
+Use these command paths first:
+
+### Validate a local app
+
+```bash
+pp canvas validate ./apps/MyCanvas --project .
+pp canvas inspect ./apps/MyCanvas --project . --mode strict
+```
+
+### Build and diff locally
+
+```bash
+pp canvas build ./apps/MyCanvas --project . --out ./dist/MyCanvas.msapp
+pp canvas diff ./apps/MyCanvas ./apps/MyCanvas-next
+```
+
+### Work with template registries
+
+```bash
+pp canvas templates inspect ./registries/canvas-controls.json
+pp canvas templates diff ./registries/canvas-controls.json ./registries/canvas-controls.next.json
+pp canvas templates pin ./registries/canvas-controls.json --out ./registries/canvas-controls.pinned.json
+```
+
+### Inspect remote apps
+
+```bash
+pp canvas list --env dev --solution Core
+pp canvas inspect "My Canvas App" --env dev --solution Core
+```
+
+## What canvas support is strongest at
+
+- deterministic offline validation and build
+- template-registry inspection and support resolution
+- normalized loading of unpacked `.pa.yaml` roots and legacy manifest trees
+- remote listing and inspection
+
+The real limitations are narrower than the older docs implied:
+
+- live registry harvesting is a separate controlled workflow, not part of
+  normal `pp canvas` usage
+- remote create/import still rely on Maker handoff or adjacent tooling
+- editor/LSP support is stronger for unpacked `.pa.yaml` roots than for the
+  legacy JSON manifest slice
 
 ## Why the registry exists
 

@@ -1,15 +1,120 @@
 # Deploy
 
-`pp deploy` now has two layers:
+Use `pp deploy` when a repo already has a `pp.config.*` project model and you
+want to preview or apply a defined set of changes consistently.
+
+For most users, the practical deploy loop is:
+
+1. model the repo with [project-config.md](project-config.md)
+2. run `pp deploy plan`
+3. inspect the preflight and target resolution
+4. run `pp deploy apply --dry-run`
+5. run `pp deploy apply --yes` only when the preview is correct
+
+`pp deploy` has two core layers:
 
 - `deploy plan`: local project resolution into a structured deploy plan
-- `deploy apply`: shared orchestration with machine-readable preflight, apply, and report output
+- `deploy apply`: shared orchestration with machine-readable preflight, apply,
+  and report output
 
-It also now has a release-orchestration layer on top of that shared deploy
-engine:
+There is also a release-orchestration layer for multi-stage promotion:
 
-- `deploy release plan`: evaluate a multi-stage release manifest without side effects
-- `deploy release apply`: run the same manifest through the shared deploy engine with approvals, validation, audit, and rollback handling
+- `deploy release plan`: evaluate a release manifest without side effects
+- `deploy release apply`: run that manifest through the shared deploy engine
+  with approvals, validation, audit, and rollback handling
+
+If you are new to `pp`, do not start here. Start with
+[quickstart.md](quickstart.md), then [project-config.md](project-config.md),
+then return to this guide once `pp project doctor` and your Dataverse aliases
+already work.
+
+## Start with these commands
+
+Preview the resolved deploy target:
+
+```bash
+pp deploy plan --project .
+pp deploy plan --project . --format json
+```
+
+Preview the execution without side effects:
+
+```bash
+pp deploy apply --project . --dry-run --format json
+```
+
+Apply the supported operations:
+
+```bash
+pp deploy apply --project . --yes --format json
+```
+
+The rest of this guide explains what the supported deploy slice can actually
+change, how preflight works, and how saved plans and release manifests behave.
+
+## Common jobs
+
+Most deploy usage falls into one of these paths:
+
+### Preview what `pp` thinks the deploy target is
+
+```bash
+pp deploy plan --project .
+pp deploy plan --project . --stage prod --format json
+```
+
+Use this before you trust any live apply path.
+
+### Dry-run the actual deploy engine
+
+```bash
+pp deploy apply --project . --dry-run --format json
+pp deploy apply --project . --stage prod --dry-run --format json
+```
+
+This is the safest way to catch missing parameters, target mismatches, and
+preflight failures before mutation.
+
+### Apply a reviewed deploy
+
+```bash
+pp deploy apply --project . --yes --format json
+pp deploy apply --project . --stage prod --yes --format json
+```
+
+### Reuse a saved plan
+
+```bash
+pp deploy plan --project . --format json > ./dist/deploy-plan.json
+pp deploy apply --plan ./dist/deploy-plan.json --yes --format json
+```
+
+Use saved plans when you need a reviewed artifact in CI or a handoff between
+planning and apply.
+
+## What deploy can change today
+
+At a practical level, the supported deploy slice is strongest at:
+
+- Dataverse environment variables
+- Dataverse connection references
+- selected local flow artifact rewrites
+- selected SharePoint and Power BI deploy-adjacent operations
+- CI-facing input and secret binding resolution
+
+It is not a general-purpose “change anything in the environment” engine.
+
+## Recommended reading path in this guide
+
+- stop after [Start with these commands](#start-with-these-commands) and
+  [Common jobs](#common-jobs) if you only need the normal plan, dry-run, apply loop
+- read [Supported apply slice](#supported-apply-slice) when you are wiring
+  `mapsTo` entries in `pp.config.yaml`
+- read [Local usage](#local-usage) when you need saved-plan workflows
+- read [Release orchestration](#release-orchestration) only when you need
+  multi-stage promotion and approvals
+- read [CI and adapters](#ci-and-adapters) when a wrapper or pipeline system is
+  calling `pp` for you
 
 ## Supported apply slice
 
@@ -97,22 +202,10 @@ Dataverse conflict detection is scoped by the resolved environment and solution 
 
 ## Local usage
 
-Preview the execution without side effects:
-
-```bash
-pp deploy apply --project . --dry-run --format json
-```
-
 Render a plan-shaped preview:
 
 ```bash
 pp deploy apply --project . --plan --format json
-```
-
-Apply the supported operations:
-
-```bash
-pp deploy apply --project . --yes --format json
 ```
 
 Apply from a previously saved deploy plan:

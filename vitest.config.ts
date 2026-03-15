@@ -19,6 +19,7 @@ const workspacePackages = [
   'powerbi',
   'deploy',
   'mcp',
+  'flow-language-server',
   'cli',
 ] as const;
 
