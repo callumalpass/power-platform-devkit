@@ -7,5 +7,5 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   external: ['vscode'],
-  noExternal: [/^@pp\//],
+  noExternal: ['vscode-languageclient'],
 });

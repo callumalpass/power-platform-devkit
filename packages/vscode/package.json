@@ -46,11 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pp/canvas": "workspace:*",
-    "@pp/config": "workspace:*",
-    "@pp/auth": "workspace:*",
-    "@pp/diagnostics": "workspace:*",
-    "@pp/flow-language-server": "workspace:*"
+    "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",

@@ -1,5 +1,27 @@
 import * as vscode from 'vscode';
-import { loadProjectConfig, type ProjectConfig } from '@pp/config';
+import { runPpJson } from '../cli';
+
+interface ResolvedSolutionTarget {
+  alias: string;
+  uniqueName: string;
+  environment?: string;
+}
+
+interface ResolvedProjectStage {
+  name: string;
+  environment?: string;
+  solutions: Record<string, ResolvedSolutionTarget>;
+}
+
+interface ProjectInspectOutput {
+  success: boolean;
+  topology: {
+    stages: Record<string, ResolvedProjectStage>;
+    activeEnvironment?: string;
+    defaultStage?: string;
+  };
+  assets: Array<{ name: string; path: string }>;
+}
 
 type SectionLabel = 'Environments' | 'Solutions' | 'Assets';
 
@@ -19,10 +41,10 @@ export class EnvironmentTreeProvider implements vscode.TreeDataProvider<PpTreeIt
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<PpTreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private config: ProjectConfig | undefined;
+  private inspectCache: ProjectInspectOutput | undefined;
 
   refresh(): void {
-    this.config = undefined;
+    this.inspectCache = undefined;
     this._onDidChangeTreeData.fire();
   }
 
@@ -34,18 +56,21 @@ export class EnvironmentTreeProvider implements vscode.TreeDataProvider<PpTreeIt
     if (!element) {
       return this.getRootItems();
     }
-    if (!this.config) return [];
-    return this.getSectionChildren(element);
+    if (!this.inspectCache) return [];
+    return this.getSectionChildren(element, this.inspectCache);
   }
 
   private async getRootItems(): Promise<PpTreeItem[]> {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!root) return [];
+    if (!vscode.workspace.workspaceFolders?.length) return [];
 
-    const result = await loadProjectConfig(root);
-    if (!result.success || !result.data) return [];
+    try {
+      this.inspectCache = await runPpJson<ProjectInspectOutput>(['project', 'inspect']);
+    } catch {
+      return [];
+    }
 
-    this.config = result.data.config;
+    if (!this.inspectCache.success) return [];
+
     return [
       new PpTreeItem('Environments', vscode.TreeItemCollapsibleState.Expanded, 'Environments'),
       new PpTreeItem('Solutions', vscode.TreeItemCollapsibleState.Collapsed, 'Solutions'),
@@ -53,37 +78,32 @@ export class EnvironmentTreeProvider implements vscode.TreeDataProvider<PpTreeIt
     ];
   }
 
-  private getSectionChildren(element: PpTreeItem): PpTreeItem[] {
-    const config = this.config;
-    if (!config) return [];
-
+  private getSectionChildren(element: PpTreeItem, data: ProjectInspectOutput): PpTreeItem[] {
     if (element.sectionLabel === 'Environments') {
-      const stages = config.topology?.stages ?? {};
-      const entries = Object.entries(stages);
-
-      if (entries.length > 0) {
-        return entries.map(([name, stage]) =>
-          new PpTreeItem(name, vscode.TreeItemCollapsibleState.None, undefined, stage.environment ?? stage.description),
-        );
+      const entries = Object.entries(data.topology.stages);
+      if (entries.length === 0 && data.topology.activeEnvironment) {
+        return [new PpTreeItem(data.topology.activeEnvironment, vscode.TreeItemCollapsibleState.None, undefined, 'active')];
       }
-
-      const defaultEnv = config.defaults?.environment;
-      if (defaultEnv) {
-        return [new PpTreeItem(defaultEnv, vscode.TreeItemCollapsibleState.None, undefined, 'default')];
-      }
-
-      return [];
+      return entries.map(([name, stage]) =>
+        new PpTreeItem(name, vscode.TreeItemCollapsibleState.None, undefined, stage.environment),
+      );
     }
 
     if (element.sectionLabel === 'Solutions') {
-      return Object.entries(config.solutions ?? {}).map(([name, target]) =>
-        new PpTreeItem(name, vscode.TreeItemCollapsibleState.None, undefined, target.uniqueName),
+      const seen = new Map<string, string>();
+      for (const stage of Object.values(data.topology.stages)) {
+        for (const [alias, target] of Object.entries(stage.solutions)) {
+          if (!seen.has(alias)) seen.set(alias, target.uniqueName);
+        }
+      }
+      return [...seen.entries()].map(([alias, uniqueName]) =>
+        new PpTreeItem(alias, vscode.TreeItemCollapsibleState.None, undefined, uniqueName),
       );
     }
 
     if (element.sectionLabel === 'Assets') {
-      return Object.entries(config.assets ?? {}).map(([name, path]) =>
-        new PpTreeItem(name, vscode.TreeItemCollapsibleState.None, undefined, path),
+      return data.assets.map((asset) =>
+        new PpTreeItem(asset.name, vscode.TreeItemCollapsibleState.None, undefined, asset.path),
       );
     }
 
