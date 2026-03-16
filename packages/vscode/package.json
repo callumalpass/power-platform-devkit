@@ -41,8 +41,8 @@
     ]
   },
   "scripts": {
-    "build": "tsup --config tsup.config.ts",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsup --config tsup.config.ts && node -e \"require('node:fs').cpSync('../canvas/powerfx-bridge',  'powerfx-bridge', {recursive:true, filter:(s)=>!s.includes('/bin')&&!s.includes('/obj')})\"",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true}); require('node:fs').rmSync('powerfx-bridge',{recursive:true,force:true})\"",
     "package": "vsce package --no-dependencies",
     "typecheck": "tsc --noEmit"
   },
