@@ -38,6 +38,18 @@
         "aliases": ["Power Automate Flow"],
         "filenames": ["flow.json"]
       }
+    ],
+    "grammars": [
+      {
+        "language": "powerapps-yaml",
+        "scopeName": "source.powerapps-yaml",
+        "path": "./syntaxes/powerapps-yaml.tmLanguage.json"
+      },
+      {
+        "language": "pp-flow",
+        "scopeName": "source.pp-flow",
+        "path": "./syntaxes/pp-flow.tmLanguage.json"
+      }
     ]
   },
   "scripts": {

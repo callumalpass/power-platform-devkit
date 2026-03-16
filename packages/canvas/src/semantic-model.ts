@@ -209,11 +209,24 @@ export async function buildCanvasSemanticModel(
     });
   }
 
-  const formulas = (
-    await Promise.all(
-      controls.map((control) => buildFormulaSemantics(control, controlById, controlNameToIds, dataSourceSymbols, metadataCatalog))
-    )
-  ).flat();
+  // Phase 1: Parse all formulas (without binding resolution)
+  const parsedPerControl = await Promise.all(
+    controls.map((control) => parseControlFormulas(control))
+  );
+
+  // Phase 2: Discover variables declared via Set(), UpdateContext(), Collect(), ClearCollect()
+  const declaredVariables = collectDeclaredVariables(parsedPerControl.flat());
+
+  // Phase 3: Resolve bindings with full variable knowledge
+  for (let i = 0; i < controls.length; i++) {
+    for (const formula of parsedPerControl[i]) {
+      if (formula.ast) {
+        formula.bindings = analyzeBindings(formula.ast, controls[i], controlById, controlNameToIds, dataSourceSymbols, metadataCatalog, declaredVariables);
+      }
+    }
+  }
+
+  const formulas = parsedPerControl.flat();
 
   for (const formula of formulas) {
     for (const binding of formula.bindings) {
@@ -294,13 +307,7 @@ function appendControlSemantics(
   }
 }
 
-async function buildFormulaSemantics(
-  control: CanvasSemanticControl,
-  controlById: Map<string, CanvasSemanticControl>,
-  controlNameToIds: Map<string, string[]>,
-  dataSourceSymbols: ReturnType<typeof buildDataSourceSymbols>,
-  metadataCatalog: CanvasMetadataCatalog | undefined
-): Promise<CanvasFormulaSemantic[]> {
+async function parseControlFormulas(control: CanvasSemanticControl): Promise<CanvasFormulaSemantic[]> {
   const sourceControl = control.source;
   const formulas: CanvasFormulaSemantic[] = [];
 
@@ -333,9 +340,6 @@ async function buildFormulaSemantics(
     const parsed = await parsePowerFxExpression(expression, {
       allowsSideEffects: property.startsWith('On') || expression.includes(';'),
     });
-    const bindings = parsed.ast
-      ? analyzeBindings(parsed.ast, control, controlById, controlNameToIds, dataSourceSymbols, metadataCatalog)
-      : [];
 
     formulas.push({
       id: `${control.id}:formula:${property}`,
@@ -347,12 +351,37 @@ async function buildFormulaSemantics(
       sourceSpan: sourceControl?.propertySpans?.[property],
       valid: parsed.valid,
       ast: parsed.ast,
-      bindings,
+      bindings: [],
       unsupportedReason: parsed.unsupportedReason,
     });
   }
 
   return formulas;
+}
+
+function collectDeclaredVariables(formulas: CanvasFormulaSemantic[]): Set<string> {
+  const variables = new Set<string>();
+  const variableSetters = new Set(['Set', 'Collect', 'ClearCollect']);
+
+  for (const formula of formulas) {
+    if (!formula.ast) continue;
+
+    visitPowerFxAst(formula.ast, (node) => {
+      if (node.kind !== 'CallExpression' || node.callee.kind !== 'Identifier') return;
+
+      if (variableSetters.has(node.callee.name) && node.arguments.length >= 1 && node.arguments[0].kind === 'Identifier') {
+        variables.add(node.arguments[0].name);
+      }
+
+      if (node.callee.name === 'UpdateContext' && node.arguments.length >= 1 && node.arguments[0].kind === 'RecordExpression') {
+        for (const field of node.arguments[0].fields) {
+          variables.add(field.name.name);
+        }
+      }
+    });
+  }
+
+  return variables;
 }
 
 function analyzeBindings(
@@ -361,7 +390,8 @@ function analyzeBindings(
   controlById: Map<string, CanvasSemanticControl>,
   controlNameToIds: Map<string, string[]>,
   dataSourceSymbols: ReturnType<typeof buildDataSourceSymbols>,
-  metadataCatalog: CanvasMetadataCatalog | undefined
+  metadataCatalog: CanvasMetadataCatalog | undefined,
+  declaredVariables: Set<string>
 ): CanvasFormulaBinding[] {
   const bindings: CanvasFormulaBinding[] = [];
   const seen = new Set<string>();
@@ -391,7 +421,7 @@ function analyzeBindings(
         return;
       }
 
-      const binding = resolveIdentifierBinding(current, control, controlNameToIds, dataSourceSymbols, metadataCatalog);
+      const binding = resolveIdentifierBinding(current, control, controlNameToIds, dataSourceSymbols, metadataCatalog, declaredVariables);
       const key = `${binding.kind}:${binding.name}:${binding.span.start}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -420,7 +450,8 @@ function resolveIdentifierBinding(
   control: CanvasSemanticControl,
   controlNameToIds: Map<string, string[]>,
   dataSourceSymbols: ReturnType<typeof buildDataSourceSymbols>,
-  metadataCatalog: CanvasMetadataCatalog | undefined
+  metadataCatalog: CanvasMetadataCatalog | undefined,
+  declaredVariables: Set<string>
 ): CanvasFormulaBinding {
   const specialNames = new Set(['App', 'Parent', 'Self', 'ThisItem', 'ThisRecord']);
 
@@ -479,7 +510,7 @@ function resolveIdentifierBinding(
     };
   }
 
-  if (/^(var|loc|gbl|col)/i.test(node.name)) {
+  if (/^(var|loc|gbl|col)/i.test(node.name) || declaredVariables.has(node.name)) {
     return {
       kind: 'variable',
       name: node.name,

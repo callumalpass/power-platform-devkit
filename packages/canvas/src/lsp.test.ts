@@ -285,4 +285,56 @@ describe('canvas lsp session', () => {
     expect(formulaCompletion.map((item) => item.label)).toEqual(expect.arrayContaining(['Button1', 'Button2', 'Contacts']));
     expect(controlHover?.contents.value).toContain('Classic/Button@2.2.0');
   });
+
+  it('returns contextual dot-completions for data sources and controls', async () => {
+    const root = await createTempDir();
+    const { screenPath } = await writeCanvasProject(root);
+    const screenText = [
+      'Screens:',
+      '  Screen1:',
+      '    Children:',
+      '      - Button1:',
+      '          Control: Classic/Button@2.2.0',
+      '          Properties:',
+      '            Text: =Contacts.Email',
+      '            OnSelect: =Notify(Button1.Text)',
+      '      - Button2:',
+      '          Control: Classic/Button@2.2.0',
+      '          Properties:',
+      '            Text: ="Ship it"',
+      '',
+    ].join('\n');
+    const session = new CanvasLspSession({
+      projectPath: join(root, 'project'),
+    });
+    const uri = pathToFileURL(screenPath).toString();
+
+    await session.handleRequest('initialize', {});
+    await session.handleNotification('textDocument/didOpen', {
+      textDocument: {
+        uri,
+        languageId: 'powerapps',
+        version: 1,
+        text: screenText,
+      },
+    });
+
+    // Completion right after "Contacts." should return column names
+    const dataSourceCompletion = (await session.handleRequest('textDocument/completion', {
+      textDocument: { uri },
+      position: positionOf(screenText, 'Email'),
+    })) as Array<{ label: string; kind: number }>;
+
+    expect(dataSourceCompletion.map((item) => item.label)).toEqual(['Email', 'Full Name']);
+    expect(dataSourceCompletion.every((item) => item.kind === 5)).toBe(true);
+
+    // Completion right after "Button1." should return template properties
+    const controlCompletion = (await session.handleRequest('textDocument/completion', {
+      textDocument: { uri },
+      position: positionOf(screenText, 'Text)'),
+    })) as Array<{ label: string; kind: number }>;
+
+    expect(controlCompletion.map((item) => item.label).sort()).toEqual(['Height', 'OnSelect', 'Text', 'Width', 'X', 'Y']);
+    expect(controlCompletion.every((item) => item.kind === 10)).toBe(true);
+  });
 });

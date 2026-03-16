@@ -356,10 +356,22 @@ export class CanvasLspSession {
     }
 
     const { analysis, relativeFile, position } = query;
+    const uri = readString(asRecord(asRecord(params)?.textDocument)?.uri);
+    const documentText = uri ? this.documents.get(uri)?.text : undefined;
     const formulaHit = this.findFormulaBindingAtPosition(analysis, relativeFile, position);
     const controlContext = this.findControlContextAtPosition(analysis, relativeFile, position);
 
     if (formulaHit || (controlContext?.propertyValueRange && rangeContains(controlContext.propertyValueRange, position))) {
+      if (documentText) {
+        const dotPrefix = findDotPrefix(documentText, position);
+        if (dotPrefix) {
+          const dotCompletions = resolveDotCompletions(dotPrefix, analysis);
+          if (dotCompletions.length > 0) {
+            return dotCompletions;
+          }
+        }
+      }
+
       return analysis.semanticModel.symbols.map((symbol) => ({
         label: symbol.name,
         kind: completionKindForSymbol(symbol.kind),
@@ -736,6 +748,143 @@ function buildBindingHover(hit: FormulaBindingHit): string {
 
   return lines.join('\n\n');
 }
+
+function findDotPrefix(text: string, position: LspPosition): string | undefined {
+  const lines = text.split('\n');
+  const line = lines[position.line];
+  if (!line) return undefined;
+
+  const before = line.slice(0, position.character);
+  let i = before.length - 1;
+
+  // Skip any identifier chars typed after the dot (partial member name)
+  while (i >= 0 && /[a-zA-Z0-9_]/.test(before[i])) {
+    i--;
+  }
+
+  if (i < 0 || before[i] !== '.') {
+    return undefined;
+  }
+
+  // Extract identifier before the dot
+  i--;
+  const end = i + 1;
+  while (i >= 0 && /[a-zA-Z0-9_]/.test(before[i])) {
+    i--;
+  }
+
+  const prefix = before.slice(i + 1, end);
+  return prefix || undefined;
+}
+
+function resolveDotCompletions(prefix: string, analysis: AnalysisContext): LspCompletionItem[] {
+  const lowerPrefix = prefix.toLowerCase();
+
+  // 1. Controls
+  const control = analysis.semanticModel.controls.find((c) => c.name.toLowerCase() === lowerPrefix);
+  if (control?.templateSurface) {
+    return control.templateSurface.allowedProperties.map((prop) => ({
+      label: prop,
+      kind: 10, // Property
+      detail: control.templateSurface!.propertyCategories[prop],
+    }));
+  }
+
+  // 2. Data sources
+  const dataSources = analysis.source.dataSources ?? [];
+  const dataSource = dataSources.find((ds) => ds.name.toLowerCase() === lowerPrefix);
+  if (dataSource?.metadata) {
+    const items: LspCompletionItem[] = [];
+    for (const column of dataSource.metadata.columns) {
+      items.push({
+        label: column.name,
+        kind: 5, // Field
+        detail: column.type,
+      });
+    }
+    for (const relationship of dataSource.metadata.relationships) {
+      items.push({
+        label: relationship.name,
+        kind: 18, // Reference
+        detail: relationship.target ? `→ ${relationship.target}` : undefined,
+      });
+    }
+    return items;
+  }
+
+  // 3. Option sets
+  const metadataCatalog = analysis.source.metadataCatalog;
+  if (metadataCatalog) {
+    const optionSet = metadataCatalog.optionSets.find((os) => os.name.toLowerCase() === lowerPrefix);
+    if (optionSet) {
+      return optionSet.values.map((v) => ({
+        label: v.name,
+        kind: 20, // EnumMember
+        detail: v.value !== undefined ? String(v.value) : undefined,
+      }));
+    }
+  }
+
+  // 4. Built-in enums
+  const enumKey = Object.keys(BUILTIN_ENUM_MEMBERS).find((k) => k.toLowerCase() === lowerPrefix);
+  if (enumKey) {
+    return BUILTIN_ENUM_MEMBERS[enumKey].map((member) => ({
+      label: member,
+      kind: 20, // EnumMember
+    }));
+  }
+
+  return [];
+}
+
+const BUILTIN_ENUM_MEMBERS: Record<string, string[]> = {
+  Align: ['Center', 'Justify', 'Left', 'Right'],
+  BorderStyle: ['Dashed', 'Dotted', 'None', 'Solid'],
+  Color: [
+    'AliceBlue', 'AntiqueWhite', 'Aqua', 'Aquamarine', 'Azure',
+    'Beige', 'Bisque', 'Black', 'BlanchedAlmond', 'Blue', 'BlueViolet', 'Brown', 'BurlyWood',
+    'CadetBlue', 'Chartreuse', 'Chocolate', 'Coral', 'CornflowerBlue', 'Cornsilk', 'Crimson', 'Cyan',
+    'DarkBlue', 'DarkCyan', 'DarkGoldenRod', 'DarkGray', 'DarkGreen', 'DarkKhaki', 'DarkMagenta',
+    'DarkOliveGreen', 'DarkOrange', 'DarkOrchid', 'DarkRed', 'DarkSalmon', 'DarkSeaGreen',
+    'DarkSlateBlue', 'DarkSlateGray', 'DarkTurquoise', 'DarkViolet',
+    'DeepPink', 'DeepSkyBlue', 'DimGray', 'DodgerBlue',
+    'FireBrick', 'FloralWhite', 'ForestGreen', 'Fuchsia',
+    'Gainsboro', 'GhostWhite', 'Gold', 'GoldenRod', 'Gray', 'Green', 'GreenYellow',
+    'HoneyDew', 'HotPink',
+    'IndianRed', 'Indigo', 'Ivory',
+    'Khaki',
+    'Lavender', 'LavenderBlush', 'LawnGreen', 'LemonChiffon', 'LightBlue', 'LightCoral', 'LightCyan',
+    'LightGoldenRodYellow', 'LightGray', 'LightGreen', 'LightPink', 'LightSalmon', 'LightSeaGreen',
+    'LightSkyBlue', 'LightSlateGray', 'LightSteelBlue', 'LightYellow',
+    'Lime', 'LimeGreen', 'Linen',
+    'Magenta', 'Maroon', 'MediumAquaMarine', 'MediumBlue', 'MediumOrchid', 'MediumPurple',
+    'MediumSeaGreen', 'MediumSlateBlue', 'MediumSpringGreen', 'MediumTurquoise', 'MediumVioletRed',
+    'MidnightBlue', 'MintCream', 'MistyRose', 'Moccasin',
+    'NavajoWhite', 'Navy',
+    'OldLace', 'Olive', 'OliveDrab', 'Orange', 'OrangeRed', 'Orchid',
+    'PaleGoldenRod', 'PaleGreen', 'PaleTurquoise', 'PaleVioletRed', 'PapayaWhip', 'PeachPuff',
+    'Peru', 'Pink', 'Plum', 'PowderBlue', 'Purple',
+    'Red', 'RosyBrown', 'RoyalBlue',
+    'SaddleBrown', 'Salmon', 'SandyBrown', 'SeaGreen', 'SeaShell', 'Sienna', 'Silver', 'SkyBlue',
+    'SlateBlue', 'SlateGray', 'Snow', 'SpringGreen', 'SteelBlue',
+    'Tan', 'Teal', 'Thistle', 'Tomato', 'Transparent', 'Turquoise',
+    'Violet',
+    'Wheat', 'White', 'WhiteSmoke',
+    'Yellow', 'YellowGreen',
+  ],
+  DisplayMode: ['Disabled', 'Edit', 'View'],
+  Font: ['Arial', 'Courier New', 'Georgia', 'Segoe UI', 'Verdana'],
+  FontWeight: ['Bold', 'Lighter', 'Normal', 'Semibold'],
+  Icon: [
+    'Add', 'Back', 'Cancel', 'Check', 'ChevronDown', 'ChevronLeft', 'ChevronRight', 'ChevronUp',
+    'Edit', 'Emoji', 'Filter', 'HamburgerMenu', 'Help', 'Home', 'Information', 'Mail',
+    'Message', 'People', 'Phone', 'Search', 'Settings', 'Trash',
+  ],
+  Layout: ['Horizontal', 'Vertical'],
+  Overflow: ['Hidden', 'Scroll'],
+  ScreenTransition: ['Cover', 'CoverRight', 'Fade', 'None', 'UnCover', 'UnCoverRight'],
+  VerticalAlign: ['Bottom', 'Middle', 'Top'],
+};
 
 function completionKindForSymbol(kind: CanvasSemanticModel['symbols'][number]['kind']): number {
   switch (kind) {
