@@ -12,11 +12,11 @@ export class FlowLanguageProvider {
   }
 
   private async startClient(): Promise<void> {
-    const serverModule = join(this.context.extensionPath, 'dist', 'flow-lsp-server.js');
+    const serverPath = join(this.context.extensionPath, 'dist', 'flow-lsp-server.js');
 
     const serverOptions: ServerOptions = {
-      run: { module: serverModule, transport: TransportKind.stdio },
-      debug: { module: serverModule, transport: TransportKind.stdio },
+      run: { command: 'node', args: [serverPath], transport: TransportKind.stdio },
+      debug: { command: 'node', args: [serverPath], transport: TransportKind.stdio },
     };
 
     const clientOptions: LanguageClientOptions = {
