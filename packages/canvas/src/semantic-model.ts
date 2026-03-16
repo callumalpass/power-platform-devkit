@@ -24,6 +24,7 @@ export type CanvasSemanticSymbolKind =
   | 'variable'
   | 'function'
   | 'special'
+  | 'enum'
   | 'unresolved';
 
 export type PowerFxAstNode =
@@ -193,6 +194,9 @@ export async function buildCanvasSemanticModel(
       name: screen.name,
       qualifiedName: screen.name,
     });
+    const screenIds = controlNameToIds.get(screen.name) ?? [];
+    screenIds.push(screenId);
+    controlNameToIds.set(screen.name, screenIds);
     appendControlSemantics(screen.name, screen.controls, undefined, controls, controlById, controlByPath, controlNameToIds, templateMap);
   }
 
@@ -418,7 +422,16 @@ function resolveIdentifierBinding(
   dataSourceSymbols: ReturnType<typeof buildDataSourceSymbols>,
   metadataCatalog: CanvasMetadataCatalog | undefined
 ): CanvasFormulaBinding {
-  const specialNames = new Set(['App', 'Parent', 'Self', 'ThisItem']);
+  const specialNames = new Set(['App', 'Parent', 'Self', 'ThisItem', 'ThisRecord']);
+
+  const builtinEnums = new Set([
+    'Align', 'BorderStyle', 'Color', 'DateTimeZone', 'Direction', 'DisplayMode',
+    'Fill', 'Focus', 'Font', 'FontWeight', 'FormMode', 'GridStyle', 'Icon',
+    'ImagePosition', 'ImageRotation', 'LabelPosition', 'Layout', 'LoadingSpinner',
+    'Match', 'MatchOptions', 'Notify', 'NotificationType', 'Overflow', 'PenMode',
+    'ScreenTransition', 'Scroll', 'SortOrder', 'StartScreen', 'TextFormat',
+    'TextMode', 'TextPosition', 'Transition', 'VerticalAlign', 'Visible', 'Zoom',
+  ]);
 
   if (specialNames.has(node.name)) {
     return {
@@ -428,6 +441,17 @@ function resolveIdentifierBinding(
       metadataBacked: false,
       span: node.span,
       targetId: `synthetic:special:${node.name.toLowerCase()}`,
+    };
+  }
+
+  if (builtinEnums.has(node.name)) {
+    return {
+      kind: 'enum',
+      name: node.name,
+      resolved: true,
+      metadataBacked: false,
+      span: node.span,
+      targetId: `synthetic:enum:${node.name.toLowerCase()}`,
     };
   }
 

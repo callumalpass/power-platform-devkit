@@ -4429,7 +4429,7 @@ function buildCanvasLintDiagnostics(prepared: PreparedCanvasValidation): CanvasL
 
     for (const binding of formula.bindings.filter((item) => !item.resolved)) {
       diagnostics.push({
-        severity: 'error',
+        severity: binding.metadataBacked ? 'error' : 'warning',
         code: binding.metadataBacked ? 'CANVAS_METADATA_REFERENCE_UNRESOLVED' : 'CANVAS_FORMULA_REFERENCE_UNRESOLVED',
         category: binding.metadataBacked ? 'metadata' : 'binding',
         message: binding.metadataBacked
