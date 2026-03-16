@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
 import { runPpJson } from './cli';
 
-interface ProjectInspectOutput {
-  success: boolean;
-  canonicalProjectRoot: string;
-  summary: { defaultEnvironment?: string };
+interface DiagnosticsBundle {
+  defaults: {
+    discovered: boolean;
+    configPath?: string;
+    environment?: string;
+    solution?: string;
+  };
 }
 
 export class PpStatusBar {
@@ -31,11 +34,13 @@ export class PpStatusBar {
     }
 
     try {
-      const result = await runPpJson<ProjectInspectOutput>(['project', 'inspect']);
-      if (result.success) {
-        const env = result.summary.defaultEnvironment ?? 'no env';
+      const result = await runPpJson<DiagnosticsBundle>(['diagnostics', 'bundle']);
+      if (result.defaults.discovered) {
+        const env = result.defaults.environment ?? 'no env';
         this.item.text = `$(cloud) ${env}`;
-        this.item.tooltip = `Power Platform project: ${result.canonicalProjectRoot}`;
+        this.item.tooltip = result.defaults.configPath
+          ? `pp config: ${result.defaults.configPath}`
+          : 'pp: no config file';
         this.item.show();
       } else {
         this.item.hide();
