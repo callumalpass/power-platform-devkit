@@ -1,16 +1,15 @@
-import { join } from 'node:path';
 import { type AuthProfile } from '@pp/auth';
 import { type EnvironmentAlias } from '@pp/config';
 import { CloudFlowService, ModelDrivenAppService } from '@pp/dataverse';
-import { type OperationResult, createDiagnostic, fail, ok } from '@pp/diagnostics';
-import { FlowService, type FlowMonitorReport, type FlowPatchDocument, type FlowWorkflowStateLabel } from '@pp/flow';
+import { type OperationResult, createDiagnostic, fail } from '@pp/diagnostics';
+import { FlowService } from '@pp/flow';
 import { ModelService, type ModelArtifactMutationKind, type ModelInspectResult } from '@pp/model';
 import * as cliHelp from './help';
 import { dispatchCommandRoute } from './command-dispatch';
 import { enforceWriteAccessForCliArgs } from './cli-access';
 import { buildPacEnvironmentGuidance } from './environment-commands';
-import { readEnvironmentAlias, readEnvironmentDefaultSolution, resolveDataverseClientByFlag, resolveDataverseClientForCli, resolveSolutionIdForCli } from './cli-resolution';
-import { createSuccessPayload, readMutationFlags } from './contract';
+import { readEnvironmentAlias, readEnvironmentDefaultSolution, resolveDataverseClientForCli, resolveSolutionIdForCli } from './cli-resolution';
+import { createSuccessPayload } from './contract';
 import {
   argumentFailure,
   dedupeStrings,
@@ -25,8 +24,6 @@ import {
   printResultDiagnostics,
   readConfigOptions,
   readFlag,
-  readJsonFileForCli,
-  readStructuredSpecFile,
 } from './cli-support';
 export async function runFlowList(args: string[]): Promise<number> {
   const resolution = await resolveDataverseClientForCli(args);
@@ -173,30 +170,6 @@ export async function runFlowAccess(args: string[]): Promise<number> {
   return 0;
 }
 
-export async function runFlowUnpack(args: string[]): Promise<number> {
-  const inputPath = positionalArgs(args)[0];
-  const outPath = readFlag(args, '--out');
-
-  if (!inputPath || !outPath) {
-    return printFailure(argumentFailure('FLOW_UNPACK_ARGS_REQUIRED', 'Usage: flow unpack <path> --out <dir>'));
-  }
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'flow.unpack', { inputPath, outPath });
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const result = await new FlowService().unpack(inputPath, outPath);
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
-}
-
 export async function runFlowExport(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
   const outPath = readFlag(args, '--out');
@@ -333,170 +306,6 @@ function augmentFlowActivateFailureResult<T>(
   };
 }
 
-export async function runFlowPromote(args: string[]): Promise<number> {
-  const identifier = positionalArgs(args)[0];
-
-  if (!identifier) {
-    return printFailure(
-      argumentFailure(
-        'FLOW_PROMOTE_ARGS_REQUIRED',
-        'Usage: flow promote <name|id|uniqueName> --source-environment ALIAS --target-environment ALIAS [--source-solution UNIQUE_NAME] [--target-solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended] [--solution-package] [--managed-solution-package] [--overwrite-unmanaged-customizations] [--holding-solution] [--skip-product-update-dependencies] [--no-publish-workflows] [--import-job-id GUID]'
-      )
-    );
-  }
-
-  const sourceResolution = await resolveDataverseClientByFlag(args, '--source-environment');
-
-  if (!sourceResolution.success || !sourceResolution.data) {
-    return printFailure(sourceResolution);
-  }
-
-  const targetResolution = await resolveDataverseClientByFlag(args, '--target-environment');
-
-  if (!targetResolution.success || !targetResolution.data) {
-    return printFailure(targetResolution);
-  }
-
-  const workflowState = readFlowWorkflowStateFlag(args);
-
-  if (!workflowState.success) {
-    return printFailure(workflowState);
-  }
-
-  const preview = maybeHandleMutationPreview(
-    args,
-    'json',
-    'flow.promote',
-    {
-      identifier,
-      sourceEnvironment: sourceResolution.data.environment.alias,
-      sourceSolution: readFlag(args, '--source-solution'),
-      targetEnvironment: targetResolution.data.environment.alias,
-      targetSolution: readFlag(args, '--target-solution'),
-      target: readFlag(args, '--target') ?? 'source artifact metadata',
-      createIfMissing: hasFlag(args, '--create-if-missing'),
-      workflowState: workflowState.data ?? 'source artifact metadata',
-      solutionPackage: hasFlag(args, '--solution-package'),
-      solutionPackageManaged: hasFlag(args, '--managed-solution-package'),
-      publishWorkflows: !hasFlag(args, '--no-publish-workflows'),
-      overwriteUnmanagedCustomizations: hasFlag(args, '--overwrite-unmanaged-customizations'),
-      holdingSolution: hasFlag(args, '--holding-solution'),
-      skipProductUpdateDependencies: hasFlag(args, '--skip-product-update-dependencies'),
-      importJobId: readFlag(args, '--import-job-id'),
-    }
-  );
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const result = await new FlowService(sourceResolution.data.client).promoteArtifact(identifier, {
-    sourceSolutionUniqueName: readFlag(args, '--source-solution'),
-    targetSolutionUniqueName: readFlag(args, '--target-solution'),
-    target: readFlag(args, '--target'),
-    createIfMissing: hasFlag(args, '--create-if-missing'),
-    workflowState: workflowState.data,
-    solutionPackage: hasFlag(args, '--solution-package'),
-    solutionPackageManaged: hasFlag(args, '--managed-solution-package'),
-    publishWorkflows: hasFlag(args, '--no-publish-workflows') ? false : undefined,
-    overwriteUnmanagedCustomizations: hasFlag(args, '--overwrite-unmanaged-customizations') ? true : undefined,
-    holdingSolution: hasFlag(args, '--holding-solution') ? true : undefined,
-    skipProductUpdateDependencies: hasFlag(args, '--skip-product-update-dependencies') ? true : undefined,
-    importJobId: readFlag(args, '--import-job-id'),
-    targetDataverseClient: targetResolution.data.client,
-  });
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  printResultDiagnostics(result, outputFormat(args, 'json'));
-  return 0;
-}
-
-export async function runFlowPack(args: string[]): Promise<number> {
-  const inputPath = positionalArgs(args)[0];
-  const outPath = readFlag(args, '--out');
-
-  if (!inputPath || !outPath) {
-    return printFailure(argumentFailure('FLOW_PACK_ARGS_REQUIRED', 'Usage: flow pack <path> --out <file.json>'));
-  }
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'flow.pack', { inputPath, outPath });
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const result = await new FlowService().pack(inputPath, outPath);
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
-}
-
-export async function runFlowDeploy(args: string[]): Promise<number> {
-  const inputPath = positionalArgs(args)[0];
-
-  if (!inputPath) {
-    return printFailure(
-      argumentFailure(
-        'FLOW_DEPLOY_ARGS_REQUIRED',
-        'Usage: flow deploy <path> --environment ALIAS [--solution UNIQUE_NAME] [--target <name|id|uniqueName>] [--create-if-missing] [--workflow-state draft|activated|suspended]'
-      )
-    );
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const workflowState = readFlowWorkflowStateFlag(args);
-
-  if (!workflowState.success) {
-    return printFailure(workflowState);
-  }
-
-  const preview = maybeHandleMutationPreview(
-    args,
-    'json',
-    'flow.deploy',
-    {
-      inputPath,
-      environment: resolution.data.environment.alias,
-      solution: readFlag(args, '--solution'),
-      target: readFlag(args, '--target') ?? 'artifact metadata',
-      createIfMissing: hasFlag(args, '--create-if-missing'),
-      workflowState: workflowState.data ?? 'artifact metadata',
-    }
-  );
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const result = await new FlowService(resolution.data.client).deployArtifact(inputPath, {
-    solutionUniqueName: readFlag(args, '--solution'),
-    target: readFlag(args, '--target'),
-    createIfMissing: hasFlag(args, '--create-if-missing'),
-    workflowState: workflowState.data,
-  });
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  printResultDiagnostics(result, outputFormat(args, 'json'));
-  return 0;
-}
-
 export async function runFlowNormalize(args: string[]): Promise<number> {
   const inputPath = positionalArgs(args)[0];
 
@@ -548,164 +357,6 @@ export async function runFlowValidate(args: string[]): Promise<number> {
   return result.data.valid ? 0 : 1;
 }
 
-export async function runFlowGraph(args: string[]): Promise<number> {
-  const inputPath = positionalArgs(args)[0];
-
-  if (!inputPath) {
-    return printFailure(argumentFailure('FLOW_GRAPH_PATH_REQUIRED', 'Usage: flow graph <path>'));
-  }
-
-  const result = await new FlowService().graphArtifact(inputPath);
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
-}
-
-export async function runFlowPatch(args: string[]): Promise<number> {
-  const inputPath = positionalArgs(args)[0];
-  const patchFile = readFlag(args, '--file');
-
-  if (!inputPath || !patchFile) {
-    return printFailure(argumentFailure('FLOW_PATCH_ARGS_REQUIRED', 'Usage: flow patch <path> --file PATCH.json [--out PATH]'));
-  }
-
-  const patch = await readJsonFileForCli(patchFile, 'FLOW_PATCH_FILE_INVALID', '--file must point to a JSON patch document.');
-
-  if (!patch.success || patch.data === undefined) {
-    return printFailure(patch);
-  }
-
-  const mutation = readMutationFlags(args);
-
-  if (!mutation.success || !mutation.data) {
-    return printFailure(mutation);
-  }
-
-  const requestedOutPath = readFlag(args, '--out') ?? 'in-place';
-
-  const preview = maybeHandleMutationPreview(args, 'json', 'flow.patch', { inputPath, patchFile, outPath: requestedOutPath }, patch.data);
-
-  if (preview !== undefined) {
-    return preview;
-  }
-
-  const result = await new FlowService().patch(inputPath, patch.data as FlowPatchDocument, readFlag(args, '--out'));
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
-}
-
-export async function runFlowRuns(args: string[]): Promise<number> {
-  const identifier = positionalArgs(args)[0];
-
-  if (!identifier) {
-    return printFailure(
-      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--status STATUS] [--since 7d]')
-    );
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const result = await new FlowService(resolution.data.client).runs(identifier, {
-    solutionUniqueName: readFlag(args, '--solution'),
-    status: readFlag(args, '--status'),
-    since: readFlag(args, '--since'),
-  });
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printByFormat(createSuccessPayload(result.data ?? [], result, { dataKey: 'runs' }), outputFormat(args, 'json'));
-  return 0;
-}
-
-export async function runFlowMonitor(args: string[]): Promise<number> {
-  const identifier = positionalArgs(args)[0];
-
-  if (!identifier) {
-    return printFailure(
-      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow monitor <name|id|uniqueName> --environment ALIAS [--since 7d]')
-    );
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const baseline = await readFlowMonitorBaselineForCli(readFlag(args, '--baseline'));
-
-  if (!baseline.success) {
-    return printFailure(baseline);
-  }
-
-  const result = await new FlowService(resolution.data.client).monitor(identifier, {
-    solutionUniqueName: readFlag(args, '--solution'),
-    since: readFlag(args, '--since'),
-    baseline: baseline.data,
-  });
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
-  return 0;
-}
-
-export async function runFlowErrors(args: string[]): Promise<number> {
-  const identifier = positionalArgs(args)[0];
-
-  if (!identifier) {
-    return printFailure(
-      argumentFailure(
-        'FLOW_IDENTIFIER_REQUIRED',
-        'Usage: flow errors <name|id|uniqueName> --environment ALIAS [--group-by errorCode|errorMessage|connectionReference]'
-      )
-    );
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const groupBy = readFlag(args, '--group-by') as 'errorCode' | 'errorMessage' | 'connectionReference' | undefined;
-
-  if (groupBy && !['errorCode', 'errorMessage', 'connectionReference'].includes(groupBy)) {
-    return printFailure(argumentFailure('FLOW_GROUP_BY_INVALID', 'Use --group-by errorCode, errorMessage, or connectionReference.'));
-  }
-
-  const result = await new FlowService(resolution.data.client).errors(identifier, {
-    solutionUniqueName: readFlag(args, '--solution'),
-    since: readFlag(args, '--since'),
-    status: readFlag(args, '--status'),
-    groupBy,
-  });
-
-  if (!result.success) {
-    return printFailure(result);
-  }
-
-  printByFormat(result.data ?? [], outputFormat(args, 'json'));
-  return 0;
-}
-
 export async function runFlowConnrefs(args: string[]): Promise<number> {
   const identifier = positionalArgs(args)[0];
 
@@ -735,34 +386,6 @@ export async function runFlowConnrefs(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
-  return 0;
-}
-
-export async function runFlowDoctor(args: string[]): Promise<number> {
-  const identifier = positionalArgs(args)[0];
-
-  if (!identifier) {
-    return printFailure(
-      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow doctor <name|id|uniqueName> --environment ALIAS [--since 7d]')
-    );
-  }
-
-  const resolution = await resolveDataverseClientForCli(args);
-
-  if (!resolution.success || !resolution.data) {
-    return printFailure(resolution);
-  }
-
-  const result = await new FlowService(resolution.data.client).doctor(identifier, {
-    solutionUniqueName: readFlag(args, '--solution'),
-    since: readFlag(args, '--since'),
-  });
-
-  if (!result.success || !result.data) {
-    return printFailure(result);
-  }
-
-  printByFormat(createSuccessPayload(result.data, result), outputFormat(args, 'json'));
   return 0;
 }
 
@@ -1267,90 +890,6 @@ function readModelTargetKind(args: string[]): ModelArtifactMutationKind | undefi
   }
 
   return undefined;
-}
-
-function readFlowWorkflowStateFlag(args: string[]): OperationResult<FlowWorkflowStateLabel | undefined> {
-  const value = readFlag(args, '--workflow-state');
-
-  if (!value) {
-    return ok(undefined, {
-      supportTier: 'preview',
-    });
-  }
-
-  if (value === 'draft' || value === 'activated' || value === 'suspended') {
-    return ok(value, {
-      supportTier: 'preview',
-    });
-  }
-
-  return argumentFailure('FLOW_WORKFLOW_STATE_INVALID', 'Use --workflow-state draft, activated, or suspended.');
-}
-
-async function readFlowMonitorBaselineForCli(path: string | undefined): Promise<OperationResult<FlowMonitorReport | undefined>> {
-  if (!path) {
-    return ok(undefined, {
-      supportTier: 'preview',
-    });
-  }
-
-  const loaded = await readJsonFileForCli(path, 'FLOW_MONITOR_BASELINE_INVALID', 'Failed to parse flow monitor baseline JSON.');
-
-  if (!loaded.success) {
-    return loaded as OperationResult<FlowMonitorReport | undefined>;
-  }
-
-  const report = unwrapFlowMonitorBaseline(loaded.data);
-
-  if (!report) {
-    return fail(
-      createDiagnostic(
-        'error',
-        'FLOW_MONITOR_BASELINE_SHAPE_INVALID',
-        'Flow monitor baseline must be a prior `pp flow monitor --format json` payload or its top-level report object.',
-        {
-          source: '@pp/cli',
-          path,
-        }
-      )
-    );
-  }
-
-  return ok(report, {
-    supportTier: 'preview',
-  });
-}
-
-function unwrapFlowMonitorBaseline(value: unknown): FlowMonitorReport | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  if (isFlowMonitorReport(value)) {
-    return value;
-  }
-
-  const candidate = (value as { data?: unknown }).data;
-  return isFlowMonitorReport(candidate) ? candidate : undefined;
-}
-
-function isFlowMonitorReport(value: unknown): value is FlowMonitorReport {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-
-  const report = value as Partial<FlowMonitorReport>;
-  return (
-    typeof report.checkedAt === 'string' &&
-    Boolean(report.health) &&
-    typeof report.health?.status === 'string' &&
-    typeof report.health?.telemetryState === 'string' &&
-    Boolean(report.recentRuns) &&
-    typeof report.recentRuns?.total === 'number' &&
-    typeof report.recentRuns?.failed === 'number' &&
-    Array.isArray(report.errorGroups) &&
-    Array.isArray(report.findings)
-  );
 }
 
 function formatCliArg(value: string): string {

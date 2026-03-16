@@ -91,7 +91,6 @@ export async function runAuthProfileInspectCommand(
         relationships: {
           environmentAliases: usage.environmentAliases,
           environmentCount: usage.environmentCount,
-          currentProject: usage.currentProject,
         },
       },
       profile
