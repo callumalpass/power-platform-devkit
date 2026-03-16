@@ -27,54 +27,6 @@ importers:
         specifier: ^3.0.8
         version: 3.2.4(@types/node@22.19.15)(tsx@4.21.0)(yaml@2.8.2)
 
-  packages/adapters/azure-devops:
-    dependencies:
-      '@pp/deploy':
-        specifier: workspace:*
-        version: link:../../deploy
-      '@pp/diagnostics':
-        specifier: workspace:*
-        version: link:../../diagnostics
-      '@pp/project':
-        specifier: workspace:*
-        version: link:../../project
-
-  packages/adapters/github-actions:
-    dependencies:
-      '@pp/deploy':
-        specifier: workspace:*
-        version: link:../../deploy
-      '@pp/diagnostics':
-        specifier: workspace:*
-        version: link:../../diagnostics
-      '@pp/project':
-        specifier: workspace:*
-        version: link:../../project
-
-  packages/adapters/power-platform-pipelines:
-    dependencies:
-      '@pp/deploy':
-        specifier: workspace:*
-        version: link:../../deploy
-      '@pp/diagnostics':
-        specifier: workspace:*
-        version: link:../../diagnostics
-      '@pp/project':
-        specifier: workspace:*
-        version: link:../../project
-
-  packages/analysis:
-    dependencies:
-      '@pp/deploy':
-        specifier: workspace:*
-        version: link:../deploy
-      '@pp/diagnostics':
-        specifier: workspace:*
-        version: link:../diagnostics
-      '@pp/project':
-        specifier: workspace:*
-        version: link:../project
-
   packages/artifacts: {}
 
   packages/auth:
@@ -194,46 +146,7 @@ importers:
         specifier: ^3.25.1
         version: 3.25.1(zod@3.25.76)
 
-  packages/deploy:
-    dependencies:
-      '@pp/auth':
-        specifier: workspace:*
-        version: link:../auth
-      '@pp/config':
-        specifier: workspace:*
-        version: link:../config
-      '@pp/dataverse':
-        specifier: workspace:*
-        version: link:../dataverse
-      '@pp/diagnostics':
-        specifier: workspace:*
-        version: link:../diagnostics
-      '@pp/flow':
-        specifier: workspace:*
-        version: link:../flow
-      '@pp/http':
-        specifier: workspace:*
-        version: link:../http
-      '@pp/powerbi':
-        specifier: workspace:*
-        version: link:../powerbi
-      '@pp/project':
-        specifier: workspace:*
-        version: link:../project
-      '@pp/sharepoint':
-        specifier: workspace:*
-        version: link:../sharepoint
-      '@pp/solution':
-        specifier: workspace:*
-        version: link:../solution
-
   packages/diagnostics: {}
-
-  packages/extensions:
-    dependencies:
-      '@pp/diagnostics':
-        specifier: workspace:*
-        version: link:../diagnostics
 
   packages/flow:
     dependencies:
@@ -318,36 +231,6 @@ importers:
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
-
-  packages/powerbi:
-    dependencies:
-      '@pp/diagnostics':
-        specifier: workspace:*
-        version: link:../diagnostics
-      '@pp/http':
-        specifier: workspace:*
-        version: link:../http
-
-  packages/project:
-    dependencies:
-      '@pp/auth':
-        specifier: workspace:*
-        version: link:../auth
-      '@pp/config':
-        specifier: workspace:*
-        version: link:../config
-      '@pp/diagnostics':
-        specifier: workspace:*
-        version: link:../diagnostics
-
-  packages/sharepoint:
-    dependencies:
-      '@pp/diagnostics':
-        specifier: workspace:*
-        version: link:../diagnostics
-      '@pp/http':
-        specifier: workspace:*
-        version: link:../http
 
   packages/solution:
     dependencies:

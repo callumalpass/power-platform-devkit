@@ -24,16 +24,7 @@ export default defineConfig({
   },
   test: {
     include: ['packages/**/src/**/*.test.ts'],
-    exclude: [
-      '**/node_modules/**',
-      'packages/project/**',
-      'packages/deploy/**',
-      'packages/analysis/**',
-      'packages/adapters/**',
-      'packages/sharepoint/**',
-      'packages/powerbi/**',
-      'packages/extensions/**',
-    ],
+    exclude: ['**/node_modules/**'],
     coverage: {
       enabled: false,
     },

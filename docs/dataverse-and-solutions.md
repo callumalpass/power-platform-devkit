@@ -109,23 +109,21 @@ Supported flags:
 For raw Web API access, use:
 
 ```bash
-pp dv request --env dev --path "EntityDefinitions?\$select=LogicalName,SchemaName"
+pp dv request "EntityDefinitions?\$select=LogicalName,SchemaName" --env dev
 ```
 
 You can also send arbitrary methods and request bodies:
 
 ```bash
-pp dv request \
+pp dv request "accounts" \
   --env dev \
   --method POST \
-  --path "accounts" \
   --body '{"name":"Acme"}'
 ```
 
 Supported flags:
 
 - `--method`
-- `--path`
 - `--body`
 - `--body-file`
 - `--response-type json|text|void`

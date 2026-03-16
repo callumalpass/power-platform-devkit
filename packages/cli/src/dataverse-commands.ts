@@ -136,10 +136,10 @@ export async function runDataverseWhoAmI(args: string[]): Promise<number> {
 }
 
 export async function runDataverseRequest(args: string[]): Promise<number> {
-  const path = readFlag(args, '--path');
+  const path = positionalArgs(args)[0] ?? readFlag(args, '--path');
 
   if (!path) {
-    return printFailure(argumentFailure('DV_REQUEST_PATH_REQUIRED', '--path is required.'));
+    return printFailure(argumentFailure('DV_REQUEST_PATH_REQUIRED', 'Usage: dv request <path> --environment <alias> [--method GET|POST|PATCH|DELETE] [--body JSON|--body-file FILE]'));
   }
 
   const method = (readFlag(args, '--method') ?? 'GET').toUpperCase();
