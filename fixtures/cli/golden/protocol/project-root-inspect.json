@@ -1,8 +1,8 @@
 {
   "assets": [
     {
-      "exists": true,
-      "kind": "directory",
+      "exists": false,
+      "kind": "missing",
       "name": "apps",
       "path": "<REPO_ROOT>/apps"
     },
@@ -13,8 +13,8 @@
       "path": "<REPO_ROOT>/flows"
     },
     {
-      "exists": true,
-      "kind": "directory",
+      "exists": false,
+      "kind": "missing",
       "name": "solutions",
       "path": "<REPO_ROOT>/solutions"
     },
@@ -71,9 +71,7 @@
     },
     "deploymentRouteSummary": "pp.config.yaml maps stage dev to environment alias dev and solution Core. The alias resolves later through the external pp environment registry and its auth context. The canonical bundle artifacts/solutions/Core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/Core.zip` or `pp solution export Core --environment dev --out artifacts/solutions/Core.zip`.",
     "editableAssetRoots": [
-      "apps",
       "flows",
-      "solutions",
       "docs"
     ],
     "environmentAliasProvenance": "Stage dev in pp.config.yaml selects environment alias dev. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
@@ -125,6 +123,7 @@
         "environmentAlias": "dev",
         "environmentStatus": "missing",
         "solutionAlias": "Core",
+        "solutionAlignment": "unknown",
         "solutionUniqueName": "Core",
         "stage": "dev",
         "summary": "stage dev -> environment dev -> auth profile <missing> -> solution Core (Core)"

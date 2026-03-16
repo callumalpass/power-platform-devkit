@@ -1,11 +1,51 @@
 {
-  "connectionReferences": [
-    {
-      "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
-      "connectionReferenceLogicalName": "shared_office365",
-      "name": "shared_office365"
-    }
-  ],
+  "data": {
+    "connectionReferences": [
+      {
+        "apiId": "/providers/microsoft.powerapps/apis/shared_office365",
+        "connectionReferenceLogicalName": "shared_office365",
+        "name": "shared_office365"
+      }
+    ],
+    "environmentVariables": [],
+    "intermediateRepresentation": {
+      "actionCount": 5,
+      "controlFlowEdgeCount": 0,
+      "dynamicContentReferenceCount": 5,
+      "expressionCount": 5,
+      "nodeCount": 5,
+      "scopeCount": 0,
+      "templateExpressionCount": 0,
+      "triggerCount": 0,
+      "variableReadCount": 0,
+      "variableWriteCount": 0
+    },
+    "name": "Office 365 Semantic Diagnostic Flow",
+    "parameters": [],
+    "path": "<REPO_ROOT>/fixtures/flow/artifacts/office365-semantic-diagnostic-flow",
+    "semanticSummary": {
+      "actionCount": 5,
+      "controlFlowEdgeCount": 0,
+      "dynamicContentReferenceCount": 5,
+      "expressionCount": 5,
+      "initializedVariables": [],
+      "referenceCounts": {
+        "actions": 0,
+        "connectionReferences": 5,
+        "environmentVariables": 0,
+        "parameters": 0,
+        "variables": 0
+      },
+      "scopeCount": 0,
+      "templateExpressionCount": 0,
+      "triggerCount": 0,
+      "variableUsage": {
+        "reads": 0,
+        "writes": 0
+      }
+    },
+    "valid": false
+  },
   "diagnostics": [
     {
       "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
@@ -43,48 +83,7 @@
       "source": "@pp/flow"
     }
   ],
-  "environmentVariables": [],
-  "intermediateRepresentation": {
-    "actionCount": 5,
-    "controlFlowEdgeCount": 0,
-    "dynamicContentReferenceCount": 5,
-    "expressionCount": 5,
-    "nodeCount": 5,
-    "scopeCount": 0,
-    "templateExpressionCount": 0,
-    "triggerCount": 0,
-    "variableReadCount": 0,
-    "variableWriteCount": 0
-  },
-  "knownLimitations": [],
-  "name": "Office 365 Semantic Diagnostic Flow",
-  "parameters": [],
-  "path": "<REPO_ROOT>/fixtures/flow/artifacts/office365-semantic-diagnostic-flow",
-  "provenance": [],
-  "semanticSummary": {
-    "actionCount": 5,
-    "controlFlowEdgeCount": 0,
-    "dynamicContentReferenceCount": 5,
-    "expressionCount": 5,
-    "initializedVariables": [],
-    "referenceCounts": {
-      "actions": 0,
-      "connectionReferences": 5,
-      "environmentVariables": 0,
-      "parameters": 0,
-      "variables": 0
-    },
-    "scopeCount": 0,
-    "templateExpressionCount": 0,
-    "triggerCount": 0,
-    "variableUsage": {
-      "reads": 0,
-      "writes": 0
-    }
-  },
   "success": true,
-  "suggestedNextActions": [],
   "supportTier": "preview",
-  "valid": false,
   "warnings": []
 }

@@ -27,6 +27,7 @@ import {
   resolveCanvasTemplateRequirements,
   validateCanvasApp,
   type CanvasRegistryBundle,
+  type CanvasPatchDocument,
 } from './index';
 
 const tempDirs: string[] = [];
@@ -2594,7 +2595,7 @@ describe('canvas patch workflows', () => {
           controlPath: 'Home/Layout/Title',
         },
       ],
-    } as const;
+    } satisfies CanvasPatchDocument;
 
     const plan = await planCanvasPatch(appPath, patch);
     expect(plan.success).toBe(true);

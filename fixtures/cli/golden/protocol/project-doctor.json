@@ -30,7 +30,7 @@
     "externalTargeting": [
       {
         "code": "PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED",
-        "hint": "Add the alias with `pp env add --name sandbox --url <dataverse-url> --profile <auth-profile>`.",
+        "hint": "Add the alias with `pp env add sandbox --url <dataverse-url> --profile <auth-profile>`.",
         "message": "Stage dev points to environment alias sandbox, but that alias is not configured in the active pp environment registry.",
         "status": "warn"
       },
@@ -205,7 +205,7 @@
     },
     {
       "code": "PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED",
-      "hint": "Add the alias with `pp env add --name sandbox --url <dataverse-url> --profile <auth-profile>`.",
+      "hint": "Add the alias with `pp env add sandbox --url <dataverse-url> --profile <auth-profile>`.",
       "message": "Stage dev points to environment alias sandbox, but that alias is not configured in the active pp environment registry.",
       "status": "warn"
     },
@@ -322,6 +322,7 @@
         "environmentAlias": "sandbox",
         "environmentStatus": "missing",
         "solutionAlias": "CoreLifecycle",
+        "solutionAlignment": "unknown",
         "solutionUniqueName": "CoreLifecycle",
         "stage": "dev",
         "summary": "stage dev -> environment sandbox -> auth profile <missing> -> solution CoreLifecycle (CoreLifecycle)"

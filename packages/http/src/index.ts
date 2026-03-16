@@ -90,7 +90,9 @@ export class HttpClient {
           {
             source: '@pp/http',
             hint: readErrorHint(error) ?? createUnhandledRequestHint(error),
-            detail: joinDetailParts(readErrorDetail(error), requestDescription, describeRetryBudget(this.retries)),
+            detail: readErrorCode(error) === undefined
+              ? joinDetailParts(readErrorDetail(error), requestDescription, describeRetryBudget(this.retries))
+              : readErrorDetail(error),
           }
         ),
         {

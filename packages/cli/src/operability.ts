@@ -1,9 +1,8 @@
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { getGlobalConfigDir, getGlobalConfigFilePath, getMsalCacheDir, type ConfigStoreOptions } from '@pp/config';
+import { getGlobalConfigDir, getGlobalConfigFilePath, getMsalCacheDir, loadProjectDefaults, type ConfigStoreOptions } from '@pp/config';
 import { createDiagnostic, ok, type Diagnostic, type OperationResult } from '@pp/diagnostics';
-import { discoverProject } from '@pp/project';
 import packageJson from '../package.json';
 import { buildCompletionNodes, type CliCompletionNode, type CliOptionSpec } from './cli-command-spec';
 
@@ -39,17 +38,14 @@ export interface OperabilityBundle {
     fileExists: boolean;
     msalCacheDirExists: boolean;
   };
-  project: {
+  defaults: {
     inspectedPath: string;
     exists: boolean;
     discovered: boolean;
-    root?: string;
     configPath?: string;
-    providerBindingCount?: number;
-    assetRoots?: string[];
-    unresolvedRequiredParameters?: string[];
-    diagnostics: Diagnostic[];
-    warnings: Diagnostic[];
+    environment?: string;
+    solution?: string;
+    artifactsDir?: string;
   };
 }
 
@@ -58,10 +54,10 @@ export interface OperabilityDoctorReport {
   summary: {
     version: string;
     inspectedPath: string;
-    projectRoot?: string;
+    configPath?: string;
     configDir: string;
     configFile: string;
-    discoveredProject: boolean;
+    discoveredConfig: boolean;
   };
   findings: Array<{
     level: Diagnostic['level'];
@@ -171,71 +167,37 @@ export async function collectOperabilityBundle(
     );
   }
 
-  let project: OperabilityBundle['project'] = {
+  let defaults: OperabilityBundle['defaults'] = {
     inspectedPath,
     exists: pathExists,
     discovered: false,
-    diagnostics: [],
-    warnings: [],
   };
 
   if (pathExists) {
-    const projectResult = await discoverProject(inspectedPath);
+    const defaultsResult = await loadProjectDefaults(inspectedPath);
 
-    if (projectResult.success && projectResult.data) {
-      const projectDiagnostics = projectResult.data.diagnostics ?? [];
-      const projectErrors = projectDiagnostics.filter((item) => item.level === 'error');
-      const projectWarnings = projectDiagnostics.filter((item) => item.level === 'warning');
-      const unresolvedRequiredParameters = Object.values(projectResult.data.parameters)
-        .filter((parameter) => parameter.definition.required && !parameter.hasValue)
-        .map((parameter) => parameter.name);
-      const projectDiscovered = Boolean(projectResult.data.configPath);
+    if (defaultsResult.success && defaultsResult.data) {
+      const discovered = Boolean(defaultsResult.data.configPath);
 
-      project = {
+      defaults = {
         inspectedPath,
         exists: true,
-        discovered: projectDiscovered,
-        root: projectResult.data.root,
-        configPath: projectResult.data.configPath,
-        providerBindingCount: Object.keys(projectResult.data.providerBindings).length,
-        assetRoots: Object.values(projectResult.data.assets)
-          .map((asset) => asset.path)
-          .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index),
-        unresolvedRequiredParameters,
-        diagnostics: projectErrors,
-        warnings: projectWarnings,
+        discovered,
+        configPath: defaultsResult.data.configPath,
+        environment: defaultsResult.data.environment,
+        solution: defaultsResult.data.solution,
+        artifactsDir: defaultsResult.data.artifactsDir,
       };
 
-      diagnostics.push(...projectErrors);
-      warnings.push(...projectWarnings);
-
-      if (!projectDiscovered) {
+      if (!discovered) {
         warnings.push(
-          createDiagnostic('warning', 'PP_PROJECT_NOT_FOUND', `No pp project config was discovered from ${inspectedPath}.`, {
+          createDiagnostic('warning', 'PP_CONFIG_NOT_FOUND', `No pp.config.yaml was found from ${inspectedPath}.`, {
             source: '@pp/cli',
             path: inspectedPath,
-            hint: 'Run `pp project init` to scaffold a local project, or point diagnostics at an existing pp project root.',
+            hint: 'Create a pp.config.yaml with defaults for environment and solution.',
           })
         );
       }
-    } else {
-      project = {
-        inspectedPath,
-        exists: true,
-        discovered: false,
-        diagnostics: [],
-        warnings: projectResult.diagnostics ?? [],
-      };
-
-      warnings.push(
-        createDiagnostic('warning', 'PP_PROJECT_NOT_FOUND', `No pp project config was discovered from ${inspectedPath}.`, {
-          source: '@pp/cli',
-          path: inspectedPath,
-          hint: 'Run `pp project init` to scaffold a local project, or point diagnostics at an existing pp project root.',
-        })
-      );
-      warnings.push(...(projectResult.diagnostics ?? []).map(asWarning));
-      warnings.push(...(projectResult.warnings ?? []).map(asWarning));
     }
   }
 
@@ -268,7 +230,7 @@ export async function collectOperabilityBundle(
         fileExists: configFileExists,
         msalCacheDirExists,
       },
-      project,
+      defaults,
     },
     {
       supportTier: 'preview',
@@ -276,7 +238,7 @@ export async function collectOperabilityBundle(
       warnings,
       suggestedNextActions: suggestNextActions({
         pathExists,
-        projectDiscovered: project.discovered,
+        configDiscovered: defaults.discovered,
         configFileExists,
       }),
     }
@@ -307,11 +269,11 @@ export async function collectOperabilityDoctorReport(
       status,
       summary: {
         version: bundle.data.cli.version,
-        inspectedPath: bundle.data.project.inspectedPath,
-        projectRoot: bundle.data.project.root,
+        inspectedPath: bundle.data.defaults.inspectedPath,
+        configPath: bundle.data.defaults.configPath,
         configDir: bundle.data.config.dir,
         configFile: bundle.data.config.file,
-        discoveredProject: bundle.data.project.discovered,
+        discoveredConfig: bundle.data.defaults.discovered,
       },
       findings,
       suggestedNextActions: bundle.suggestedNextActions ?? [],
@@ -767,7 +729,7 @@ function indentBlock(value: string, indent: string): string {
 
 function suggestNextActions(options: {
   pathExists: boolean;
-  projectDiscovered: boolean;
+  configDiscovered: boolean;
   configFileExists: boolean;
 }): string[] {
   const completionAction =
@@ -778,23 +740,8 @@ function suggestNextActions(options: {
     actions.push(`pp auth profile list --config-dir "${getGlobalConfigDir()}"`);
   }
 
-  if (options.pathExists && options.projectDiscovered) {
-    actions.push('pp project doctor --format json');
-  } else if (options.pathExists) {
-    actions.push('pp project init --plan --format markdown');
-  }
-
   actions.push('pp diagnostics bundle --format json > pp-diagnostics.json');
   return actions;
-}
-
-function asWarning(diagnostic: Diagnostic): Diagnostic {
-  return diagnostic.level === 'warning'
-    ? diagnostic
-    : {
-        ...diagnostic,
-        level: 'warning',
-      };
 }
 
 async function pathExistsOnDisk(path: string): Promise<boolean> {

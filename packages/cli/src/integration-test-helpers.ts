@@ -1,4 +1,4 @@
-import { access, chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { expect, vi } from 'vitest';
@@ -37,93 +37,6 @@ export async function createSolutionArchive(path: string, managed: boolean): Pro
   );
   const created = await createZipArchive(root, path);
   expect(created.success).toBe(true);
-}
-
-export async function writePortfolioFixtureProject(
-  root: string,
-  config: {
-    owner?: string;
-    docsPaths?: string[];
-    providerKind: string;
-    providerTarget: string;
-    defaultEnvironment: string;
-    stageEnvironment: string;
-    solutionUniqueName: string;
-    assetRoot: string;
-    includeMissingAsset?: boolean;
-    includeRequiredSecret?: boolean;
-    sensitiveLiteral?: boolean;
-  }
-): Promise<string> {
-  await mkdir(join(root, config.assetRoot), { recursive: true });
-  await mkdir(join(root, 'docs'), { recursive: true });
-
-  const docsSection =
-    config.owner || (config.docsPaths ?? []).length > 0
-      ? [
-          'docs:',
-          ...(config.owner ? [`  owner: ${config.owner}`] : []),
-          ...((config.docsPaths ?? []).length > 0 ? ['  paths:', ...(config.docsPaths ?? []).map((path) => `    - ${path}`)] : []),
-        ]
-      : [];
-  const missingAssetSection = config.includeMissingAsset ? ['  flows: flows'] : [];
-  const parameterLines = [
-    'parameters:',
-    '  tenantDomain:',
-    '    type: string',
-    '    fromEnv: PP_TENANT_DOMAIN',
-    '    required: true',
-    ...(config.sensitiveLiteral
-      ? [
-          '  apiToken:',
-          '    type: string',
-          '    value: super-secret',
-          '    secretRef: api_token',
-          '    required: true',
-        ]
-      : []),
-    ...(config.includeRequiredSecret
-      ? [
-          '  deployKey:',
-          '    type: string',
-          '    secretRef: deploy_key',
-          '    required: true',
-        ]
-      : []),
-  ];
-
-  await writeFile(
-    join(root, 'pp.config.yaml'),
-    [
-      'name: portfolio-fixture',
-      'defaults:',
-      `  environment: ${config.defaultEnvironment}`,
-      '  solution: core',
-      'solutions:',
-      '  core:',
-      `    environment: ${config.defaultEnvironment}`,
-      `    uniqueName: ${config.solutionUniqueName}`,
-      'assets:',
-      `  apps: ${config.assetRoot}`,
-      ...missingAssetSection,
-      'providerBindings:',
-      '  primaryDataverse:',
-      `    kind: ${config.providerKind}`,
-      `    target: ${config.providerTarget}`,
-      ...parameterLines,
-      'topology:',
-      '  defaultStage: prod',
-      '  stages:',
-      '    prod:',
-      `      environment: ${config.stageEnvironment}`,
-      '      solution: core',
-      ...docsSection,
-      '',
-    ].join('\n'),
-    'utf8'
-  );
-
-  return root;
 }
 
 export async function writeUnpackedCanvasFixture(
@@ -297,28 +210,6 @@ export function normalizeCliSnapshot<T>(value: T, ...tempPaths: string[]): T {
   });
 }
 
-function normalizeDurationMs<T>(value: T): T {
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeDurationMs(item)) as T;
-  }
-
-  if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, nested]) => [key, key === 'durationMs' ? 0 : normalizeDurationMs(nested)])
-    ) as T;
-  }
-
-  return value;
-}
-
-export function normalizeCliAnalysisSnapshot<T>(value: T): T {
-  const normalizedStrings = mapSnapshotStrings(normalizeCliSnapshot(value), (entry) =>
-    entry.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, '<GENERATED_AT>')
-  );
-
-  return normalizeDurationMs(normalizedStrings);
-}
-
 export function normalizeCanvasTempRegistrySnapshot<T>(value: T, ...tempPaths: string[]): T {
   const normalized = normalizeCliSnapshot(value, ...tempPaths);
 
@@ -385,6 +276,22 @@ export async function writeSolutionExportMetadata(root: string, managed = false)
     `<ImportExportXml><SolutionManifest><UniqueName>Core</UniqueName><Version>1.0.0.0</Version><Managed>${managed ? '1' : '0'}</Managed></SolutionManifest></ImportExportXml>`,
     'utf8'
   );
+}
+
+export function normalizeNativeCanvasBuildSnapshot<T>(value: T, ...tempPaths: string[]): T {
+  const normalized = normalizeCliSnapshot(value, ...tempPaths);
+
+  if (typeof normalized !== 'object' || normalized === null) {
+    return normalized;
+  }
+
+  const record = normalized as Record<string, unknown>;
+
+  if ('outFileSha256' in record) {
+    return { ...record, outFileSha256: '<OUT_FILE_SHA256>' } as T;
+  }
+
+  return normalized;
 }
 
 export function normalizeNativeHeaderSnapshot<T>(value: T): T {

@@ -162,6 +162,34 @@
     {
       "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
       "level": "error",
+      "message": "Connector action DataverseListRowsBadCountShape parameter returntotalrecordcount for ListRecords must be a boolean literal or expression, not array.",
+      "path": "actions.DataverseListRowsBadCountShape.inputs.parameters.returntotalrecordcount",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action DataverseListRowsBadTopShape parameter $top for ListRecords must be an integer literal or expression, not object.",
+      "path": "actions.DataverseListRowsBadTopShape.inputs.parameters.$top",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_REQUIRED_MISSING",
+      "level": "error",
+      "message": "Connector action DataverseListRowsMissingEntity is missing required parameter entityName for ListRecords.",
+      "path": "actions.DataverseListRowsMissingEntity.inputs.parameters.entityName",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
+      "message": "Connector action DataverseListRowsPathQueryBadTopShape parameter $top for ListRecords must be an integer literal or expression, not object.",
+      "path": "actions.DataverseListRowsPathQueryBadTopShape.inputs.queries.$top",
+      "source": "@pp/flow"
+    },
+    {
+      "code": "FLOW_CONNECTOR_PARAMETER_SHAPE_UNSUPPORTED",
+      "level": "error",
       "message": "Connector action DataverseUpdateRowBadItemFieldShape parameter item/name for UpdateOnlyRecord must be a scalar literal or whole expression, not array.",
       "path": "actions.DataverseUpdateRowBadItemFieldShape.inputs.parameters.item/name",
       "source": "@pp/flow"

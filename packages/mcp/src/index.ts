@@ -1,10 +1,8 @@
-import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { stableStringify } from '@pp/artifacts';
-import { generateContextPack, generatePortfolioReport, type AnalysisContextPack } from '@pp/analysis';
 import { AuthService, DEFAULT_BROWSER_BOOTSTRAP_URL, summarizeBrowserProfile, summarizeProfile, type AuthProfile, type BrowserProfile } from '@pp/auth';
 import { CanvasService } from '@pp/canvas';
 import { checkEnvironmentAccess, getEnvironmentAlias, listEnvironments, saveEnvironmentAlias, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
@@ -32,24 +30,9 @@ import {
   type EnvironmentVariableSummary,
   type MetadataApplyPlan,
 } from '@pp/dataverse';
-import { executeDeploy, executeDeployPlan, type DeployExecutionMode, type DeployPlan } from '@pp/deploy';
 import { createDiagnostic, fail, type Diagnostic, type OperationResult, type ProvenanceRecord, type SupportTier, ok } from '@pp/diagnostics';
 import { FlowService, type FlowMonitorReport } from '@pp/flow';
 import { ModelService, type ModelAppSummary, type ModelInspectResult } from '@pp/model';
-import {
-  cancelInitSession,
-  compareProjectRuntimeTarget,
-  discoverProject,
-  doctorProject,
-  feedbackProject,
-  getInitSession,
-  resumeInitSession,
-  startInitSession,
-  type InitSessionAnswers,
-  type ProjectContext,
-  summarizeProject,
-  summarizeProjectContract,
-} from '@pp/project';
 import {
   SolutionService,
   type SolutionAnalysis,
@@ -307,15 +290,6 @@ export function addSolutionInspectRecoveryGuidance<T>(
   };
 }
 
-interface DeploySessionRecord {
-  id: string;
-  createdAt: string;
-  expiresAt: string;
-  workspaceRoot: string;
-  selectedStage?: string;
-  plan: DeployPlan;
-}
-
 interface ToolMutationPolicyReadOnly {
   mode: 'read-only';
   mutationsExposed: false;
@@ -327,13 +301,11 @@ interface ToolMutationPolicyControlled {
   mutationsExposed: true;
   approvalRequired: boolean;
   approvalStrategy: string;
-  supportedExecutionModes: DeployExecutionMode[];
+  supportedExecutionModes: string[];
   sessionRequired: boolean;
 }
 
 type ToolMutationPolicy = ToolMutationPolicyReadOnly | ToolMutationPolicyControlled;
-
-const DEPLOY_SESSION_TTL_MS = 30 * 60 * 1000;
 
 const diagnosticSchema = z.object({
   level: z.enum(['error', 'warning', 'info']),
@@ -697,68 +669,6 @@ const dataverseCreateSchema = remoteBaseSchema.extend({
   ifMatch: z.string().min(1).optional(),
 });
 
-const projectScopeSchema = z.object({
-  projectPath: z.string().min(1).optional(),
-  stage: z.string().min(1).optional(),
-  environmentAlias: z.string().min(1).optional(),
-});
-
-const portfolioScopeSchema = z.object({
-  projectPaths: z.array(z.string().min(1)).optional(),
-  stage: z.string().min(1).optional(),
-  allowedProviderKinds: z.array(z.string().min(1)).optional(),
-  focusAsset: z.string().min(1).optional(),
-});
-
-const deployScopeSchema = z.object({
-  projectPath: z.string().min(1).optional(),
-  stage: z.string().min(1).optional(),
-});
-
-const initAnswerSchema = z.object({
-  goal: z.enum(['dataverse', 'maker', 'project', 'full']).optional(),
-  authMode: z.enum(['user', 'device-code', 'environment-token', 'client-secret', 'static-token']).optional(),
-  authProfileName: z.string().min(1).optional(),
-  loginHint: z.string().optional(),
-  tokenEnvVar: z.string().min(1).optional(),
-  tenantId: z.string().min(1).optional(),
-  clientId: z.string().min(1).optional(),
-  clientSecretEnv: z.string().min(1).optional(),
-  staticToken: z.string().min(1).optional(),
-  environmentAlias: z.string().min(1).optional(),
-  environmentUrl: z.string().url().optional(),
-  browserProfileName: z.string().min(1).optional(),
-  browserProfileKind: z.enum(['chrome', 'edge', 'chromium', 'custom']).optional(),
-  browserBootstrapUrl: z.string().url().optional(),
-  projectName: z.string().min(1).optional(),
-  solutionName: z.string().min(1).optional(),
-  stageName: z.string().min(1).optional(),
-});
-
-const setupStartSchema = initAnswerSchema.extend({
-  projectPath: z.string().min(1).optional(),
-  configDir: z.string().min(1).optional(),
-  allowInteractiveAuth: z.boolean().optional(),
-});
-
-const setupSessionSchema = z.object({
-  sessionId: z.string().uuid(),
-  configDir: z.string().min(1).optional(),
-});
-
-const deployApplySchema = z.object({
-  sessionId: z.string().uuid(),
-  mode: z.enum(['apply', 'dry-run']).optional(),
-  parameterOverrides: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
-  approval: z
-    .object({
-      confirmed: z.boolean(),
-      sessionId: z.string().uuid(),
-      reason: z.string().min(1).optional(),
-    })
-    .optional(),
-});
-
 export const initialMcpTools: McpToolDefinition[] = [
   {
     name: 'pp.environment.list',
@@ -1021,106 +931,6 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'Replace one remote canvas app inside a named solution from one explicit local `.msapp` artifact.',
   },
   {
-    name: 'pp.project.inspect',
-    title: 'Inspect Project',
-    description: 'Inspect the local pp project context resolved from the working tree.',
-  },
-  {
-    name: 'pp.project.doctor',
-    title: 'Doctor Project',
-    description: 'Validate the local project layout and expose the canonical stage-to-bundle route in structured form.',
-  },
-  {
-    name: 'pp.project.feedback',
-    title: 'Project Feedback',
-    description: 'Capture conceptual feedback about the local project structure without leaving the MCP surface.',
-  },
-  {
-    name: 'pp.setup.start',
-    title: 'Start Setup Session',
-    description: 'Start a guided, resumable pp setup session that defaults to interactive user auth.',
-  },
-  {
-    name: 'pp.setup.status',
-    title: 'Inspect Setup Session',
-    description: 'Inspect the state of a persisted pp setup session.',
-  },
-  {
-    name: 'pp.setup.answer',
-    title: 'Answer Setup Session',
-    description: 'Apply one or more user answers to a persisted pp setup session.',
-  },
-  {
-    name: 'pp.setup.resume',
-    title: 'Resume Setup Session',
-    description: 'Resume a persisted pp setup session after an external step completes.',
-  },
-  {
-    name: 'pp.setup.cancel',
-    title: 'Cancel Setup Session',
-    description: 'Cancel a persisted pp setup session.',
-  },
-  {
-    name: 'pp.init.start',
-    title: 'Start Init Session',
-    description: 'Start a guided, resumable pp init session for local setup.',
-  },
-  {
-    name: 'pp.init.status',
-    title: 'Inspect Init Session',
-    description: 'Inspect the state of a persisted pp init session.',
-  },
-  {
-    name: 'pp.init.answer',
-    title: 'Answer Init Session',
-    description: 'Apply one or more user answers to a persisted pp init session.',
-  },
-  {
-    name: 'pp.init.resume',
-    title: 'Resume Init Session',
-    description: 'Resume a persisted pp init session after an external step completes.',
-  },
-  {
-    name: 'pp.init.cancel',
-    title: 'Cancel Init Session',
-    description: 'Cancel a persisted pp init session.',
-  },
-  {
-    name: 'pp.analysis.context',
-    title: 'Generate Analysis Context',
-    description: 'Generate a structured project and deploy context pack for agent workflows.',
-  },
-  {
-    name: 'pp.analysis.portfolio',
-    title: 'Analyze Portfolio',
-    description: 'Aggregate multiple projects into a structured portfolio governance and drift report.',
-  },
-  {
-    name: 'pp.analysis.drift',
-    title: 'Inspect Portfolio Drift',
-    description: 'Inspect cross-project drift across stages, provider bindings, parameters, and assets.',
-  },
-  {
-    name: 'pp.analysis.usage',
-    title: 'Inspect Portfolio Usage',
-    description: 'Inspect ownership, asset usage, provider usage, and parameter inventories across projects.',
-  },
-  {
-    name: 'pp.analysis.policy',
-    title: 'Inspect Portfolio Policy',
-    description: 'Inspect governance findings such as missing ownership, missing provenance, and unsupported connectors.',
-  },
-  {
-    name: 'pp.deploy.plan',
-    title: 'Plan Deploy Apply',
-    description: 'Resolve a bounded deploy plan, preflight it, and store an MCP plan session for later apply.',
-  },
-  {
-    name: 'pp.deploy.apply',
-    title: 'Apply Planned Deploy',
-    description: 'Execute a previously planned deploy session in dry-run or apply mode with explicit approval for live writes.',
-  },
-  {
     name: 'pp.domain.list',
     title: 'List Supported Domains',
     description: 'Describe the current MCP read surface and the mutation boundary for each exposed domain.',
@@ -1128,37 +938,6 @@ export const initialMcpTools: McpToolDefinition[] = [
 ];
 
 const initialSupportedDomains: SupportedDomainSummary[] = [
-  {
-    name: 'project',
-    kind: 'local-context',
-    supportTier: 'preview',
-    readTools: [
-      'pp.project.inspect',
-      'pp.project.doctor',
-      'pp.project.feedback',
-      'pp.setup.status',
-      'pp.init.status',
-      'pp.analysis.context',
-      'pp.analysis.portfolio',
-      'pp.analysis.drift',
-      'pp.analysis.usage',
-      'pp.analysis.policy',
-    ],
-    mutationToolsAvailable: true,
-    mutationTools: [
-      'pp.setup.start',
-      'pp.setup.answer',
-      'pp.setup.resume',
-      'pp.setup.cancel',
-      'pp.init.start',
-      'pp.init.answer',
-      'pp.init.resume',
-      'pp.init.cancel',
-      'pp.deploy.plan',
-      'pp.deploy.apply',
-    ],
-    notes: 'Reads local project topology and can drive guided setup/init sessions plus bounded deploy plan-then-apply workflows against the resolved workspace.',
-  },
   {
     name: 'auth',
     kind: 'local-context',
@@ -1170,7 +949,6 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.browser-profile.inspect',
       'pp.environment.list',
       'pp.environment.inspect',
-      'pp.setup.status',
     ],
     mutationToolsAvailable: true,
     mutationTools: [
@@ -1179,13 +957,9 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.browser-profile.create',
       'pp.browser-profile.bootstrap',
       'pp.environment.add',
-      'pp.setup.start',
-      'pp.setup.answer',
-      'pp.setup.resume',
-      'pp.setup.cancel',
     ],
     notes:
-      'Manages local pp auth profiles, browser profiles, environment aliases, and guided setup sessions directly from MCP, with interactive auth preferred for human-oriented setup flows.',
+      'Manages local pp auth profiles, browser profiles, and environment aliases directly from MCP, with interactive auth preferred for human-oriented setup flows.',
   },
   {
     name: 'dataverse',
@@ -1274,14 +1048,6 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'Local flow artifact inspect/unpack/normalize/validate/patch routes are CLI-only today: `pp flow inspect`, `pp flow unpack`, `pp flow normalize`, `pp flow validate`, and `pp flow patch`.',
   },
   {
-    name: 'analysis',
-    kind: 'local-context',
-    supportTier: 'preview',
-    readTools: ['pp.analysis.context', 'pp.analysis.portfolio', 'pp.analysis.drift', 'pp.analysis.usage', 'pp.analysis.policy', 'pp.domain.list'],
-    mutationToolsAvailable: false,
-    notes: 'Returns structured agent context and interface metadata instead of rendered prose.',
-  },
-  {
     name: 'mcp',
     kind: 'interface',
     supportTier: 'preview',
@@ -1289,8 +1055,6 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       .filter(
         (tool) =>
           ![
-            'pp.deploy.plan',
-            'pp.deploy.apply',
             'pp.solution.create',
             'pp.solution.set-metadata',
             'pp.solution.publish',
@@ -1317,10 +1081,6 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.dataverse.delete',
       'pp.model-app.create',
       'pp.model-app.attach',
-      'pp.init.start',
-      'pp.init.answer',
-      'pp.init.resume',
-      'pp.init.cancel',
       'pp.solution.create',
       'pp.solution.set-metadata',
       'pp.solution.publish',
@@ -1333,10 +1093,8 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
       'pp.canvas-app.attach',
       'pp.canvas-app.download',
       'pp.canvas-app.import',
-      'pp.deploy.plan',
-      'pp.deploy.apply',
     ],
-    notes: 'Mutation tools are exposed through stored plan sessions plus explicit approval for live apply.',
+    notes: 'Mutation tools are exposed through explicit approval for live apply.',
   },
 ];
 
@@ -1367,8 +1125,6 @@ export async function startPpMcpServer(options: PpMcpServerOptions = {}): Promis
 }
 
 function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
-  const deploySessions = new Map<string, DeploySessionRecord>();
-
   server.registerTool(
     'pp.environment.list',
     {
@@ -1729,7 +1485,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         completed === true
           ? await auth.markBrowserProfileBootstrapped(name, { url: bootstrapUrl, completedAt })
           : await auth.launchBrowserProfile(name, bootstrapUrl);
-      return toToolResult('pp.browser-profile.bootstrap', result, localMutationPolicy());
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return toToolResult('pp.browser-profile.bootstrap', result as any, localMutationPolicy());
     }
   );
 
@@ -2532,13 +2289,13 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         await mkdir(dirname(resolvedResultPath), { recursive: true });
         await writeFile(
           resolvedResultPath,
-          stableStringify(toolResult.structuredContent as Record<string, unknown>) + '\n',
+          stableStringify(toolResult.structuredContent as unknown as Parameters<typeof stableStringify>[0]) + '\n',
           'utf8',
         );
-        toolResult = appendToolResultLocalWrite(toolResult, {
+        toolResult = appendToolResultLocalWrite(toolResult as any, {
           kind: 'tool-result-json',
           path: resolvedResultPath,
-        });
+        }) as typeof toolResult;
       }
 
       return toolResult;
@@ -2926,154 +2683,6 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.project.inspect',
-    {
-      title: 'Inspect Project',
-      description: 'Inspect the local pp project context resolved from the working tree.',
-      inputSchema: projectScopeSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Inspect Project'),
-    },
-    async ({ projectPath, stage, environmentAlias }) => {
-      const result = await discoverProject(resolveProjectPath(projectPath, defaults), {
-        stage,
-        environment: process.env,
-      });
-      if (!result.success || !result.data) {
-        return toToolResult('pp.project.inspect', result, readOnlyPolicy());
-      }
-      const configOptions = readConfigOptions(undefined, defaults);
-      const targetComparison = environmentAlias
-        ? await compareProjectRuntimeTarget(result.data, environmentAlias, configOptions)
-        : undefined;
-      return toToolResult(
-        'pp.project.inspect',
-        ok(
-          {
-            summary: summarizeProject(result.data),
-            contract: summarizeProjectContract(result.data),
-            targetComparison,
-            ...result.data,
-          },
-          {
-            diagnostics: result.diagnostics,
-            warnings: result.warnings,
-            supportTier: result.supportTier,
-            suggestedNextActions: result.suggestedNextActions,
-            provenance: result.provenance,
-            knownLimitations: result.knownLimitations,
-          }
-        ),
-        readOnlyPolicy()
-      );
-    }
-  );
-
-  server.registerTool(
-    'pp.project.doctor',
-    {
-      title: 'Doctor Project',
-      description: 'Validate the local project layout and expose the canonical stage-to-bundle route in structured form.',
-      inputSchema: projectScopeSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Doctor Project'),
-    },
-    async ({ projectPath, stage, environmentAlias }) => {
-      const resolvedProjectPath = resolveProjectPath(projectPath, defaults);
-      const result = await doctorProject(resolvedProjectPath, {
-        stage,
-        environment: process.env,
-      });
-      if (!result.success || !result.data) {
-        return toToolResult('pp.project.doctor', result, readOnlyPolicy());
-      }
-
-      const project =
-        environmentAlias !== undefined
-          ? await discoverProject(resolvedProjectPath, {
-              stage,
-              environment: process.env,
-            })
-          : undefined;
-      const targetComparison =
-        environmentAlias && project?.success && project.data
-          ? await compareProjectRuntimeTarget(project.data, environmentAlias, readConfigOptions(undefined, defaults))
-          : undefined;
-
-      return toToolResult(
-        'pp.project.doctor',
-        ok(
-          {
-            ...result.data,
-            targetComparison,
-          },
-          {
-            diagnostics: result.diagnostics,
-            warnings: result.warnings,
-            supportTier: result.supportTier,
-            suggestedNextActions: result.suggestedNextActions,
-            provenance: result.provenance,
-            knownLimitations: result.knownLimitations,
-          }
-        ),
-        readOnlyPolicy()
-      );
-    }
-  );
-
-  server.registerTool(
-    'pp.project.feedback',
-    {
-      title: 'Project Feedback',
-      description: 'Capture conceptual feedback about the local project structure without leaving the MCP surface.',
-      inputSchema: projectScopeSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Project Feedback'),
-    },
-    async ({ projectPath, stage, environmentAlias }) => {
-      const resolvedProjectPath = resolveProjectPath(projectPath, defaults);
-      const result = await feedbackProject(resolvedProjectPath, {
-        stage,
-        environment: process.env,
-      });
-      if (!result.success || !result.data) {
-        return toToolResult('pp.project.feedback', result, readOnlyPolicy());
-      }
-
-      const project =
-        environmentAlias !== undefined
-          ? await discoverProject(resolvedProjectPath, {
-              stage,
-              environment: process.env,
-            })
-          : undefined;
-      const targetComparison =
-        environmentAlias && project?.success && project.data
-          ? await compareProjectRuntimeTarget(project.data, environmentAlias, readConfigOptions(undefined, defaults))
-          : undefined;
-
-      return toToolResult(
-        'pp.project.feedback',
-        ok(
-          {
-            ...result.data,
-            targetComparison,
-          },
-          {
-            diagnostics: result.diagnostics,
-            warnings: result.warnings,
-            supportTier: result.supportTier,
-            suggestedNextActions: result.suggestedNextActions,
-            provenance: result.provenance,
-            knownLimitations: result.knownLimitations,
-          }
-        ),
-        readOnlyPolicy()
-      );
-    }
-  );
-
-  server.registerTool(
     'pp.canvas-app.download',
     {
       title: 'Download Canvas App',
@@ -3154,455 +2763,6 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
           'This tool replaces one explicit remote canvas app inside one named solution from one explicit local `.msapp` artifact.',
           true,
         ),
-      );
-    }
-  );
-
-  server.registerTool(
-    'pp.setup.start',
-    {
-      title: 'Start Setup Session',
-      description: 'Start a guided, resumable pp setup session that defaults to interactive user auth.',
-      inputSchema: setupStartSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Start Setup Session'),
-    },
-    async ({ projectPath, configDir, allowInteractiveAuth: _allowInteractiveAuth, ...answers }) =>
-      toToolResult(
-        'pp.setup.start',
-        await startInitSession(
-          {
-            root: resolveProjectPath(projectPath, defaults),
-            goal: answers.goal ?? 'full',
-            authMode: answers.authMode ?? 'user',
-            browserProfileKind: answers.browserProfileKind ?? 'edge',
-            ...(answers as Partial<InitSessionAnswers>),
-          },
-          readConfigOptions(configDir, defaults)
-        ),
-        localMutationPolicy()
-      )
-  );
-
-  server.registerTool(
-    'pp.setup.status',
-    {
-      title: 'Inspect Setup Session',
-      description: 'Inspect the current state of a persisted pp setup session.',
-      inputSchema: setupSessionSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Inspect Setup Session'),
-    },
-    async ({ sessionId, configDir }) =>
-      toToolResult('pp.setup.status', await getInitSession(sessionId, readConfigOptions(configDir, defaults)), readOnlyPolicy())
-  );
-
-  server.registerTool(
-    'pp.setup.answer',
-    {
-      title: 'Answer Setup Session',
-      description: 'Apply one or more user answers to a persisted pp setup session.',
-      inputSchema: z.object({
-        sessionId: z.string().uuid(),
-        configDir: z.string().min(1).optional(),
-        answers: initAnswerSchema,
-      }),
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Answer Setup Session'),
-    },
-    async ({ sessionId, configDir, answers }) =>
-      toToolResult('pp.setup.answer', await resumeInitSession(sessionId, { answers }, readConfigOptions(configDir, defaults)), localMutationPolicy())
-  );
-
-  server.registerTool(
-    'pp.setup.resume',
-    {
-      title: 'Resume Setup Session',
-      description: 'Resume a persisted pp setup session after an external step completes.',
-      inputSchema: setupSessionSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Resume Setup Session'),
-    },
-    async ({ sessionId, configDir }) =>
-      toToolResult('pp.setup.resume', await resumeInitSession(sessionId, {}, readConfigOptions(configDir, defaults)), localMutationPolicy())
-  );
-
-  server.registerTool(
-    'pp.setup.cancel',
-    {
-      title: 'Cancel Setup Session',
-      description: 'Cancel a persisted pp setup session.',
-      inputSchema: setupSessionSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Cancel Setup Session'),
-    },
-    async ({ sessionId, configDir }) =>
-      toToolResult('pp.setup.cancel', await cancelInitSession(sessionId, readConfigOptions(configDir, defaults)), localMutationPolicy())
-  );
-
-  server.registerTool(
-    'pp.init.start',
-    {
-      title: 'Start Init Session',
-      description: 'Start a guided, resumable pp init session rooted at the selected project path.',
-      inputSchema: initAnswerSchema.extend({
-        projectPath: z.string().min(1).optional(),
-        configDir: z.string().min(1).optional(),
-      }),
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Start Init Session'),
-    },
-    async ({ projectPath, configDir, ...answers }) =>
-      toToolResult(
-        'pp.init.start',
-        await startInitSession(
-          {
-            root: resolveProjectPath(projectPath, defaults),
-            ...(answers as Partial<InitSessionAnswers>),
-          },
-          readConfigOptions(configDir, defaults)
-        ),
-        localMutationPolicy()
-      )
-  );
-
-  server.registerTool(
-    'pp.init.status',
-    {
-      title: 'Inspect Init Session',
-      description: 'Inspect the current state of a persisted pp init session.',
-      inputSchema: z.object({
-        sessionId: z.string().uuid(),
-        configDir: z.string().min(1).optional(),
-      }),
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Inspect Init Session'),
-    },
-    async ({ sessionId, configDir }) =>
-      toToolResult('pp.init.status', await getInitSession(sessionId, readConfigOptions(configDir, defaults)), readOnlyPolicy())
-  );
-
-  server.registerTool(
-    'pp.init.answer',
-    {
-      title: 'Answer Init Session',
-      description: 'Apply one or more user answers to a persisted pp init session.',
-      inputSchema: z.object({
-        sessionId: z.string().uuid(),
-        configDir: z.string().min(1).optional(),
-        answers: initAnswerSchema,
-      }),
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Answer Init Session'),
-    },
-    async ({ sessionId, configDir, answers }) =>
-      toToolResult('pp.init.answer', await resumeInitSession(sessionId, { answers }, readConfigOptions(configDir, defaults)), localMutationPolicy())
-  );
-
-  server.registerTool(
-    'pp.init.resume',
-    {
-      title: 'Resume Init Session',
-      description: 'Resume a persisted pp init session after an external step completes.',
-      inputSchema: z.object({
-        sessionId: z.string().uuid(),
-        configDir: z.string().min(1).optional(),
-      }),
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Resume Init Session'),
-    },
-    async ({ sessionId, configDir }) =>
-      toToolResult('pp.init.resume', await resumeInitSession(sessionId, {}, readConfigOptions(configDir, defaults)), localMutationPolicy())
-  );
-
-  server.registerTool(
-    'pp.init.cancel',
-    {
-      title: 'Cancel Init Session',
-      description: 'Cancel a persisted pp init session.',
-      inputSchema: z.object({
-        sessionId: z.string().uuid(),
-        configDir: z.string().min(1).optional(),
-      }),
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Cancel Init Session'),
-    },
-    async ({ sessionId, configDir }) =>
-      toToolResult('pp.init.cancel', await cancelInitSession(sessionId, readConfigOptions(configDir, defaults)), localMutationPolicy())
-  );
-
-  server.registerTool(
-    'pp.analysis.context',
-    {
-      title: 'Generate Analysis Context',
-      description: 'Generate a structured project and deploy context pack for agent workflows.',
-      inputSchema: projectScopeSchema.extend({
-        focusAsset: z.string().min(1).optional(),
-      }),
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Generate Analysis Context'),
-    },
-    async ({ projectPath, stage, focusAsset, environmentAlias }) => {
-      const project = await discoverProject(resolveProjectPath(projectPath, defaults), {
-        stage,
-        environment: process.env,
-      });
-
-      if (!project.success || !project.data) {
-        return toToolResult('pp.analysis.context', project, readOnlyPolicy());
-      }
-
-      const result = generateContextPack(project.data, focusAsset);
-      if (!result.success || !result.data) {
-        return toToolResult('pp.analysis.context', result, readOnlyPolicy());
-      }
-
-      const targetComparison = environmentAlias
-        ? await compareProjectRuntimeTarget(project.data, environmentAlias, readConfigOptions(undefined, defaults))
-        : undefined;
-
-      return toToolResult(
-        'pp.analysis.context',
-        ok(
-          {
-            ...result.data,
-            targetComparison,
-          },
-          {
-            diagnostics: result.diagnostics,
-            warnings: result.warnings,
-            supportTier: result.supportTier,
-            suggestedNextActions: result.suggestedNextActions,
-            provenance: result.provenance,
-            knownLimitations: result.knownLimitations,
-          }
-        ),
-        readOnlyPolicy()
-      );
-    }
-  );
-
-  server.registerTool(
-    'pp.analysis.portfolio',
-    {
-      title: 'Analyze Portfolio',
-      description: 'Aggregate multiple projects into a structured portfolio governance and drift report.',
-      inputSchema: portfolioScopeSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Analyze Portfolio'),
-    },
-    async ({ projectPaths, stage, allowedProviderKinds, focusAsset }) =>
-      runPortfolioTool('pp.analysis.portfolio', defaults, {
-        projectPaths,
-        stage,
-        allowedProviderKinds,
-        focusAsset,
-        view: 'portfolio',
-      })
-  );
-
-  server.registerTool(
-    'pp.analysis.drift',
-    {
-      title: 'Inspect Portfolio Drift',
-      description: 'Inspect cross-project drift across stages, provider bindings, parameters, and assets.',
-      inputSchema: portfolioScopeSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Inspect Portfolio Drift'),
-    },
-    async ({ projectPaths, stage, allowedProviderKinds, focusAsset }) =>
-      runPortfolioTool('pp.analysis.drift', defaults, {
-        projectPaths,
-        stage,
-        allowedProviderKinds,
-        focusAsset,
-        view: 'drift',
-      })
-  );
-
-  server.registerTool(
-    'pp.analysis.usage',
-    {
-      title: 'Inspect Portfolio Usage',
-      description: 'Inspect ownership, asset usage, provider usage, and parameter inventories across projects.',
-      inputSchema: portfolioScopeSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Inspect Portfolio Usage'),
-    },
-    async ({ projectPaths, stage, allowedProviderKinds, focusAsset }) =>
-      runPortfolioTool('pp.analysis.usage', defaults, {
-        projectPaths,
-        stage,
-        allowedProviderKinds,
-        focusAsset,
-        view: 'usage',
-      })
-  );
-
-  server.registerTool(
-    'pp.analysis.policy',
-    {
-      title: 'Inspect Portfolio Policy',
-      description: 'Inspect governance findings such as missing ownership, missing provenance, and unsupported connectors.',
-      inputSchema: portfolioScopeSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Inspect Portfolio Policy'),
-    },
-    async ({ projectPaths, stage, allowedProviderKinds, focusAsset }) =>
-      runPortfolioTool('pp.analysis.policy', defaults, {
-        projectPaths,
-        stage,
-        allowedProviderKinds,
-        focusAsset,
-        view: 'policy',
-      })
-  );
-
-  server.registerTool(
-    'pp.deploy.plan',
-    {
-      title: 'Plan Deploy Apply',
-      description: 'Resolve a bounded deploy plan, preflight it, and store an MCP plan session for later apply.',
-      inputSchema: deployScopeSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Plan Deploy Apply'),
-    },
-    async ({ projectPath, stage }) => {
-      const project = await discoverProject(resolveProjectPath(projectPath, defaults), {
-        stage,
-        environment: process.env,
-      });
-
-      if (!project.success || !project.data) {
-        return toToolResult('pp.deploy.plan', project, controlledMutationPolicy(true));
-      }
-
-      const preview = await executeDeploy(project.data, {
-        mode: 'plan',
-      });
-
-      if (!preview.success || !preview.data) {
-        return toToolResult('pp.deploy.plan', preview, controlledMutationPolicy(true));
-      }
-
-      const session = createDeploySession(project.data, preview.data.plan);
-      deploySessions.set(session.id, session);
-
-      return toToolResult(
-        'pp.deploy.plan',
-        ok(
-          {
-            session: summarizeDeploySession(session),
-            workspace: {
-              projectRoot: project.data.root,
-              selectedStage: project.data.topology.selectedStage,
-              activeEnvironment: project.data.topology.activeEnvironment,
-              activeSolution: project.data.topology.activeSolution?.uniqueName,
-            },
-            preview: preview.data,
-          },
-          {
-            diagnostics: preview.diagnostics,
-            warnings: preview.warnings,
-            supportTier: preview.supportTier,
-            suggestedNextActions: [
-              `Call pp.deploy.apply with sessionId ${session.id} and mode dry-run to re-check the stored plan without writing.`,
-              `Call pp.deploy.apply with sessionId ${session.id} and approval.confirmed=true to authorize live apply for this exact plan session.`,
-              ...(preview.suggestedNextActions ?? []),
-            ],
-            provenance: [
-              ...(preview.provenance ?? []),
-              {
-                kind: 'inferred',
-                source: '@pp/mcp deploy session',
-                detail: `Stored plan session ${session.id} for ${project.data.root} until ${session.expiresAt}.`,
-              },
-            ],
-            knownLimitations: preview.knownLimitations,
-          }
-        ),
-        controlledMutationPolicy(true)
-      );
-    }
-  );
-
-  server.registerTool(
-    'pp.deploy.apply',
-    {
-      title: 'Apply Planned Deploy',
-      description: 'Execute a previously planned deploy session in dry-run or apply mode with explicit approval for live writes.',
-      inputSchema: deployApplySchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: controlledMutationAnnotations('Apply Planned Deploy'),
-    },
-    async ({ sessionId, mode, parameterOverrides, approval }) => {
-      pruneExpiredDeploySessions(deploySessions);
-      const session = deploySessions.get(sessionId);
-
-      if (!session) {
-        return toToolResult(
-          'pp.deploy.apply',
-          fail(
-            [
-              createDiagnostic('error', 'MCP_DEPLOY_SESSION_NOT_FOUND', `Deploy session ${sessionId} was not found or has expired.`, {
-                source: '@pp/mcp',
-                detail: `sessionId=${sessionId}`,
-              }),
-            ],
-            {
-              supportTier: 'preview',
-              suggestedNextActions: ['Call pp.deploy.plan again to create a fresh bounded plan session before applying it.'],
-              knownLimitations: ['Deploy apply currently depends on an in-memory MCP plan session and does not persist sessions across server restarts.'],
-            }
-          ),
-          controlledMutationPolicy(true)
-        );
-      }
-
-      const executionMode = mode ?? 'apply';
-      const confirmed = executionMode === 'apply' && approval?.confirmed === true && approval.sessionId === sessionId;
-      const result = await executeDeployPlan(session.plan, {
-        mode: executionMode,
-        confirmed,
-        parameterOverrides,
-      });
-
-      return toToolResult(
-        'pp.deploy.apply',
-        ok(
-          {
-            session: summarizeDeploySession(session),
-            approval: {
-              required: executionMode === 'apply',
-              confirmed,
-              matchedSession: approval?.sessionId === sessionId,
-              reason: approval?.reason,
-            },
-            result: result.data,
-          },
-          {
-            diagnostics: result.diagnostics,
-            warnings: result.warnings,
-            supportTier: result.supportTier,
-            suggestedNextActions: [
-              executionMode === 'apply' && !confirmed
-                ? `Re-run pp.deploy.apply with sessionId ${sessionId} and approval { confirmed: true, sessionId: "${sessionId}" } to authorize live apply.`
-                : `Re-run pp.deploy.plan if the workspace changed and you need a fresh bounded plan.`,
-              ...(result.suggestedNextActions ?? []),
-            ],
-            provenance: [
-              ...(result.provenance ?? []),
-              {
-                kind: 'inferred',
-                source: '@pp/mcp deploy session',
-                detail: `Executed ${executionMode} against stored plan session ${session.id}.`,
-              },
-            ],
-            knownLimitations: result.knownLimitations,
-          }
-        ),
-        controlledMutationPolicy(true),
-        !result.success
       );
     }
   );
@@ -4129,103 +3289,6 @@ function isFlowMonitorReport(value: unknown): value is FlowMonitorReport {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-async function resolvePortfolioProjects(
-  projectPaths: string[] | undefined,
-  stage: string | undefined,
-  defaults: PpMcpServerOptions
-): Promise<OperationResult<ProjectContext[]>> {
-  const requested = (projectPaths && projectPaths.length > 0 ? projectPaths : [resolveProjectPath(undefined, defaults)]).map((path) =>
-    resolve(path)
-  );
-  const projects: ProjectContext[] = [];
-  const warnings: Diagnostic[] = [];
-  const seen = new Set<string>();
-
-  for (const projectPath of requested) {
-    if (seen.has(projectPath)) {
-      warnings.push(
-        createDiagnostic('warning', 'ANALYSIS_PORTFOLIO_DUPLICATE_PROJECT', `Skipping duplicate portfolio project ${projectPath}`, {
-          source: '@pp/mcp',
-        })
-      );
-      continue;
-    }
-
-    seen.add(projectPath);
-    const result = await discoverProject(projectPath, {
-      stage,
-      environment: process.env,
-    });
-
-    if (!result.success || !result.data) {
-      return fail([...warnings, ...result.diagnostics], {
-        warnings: [...warnings, ...result.warnings],
-        supportTier: result.supportTier,
-        suggestedNextActions: result.suggestedNextActions,
-        provenance: result.provenance,
-        knownLimitations: result.knownLimitations,
-      });
-    }
-
-    warnings.push(...result.warnings);
-    projects.push(result.data);
-  }
-
-  return ok(projects, {
-    warnings,
-    supportTier: 'preview',
-  });
-}
-
-async function runPortfolioTool(
-  toolName: string,
-  defaults: PpMcpServerOptions,
-  args: {
-    projectPaths?: string[];
-    stage?: string;
-    allowedProviderKinds?: string[];
-    focusAsset?: string;
-    view: 'portfolio' | 'drift' | 'usage' | 'policy';
-  }
-) {
-  const projects = await resolvePortfolioProjects(args.projectPaths, args.stage, defaults);
-
-  if (!projects.success || !projects.data) {
-    return toToolResult(toolName, projects, readOnlyPolicy());
-  }
-
-  const result = generatePortfolioReport(projects.data, {
-    allowedProviderKinds: args.allowedProviderKinds,
-    focusAsset: args.focusAsset,
-  });
-
-  if (!result.success || !result.data) {
-    return toToolResult(toolName, result, readOnlyPolicy());
-  }
-
-  const data =
-    args.view === 'portfolio'
-      ? result.data
-      : args.view === 'drift'
-        ? result.data.drift
-        : args.view === 'usage'
-          ? result.data.inventories
-          : result.data.governance;
-
-  return toToolResult(
-    toolName,
-    ok(data, {
-      diagnostics: [...projects.diagnostics, ...result.diagnostics],
-      warnings: [...projects.warnings, ...result.warnings],
-      supportTier: result.supportTier,
-      suggestedNextActions: result.suggestedNextActions,
-      provenance: result.provenance,
-      knownLimitations: result.knownLimitations,
-    }),
-    readOnlyPolicy()
-  );
 }
 
 export async function buildEnvironmentCleanupPlan(
@@ -5618,7 +4681,7 @@ function appendToolResultLocalWrite(
       ...structuredContent,
       ...(data !== undefined ? { data } : {}),
       localWrites: [...existingLocalWrites, localWrite],
-    },
+    } as unknown as ReturnType<typeof toToolResult>['structuredContent'],
   };
 }
 
@@ -5627,17 +4690,6 @@ function readOnlyPolicy(): ToolMutationPolicyReadOnly {
     mode: 'read-only',
     mutationsExposed: false,
     optInStrategy: 'No mutation tools are exposed by this tool.',
-  };
-}
-
-function controlledMutationPolicy(approvalRequired: boolean): ToolMutationPolicyControlled {
-  return {
-    mode: 'controlled',
-    mutationsExposed: true,
-    approvalRequired,
-    approvalStrategy: 'Plan first, then execute a stored MCP deploy session. Live apply requires explicit approval bound to the exact session id.',
-    supportedExecutionModes: ['plan', 'dry-run', 'apply'],
-    sessionRequired: true,
   };
 }
 
@@ -5688,40 +4740,6 @@ function controlledMutationAnnotations(title: string) {
   } as const;
 }
 
-function createDeploySession(project: ProjectContext, plan: DeployPlan): DeploySessionRecord {
-  const createdAt = new Date().toISOString();
-  return {
-    id: randomUUID(),
-    createdAt,
-    expiresAt: new Date(Date.now() + DEPLOY_SESSION_TTL_MS).toISOString(),
-    workspaceRoot: project.root,
-    selectedStage: project.topology.selectedStage,
-    plan,
-  };
-}
-
-function summarizeDeploySession(session: DeploySessionRecord) {
-  return {
-    id: session.id,
-    createdAt: session.createdAt,
-    expiresAt: session.expiresAt,
-    workspaceRoot: session.workspaceRoot,
-    selectedStage: session.selectedStage,
-    target: session.plan.target,
-    operationCount: session.plan.operations.length,
-    operationKinds: [...new Set(session.plan.operations.map((operation) => operation.kind))],
-  };
-}
-
-function pruneExpiredDeploySessions(sessions: Map<string, DeploySessionRecord>): void {
-  const now = Date.now();
-  for (const [sessionId, session] of sessions.entries()) {
-    if (Date.parse(session.expiresAt) <= now) {
-      sessions.delete(sessionId);
-    }
-  }
-}
-
 function summarizeEnvelope(
   toolName: string,
   envelope: {
@@ -5758,13 +4776,11 @@ function summarizeEnvelope(
 }
 
 export type {
-  AnalysisContextPack,
   ConnectionReferenceSummary,
   EnvironmentAlias,
   EnvironmentVariableSummary,
   ModelAppSummary,
   ModelInspectResult,
-  ProjectContext,
   SolutionAnalysis,
   SolutionSummary,
 };

@@ -1,17 +1,13 @@
 {
   "diagnostics": [],
+  "friendlyname": "Core Solution",
   "knownLimitations": [],
   "provenance": [],
-  "solutions": [
-    {
-      "friendlyname": "Core Solution",
-      "solutionid": "sol-source",
-      "uniquename": "Core",
-      "version": "1.2.0.0"
-    }
-  ],
+  "solutionid": "sol-source",
   "success": true,
   "suggestedNextActions": [],
   "supportTier": "preview",
+  "uniquename": "Core",
+  "version": "1.2.0.0",
   "warnings": []
 }

@@ -585,10 +585,6 @@ async function executePreparedDeploy(context: {
 }): Promise<OperationResult<DeployExecutionResult>> {
   const { mode, plan, bindings, confirmation, target, preparedOperations, diagnostics, warnings, startedAt } = context;
   const checks = [...context.checks];
-  const targetResolution = await collectDeployTargetResolutionInspection(target);
-  checks.push(...targetResolution.checks);
-  diagnostics.push(...targetResolution.diagnostics);
-  warnings.push(...targetResolution.warnings);
   const applyOperations: DeployOperationResult[] = [];
   const conflicts = analyzeDeployTargetConflicts(preparedOperations.map((operation) => operation.plan));
   const dataverseOperations = preparedOperations.filter((operation) => isDataverseMutationOperation(operation.plan));
@@ -613,6 +609,12 @@ async function executePreparedDeploy(context: {
       !isSharePointFileTextOperation(operation.plan) &&
       !isPowerBiDatasetRefreshOperation(operation.plan)
   );
+  if (dataverseOperations.length > 0 || flowOperations.length > 0) {
+    const targetResolution = await collectDeployTargetResolutionInspection(target);
+    checks.push(...targetResolution.checks);
+    diagnostics.push(...targetResolution.diagnostics);
+    warnings.push(...targetResolution.warnings);
+  }
   const runnableDataverseOperations: PreparedDeployOperation[] = [];
   const runnableFlowOperations: FlowParameterDeployTargetInspection[] = [];
   const runnableFlowConnectionReferenceOperations: FlowConnectionReferenceDeployTargetInspection[] = [];

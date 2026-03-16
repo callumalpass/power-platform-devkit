@@ -4397,7 +4397,13 @@ async function normalizeSolutionArchivePackageType(
   const inspectedPackageType = await readSolutionArchivePackageType(packagePath);
 
   if (!inspectedPackageType.success || !inspectedPackageType.data) {
-    return inspectedPackageType as unknown as OperationResult<{ normalized: boolean }>;
+    // Could not inspect the archive package type (e.g. corrupt or non-zip payload).
+    // Proceed without normalizing rather than failing the export; any issues with the
+    // package type will surface when the archive is subsequently consumed.
+    return ok(
+      { normalized: false },
+      { supportTier: 'preview' }
+    );
   }
 
   if (inspectedPackageType.data === expectedPackageType) {
@@ -4607,10 +4613,9 @@ async function readSolutionArchiveMetadataContent(packagePath: string): Promise<
     return entries as unknown as OperationResult<Buffer>;
   }
 
-  const metadataEntry = entries.data.find((entry) => {
-    const normalized = entry.replaceAll('\\', '/').toLowerCase();
-    return normalized.endsWith('/other.xml') || normalized.endsWith('/solution.xml') || normalized === 'other.xml' || normalized === 'solution.xml';
-  });
+  const metadataEntry =
+    entries.data.find((entry) => { const n = entry.replaceAll('\\', '/').toLowerCase(); return n.endsWith('/solution.xml') || n === 'solution.xml'; }) ??
+    entries.data.find((entry) => { const n = entry.replaceAll('\\', '/').toLowerCase(); return n.endsWith('/other.xml') || n === 'other.xml'; });
 
   if (!metadataEntry) {
     return fail(

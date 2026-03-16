@@ -63,6 +63,19 @@ function normalizeNativeHeaderSnapshot<T>(value: T, ...tempPaths: string[]): T {
   } as T;
 }
 
+function normalizeCanvasBuildSnapshot<T>(value: T, ...tempPaths: string[]): T {
+  const normalized = normalizeCanvasSnapshot(value, ...tempPaths);
+
+  if (typeof normalized !== 'object' || normalized === null || !('outFileSha256' in normalized)) {
+    return normalized;
+  }
+
+  return {
+    ...(normalized as Record<string, unknown>),
+    outFileSha256: '<OUT_FILE_SHA256>',
+  } as T;
+}
+
 function snapshotCanvasResult<T>(result: {
   success: boolean;
   data?: T;
@@ -328,7 +341,7 @@ describe('canvas fixture-backed goldens', () => {
       normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
     });
     await expectGoldenJson(build.data, 'fixtures/canvas/golden/native/build-result.json', {
-      normalize: (value) => normalizeCanvasSnapshot(value, tempDir),
+      normalize: (value) => normalizeCanvasBuildSnapshot(value, tempDir),
     });
 
     const unzipDir = await unzipCanvasPackage(outPath, tempDir);

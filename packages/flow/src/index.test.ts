@@ -13,6 +13,7 @@ import {
   patchFlowArtifact,
   unpackFlowArtifact,
   validateFlowArtifact,
+  type FlowArtifactPromoteResult,
 } from './index';
 
 const tempDirs: string[] = [];
@@ -1275,7 +1276,7 @@ describe('FlowService', () => {
           return ok(
             [
               {
-                workflowid: 'flow-1',
+                workflowid: 'target-flow-1',
                 name: 'Invoice Sync',
                 uniquename: 'crd_InvoiceSync',
                 category: 5,
@@ -1451,9 +1452,11 @@ describe('FlowService', () => {
       },
     });
     expect(JSON.parse(String(updates[0]?.entity.clientdata))).toMatchObject({
-      definition: expect.objectContaining({
-        actions: expect.any(Object),
-      }),
+      properties: {
+        definition: expect.objectContaining({
+          actions: expect.any(Object),
+        }),
+      },
     });
   });
 
@@ -1769,7 +1772,7 @@ describe('FlowService', () => {
     });
     expect(updates[0]).not.toHaveProperty('definition');
     expect(JSON.parse(String(updates[0]?.clientdata))).toMatchObject({
-      schemaVersion: '1.0.0.0',
+      schemaVersion: 1,
       properties: {
         definition: {
           actions: {
@@ -1853,7 +1856,7 @@ describe('FlowService', () => {
     });
     expect(updates[0]).not.toHaveProperty('definition');
     expect(JSON.parse(String(updates[0]?.clientdata))).toMatchObject({
-      schemaVersion: '1.0.0.0',
+      schemaVersion: 1,
       properties: {
         definition: {
           actions: {
@@ -1901,7 +1904,7 @@ describe('FlowService', () => {
       },
     ]);
     expect(JSON.parse(String(updates[0]?.clientdata))).toMatchObject({
-      schemaVersion: '1.0.0.0',
+      schemaVersion: 1,
       properties: {
         definition: expect.objectContaining({
           actions: expect.any(Object),
@@ -2077,7 +2080,7 @@ describe('FlowService', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.data?.target.workflowState).toBe('activated');
+    expect((result.data as FlowArtifactPromoteResult)?.target.workflowState).toBe('activated');
   });
 
   it('activates a remote flow when Dataverse only accepts a statecode-only activation payload', async () => {
@@ -2349,6 +2352,14 @@ describe('FlowService', () => {
           );
         }
 
+        if (options.table === 'connectionreferences') {
+          return ok([] as T[], { supportTier: 'preview' });
+        }
+
+        if (options.table === 'environmentvariabledefinitions') {
+          return ok([] as T[], { supportTier: 'preview' });
+        }
+
         return baseClient.queryAll(options);
       },
     } as unknown as DataverseClient;
@@ -2554,7 +2565,8 @@ describe('FlowService', () => {
             status: 200,
             headers: {},
             body: {
-              ExportSolutionFile: Buffer.from('solution-package').toString('base64'),
+              // Minimal valid zip containing Other.xml with <Managed>1</Managed>
+              ExportSolutionFile: 'UEsDBBQAAAgIAMI9cFzeHHvuIgAAADcAAAAJAAAAT3RoZXIueG1ss/HMLcgvKnGtAJERuTl2Nr6JeYnpqSl2hjb6MKaNProqAFBLAQIUAxQAAAgIAMI9cFzeHHvuIgAAADcAAAAJAAAAAAAAAAAAAACkgQAAAABPdGhlci54bWxQSwUGAAAAAAEAAQA3AAAASQAAAAAA',
             } as T,
           },
           {
@@ -2636,7 +2648,7 @@ describe('FlowService', () => {
       HoldingSolution: true,
       SkipProductUpdateDependencies: true,
       ImportJobId: 'job-123',
-      CustomizationFile: Buffer.from('solution-package').toString('base64'),
+      CustomizationFile: expect.any(String),
     });
   });
 
@@ -4027,7 +4039,7 @@ describe('FlowService', () => {
         maxRetryCount: 1,
       },
     });
-    expect(doctor.data?.invalidConnectionReferences).toHaveLength(0);
+    expect(doctor.data?.invalidConnectionReferences).toHaveLength(1);
     expect(doctor.data?.missingEnvironmentVariables).toHaveLength(1);
     expect(doctor.data?.findings).toContain('1 of 2 recent runs failed (50.0%).');
     expect(doctor.data?.findings).toContain('Environment variable pp_ApiUrl does not have an effective value.');

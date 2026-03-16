@@ -58,6 +58,15 @@
   },
   "defaultEnvironment": "dev",
   "defaultSolution": "core",
+  "diagnostics": [
+    {
+      "code": "PROJECT_PARAMETER_MISSING",
+      "hint": "Set PP_SQL_ENDPOINT or provide an explicit value in the project config.",
+      "level": "error",
+      "message": "Required project parameter sqlEndpoint is not resolved",
+      "source": "@pp/project"
+    }
+  ],
   "executionStages": [
     "resolve",
     "preflight",
@@ -123,6 +132,7 @@
       "value": false
     }
   ],
+  "knownLimitations": [],
   "operations": [
     {
       "environmentAlias": "prod",
@@ -145,16 +155,20 @@
     }
   ],
   "projectRoot": "<REPO_ROOT>/fixtures/analysis/project",
+  "provenance": [],
   "providerBindings": [
     "primaryDataverse",
     "financeSharePoint"
   ],
   "selectedStage": "prod",
+  "success": true,
+  "suggestedNextActions": [],
   "supportedAdapters": [
     "github-actions",
     "azure-devops",
     "power-platform-pipelines"
   ],
+  "supportTier": "preview",
   "target": {
     "environmentAlias": "prod",
     "solutionAlias": "core",
@@ -175,5 +189,6 @@
       "environment": "prod",
       "name": "prod"
     }
-  ]
+  ],
+  "warnings": []
 }

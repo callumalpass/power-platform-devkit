@@ -4,7 +4,6 @@ import { realpathSync } from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, resolve as resolvePath } from 'node:path';
-import { renderMarkdownPortfolioReport, renderMarkdownReport, generateContextPack, generatePortfolioReport } from '@pp/analysis';
 import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import {
   AuthService,
@@ -57,34 +56,11 @@ import {
   type RelationshipMetadataKind,
 } from '@pp/dataverse';
 import { fail, ok, createDiagnostic, type Diagnostic, type OperationResult } from '@pp/diagnostics';
-import { FlowService, type FlowMonitorReport, type FlowPatchDocument, type FlowWorkflowStateLabel } from '@pp/flow';
+import { FlowService, type FlowWorkflowStateLabel } from '@pp/flow';
 import { HttpClient } from '@pp/http';
 import { startReadFirstMcpServer } from '@pp/mcp';
 import { ModelService, type ModelArtifactMutationKind, type ModelInspectResult } from '@pp/model';
-import { PowerBiClient } from '@pp/powerbi';
-import {
-  discoverProject,
-  doctorProject,
-  feedbackProject,
-  initProject,
-  planProjectInit,
-  resolvePowerBiTarget,
-  resolveSharePointTarget,
-  summarizeProject,
-  summarizeProjectContract,
-  summarizeResolvedParameter,
-  type ProjectDoctorReport,
-  type ProjectFeedbackReport,
-  type ProjectInitPlan,
-  type ProjectInitResult,
-  type ProviderBindingResolverContext,
-  type ProjectContext,
-  type ResolvedPowerBiTarget,
-  type ResolvedSharePointTarget,
-} from '@pp/project';
-import { SharePointClient } from '@pp/sharepoint';
 import { SolutionService, type SolutionAnalysis, type SolutionPackageType } from '@pp/solution';
-import { runDelegatedCanvasCreate } from './canvas-create-delegate';
 import { launchPersistentBrowserProfileContext } from './browser-profile-playwright';
 import {
   CLI_PACKAGE_NAME,
@@ -96,21 +72,15 @@ import {
 import YAML from 'yaml';
 import * as cliHelp from './help';
 import {
-  runInitGroup,
   runAuthGroup,
-  runAnalysisGroup,
   runCanvasGroup,
   runConnectionReferenceGroup,
   runDataverseGroup,
-  runDeployGroup,
   runDiagnosticsGroup,
   runEnvironmentGroup,
   runEnvironmentVariableGroup,
   runFlowGroup,
   runModelGroup,
-  runPowerBiGroup,
-  runProjectGroup,
-  runSharePointGroup,
   runSolutionGroup,
 } from './command-groups';
 import { dispatchCommandRoute } from './command-dispatch';
@@ -165,28 +135,6 @@ import {
 import { enforceWriteAccessForCliArgs } from './cli-access';
 import { createTopLevelCommandRunners } from './top-level-command-runners';
 import {
-  runInitAnswerCommand,
-  runInitCancelCommand,
-  runInitResumeCommand,
-  runInitStartCommand,
-  runInitStatusCommand,
-} from './init-commands';
-import {
-  runProjectDoctorCommand,
-  runProjectFeedbackCommand,
-  runProjectInitCommand,
-  runProjectInspectCommand,
-  runProjectSolutionPullCommand,
-} from './project-commands';
-import {
-  runAnalysisContextCommand,
-  runAnalysisDriftCommand,
-  runAnalysisPolicyCommand,
-  runAnalysisPortfolioCommand,
-  runAnalysisReportCommand,
-  runAnalysisUsageCommand,
-} from './analysis-commands';
-import {
   runSolutionAnalyzeCommand,
   runSolutionComponentsCommand,
   runSolutionCompareCommand,
@@ -206,7 +154,6 @@ import {
   runSolutionUnpackCommand,
   createLocalSolutionService,
 } from './solution-commands';
-import { runDeployApplyCommand, runDeployPlanCommand, runDeployReleaseCommand } from './deploy-commands';
 import {
   runAuthBrowserProfileBootstrapCommand,
   runAuthBrowserProfileInspectCommand,
@@ -224,12 +171,9 @@ import {
   buildPacEnvironmentGuidance,
   runEnvironmentAddCommand,
   runEnvironmentBaselineCommand,
-  runEnvironmentCleanupCommand,
-  runEnvironmentCleanupPlanCommand,
   runEnvironmentInspectCommand,
   runEnvironmentListCommand,
   runEnvironmentRemoveCommand,
-  runEnvironmentResetCommand,
   runEnvironmentResolveMakerIdCommand,
 } from './environment-commands';
 import {
@@ -245,15 +189,6 @@ import {
   runEnvironmentVariableList,
   runEnvironmentVariableSet,
 } from './environment-variable-commands';
-import {
-  runPowerBiDatasetInspect,
-  runPowerBiReportInspect,
-  runPowerBiWorkspaceInspect,
-  runSharePointFileInspect,
-  runSharePointListInspect,
-  runSharePointPermissionsInspect,
-  runSharePointSiteInspect,
-} from './provider-commands';
 import {
   runDataverseAction,
   runDataverseBatch,
@@ -279,41 +214,21 @@ import {
   runCanvasLint,
   runCanvasList,
   runCanvasPatch,
-  runCanvasPatchApply,
-  runCanvasPatchPlan,
   runCanvasProbe,
-  runCanvasTemplateAudit,
-  runCanvasTemplateDiff,
-  runCanvasTemplateImport,
-  runCanvasTemplateInspect,
-  runCanvasTemplatePin,
-  runCanvasTemplateRefresh,
   runCanvasTemplates,
-  runCanvasUnsupportedRemoteMutation,
   runCanvasValidate,
   runCanvasWorkspace,
-  runCanvasWorkspaceInspect,
 } from './canvas-commands';
 import {
   runFlowAccess,
   runFlowActivate,
   runFlowAttach,
   runFlowConnrefs,
-  runFlowDeploy,
-  runFlowDoctor,
-  runFlowErrors,
   runFlowExport,
-  runFlowGraph,
   runFlowInspect,
   runFlowList,
   runFlowLsp,
-  runFlowMonitor,
   runFlowNormalize,
-  runFlowPack,
-  runFlowPatch,
-  runFlowPromote,
-  runFlowRuns,
-  runFlowUnpack,
   runFlowValidate,
   runModelAccess,
   runModelAttach,
@@ -398,12 +313,7 @@ const topLevelCommandRunners = createTopLevelCommandRunners(
     cliVersion: CLI_VERSION,
   },
   {
-    runProjectGroup,
-    runAnalysisGroup,
-    runDeployGroup,
     runDiagnosticsGroup,
-    runSharePointGroup,
-    runPowerBiGroup,
   }
 );
 
@@ -413,7 +323,6 @@ export async function main(argv: string[]): Promise<number> {
     runCompletion: topLevelCommandRunners.runCompletion,
     runMcp,
     runDiagnostics,
-    runInit,
     runAuth,
     runEnvironment,
     runDataverse,
@@ -423,22 +332,7 @@ export async function main(argv: string[]): Promise<number> {
     runCanvas,
     runFlow,
     runModel,
-    runProject,
-    runSharePoint,
-    runPowerBi,
-    runAnalysis,
-    runDeploy,
     printFailureForInvalidFormat: (result) => printFailure(result),
-  });
-}
-
-async function runProject(command: string | undefined, args: string[]): Promise<number> {
-  return topLevelCommandRunners.runProject(command, args, {
-    runProjectInit,
-    runProjectDoctor,
-    runProjectFeedback,
-    runProjectInspect,
-    runProjectSolutionPull,
   });
 }
 
@@ -479,135 +373,9 @@ async function runMcp(command: string | undefined, args: string[]): Promise<numb
   return 0;
 }
 
-async function runInit(command: string | undefined, args: string[]): Promise<number> {
-  return runInitGroup(command, args, {
-    runInitStart,
-    runInitStatus,
-    runInitResume,
-    runInitAnswer,
-    runInitCancel,
-  });
-}
-
-async function runAnalysis(command: string | undefined, args: string[]): Promise<number> {
-  return topLevelCommandRunners.runAnalysis(command, args, {
-    runAnalysisReport,
-    runAnalysisContext,
-    runAnalysisPortfolio,
-    runAnalysisDrift,
-    runAnalysisUsage,
-    runAnalysisPolicy,
-  });
-}
-
-async function runInitStart(args: string[]): Promise<number> {
-  return runInitStartCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readConfigOptions,
-    readFlag,
-    readRepeatedFlags,
-    hasFlag,
-    isMachineReadableOutputFormat,
-    printFailure,
-    printByFormat,
-    promptForInput,
-    argumentFailure,
-  });
-}
-
-async function runInitStatus(args: string[]): Promise<number> {
-  return runInitStatusCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readConfigOptions,
-    readFlag,
-    readRepeatedFlags,
-    hasFlag,
-    isMachineReadableOutputFormat,
-    printFailure,
-    printByFormat,
-    promptForInput,
-    argumentFailure,
-  });
-}
-
-async function runInitResume(args: string[]): Promise<number> {
-  return runInitResumeCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readConfigOptions,
-    readFlag,
-    readRepeatedFlags,
-    hasFlag,
-    isMachineReadableOutputFormat,
-    printFailure,
-    printByFormat,
-    promptForInput,
-    argumentFailure,
-  });
-}
-
-async function runInitAnswer(args: string[]): Promise<number> {
-  return runInitAnswerCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readConfigOptions,
-    readFlag,
-    readRepeatedFlags,
-    hasFlag,
-    isMachineReadableOutputFormat,
-    printFailure,
-    printByFormat,
-    promptForInput,
-    argumentFailure,
-  });
-}
-
-async function runInitCancel(args: string[]): Promise<number> {
-  return runInitCancelCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readConfigOptions,
-    readFlag,
-    readRepeatedFlags,
-    hasFlag,
-    isMachineReadableOutputFormat,
-    printFailure,
-    printByFormat,
-    promptForInput,
-    argumentFailure,
-  });
-}
-
-async function runDeploy(command: string | undefined, args: string[]): Promise<number> {
-  return topLevelCommandRunners.runDeploy(command, args, { runDeployPlan, runDeployApply, runDeployRelease });
-}
 
 async function runDiagnostics(command: string | undefined, args: string[]): Promise<number> {
   return topLevelCommandRunners.runDiagnostics(command, args, { runDiagnosticsDoctor, runDiagnosticsBundle });
-}
-
-async function runSharePoint(command: string | undefined, args: string[]): Promise<number> {
-  return topLevelCommandRunners.runSharePoint(command, args, {
-    runSharePointSiteInspect,
-    runSharePointListInspect,
-    runSharePointFileInspect,
-    runSharePointPermissionsInspect,
-  });
-}
-
-async function runPowerBi(command: string | undefined, args: string[]): Promise<number> {
-  return topLevelCommandRunners.runPowerBi(command, args, {
-    runPowerBiWorkspaceInspect,
-    runPowerBiDatasetInspect,
-    runPowerBiReportInspect,
-  });
 }
 
 async function runDiagnosticsDoctor(args: string[]): Promise<number> {
@@ -664,9 +432,6 @@ async function runEnvironment(command: string | undefined, args: string[]): Prom
     runEnvironmentInspect,
     runEnvironmentBaseline,
     runEnvironmentResolveMakerId,
-    runEnvironmentCleanupPlan,
-    runEnvironmentReset,
-    runEnvironmentCleanup,
     runEnvironmentRemove,
   });
 }
@@ -735,7 +500,6 @@ async function runCanvas(command: string | undefined, args: string[]): Promise<n
     runCanvasAttach,
     runCanvasDownload,
     runCanvasImport,
-    runCanvasUnsupportedRemoteMutation,
     runCanvasList,
     runCanvasProbe,
     runCanvasAccess,
@@ -757,19 +521,9 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
     runFlowAttach,
     runFlowExport,
     runFlowActivate,
-    runFlowPromote,
-    runFlowUnpack,
-    runFlowPack,
-    runFlowDeploy,
     runFlowNormalize,
     runFlowValidate,
-    runFlowGraph,
-    runFlowPatch,
-    runFlowRuns,
-    runFlowMonitor,
-    runFlowErrors,
     runFlowConnrefs,
-    runFlowDoctor,
     runFlowAccess,
     runFlowLsp,
   });
@@ -789,267 +543,6 @@ async function runModel(command: string | undefined, args: string[]): Promise<nu
     runModelViews,
     runModelDependencies,
     runModelPatch,
-  });
-}
-
-async function runProjectInspect(args: string[]): Promise<number> {
-  return runProjectInspectCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printFailureWithMachinePayload,
-    printByFormat,
-    isMachineReadableOutputFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    hasFlag,
-  });
-}
-
-async function runProjectSolutionPull(args: string[]): Promise<number> {
-  return runProjectSolutionPullCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printFailureWithMachinePayload,
-    printByFormat,
-    isMachineReadableOutputFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    hasFlag,
-    maybeHandleMutationPreview,
-    resolveDataverseClientForEnvironmentAlias: async (environmentAlias: string, commandArgs: string[]) =>
-      resolveDataverseClient(environmentAlias, {
-        ...readConfigOptions(commandArgs),
-        publicClientLoginOptions: readPublicClientLoginOptions(commandArgs),
-      }),
-    createLocalSolutionService,
-    argumentFailure,
-  });
-}
-
-async function runProjectInit(args: string[]): Promise<number> {
-  return runProjectInitCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printFailureWithMachinePayload,
-    printByFormat,
-    isMachineReadableOutputFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    hasFlag,
-  });
-}
-
-async function runProjectDoctor(args: string[]): Promise<number> {
-  return runProjectDoctorCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printFailureWithMachinePayload,
-    printByFormat,
-    isMachineReadableOutputFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    hasFlag,
-  });
-}
-
-async function runProjectFeedback(args: string[]): Promise<number> {
-  return runProjectFeedbackCommand(args, {
-    positionalArgs,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printFailureWithMachinePayload,
-    printByFormat,
-    isMachineReadableOutputFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    hasFlag,
-  });
-}
-
-async function runAnalysisReport(args: string[]): Promise<number> {
-  return runAnalysisReportCommand(args, {
-    positionalArgs,
-    resolveDefaultInvocationPath,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printByFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    readRepeatedFlags,
-    readAnalysisPortfolioProjectPaths,
-  });
-}
-
-async function runAnalysisContext(args: string[]): Promise<number> {
-  return runAnalysisContextCommand(args, {
-    positionalArgs,
-    resolveDefaultInvocationPath,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printByFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    readRepeatedFlags,
-    readAnalysisPortfolioProjectPaths,
-  });
-}
-
-async function runAnalysisPortfolio(args: string[]): Promise<number> {
-  return runAnalysisPortfolioCommand(args, {
-    positionalArgs,
-    resolveDefaultInvocationPath,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printByFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    readRepeatedFlags,
-    readAnalysisPortfolioProjectPaths,
-  });
-}
-
-async function runAnalysisDrift(args: string[]): Promise<number> {
-  return runAnalysisDriftCommand(args, {
-    positionalArgs,
-    resolveDefaultInvocationPath,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printByFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    readRepeatedFlags,
-    readAnalysisPortfolioProjectPaths,
-  });
-}
-
-async function runAnalysisUsage(args: string[]): Promise<number> {
-  return runAnalysisUsageCommand(args, {
-    positionalArgs,
-    resolveDefaultInvocationPath,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printByFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    readRepeatedFlags,
-    readAnalysisPortfolioProjectPaths,
-  });
-}
-
-async function runAnalysisPolicy(args: string[]): Promise<number> {
-  return runAnalysisPolicyCommand(args, {
-    positionalArgs,
-    resolveDefaultInvocationPath,
-    resolveInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    readConfigOptions,
-    printFailure,
-    printByFormat,
-    printResultDiagnostics,
-    readFlag,
-    readEnvironmentAlias,
-    readRepeatedFlags,
-    readAnalysisPortfolioProjectPaths,
-  });
-}
-
-async function runDeployPlan(args: string[]): Promise<number> {
-  return runDeployPlanCommand(args, {
-    resolveDefaultInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    printFailure,
-    printFailureWithMachinePayload,
-    printByFormat,
-    printResultDiagnostics,
-    readFlag,
-    positionalArgs,
-    readRepeatedFlags,
-    hasFlag,
-    readValueFlag,
-    argumentFailure,
-    printHelp: cliHelp.printHelp,
-  });
-}
-
-async function runDeployApply(args: string[]): Promise<number> {
-  return runDeployApplyCommand(args, {
-    resolveDefaultInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    printFailure,
-    printByFormat,
-    printResultDiagnostics,
-    readFlag,
-    positionalArgs,
-    readRepeatedFlags,
-    hasFlag,
-    readValueFlag,
-    argumentFailure,
-    printHelp: cliHelp.printHelp,
-  });
-}
-
-async function runDeployRelease(args: string[]): Promise<number> {
-  return runDeployReleaseCommand(args, {
-    resolveDefaultInvocationPath,
-    outputFormat,
-    readProjectDiscoveryOptions,
-    printFailure,
-    printByFormat,
-    printResultDiagnostics,
-    readFlag,
-    positionalArgs,
-    readRepeatedFlags,
-    hasFlag,
-    readValueFlag,
-    argumentFailure,
-    printHelp: cliHelp.printHelp,
   });
 }
 
@@ -1316,48 +809,6 @@ async function runEnvironmentResolveMakerId(configOptions: ConfigStoreOptions, a
 
 async function runEnvironmentRemove(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
   return runEnvironmentRemoveCommand(configOptions, args, {
-    positionalArgs,
-    readRepeatedFlags,
-    outputFormat,
-    printFailure,
-    printByFormat,
-    printWarnings,
-    readFlag,
-    argumentFailure,
-    discoverMakerEnvironmentIdForEnvironment,
-  });
-}
-
-async function runEnvironmentCleanupPlan(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  return runEnvironmentCleanupPlanCommand(configOptions, args, {
-    positionalArgs,
-    readRepeatedFlags,
-    outputFormat,
-    printFailure,
-    printByFormat,
-    printWarnings,
-    readFlag,
-    argumentFailure,
-    discoverMakerEnvironmentIdForEnvironment,
-  });
-}
-
-async function runEnvironmentCleanup(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  return runEnvironmentCleanupCommand(configOptions, args, {
-    positionalArgs,
-    readRepeatedFlags,
-    outputFormat,
-    printFailure,
-    printByFormat,
-    printWarnings,
-    readFlag,
-    argumentFailure,
-    discoverMakerEnvironmentIdForEnvironment,
-  });
-}
-
-async function runEnvironmentReset(configOptions: ConfigStoreOptions, args: string[]): Promise<number> {
-  return runEnvironmentResetCommand(configOptions, args, {
     positionalArgs,
     readRepeatedFlags,
     outputFormat,

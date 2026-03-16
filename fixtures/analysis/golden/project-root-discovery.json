@@ -1,243 +1,113 @@
 {
   "assets": [
     {
-      "exists": true,
-      "kind": "directory",
+      "exists": false,
+      "kind": "missing",
       "name": "apps",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/apps"
+      "path": "<REPO_ROOT>/apps"
     },
     {
       "exists": true,
       "kind": "directory",
       "name": "flows",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/flows"
+      "path": "<REPO_ROOT>/flows"
     },
     {
-      "exists": true,
-      "kind": "file",
-      "name": "solutionBundle",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/solutions/Core.zip"
+      "exists": false,
+      "kind": "missing",
+      "name": "solutions",
+      "path": "<REPO_ROOT>/solutions"
     },
     {
       "exists": true,
       "kind": "directory",
       "name": "docs",
-      "path": "<REPO_ROOT>/fixtures/analysis/project/docs"
+      "path": "<REPO_ROOT>/docs"
     }
   ],
-  "build": {
-    "canvas": {
-      "mode": "seeded"
-    }
-  },
-  "diagnostics": [
-    {
-      "code": "PROJECT_PARAMETER_MISSING",
-      "hint": "Set PP_TENANT_DOMAIN or provide an explicit value in the project config.",
-      "level": "error",
-      "message": "Required project parameter tenantDomain is not resolved",
-      "source": "@pp/project"
-    },
-    {
-      "code": "PROJECT_SECRET_LOOKUP_MISS",
-      "level": "info",
-      "message": "Secret ref app_token did not resolve from pipeline",
-      "source": "@pp/project"
-    },
-    {
-      "code": "PROJECT_PARAMETER_SECRET_MISSING",
-      "hint": "Resolve secret ref app_token or provide an explicit value override.",
-      "level": "error",
-      "message": "Required secret-backed project parameter apiToken is not resolved",
-      "source": "@pp/project"
-    },
-    {
-      "code": "PROJECT_PARAMETER_MISSING",
-      "hint": "Set PP_SQL_ENDPOINT or provide an explicit value in the project config.",
-      "level": "error",
-      "message": "Required project parameter sqlEndpoint is not resolved",
-      "source": "@pp/project"
-    }
-  ],
+  "build": {},
+  "diagnostics": [],
   "discovery": {
     "anchorEvidence": {
       "assetKeys": [
         "apps",
         "docs",
         "flows",
-        "solutionBundle"
+        "solutions"
       ],
-      "configPath": "fixtures/analysis/project/pp.config.yaml",
+      "configPath": "pp.config.yaml",
       "docsPaths": [
         "docs"
       ],
       "providerBindingNames": [
-        "financeSharePoint",
         "primaryDataverse"
       ],
       "stageNames": [
-        "dev",
-        "prod"
+        "dev"
       ]
     },
-    "autoSelectedProjectRoot": "fixtures/analysis/project",
-    "autoSelectedReason": "only-descendant-project",
-    "canonicalAnchorReason": "Treat fixtures/analysis/project as the canonical local project for this invocation because it is the only descendant pp project under the inspected path. It defines its own config, 4 asset path(s), 2 stage(s), 2 provider binding(s), 1 docs path(s).",
     "configFound": true,
     "descendantProjectConfigs": [],
     "descendantProjectRoots": [],
     "inspectedPath": "<REPO_ROOT>",
-    "resolvedRoot": "<REPO_ROOT>/fixtures/analysis/project",
+    "resolvedRoot": "<REPO_ROOT>",
     "usedDefaultLayout": false
   },
   "docs": {
-    "owner": "platform-team",
     "paths": [
       "docs"
     ]
   },
-  "parameters": {
-    "apiToken": {
-      "hasValue": false,
-      "mappings": [
-        {
-          "kind": "deploy-secret",
-          "target": "api-token"
-        }
-      ],
-      "name": "apiToken",
-      "reference": "app_token",
-      "sensitive": true,
-      "source": "missing",
-      "type": "string"
-    },
-    "releaseName": {
-      "hasValue": true,
-      "mappings": [],
-      "name": "releaseName",
-      "sensitive": false,
-      "source": "value",
-      "type": "string",
-      "value": "production"
-    },
-    "sqlEndpoint": {
-      "hasValue": false,
-      "mappings": [
-        {
-          "kind": "deploy-input",
-          "target": "sql-endpoint"
-        }
-      ],
-      "name": "sqlEndpoint",
-      "sensitive": false,
-      "source": "missing",
-      "type": "string"
-    },
-    "tenantDomain": {
-      "hasValue": false,
-      "mappings": [
-        {
-          "kind": "dataverse-envvar",
-          "target": "pp_TenantDomain"
-        }
-      ],
-      "name": "tenantDomain",
-      "sensitive": false,
-      "source": "missing",
-      "type": "string"
-    },
-    "useManagedIdentity": {
-      "hasValue": true,
-      "mappings": [],
-      "name": "useManagedIdentity",
-      "sensitive": false,
-      "source": "value",
-      "type": "boolean",
-      "value": false
-    }
-  },
+  "parameters": {},
   "providerBindings": {
-    "financeSharePoint": {
-      "kind": "sharepoint-site",
-      "target": "https://example.sharepoint.com/sites/finance"
-    },
     "primaryDataverse": {
+      "description": "Primary Dataverse environment alias for this project",
       "kind": "dataverse",
       "target": "dev"
     }
   },
   "summary": {
-    "activeEnvironment": "prod",
-    "activeSolution": "CoreManaged",
+    "activeEnvironment": "dev",
+    "activeSolution": "Core",
     "assetCount": 4,
-    "configPath": "<REPO_ROOT>/fixtures/analysis/project/pp.config.yaml",
+    "configPath": "<REPO_ROOT>/pp.config.yaml",
     "defaultEnvironment": "dev",
-    "defaultSolution": "core",
-    "missingRequiredParameters": [
-      "tenantDomain",
-      "apiToken",
-      "sqlEndpoint"
-    ],
-    "parameterCount": 5,
-    "providerBindingCount": 2,
-    "root": "<REPO_ROOT>/fixtures/analysis/project",
-    "selectedStage": "prod",
-    "topologyStageCount": 2
+    "defaultSolution": "Core",
+    "missingRequiredParameters": [],
+    "parameterCount": 0,
+    "providerBindingCount": 1,
+    "root": "<REPO_ROOT>",
+    "selectedStage": "dev",
+    "topologyStageCount": 1
   },
-  "templateRegistries": [
-    "./registries/canvas-controls.json"
-  ],
+  "templateRegistries": [],
   "topology": {
-    "activeEnvironment": "prod",
+    "activeEnvironment": "dev",
     "activeSolution": {
-      "alias": "core",
-      "environment": "prod",
-      "source": "stage",
-      "stage": "prod",
-      "uniqueName": "CoreManaged"
+      "alias": "Core",
+      "environment": "dev",
+      "source": "project",
+      "uniqueName": "Core"
     },
-    "defaultStage": "prod",
-    "selectedStage": "prod",
+    "defaultStage": "dev",
+    "selectedStage": "dev",
     "stages": {
       "dev": {
         "defaultSolution": {
-          "alias": "core",
+          "alias": "Core",
           "environment": "dev",
           "source": "project",
-          "uniqueName": "CoreDev"
+          "uniqueName": "Core"
         },
         "environment": "dev",
         "name": "dev",
         "parameterOverrides": [],
         "solutions": {
-          "core": {
-            "alias": "core",
+          "Core": {
+            "alias": "Core",
             "environment": "dev",
             "source": "project",
-            "uniqueName": "CoreDev"
-          }
-        }
-      },
-      "prod": {
-        "defaultSolution": {
-          "alias": "core",
-          "environment": "prod",
-          "source": "stage",
-          "stage": "prod",
-          "uniqueName": "CoreManaged"
-        },
-        "environment": "prod",
-        "name": "prod",
-        "parameterOverrides": [
-          "releaseName"
-        ],
-        "solutions": {
-          "core": {
-            "alias": "core",
-            "environment": "prod",
-            "source": "stage",
-            "stage": "prod",
-            "uniqueName": "CoreManaged"
+            "uniqueName": "Core"
           }
         }
       }

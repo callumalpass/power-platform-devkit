@@ -1,112 +1,29 @@
-import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import type { Dirent } from 'node:fs';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, relative, resolve, win32 as win32Path } from 'node:path';
-import { createDiagnostic, fail, ok, withWarning, type OperationResult } from '@pp/diagnostics';
+import { dirname, join, resolve, win32 as win32Path } from 'node:path';
+import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
 export type OutputMode = 'table' | 'json' | 'yaml' | 'ndjson' | 'markdown' | 'raw';
-export type ParameterType = 'string' | 'number' | 'boolean';
 export type AuthProfileType = 'static-token' | 'environment-token' | 'client-secret' | 'user' | 'device-code';
 export type BrowserProfileKind = 'chrome' | 'edge' | 'chromium' | 'custom';
 export type EnvironmentAccessMode = 'read-write' | 'read-only';
 export type EnvironmentOperationIntent = 'read' | 'write';
 
-const primitiveValueSchema = z.union([z.string(), z.number(), z.boolean()]);
-
-const parameterMappingSchema = z.object({
-  kind: z.string(),
-  target: z.string(),
-  path: z.string().optional(),
-  site: z.string().optional(),
-  drive: z.string().optional(),
-  workspace: z.string().optional(),
-  environment: z.string().optional(),
-  solution: z.string().optional(),
-  notifyOption: z.string().optional(),
-  refreshType: z.string().optional(),
-  displayName: z.string().optional(),
-  connectorId: z.string().optional(),
-  customConnectorId: z.string().optional(),
-  defaultValue: primitiveValueSchema.optional(),
-  type: z.union([z.string(), z.number()]).optional(),
-  valueSchema: z.string().optional(),
-  secretStore: z.number().int().optional(),
-});
-
-const projectParameterSchema = z.object({
-  description: z.string().optional(),
-  type: z.enum(['string', 'number', 'boolean']).optional(),
-  required: z.boolean().optional(),
-  value: primitiveValueSchema.optional(),
-  fromEnv: z.string().optional(),
-  secretRef: z.string().optional(),
-  mapsTo: z.array(parameterMappingSchema).optional(),
-});
-
-const providerBindingSchema = z.object({
-  kind: z.string(),
-  target: z.string(),
-  description: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-const solutionTargetSchema = z.object({
-  environment: z.string().optional(),
-  uniqueName: z.string(),
-});
-
-const stageParameterOverrideSchema = z.union([primitiveValueSchema, projectParameterSchema.partial()]);
-
-const topologyStageSchema = z.object({
-  description: z.string().optional(),
-  environment: z.string().optional(),
-  solution: z.string().optional(),
-  solutions: z.record(z.string(), z.union([z.string(), solutionTargetSchema])).optional(),
-  parameters: z.record(z.string(), stageParameterOverrideSchema).optional(),
-});
-
-const secretProviderSchema = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('env'),
-    prefix: z.string().optional(),
-  }),
-]);
-
-const projectSecretsSchema = z.object({
-  defaultProvider: z.string().optional(),
-  providers: z.record(z.string(), secretProviderSchema).optional(),
-});
-
 const projectConfigSchema = z.object({
-  name: z.string().optional(),
   defaults: z
     .object({
       environment: z.string().optional(),
       solution: z.string().optional(),
-      stage: z.string().optional(),
     })
     .optional(),
-  solutions: z.record(z.string(), solutionTargetSchema).optional(),
-  assets: z.record(z.string(), z.string()).optional(),
-  providerBindings: z.record(z.string(), providerBindingSchema).optional(),
-  parameters: z.record(z.string(), projectParameterSchema).optional(),
-  topology: z
+  artifacts: z
     .object({
-      defaultStage: z.string().optional(),
-      stages: z.record(z.string(), topologyStageSchema),
+      solutions: z.string().optional(),
     })
     .optional(),
-  secrets: projectSecretsSchema.optional(),
   templateRegistries: z.array(z.string()).optional(),
-  build: z.record(z.string(), z.unknown()).optional(),
-  docs: z
-    .object({
-      owner: z.string().optional(),
-      paths: z.array(z.string()).optional(),
-    })
-    .optional(),
 });
 
 const authProfileBaseSchema = z.object({
@@ -200,14 +117,6 @@ const globalConfigSchema = z.object({
   preferences: z.record(z.string(), z.unknown()).default({}),
 });
 
-export type ParameterMapping = z.infer<typeof parameterMappingSchema>;
-export type ProjectParameterDefinition = z.infer<typeof projectParameterSchema>;
-export type ProviderBinding = z.infer<typeof providerBindingSchema>;
-export type SolutionTarget = z.infer<typeof solutionTargetSchema>;
-export type StageParameterOverride = z.infer<typeof stageParameterOverrideSchema>;
-export type ProjectTopologyStage = z.infer<typeof topologyStageSchema>;
-export type ProjectSecretProvider = z.infer<typeof secretProviderSchema>;
-export type ProjectSecretsConfig = z.infer<typeof projectSecretsSchema>;
 export type ProjectConfig = z.infer<typeof projectConfigSchema>;
 export type BrowserProfile = z.infer<typeof browserProfileSchema>;
 export type EnvironmentAccessPolicy = z.infer<typeof environmentAccessPolicySchema>;
@@ -238,18 +147,6 @@ export interface GlobalConfigPathEnvironment {
 
 export const PROJECT_CONFIG_FILENAMES = ['pp.config.json', 'pp.config.yaml', 'pp.config.yml'];
 export const GLOBAL_CONFIG_FILENAMES = ['config.json', 'config.yaml', 'config.yml'];
-const PROJECT_CONFIG_DISCOVERY_MAX_DEPTH = 4;
-const PROJECT_CONFIG_DISCOVERY_MAX_RESULTS = 5;
-const PROJECT_CONFIG_DISCOVERY_IGNORED_DIRS = new Set([
-  '.git',
-  '.hg',
-  '.svn',
-  '.ops',
-  'node_modules',
-  'dist',
-  'build',
-  'coverage',
-]);
 
 export function getDefaultGlobalConfigDir(
   platform: NodeJS.Platform = process.platform,
@@ -313,37 +210,36 @@ export async function loadProjectConfig(startDir = process.cwd()): Promise<Opera
   const path = await findNearestProjectConfig(startDir);
 
   if (!path) {
-    const resolvedStartDir = resolve(startDir);
-    const descendantCandidates = await findDescendantProjectConfigs(resolvedStartDir);
-    const nearestCandidate = descendantCandidates[0];
-    const candidateList = descendantCandidates.map((candidate) => relativePathFrom(resolvedStartDir, candidate));
-
-    if (descendantCandidates.length === 1 && nearestCandidate) {
-      return readLocatedConfig(nearestCandidate, projectConfigSchema, '@pp/config');
-    }
-
-    return withWarning(
-      ok<LocatedConfig<ProjectConfig> | undefined>(undefined, {
-        supportTier: 'preview',
-        suggestedNextActions: buildProjectConfigSuggestions(candidateList),
-      }),
-      createDiagnostic(
-        'warning',
-        'PROJECT_CONFIG_NOT_FOUND',
-        `No project config file was found at or above ${resolvedStartDir}. Using defaults.`,
-        {
-          source: '@pp/config',
-          path: nearestCandidate,
-          hint: nearestCandidate
-            ? `Found descendant project config at ${relativePathFrom(resolvedStartDir, nearestCandidate)}. Re-run with that path or --project ${relativePathFrom(resolvedStartDir, dirname(nearestCandidate))}.`
-            : 'Run `pp project init` here to scaffold a project, or re-run `pp project inspect` with an explicit project path.',
-          detail: candidateList.length > 0 ? `Descendant project configs: ${candidateList.join(', ')}` : undefined,
-        }
-      )
-    );
+    return ok(undefined, { supportTier: 'preview' });
   }
 
   return readLocatedConfig(path, projectConfigSchema, '@pp/config');
+}
+
+export interface ProjectDefaults {
+  environment?: string;
+  solution?: string;
+  artifactsDir?: string;
+  configPath?: string;
+}
+
+export async function loadProjectDefaults(startDir = process.cwd()): Promise<OperationResult<ProjectDefaults>> {
+  const result = await loadProjectConfig(startDir);
+
+  if (!result.success) {
+    return result as unknown as OperationResult<ProjectDefaults>;
+  }
+
+  const config = result.data?.config;
+  return ok(
+    {
+      environment: config?.defaults?.environment,
+      solution: config?.defaults?.solution,
+      artifactsDir: config?.artifacts?.solutions,
+      configPath: result.data?.path,
+    },
+    { supportTier: 'preview' }
+  );
 }
 
 export async function loadGlobalConfig(
@@ -856,100 +752,3 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-export async function findDescendantProjectConfigs(startDir: string): Promise<string[]> {
-  const results: string[] = [];
-  await collectDescendantProjectConfigs(resolve(startDir), 0, results);
-  return results.sort((left, right) => left.localeCompare(right));
-}
-
-async function collectDescendantProjectConfigs(currentDir: string, depth: number, results: string[]): Promise<void> {
-  if (depth > PROJECT_CONFIG_DISCOVERY_MAX_DEPTH || results.length >= PROJECT_CONFIG_DISCOVERY_MAX_RESULTS) {
-    return;
-  }
-
-  for (const filename of PROJECT_CONFIG_FILENAMES) {
-    const candidate = join(currentDir, filename);
-    if (await exists(candidate)) {
-      results.push(candidate);
-      return;
-    }
-  }
-
-  if (depth === PROJECT_CONFIG_DISCOVERY_MAX_DEPTH) {
-    return;
-  }
-
-  let entries: Dirent<string>[];
-
-  try {
-    entries = await readdir(currentDir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    if (PROJECT_CONFIG_DISCOVERY_IGNORED_DIRS.has(entry.name)) {
-      continue;
-    }
-
-    await collectDescendantProjectConfigs(join(currentDir, entry.name), depth + 1, results);
-
-    if (results.length >= PROJECT_CONFIG_DISCOVERY_MAX_RESULTS) {
-      return;
-    }
-  }
-}
-
-function buildProjectConfigSuggestions(candidatePaths: string[]): string[] {
-  if (candidatePaths.length === 0) {
-    return [
-      'Run `pp project init` in this directory to scaffold a minimal config.',
-      'Re-run `pp project inspect` with an explicit project path when the config lives elsewhere.',
-    ];
-  }
-
-  return candidatePaths.map((candidatePath) => `Inspect descendant project config at ${candidatePath}.`);
-}
-
-function buildCanonicalAnchorReason(
-  startDir: string,
-  configPath: string,
-  config: ProjectConfig
-): string {
-  const configRoot = dirname(configPath);
-  const projectRoot = relativePathFrom(startDir, configRoot) || '.';
-  const assetKeys = Object.keys(config.assets ?? {}).sort();
-  const stageNames = Object.keys(config.topology?.stages ?? {}).sort();
-  const providerBindingNames = Object.keys(config.providerBindings ?? {}).sort();
-  const docsPaths = (config.docs?.paths ?? []).map((entry) => relative(configRoot, join(configRoot, entry)) || '.').sort();
-  const reasons = [
-    `Treat ${projectRoot} as the canonical local project for this invocation because it is the only descendant pp project under the inspected path.`,
-    'It defines its own config',
-  ];
-
-  if (assetKeys.length > 0) {
-    reasons.push(`${assetKeys.length} asset path(s)`);
-  }
-
-  if (stageNames.length > 0) {
-    reasons.push(`${stageNames.length} stage(s)`);
-  }
-
-  if (providerBindingNames.length > 0) {
-    reasons.push(`${providerBindingNames.length} provider binding(s)`);
-  }
-
-  if (docsPaths.length > 0) {
-    reasons.push(`${docsPaths.length} docs path(s)`);
-  }
-
-  return `${reasons[0]} ${reasons.slice(1).join(', ')}.`;
-}
-
-function relativePathFrom(fromDir: string, targetPath: string): string {
-  return targetPath.startsWith(fromDir) ? relative(fromDir, targetPath) || '.' : targetPath;
-}

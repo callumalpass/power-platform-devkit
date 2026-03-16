@@ -233,9 +233,9 @@ class PowerFxBridgeSession {
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.unref();
-    child.stdin.unref();
-    child.stdout.unref();
-    child.stderr.unref();
+    (child.stdin as NodeJS.WritableStream & { unref?(): void }).unref?.();
+    (child.stdout as NodeJS.ReadableStream & { unref?(): void }).unref?.();
+    (child.stderr as NodeJS.ReadableStream & { unref?(): void }).unref?.();
     child.stdout.on('data', (chunk: string) => this.handleStdout(chunk));
     child.stderr.on('data', (chunk: string) => {
       this.stderrBuffer = `${this.stderrBuffer}${chunk}`.slice(-8_192);

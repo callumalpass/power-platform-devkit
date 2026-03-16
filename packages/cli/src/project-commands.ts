@@ -107,6 +107,11 @@ export async function runProjectInspectCommand(args: string[], deps: ProjectComm
       }
     );
 
+    if (deps.isMachineReadableOutputFormat(format) && failure.details) {
+      deps.printByFormat(failure.details, format);
+      deps.printResultDiagnostics(failure, format);
+      return 1;
+    }
     return deps.printFailureWithMachinePayload(failure, format);
   }
 

@@ -28,15 +28,12 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@pp/analysis": "workspace:*",
     "@pp/auth": "workspace:*",
     "@pp/canvas": "workspace:*",
     "@pp/config": "workspace:*",
     "@pp/dataverse": "workspace:*",
-    "@pp/deploy": "workspace:*",
     "@pp/diagnostics": "workspace:*",
     "@pp/model": "workspace:*",
-    "@pp/project": "workspace:*",
     "@pp/solution": "workspace:*",
     "yaml": "^2.8.1",
     "zod": "^3.24.2"

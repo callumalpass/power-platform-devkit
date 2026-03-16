@@ -3,7 +3,7 @@
     "operations": [
       {
         "changed": true,
-        "currentValue": "https://example.test",
+        "currentValue": "null",
         "kind": "flow-parameter-set",
         "message": "Updated flow parameter ApiBaseUrl.",
         "nextValue": "https://contoso.example",

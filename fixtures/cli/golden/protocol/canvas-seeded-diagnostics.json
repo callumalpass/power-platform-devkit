@@ -2,21 +2,25 @@
   "diagnostics": [
     {
       "code": "CANVAS_TEMPLATE_METADATA_MISSING",
-      "hint": "Provide seeded metadata or load a matching template registry.",
+      "hint": "Inspect seed.templates.json to confirm it includes every required control template, or retry with --mode seeded if formula-only validation is sufficient for this legacy manifest.",
       "level": "error",
       "message": "Template metadata for groupContainer@1.0.0 was not resolved for Home/Layout.",
       "source": "@pp/canvas"
     },
     {
       "code": "CANVAS_TEMPLATE_METADATA_MISSING",
-      "hint": "Provide seeded metadata or load a matching template registry.",
+      "hint": "Inspect seed.templates.json to confirm it includes every required control template, or retry with --mode seeded if formula-only validation is sufficient for this legacy manifest.",
       "level": "error",
       "message": "Template metadata for Label@1.0.0 was not resolved for Home/Layout/Title.",
       "source": "@pp/canvas"
     }
   ],
   "success": true,
-  "suggestedNextActions": [],
+  "suggestedNextActions": [
+    "If formula-only coverage is acceptable for this legacy manifest, retry with `pp canvas validate /home/calluma/projects/pp/fixtures/canvas/apps/base-app --mode seeded --format json`.",
+    "Review `/home/calluma/projects/pp/fixtures/canvas/apps/base-app/seed.templates.json` and add the missing control templates before retrying strict mode.",
+    "Run `pp canvas inspect /home/calluma/projects/pp/fixtures/canvas/apps/base-app --mode seeded --format json` to review the resolved registry stack and missing template requirements."
+  ],
   "supportTier": "preview",
   "warnings": []
 }

@@ -9,7 +9,6 @@ export interface MainGroupHandlers {
   runCompletion(args: string[]): Promise<number>;
   runMcp(command: string | undefined, args: string[]): Promise<number>;
   runDiagnostics(command: string | undefined, args: string[]): Promise<number>;
-  runInit(command: string | undefined, args: string[]): Promise<number>;
   runAuth(command: string | undefined, args: string[]): Promise<number>;
   runEnvironment(command: string | undefined, args: string[]): Promise<number>;
   runDataverse(command: string | undefined, args: string[]): Promise<number>;
@@ -19,11 +18,6 @@ export interface MainGroupHandlers {
   runCanvas(command: string | undefined, args: string[]): Promise<number>;
   runFlow(command: string | undefined, args: string[]): Promise<number>;
   runModel(command: string | undefined, args: string[]): Promise<number>;
-  runProject(command: string | undefined, args: string[]): Promise<number>;
-  runSharePoint(command: string | undefined, args: string[]): Promise<number>;
-  runPowerBi(command: string | undefined, args: string[]): Promise<number>;
-  runAnalysis(command: string | undefined, args: string[]): Promise<number>;
-  runDeploy(command: string | undefined, args: string[]): Promise<number>;
   printFailureForInvalidFormat(result: OperationResult<CliOutputFormat>): number;
 }
 
@@ -62,10 +56,6 @@ export async function dispatchMainCommand(argv: string[], handlers: MainGroupHan
     return handlers.runMcp(command, rest);
   }
 
-  if (canonicalGroup === 'init') {
-    return handlers.runInit(command, rest);
-  }
-
   const requestedFormat = readOutputFormat(normalizedArgv, 'json');
 
   if (!requestedFormat.success && !allowsCustomOutputFormat(normalizedArgv)) {
@@ -85,11 +75,6 @@ export async function dispatchMainCommand(argv: string[], handlers: MainGroupHan
         { name: 'canvas', delegate: true, run: (args) => handlers.runCanvas(args[0], args.slice(1)) },
         { name: 'flow', delegate: true, run: (args) => handlers.runFlow(args[0], args.slice(1)) },
         { name: 'model', delegate: true, run: (args) => handlers.runModel(args[0], args.slice(1)) },
-        { name: 'project', delegate: true, run: (args) => handlers.runProject(args[0], args.slice(1)) },
-        { name: 'sharepoint', delegate: true, run: (args) => handlers.runSharePoint(args[0], args.slice(1)) },
-        { name: 'powerbi', delegate: true, run: (args) => handlers.runPowerBi(args[0], args.slice(1)) },
-        { name: 'analysis', delegate: true, run: (args) => handlers.runAnalysis(args[0], args.slice(1)) },
-        { name: 'deploy', delegate: true, run: (args) => handlers.runDeploy(args[0], args.slice(1)) },
       ],
     },
     [canonicalGroup, command, ...rest].filter((value): value is string => value !== undefined)

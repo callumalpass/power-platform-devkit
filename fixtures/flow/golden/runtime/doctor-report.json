@@ -84,36 +84,22 @@
     {
       "diagnostics": [
         {
-          "code": "DATAVERSE_CONNREF_ROW_INFERRED",
-          "hint": "Use `pp flow inspect <flow> --environment <alias> --solution <solution>` for the embedded reference evidence, or inspect the environment directly if you need the backing Dataverse row.",
-          "level": "warning",
-          "message": "Connection reference shared_office365 was inferred from embedded flow metadata because no Dataverse connection reference row was visible in scope.",
-          "source": "@pp/dataverse"
-        },
-        {
-          "code": "DATAVERSE_CONNREF_CONNECTOR_MISSING",
-          "level": "error",
-          "message": "Connection reference shared_office365 does not declare a connector id.",
-          "source": "@pp/dataverse"
-        },
-        {
           "code": "DATAVERSE_CONNREF_CONNECTION_MISSING",
           "level": "warning",
-          "message": "Connection reference shared_office365 has no active connection binding.",
+          "message": "Connection reference Office 365 Mail has no active connection binding.",
           "source": "@pp/dataverse"
         }
       ],
       "reference": {
         "connected": false,
-        "displayName": "shared_office365",
-        "id": "inferred:shared_office365",
-        "kind": "inferred",
+        "connectorId": "/providers/microsoft.powerapps/apis/shared_office365",
+        "displayName": "Office 365 Mail",
+        "id": "ref-1",
+        "kind": "row",
         "logicalName": "shared_office365",
         "solutionId": "sol-1"
       },
       "suggestedNextActions": [
-        "Inspect the flow metadata or environment directly when you need proof of the backing Dataverse connection reference row.",
-        "Recreate or repair the connection reference so it binds to a connector.",
         "Bind the connection reference to an active connection before deployment."
       ],
       "valid": false

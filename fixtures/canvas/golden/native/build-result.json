@@ -1,6 +1,6 @@
 {
   "mode": "strict",
-  "outFileSha256": "d8fde4d94f219fa42ed216e7ca29845007b92a7ecdb20f41ec773fa4436e5814",
+  "outFileSha256": "<OUT_FILE_SHA256>",
   "outPath": "<TMP_DIR>/NativeCanvas.msapp",
   "packageHash": "42ec46b0ce8beb7bcf396b403a2d4a53e68542e873a6a7b076e75d85d0d3d473",
   "sourceHash": "053ee43c9a11f44d6dae91cfb02b504fd708be2f57ff9dd8a96c6dfc3c97fac8",

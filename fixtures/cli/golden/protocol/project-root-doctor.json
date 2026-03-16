@@ -1,8 +1,8 @@
 {
   "assets": [
     {
-      "exists": true,
-      "kind": "directory",
+      "exists": false,
+      "kind": "missing",
       "name": "apps",
       "path": "<REPO_ROOT>/apps"
     },
@@ -13,8 +13,8 @@
       "path": "<REPO_ROOT>/flows"
     },
     {
-      "exists": true,
-      "kind": "directory",
+      "exists": false,
+      "kind": "missing",
       "name": "solutions",
       "path": "<REPO_ROOT>/solutions"
     },
@@ -30,7 +30,7 @@
     "externalTargeting": [
       {
         "code": "PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED",
-        "hint": "Add the alias with `pp env add --name dev --url <dataverse-url> --profile <auth-profile>`.",
+        "hint": "Add the alias with `pp env add dev --url <dataverse-url> --profile <auth-profile>`.",
         "message": "Stage dev points to environment alias dev, but that alias is not configured in the active pp environment registry.",
         "status": "warn"
       },
@@ -53,15 +53,9 @@
         "status": "pass"
       },
       {
-        "code": "PROJECT_DOCTOR_ASSET_PRESENT",
-        "message": "Asset path apps is present for apps",
-        "path": "<REPO_ROOT>/apps",
-        "status": "pass"
-      },
-      {
-        "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
-        "hint": "Place editable canvas-app or other app source under app-specific subfolders in `apps/`; keep generated solution bundles out of this root.",
-        "message": "Asset root apps exists for apps, but it is still empty and does not yet prove the expected per-asset layout.",
+        "code": "PROJECT_DOCTOR_ASSET_MISSING",
+        "hint": "Create apps or update the project assets map if this repo uses a different layout.",
+        "message": "Expected asset path apps is missing for apps",
         "path": "<REPO_ROOT>/apps",
         "status": "warn"
       },
@@ -72,22 +66,9 @@
         "status": "pass"
       },
       {
-        "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
-        "hint": "Place editable flow source under flow-specific subfolders in `flows/` so repo-local flow artifacts stay separate from solution bundles.",
-        "message": "Asset root flows exists for flows, but it is still empty and does not yet prove the expected per-asset layout.",
-        "path": "<REPO_ROOT>/flows",
-        "status": "warn"
-      },
-      {
-        "code": "PROJECT_DOCTOR_ASSET_PRESENT",
-        "message": "Asset path solutions is present for solutions",
-        "path": "<REPO_ROOT>/solutions",
-        "status": "pass"
-      },
-      {
-        "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
-        "hint": "Keep unpacked solution source trees under `solutions/<solution>/`; treat zip files inside `solutions/` as generated or stale output, not canonical source.",
-        "message": "Asset root solutions exists for solutions, but it is still empty and does not yet prove the expected per-asset layout.",
+        "code": "PROJECT_DOCTOR_ASSET_MISSING",
+        "hint": "Create solutions or update the project assets map if this repo uses a different layout.",
+        "message": "Expected asset path solutions is missing for solutions",
         "path": "<REPO_ROOT>/solutions",
         "status": "warn"
       },
@@ -133,15 +114,9 @@
       "status": "pass"
     },
     {
-      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
-      "message": "Asset path apps is present for apps",
-      "path": "<REPO_ROOT>/apps",
-      "status": "pass"
-    },
-    {
-      "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
-      "hint": "Place editable canvas-app or other app source under app-specific subfolders in `apps/`; keep generated solution bundles out of this root.",
-      "message": "Asset root apps exists for apps, but it is still empty and does not yet prove the expected per-asset layout.",
+      "code": "PROJECT_DOCTOR_ASSET_MISSING",
+      "hint": "Create apps or update the project assets map if this repo uses a different layout.",
+      "message": "Expected asset path apps is missing for apps",
       "path": "<REPO_ROOT>/apps",
       "status": "warn"
     },
@@ -152,22 +127,9 @@
       "status": "pass"
     },
     {
-      "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
-      "hint": "Place editable flow source under flow-specific subfolders in `flows/` so repo-local flow artifacts stay separate from solution bundles.",
-      "message": "Asset root flows exists for flows, but it is still empty and does not yet prove the expected per-asset layout.",
-      "path": "<REPO_ROOT>/flows",
-      "status": "warn"
-    },
-    {
-      "code": "PROJECT_DOCTOR_ASSET_PRESENT",
-      "message": "Asset path solutions is present for solutions",
-      "path": "<REPO_ROOT>/solutions",
-      "status": "pass"
-    },
-    {
-      "code": "PROJECT_DOCTOR_ASSET_ROOT_EMPTY",
-      "hint": "Keep unpacked solution source trees under `solutions/<solution>/`; treat zip files inside `solutions/` as generated or stale output, not canonical source.",
-      "message": "Asset root solutions exists for solutions, but it is still empty and does not yet prove the expected per-asset layout.",
+      "code": "PROJECT_DOCTOR_ASSET_MISSING",
+      "hint": "Create solutions or update the project assets map if this repo uses a different layout.",
+      "message": "Expected asset path solutions is missing for solutions",
       "path": "<REPO_ROOT>/solutions",
       "status": "warn"
     },
@@ -205,7 +167,7 @@
     },
     {
       "code": "PROJECT_DOCTOR_ENV_ALIAS_UNRESOLVED",
-      "hint": "Add the alias with `pp env add --name dev --url <dataverse-url> --profile <auth-profile>`.",
+      "hint": "Add the alias with `pp env add dev --url <dataverse-url> --profile <auth-profile>`.",
       "message": "Stage dev points to environment alias dev, but that alias is not configured in the active pp environment registry.",
       "status": "warn"
     },
@@ -263,9 +225,7 @@
       "stage": "dev"
     },
     "editableAssetRoots": [
-      "apps",
       "flows",
-      "solutions",
       "docs"
     ],
     "layoutProfile": "source-first",
@@ -292,9 +252,7 @@
   "inspectedPath": "<REPO_ROOT>",
   "layout": {
     "editableAssetRoots": [
-      "apps",
       "flows",
-      "solutions",
       "docs"
     ],
     "generatedBundlePaths": [],
@@ -322,6 +280,7 @@
         "environmentAlias": "dev",
         "environmentStatus": "missing",
         "solutionAlias": "Core",
+        "solutionAlignment": "unknown",
         "solutionUniqueName": "Core",
         "stage": "dev",
         "summary": "stage dev -> environment dev -> auth profile <missing> -> solution Core (Core)"
@@ -331,7 +290,7 @@
   "root": "<REPO_ROOT>",
   "success": true,
   "suggestedNextActions": [
-    "Project layout looks coherent. Keep `pp.config.*` aligned with real environment aliases, solution names, and parameter sources as the repo evolves."
+    "Create the missing asset directories or update `assets` in `pp.config.*` so the local repo model matches reality."
   ],
   "summary": {
     "activeTargetSummary": "Active target: stage dev -> environment dev -> solution Core (Core)",
@@ -347,13 +306,13 @@
       "The canonical bundle artifacts/solutions/Core.zip is not generated yet; create it with `pp solution pack <solution-folder> --out artifacts/solutions/Core.zip` or `pp solution export Core --environment dev --out artifacts/solutions/Core.zip`."
     ],
     "environmentAliasProvenance": "Stage dev in pp.config.yaml selects environment alias dev. The alias name lives in the project config, but the actual Dataverse URL and auth profile are resolved later from the external pp environment registry.",
-    "existingAssetCount": 4,
+    "existingAssetCount": 2,
     "hasConfig": true,
     "hasProviderBindings": true,
     "hasTemplateRegistries": false,
     "hasTopology": true,
     "layoutProfile": "source-first",
-    "missingAssetCount": 0,
+    "missingAssetCount": 2,
     "requiredParameterCount": 0,
     "unresolvedRequiredParameterCount": 0
   },

@@ -267,13 +267,6 @@ describe('DataverseClient', () => {
         status: 200,
         headers: {},
         data: {
-          value: [],
-        },
-      }),
-      ok({
-        status: 200,
-        headers: {},
-        data: {
           LogicalName: 'solution',
           EntitySetName: 'solutions',
         },
@@ -3547,6 +3540,7 @@ describe('ALM services', () => {
       ok({
         status: 204,
         headers: {},
+        data: undefined,
         entityId: 'val-1',
       }),
     ]);

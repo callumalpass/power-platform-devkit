@@ -93,9 +93,6 @@ export interface EnvironmentGroupHandlers<TConfigOptions> {
   runEnvironmentInspect(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentBaseline(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentResolveMakerId(configOptions: TConfigOptions, args: string[]): Promise<number>;
-  runEnvironmentCleanupPlan(configOptions: TConfigOptions, args: string[]): Promise<number>;
-  runEnvironmentReset(configOptions: TConfigOptions, args: string[]): Promise<number>;
-  runEnvironmentCleanup(configOptions: TConfigOptions, args: string[]): Promise<number>;
   runEnvironmentRemove(configOptions: TConfigOptions, args: string[]): Promise<number>;
 }
 
@@ -118,131 +115,7 @@ export async function runEnvironmentGroup<TConfigOptions>(
           help: cliHelp.printEnvironmentResolveMakerIdHelp,
           run: (rest) => handlers.runEnvironmentResolveMakerId(configOptions, rest),
         },
-        {
-          name: 'cleanup-plan',
-          help: cliHelp.printEnvironmentCleanupPlanHelp,
-          run: (rest) => handlers.runEnvironmentCleanupPlan(configOptions, rest),
-        },
-        { name: 'reset', help: cliHelp.printEnvironmentResetHelp, run: (rest) => handlers.runEnvironmentReset(configOptions, rest) },
-        { name: 'cleanup', help: cliHelp.printEnvironmentCleanupHelp, run: (rest) => handlers.runEnvironmentCleanup(configOptions, rest) },
         { name: 'remove', run: (rest) => handlers.runEnvironmentRemove(configOptions, rest) },
-      ],
-    },
-    [command, ...args].filter((value): value is string => value !== undefined)
-  );
-}
-
-export interface ProjectGroupHandlers {
-  runProjectInit(args: string[]): Promise<number>;
-  runProjectDoctor(args: string[]): Promise<number>;
-  runProjectFeedback(args: string[]): Promise<number>;
-  runProjectInspect(args: string[]): Promise<number>;
-  runProjectSolutionPull(args: string[]): Promise<number>;
-}
-
-export interface InitGroupHandlers {
-  runInitStart(args: string[]): Promise<number>;
-  runInitStatus(args: string[]): Promise<number>;
-  runInitResume(args: string[]): Promise<number>;
-  runInitAnswer(args: string[]): Promise<number>;
-  runInitCancel(args: string[]): Promise<number>;
-}
-
-export async function runProjectGroup(
-  command: string | undefined,
-  args: string[],
-  handlers: ProjectGroupHandlers
-): Promise<number> {
-  return dispatchCommandRoute(
-    {
-      help: cliHelp.printProjectHelp,
-      unknownExitCode: 1,
-      children: [
-        {
-          name: 'solution',
-          help: cliHelp.printProjectSolutionHelp,
-          children: [
-            { name: 'pull', help: cliHelp.printProjectSolutionPullHelp, run: (rest) => handlers.runProjectSolutionPull(rest) },
-          ],
-        },
-        { name: 'init', help: cliHelp.printProjectInitHelp, run: (rest) => handlers.runProjectInit(rest) },
-        { name: 'doctor', help: cliHelp.printProjectDoctorHelp, run: (rest) => handlers.runProjectDoctor(rest) },
-        { name: 'feedback', help: cliHelp.printProjectFeedbackHelp, run: (rest) => handlers.runProjectFeedback(rest) },
-        { name: 'inspect', help: cliHelp.printProjectInspectHelp, run: (rest) => handlers.runProjectInspect(rest) },
-      ],
-    },
-    [command, ...args].filter((value): value is string => value !== undefined)
-  );
-}
-
-export async function runInitGroup(command: string | undefined, args: string[], handlers: InitGroupHandlers): Promise<number> {
-  return dispatchCommandRoute(
-    {
-      help: cliHelp.printInitHelp,
-      children: [
-        { name: 'start', help: cliHelp.printInitHelp, run: (rest) => handlers.runInitStart(rest) },
-        { name: 'status', help: cliHelp.printInitStatusHelp, run: (rest) => handlers.runInitStatus(rest) },
-        { name: 'resume', help: cliHelp.printInitResumeHelp, run: (rest) => handlers.runInitResume(rest) },
-        { name: 'answer', help: cliHelp.printInitAnswerHelp, run: (rest) => handlers.runInitAnswer(rest) },
-        { name: 'cancel', help: cliHelp.printInitCancelHelp, run: (rest) => handlers.runInitCancel(rest) },
-      ],
-      defaultCommand: {
-        run: (rest) => handlers.runInitStart(rest),
-        help: cliHelp.printInitHelp,
-      },
-    },
-    [command, ...args].filter((value): value is string => value !== undefined)
-  );
-}
-
-export interface AnalysisGroupHandlers {
-  runAnalysisReport(args: string[]): Promise<number>;
-  runAnalysisContext(args: string[]): Promise<number>;
-  runAnalysisPortfolio(args: string[]): Promise<number>;
-  runAnalysisDrift(args: string[]): Promise<number>;
-  runAnalysisUsage(args: string[]): Promise<number>;
-  runAnalysisPolicy(args: string[]): Promise<number>;
-}
-
-export async function runAnalysisGroup(
-  command: string | undefined,
-  args: string[],
-  handlers: AnalysisGroupHandlers
-): Promise<number> {
-  return dispatchCommandRoute(
-    {
-      help: cliHelp.printAnalysisHelp,
-      children: [
-        { name: 'report', help: cliHelp.printAnalysisReportHelp, run: (rest) => handlers.runAnalysisReport(rest) },
-        { name: 'context', help: cliHelp.printAnalysisContextHelp, run: (rest) => handlers.runAnalysisContext(rest) },
-        { name: 'portfolio', help: cliHelp.printAnalysisPortfolioHelp, run: (rest) => handlers.runAnalysisPortfolio(rest) },
-        { name: 'drift', help: () => cliHelp.printAnalysisPortfolioViewHelp('drift'), run: (rest) => handlers.runAnalysisDrift(rest) },
-        { name: 'usage', help: () => cliHelp.printAnalysisPortfolioViewHelp('usage'), run: (rest) => handlers.runAnalysisUsage(rest) },
-        { name: 'policy', help: () => cliHelp.printAnalysisPortfolioViewHelp('policy'), run: (rest) => handlers.runAnalysisPolicy(rest) },
-      ],
-    },
-    [command, ...args].filter((value): value is string => value !== undefined)
-  );
-}
-
-export interface DeployGroupHandlers {
-  runDeployPlan(args: string[]): Promise<number>;
-  runDeployApply(args: string[]): Promise<number>;
-  runDeployRelease(args: string[]): Promise<number>;
-}
-
-export async function runDeployGroup(
-  command: string | undefined,
-  args: string[],
-  handlers: DeployGroupHandlers
-): Promise<number> {
-  return dispatchCommandRoute(
-    {
-      help: cliHelp.printDeployHelp,
-      children: [
-        { name: 'plan', help: cliHelp.printDeployPlanHelp, run: (rest) => handlers.runDeployPlan(rest) },
-        { name: 'apply', help: cliHelp.printDeployApplyHelp, run: (rest) => handlers.runDeployApply(rest) },
-        { name: 'release', help: cliHelp.printDeployReleaseHelp, run: (rest) => handlers.runDeployRelease(rest) },
       ],
     },
     [command, ...args].filter((value): value is string => value !== undefined)
@@ -265,84 +138,6 @@ export async function runDiagnosticsGroup(
       children: [
         { name: 'doctor', help: cliHelp.printDiagnosticsDoctorHelp, run: (rest) => handlers.runDiagnosticsDoctor(rest) },
         { name: 'bundle', help: cliHelp.printDiagnosticsBundleHelp, run: (rest) => handlers.runDiagnosticsBundle(rest) },
-      ],
-    },
-    [command, ...args].filter((value): value is string => value !== undefined)
-  );
-}
-
-export interface SharePointGroupHandlers {
-  runSharePointSiteInspect(args: string[]): Promise<number>;
-  runSharePointListInspect(args: string[]): Promise<number>;
-  runSharePointFileInspect(args: string[]): Promise<number>;
-  runSharePointPermissionsInspect(args: string[]): Promise<number>;
-}
-
-export async function runSharePointGroup(
-  command: string | undefined,
-  args: string[],
-  handlers: SharePointGroupHandlers
-): Promise<number> {
-  return dispatchCommandRoute(
-    {
-      help: cliHelp.printSharePointHelp,
-      children: [
-        {
-          name: 'site',
-          help: cliHelp.printSharePointHelp,
-          children: [{ name: 'inspect', help: cliHelp.printSharePointHelp, run: (rest) => handlers.runSharePointSiteInspect(rest) }],
-        },
-        {
-          name: 'list',
-          help: cliHelp.printSharePointHelp,
-          children: [{ name: 'inspect', help: cliHelp.printSharePointHelp, run: (rest) => handlers.runSharePointListInspect(rest) }],
-        },
-        {
-          name: 'file',
-          help: cliHelp.printSharePointHelp,
-          children: [{ name: 'inspect', help: cliHelp.printSharePointHelp, run: (rest) => handlers.runSharePointFileInspect(rest) }],
-        },
-        {
-          name: 'permissions',
-          help: cliHelp.printSharePointHelp,
-          children: [{ name: 'inspect', help: cliHelp.printSharePointHelp, run: (rest) => handlers.runSharePointPermissionsInspect(rest) }],
-        },
-      ],
-    },
-    [command, ...args].filter((value): value is string => value !== undefined)
-  );
-}
-
-export interface PowerBiGroupHandlers {
-  runPowerBiWorkspaceInspect(args: string[]): Promise<number>;
-  runPowerBiDatasetInspect(args: string[]): Promise<number>;
-  runPowerBiReportInspect(args: string[]): Promise<number>;
-}
-
-export async function runPowerBiGroup(
-  command: string | undefined,
-  args: string[],
-  handlers: PowerBiGroupHandlers
-): Promise<number> {
-  return dispatchCommandRoute(
-    {
-      help: cliHelp.printPowerBiHelp,
-      children: [
-        {
-          name: 'workspace',
-          help: cliHelp.printPowerBiHelp,
-          children: [{ name: 'inspect', help: cliHelp.printPowerBiHelp, run: (rest) => handlers.runPowerBiWorkspaceInspect(rest) }],
-        },
-        {
-          name: 'dataset',
-          help: cliHelp.printPowerBiHelp,
-          children: [{ name: 'inspect', help: cliHelp.printPowerBiHelp, run: (rest) => handlers.runPowerBiDatasetInspect(rest) }],
-        },
-        {
-          name: 'report',
-          help: cliHelp.printPowerBiHelp,
-          children: [{ name: 'inspect', help: cliHelp.printPowerBiHelp, run: (rest) => handlers.runPowerBiReportInspect(rest) }],
-        },
       ],
     },
     [command, ...args].filter((value): value is string => value !== undefined)
@@ -519,7 +314,6 @@ export interface CanvasGroupHandlers {
   runCanvasAttach(args: string[]): Promise<number>;
   runCanvasDownload(args: string[]): Promise<number>;
   runCanvasImport(args: string[]): Promise<number>;
-  runCanvasUnsupportedRemoteMutation(command: 'create' | 'import', args: string[]): Promise<number>;
   runCanvasList(args: string[]): Promise<number>;
   runCanvasProbe(args: string[]): Promise<number>;
   runCanvasAccess(args: string[]): Promise<number>;
@@ -545,7 +339,6 @@ export async function runCanvasGroup(
       children: [
         { name: 'attach', help: cliHelp.printCanvasAttachHelp, run: (rest) => handlers.runCanvasAttach(rest) },
         { name: 'download', help: cliHelp.printCanvasDownloadHelp, run: (rest) => handlers.runCanvasDownload(rest) },
-        { name: 'create', help: cliHelp.printCanvasCreateHelp, run: (rest) => handlers.runCanvasUnsupportedRemoteMutation('create', rest) },
         { name: 'import', help: cliHelp.printCanvasImportHelp, run: (rest) => handlers.runCanvasImport(rest) },
         { name: 'list', help: cliHelp.printCanvasListHelp, run: (rest) => handlers.runCanvasList(rest) },
         { name: 'probe', help: cliHelp.printCanvasProbeHelp, run: (rest) => handlers.runCanvasProbe(rest) },
@@ -570,19 +363,9 @@ export interface FlowGroupHandlers {
   runFlowAttach(args: string[]): Promise<number>;
   runFlowExport(args: string[]): Promise<number>;
   runFlowActivate(args: string[]): Promise<number>;
-  runFlowPromote(args: string[]): Promise<number>;
-  runFlowUnpack(args: string[]): Promise<number>;
-  runFlowPack(args: string[]): Promise<number>;
-  runFlowDeploy(args: string[]): Promise<number>;
   runFlowNormalize(args: string[]): Promise<number>;
   runFlowValidate(args: string[]): Promise<number>;
-  runFlowGraph(args: string[]): Promise<number>;
-  runFlowPatch(args: string[]): Promise<number>;
-  runFlowRuns(args: string[]): Promise<number>;
-  runFlowMonitor(args: string[]): Promise<number>;
-  runFlowErrors(args: string[]): Promise<number>;
   runFlowConnrefs(args: string[]): Promise<number>;
-  runFlowDoctor(args: string[]): Promise<number>;
   runFlowAccess(args: string[]): Promise<number>;
   runFlowLsp(args: string[]): Promise<number>;
 }
@@ -601,19 +384,9 @@ export async function runFlowGroup(
         { name: 'attach', help: cliHelp.printFlowAttachHelp, run: (rest) => handlers.runFlowAttach(rest) },
         { name: 'export', help: cliHelp.printFlowExportHelp, run: (rest) => handlers.runFlowExport(rest) },
         { name: 'activate', help: cliHelp.printFlowActivateHelp, run: (rest) => handlers.runFlowActivate(rest) },
-        { name: 'promote', help: cliHelp.printFlowPromoteHelp, run: (rest) => handlers.runFlowPromote(rest) },
-        { name: 'unpack', help: cliHelp.printFlowUnpackHelp, run: (rest) => handlers.runFlowUnpack(rest) },
-        { name: 'pack', help: cliHelp.printFlowPackHelp, run: (rest) => handlers.runFlowPack(rest) },
-        { name: 'deploy', help: cliHelp.printFlowDeployHelp, run: (rest) => handlers.runFlowDeploy(rest) },
         { name: 'normalize', help: cliHelp.printFlowNormalizeHelp, run: (rest) => handlers.runFlowNormalize(rest) },
         { name: 'validate', help: cliHelp.printFlowValidateHelp, run: (rest) => handlers.runFlowValidate(rest) },
-        { name: 'graph', help: cliHelp.printFlowGraphHelp, run: (rest) => handlers.runFlowGraph(rest) },
-        { name: 'patch', help: cliHelp.printFlowPatchHelp, run: (rest) => handlers.runFlowPatch(rest) },
-        { name: 'runs', help: cliHelp.printFlowRunsHelp, run: (rest) => handlers.runFlowRuns(rest) },
-        { name: 'monitor', help: cliHelp.printFlowMonitorHelp, run: (rest) => handlers.runFlowMonitor(rest) },
-        { name: 'errors', help: cliHelp.printFlowErrorsHelp, run: (rest) => handlers.runFlowErrors(rest) },
         { name: 'connrefs', help: cliHelp.printFlowConnrefsHelp, run: (rest) => handlers.runFlowConnrefs(rest) },
-        { name: 'doctor', help: cliHelp.printFlowDoctorHelp, run: (rest) => handlers.runFlowDoctor(rest) },
         { name: 'access', help: cliHelp.printFlowAccessHelp, run: (rest) => handlers.runFlowAccess(rest) },
         { name: 'lsp', help: cliHelp.printFlowLspHelp, run: (rest) => handlers.runFlowLsp(rest) },
       ],

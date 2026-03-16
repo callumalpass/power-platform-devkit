@@ -6,6 +6,11 @@
     "dataverse": {
       "accessCommand": "pp canvas access \"Harness Canvas\" --environment fixture --format json"
     },
+    "download": {
+      "autoResolved": false,
+      "downloadCommand": "pp canvas download \"Harness Canvas\" --environment fixture --solution Core",
+      "solutionUniqueName": "Core"
+    },
     "makerStudio": {
       "inspectCommand": "pp canvas inspect \"Harness Canvas\" --environment fixture --solution Core",
       "recommendedUrl": "https://make.powerapps.com/e/env-123/canvas/?action=edit&app-id=%2Fproviders%2FMicrosoft.PowerApps%2Fapps%2Fcanvas-1&tenantId=tenant-1&hint=user-1"

@@ -233,26 +233,6 @@ describe('@pp/mcp', () => {
         'pp.model-app.inspect',
         'pp.canvas-app.download',
         'pp.canvas-app.import',
-        'pp.project.inspect',
-        'pp.project.doctor',
-        'pp.project.feedback',
-        'pp.setup.start',
-        'pp.setup.status',
-        'pp.setup.answer',
-        'pp.setup.resume',
-        'pp.setup.cancel',
-        'pp.init.start',
-        'pp.init.status',
-        'pp.init.answer',
-        'pp.init.resume',
-        'pp.init.cancel',
-        'pp.analysis.context',
-        'pp.analysis.portfolio',
-        'pp.analysis.drift',
-        'pp.analysis.usage',
-        'pp.analysis.policy',
-        'pp.deploy.plan',
-        'pp.deploy.apply',
         'pp.domain.list',
       ])
     );
@@ -274,85 +254,6 @@ describe('@pp/mcp', () => {
     });
     expect((environments.structuredContent as { data: Array<{ alias: string }> }).data[0]?.alias).toBe('dev');
 
-    const project = await client.callTool({
-      name: 'pp.project.inspect',
-      arguments: {
-        environmentAlias: 'test',
-      },
-    });
-    expect(project.isError).toBeFalsy();
-    expect(project.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.project.inspect',
-      },
-    });
-    expect((project.structuredContent as { data: { discovery: { resolvedRoot: string } } }).data.discovery.resolvedRoot).toBe(
-      resolveRepoPath('fixtures', 'analysis', 'project')
-    );
-    expect(
-      (project.structuredContent as { data: { contract: { deploymentRouteSummary: string } } }).data.contract.deploymentRouteSummary
-    ).toContain('environment alias');
-    expect((project.structuredContent as { data: { targetComparison: { relationship: string } } }).data.targetComparison.relationship).toBe(
-      'unmapped'
-    );
-
-    const doctor = await client.callTool({
-      name: 'pp.project.doctor',
-      arguments: {},
-    });
-    expect(doctor.isError).toBeFalsy();
-    expect(doctor.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.project.doctor',
-      },
-    });
-
-    const feedback = await client.callTool({
-      name: 'pp.project.feedback',
-      arguments: {},
-    });
-    expect(feedback.isError).toBeFalsy();
-    expect(feedback.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.project.feedback',
-      },
-    });
-
-    const analysis = await client.callTool({
-      name: 'pp.analysis.context',
-      arguments: {
-        focusAsset: 'solution:core',
-        environmentAlias: 'test',
-      },
-    });
-    expect(analysis.isError).toBeFalsy();
-    expect(analysis.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.analysis.context',
-      },
-    });
-    expect((analysis.structuredContent as { data: { targetComparison: { requestedEnvironmentAlias: string } } }).data.targetComparison.requestedEnvironmentAlias).toBe(
-      'test'
-    );
-    expect((analysis.structuredContent as { data: { focusAsset: string } }).data.focusAsset).toBe('solution:core');
-
-    const portfolio = await client.callTool({
-      name: 'pp.analysis.portfolio',
-      arguments: {},
-    });
-    expect(portfolio.isError).toBeFalsy();
-    expect(portfolio.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.analysis.portfolio',
-      },
-    });
-    expect((portfolio.structuredContent as { data: { summary: { projectCount: number } } }).data.summary.projectCount).toBe(1);
-
     const domains = await client.callTool({
       name: 'pp.domain.list',
       arguments: {},
@@ -369,7 +270,6 @@ describe('@pp/mcp', () => {
             'pp.browser-profile.inspect',
             'pp.environment.list',
             'pp.environment.inspect',
-            'pp.setup.status',
           ]),
           mutationToolsAvailable: true,
           mutationTools: expect.arrayContaining([
@@ -378,10 +278,6 @@ describe('@pp/mcp', () => {
             'pp.browser-profile.create',
             'pp.browser-profile.bootstrap',
             'pp.environment.add',
-            'pp.setup.start',
-            'pp.setup.answer',
-            'pp.setup.resume',
-            'pp.setup.cancel',
           ]),
           notes: expect.stringContaining('interactive auth preferred'),
         }),
@@ -461,47 +357,6 @@ describe('@pp/mcp', () => {
           notes: expect.stringContaining('CLI-only today'),
         }),
         expect.objectContaining({
-          name: 'project',
-          readTools: expect.arrayContaining(['pp.project.inspect', 'pp.project.doctor', 'pp.project.feedback', 'pp.setup.status']),
-          mutationToolsAvailable: true,
-          mutationTools: expect.arrayContaining([
-            'pp.setup.start',
-            'pp.setup.answer',
-            'pp.setup.resume',
-            'pp.setup.cancel',
-            'pp.init.start',
-            'pp.init.answer',
-            'pp.init.resume',
-            'pp.init.cancel',
-            'pp.deploy.plan',
-            'pp.deploy.apply',
-          ]),
-        }),
-        expect.objectContaining({
-          name: 'auth',
-          readTools: expect.arrayContaining([
-            'pp.auth-profile.list',
-            'pp.auth-profile.inspect',
-            'pp.browser-profile.list',
-            'pp.browser-profile.inspect',
-            'pp.environment.list',
-            'pp.environment.inspect',
-            'pp.setup.status',
-          ]),
-          mutationToolsAvailable: true,
-          mutationTools: expect.arrayContaining([
-            'pp.auth-profile.create',
-            'pp.auth-profile.authenticate',
-            'pp.browser-profile.create',
-            'pp.browser-profile.bootstrap',
-            'pp.environment.add',
-            'pp.setup.start',
-            'pp.setup.answer',
-            'pp.setup.resume',
-            'pp.setup.cancel',
-          ]),
-        }),
-        expect.objectContaining({
           name: 'mcp',
           readTools: expect.arrayContaining(['pp.solution.sync-status']),
           mutationTools: expect.arrayContaining([
@@ -511,10 +366,6 @@ describe('@pp/mcp', () => {
             'pp.dataverse.delete',
             'pp.model-app.create',
             'pp.model-app.attach',
-            'pp.init.start',
-            'pp.init.answer',
-            'pp.init.resume',
-            'pp.init.cancel',
             'pp.solution.create',
             'pp.solution.set-metadata',
             'pp.solution.publish',
@@ -527,8 +378,6 @@ describe('@pp/mcp', () => {
             'pp.canvas-app.attach',
             'pp.canvas-app.download',
             'pp.canvas-app.import',
-            'pp.deploy.plan',
-            'pp.deploy.apply',
           ]),
         }),
       ])
@@ -561,11 +410,11 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
-    const listTool = server._registeredTools['pp.solution.list'];
+    const listTool = server._registeredTools['pp.solution.list']!;
 
     const result = await listTool.handler({
       environment: 'dev',
@@ -633,12 +482,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.dataverse.metadata.table'].handler({
+    const result = await server._registeredTools['pp.dataverse.metadata.table']!.handler({
       environment: 'dev',
       logicalName: 'pp_project',
     });
@@ -704,12 +553,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.dataverse.metadata.relationship'].handler({
+    const result = await server._registeredTools['pp.dataverse.metadata.relationship']!.handler({
       environment: 'dev',
       schemaName: 'pp_project_task',
       kind: 'one-to-many',
@@ -762,12 +611,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.model-app.create'].handler({
+    const result = await server._registeredTools['pp.model-app.create']!.handler({
       environment: 'dev',
       uniqueName: 'HarnessApp',
       name: 'Harness App',
@@ -820,12 +669,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.connection-reference.create'].handler({
+    const result = await server._registeredTools['pp.connection-reference.create']!.handler({
       environment: 'dev',
       logicalName: 'pp_shared_sql',
       displayName: 'Shared SQL',
@@ -882,12 +731,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.connection-reference.set'].handler({
+    const result = await server._registeredTools['pp.connection-reference.set']!.handler({
       environment: 'dev',
       identifier: 'pp_shared_sql',
       connectionId: '/providers/Microsoft.PowerApps/apis/shared_sql/connections/shared-sql-456',
@@ -940,12 +789,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.model-app.attach'].handler({
+    const result = await server._registeredTools['pp.model-app.attach']!.handler({
       environment: 'dev',
       identifier: 'Harness App',
       solutionUniqueName: 'Core',
@@ -1012,11 +861,11 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
-    const publishTool = server._registeredTools['pp.solution.publish'];
+    const publishTool = server._registeredTools['pp.solution.publish']!;
 
     const result = await publishTool.handler({
       environment: 'dev',
@@ -1079,7 +928,7 @@ describe('@pp/mcp', () => {
             stateCode: 1,
             statusCode: 2,
           },
-        },
+        } as any,
         {
           supportTier: 'preview',
         },
@@ -1088,11 +937,11 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
-    const activateTool = server._registeredTools['pp.flow.activate'];
+    const activateTool = server._registeredTools['pp.flow.activate']!;
 
     const result = await activateTool.handler({
       environment: 'dev',
@@ -1166,12 +1015,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.flow.deploy'].handler({
+    const result = await server._registeredTools['pp.flow.deploy']!.handler({
       environment: 'dev',
       inputPath: '/tmp/source-flow.json',
       solutionUniqueName: 'Core',
@@ -1243,7 +1092,7 @@ describe('@pp/mcp', () => {
           extractedPath: '/tmp/HarnessCanvas',
           exportedEntry: 'CanvasApps/crd_HarnessCanvas.msapp',
           availableEntries: ['CanvasApps/crd_HarnessCanvas.msapp'],
-        },
+        } as any,
         {
           supportTier: 'preview',
         },
@@ -1252,12 +1101,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.canvas-app.download'].handler({
+    const result = await server._registeredTools['pp.canvas-app.download']!.handler({
       environment: 'dev',
       identifier: 'Harness Canvas',
       solutionUniqueName: 'Core',
@@ -1277,8 +1126,8 @@ describe('@pp/mcp', () => {
     });
     expect(downloadSpy).toHaveBeenCalledWith('Harness Canvas', {
       solutionUniqueName: 'Core',
-      outPath: resolveRepoPath('artifacts', 'HarnessCanvas.msapp'),
-      extractToDirectory: resolveRepoPath('artifacts', 'HarnessCanvas'),
+      outPath: resolveRepoPath('fixtures', 'analysis', 'project', 'artifacts', 'HarnessCanvas.msapp'),
+      extractToDirectory: resolveRepoPath('fixtures', 'analysis', 'project', 'artifacts', 'HarnessCanvas'),
     });
   });
 
@@ -1303,7 +1152,7 @@ describe('@pp/mcp', () => {
           },
           explicitShares: [],
           explicitShareCount: 0,
-        },
+        } as any,
         {
           supportTier: 'preview',
         },
@@ -1312,12 +1161,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.canvas-app.access'].handler({
+    const result = await server._registeredTools['pp.canvas-app.access']!.handler({
       environment: 'dev',
       identifier: 'Harness Canvas',
       solutionUniqueName: 'Core',
@@ -1378,7 +1227,7 @@ describe('@pp/mcp', () => {
             },
           },
           previewLimitations: ['read-only preview'],
-        },
+        } as any,
         {
           supportTier: 'preview',
           knownLimitations: ['read-only preview'],
@@ -1388,12 +1237,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.canvas-app.plan-attach'].handler({
+    const result = await server._registeredTools['pp.canvas-app.plan-attach']!.handler({
       environment: 'dev',
       identifier: 'Harness Canvas',
       solutionUniqueName: 'Core',
@@ -1444,12 +1293,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.solution.create'].handler({
+    const result = await server._registeredTools['pp.solution.create']!.handler({
       environment: 'dev',
       uniqueName: 'ppHarnessShell',
     });
@@ -1488,7 +1337,7 @@ describe('@pp/mcp', () => {
           solutionUniqueName: 'Core',
           sourcePath: '/tmp/HarnessCanvas.msapp',
           importedEntry: 'CanvasApps/crd_HarnessCanvas.msapp',
-        },
+        } as any,
         {
           supportTier: 'preview',
         },
@@ -1497,12 +1346,12 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
 
-    const result = await server._registeredTools['pp.canvas-app.import'].handler({
+    const result = await server._registeredTools['pp.canvas-app.import']!.handler({
       environment: 'dev',
       identifier: 'Harness Canvas',
       solutionUniqueName: 'Core',
@@ -1522,7 +1371,7 @@ describe('@pp/mcp', () => {
     });
     expect(importSpy).toHaveBeenCalledWith('Harness Canvas', {
       solutionUniqueName: 'Core',
-      importPath: resolveRepoPath('dist', 'HarnessCanvas.msapp'),
+      importPath: resolveRepoPath('fixtures', 'analysis', 'project', 'dist', 'HarnessCanvas.msapp'),
       publishWorkflows: true,
       overwriteUnmanagedCustomizations: undefined,
     });
@@ -1544,11 +1393,11 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
-    const monitorTool = server._registeredTools['pp.flow.monitor'];
+    const monitorTool = server._registeredTools['pp.flow.monitor']!;
 
     const baseline = await monitorTool.handler({
         environment: 'dev',
@@ -1665,7 +1514,7 @@ describe('@pp/mcp', () => {
                 },
               }),
             })
-          ) as ReturnType<typeof sparseClient.queryAll<T>>;
+          ) as unknown as ReturnType<typeof sparseClient.queryAll<T>>;
         }
       }
 
@@ -1678,11 +1527,11 @@ describe('@pp/mcp', () => {
 
     const server = createPpMcpServer({
       configDir,
-      project: resolveRepoPath('fixtures', 'analysis', 'project'),
+      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
     }) as unknown as {
       _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
     };
-    const doctorTool = server._registeredTools['pp.flow.doctor'];
+    const doctorTool = server._registeredTools['pp.flow.doctor']!;
 
     const doctor = await doctorTool.handler({
       environment: 'dev',
@@ -2318,72 +2167,6 @@ describe('@pp/mcp', () => {
     );
   });
 
-  it('exposes init setup sessions through MCP tools', async () => {
-    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-init-config-'));
-    await writeFixtureConfig(configDir);
-    const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-init-project-'));
-
-    const client = await createClient({
-      configDir,
-      projectPath: projectRoot,
-      env: {
-        PP_INIT_MCP_TOKEN: 'fixture-token',
-      },
-    });
-
-    const started = await client.callTool({
-      name: 'pp.init.start',
-      arguments: {
-        projectPath: projectRoot,
-        goal: 'project',
-        authMode: 'environment-token',
-        authProfileName: 'ci',
-        tokenEnvVar: 'PP_INIT_MCP_TOKEN',
-        environmentAlias: 'dev2',
-        environmentUrl: 'https://example.crm.dynamics.com',
-        projectName: 'demo',
-        solutionName: 'Core',
-        stageName: 'dev',
-      },
-    });
-
-    expect(started.isError).toBeFalsy();
-    expect(started.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.init.start',
-        mutationPolicy: {
-          mode: 'controlled',
-          approvalRequired: false,
-          sessionRequired: false,
-        },
-      },
-      data: {
-        status: 'completed',
-      },
-    });
-
-    const sessionId = (started.structuredContent as { data: { id: string } }).data.id;
-    const status = await client.callTool({
-      name: 'pp.init.status',
-      arguments: {
-        sessionId,
-      },
-    });
-
-    expect(status.isError).toBeFalsy();
-    expect(status.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.init.status',
-      },
-      data: {
-        id: sessionId,
-        status: 'completed',
-      },
-    });
-  });
-
   it('manages local auth, browser, and environment config through MCP tools', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-local-config-'));
     const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-local-project-'));
@@ -2477,203 +2260,4 @@ describe('@pp/mcp', () => {
     );
   });
 
-  it('defaults setup sessions to interactive user auth through MCP', async () => {
-    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-setup-config-'));
-    const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-setup-project-'));
-
-    const client = await createClient({
-      configDir,
-      projectPath: projectRoot,
-    });
-
-    const started = await client.callTool({
-      name: 'pp.setup.start',
-      arguments: {
-        projectPath: projectRoot,
-        environmentAlias: 'dev',
-        environmentUrl: 'https://example.crm.dynamics.com',
-        authProfileName: 'work',
-        browserProfileName: 'edge-work',
-        projectName: 'demo',
-        solutionName: 'Core',
-      },
-    });
-
-    expect(started.isError).toBeFalsy();
-    expect(started.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.setup.start',
-      },
-      data: {
-        status: 'active',
-        answers: {
-          goal: 'full',
-          authMode: 'user',
-          authProfileName: 'work',
-          browserProfileName: 'edge-work',
-        },
-        prompt: {
-          field: 'loginHint',
-        },
-      },
-    });
-  });
-
-  it('supports deploy plan-then-apply with explicit approval gating', async () => {
-    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
-    await writeFixtureConfig(configDir);
-
-    const projectRoot = await mkdtemp(join(tmpdir(), 'pp-mcp-deploy-project-'));
-    await mkdir(join(projectRoot, 'flows', 'invoice'), { recursive: true });
-    await writeFile(
-      join(projectRoot, 'pp.config.yaml'),
-      [
-        'topology:',
-        '  defaultStage: dev',
-        '  stages:',
-        '    dev: {}',
-        'parameters:',
-        '  apiBaseUrl:',
-        '    type: string',
-        '    value: https://contoso.example',
-        '    mapsTo:',
-        '      - kind: flow-parameter',
-        '        path: flows/invoice/flow.json',
-        '        target: ApiBaseUrl',
-      ].join('\n'),
-      'utf8'
-    );
-    await writeFile(
-      join(projectRoot, 'flows', 'invoice', 'flow.json'),
-      await readFile(resolveRepoPath('fixtures', 'flow', 'golden', 'unpacked.flow.json'), 'utf8'),
-      'utf8'
-    );
-
-    const client = await createClient({
-      configDir,
-      projectPath: projectRoot,
-    });
-
-    const plan = await client.callTool({
-      name: 'pp.deploy.plan',
-      arguments: {},
-    });
-    expect(plan.isError).toBeFalsy();
-    expect(plan.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.deploy.plan',
-        mutationPolicy: {
-          mode: 'controlled',
-          mutationsExposed: true,
-          approvalRequired: true,
-          sessionRequired: true,
-        },
-      },
-      data: {
-        session: {
-          operationCount: 1,
-          operationKinds: ['flow-parameter-set'],
-        },
-        preview: {
-          mode: 'plan',
-          preflight: {
-            ok: true,
-          },
-        },
-      },
-    });
-
-    const sessionId = (plan.structuredContent as { data: { session: { id: string } } }).data.session.id;
-
-    const blockedApply = await client.callTool({
-      name: 'pp.deploy.apply',
-      arguments: {
-        sessionId,
-      },
-    });
-    expect(blockedApply.isError).toBeFalsy();
-    expect(blockedApply.structuredContent).toMatchObject({
-      success: true,
-      data: {
-        approval: {
-          required: true,
-          confirmed: false,
-          matchedSession: false,
-        },
-        result: {
-          mode: 'apply',
-          confirmation: {
-            required: true,
-            confirmed: false,
-            status: 'blocked',
-          },
-          preflight: {
-            ok: false,
-          },
-        },
-      },
-    });
-
-    const apply = await client.callTool({
-      name: 'pp.deploy.apply',
-      arguments: {
-        sessionId,
-        approval: {
-          confirmed: true,
-          sessionId,
-          reason: 'fixture test',
-        },
-      },
-    });
-    expect(apply.isError).toBeFalsy();
-    expect(apply.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.deploy.apply',
-        mutationPolicy: {
-          mode: 'controlled',
-          mutationsExposed: true,
-        },
-      },
-      data: {
-        approval: {
-          required: true,
-          confirmed: true,
-          matchedSession: true,
-        },
-        result: {
-          mode: 'apply',
-          confirmation: {
-            required: true,
-            confirmed: true,
-            status: 'confirmed',
-          },
-          preflight: {
-            ok: true,
-          },
-          apply: {
-            summary: {
-              applied: 1,
-            },
-            operations: [
-              expect.objectContaining({
-                kind: 'flow-parameter-set',
-                status: 'applied',
-                changed: true,
-              }),
-            ],
-          },
-        },
-      },
-    });
-
-    const updatedArtifact = JSON.parse(await readFile(join(projectRoot, 'flows', 'invoice', 'flow.json'), 'utf8')) as {
-      metadata: { parameters: Record<string, unknown> };
-      definition: { parameters: Record<string, { defaultValue?: unknown }> };
-    };
-    expect(updatedArtifact.metadata.parameters.ApiBaseUrl).toBe('https://contoso.example');
-    expect(updatedArtifact.definition.parameters.ApiBaseUrl?.defaultValue).toBe('https://contoso.example');
-  });
 });

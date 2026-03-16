@@ -4,10 +4,9 @@ import { basename, extname, join, resolve as resolvePath } from 'node:path';
 import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import { AuthService, resolveBrowserProfileDirectory, type AuthProfile } from '@pp/auth';
 import { CanvasService, deriveCanvasStudioEditUrl, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
-import { type ConfigStoreOptions } from '@pp/config';
+import { loadProjectConfig, type ConfigStoreOptions } from '@pp/config';
 import { CanvasAppService, DataverseClient, resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
-import { discoverProject } from '@pp/project';
 import { SolutionService } from '@pp/solution';
 import { launchPersistentBrowserProfileContext } from './browser-profile-playwright';
 import { runDelegatedCanvasCreate } from './canvas-create-delegate';
@@ -18,6 +17,7 @@ import { resolveCanvasMakerEnvironmentId, readEnvironmentAlias, readEnvironmentD
 import {
   argumentFailure,
   hasFlag,
+  isMachineReadableOutputFormat,
   printFailureWithMachinePayload,
   pathExists,
   positionalArgs,
@@ -29,7 +29,6 @@ import {
   readFlag,
   readJsonFileForCli,
   readNumberFlag,
-  readProjectDiscoveryOptions,
   readRepeatedFlags,
   resolveOptionalInvocationPath,
   outputFormat,
@@ -1386,8 +1385,23 @@ export async function runCanvasImport(args: string[]): Promise<number> {
   const importPath = positionalArgs(args)[0];
   const solutionUniqueName = readFlag(args, '--solution');
   const target = readFlag(args, '--target');
+  const explicitMakerEnvId = readFlag(args, '--maker-env-id');
 
-  if (!importPath || !solutionUniqueName || !target) {
+  if (!importPath) {
+    return printFailure(
+      argumentFailure(
+        'CANVAS_IMPORT_ARGS_REQUIRED',
+        'Usage: canvas import <file.msapp> --environment ALIAS --solution UNIQUE_NAME --target <displayName|name|id> [--overwrite-unmanaged-customizations] [--no-publish-workflows]'
+      )
+    );
+  }
+
+  // No solution provided, or maker-env-id provided without target: use placeholder Maker guidance
+  if (!solutionUniqueName || (!target && explicitMakerEnvId)) {
+    return runCanvasUnsupportedRemoteMutation('import', args);
+  }
+
+  if (!target) {
     return printFailure(
       argumentFailure(
         'CANVAS_IMPORT_ARGS_REQUIRED',
@@ -1879,10 +1893,17 @@ export async function runCanvasBuild(args: string[]): Promise<number> {
   const format = outputFormat(args, 'json');
 
   if (!result.success || !result.data) {
+    if (isMachineReadableOutputFormat(format) && result.details && typeof result.details === 'object') {
+      printByFormat(result.details, format);
+      printResultDiagnostics({ ...result, success: true as const, details: undefined }, format);
+      return 1;
+    }
+
     return printFailureWithMachinePayload(result, format);
   }
 
   printByFormat(result.data, format);
+  printResultDiagnostics(result, format);
   return 0;
 }
 
@@ -2120,35 +2141,23 @@ export async function runCanvasPatchApply(args: string[]): Promise<number> {
 }
 
 async function resolveCanvasCliContext(args: string[], canvasTarget?: string): Promise<OperationResult<CanvasCliContext>> {
-  const discoveryOptions = readProjectDiscoveryOptions(args);
-
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return discoveryOptions as unknown as OperationResult<CanvasCliContext>;
-  }
-
-  const explicitProjectPath = readFlag(args, '--project');
   const workspacePath = readFlag(args, '--workspace');
   const resolvedCanvasTarget = canvasTarget ? resolvePath(canvasTarget) : undefined;
-  const preferCanvasTargetProjectRoot =
-    !explicitProjectPath && !workspacePath && resolvedCanvasTarget ? await pathExists(resolvedCanvasTarget) : false;
-  const projectPath = explicitProjectPath ?? (preferCanvasTargetProjectRoot ? resolvedCanvasTarget! : process.cwd());
-  const project = await discoverProject(projectPath, discoveryOptions.data);
+  const rootPath = resolvedCanvasTarget && (await pathExists(resolvedCanvasTarget)) ? resolvedCanvasTarget : process.cwd();
 
-  if (!project.success || !project.data) {
-    return project as unknown as OperationResult<CanvasCliContext>;
-  }
+  const config = await loadProjectConfig(rootPath);
 
-  const mode = readCanvasBuildMode(readFlag(args, '--mode') ?? readProjectCanvasBuildMode(project.data.build) ?? 'strict');
+  const mode = readCanvasBuildMode(readFlag(args, '--mode') ?? 'strict');
 
   if (!mode) {
     return argumentFailure('CANVAS_MODE_INVALID', 'Use --mode strict, seeded, or registry.');
   }
 
   const registries = readRepeatedFlags(args, '--registry');
-  let path = canvasTarget ? resolvePath(canvasTarget) : resolvePath(projectPath);
-  let resolvedRegistries = registries.length > 0 ? registries : project.data.templateRegistries;
-  let diagnostics = project.diagnostics;
-  let warnings = project.warnings;
+  let path = canvasTarget ? resolvePath(canvasTarget) : resolvePath(rootPath);
+  let resolvedRegistries = registries.length > 0 ? registries : (config.data?.config.templateRegistries ?? []);
+  let diagnostics = config.diagnostics;
+  let warnings = config.warnings;
 
   if (workspacePath && canvasTarget) {
     const workspace = await new CanvasService().resolveWorkspaceTarget(canvasTarget, {
@@ -2170,7 +2179,7 @@ async function resolveCanvasCliContext(args: string[], canvasTarget?: string): P
     {
       path,
       options: {
-        root: project.data.root,
+        root: rootPath,
         registries: resolvedRegistries,
         cacheDir: readFlag(args, '--cache-dir'),
         mode,
@@ -2186,18 +2195,6 @@ async function resolveCanvasCliContext(args: string[], canvasTarget?: string): P
 
 function readCanvasBuildMode(value: string | undefined): CanvasBuildMode | undefined {
   return value === 'strict' || value === 'seeded' || value === 'registry' ? value : undefined;
-}
-
-function readProjectCanvasBuildMode(build: Record<string, unknown>): string | undefined {
-  const canvas = build.canvas;
-
-  if (typeof canvas !== 'object' || canvas === null || Array.isArray(canvas)) {
-    return undefined;
-  }
-
-  return typeof (canvas as Record<string, unknown>).mode === 'string'
-    ? ((canvas as Record<string, unknown>).mode as string)
-    : undefined;
 }
 
 function readCanvasTemplateImportProvenance(args: string[]): Partial<CanvasTemplateProvenance> | undefined {

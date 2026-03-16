@@ -1,13 +1,15 @@
 solution:
-  friendlyname: Core Solution
   solutionid: sol-source
   uniquename: Core
+  friendlyname: Core Solution
   version: 1.2.0.0
 components:
   - id: comp-source-app
     objectId: obj-app
     componentType: 80
     componentTypeLabel: app-module
+    name: Sales Hub
+    logicalName: SalesHub
   - id: comp-source-sitemap
     objectId: obj-site
     componentType: 62
@@ -27,6 +29,14 @@ dependencies:
     dependentComponentType: 29
     dependentComponentTypeLabel: workflow
     missingRequiredComponent: true
+    importRisk:
+      classification: likely-import-blocker
+      severity: warning
+      reason: The missing form is another solution component rather than a standard
+        platform table, so cross-environment import usually stays blocked until
+        that component is packaged or provisioned separately.
+      suggestedAction: Package the component with the solution or capture an explicit
+        prerequisite/install step for the target environment.
   - id: dep-source-satisfied-site
     dependencyType: 1
     requiredComponentObjectId: obj-site
@@ -36,10 +46,106 @@ dependencies:
     dependentComponentType: 80
     dependentComponentTypeLabel: app-module
     missingRequiredComponent: false
+    importRisk:
+      classification: resolved
+      severity: none
+      reason: The required component is already present in the solution.
+    dependentComponentName: Sales Hub
+    dependentComponentLogicalName: SalesHub
 missingDependencies:
   - *a1
-invalidConnectionReferences: []
+invalidConnectionReferences:
+  - reference:
+      id: connref-source-broken
+      kind: row
+      logicalName: pp_shared_sharepoint
+      displayName: SharePoint
+      solutionId: sol-source
+      stateCode: 0
+      connected: false
+    valid: false
+    diagnostics:
+      - level: error
+        code: DATAVERSE_CONNREF_CONNECTOR_MISSING
+        message: Connection reference SharePoint does not declare a connector id.
+        source: "@pp/dataverse"
+      - level: warning
+        code: DATAVERSE_CONNREF_CONNECTION_MISSING
+        message: Connection reference SharePoint has no active connection binding.
+        source: "@pp/dataverse"
+    suggestedNextActions:
+      - Recreate or repair the connection reference so it binds to a connector.
+      - Bind the connection reference to an active connection before deployment.
 missingEnvironmentVariables: []
+modelDriven:
+  apps:
+    - appId: obj-app
+      uniqueName: SalesHub
+      name: Sales Hub
+      composition:
+        app:
+          id: obj-app
+          uniqueName: SalesHub
+          name: Sales Hub
+          version: 1.0.0.0
+          stateCode: 0
+        artifacts:
+          - key: app:obj-app
+            kind: app
+            id: obj-app
+            name: Sales Hub
+            status: resolved
+          - key: form:form-account-main
+            kind: form
+            id: form-account-main
+            componentId: src-model-form
+            componentType: 60
+            name: Account Main
+            table: account
+            status: resolved
+          - key: sitemap:site-sales
+            kind: sitemap
+            id: site-sales
+            componentId: src-model-sitemap
+            componentType: 62
+            name: Sales Hub sitemap
+            status: resolved
+          - key: table:entity-account
+            kind: table
+            id: entity-account
+            componentId: src-model-table
+            componentType: 1
+            name: Account
+            table: account
+            logicalName: account
+            status: resolved
+        relationships:
+          - from: app:obj-app
+            to: table:entity-account
+            relation: contains
+          - from: app:obj-app
+            to: form:form-account-main
+            relation: contains
+          - from: form:form-account-main
+            to: table:entity-account
+            relation: depends-on
+          - from: app:obj-app
+            to: sitemap:site-sales
+            relation: contains
+        summary:
+          totalArtifacts: 4
+          missingArtifacts: 0
+          byKind:
+            app: 1
+            form: 1
+            sitemap: 1
+            table: 1
+          tables:
+            - account
+  summary:
+    appCount: 1
+    artifactCount: 4
+    missingArtifactCount: 0
 origin:
   kind: environment
 artifacts: []

@@ -114,12 +114,13 @@ importers:
       yaml:
         specifier: ^2.7.1
         version: 2.8.2
+    devDependencies:
+      '@types/adm-zip':
+        specifier: ^0.5.7
+        version: 0.5.7
 
   packages/cli:
     dependencies:
-      '@pp/analysis':
-        specifier: workspace:*
-        version: link:../analysis
       '@pp/artifacts':
         specifier: workspace:*
         version: link:../artifacts
@@ -135,9 +136,6 @@ importers:
       '@pp/dataverse':
         specifier: workspace:*
         version: link:../dataverse
-      '@pp/deploy':
-        specifier: workspace:*
-        version: link:../deploy
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
@@ -153,15 +151,6 @@ importers:
       '@pp/model':
         specifier: workspace:*
         version: link:../model
-      '@pp/powerbi':
-        specifier: workspace:*
-        version: link:../powerbi
-      '@pp/project':
-        specifier: workspace:*
-        version: link:../project
-      '@pp/sharepoint':
-        specifier: workspace:*
-        version: link:../sharepoint
       '@pp/solution':
         specifier: workspace:*
         version: link:../solution
@@ -293,9 +282,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.27.1
         version: 1.27.1(zod@3.25.76)
-      '@pp/analysis':
-        specifier: workspace:*
-        version: link:../analysis
       '@pp/auth':
         specifier: workspace:*
         version: link:../auth
@@ -308,18 +294,12 @@ importers:
       '@pp/dataverse':
         specifier: workspace:*
         version: link:../dataverse
-      '@pp/deploy':
-        specifier: workspace:*
-        version: link:../deploy
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
       '@pp/model':
         specifier: workspace:*
         version: link:../model
-      '@pp/project':
-        specifier: workspace:*
-        version: link:../project
       '@pp/solution':
         specifier: workspace:*
         version: link:../solution
@@ -386,6 +366,10 @@ importers:
       adm-zip:
         specifier: ^0.5.16
         version: 0.5.16
+    devDependencies:
+      '@types/adm-zip':
+        specifier: ^0.5.7
+        version: 0.5.7
 
   packages/vscode:
     dependencies:
@@ -863,6 +847,9 @@ packages:
 
   '@textlint/types@15.5.2':
     resolution: {integrity: sha512-sJOrlVLLXp4/EZtiWKWq9y2fWyZlI8GP+24rnU5avtPWBIMm/1w97yzKrAqYF8czx2MqR391z5akhnfhj2f/AQ==}
+
+  '@types/adm-zip@0.5.7':
+    resolution: {integrity: sha512-DNEs/QvmyRLurdQPChqq0Md4zGvPwHerAJYWk9l2jCbD1VPpnzRJorOdiq4zsw09NFbYnhfsoEhWtxIzXpn2yw==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -2914,6 +2901,10 @@ snapshots:
   '@textlint/types@15.5.2':
     dependencies:
       '@textlint/ast-node-types': 15.5.2
+
+  '@types/adm-zip@0.5.7':
+    dependencies:
+      '@types/node': 22.19.15
 
   '@types/chai@5.2.3':
     dependencies:

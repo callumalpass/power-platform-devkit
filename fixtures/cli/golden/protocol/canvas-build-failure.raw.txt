@@ -1,3 +1,8 @@
 ERROR CANVAS_FORMULA_PROPERTY_INVALID: Formula property OnSelectFormula on Home/Layout/BrokenButton is not supported by the current Power Fx semantic slice.
-ERROR CANVAS_TEMPLATE_METADATA_MISSING: Template metadata for GhostCard@1.0.0 was not resolved for Home/Layout/GhostCard. (hint=Provide seeded metadata or load a matching template registry.)
-WARNING CANVAS_TEMPLATE_UNSUPPORTED: Template LegacyBadge@1.0.0 for Home/Layout/LegacyBadge is partial in strict mode. (detail=Supported modes: registry)
+ERROR CANVAS_TEMPLATE_METADATA_MISSING: Template metadata for GhostCard@1.0.0 was not resolved for Home/Layout/GhostCard. (hint=Inspect seed.templates.json to confirm it includes every required control template, or retry with --mode seeded if formula-only validation is sufficient for this legacy manifest.)
+WARNING CANVAS_TEMPLATE_UNSUPPORTED: Template LegacyBadge@1.0.0 for Home/Layout/LegacyBadge is partial in strict mode. (detail=Supported modes: registry If formula-only coverage is acceptable for this legacy manifest, retry with `pp canvas validate <REPO_ROOT>/fixtures/canvas/apps/diagnostic-app --mode seeded --format json`.)
+
+Next actions:
+- If formula-only coverage is acceptable for this legacy manifest, retry with `pp canvas validate <REPO_ROOT>/fixtures/canvas/apps/diagnostic-app --mode seeded --format json`.
+- Review `<REPO_ROOT>/fixtures/canvas/apps/diagnostic-app/seed.templates.json` and add the missing control templates before retrying strict mode.
+- Run `pp canvas inspect <REPO_ROOT>/fixtures/canvas/apps/diagnostic-app --mode strict --format json` to review the resolved registry stack and missing template requirements.

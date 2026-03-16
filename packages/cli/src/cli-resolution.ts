@@ -1,14 +1,12 @@
 import { createTokenProvider, type AuthProfile } from '@pp/auth';
-import { getEnvironmentAlias, saveEnvironmentAlias, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
+import { getEnvironmentAlias, loadProjectDefaults, saveEnvironmentAlias, type ConfigStoreOptions, type EnvironmentAlias } from '@pp/config';
 import { fail, ok, type OperationResult } from '@pp/diagnostics';
 import { HttpClient } from '@pp/http';
-import { discoverProject } from '@pp/project';
 import { resolveDataverseClient, type DataverseClient, type DataverseResolution } from '@pp/dataverse';
 import {
   argumentFailure,
   readConfigOptions,
   readFlag,
-  readProjectDiscoveryOptions,
   readPublicClientLoginOptions,
   resolveDefaultInvocationPath,
 } from './cli-support';
@@ -41,46 +39,15 @@ export async function resolveEnvironmentAliasForCli(args: string[], flag: string
     });
   }
 
-  const discoveryOptions = readProjectDiscoveryOptions(args);
+  const defaults = await loadProjectDefaults(resolveDefaultInvocationPath());
 
-  if (!discoveryOptions.success || !discoveryOptions.data) {
-    return discoveryOptions as unknown as OperationResult<string>;
-  }
-
-  const project = await discoverProject(resolveDefaultInvocationPath(), discoveryOptions.data);
-
-  if (!project.success || !project.data) {
-    return project as unknown as OperationResult<string>;
-  }
-
-  const errorDiagnostics = project.diagnostics.filter((diagnostic) => diagnostic.level === 'error');
-
-  if (errorDiagnostics.length > 0) {
-    return fail(errorDiagnostics, {
-      supportTier: project.supportTier,
-      warnings: project.warnings,
+  if (defaults.success && defaults.data?.environment) {
+    return ok(defaults.data.environment, {
+      supportTier: 'preview',
       details: {
-        projectRoot: project.data.root,
-        selectedStage: project.data.topology.selectedStage,
-        activeEnvironment: project.data.topology.activeEnvironment,
+        source: 'project-config',
+        configPath: defaults.data.configPath,
       },
-      provenance: project.provenance,
-      knownLimitations: project.knownLimitations,
-    });
-  }
-
-  if (project.data.topology.activeEnvironment) {
-    return ok(project.data.topology.activeEnvironment, {
-      supportTier: project.supportTier,
-      diagnostics: project.diagnostics,
-      warnings: project.warnings,
-      details: {
-        projectRoot: project.data.root,
-        selectedStage: project.data.topology.selectedStage,
-        source: 'project-topology',
-      },
-      provenance: project.provenance,
-      knownLimitations: project.knownLimitations,
     });
   }
 

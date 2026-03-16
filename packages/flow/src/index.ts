@@ -4730,7 +4730,11 @@ function buildFlowClientData(
   });
 }
 
-function resolveFlowClientDataSchemaVersion(value: unknown): string {
+function resolveFlowClientDataSchemaVersion(value: unknown): string | number {
+  if (value === undefined || value === null) {
+    return 1;
+  }
+
   if (typeof value === 'string') {
     const trimmed = value.trim();
 

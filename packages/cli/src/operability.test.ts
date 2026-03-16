@@ -30,17 +30,18 @@ describe('operability helpers', () => {
     const pwsh = renderCompletionScript('pwsh');
 
     expect(bash).toContain('complete -F _pp_complete pp');
-    expect(bash).toContain('diagnostics) COMPREPLY=( $(compgen -W "doctor bundle"');
+    expect(bash).toContain("'diagnostics')");
+    expect(bash).toContain("'doctor' 'bundle'");
     expect(zsh).toContain('#compdef pp');
-    expect(zsh).toContain("compadd -- 'doctor' 'bundle'");
-    expect(fish).toContain('complete -c pp -n "__fish_use_subcommand" -a "diagnostics"');
-    expect(fish).toContain('complete -c pp -n "__fish_seen_subcommand_from completion" -a "bash zsh fish pwsh"');
+    expect(zsh).toContain('compadd -- "${candidates[@]}"');
+    expect(fish).toContain('complete -c pp -f -a "(__pp_complete)"');
+    expect(fish).toContain("case 'diagnostics'");
     expect(pwsh).toContain('Register-ArgumentCompleter -Native -CommandName pp');
     expect(pwsh).toContain("'diagnostics'");
     expect(pwsh).toContain("'pwsh'");
   });
 
-  it('collects a warning-only doctor report for a non-project directory', async () => {
+  it('collects a warning-only doctor report for a directory without config', async () => {
     const root = await createTempDir();
     const report = await collectOperabilityDoctorReport(root, { configDir: join(root, '.config') });
 
@@ -50,33 +51,18 @@ describe('operability helpers', () => {
       summary: {
         version: CLI_VERSION,
         inspectedPath: root,
-        discoveredProject: false,
+        discoveredConfig: false,
       },
     });
     expect(report.diagnostics).toHaveLength(0);
-    expect(report.warnings.map((item) => item.code)).toContain('PP_PROJECT_NOT_FOUND');
-    expect(report.suggestedNextActions).toContain('pp project init --plan --format markdown');
+    expect(report.warnings.map((item) => item.code)).toContain('PP_CONFIG_NOT_FOUND');
   });
 
-  it('collects a discovered-project bundle with unresolved parameter visibility', async () => {
+  it('collects a discovered-config bundle with defaults', async () => {
     const root = await createTempDir();
     await writeFile(
       join(root, 'pp.config.yaml'),
-      [
-        'name: operability-fixture',
-        'defaults:',
-        '  environment: dev',
-        'providerBindings:',
-        '  primaryDataverse:',
-        '    kind: dataverse',
-        '    target: dev',
-        'parameters:',
-        '  tenantDomain:',
-        '    type: string',
-        '    fromEnv: PP_TENANT_DOMAIN',
-        '    required: true',
-        '',
-      ].join('\n'),
+      ['defaults:', '  environment: dev', '  solution: Core', 'artifacts:', '  solutions: .pp/solutions', ''].join('\n'),
       'utf8'
     );
 
@@ -89,16 +75,14 @@ describe('operability helpers', () => {
         packageName: CLI_PACKAGE_NAME,
         version: CLI_VERSION,
       },
-      project: {
+      defaults: {
         inspectedPath: root,
         discovered: true,
-        root,
         configPath: join(root, 'pp.config.yaml'),
-        unresolvedRequiredParameters: ['tenantDomain'],
-        providerBindingCount: 1,
+        environment: 'dev',
+        solution: 'Core',
+        artifactsDir: '.pp/solutions',
       },
     });
-    expect(bundle.diagnostics.map((item) => item.code)).toContain('PROJECT_PARAMETER_MISSING');
-    expect(bundle.suggestedNextActions).toContain('pp project doctor --format json');
   });
 });

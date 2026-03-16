@@ -1,5 +1,3 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type AuthProfile } from '@pp/auth';
 import { type EnvironmentAlias } from '@pp/config';
@@ -12,7 +10,7 @@ import { dispatchCommandRoute } from './command-dispatch';
 import { enforceWriteAccessForCliArgs } from './cli-access';
 import { buildPacEnvironmentGuidance } from './environment-commands';
 import { readEnvironmentAlias, readEnvironmentDefaultSolution, resolveDataverseClientByFlag, resolveDataverseClientForCli, resolveSolutionIdForCli } from './cli-resolution';
-import { createMutationPreview, createSuccessPayload, readMutationFlags } from './contract';
+import { createSuccessPayload, readMutationFlags } from './contract';
 import {
   argumentFailure,
   dedupeStrings,
@@ -589,41 +587,10 @@ export async function runFlowPatch(args: string[]): Promise<number> {
 
   const requestedOutPath = readFlag(args, '--out') ?? 'in-place';
 
-  if (mutation.data.mode !== 'apply') {
-    const previewOutRoot = await mkdtemp(join(tmpdir(), 'pp-flow-patch-preview-'));
+  const preview = maybeHandleMutationPreview(args, 'json', 'flow.patch', { inputPath, patchFile, outPath: requestedOutPath }, patch.data);
 
-    try {
-      const analysis = await new FlowService().patch(inputPath, patch.data as FlowPatchDocument, previewOutRoot);
-
-      if (!analysis.success || !analysis.data) {
-        return printFailure(analysis);
-      }
-
-      printByFormat(
-        createMutationPreview(
-          'flow.patch',
-          mutation.data,
-          { inputPath, patchFile, outPath: requestedOutPath },
-          patch.data,
-          analysis,
-          {
-            validation: {
-              patchAccepted: true,
-              operationCount: analysis.data.appliedOperations.length,
-            },
-            analysis: {
-              changed: analysis.data.changed,
-              appliedOperations: analysis.data.appliedOperations,
-              summary: analysis.data.summary,
-            },
-          }
-        ),
-        outputFormat(args, 'json')
-      );
-      return 0;
-    } finally {
-      await rm(previewOutRoot, { recursive: true, force: true });
-    }
+  if (preview !== undefined) {
+    return preview;
   }
 
   const result = await new FlowService().patch(inputPath, patch.data as FlowPatchDocument, readFlag(args, '--out'));
@@ -1510,8 +1477,8 @@ function buildModelArtifactProjectionReport(
     coverage: compactObject({
       componentMembershipSource: inferredReason ? 'dependencies' : 'appmodulecomponents',
       componentInspectionAvailable: omissionReason === undefined || inferredReason !== undefined,
-      omissionReason: omissionReason?.message,
-      inferredReason: inferredReason?.message,
+      omissionReason: omissionReason ? { code: omissionReason.code, message: omissionReason.message } : undefined,
+      inferenceReason: inferredReason ? { code: inferredReason.code } : undefined,
     }),
   });
 }

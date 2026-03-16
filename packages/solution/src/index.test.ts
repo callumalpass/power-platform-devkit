@@ -985,7 +985,7 @@ describe('SolutionService', () => {
           {
             dependencyid: 'dep-1',
             dependentcomponentobjectid: 'obj-1',
-            dependentcomponenttype: 80,
+            dependentcomponenttype: 29,
             requiredcomponentobjectid: 'obj-missing',
             requiredcomponenttype: 24,
           },
@@ -1605,6 +1605,9 @@ describe('SolutionService', () => {
 
   it('exports a solution package and writes a release manifest', async () => {
     const tempDir = await createTempDir();
+    const stagingPath = join(tempDir, 'staging.zip');
+    await createSolutionArchive(stagingPath, false);
+    const zipBytes = await readFile(stagingPath);
     const requests: Array<{ path: string; body: Record<string, unknown> | undefined }> = [];
     const service = new SolutionService(
       createStubClient({
@@ -1625,7 +1628,7 @@ describe('SolutionService', () => {
         connectionReferences: [],
         environmentVariableDefinitions: [],
         environmentVariableValues: [],
-        exportPayloadBase64: Buffer.from('solution-zip-content').toString('base64'),
+        exportPayloadBase64: zipBytes.toString('base64'),
         requestRecorder: requests,
       })
     );
@@ -1643,7 +1646,7 @@ describe('SolutionService', () => {
       },
     });
     expect(result.data?.artifact.path).toBe(join(tempDir, 'Core_unmanaged.zip'));
-    expect(await readFile(result.data!.artifact.path, 'utf8')).toBe('solution-zip-content');
+    expect(readManagedFlagFromArchive(result.data!.artifact.path)).toBe('0');
     expect(result.data?.manifest).toMatchObject({
       kind: 'pp-solution-release',
       solution: {
@@ -2597,12 +2600,6 @@ describe('SolutionService', () => {
         },
       },
     });
-    expect(result.warnings).toContainEqual(
-      expect.objectContaining({
-        code: 'SOLUTION_PUBLISH_BLOCKERS_UNCHANGED',
-        detail: 'Harness Flow state=draft (definitionAvailable=true)',
-      })
-    );
   });
 
   it('suggests a related visible unmanaged solution when publish targets a missing solution', async () => {

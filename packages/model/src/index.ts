@@ -612,7 +612,7 @@ export class ModelService {
     return ok(data, {
       supportTier: 'preview',
       diagnostics: mergeDiagnostics(
-        apps.diagnostics,
+        apps.diagnostics.filter((d) => d.level !== 'info'),
         components.diagnostics,
         forms.diagnostics,
         views.diagnostics,

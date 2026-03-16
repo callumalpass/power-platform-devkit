@@ -2275,6 +2275,7 @@ export async function inspectCanvasApp(
       supportTier: 'preview',
       diagnostics: prepared.data.diagnostics,
       warnings: prepared.data.warnings,
+      suggestedNextActions: prepared.suggestedNextActions,
     }
   );
 }

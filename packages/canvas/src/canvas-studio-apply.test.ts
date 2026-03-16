@@ -39,7 +39,7 @@ describe('canvas studio apply persistent context launch options', () => {
       debug: false,
       headless: true,
       slowMoMs: 250,
-    });
+    })!;
 
     expect(launchOptions.channel).toBe('msedge');
     expect(launchOptions.executablePath).toBeUndefined();
@@ -55,7 +55,7 @@ describe('canvas studio apply persistent context launch options', () => {
       debug: true,
       headless: true,
       slowMoMs: 500,
-    });
+    })!;
 
     expect(launchOptions.executablePath).toBe('/opt/browser/custom-browser');
     expect(launchOptions.channel).toBeUndefined();
