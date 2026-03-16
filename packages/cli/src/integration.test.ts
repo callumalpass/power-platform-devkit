@@ -58,30 +58,20 @@ describe('cli fixture-backed workflows', () => {
 
     expect(code).toBe(0);
     expect(stderr.join('')).toBe('');
-    expect(stdout.join('')).toContain('Power Platform CLI for local project work, Dataverse environments, solutions, and deployment workflows.');
+    expect(stdout.join('')).toContain('Power Platform CLI for authenticated Dataverse access, solution lifecycle,');
     expect(stdout.join('')).toContain('auth profile        how pp gets credentials');
     expect(stdout.join('')).toContain('environment alias   named Dataverse target that points to a URL and auth profile');
-    expect(stdout.join('')).toContain('project/stage -> environment alias -> auth profile -> token -> Dataverse/solution');
-    expect(stdout.join('')).toContain('Top-level areas:');
+    expect(stdout.join('')).toContain('Commands:');
     expect(stdout.join('')).toContain('  auth          manage auth profiles, browser profiles, login, and tokens');
     expect(stdout.join('')).toContain('  env           manage Dataverse environment aliases');
-    expect(stdout.join('')).toContain('  solution      inspect and mutate solutions');
-    expect(stdout.join('')).toContain('  mcp           stdio MCP server hosting');
-    expect(stdout.join('')).toContain('  diagnostics   install/config/project diagnostics');
+    expect(stdout.join('')).toContain('  solution      solution lifecycle');
+    expect(stdout.join('')).toContain('  mcp           stdio MCP server for agent integration');
+    expect(stdout.join('')).toContain('  diagnostics   installation and configuration diagnostics');
     expect(stdout.join('')).toContain('pp auth profile add-user --name work');
     expect(stdout.join('')).toContain('pp env add dev --url https://contoso.crm.dynamics.com --profile work');
-    expect(stdout.join('')).toContain('pp mcp serve --project .');
-    expect(stdout.join('')).toContain('Use `pp env --help` to browse alias lifecycle commands before choosing `env add`, `env inspect`, or bootstrap cleanup flows.');
-    expect(stdout.join('')).toContain(
-      '`auth profile add-env` means "read a token from an environment variable", not "register a Dataverse environment alias".'
-    );
-    expect(stdout.join('')).toContain('pp auth profile --help');
-    expect(stdout.join('')).toContain('pp auth profile add-env --help');
-    expect(stdout.join('')).toContain('pp env --help');
-    expect(stdout.join('')).toContain(
-      'For machine-readable stdout in local source-backed runs, prefer `node scripts/run-pp-dev.mjs ...`; `pnpm pp -- ...` can prepend package-runner banner lines.'
-    );
-    expect(stdout.join('')).not.toContain('canvas import <file.msapp>');
+    expect(stdout.join('')).toContain('pp dv whoami --env dev');
+    expect(stdout.join('')).toContain('pp solution list --env dev');
+    expect(stdout.join('')).toContain('pp.config.yaml');
   });
 
   it('prints version, completion, and diagnostics help as first-class product commands', async () => {
@@ -136,7 +126,7 @@ describe('cli fixture-backed workflows', () => {
     expect(mcpServeHelp.stdout).toContain('"args": ["mcp", "serve", "--project", "."]');
   });
 
-  it('prints canvas-specific help with remote workflow guidance', async () => {
+  it('prints canvas-specific help with local and remote workflow guidance', async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
@@ -156,16 +146,11 @@ describe('cli fixture-backed workflows', () => {
     expect(code).toBe(0);
     expect(stderr.join('')).toBe('');
     expect(stdout.join('')).toContain('Usage: canvas <command> [options]');
+    expect(stdout.join('')).toContain('Local canvas tooling:');
+    expect(stdout.join('')).toContain('validate <path>');
+    expect(stdout.join('')).toContain('build <path>');
+    expect(stdout.join('')).toContain('pp canvas inspect ./apps/MyCanvas --mode strict');
     expect(stdout.join('')).toContain('pp canvas list --environment dev --solution Core');
-    expect(stdout.join('')).toContain('pp canvas download "Harness Canvas" --environment dev --solution Core --out ./artifacts/HarnessCanvas.msapp');
-    expect(stdout.join('')).toContain('pp canvas import ./dist/HarnessCanvas.msapp --environment dev --solution Core --target "Harness Canvas"');
-    expect(stdout.join('')).toContain('pp canvas probe "Harness Canvas" --environment dev --solution Core --browser-profile maker-work');
-    expect(stdout.join('')).toContain(
-      'Remote canvas download exports the containing solution through Dataverse and extracts CanvasApps/*.msapp without leaving pp.'
-    );
-    expect(stdout.join('')).toContain(
-      'Remote canvas import replaces one explicit CanvasApps/*.msapp entry by exporting and re-importing the containing solution through Dataverse.'
-    );
   });
 
   it('routes nested help through the generic command dispatcher', async () => {
@@ -3488,10 +3473,10 @@ describe('cli fixture-backed workflows', () => {
     expect(dependencies.code).toBe(0);
     expect(dependencies.stderr).toBe('');
 
-    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/cli/golden/protocol/solution-list-report.json');
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/solution-inspect-report.json');
-    await expectGoldenJson(JSON.parse(components.stdout), 'fixtures/solution/golden/components-report.json');
-    await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/solution/golden/dependencies-report.json');
+    await expectGoldenJson(JSON.parse(components.stdout), 'fixtures/cli/golden/protocol/solution-components-report.json');
+    await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/cli/golden/protocol/solution-dependencies-report.json');
   });
 
   it('rejects unsupported output formats instead of falling back to json', async () => {
@@ -4061,7 +4046,7 @@ describe('cli fixture-backed workflows', () => {
 
     expect(list.code).toBe(0);
     expect(list.stderr).toBe('');
-    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/cli/golden/protocol/solution-list-report.json');
   });
 
   it('lets explicit --environment override the active project environment for solution list', async () => {
@@ -4248,7 +4233,7 @@ describe('cli fixture-backed workflows', () => {
 
     expect(list.code).toBe(0);
     expect(list.stderr).toBe('');
-    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/solution/golden/list-report.json');
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/cli/golden/protocol/solution-list-report.json');
   });
 
   it('exports and imports solution artifacts through the CLI entrypoint', async () => {
@@ -7202,12 +7187,12 @@ describe('cli fixture-backed workflows', () => {
     expect(dependencies.code).toBe(0);
     expect(dependencies.stderr).toBe('');
 
-    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/model/golden/list-report.json');
+    await expectGoldenJson(JSON.parse(list.stdout), 'fixtures/cli/golden/protocol/model-list-report.json');
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/cli/golden/protocol/model-inspect-report.json');
-    await expectGoldenJson(JSON.parse(sitemap.stdout), 'fixtures/model/golden/sitemap-report.json');
-    await expectGoldenJson(JSON.parse(forms.stdout), 'fixtures/model/golden/forms-report.json');
-    await expectGoldenJson(JSON.parse(views.stdout), 'fixtures/model/golden/views-report.json');
-    await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/model/golden/dependencies-report.json');
+    await expectGoldenJson(JSON.parse(sitemap.stdout), 'fixtures/cli/golden/protocol/model-sitemap-report.json');
+    await expectGoldenJson(JSON.parse(forms.stdout), 'fixtures/cli/golden/protocol/model-forms-report.json');
+    await expectGoldenJson(JSON.parse(views.stdout), 'fixtures/cli/golden/protocol/model-views-report.json');
+    await expectGoldenJson(JSON.parse(dependencies.stdout), 'fixtures/cli/golden/protocol/model-dependencies-report.json');
   });
 
   it('explains empty model artifact projections when component inspection is unavailable', async () => {

@@ -1,0 +1,28 @@
+{
+  "app": {
+    "id": "app-1",
+    "name": "Sales Hub",
+    "publishedOn": "2026-03-01T08:00:00.000Z",
+    "stateCode": 0,
+    "uniqueName": "SalesHub",
+    "version": "1.0.0.0"
+  },
+  "coverage": {
+    "componentInspectionAvailable": true,
+    "componentMembershipSource": "appmodulecomponents"
+  },
+  "items": [
+    {
+      "formType": 2,
+      "id": "form-1",
+      "name": "Account Main",
+      "table": "account"
+    }
+  ],
+  "summary": {
+    "artifactKind": "form",
+    "componentCount": 5,
+    "count": 1,
+    "missingComponentCount": 1
+  }
+}

@@ -139,17 +139,14 @@ describe('remote discovery help integration coverage', () => {
 
     expect(rootHelp.code).toBe(0);
     expect(rootHelp.stderr).toBe('');
-    expect(rootHelp.stdout).toContain('Top-level areas:');
-    expect(rootHelp.stdout).toContain('Use `pp env --help` to browse alias lifecycle commands before choosing `env add`, `env inspect`, or bootstrap cleanup flows.');
-    expect(rootHelp.stdout).toContain(
-      '`auth profile add-env` means "read a token from an environment variable", not "register a Dataverse environment alias".'
-    );
-    expect(rootHelp.stdout).toContain('pp auth profile add-env --help');
-    expect(rootHelp.stdout).toContain('pp env --help');
-    expect(rootHelp.stdout).toContain('  model         inspect model-driven apps');
-    expect(rootHelp.stdout).toContain('  connref       inspect, validate, and mutate connection references');
-    expect(rootHelp.stdout).toContain('  envvar        inspect and mutate environment variables');
-    expect(rootHelp.stdout).toContain('pp solution list --help');
+    expect(rootHelp.stdout).toContain('Commands:');
+    expect(rootHelp.stdout).toContain('  auth          manage auth profiles, browser profiles, login, and tokens');
+    expect(rootHelp.stdout).toContain('  env           manage Dataverse environment aliases');
+    expect(rootHelp.stdout).toContain('  dv            Dataverse requests, rows, and metadata workflows');
+    expect(rootHelp.stdout).toContain('  solution      solution lifecycle');
+    expect(rootHelp.stdout).toContain('  canvas        local canvas app validation');
+    expect(rootHelp.stdout).toContain('  flow          local flow validation');
+    expect(rootHelp.stdout).toContain('  mcp           stdio MCP server for agent integration');
 
     expect(connrefHelp.code).toBe(0);
     expect(connrefHelp.stderr).toBe('');

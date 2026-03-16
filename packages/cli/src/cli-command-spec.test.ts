@@ -17,9 +17,9 @@ describe('cli command spec', () => {
   it('emits completion nodes for deep command paths', () => {
     const nodes = buildCompletionNodes();
     const authProfile = nodes.find((node) => node.path.join(' ') === 'auth profile');
-    const sharepointSite = nodes.find((node) => node.path.join(' ') === 'sharepoint site');
+    const canvasPatch = nodes.find((node) => node.path.join(' ') === 'canvas patch');
 
     expect(authProfile?.subcommands).toContain('add-user');
-    expect(sharepointSite?.subcommands).toEqual(['inspect']);
+    expect(canvasPatch?.subcommands).toContain('plan');
   });
 });

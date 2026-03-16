@@ -48,11 +48,7 @@ const PLAN_OPTION = option('--plan');
 const DRY_RUN_OPTION = option('--dry-run');
 const MODE_OPTION = option('--mode', ['strict', 'seeded', 'registry']);
 const KIND_OPTION = option('--kind', ['app', 'form', 'view', 'sitemap']);
-const STAGE_OPTION = option('--stage');
-const PARAM_OPTION = option('--param');
-
 const COMMON_OUTPUT_OPTIONS = [HELP_OPTION, FORMAT_OPTION] as const;
-const COMMON_PROJECT_OPTIONS = [HELP_OPTION, FORMAT_OPTION, PROJECT_OPTION, STAGE_OPTION, PARAM_OPTION] as const;
 const COMMON_ENVIRONMENT_OPTIONS = [HELP_OPTION, FORMAT_OPTION, CONFIG_DIR_OPTION, ENVIRONMENT_OPTION] as const;
 const COMMON_ENVIRONMENT_SOLUTION_OPTIONS = [
   HELP_OPTION,
@@ -330,19 +326,9 @@ export const CLI_COMMAND_SPEC: CliCommandSpec = {
         command('inspect', { options: COMMON_ENVIRONMENT_SOLUTION_OPTIONS }),
         command('export', { options: [...COMMON_ENVIRONMENT_SOLUTION_OPTIONS, option('--out')] }),
         command('activate', { options: [...COMMON_ENVIRONMENT_SOLUTION_OPTIONS, ...COMMON_MUTATION_OPTIONS] }),
-        command('promote', { options: [...COMMON_ENVIRONMENT_SOLUTION_OPTIONS, ...COMMON_MUTATION_OPTIONS] }),
-        command('unpack', { options: COMMON_OUTPUT_OPTIONS }),
-        command('pack', { options: COMMON_OUTPUT_OPTIONS }),
-        command('deploy', { options: [...COMMON_ENVIRONMENT_SOLUTION_OPTIONS, ...COMMON_MUTATION_OPTIONS] }),
         command('normalize', { options: COMMON_OUTPUT_OPTIONS }),
         command('validate', { options: COMMON_OUTPUT_OPTIONS }),
-        command('graph', { options: COMMON_OUTPUT_OPTIONS }),
-        command('patch', { options: COMMON_OUTPUT_OPTIONS }),
-        command('runs', { options: COMMON_ENVIRONMENT_SOLUTION_OPTIONS }),
-        command('monitor', { options: COMMON_ENVIRONMENT_SOLUTION_OPTIONS }),
-        command('errors', { options: COMMON_ENVIRONMENT_SOLUTION_OPTIONS }),
         command('connrefs', { options: COMMON_ENVIRONMENT_SOLUTION_OPTIONS }),
-        command('doctor', { options: COMMON_ENVIRONMENT_SOLUTION_OPTIONS }),
         command('access', { options: COMMON_ENVIRONMENT_OPTIONS }),
         command('lsp', { options: [] }),
       ],
@@ -367,77 +353,9 @@ export const CLI_COMMAND_SPEC: CliCommandSpec = {
         }),
       ],
     }),
-    command('project', {
-      children: [
-        command('solution', {
-          children: [command('pull', { options: COMMON_PROJECT_OPTIONS })],
-        }),
-        command('init', { options: COMMON_PROJECT_OPTIONS }),
-        command('doctor', { options: COMMON_PROJECT_OPTIONS }),
-        command('feedback', { options: COMMON_PROJECT_OPTIONS }),
-        command('inspect', { options: COMMON_PROJECT_OPTIONS }),
-      ],
-    }),
-    command('analysis', {
-      children: [
-        command('report', { options: COMMON_PROJECT_OPTIONS }),
-        command('context', { options: COMMON_PROJECT_OPTIONS }),
-        command('portfolio', { options: COMMON_PROJECT_OPTIONS }),
-        command('drift', { options: COMMON_PROJECT_OPTIONS }),
-        command('usage', { options: COMMON_PROJECT_OPTIONS }),
-        command('policy', { options: COMMON_PROJECT_OPTIONS }),
-      ],
-    }),
-    command('deploy', {
-      children: [
-        command('plan', { options: COMMON_PROJECT_OPTIONS }),
-        command('apply', { options: COMMON_PROJECT_OPTIONS }),
-        command('release', { options: COMMON_PROJECT_OPTIONS }),
-      ],
-    }),
-    command('init', {
-      children: [
-        command('start', { options: [HELP_OPTION, FORMAT_OPTION, option('--goal'), option('--auth-mode'), option('--no-interactive')] }),
-        command('status', { options: COMMON_OUTPUT_OPTIONS }),
-        command('resume', { options: COMMON_OUTPUT_OPTIONS }),
-        command('answer', { options: COMMON_OUTPUT_OPTIONS }),
-        command('cancel', { options: COMMON_OUTPUT_OPTIONS }),
-      ],
-    }),
     command('mcp', {
       children: [
-        command('serve', { options: [HELP_OPTION, CONFIG_DIR_OPTION, PROJECT_OPTION, option('--allow-interactive-auth')] }),
-      ],
-    }),
-    command('sharepoint', {
-      children: [
-        command('site', { children: [command('inspect', { options: [HELP_OPTION, FORMAT_OPTION, PROJECT_OPTION, PROFILE_OPTION] })] }),
-        command('list', {
-          children: [command('inspect', { options: [HELP_OPTION, FORMAT_OPTION, PROJECT_OPTION, PROFILE_OPTION, option('--site')] })],
-        }),
-        command('file', {
-          children: [
-            command('inspect', { options: [HELP_OPTION, FORMAT_OPTION, PROJECT_OPTION, PROFILE_OPTION, option('--site'), option('--drive')] }),
-          ],
-        }),
-        command('permissions', {
-          children: [
-            command('inspect', { options: [HELP_OPTION, FORMAT_OPTION, PROJECT_OPTION, PROFILE_OPTION, option('--site'), option('--list'), option('--file'), option('--drive')] }),
-          ],
-        }),
-      ],
-    }),
-    command('powerbi', {
-      children: [
-        command('workspace', {
-          children: [command('inspect', { options: [HELP_OPTION, FORMAT_OPTION, PROJECT_OPTION, PROFILE_OPTION] })],
-        }),
-        command('dataset', {
-          children: [command('inspect', { options: [HELP_OPTION, FORMAT_OPTION, PROJECT_OPTION, PROFILE_OPTION, option('--workspace')] })],
-        }),
-        command('report', {
-          children: [command('inspect', { options: [HELP_OPTION, FORMAT_OPTION, PROJECT_OPTION, PROFILE_OPTION, option('--workspace')] })],
-        }),
+        command('serve', { options: [HELP_OPTION, CONFIG_DIR_OPTION, option('--allow-interactive-auth')] }),
       ],
     }),
     command('diagnostics', {

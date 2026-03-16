@@ -6,64 +6,47 @@ export function printHelp(): void {
   writeHelp([
     'pp',
     '',
-    'Power Platform CLI for local project work, Dataverse environments, solutions, and deployment workflows.',
+    'Power Platform CLI for authenticated Dataverse access, solution lifecycle,',
+    'and local canvas and flow tooling.',
     '',
     'Concepts:',
     '  auth profile        how pp gets credentials',
     '  environment alias   named Dataverse target that points to a URL and auth profile',
-    '  stage               project topology selector for deploy and analysis workflows',
     '',
-    'Resolution model:',
-    '  project/stage -> environment alias -> auth profile -> token -> Dataverse/solution',
+    'Resolution:',
+    '  --environment flag -> pp.config.yaml defaults -> environment alias -> auth profile -> token',
     '',
-    'Top-level areas:',
+    'Commands:',
     '  auth          manage auth profiles, browser profiles, login, and tokens',
     '  env           manage Dataverse environment aliases',
     '  dv            Dataverse requests, rows, and metadata workflows',
-    '  solution      inspect and mutate solutions',
-    '  connref       inspect, validate, and mutate connection references',
-    '  envvar        inspect and mutate environment variables',
-    '  canvas        inspect and package canvas apps',
-    '  flow          inspect and package flows',
-    '  model         inspect model-driven apps',
-    '  project       manage local pp project layout and topology',
-    '  analysis      project analysis and context capture',
-    '  deploy        deployment planning and apply workflows',
-    '  mcp           stdio MCP server hosting',
-    '  sharepoint    inspect SharePoint bindings and assets',
-    '  powerbi       inspect Power BI bindings and assets',
-    '  diagnostics   install/config/project diagnostics',
-    '  init          guided, resumable first-run setup for auth, environments, browser bootstrap, and project scaffold',
-    '  completion    shell completion script generation',
+    '  solution      solution lifecycle: list, inspect, create, export, import, publish',
+    '  canvas        local canvas app validation, linting, building, and inspection',
+    '  flow          local flow validation, linting, and inspection',
+    '  mcp           stdio MCP server for agent integration',
+    '',
+    'Utilities:',
+    '  diagnostics   installation and configuration diagnostics',
     '  version       print the CLI version',
+    '  completion    shell completion script generation',
     '',
     'Getting started:',
     '  pp auth profile add-user --name work',
     '  pp env add dev --url https://contoso.crm.dynamics.com --profile work',
-    '  pp init',
-    '  pp dv whoami --environment dev',
-    '  pp mcp serve --project .',
+    '  pp dv whoami --env dev',
+    '  pp solution list --env dev',
     '',
-    'Discovery guide:',
-    '  - Use `pp env --help` to browse alias lifecycle commands before choosing `env add`, `env inspect`, or bootstrap cleanup flows.',
-    '  - Use `pp auth profile --help` when you are choosing a credential source; `auth profile add-env` means "read a token from an environment variable", not "register a Dataverse environment alias".',
+    'Local defaults (pp.config.yaml):',
+    '  defaults:',
+    '    environment: dev',
+    '    solution: Core',
+    '  artifacts:',
+    '    solutions: .pp/solutions',
     '',
-    'Examples:',
-    '  pp auth --help',
-    '  pp auth profile --help',
-    '  pp auth profile add-env --help',
-    '  pp env --help',
-    '  pp env add --help',
-    '  pp solution list --help',
-    '',
-    'Common output option:',
+    'Common options:',
     '  --format table|json|yaml|ndjson|markdown|raw',
-    '  For machine-readable stdout in local source-backed runs, prefer `node scripts/run-pp-dev.mjs ...`; `pnpm pp -- ...` can prepend package-runner banner lines.',
-    '',
-    'Mutation command options:',
-    '  --dry-run  render a mutation preview without side effects',
+    '  --dry-run  preview mutations without side effects',
     '  --plan     render a mutation plan without side effects',
-    '  --yes      record non-interactive confirmation for guarded workflows',
   ]);
 }
 
@@ -100,84 +83,6 @@ export function printAuthHelp(): void {
     '',
     'See also:',
     '  - Use `pp env add` to bind a Dataverse environment URL to an existing auth profile.',
-  ]);
-}
-
-export function printInitHelp(): void {
-  writeHelp([
-    'Usage:',
-    '  init [root] [options]',
-    '  init status <session-id> [options]',
-    '  init resume <session-id> [options]',
-    '  init answer <session-id> --set field=value [--set field=value ...] [options]',
-    '  init cancel <session-id> [options]',
-    '',
-    'Guided setup for first-run pp use. The init workflow is resumable so CLI and agent surfaces can pause for user input or browser work and continue later.',
-    '',
-    'Common options:',
-    '  --goal dataverse|maker|project|full',
-    '  --auth-mode user|device-code|environment-token|client-secret|static-token',
-    '  --profile NAME',
-    '  --env ALIAS',
-    '  --url https://contoso.crm.dynamics.com',
-    '  --browser-profile NAME',
-    '  --name PROJECT_NAME',
-    '  --solution UNIQUE_NAME',
-    '  --stage NAME',
-    '  --config-dir path',
-    '  --format table|json|yaml|ndjson|markdown|raw',
-    '',
-    'Behavior:',
-    '  - Creates or reuses auth profiles and environment aliases.',
-    '  - Blocks on external actions such as browser login or browser-profile bootstrap, then resumes cleanly.',
-    '  - Optionally scaffolds a local project and verifies it with `project doctor`.',
-    '',
-    'Examples:',
-    '  pp init',
-    '  pp init --goal dataverse --auth-mode environment-token --profile ci --token-env PP_TOKEN --env dev --url https://contoso.crm.dynamics.com',
-    '  pp init status <session-id>',
-    '  pp init answer <session-id> --set solutionName=Core --set projectName=demo',
-    '  pp init resume <session-id>',
-  ]);
-}
-
-export function printInitStatusHelp(): void {
-  writeHelp([
-    'Usage: init status <session-id> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-    '',
-    'Print the persisted state of one init session, including any blocked prompt or external action.',
-  ]);
-}
-
-export function printInitResumeHelp(): void {
-  writeHelp([
-    'Usage: init resume <session-id> [options]',
-    '',
-    'Resume a setup session after you have answered a question, completed browser auth, or completed browser-profile bootstrap.',
-    '',
-    'Useful options:',
-    '  --set field=value is not supported here; use `pp init answer` for explicit field updates.',
-    '  --format table|json|yaml|ndjson|markdown|raw',
-  ]);
-}
-
-export function printInitAnswerHelp(): void {
-  writeHelp([
-    'Usage: init answer <session-id> --set field=value [--set field=value ...] [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-    '',
-    'Apply one or more answers to a persisted init session and then re-evaluate the next blocked step.',
-    '',
-    'Examples:',
-    '  pp init answer <session-id> --set goal=full',
-    '  pp init answer <session-id> --set environmentUrl=https://contoso.crm.dynamics.com --set environmentAlias=dev',
-  ]);
-}
-
-export function printInitCancelHelp(): void {
-  writeHelp([
-    'Usage: init cancel <session-id> [--config-dir path] [--format table|json|yaml|ndjson|markdown|raw]',
-    '',
-    'Mark a persisted init session as cancelled without deleting the underlying config artifacts it may already have created.',
   ]);
 }
 
