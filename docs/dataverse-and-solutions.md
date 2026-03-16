@@ -1,13 +1,8 @@
 # Dataverse and solutions
 
-This is the most important remote workflow guide in `pp`.
+The `pp` CLI provides environment-alias-driven access to Dataverse. You authenticate through an auth profile, bind an environment alias to that profile, and then run `dv` or `solution` commands against the alias.
 
-The current Dataverse surface is environment-alias driven and exposes both
-generic Web API access and a useful layer of typed helpers.
-
-You authenticate once through an auth profile, bind an environment alias to that profile, and then run `dv` or `solution` commands against the alias.
-
-If you are new to `pp`, start with these:
+If you are new to `pp`, run these four commands first to confirm that auth, environment targeting, and solution listing all work:
 
 ```bash
 pp dv whoami --env dev
@@ -16,237 +11,102 @@ pp solution list --env dev
 pp solution inspect Core --env dev
 ```
 
-Use the rest of this guide as command reference once those paths are already
-working.
-
-## Common jobs
-
-Most users come here to do one of these jobs:
-
-1. confirm that auth and environment targeting work
-2. inspect Dataverse rows or metadata
-3. inspect or export a solution
-4. make a small, explicit Dataverse change
-5. drop into lower-level Web API access when the typed helper does not exist
-
-Use these command paths first:
-
-### Confirm access works
-
-```bash
-pp dv whoami --env dev
-pp dv query accounts --env dev --top 5
-pp solution list --env dev
-```
-
-### Inspect Dataverse data safely
-
-```bash
-pp dv query accounts --env dev --select name,accountnumber --top 10
-pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
-pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
-pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
-```
-
-### Inspect solutions
-
-```bash
-pp solution list --env dev
-pp solution inspect Core --env dev
-pp solution export Core --env dev --out ./artifacts/solutions/Core.zip --plan
-```
-
-### Make an explicit change
-
-```bash
-pp dv create accounts --env dev --body '{"name":"Acme"}'
-pp dv update accounts 00000000-0000-0000-0000-000000000001 --env dev --body '{"telephone1":"+1 555 0100"}'
-pp dv delete accounts 00000000-0000-0000-0000-000000000001 --env dev
-```
-
-When you are unsure, prefer read commands first and inspect the resolved output
-before running mutations.
+Once those paths are working, use the rest of this guide as needed. The sections are organized around the tasks you are most likely to do: querying data, mutating rows, inspecting or authoring metadata, and working with solutions. If you already know what you need, jump directly to the relevant section. If you are exploring, read linearly from here -- each section builds on the concepts introduced earlier.
 
 ## Prerequisite
+
+Before any `dv` or `solution` command will work, you need an auth profile and an environment alias pointing at it:
 
 ```bash
 pp auth login --name dev-user --resource https://example.crm.dynamics.com
 pp env add --name dev --url https://example.crm.dynamics.com --profile dev-user
 ```
 
-## Recommended reading path in this guide
+## Verifying access with `dv whoami`
 
-Read only the section that matches the job you have:
-
-- start with [`dv whoami`](#dv-whoami) and [`dv query`](#dv-query) for routine inspection
-- jump to [Connection references](#connection-references) or [Environment variables](#environment-variables) for deploy-adjacent Dataverse targets
-- jump to [`dv metadata`](#dv-metadata) for schema inspection and authoring
-- jump to [Solution commands](#solution-commands) for solution lifecycle work
-- use [`dv request`](#dv-request), [`dv action`](#dv-action), or [`dv function`](#dv-function) only when you need lower-level access
-
-## Dataverse command reference
-
-## `dv whoami`
+The `dv whoami` command calls the Dataverse `WhoAmI()` function and returns the `BusinessUnitId`, `OrganizationId`, and `UserId` along with the resolved environment alias and auth profile. It is the fastest way to confirm that your credentials and environment alias are configured correctly.
 
 ```bash
 pp dv whoami --env dev
 pp dv whoami --env dev --format json
 ```
 
-Calls Dataverse `WhoAmI()` and returns:
+Use `--format json` when you need machine-readable output.
 
-- `BusinessUnitId`
-- `OrganizationId`
-- `UserId`
-- the resolved environment alias and auth profile
+## Querying data with `dv query` and `dv get`
 
-Supported flags:
-
-- `--format`
-
-## `dv request`
-
-For raw Web API access, use:
+`dv query` retrieves a collection of rows from a logical table. You control which columns come back with `--select`, restrict results with `--filter` (any valid OData filter expression), order them with `--orderby`, and cap the count with `--top`. Pass `--expand` to inline related records, and `--count` to include the total row count in the response.
 
 ```bash
-pp dv request "EntityDefinitions?\$select=LogicalName,SchemaName" --env dev
+pp dv query accounts --env dev
+pp dv query accounts --env dev --select name,accountnumber --top 10
+pp dv query solutions --env dev --filter "uniquename eq 'Core'"
+pp dv query accounts --env dev --expand primarycontactid($select=fullname) --orderby name asc --count
 ```
 
-You can also send arbitrary methods and request bodies:
+For paging, `--all` follows `@odata.nextLink` until the full result set is collected, while `--page-info` returns just the first page together with the `count` and `nextLink`. You can also tune page size with `--max-page-size`. The `--annotations` flag controls OData annotation inclusion, and `--format` sets the output format.
 
 ```bash
-pp dv request "accounts" \
+pp dv query accounts --env dev --all
+pp dv query accounts --env dev --page-info
+```
+
+When you need a single row rather than a collection, use `dv get` with the logical table name and GUID. It supports `--select`, `--expand`, and `--annotations`.
+
+```bash
+pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
+```
+
+## Mutating rows with `dv create`, `dv update`, and `dv delete`
+
+These three commands map directly to Dataverse POST, PATCH, and DELETE operations on entity collections.
+
+`dv create` inserts a new row. Pass the payload as inline JSON with `--body` or from a file with `--body-file`. Adding `--return-representation` tells Dataverse to return the created record, which you can further shape with `--select` and `--expand`. The `--if-match` and `--if-none-match` flags set the corresponding HTTP concurrency headers, and `--annotations` controls OData annotation inclusion.
+
+```bash
+pp dv create accounts --env dev --body '{"name":"Acme"}'
+pp dv create accounts --env dev --body-file ./account.json --return-representation
+```
+
+`dv update` patches an existing row identified by table name and GUID. It accepts the same flags as `dv create`.
+
+```bash
+pp dv update accounts 00000000-0000-0000-0000-000000000001 \
   --env dev \
-  --method POST \
-  --body '{"name":"Acme"}'
+  --body '{"name":"Renamed"}'
 ```
 
-Supported flags:
-
-- `--method`
-- `--body`
-- `--body-file`
-- `--response-type json|text|void`
-- repeated `--header "Name: value"`
-- `--format`
-
-## `dv action`
-
-For first-class Dataverse actions, use:
+`dv delete` removes a row. The only additional flag beyond `--env` is `--if-match` for concurrency control.
 
 ```bash
-pp dv action ExportSolution --env dev --body '{"SolutionName":"Core","Managed":false}'
-pp dv action AddToQueue --env dev --bound-path 'queues(<queue-id>)' --body-file ./queue-item.json
+pp dv delete accounts 00000000-0000-0000-0000-000000000001 --env dev
 ```
 
-Supported flags:
+When you are unsure about the data, prefer read commands first and inspect the resolved output before running mutations.
 
-- `--body`
-- `--body-file`
-- `--bound-path`
-- `--response-type json|text|void`
-- repeated `--header "Name: value"`
-- `--solution`
-- `--format`
+## Row-set workflows with `dv rows`
 
-## `dv function`
+When you need to export or apply batches of rows without hand-writing HTTP batch fragments, use `dv rows`.
 
-For first-class Dataverse functions, use:
+### Exporting rows
 
-```bash
-pp dv function sample_GetCount --env dev --param logicalName=account
-pp dv function RetrieveTotalRecordCount --env dev --param-json includeInternal=false
-```
-
-Supported flags:
-
-- repeated `--param key=value`
-- repeated `--param-json key=JSON`
-- `--bound-path`
-- `--response-type json|text|void`
-- repeated `--header "Name: value"`
-- `--format`
-
-## `dv batch`
-
-Execute a Dataverse `$batch` manifest:
-
-```bash
-pp dv batch --env dev --file ./specs/account-batch.yaml
-```
-
-Supported flags:
-
-- `--file`
-- `--continue-on-error`
-- `--solution`
-- `--annotations`
-- `--format`
-
-Example batch manifest:
-
-```yaml
-requests:
-  - id: query
-    method: GET
-    path: accounts?$select=accountid,name
-  - id: update
-    method: PATCH
-    path: accounts(00000000-0000-0000-0000-000000000001)
-    atomicGroup: writes
-    body:
-      name: Updated from batch
-```
-
-## `dv rows`
-
-Use `dv rows` for higher-level row-set workflows that do not require hand-written
-HTTP batch fragments.
-
-### `dv rows export`
-
-Export a query slice as a stable row-set artifact:
+`dv rows export` queries a table slice and writes the result as a stable row-set artifact. It accepts the same query flags as `dv query` (`--select`, `--expand`, `--orderby`, `--top`, `--filter`, `--count`, `--all`, `--max-page-size`, `--annotations`) and adds `--out` to write the result to a file. When `--out` is provided, the file extension determines the format: `.json` writes JSON and `.yaml` or `.yml` write YAML. Without `--out`, the artifact prints to stdout.
 
 ```bash
 pp dv rows export accounts --env dev --select accountid,name --all --out ./artifacts/accounts.yaml
 pp dv rows export contacts --env dev --filter "statecode eq 0" --top 100
 ```
 
-Supported flags:
+### Applying row mutations
 
-- `--select`
-- `--expand`
-- `--orderby`
-- `--top`
-- `--filter`
-- `--count`
-- `--all`
-- `--max-page-size`
-- `--annotations`
-- `--out`
-- `--format`
-
-When `--out` is provided, `.json` writes JSON and `.yaml` / `.yml` write YAML.
-Otherwise the row-set artifact is printed to stdout.
-
-### `dv rows apply`
-
-Apply a typed row-mutation manifest through Dataverse batch:
+`dv rows apply` sends a typed row-mutation manifest through Dataverse batch. Pass `--continue-on-error` to allow partial success, `--solution` to scope the batch to a specific solution, and `--annotations` or `--format` as needed.
 
 ```bash
 pp dv rows apply --env dev --file ./specs/account-ops.yaml
 pp dv rows apply --env dev --file ./specs/account-ops.yaml --continue-on-error --solution Core
 ```
 
-Supported flags:
-
-- `--file`
-- `--continue-on-error`
-- `--solution`
-- `--annotations`
-- `--format`
-
-Example row manifest:
+The manifest uses `table` to set the default entity collection and `operations` to list individual mutations. Supported operation kinds are `create`, `update`, `upsert`, and `delete`. For `update` and `upsert`, you can target either a `path` directly or a `table` plus `recordId`. `create` uses the collection path for the resolved table. `delete` ignores `body`.
 
 ```yaml
 table: accounts
@@ -267,135 +127,69 @@ operations:
     recordId: 00000000-0000-0000-0000-000000000001
 ```
 
-Supported operation kinds are `create`, `update`, `upsert`, and `delete`.
-`update` / `upsert` can target either `path` directly or `table` plus
-`recordId`. `create` uses the collection path for the resolved table, and
-`delete` ignores `body`.
+## Batch requests with `dv batch`
 
-## `dv query`
+`dv batch` executes a Dataverse `$batch` manifest from a file. Use `--continue-on-error` to allow partial success, `--solution` to scope the batch to a specific solution, and `--annotations` to control OData annotations.
 
 ```bash
-pp dv query accounts --env dev
-pp dv query accounts --env dev --select name,accountnumber --top 10
-pp dv query solutions --env dev --filter "uniquename eq 'Core'"
-pp dv query accounts --env dev --expand primarycontactid($select=fullname) --orderby name asc --count
-pp dv query accounts --env dev --all
-pp dv query accounts --env dev --page-info
+pp dv batch --env dev --file ./specs/account-batch.yaml
 ```
 
-Supported flags today:
+A batch manifest lists individual requests, each with an `id`, `method`, and `path`. Requests that should be atomically grouped share an `atomicGroup` value:
 
-- `--env`
-- `--select a,b,c`
-- `--expand x,y`
-- `--orderby expr`
-- `--top N`
-- `--filter "<odata filter>"`
-- `--count`
-- `--all`
-- `--page-info`
-- `--max-page-size`
-- `--annotations`
-- `--format`
-
-`--all` follows `@odata.nextLink` until the full result set is collected. `--page-info` returns the first page together with `count` and `nextLink`.
-
-## `dv get`
-
-```bash
-pp dv get accounts 00000000-0000-0000-0000-000000000001 --env dev --select name
+```yaml
+requests:
+  - id: query
+    method: GET
+    path: accounts?$select=accountid,name
+  - id: update
+    method: PATCH
+    path: accounts(00000000-0000-0000-0000-000000000001)
+    atomicGroup: writes
+    body:
+      name: Updated from batch
 ```
 
-This fetches a single row by logical table name and GUID.
+## Low-level Web API access
 
-Supported row options today:
+When the typed helpers do not cover your use case, three commands give you direct access to the Dataverse Web API.
 
-- `--select`
-- `--expand`
-- `--annotations`
+### `dv request`
 
-## `dv create`
+`dv request` sends an arbitrary HTTP request to the Web API path you supply. You can set the HTTP method with `--method` (defaults to GET), pass a request body with `--body` or `--body-file`, add headers with repeatable `--header "Name: value"` flags, and control response parsing with `--response-type` (`json`, `text`, or `void`).
 
 ```bash
-pp dv create accounts --env dev --body '{"name":"Acme"}'
-pp dv create accounts --env dev --body-file ./account.json --return-representation
+pp dv request "EntityDefinitions?\$select=LogicalName,SchemaName" --env dev
 ```
 
-Supported flags:
-
-- `--body`
-- `--body-file`
-- `--return-representation`
-- `--select`
-- `--expand`
-- `--if-match`
-- `--if-none-match`
-- `--annotations`
-
-## `dv update`
-
 ```bash
-pp dv update accounts 00000000-0000-0000-0000-000000000001 \
+pp dv request "accounts" \
   --env dev \
-  --body '{"name":"Renamed"}'
+  --method POST \
+  --body '{"name":"Acme"}'
 ```
 
-Supported flags:
+### `dv action`
 
-- `--body`
-- `--body-file`
-- `--return-representation`
-- `--if-match`
-- `--if-none-match`
-- `--select`
-- `--expand`
-- `--annotations`
-
-## `dv delete`
+`dv action` invokes a named Dataverse action. It works like `dv request` but is scoped to actions specifically: pass the action name as the first argument, supply a body with `--body` or `--body-file`, and use `--bound-path` when the action is bound to a specific entity instance. The `--solution` flag sets the `MSCRM.SolutionUniqueName` header.
 
 ```bash
-pp dv delete accounts 00000000-0000-0000-0000-000000000001 --env dev
+pp dv action ExportSolution --env dev --body '{"SolutionName":"Core","Managed":false}'
+pp dv action AddToQueue --env dev --bound-path 'queues(<queue-id>)' --body-file ./queue-item.json
 ```
 
-Supported flags:
+### `dv function`
 
-- `--if-match`
+`dv function` invokes a named Dataverse function. Pass simple parameters with repeatable `--param key=value` flags, or JSON-typed parameters with `--param-json key=JSON`. Like `dv action`, it supports `--bound-path` for bound functions and `--response-type` for controlling response parsing.
+
+```bash
+pp dv function sample_GetCount --env dev --param logicalName=account
+pp dv function RetrieveTotalRecordCount --env dev --param-json includeInternal=false
+```
 
 ## Connection references
 
-## `solution list`
-
-```bash
-pp solution list --env dev
-pp solution list --env dev --format json
-```
-
-Lists installed solutions for the resolved environment alias.
-
-Supported flags:
-
-- `--format`
-
-## Reset disposable harness assets
-
-When bootstrap needs to clear stale run-scoped solutions before reuse, stay
-inside `pp`:
-
-```bash
-pp env baseline test --prefix ppHarness20260310T013401820Z --format json
-pp env cleanup-plan test --prefix ppHarness20260310T013401820Z --format json
-pp env reset test --prefix ppHarness20260310T013401820Z --dry-run --format json
-pp env reset test --prefix ppHarness20260310T013401820Z --format json
-```
-
-`cleanup-plan` enumerates solutions whose unique name or friendly name starts
-with the given prefix, and `reset` deletes those matches. This is the intended
-prefix-based reset workflow for disposable harness assets; use
-`--dry-run` or `--plan` before mutating a shared environment. Use
-`env baseline` first when you want one non-mutating payload that also embeds the
-resolved environment/auth context and optional prior-solution absence checks.
-
-List, inspect, and validate connection references as first-class ALM objects:
+Connection references are first-class ALM objects that you can list, inspect, and validate through `pp connref`.
 
 ```bash
 pp connref list --env dev
@@ -403,145 +197,136 @@ pp connref inspect pp_sharedconnector --env dev
 pp connref validate --env dev --solution Core
 ```
 
-Validation is intentionally structured and focuses on deployment blockers such
-as:
-
-- missing connector bindings
-- missing active connection ids
-- solution-scoped filtering when `--solution` is supplied
+Validation focuses on deployment blockers: missing connector bindings, missing active connection IDs, and solution-scoped filtering when `--solution` is supplied.
 
 ## Environment variables
 
-Inspect effective values and set current values through bounded commands:
+The `pp envvar` commands let you inspect effective values and manage current values for Dataverse environment variables. The inspect and list outputs show the schema name and display name, the default value, the current value (if present), the effective value, and the value record ID when a current value exists.
 
 ```bash
-pp envvar create pp_ApiUrl --env dev --solution Core --display-name "API URL"
 pp envvar list --env dev
 pp envvar inspect pp_ApiUrl --env dev
 pp envvar set pp_ApiUrl --env dev --value https://next.example.test
 ```
 
-The inspect and list outputs include:
+`envvar create` seeds a new environment variable definition through the typed CLI surface. Pass `--solution` to add it directly into a solution, which avoids dropping to raw `pp dv request` for the common "create definition, then set value" workflow.
 
-- schema name and display name
-- default value
-- current value, if present
-- effective value
-- value record id when a current value exists
+```bash
+pp envvar create pp_ApiUrl --env dev --solution Core --display-name "API URL"
+```
 
-`envvar create` seeds an environment variable definition through the typed CLI
-surface and can add it directly into a solution by passing `--solution`, which
-avoids dropping to raw `pp dv request` for the common "create definition, then
-set value" workflow.
+## Metadata inspection
 
-## `dv metadata`
+The `dv metadata` commands let you browse the Dataverse schema: tables, columns, option sets, and relationships. The inspection commands default to normalized views that surface the most useful fields, but you can always pass `--view raw` to get the original Dataverse metadata payload.
 
-List tables:
+### Browsing tables and columns
+
+`dv metadata tables` lists table definitions. It supports `--select`, `--filter`, and `--expand`, which are sent directly to the metadata endpoint. Note that `--top` is applied client-side because `EntityDefinitions` does not support `$top`, and `--orderby` and `--count` are not supported for this command.
 
 ```bash
 pp dv metadata tables --env dev --select LogicalName,SchemaName --top 10
 pp dv metadata tables --env dev --all
 ```
 
-Notes:
-
-- `--select`, `--filter`, and `--expand` are sent to the metadata endpoint.
-- `--top` is applied client-side because `EntityDefinitions` does not support `$top`.
-- `--orderby` and `--count` are not supported for `dv metadata tables`.
-
-Inspect a specific table definition:
+To inspect a single table definition, use `dv metadata table` with the logical name:
 
 ```bash
 pp dv metadata table account --env dev --select LogicalName,SchemaName,ObjectTypeCode
 ```
 
-List columns for a table:
+`dv metadata columns` lists column definitions for a given table. It follows the same query rules and client-side `--top` behavior as `dv metadata tables`, and defaults to a normalized `common` view.
 
 ```bash
 pp dv metadata columns account --env dev --select LogicalName,SchemaName,AttributeType --top 10
 pp dv metadata columns account --env dev --filter "AttributeType eq Microsoft.Dynamics.CRM.AttributeTypeCode'String'"
 ```
 
-Inspect a specific column definition:
+`dv metadata column` inspects a single column and defaults to a normalized `detailed` view. Pass `--view raw` to get the unprocessed Dataverse payload.
 
 ```bash
 pp dv metadata column account name --env dev --select LogicalName,SchemaName,AttributeType
 pp dv metadata column account name --env dev --view raw
 ```
 
-Notes:
+### Option sets and relationships
 
-- `dv metadata columns` follows the same query rules as `dv metadata tables`.
-- `dv metadata columns` defaults to a normalized `common` view.
-- `dv metadata column` defaults to a normalized `detailed` view.
-- use `--view raw` to return the original Dataverse metadata payload.
-- `--top` is applied client-side.
-- `--orderby` and `--count` are not supported.
+`dv metadata option-set` returns a normalized view of a global option set, including the name, display name, description, metadata ID, option set type, whether it is global, its introduced version, and normalized option entries with value, label, optional description, color, and managed status.
 
-Create metadata from structured spec files:
+```bash
+pp dv metadata option-set pp_projectstatus --env dev
+```
+
+`dv metadata relationship` returns a normalized relationship summary. For one-to-many relationships, the output includes the referenced and referencing entities, lookup identity and display labels, and cascade configuration. For many-to-many relationships, it includes both entity logical names, the intersect entity name, and navigation property names when Dataverse exposes them. Pass `--kind many-to-many` when inspecting a many-to-many relationship, and `--view raw` when you need the original payload.
+
+```bash
+pp dv metadata relationship pp_project_account --env dev
+pp dv metadata relationship pp_project_contact --env dev --kind many-to-many
+```
+
+### Snapshots and diffs
+
+`dv metadata snapshot` emits stable JSON artifacts for `table`, `columns`, `option-set`, and `relationship` domains. `dv metadata diff` then compares two saved snapshot artifacts and reports field-level adds, removes, and changes. Together they give you a before/after comparison workflow for tracking schema changes.
+
+```bash
+pp dv metadata snapshot columns pp_project --env dev --out ./artifacts/pp_project.columns.json
+pp dv metadata snapshot relationship pp_project_account --env dev --kind one-to-many --out ./artifacts/pp_project_account.relationship.json
+pp dv metadata diff --left ./artifacts/pp_project.columns.before.json --right ./artifacts/pp_project.columns.after.json
+```
+
+## Metadata authoring
+
+Beyond inspection, `pp` provides a structured authoring workflow for creating and updating Dataverse schema through spec files. The overall flow is: use `schema` to see the expected spec shape, use `init` to scaffold a starter file, then use `create-*` or `update-*` to apply it, or use `apply` to execute multiple operations from a single manifest.
+
+### Schema and scaffolding
+
+`dv metadata schema` emits a validator-derived JSON Schema for a spec contract, which is useful for editor autocompletion and validation. `dv metadata init` prints a starter scaffold you can fill in. For columns, both commands accept `--kind` to select the column type.
 
 ```bash
 pp dv metadata schema create-table --format json-schema
 pp dv metadata schema add-column --kind string --format json-schema
 pp dv metadata init create-table
 pp dv metadata init add-column --kind choice
-pp dv metadata apply --env dev --file ./specs/schema.apply.yaml --solution Core
+```
+
+You can also run `pp dv metadata --help` to see the full metadata command surface without needing to pick a subcommand first.
+
+### Creating schema objects
+
+Each creation command reads a spec file with `--file` (JSON, YAML, or YML), sends the typed request to Dataverse, publishes by default (use `--no-publish` to skip), and returns the initial Dataverse response plus the fetched definition when read-back succeeds. The `--solution` flag adds `MSCRM.SolutionUniqueName` to the metadata request so the new object lands in the correct solution. The `--language-code` flag defaults to `1033`.
+
+Metadata write commands also include an `entitySummary` field with a normalized table, column, option-set, or relationship summary alongside the raw read-back payload. If read-back or publish encounters a problem after the underlying create has already succeeded, it is reported as a warning rather than a failure.
+
+```bash
 pp dv metadata create-table --env dev --file ./specs/project.table.yaml --solution Core
-pp dv metadata update-table pp_project --env dev --file ./specs/project.table.update.yaml --solution Core
 pp dv metadata add-column pp_project --env dev --file ./specs/client-code.column.yaml --solution Core
-pp dv metadata update-column pp_project pp_clientcode --env dev --file ./specs/client-code.column.update.yaml --solution Core
 pp dv metadata create-option-set --env dev --file ./specs/status.optionset.yaml --solution Core
-pp dv metadata update-option-set --env dev --file ./specs/status.update.yaml --solution Core
 pp dv metadata create-relationship --env dev --file ./specs/project-account.relationship.yaml --solution Core
-pp dv metadata update-relationship pp_project_account --env dev --kind one-to-many --file ./specs/project-account.relationship.update.yaml --solution Core
 pp dv metadata create-many-to-many --env dev --file ./specs/project-contact.m2m.yaml --solution Core
 pp dv metadata create-customer-relationship --env dev --file ./specs/project-customer.relationship.yaml --solution Core
 ```
 
-Supported creation scope today:
+The current creation scope covers custom tables with a primary-name column; column kinds `string`, `memo`, `integer`, `decimal`, `money`, `datetime`, `boolean`, `choice`, `autonumber`, `file`, and `image`; global option sets; one-to-many relationships with lookup creation; many-to-many relationships; and customer lookup relationships through the Dataverse customer-relationship action.
 
-- custom tables with a primary-name column
-- column kinds: `string`, `memo`, `integer`, `decimal`, `money`, `datetime`, `boolean`, `choice`, `autonumber`, `file`, `image`
-- global option set create and option-value updates
-- one-to-many relationships with lookup creation
-- many-to-many relationship creation
-- customer lookup relationship creation through the Dataverse customer-relationship action
-- typed update flows for table labels/descriptions, column labels/required-level/boolean labels, and relationship menu or cascade metadata
+### Updating schema objects
 
-Inspect richer metadata definitions:
+Update commands read the current metadata definition, apply a typed overlay from your spec file, and send the required Dataverse metadata `PUT`. They share the same `--file`, `--solution`, and `--language-code` flags as creation commands.
 
 ```bash
-pp dv metadata option-set pp_projectstatus --env dev
-pp dv metadata relationship pp_project_account --env dev
-pp dv metadata relationship pp_project_contact --env dev --kind many-to-many
-pp dv metadata snapshot columns pp_project --env dev --out ./artifacts/pp_project.columns.json
-pp dv metadata snapshot relationship pp_project_account --env dev --kind one-to-many --out ./artifacts/pp_project_account.relationship.json
-pp dv metadata diff --left ./artifacts/pp_project.columns.before.json --right ./artifacts/pp_project.columns.after.json
+pp dv metadata update-table pp_project --env dev --file ./specs/project.table.update.yaml --solution Core
+pp dv metadata update-column pp_project pp_clientcode --env dev --file ./specs/client-code.column.update.yaml --solution Core
+pp dv metadata update-option-set --env dev --file ./specs/status.update.yaml --solution Core
+pp dv metadata update-relationship pp_project_account --env dev --kind one-to-many --file ./specs/project-account.relationship.update.yaml --solution Core
 ```
 
-Normalized inspection defaults:
+Typed update flows exist for table labels and descriptions, column labels, required level, and boolean labels, and relationship menu or cascade metadata.
 
-- `dv metadata option-set` returns `name`, `displayName`, `description`, `metadataId`, `optionSetType`, `isGlobal`, `introducedVersion`, and normalized `options` entries with `value`, `label`, optional `description`, `color`, and `isManaged`
-- `dv metadata relationship` returns a normalized relationship summary instead of raw Dataverse metadata
-- one-to-many relationship output includes `referencedEntity`, `referencedAttribute`, `referencingEntity`, lookup identity/display labels, and cascade configuration when present
-- many-to-many relationship output includes `entity1LogicalName`, `entity2LogicalName`, `intersectEntityName`, and navigation property names when Dataverse exposes them
-- use `--view raw` on either command when you need the original Dataverse payload
-- `dv metadata snapshot` emits stable JSON artifacts for `table`, `columns`, `option-set`, and `relationship` domains
-- `dv metadata diff` compares two saved snapshot artifacts and reports field-level adds, removes, and changes
+### Multi-operation manifests with `apply`
 
-Common flags:
+`dv metadata apply` accepts a manifest whose `operations` entries point at isolated spec files. Each entry specifies a `kind` (like `create-table` or `add-column`) and a `file` path. Entries with kind `add-column` must also include `tableLogicalName`.
 
-- `pp dv metadata --help` now prints the metadata command surface directly instead of requiring a subcommand first
-- `dv metadata schema <create-table|add-column>` emits validator-derived JSON Schema for the selected spec contract
-- `dv metadata init <create-table|add-column>` prints a starter scaffold; `add-column` accepts `--kind`
-- `--file` accepts JSON, YAML, or YML
-- `dv metadata apply --file` accepts a manifest whose `operations` entries point at isolated spec files; `add-column` entries also require `tableLogicalName`
-- `--solution` adds `MSCRM.SolutionUniqueName` to the metadata request
-- `--language-code` defaults to `1033`
-- publish happens by default after create; use `--no-publish` to skip it
-- metadata write commands now include an `entitySummary` field with a normalized table, column, option-set, or relationship summary alongside the raw read-back payload
-
-Example apply manifest:
+```bash
+pp dv metadata apply --env dev --file ./specs/schema.apply.yaml --solution Core
+```
 
 ```yaml
 operations:
@@ -557,7 +342,11 @@ operations:
     file: ./task-project.relationship.yaml
 ```
 
-Example table spec:
+### Spec file examples
+
+The following examples show the structure of each spec type. These are the files you pass via `--file` to the creation and update commands.
+
+Table spec:
 
 ```yaml
 schemaName: pp_Project
@@ -572,7 +361,7 @@ primaryName:
   maxLength: 200
 ```
 
-Example column spec:
+String column spec:
 
 ```yaml
 kind: string
@@ -584,7 +373,7 @@ maxLength: 50
 format: text
 ```
 
-Example autonumber column spec:
+Autonumber column spec:
 
 ```yaml
 kind: autonumber
@@ -594,7 +383,7 @@ autoNumberFormat: PROJ-{SEQNUM:6}
 maxLength: 20
 ```
 
-Example file column spec:
+File column spec:
 
 ```yaml
 kind: file
@@ -603,7 +392,7 @@ displayName: Specification
 maxSizeInKB: 10240
 ```
 
-Example image column spec:
+Image column spec:
 
 ```yaml
 kind: image
@@ -613,7 +402,7 @@ maxSizeInKB: 5120
 canStoreFullImage: true
 ```
 
-Example global option set spec:
+Global option set spec:
 
 ```yaml
 name: pp_projectstatus
@@ -625,7 +414,7 @@ options:
     value: 100000001
 ```
 
-Example global option set update spec:
+Global option set update spec -- `add` inserts new options (you can omit `value` to let Dataverse assign one), `update` targets existing options by numeric value with `mergeLabels` defaulting to `true` when omitted, and `removeValues` and `orderValues` both operate on numeric option values:
 
 ```yaml
 name: pp_projectstatus
@@ -642,13 +431,7 @@ orderValues:
   - 100000001
 ```
 
-Update semantics:
-
-- `add` inserts new options and can omit `value` to let Dataverse assign one
-- `update` targets existing options by numeric `value`; `mergeLabels` defaults to `true` when omitted
-- `removeValues` and `orderValues` both operate on numeric option values
-
-Example table update spec:
+Table update spec:
 
 ```yaml
 displayName: Projects
@@ -656,7 +439,7 @@ pluralDisplayName: Projects
 description: Updated table description
 ```
 
-Example column update spec:
+Column update spec:
 
 ```yaml
 displayName: Client Code
@@ -672,7 +455,7 @@ trueLabel: Enabled
 falseLabel: Disabled
 ```
 
-Example one-to-many relationship spec:
+One-to-many relationship spec:
 
 ```yaml
 schemaName: pp_project_account
@@ -683,7 +466,7 @@ lookup:
   displayName: Account
 ```
 
-Example many-to-many relationship spec:
+Many-to-many relationship spec -- optional `entity1Menu` and `entity2Menu` blocks control the associated menu label, behavior, group, and order for navigation:
 
 ```yaml
 schemaName: pp_project_contact
@@ -693,10 +476,7 @@ entity1Menu:
   label: Contacts
 ```
 
-Optional `entity1Menu` and `entity2Menu` blocks let you control the associated
-menu label, behavior, group, and order for many-to-many navigation.
-
-Example one-to-many relationship update spec:
+One-to-many relationship update spec:
 
 ```yaml
 associatedMenuLabel: Customers
@@ -706,7 +486,7 @@ cascade:
   share: cascade
 ```
 
-Example many-to-many relationship update spec:
+Many-to-many relationship update spec:
 
 ```yaml
 entity1Menu:
@@ -714,7 +494,7 @@ entity1Menu:
   behavior: useLabel
 ```
 
-Example customer relationship spec:
+Customer relationship spec -- uses the Dataverse customer-relationship action to create the complex lookup plus paired account and contact one-to-many relationships. Optional `accountMenu` and `contactMenu` blocks customize the associated menu metadata for those generated relationships:
 
 ```yaml
 tableLogicalName: pp_project
@@ -725,21 +505,13 @@ accountReferencedAttribute: id
 contactReferencedAttribute: id
 ```
 
-Customer relationship creation uses the Dataverse customer-relationship action
-to create the complex lookup plus the paired account and contact one-to-many
-relationships. Optional `accountMenu` and `contactMenu` blocks customize the
-associated menu metadata for those generated relationships.
-
-Notes:
-
-- create commands return the initial Dataverse response plus the fetched definition when read-back succeeds
-- update commands read the current metadata definition, apply the typed overlay, and send the required Dataverse metadata `PUT`
-- read-back or publish problems are reported as warnings when the underlying create call has already succeeded
-- the authoring surface is intentionally smaller than raw Dataverse metadata JSON so `pp` can validate and shape payloads consistently
-
 ## Solution commands
 
-Create an unmanaged remote solution shell:
+Solution commands cover the full lifecycle of working with Dataverse solutions: creating shells, inspecting what is installed, publishing, exporting, importing, and comparing across environments.
+
+### Creating and updating solutions
+
+`solution create` creates an unmanaged solution shell in a target environment. You provide the unique name as the first argument and set the friendly name, publisher, and description through flags.
 
 ```bash
 pp solution create HarnessShell --env dev \
@@ -748,7 +520,7 @@ pp solution create HarnessShell --env dev \
   --description "Disposable unmanaged shell for test work."
 ```
 
-Update solution metadata without dropping to raw `dv update`:
+`solution set-metadata` updates a solution's metadata (version, publisher) without dropping to raw `dv update`.
 
 ```bash
 pp solution set-metadata HarnessShell --env dev \
@@ -756,80 +528,73 @@ pp solution set-metadata HarnessShell --env dev \
   --publisher-unique-name HarnessPublisher
 ```
 
-List the first 100 solutions:
+### Listing and inspecting solutions
+
+`solution list` returns the first 100 solutions installed in the target environment. `solution inspect` retrieves a single solution by unique name and returns a detailed record including the solution ID, unique name, friendly name, version, managed status, and publisher details (publisher ID, unique name, friendly name, customization prefix, and customization option value prefix). Both support `--format` for output control.
 
 ```bash
 pp solution list --env dev
-```
-
-Inspect a solution by unique name:
-
-```bash
 pp solution inspect Core --env dev
 ```
 
-Publish a solution and optionally wait until export succeeds as the post-publish checkpoint:
+### Publishing
+
+`solution publish` triggers the Dataverse `PublishAllXml` action for a solution. Pass `--wait-for-export` along with `--out` to block until export succeeds as a post-publish checkpoint.
 
 ```bash
 pp solution publish Core --env dev
 pp solution publish Core --env dev --wait-for-export --out ./artifacts/Core.zip
 ```
 
-`pp solution publish --format json` also returns a `progress` history, `readBack`, a machine-readable `blockers` list, a top-level `readiness` assessment, and an `exportCheck` result from one immediate export-backed sync probe so the publish response itself shows whether export readiness was confirmed, timed out after polling, or is still blocked on packaged workflow state. Workflow blockers now carry remediation metadata that names the primary MCP/CLI activation route plus any richer pp-native alternatives such as `pp.flow.deploy`, while explicitly calling out when `FLOW_ACTIVATE_DEFINITION_REQUIRED` means `pp` has no further native completion path for that draft modern flow.
+With `--format json`, the publish response includes a `progress` history, a `readBack`, a machine-readable `blockers` list, a top-level `readiness` assessment, and an `exportCheck` result from one immediate export-backed sync probe. This tells you whether export readiness was confirmed, timed out after polling, or is still blocked on packaged workflow state. Workflow blockers carry remediation metadata that names the primary MCP/CLI activation route plus any richer `pp`-native alternatives such as `pp.flow.deploy`, and explicitly call out when `FLOW_ACTIVATE_DEFINITION_REQUIRED` means `pp` has no further native completion path for that draft modern flow.
 
-Inspect solution inventory and preflight facts:
+### Exporting
+
+```bash
+pp solution export Core --env dev --out ./artifacts/solutions/Core.zip --plan
+```
+
+`solution export` calls the Dataverse `ExportSolution` action and saves the resulting zip. Use `--plan` to preview the export plan before executing.
+
+### Importing
+
+`solution import` uses the Dataverse `ImportSolution` action with structured retry guidance. The `--plan` flag reads the adjacent release manifest when present and otherwise falls back to solution package metadata, then combines that with live target solution state to surface managed/unmanaged and same-version promotion diagnostics before mutating anything.
+
+### Analysis and comparison
+
+Several commands help you understand what is inside a solution and how it differs across environments.
+
+`solution components` lists the component inventory of a solution. `solution dependencies` shows dependency edges with missing-required-component flags plus import-risk classification (`resolved`, `expected-external`, `likely-import-blocker`, or `review-required`). `solution analyze` combines components and dependencies with connection-reference validation failures and environment variables with missing effective values into a single preflight report. `solution sync-status` checks export readiness with a configurable timeout.
 
 ```bash
 pp solution components Core --env dev
 pp solution dependencies Core --env dev
 pp solution analyze Core --env dev
 pp solution sync-status Core --env dev --timeout-ms 20000 --format json
+```
+
+`solution compare` computes source/target drift summaries. You can compare two live environments, a live environment against a solution zip, or an unpacked solution folder against a zip. By default, model-driven app comparison reports only shell presence; pass `--include-model-composition` for deep model artifact drift. Some comparison modes require a path to the `pac` CLI binary via `--pac`.
+
+```bash
 pp solution compare Core --source-env dev --target-env prod
 pp solution compare Core --source-env dev --target-env prod --include-model-composition
 pp solution compare Core --source-env dev --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac
 pp solution compare --source-folder ./src/solutions/Core --target-zip ./artifacts/Core_managed.zip --pac /path/to/pac
 ```
 
-Current solution output includes:
+## Disposable harness baselines
 
-- `solutionid`
-- `uniquename`
-- `friendlyname`
-- `version`
-- `ismanaged`
-- `publisher.publisherid`
-- `publisher.uniquename`
-- `publisher.friendlyname`
-- `publisher.customizationprefix`
-- `publisher.customizationoptionvalueprefix`
-- normalized component inventory
-- dependency edges with missing-required-component flags plus import-risk classification (`resolved`, `expected-external`, `likely-import-blocker`, or `review-required`)
-- connection-reference validation failures
-- environment variables with missing effective values
-- source/target drift summaries for compare output
-- shell-only model-driven app presence by default during environment compare, with `--include-model-composition` for deep model artifact drift
+When bootstrap needs to check for stale run-scoped solutions before reuse, use the `env baseline` command. It returns one machine-readable payload that embeds the resolved environment/auth context, prefix collision checks, and optional prior-solution absence checks behind a `readyForBootstrap` result.
 
-## Environment alias fields that matter here
-
-When adding an environment alias, these fields currently influence Dataverse resolution:
-
-- `--url`
-- `--profile`
-- `--api-path`
-
-Additional alias metadata used by other workflows:
-
-- `--default-solution`
-- `--maker-env-id`: optional Maker environment id for building deep links in
-  canvas fallback diagnostics
-
-If `--api-path` is omitted, Dataverse defaults to:
-
-```text
-/api/data/v9.2/
+```bash
+pp env baseline test --prefix ppHarness20260310T013401820Z --format json
 ```
 
-Example:
+Prefix-scoped cleanup and reset capabilities are available through the MCP server (`pp.environment.cleanup-plan` and `pp.environment.cleanup`) but are not currently wired as CLI subcommands.
+
+## Environment alias fields
+
+When adding an environment alias, three fields influence Dataverse resolution: `--url` sets the environment URL, `--profile` binds the alias to an auth profile, and `--api-path` overrides the Web API base path (defaults to `/api/data/v9.2/`). Two additional alias fields are used by other workflows: `--default-solution` and `--maker-env-id` (an optional Maker environment ID for building deep links in canvas fallback diagnostics).
 
 ```bash
 pp env add \
@@ -841,37 +606,10 @@ pp env add \
 
 ## Output formats
 
-Most current commands default to JSON output. Some project and analysis commands also support markdown output. The CLI help text in `packages/cli/src/index.ts` is the current source of truth for exact flags.
+Most commands default to JSON output. The CLI help text in `packages/cli/src/index.ts` is the current source of truth for exact flags.
 
 ## Current boundaries
 
-Implemented today:
+The Dataverse surface in `pp` today covers solution lifecycle operations (create, list, inspect, publish, export, import), solution analysis and comparison (component inventory, dependency analysis, preflight checks, cross-environment and zip-based drift detection), row-level CRUD with full query support (select, top, filter, expand, orderby, count, paging), typed Dataverse action, function, and `$batch` invocation, row-set export and batch-apply workflows, metadata inspection and normalized views for tables, columns, option sets, and relationships (including snapshots and diffs), and metadata authoring for tables, most column types, option sets, and all three relationship kinds. Local solution pack/unpack orchestration through `pac solution pack|unpack` and gated live smoke testing through `pnpm smoke:live` are also available.
 
-- solution create for unmanaged shells
-- solution publish through the Dataverse `PublishAllXml` action, with an optional export-backed synchronization checkpoint and structured progress history in machine-readable output
-- solution export through the Dataverse `ExportSolution` action with `pp` release manifests
-- solution import through the Dataverse `ImportSolution` action with structured retry guidance
-- target-aware `pp solution import --plan`, which reads the adjacent release manifest when present and otherwise falls back to solution package metadata before combining that with live target solution state to surface managed/unmanaged and same-version promotion diagnostics before mutating
-- typed Dataverse action, function, and `$batch` invocation helpers plus CLI commands
-- local solution pack and unpack orchestration through `pac solution pack|unpack`
-- Dataverse `WhoAmI`
-- generic Web API request execution
-- table query with select/top/filter/expand/orderby/count
-- query paging with `--all`
-- row-by-ID fetch
-- create/update/delete primitives
-- metadata table listing and inspection
-- normalized option-set and relationship inspection
-- metadata create for phase 1, 2, and part of phase 3 assets
-- gated live smoke runner through `pnpm smoke:live`
-- solution list
-- solution inspect by unique name
-- solution component inventory
-- solution dependency and preflight analysis
-- solution comparison across environments, solution zips, and unpacked roots
-
-Not implemented yet:
-
-- deeper metadata browsing beyond basic table listing and single-table inspection
-- state/status metadata, owner-style lookups, formula-column edge cases, and other remaining phase 3 metadata assets
-- deploy consumption of solution release manifests and rollback bundles
+The areas not yet covered include deeper metadata browsing beyond basic table listing and single-table inspection, remaining phase 3 metadata assets (state/status metadata, owner-style lookups, formula-column edge cases), and deploy consumption of solution release manifests and rollback bundles.

@@ -1,114 +1,25 @@
 # Architecture
 
-This guide is for contributors who need to understand where behavior belongs in
-the repo. It is not the best starting point for learning how to use `pp`.
-
-If you are trying to get work done with the CLI, start with:
-
-- [quickstart.md](quickstart.md)
-- [dataverse-and-solutions.md](dataverse-and-solutions.md)
-- [project-config.md](project-config.md)
-- [deploy.md](deploy.md)
+This guide is for contributors who need to understand where behavior belongs in the repo. It is not the best starting point for learning how to use `pp` -- for that, start with the [Quickstart](quickstart.md) or [Dataverse and solutions](dataverse-and-solutions.md) guide.
 
 ## Mental model
 
-`pp` is a package-first monorepo. The CLI is the main shipped interface, but
-most behavior lives in narrower workspace packages with explicit contracts.
-
-The practical layers are:
-
-1. core infrastructure and shared contracts
-2. domain packages for Power Platform and adjacent providers
-3. local project analysis and deploy orchestration
-4. interface layers such as the CLI, MCP server, and CI adapters
-
-That split matters because most user-facing commands are compositions of the
-same underlying services.
+`pp` is a package-first monorepo. The CLI is the main shipped interface, but most behavior lives in narrower workspace packages with explicit contracts. The repo has three practical layers: core infrastructure and shared contracts, domain packages for Power Platform services, and interface layers such as the CLI and MCP server. That split matters because most user-facing commands are compositions of the same underlying services -- a `pp solution export` call, for example, depends on auth, config, the Dataverse client, and the solution package, all coordinated by the CLI layer.
 
 ## Package map
 
-Core packages:
+The **core packages** provide infrastructure that every other package depends on. `@pp/auth` handles auth profiles, browser-profile management, and token acquisition. `@pp/config` owns persisted configuration for auth profiles, environment aliases, and project config file discovery (`pp.config.json|yaml|yml`). `@pp/diagnostics` defines `OperationResult`, diagnostics, and failure helpers that give the CLI a consistent way to report outcomes. `@pp/http` provides shared HTTP helpers, `@pp/artifacts` handles stable JSON and YAML artifact IO, and `@pp/cache` provides local cache primitives and metadata snapshot storage.
 
-- `@pp/auth`: auth profiles, browser-profile management, token acquisition
-- `@pp/config`: persisted config for auth profiles and environment aliases
-- `@pp/diagnostics`: `OperationResult`, diagnostics, and failure helpers
-- `@pp/http`: shared HTTP helpers
-- `@pp/artifacts`: stable JSON and YAML artifact IO
+The **domain packages** sit on top of that core layer and each own one Power Platform service area. `@pp/dataverse` covers Dataverse client resolution, rows, metadata, connection references, and environment variables. `@pp/solution` handles solution lifecycle operations: analysis, compare, pack/unpack, and import/export. `@pp/canvas` provides template registries, offline validation and build, diff, LSP support, and harvesting helpers. `@pp/flow` covers flow discovery, runtime inspection, artifact lifecycle, graph traversal, and patch helpers. `@pp/model` handles model-driven app inspection and dependency tracing. Keeping these separate from the core means each domain can evolve its API surface without entangling unrelated services.
 
-Project and orchestration packages:
-
-- `@pp/project`: `pp.config.*` discovery, init, doctor, topology, parameters,
-  and provider bindings
-- `@pp/analysis`: human and machine-readable project analysis
-- `@pp/deploy`: deploy plan/apply/release orchestration
-- `@pp/extensions`: extension manifest, registry, compatibility, and trust
-  policy
-
-Primary domain packages:
-
-- `@pp/dataverse`: Dataverse client resolution, rows, metadata, connection
-  references, and environment variables
-- `@pp/solution`: solution lifecycle, analysis, compare, pack/unpack,
-  import/export
-- `@pp/canvas`: template registries, offline validation/build, diff, LSP, and
-  harvesting helpers
-- `@pp/flow`: flow discovery, runtime inspection, artifact lifecycle, graph,
-  and patch helpers
-- `@pp/model`: model-driven app inspection and dependency tracing
-
-Adjacent provider packages:
-
-- `@pp/sharepoint`
-- `@pp/powerbi`
-
-Interface and adapter packages:
-
-- `@pp/cli`
-- `@pp/mcp`
-- `@pp/adapter-github-actions`
-- `@pp/adapter-azure-devops`
-- `@pp/adapter-power-platform-pipelines`
+The **interface packages** are what users and tools interact with directly. `@pp/cli` is the main command-line interface. `@pp/mcp` exposes the same domain packages through an MCP server. `@pp/flow-language-server` is a standalone flow LSP server, and `@pp/vscode` is the VS Code extension for canvas and flow language support.
 
 ## Runtime flow
 
-For a typical CLI command:
-
-1. `@pp/cli` parses argv and shared output flags.
-2. It resolves config or project state through `@pp/config` and `@pp/project`.
-3. It calls a domain package such as `@pp/dataverse`, `@pp/solution`, or
-   `@pp/flow`.
-4. The result is normalized through `@pp/diagnostics` and rendered through the
-   shared command contract.
-
-For local-only commands such as `project inspect`, `analysis report`, or
-`deploy plan`, the path often stops in `@pp/project`, `@pp/analysis`, and
-`@pp/deploy` without touching a live environment.
-
-## Repo-local project model
-
-The repo is organized around a local project contract rather than a loose set
-of scripts.
-
-That project model gives the rest of the stack:
-
-- a discoverable root via `pp.config.json|yaml|yml`
-- default environment and solution aliases
-- stage-aware topology
-- parameter resolution rules
-- provider bindings for adjacent systems
-- known asset roots such as `apps/`, `flows/`, `solutions/`, and `docs/`
-
-This is why commands such as `project inspect`, `analysis context`, and
-`deploy apply` can share the same language and data.
+A typical CLI command follows a consistent path through these layers. First, `@pp/cli` parses argv and shared output flags. It then resolves configuration through `@pp/config`, including auth profiles and environment aliases. Next, it calls into a domain package such as `@pp/dataverse`, `@pp/solution`, or `@pp/flow` to do the actual work. Finally, the result is normalized through `@pp/diagnostics` and rendered according to the shared command contract.
 
 ## What matters most in practice
 
-- The strongest current slices are auth/config, Dataverse inspection and
-  metadata authoring, solution lifecycle, project analysis, and deploy
-  planning/apply.
-- Canvas, flow runtime, SharePoint, Power BI, MCP, and extensions are real
-  surfaces, but some are more specialized or still incomplete in parts.
+The strongest current slices are auth/config, Dataverse inspection and metadata authoring, solution lifecycle, canvas offline validation/build, and flow artifact lifecycle. MCP exposes a growing read and bounded-mutation surface over the same domain packages.
 
-Use [supported-surfaces.md](supported-surfaces.md) for product adoption
-guidance. Use this architecture guide only when you need to place new code or
-reason about ownership boundaries.
+Use [supported-surfaces.md](supported-surfaces.md) for product adoption guidance. Use this architecture guide only when you need to place new code or reason about ownership boundaries.

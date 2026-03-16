@@ -1,137 +1,107 @@
 # Operability
 
 This guide covers installation, command discovery, diagnostics, packaging, and
-large-repo usage for `pp`.
+guidance for working with `pp` in larger repos and CI environments. For
+day-to-day product use, start with [quickstart.md](quickstart.md) instead.
 
-If you only need a quick operational check:
+## Installing and building from source
 
-```bash
-pnpm install
-pp version --format raw
-pp diagnostics doctor
-```
-
-For actual day-to-day product use, read [quickstart.md](quickstart.md) first.
-
-## Install and package
-
-From source:
+Clone the repo and install dependencies. In a normal checkout, `pnpm install`
+prepares the CLI bundle automatically. If install scripts are disabled in your
+environment, run `pnpm --filter @pp/cli build` before using the CLI.
 
 ```bash
 pnpm install
 node packages/cli/dist/index.cjs version
 ```
 
-`pnpm install` now prepares the CLI bundle automatically in a normal checkout.
-If install scripts are disabled, run `pnpm --filter @pp/cli build` first.
-
-Package the CLI as a tarball:
+To produce a publishable tarball from the workspace, use the `pack:cli` script,
+which builds `@pp/cli` and creates an npm package tarball from `packages/cli/`.
 
 ```bash
 pnpm pack:cli
 ```
 
-That builds `@pp/cli` and produces an npm package tarball from
-`packages/cli/`.
-
 The repo is still source-first operationally. For orientation on package roles
 and maturity, pair this guide with [architecture.md](architecture.md) and
 [supported-surfaces.md](supported-surfaces.md).
 
-For development, the quickest direct entrypoints are:
+For development, the quickest way to run `pp` from source is through one of
+these entrypoints. `pnpm pp` is best for interactive work, while
+`run-pp-dev.mjs` produces clean machine-readable stdout suitable for agents and
+CI jobs.
 
 ```bash
-pnpm pp -- project inspect
-node scripts/run-pp-dev.mjs project inspect
-node packages/cli/dist/index.cjs project inspect
+pnpm pp -- version
+node scripts/run-pp-dev.mjs version
+node packages/cli/dist/index.cjs version
 ```
 
-Prefer `pnpm pp -- ...` at the repo root for interactive source-backed
-workflows, or `node scripts/run-pp-dev.mjs ...` when an agent or CI job needs
-clean machine-readable stdout. Both preserve the original invocation directory
-for local project discovery, so `project inspect` and `project doctor` do not
-silently re-root to `packages/cli`.
+## Discovering commands
 
-## Command discovery
-
-Use the built-in help surface first:
+The built-in help surface is the best way to explore what `pp` can do.
 
 ```bash
 pp --help
-pp project --help
 pp diagnostics --help
 pp version --format raw
 ```
 
-Install shell completion:
+Shell completion makes command discovery faster in daily use. Generate a
+completion script for your shell and source it.
 
 ```bash
 pp completion zsh > ~/.zfunc/_pp
 autoload -U compinit && compinit
 ```
 
-Other supported shells:
-
-```bash
-pp completion bash
-pp completion fish
-```
-
-The generated completion scripts cover the implemented top-level command surface
-plus the next subcommand layer so operators and agents can discover workflows
-without memorizing the whole tree.
+Bash and fish are also supported through `pp completion bash` and
+`pp completion fish`. The generated scripts cover the implemented top-level
+command surface plus the next subcommand layer, so you can tab-complete your way
+through workflows without memorizing the whole tree.
 
 ## Diagnostics and support bundles
 
-Use `diagnostics doctor` when the question is "is this install or repo state
-coherent?".
+Use `diagnostics doctor` when you want to check whether your install and local
+repo state are coherent. It summarizes CLI version, config paths, and any issues
+it finds.
 
 ```bash
 pp diagnostics doctor
 pp diagnostics doctor ./repo --format table
 ```
 
-Use `diagnostics bundle` when you need a support artifact or CI snapshot.
+Use `diagnostics bundle` when you need a structured snapshot for support triage
+or CI artifacts. The bundle includes the CLI version and package location,
+Node and platform metadata, global config and MSAL cache paths, project
+discovery state for the inspected path, and any unresolved project diagnostics
+when a local `pp.config.*` file is present.
 
 ```bash
 pp diagnostics bundle --format json > pp-diagnostics.json
 pp diagnostics bundle ./repo --config-dir ./.tmp/pp-config --format yaml
 ```
 
-The bundle includes:
+## Working with larger repos
 
-- CLI version and package location
-- Node/runtime platform metadata
-- global config and MSAL cache paths
-- project discovery state for the inspected path
-- unresolved project diagnostics when a local `pp.config.*` is present
-
-## Large-workspace guidance
-
-`pp` already separates local-only workflows from remote Dataverse operations.
-For larger repos and environments, prefer that boundary explicitly:
-
-- run `pp project inspect`, `pp project doctor`, `pp analysis context`, and
-  `pp deploy plan` from the repo root before live environment commands
-- use `--project`, `--workspace`, and stage/parameter overrides to avoid
-  ad-hoc path guessing in large monorepos
-- keep canvas template registries explicit through committed files or
-  `cache:NAME` references rather than relying on ambient machine state
-- capture `pp diagnostics bundle` output before and after a failing workflow so
-  config drift and discovery changes are visible in artifacts
+`pp` separates local-only workflows from remote Dataverse operations, and that
+separation becomes especially useful in larger repos. Use `--workspace` for
+canvas workspace resolution and `--registry` for explicit registry inputs so
+you do not rely on ad-hoc path guessing. Keep canvas template registries
+explicit through committed files or `cache:NAME` references rather than
+ambient machine state. When debugging failures, capture `pp diagnostics bundle`
+output before and after the failing workflow so config drift and discovery
+changes are visible in the artifacts.
 
 ## CI and agent use
 
-For CI or agent-driven flows:
+For CI pipelines and agent-driven workflows, prefer machine-readable output
+with `--format json`, `--format yaml`, or `--format ndjson`. Persist
+`pp diagnostics bundle` output as a build artifact when a job fails, and
+include `pp version` in logs so support reports can tie behavior to a concrete
+CLI build.
 
-- prefer machine-readable output with `--format json|yaml|ndjson`
-- persist `pp diagnostics bundle` output as a build artifact when a job fails
-- use `pp version` in logs so support reports can tie behavior to a concrete
-  CLI build
-
-## Repo docs to keep nearby
+## Related docs
 
 - [quickstart.md](quickstart.md) for first-run setup
-- [project-config.md](project-config.md) for local project topology and parameters
-- [deploy.md](deploy.md) for deploy contracts and adapter behavior
 - [testing.md](testing.md) for contributor validation lanes

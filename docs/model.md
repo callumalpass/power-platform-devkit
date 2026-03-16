@@ -1,106 +1,69 @@
 # Model-driven apps
 
 Model-driven app support in `pp` is Dataverse-backed and useful today for
-inspection, dependency tracing, and a small amount of app record authoring.
+inspection, dependency tracing, and basic app-record authoring. It turns
+model-driven apps from opaque solution components into inspectable composition
+objects with clear sitemap, form, view, and table relationships.
 
-It turns model-driven apps from opaque solution components into inspectable
-composition objects.
+## Getting started
 
-## Common jobs
-
-Most users come here for one of these jobs:
-
-1. inspect a model-driven app and its composition
-2. inspect sitemap, forms, views, and dependencies
-3. create an app record or attach one to a solution
-
-Use these command paths first:
+The most common starting point is listing and inspecting model-driven apps in
+a target environment. `model list` shows available apps, and `model inspect`
+returns a detailed composition summary including sitemaps, forms, views, tables,
+dependencies, and any missing components.
 
 ```bash
 pp model list --env dev
 pp model inspect SalesHub --env dev
-pp model sitemap SalesHub --env dev
-pp model dependencies SalesHub --env dev
 ```
 
-If you need authoring:
+From there, you can drill into specific aspects of an app's composition. The
+sitemap command shows navigation structure, the forms and views commands show
+entity-level UI composition, and the dependencies command shows resolved and
+missing component relationships.
 
 ```bash
-pp model create SalesHub --env dev --name "Sales Hub" --solution Core
-pp model attach SalesHub --env dev --solution Core
-```
-
-## Commands
-
-```bash
-pp model create SalesHub --env dev --name "Sales Hub" --solution Core
-pp model attach SalesHub --env dev --solution Core
-pp model list --env dev
-pp model inspect SalesHub --env dev
 pp model sitemap SalesHub --env dev
 pp model forms SalesHub --env dev
 pp model views SalesHub --env dev
 pp model dependencies SalesHub --env dev
 ```
 
-All commands also accept `--solution UNIQUE_NAME` to limit the app set to
-solution-scoped model-driven apps.
+All of these commands accept `--solution UNIQUE_NAME` to limit the results to
+apps scoped to a particular solution.
 
-## Current inspection surface
+## Creating and attaching apps
 
-The service queries:
+When you need to create a new model-driven app record or attach an existing one
+to a solution, use the authoring commands. `model create` creates a
+solution-aware app record, and `model attach` adds an existing app to a
+solution.
 
-- `appmodules`
-- `appmodulecomponents`
-- `dependencies` as an inferred fallback when `appmodulecomponents` is blocked
-- `systemforms`
-- `savedqueries`
-- `sitemaps`
-- table metadata through `EntityDefinitions`
+```bash
+pp model create SalesHub --env dev --name "Sales Hub" --solution Core
+pp model attach SalesHub --env dev --solution Core
+```
 
-That produces:
+## How inspection works
 
-- app identity and version info
-- sitemap references
-- form composition
-- view composition
-- table references
-- dependency summaries with resolved vs missing component state
+Under the hood, the model service queries `appmodules`, `appmodulecomponents`,
+`systemforms`, `savedqueries`, `sitemaps`, and `EntityDefinitions` to build a
+unified picture of each app's composition. When a tenant rejects
+`appmodule_appmodulecomponent` reads, `pp model inspect` falls back to
+`dependencies` rows where the model-driven app is the dependent component. That
+recovers sitemap, form, view, and table detail with a warning that the
+composition is inferred rather than directly queried.
 
-When tenants reject `appmodule_appmodulecomponent` reads, `pp model inspect`
-now falls back to `dependencies` rows where the model-driven app is the
-dependent component. That recovers sitemap, form, view, and table detail with a
-warning that the composition is inferred rather than direct membership.
+The `model inspect` output combines everything into one composition object with
+`app`, `sitemaps`, `forms`, `views`, `tables`, `dependencies`, and
+`missingComponents` fields. This keeps the domain language model-focused instead
+of leaking raw Dataverse table names into normal use.
 
-## Output shape
+## What model support does and does not include
 
-`model inspect` returns one combined composition object:
-
-- `app`
-- `sitemaps`
-- `forms`
-- `views`
-- `tables`
-- `dependencies`
-- `missingComponents`
-
-This keeps the domain language model-focused instead of leaking raw Dataverse
-table names into normal use.
-
-## What model support includes today
-
-Model support includes app-record authoring for:
-
-- solution-aware app creation through `model create`
-- supported solution attachment through `model attach`
-
-It does not include:
-
-- sitemap mutation
-- form or view authoring
-- model-driven packaging or deploy orchestration
-
-That is a deliberate scope choice, not a statement that the whole module is
-fragile. The main value here is composition visibility and dependency tracing,
-with create/attach support so callers do not have to drop to raw Dataverse
-`appmodule` writes for the basic app record lifecycle.
+Model support today covers inspection, dependency tracing, app-record creation,
+and solution attachment. It does not include sitemap mutation, form or view
+authoring, or model-driven packaging and deploy orchestration. That is a
+deliberate scope choice. The main value is composition visibility and dependency
+tracing, with create and attach support so you do not have to drop to raw
+Dataverse `appmodule` writes for basic app record lifecycle.
