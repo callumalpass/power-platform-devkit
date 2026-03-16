@@ -22,10 +22,6 @@ async function findBinary(name: string): Promise<string> {
   return name; // fall back to PATH
 }
 
-export async function findLspBinary(name: string): Promise<string> {
-  return findBinary(name);
-}
-
 export async function runPp(args: string[]): Promise<{ stdout: string; stderr: string }> {
   const bin = await findBinary('pp');
   return execFileAsync(bin, args, { cwd: workspaceRoot() });

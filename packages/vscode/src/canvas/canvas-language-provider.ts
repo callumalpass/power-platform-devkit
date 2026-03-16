@@ -1,6 +1,6 @@
+import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { LanguageClient, type LanguageClientOptions, type ServerOptions, TransportKind } from 'vscode-languageclient/node';
-import { findLspBinary } from '../cli';
 
 export class CanvasLanguageProvider {
   private client: LanguageClient | undefined;
@@ -8,11 +8,11 @@ export class CanvasLanguageProvider {
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   async activate(): Promise<void> {
-    const command = await findLspBinary('pp-canvas-lsp');
+    const serverModule = join(this.context.extensionPath, 'dist', 'canvas-lsp-server.js');
 
     const serverOptions: ServerOptions = {
-      run: { command, transport: TransportKind.stdio },
-      debug: { command, transport: TransportKind.stdio },
+      run: { module: serverModule, transport: TransportKind.stdio },
+      debug: { module: serverModule, transport: TransportKind.stdio },
     };
 
     const clientOptions: LanguageClientOptions = {
@@ -29,7 +29,7 @@ export class CanvasLanguageProvider {
       await this.client.start();
     } catch {
       void vscode.window.showErrorMessage(
-        'Power Platform: could not start canvas language server. Make sure `pp-canvas-lsp` is on PATH or installed in node_modules/.bin.',
+        'Power Platform: could not start canvas language server.',
       );
     }
   }
