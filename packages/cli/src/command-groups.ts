@@ -368,6 +368,7 @@ export interface FlowGroupHandlers {
   runFlowConnrefs(args: string[]): Promise<number>;
   runFlowAccess(args: string[]): Promise<number>;
   runFlowRuns(args: string[]): Promise<number>;
+  runFlowRequest(args: string[]): Promise<number>;
   runFlowLsp(args: string[]): Promise<number>;
 }
 
@@ -390,6 +391,7 @@ export async function runFlowGroup(
         { name: 'connrefs', help: cliHelp.printFlowConnrefsHelp, run: (rest) => handlers.runFlowConnrefs(rest) },
         { name: 'access', help: cliHelp.printFlowAccessHelp, run: (rest) => handlers.runFlowAccess(rest) },
         { name: 'runs', help: cliHelp.printFlowRunsHelp, run: (rest) => handlers.runFlowRuns(rest) },
+        { name: 'request', help: cliHelp.printFlowRequestHelp, run: (rest) => handlers.runFlowRequest(rest) },
         { name: 'lsp', help: cliHelp.printFlowLspHelp, run: (rest) => handlers.runFlowLsp(rest) },
       ],
     },

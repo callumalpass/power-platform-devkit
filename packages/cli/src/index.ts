@@ -227,6 +227,7 @@ import {
   runFlowList,
   runFlowLsp,
   runFlowNormalize,
+  runFlowRequest,
   runFlowRuns,
   runFlowValidate,
   runModelAccess,
@@ -525,6 +526,7 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
     runFlowConnrefs,
     runFlowAccess,
     runFlowRuns,
+    runFlowRequest,
     runFlowLsp,
   });
 }

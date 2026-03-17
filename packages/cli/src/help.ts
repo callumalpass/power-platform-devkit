@@ -921,6 +921,7 @@ export function printFlowHelp(): void {
       '  connrefs <name|id|...>       inspect connection references used by a flow',
       '  access <name|id|...>         inspect ownership and share state',
       '  runs <name|id|...>           list recent runs for a flow',
+      '  request <path>               issue a raw Power Automate API request',
       '',
       'Examples:',
       '  pp flow inspect ./flows/invoice/flow.json',
@@ -1224,16 +1225,45 @@ export function printFlowPatchHelp(): void {
 export function printFlowRunsHelp(): void {
   process.stdout.write(
     [
-      'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--include-actions] [options]',
+      'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--include-actions] [--run-id ID] [--include-action-io] [options]',
       '',
       'Behavior:',
       '  - Lists recent remote runs for one flow.',
       '  - When --include-actions is set, each run includes per-action step detail.',
+      '  - When --run-id is set, filters results to a single run.',
+      '  - When --include-action-io is set (requires --run-id), fetches the actual input/output',
+      '    payloads for each action step via the SAS-signed URLs returned by the Power Automate API.',
       '  - Uses the Power Automate API when makerEnvironmentId is configured on the environment alias.',
       '',
       'Examples:',
       '  pp flow runs InvoiceSync --environment dev --since 7d --format json',
       '  pp flow runs InvoiceSync --environment dev --since 1d --include-actions --format json',
+      '  pp flow runs InvoiceSync --environment dev --run-id 08585… --include-actions --format json',
+      '  pp flow runs InvoiceSync --environment dev --run-id 08585… --include-action-io --format json',
+      '',
+      'Common output options:',
+      '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printFlowRequestHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: flow request <path> --environment ALIAS [--method GET|POST|PATCH|DELETE] [--query key=value ...] [--body JSON|--body-file FILE] [options]',
+      '',
+      'Behavior:',
+      '  - Issues a raw HTTP request to the Power Automate management API (api.flow.microsoft.com).',
+      '  - The environment-scoped prefix (/providers/Microsoft.ProcessSimple/environments/<id>)',
+      '    is automatically prepended to <path>.',
+      '  - The api-version query parameter is injected automatically.',
+      '  - Requires makerEnvironmentId on the environment alias.',
+      '',
+      'Examples:',
+      '  pp flow request /flows/<flowId>/runs --environment dev --format json',
+      '  pp flow request /flows/<flowId>/runs --environment dev --query \'$top=10\' --format json',
+      '  pp flow request /flows/<flowId>/runs --environment dev --query \'$filter=properties/status eq \\\'Failed\\\'\' --format json',
+      '  pp flow request /flows/<flowId>/runs/<runId>/actions --environment dev --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

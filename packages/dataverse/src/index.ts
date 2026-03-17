@@ -792,6 +792,8 @@ interface PowerAutomateRunActionRecord {
     status?: string;
     code?: string;
     error?: { code?: string; message?: string };
+    inputsLink?: { uri?: string; contentSize?: number };
+    outputsLink?: { uri?: string; contentSize?: number };
   };
 }
 
@@ -804,6 +806,10 @@ export interface CloudFlowRunActionSummary {
   code?: string;
   errorCode?: string;
   errorMessage?: string;
+  inputsLink?: string;
+  outputsLink?: string;
+  inputs?: unknown;
+  outputs?: unknown;
 }
 
 export interface CloudFlowRunSummary {
@@ -827,6 +833,8 @@ export interface CloudFlowRunListOptions {
   status?: string;
   since?: string;
   includeActions?: boolean;
+  runId?: string;
+  includeActionInputsOutputs?: boolean;
 }
 
 interface AssetAccessRecord {
@@ -3733,12 +3741,13 @@ export class CloudFlowService {
 
       if (flowApiResult.success) {
         let filtered = (flowApiResult.data ?? [])
+          .filter((run) => !options.runId || run.id === options.runId)
           .filter((run) => !options.status || normalizeCloudFlowStatus(run.status) === normalizeCloudFlowStatus(options.status))
           .filter((run) => !options.since || isAfterRelativeTime(run.startTime, options.since))
           .sort(compareCloudFlowRunsDescending);
 
         if (options.includeActions && this.flowApiClient && this.makerEnvironmentId) {
-          filtered = await enrichRunsWithActions(this.flowApiClient, this.makerEnvironmentId, options.workflowId, filtered);
+          filtered = await enrichRunsWithActions(this.flowApiClient, this.makerEnvironmentId, options.workflowId, filtered, options.includeActionInputsOutputs);
         }
 
         return ok(filtered, {
@@ -5614,6 +5623,8 @@ function normalizeFlowApiRunAction(record: PowerAutomateRunActionRecord): CloudF
     code: props?.code,
     errorCode: props?.error?.code,
     errorMessage: props?.error?.message,
+    inputsLink: props?.inputsLink?.uri,
+    outputsLink: props?.outputsLink?.uri,
   };
 }
 
@@ -5635,15 +5646,48 @@ async function queryFlowApiRunActions(
   return (result.data?.value ?? []).map(normalizeFlowApiRunAction);
 }
 
+async function fetchActionInputsOutputs(actions: CloudFlowRunActionSummary[]): Promise<CloudFlowRunActionSummary[]> {
+  return Promise.all(
+    actions.map(async (action) => {
+      let inputs: unknown;
+      let outputs: unknown;
+
+      if (action.inputsLink) {
+        try {
+          const res = await fetch(action.inputsLink);
+          if (res.ok) inputs = await res.json();
+        } catch {
+          // SAS URL fetch failed — leave inputs undefined
+        }
+      }
+
+      if (action.outputsLink) {
+        try {
+          const res = await fetch(action.outputsLink);
+          if (res.ok) outputs = await res.json();
+        } catch {
+          // SAS URL fetch failed — leave outputs undefined
+        }
+      }
+
+      return { ...action, inputs, outputs };
+    }),
+  );
+}
+
 async function enrichRunsWithActions(
   flowApiClient: HttpClient,
   makerEnvironmentId: string,
   workflowId: string,
   runs: CloudFlowRunSummary[],
+  includeActionInputsOutputs?: boolean,
 ): Promise<CloudFlowRunSummary[]> {
   const enriched = await Promise.all(
     runs.map(async (run) => {
-      const actions = await queryFlowApiRunActions(flowApiClient, makerEnvironmentId, workflowId, run.id);
+      let actions = await queryFlowApiRunActions(flowApiClient, makerEnvironmentId, workflowId, run.id);
+      if (includeActionInputsOutputs) {
+        actions = await fetchActionInputsOutputs(actions);
+      }
       return { ...run, actions };
     }),
   );

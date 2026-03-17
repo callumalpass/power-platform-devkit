@@ -578,6 +578,10 @@ export interface FlowRunActionSummary {
   code?: string;
   errorCode?: string;
   errorMessage?: string;
+  inputsLink?: string;
+  outputsLink?: string;
+  inputs?: unknown;
+  outputs?: unknown;
 }
 
 export interface FlowRunSummary {
@@ -993,6 +997,8 @@ export class FlowService {
       status?: string;
       since?: string;
       includeActions?: boolean;
+      runId?: string;
+      includeActionInputsOutputs?: boolean;
     } = {}
   ): Promise<OperationResult<FlowRunSummary[]>> {
     const flow = await this.inspect(identifier, options);
@@ -1037,6 +1043,8 @@ export class FlowService {
       status: options.status,
       since: options.since,
       includeActions: options.includeActions,
+      runId: options.runId,
+      includeActionInputsOutputs: options.includeActionInputsOutputs,
     });
 
     if (!runs.success) {
@@ -3732,6 +3740,10 @@ function normalizeFlowRunAction(action: CloudFlowRunActionSummary): FlowRunActio
     code: action.code,
     errorCode: action.errorCode,
     errorMessage: action.errorMessage,
+    inputsLink: action.inputsLink,
+    outputsLink: action.outputsLink,
+    inputs: action.inputs,
+    outputs: action.outputs,
   };
 }
 

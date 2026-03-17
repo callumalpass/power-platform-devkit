@@ -226,8 +226,43 @@ Run data includes each run's status, start and end times, computed duration, and
 error codes and messages when applicable. When `includeActions` is set (or
 `--include-actions` on the CLI), each run also includes per-action step detail
 showing the name, status, timing, and error information for every action that
-executed within the run. Action detail is only available through the Power
-Automate API path.
+executed within the run. Each action also exposes `inputsLink` and `outputsLink`
+— SAS-signed URLs pointing to the full input/output JSON payloads. Action detail
+is only available through the Power Automate API path.
+
+To filter to a single run, pass `--run-id <id>` (or `runId` in the MCP tool).
+To fetch the actual input/output payloads for each action, pass
+`--include-action-io` (or `includeActionInputsOutputs` in the MCP tool). This
+requires `--run-id` to scope the fetch to a single run and implicitly enables
+`--include-actions`. The payloads are fetched from the SAS-signed URLs returned
+by the Power Automate API and attached as `inputs` and `outputs` on each action.
+
+```bash
+pp flow runs InvoiceSync --environment dev --run-id 08585… --include-action-io --format json
+```
+
+## Raw Power Automate API access
+
+`pp flow request` provides direct access to the Power Automate management API
+(`api.flow.microsoft.com`), similar to how `pp dv request` provides direct
+Dataverse API access. The environment-scoped path prefix and `api-version` query
+parameter are injected automatically. Additional OData query parameters can be
+passed with `--query key=value`.
+
+This is useful for querying older runs beyond the default result limit, applying
+custom OData filters, or accessing any Power Automate API endpoint not covered
+by the higher-level commands.
+
+```bash
+# List runs with a custom $top limit
+pp flow request /flows/<flowId>/runs --environment dev --query '$top=10' --format json
+
+# Filter to failed runs
+pp flow request /flows/<flowId>/runs --environment dev --query '$filter=properties/status eq '\''Failed'\''' --format json
+
+# Fetch actions for a specific run
+pp flow request /flows/<flowId>/runs/<runId>/actions --environment dev --format json
+```
 
 ## Current limitations
 

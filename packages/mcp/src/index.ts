@@ -387,6 +387,15 @@ const flowRunsSchema = solutionScopeSchema.extend({
   status: z.string().min(1).optional(),
   since: z.string().min(1).optional(),
   includeActions: z.boolean().optional(),
+  runId: z.string().min(1).optional(),
+  includeActionInputsOutputs: z.boolean().optional(),
+});
+
+const flowRequestSchema = remoteBaseSchema.extend({
+  path: z.string().min(1).describe('API path relative to the environment scope (e.g. /flows/<flowId>/runs). The environment prefix is prepended automatically.'),
+  method: z.enum(['GET', 'POST', 'PATCH', 'DELETE']).optional().default('GET'),
+  query: z.record(z.string()).optional().describe('Additional query parameters (e.g. { "$top": "10", "$filter": "..." }). api-version is injected automatically.'),
+  body: z.unknown().optional(),
 });
 
 const flowErrorsSchema = flowRunsSchema.extend({
@@ -2117,7 +2126,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       outputSchema: outputEnvelopeSchema,
       annotations: readOnlyAnnotations('List Flow Runs'),
     },
-    async ({ identifier, solutionUniqueName, status, since, includeActions, ...args }) => {
+    async ({ identifier, solutionUniqueName, status, since, includeActions, runId, includeActionInputsOutputs, ...args }) => {
       const resolution = await resolveRemoteRuntime(args, defaults);
 
       if (!resolution.success || !resolution.data) {
@@ -2129,8 +2138,60 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         status,
         since,
         includeActions,
+        runId,
+        includeActionInputsOutputs,
       });
       return toToolResult('pp.flow.runs', result, readOnlyPolicy());
+    }
+  );
+
+  server.registerTool(
+    'pp.flow.request',
+    {
+      title: 'Raw Flow API Request',
+      description: 'Issue a raw HTTP request to the Power Automate management API. The environment-scoped path prefix and api-version query parameter are injected automatically. Useful for querying with custom OData filters, pagination ($top/$skip), or accessing any Power Automate API endpoint.',
+      inputSchema: flowRequestSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Raw Flow API Request'),
+    },
+    async ({ path, method, query, body, ...args }) => {
+      const resolution = await resolveRemoteRuntime(args, defaults);
+
+      if (!resolution.success || !resolution.data) {
+        return toToolResult('pp.flow.request', resolution, readOnlyPolicy());
+      }
+
+      if (!resolution.data.flowApiClient || !resolution.data.makerEnvironmentId) {
+        return toToolResult(
+          'pp.flow.request',
+          fail(
+            createDiagnostic('error', 'FLOW_API_CLIENT_REQUIRED', 'The Power Automate API client requires makerEnvironmentId on the environment alias. Use pp.env.resolve-maker-id first.', {
+              source: '@pp/mcp',
+            })
+          ),
+          readOnlyPolicy()
+        );
+      }
+
+      const fullPath = `/providers/Microsoft.ProcessSimple/environments/${resolution.data.makerEnvironmentId}${path.startsWith('/') ? path : `/${path}`}`;
+      const fullQuery: Record<string, string> = { 'api-version': '2016-11-01', ...((query as Record<string, string>) ?? {}) };
+
+      const response = await resolution.data.flowApiClient.request<unknown>({
+        path: fullPath,
+        method: method ?? 'GET',
+        query: fullQuery,
+        body: body ?? undefined,
+      });
+
+      if (!response.success || !response.data) {
+        return toToolResult('pp.flow.request', response, readOnlyPolicy());
+      }
+
+      return toToolResult(
+        'pp.flow.request',
+        ok({ status: response.data.status, headers: response.data.headers, body: response.data.data }),
+        readOnlyPolicy()
+      );
     }
   );
 

@@ -24,6 +24,9 @@ import {
   printResultDiagnostics,
   readConfigOptions,
   readFlag,
+  readHeaderFlags,
+  readJsonBodyArgument,
+  readRepeatedFlags,
 } from './cli-support';
 export async function runFlowList(args: string[]): Promise<number> {
   const resolution = await resolveDataverseClientForCli(args);
@@ -394,7 +397,16 @@ export async function runFlowRuns(args: string[]): Promise<number> {
 
   if (!identifier) {
     return printFailure(
-      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--status STATUS] [--since 7d] [--include-actions]')
+      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--status STATUS] [--since 7d] [--include-actions] [--run-id ID] [--include-action-io]')
+    );
+  }
+
+  const includeActionIo = hasFlag(args, '--include-action-io');
+  const runId = readFlag(args, '--run-id');
+
+  if (includeActionIo && !runId) {
+    return printFailure(
+      argumentFailure('RUN_ID_REQUIRED_FOR_ACTION_IO', '--include-action-io requires --run-id to scope payload fetching to a single run.')
     );
   }
 
@@ -408,7 +420,9 @@ export async function runFlowRuns(args: string[]): Promise<number> {
     solutionUniqueName: readFlag(args, '--solution'),
     status: readFlag(args, '--status'),
     since: readFlag(args, '--since'),
-    includeActions: hasFlag(args, '--include-actions'),
+    includeActions: hasFlag(args, '--include-actions') || includeActionIo,
+    runId,
+    includeActionInputsOutputs: includeActionIo,
   });
 
   if (!result.success) {
@@ -417,6 +431,92 @@ export async function runFlowRuns(args: string[]): Promise<number> {
 
   printByFormat(result.data ?? [], outputFormat(args, 'json'));
   printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+export async function runFlowRequest(args: string[]): Promise<number> {
+  const path = positionalArgs(args)[0];
+
+  if (!path) {
+    return printFailure(
+      argumentFailure('FLOW_REQUEST_PATH_REQUIRED', 'Usage: flow request <path> --environment ALIAS [--method GET|POST|PATCH|DELETE] [--query key=value ...] [--body JSON|--body-file FILE]')
+    );
+  }
+
+  const method = (readFlag(args, '--method') ?? 'GET').toUpperCase();
+  const accessCheck = await enforceWriteAccessForCliArgs(args, 'flow.request', method !== 'GET');
+
+  if (accessCheck !== undefined) {
+    return accessCheck;
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  if (!resolution.data.flowApiClient || !resolution.data.makerEnvironmentId) {
+    return printFailure(
+      fail(
+        createDiagnostic('error', 'FLOW_API_CLIENT_REQUIRED', 'The Power Automate API client requires makerEnvironmentId on the environment alias. Run `pp env resolve-maker-id <alias>` first.', {
+          source: '@pp/cli',
+        })
+      )
+    );
+  }
+
+  const responseType = (readFlag(args, '--response-type') ?? 'json') as 'json' | 'text' | 'void';
+  const body = await readJsonBodyArgument(args);
+
+  if (!body.success) {
+    return printFailure(body);
+  }
+
+  if (method !== 'GET') {
+    const preview = maybeHandleMutationPreview(args, 'json', 'flow.request', { path, method }, body.data);
+
+    if (preview !== undefined) {
+      return preview;
+    }
+  }
+
+  const queryEntries = readRepeatedFlags(args, '--query')
+    .map((entry) => {
+      const eqIndex = entry.indexOf('=');
+      if (eqIndex === -1) return undefined;
+      return [entry.slice(0, eqIndex), entry.slice(eqIndex + 1)] as const;
+    })
+    .filter((entry): entry is readonly [string, string] => Boolean(entry));
+
+  const query: Record<string, string> = { 'api-version': '2016-11-01' };
+  for (const [key, value] of queryEntries) {
+    query[key] = value;
+  }
+
+  const fullPath = `/providers/Microsoft.ProcessSimple/environments/${resolution.data.makerEnvironmentId}${path.startsWith('/') ? path : `/${path}`}`;
+
+  const response = await resolution.data.flowApiClient.request<unknown>({
+    path: fullPath,
+    method,
+    query,
+    body: body.data,
+    responseType,
+    headers: readHeaderFlags(args),
+  });
+
+  if (!response.success || !response.data) {
+    return printFailure(response);
+  }
+
+  printByFormat(
+    {
+      status: response.data.status,
+      headers: response.data.headers,
+      body: response.data.data,
+    },
+    outputFormat(args, 'json')
+  );
   return 0;
 }
 
