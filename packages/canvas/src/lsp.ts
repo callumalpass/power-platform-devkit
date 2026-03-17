@@ -758,7 +758,7 @@ function findDotPrefix(text: string, position: LspPosition): string | undefined 
   let i = before.length - 1;
 
   // Skip any identifier chars typed after the dot (partial member name)
-  while (i >= 0 && /[a-zA-Z0-9_]/.test(before[i])) {
+  while (i >= 0 && /[a-zA-Z0-9_]/.test(before[i]!)) {
     i--;
   }
 
@@ -769,7 +769,7 @@ function findDotPrefix(text: string, position: LspPosition): string | undefined 
   // Extract identifier before the dot
   i--;
   const end = i + 1;
-  while (i >= 0 && /[a-zA-Z0-9_]/.test(before[i])) {
+  while (i >= 0 && /[a-zA-Z0-9_]/.test(before[i]!)) {
     i--;
   }
 
@@ -828,7 +828,7 @@ function resolveDotCompletions(prefix: string, analysis: AnalysisContext): LspCo
   // 4. Built-in enums
   const enumKey = Object.keys(BUILTIN_ENUM_MEMBERS).find((k) => k.toLowerCase() === lowerPrefix);
   if (enumKey) {
-    return BUILTIN_ENUM_MEMBERS[enumKey].map((member) => ({
+    return BUILTIN_ENUM_MEMBERS[enumKey]!.map((member) => ({
       label: member,
       kind: 20, // EnumMember
     }));

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Power Automate Flow",
+  "scopeName": "source.pp-flow",
+  "patterns": [
+    { "include": "#flow-expression-string" },
+    { "include": "#flow-wellknown-key" },
+    { "include": "#flow-action-type-value" },
+    { "include": "source.json" }
+  ],
+  "repository": {
+    "flow-expression-string": {
+      "comment": "Strings containing Power Automate expressions like @{...} or @func(...)",
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.json",
+      "patterns": [
+        { "include": "#flow-expression-interpolation" },
+        { "include": "#flow-expression-function" },
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.json"
+        }
+      ]
+    },
+    "flow-expression-interpolation": {
+      "begin": "@\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.expression.begin.pp-flow" }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.expression.end.pp-flow" }
+      },
+      "name": "meta.expression.interpolation.pp-flow",
+      "patterns": [
+        { "include": "#flow-inline-function" },
+        { "include": "#flow-inline-string" },
+        { "include": "#flow-inline-number" }
+      ]
+    },
+    "flow-expression-function": {
+      "match": "@(parameters|variables|body|triggerBody|triggerOutputs|outputs|actions|item|items|iterationIndexes|workflow|trigger|result|actionBody|actionOutputs|concat|guid|substring|replace|toLower|toUpper|indexOf|lastIndexOf|length|split|join|first|last|take|skip|union|intersection|contains|empty|coalesce|if|equals|and|or|not|less|lessOrEquals|greater|greaterOrEquals|add|sub|mul|div|mod|min|max|range|int|float|string|bool|json|xml|base64|base64ToString|base64ToBinary|binary|uriComponent|uriComponentToString|dataUri|dataUriToBinary|dataUriToString|decodeBase64|encodeUriComponent|decodeUriComponent|formatNumber|utcNow|addDays|addHours|addMinutes|addSeconds|addToTime|convertFromUtc|convertTimeZone|convertToUtc|dayOfMonth|dayOfWeek|dayOfYear|startOfDay|startOfMonth|startOfYear|ticks|formatDateTime|parseDateTime|getFutureTime|getPastTime|array|createArray|chunk|sort|reverse|setProperty|removeProperty|addProperty|xpath|nthIndexOf|slice|trim|endsWith|startsWith|null|parseFloat|parseInt|rand|decimal)(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.pp-flow" }
+      },
+      "name": "meta.expression.function.pp-flow"
+    },
+    "flow-inline-function": {
+      "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.pp-flow" }
+      }
+    },
+    "flow-inline-string": {
+      "begin": "'",
+      "end": "'",
+      "name": "string.quoted.single.pp-flow",
+      "patterns": [
+        {
+          "match": "''",
+          "name": "constant.character.escape.pp-flow"
+        }
+      ]
+    },
+    "flow-inline-number": {
+      "match": "\\b[0-9]+(\\.[0-9]+)?\\b",
+      "name": "constant.numeric.pp-flow"
+    },
+    "flow-wellknown-key": {
+      "match": "\"(type|kind|runAfter|inputs|outputs|operationId|apiId|host|parameters|metadata|description|recurrence|authentication)\"(?=\\s*:)",
+      "captures": {
+        "1": { "name": "support.type.property-name.pp-flow" }
+      }
+    },
+    "flow-action-type-value": {
+      "match": "(?<=:\\s*)\"(Compose|InitializeVariable|Scope|OpenApiConnection|Request|SetVariable|Http|Condition|ForEach|Switch|Until|Response|Terminate|Wait|ApiConnection|Query|Select|Join|ParseJson|Table|IncrementVariable|DecrementVariable|AppendToArrayVariable|AppendToStringVariable)\"",
+      "captures": {
+        "1": { "name": "constant.other.action-type.pp-flow" }
+      }
+    }
+  }
+}

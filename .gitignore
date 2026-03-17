@@ -12,3 +12,4 @@ coverage
 .ops/github-canvas-corpus/PowerApps-Tooling/
 packages/canvas/powerfx-bridge/bin/
 packages/canvas/powerfx-bridge/obj/
+/.ops

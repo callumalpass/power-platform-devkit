@@ -219,9 +219,9 @@ export async function buildCanvasSemanticModel(
 
   // Phase 3: Resolve bindings with full variable knowledge
   for (let i = 0; i < controls.length; i++) {
-    for (const formula of parsedPerControl[i]) {
+    for (const formula of parsedPerControl[i]!) {
       if (formula.ast) {
-        formula.bindings = analyzeBindings(formula.ast, controls[i], controlById, controlNameToIds, dataSourceSymbols, metadataCatalog, declaredVariables);
+        formula.bindings = analyzeBindings(formula.ast, controls[i]!, controlById, controlNameToIds, dataSourceSymbols, metadataCatalog, declaredVariables);
       }
     }
   }
@@ -369,11 +369,11 @@ function collectDeclaredVariables(formulas: CanvasFormulaSemantic[]): Set<string
     visitPowerFxAst(formula.ast, (node) => {
       if (node.kind !== 'CallExpression' || node.callee.kind !== 'Identifier') return;
 
-      if (variableSetters.has(node.callee.name) && node.arguments.length >= 1 && node.arguments[0].kind === 'Identifier') {
-        variables.add(node.arguments[0].name);
+      if (variableSetters.has(node.callee.name) && node.arguments.length >= 1 && node.arguments[0]!.kind === 'Identifier') {
+        variables.add(node.arguments[0]!.name);
       }
 
-      if (node.callee.name === 'UpdateContext' && node.arguments.length >= 1 && node.arguments[0].kind === 'RecordExpression') {
+      if (node.callee.name === 'UpdateContext' && node.arguments.length >= 1 && node.arguments[0]!.kind === 'RecordExpression') {
         for (const field of node.arguments[0].fields) {
           variables.add(field.name.name);
         }

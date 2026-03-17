@@ -1,0 +1,104 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Power Apps YAML",
+  "scopeName": "source.powerapps-yaml",
+  "patterns": [
+    { "include": "#yaml-comment" },
+    { "include": "#formula-property" },
+    { "include": "#control-type-property" },
+    { "include": "#structure-keyword" },
+    { "include": "#control-name" },
+    { "include": "source.yaml" }
+  ],
+  "repository": {
+    "yaml-comment": {
+      "match": "^\\s*#.*$",
+      "name": "comment.line.number-sign.yaml"
+    },
+    "formula-property": {
+      "comment": "Matches 'Key: =expression' — captures the whole line so YAML patterns don't consume it first",
+      "begin": "^(\\s*)(\\w[\\w ]*)(:)\\s*(=)",
+      "beginCaptures": {
+        "2": { "name": "entity.name.tag.yaml" },
+        "3": { "name": "punctuation.separator.key-value.yaml" },
+        "4": { "name": "keyword.operator.formula.powerapps-yaml" }
+      },
+      "end": "$",
+      "name": "meta.formula.powerapps-yaml",
+      "patterns": [
+        { "include": "#powerfx-comment" },
+        { "include": "#powerfx-string" },
+        { "include": "#powerfx-boolean" },
+        { "include": "#powerfx-builtin-enum" },
+        { "include": "#powerfx-function-call" },
+        { "include": "#powerfx-number" },
+        { "include": "#powerfx-operator" },
+        { "include": "#powerfx-keyword" }
+      ]
+    },
+    "control-type-property": {
+      "match": "^(\\s*)(Control)(:)\\s*(\\S+@[0-9][0-9.]*)",
+      "captures": {
+        "2": { "name": "keyword.control.powerapps-yaml" },
+        "3": { "name": "punctuation.separator.key-value.yaml" },
+        "4": { "name": "entity.name.type.control.powerapps-yaml" }
+      }
+    },
+    "structure-keyword": {
+      "match": "^(\\s*)(Properties|Children|Screens|Variant|Layout)(:)\\s*$",
+      "captures": {
+        "2": { "name": "keyword.control.powerapps-yaml" },
+        "3": { "name": "punctuation.separator.key-value.yaml" }
+      }
+    },
+    "control-name": {
+      "comment": "Top-level screen names and control names (key with colon, no value or only whitespace after)",
+      "match": "^(\\s*-?\\s*)(\\w[\\w ]*)(:)\\s*$",
+      "captures": {
+        "2": { "name": "entity.name.section.control.powerapps-yaml" },
+        "3": { "name": "punctuation.separator.key-value.yaml" }
+      }
+    },
+    "powerfx-comment": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.powerfx"
+    },
+    "powerfx-string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.powerfx",
+      "patterns": [
+        {
+          "match": "\"\"",
+          "name": "constant.character.escape.powerfx"
+        }
+      ]
+    },
+    "powerfx-boolean": {
+      "match": "\\b(true|false)\\b",
+      "name": "constant.language.boolean.powerfx"
+    },
+    "powerfx-builtin-enum": {
+      "match": "\\b(Font|Color|Icon|FontWeight|DisplayMode|Layout|Align|VerticalAlign|Overflow|BorderStyle|TextMode|TextFormat|PenMode|ImagePosition|Screen|Transition|BarcodeType|DateTimeZone|StartOfWeek|SortOrder|Match|MatchOptions|JSONFormat|TraceOptions|TraceSeverity|LoadingSpinner|NotificationType|ScreenTransition|FormMode)\\b",
+      "name": "support.type.enum.powerfx"
+    },
+    "powerfx-function-call": {
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.powerfx" }
+      }
+    },
+    "powerfx-number": {
+      "match": "\\b[0-9]+(\\.[0-9]+)?\\b",
+      "name": "constant.numeric.powerfx"
+    },
+    "powerfx-operator": {
+      "match": "<>|<=|>=|[+\\-*/&=<>]",
+      "name": "keyword.operator.powerfx"
+    },
+    "powerfx-keyword": {
+      "match": "\\b(And|Or|Not|in|exactin|As|Self|Parent|ThisItem|ThisRecord)\\b",
+      "name": "keyword.other.powerfx"
+    }
+  }
+}
