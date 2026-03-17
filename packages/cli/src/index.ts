@@ -222,13 +222,10 @@ import {
   runFlowActivate,
   runFlowAttach,
   runFlowConnrefs,
-  runFlowDoctor,
-  runFlowErrors,
   runFlowExport,
   runFlowInspect,
   runFlowList,
   runFlowLsp,
-  runFlowMonitor,
   runFlowNormalize,
   runFlowRuns,
   runFlowValidate,
@@ -528,9 +525,6 @@ async function runFlow(command: string | undefined, args: string[]): Promise<num
     runFlowConnrefs,
     runFlowAccess,
     runFlowRuns,
-    runFlowErrors,
-    runFlowDoctor,
-    runFlowMonitor,
     runFlowLsp,
   });
 }

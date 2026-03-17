@@ -921,9 +921,6 @@ export function printFlowHelp(): void {
       '  connrefs <name|id|...>       inspect connection references used by a flow',
       '  access <name|id|...>         inspect ownership and share state',
       '  runs <name|id|...>           list recent runs for a flow',
-      '  errors <name|id|...>         summarize recent flow errors',
-      '  doctor <name|id|...>         diagnose flow runtime health',
-      '  monitor <name|id|...>        combined health monitoring report',
       '',
       'Examples:',
       '  pp flow inspect ./flows/invoice/flow.json',
@@ -1244,43 +1241,6 @@ export function printFlowRunsHelp(): void {
   );
 }
 
-export function printFlowMonitorHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow monitor <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [--baseline FILE] [options]',
-      '',
-      'Behavior:',
-      '  - Combines recent runs, grouped runtime errors, and doctor findings into one follow-up monitoring report.',
-      '  - Emits a health classification so repeated deployment checks do not require manual correlation across multiple commands.',
-      '  - When `--baseline` points at a prior monitor JSON payload, also reports whether health, run counts, latest failure, or grouped errors changed since that capture.',
-      '',
-      'Examples:',
-      '  pp flow monitor InvoiceSync --environment dev --since 2h --format json',
-      '  pp flow monitor InvoiceSync --environment dev --since 2h --baseline ./artifacts/InvoiceSync.monitor.json --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-export function printFlowErrorsHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow errors <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference] [options]',
-      '',
-      'Behavior:',
-      '  - Summarizes recent remote flow failures and can group them by error or connection reference.',
-      '',
-      'Examples:',
-      '  pp flow errors InvoiceSync --environment dev --since 7d --group-by errorCode --format json',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
 export function printFlowConnrefsHelp(): void {
   process.stdout.write(
     [
@@ -1294,23 +1254,6 @@ export function printFlowConnrefsHelp(): void {
       '',
       'Auth behavior:',
       '  --no-interactive-auth       Fail fast with structured diagnostics instead of opening browser auth',
-      '',
-      'Common output options:',
-      '  --format table|json|yaml|ndjson|markdown|raw',
-    ].join('\n') + '\n'
-  );
-}
-
-export function printFlowDoctorHelp(): void {
-  process.stdout.write(
-    [
-      'Usage: flow doctor <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--since 7d] [options]',
-      '',
-      'Behavior:',
-      '  - Summarizes runtime health, failures, and connection-reference context for one remote flow.',
-      '',
-      'Examples:',
-      '  pp flow doctor InvoiceSync --environment dev --since 7d --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

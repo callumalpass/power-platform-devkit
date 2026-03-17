@@ -170,6 +170,9 @@ grouped error analysis, `FlowService.doctor()` for pre-triaged diagnostics, and
 
 These capabilities are accessible through the MCP tools `pp.flow.deploy`,
 `pp.flow.runs`, `pp.flow.errors`, `pp.flow.doctor`, and `pp.flow.monitor`.
+`flow runs` is also available as a CLI command; `errors`, `doctor`, and
+`monitor` are MCP-only to encourage direct run inspection over automated
+summaries.
 
 ### Patch model
 
@@ -198,9 +201,9 @@ dynamic-content references, and variable targets.
 
 ## Cloud flow run history
 
-Cloud flow run history is available through `FlowService.runs()`,
-`FlowService.errors()`, `FlowService.doctor()`, and `FlowService.monitor()`,
-and through the corresponding MCP tools.
+Cloud flow run history is available through `pp flow runs` on the CLI and
+through the MCP tools `pp.flow.runs`, `pp.flow.errors`, `pp.flow.doctor`, and
+`pp.flow.monitor`.
 
 When the target environment has a `makerEnvironmentId` configured on its
 environment alias, `pp` queries the Power Automate management API
