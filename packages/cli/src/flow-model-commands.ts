@@ -32,7 +32,7 @@ export async function runFlowList(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
-  const result = await new FlowService(resolution.data.client).list({
+  const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).list({
     solutionUniqueName: readFlag(args, '--solution'),
   });
 
@@ -59,7 +59,7 @@ export async function runFlowInspect(args: string[]): Promise<number> {
       return printFailure(resolution);
     }
 
-    const result = await new FlowService(resolution.data.client).inspect(identifier, {
+    const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).inspect(identifier, {
       solutionUniqueName: readFlag(args, '--solution'),
     });
 
@@ -129,7 +129,7 @@ export async function runFlowAttach(args: string[]): Promise<number> {
     return preview;
   }
 
-  const result = await new FlowService(resolution.data.client).attach(identifier, solutionUniqueName, {
+  const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).attach(identifier, solutionUniqueName, {
     addRequiredComponents,
   });
 
@@ -202,7 +202,7 @@ export async function runFlowExport(args: string[]): Promise<number> {
     return preview;
   }
 
-  const result = await new FlowService(resolution.data.client).exportArtifact(identifier, outPath, {
+  const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).exportArtifact(identifier, outPath, {
     solutionUniqueName: readFlag(args, '--solution'),
   });
 
@@ -246,7 +246,7 @@ export async function runFlowActivate(args: string[]): Promise<number> {
     return preview;
   }
 
-  const result = await new FlowService(resolution.data.client).activate(identifier, {
+  const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).activate(identifier, {
     solutionUniqueName,
   });
 
@@ -372,7 +372,7 @@ export async function runFlowConnrefs(args: string[]): Promise<number> {
     return printFailure(resolution);
   }
 
-  const result = await new FlowService(resolution.data.client).connrefs(identifier, {
+  const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).connrefs(identifier, {
     solutionUniqueName: readFlag(args, '--solution'),
     since: readFlag(args, '--since'),
   });

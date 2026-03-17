@@ -3951,6 +3951,171 @@ describe('normalizeMetadataQueryOptions', () => {
     expect(httpClient.requests[2]?.path).toContain('retrycount');
   });
 
+  it('fetches cloud flow runs from Power Automate API when configured', async () => {
+    const dataverseHttpClient = new FakeHttpClient([]);
+    const flowApiHttpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              name: 'run-a',
+              properties: {
+                startTime: '2026-03-10T10:00:00.000Z',
+                endTime: '2026-03-10T10:00:05.000Z',
+                status: 'Succeeded',
+              },
+            },
+            {
+              name: 'run-b',
+              properties: {
+                startTime: '2026-03-10T11:00:00.000Z',
+                endTime: '2026-03-10T11:00:02.000Z',
+                status: 'Failed',
+                error: { code: 'ConnectionAuthorizationFailed', message: 'Auth failed' },
+              },
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, dataverseHttpClient);
+    const service = new CloudFlowService(client, {
+      flowApiClient: flowApiHttpClient,
+      makerEnvironmentId: 'env-001',
+    });
+
+    const runs = await service.runs({ workflowId: 'wf-123' });
+
+    expect(runs.success).toBe(true);
+    expect(runs.data).toHaveLength(2);
+    expect(runs.data?.[0]).toMatchObject({
+      id: 'run-b',
+      workflowId: 'wf-123',
+      status: 'Failed',
+      durationMs: 2000,
+      errorCode: 'ConnectionAuthorizationFailed',
+      errorMessage: 'Auth failed',
+    });
+    expect(runs.data?.[1]).toMatchObject({
+      id: 'run-a',
+      workflowId: 'wf-123',
+      status: 'Succeeded',
+      durationMs: 5000,
+    });
+    expect(flowApiHttpClient.requests[0]?.path).toContain('/providers/Microsoft.ProcessSimple/environments/env-001/flows/wf-123/runs');
+    expect(dataverseHttpClient.requests).toHaveLength(0);
+  });
+
+  it('falls back to Dataverse flowruns when Power Automate API fails', async () => {
+    const dataverseHttpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              flowrunid: 'dv-run-1',
+              workflowid: 'wf-123',
+              status: 'Succeeded',
+              starttime: '2026-03-10T10:00:00.000Z',
+            },
+          ],
+        },
+      }),
+    ]);
+    const flowApiHttpClient = new FakeHttpClient([
+      fail(createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'Forbidden', { source: '@pp/http' })),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, dataverseHttpClient);
+    const service = new CloudFlowService(client, {
+      flowApiClient: flowApiHttpClient,
+      makerEnvironmentId: 'env-001',
+    });
+
+    const runs = await service.runs({ workflowId: 'wf-123' });
+
+    expect(runs.success).toBe(true);
+    expect(runs.data).toHaveLength(1);
+    expect(runs.data?.[0]?.id).toBe('dv-run-1');
+    expect(flowApiHttpClient.requests).toHaveLength(1);
+    expect(dataverseHttpClient.requests).toHaveLength(1);
+  });
+
+  it('skips Power Automate API when workflowId is not provided', async () => {
+    const dataverseHttpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              flowrunid: 'dv-run-1',
+              workflowid: 'wf-123',
+              status: 'Succeeded',
+              starttime: '2026-03-10T10:00:00.000Z',
+            },
+          ],
+        },
+      }),
+    ]);
+    const flowApiHttpClient = new FakeHttpClient([]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, dataverseHttpClient);
+    const service = new CloudFlowService(client, {
+      flowApiClient: flowApiHttpClient,
+      makerEnvironmentId: 'env-001',
+    });
+
+    const runs = await service.runs({});
+
+    expect(runs.success).toBe(true);
+    expect(runs.data).toHaveLength(1);
+    expect(flowApiHttpClient.requests).toHaveLength(0);
+    expect(dataverseHttpClient.requests).toHaveLength(1);
+  });
+
+  it('filters Power Automate API runs by status', async () => {
+    const flowApiHttpClient = new FakeHttpClient([
+      ok({
+        status: 200,
+        headers: {},
+        data: {
+          value: [
+            {
+              name: 'run-ok',
+              properties: {
+                startTime: '2026-03-10T10:00:00.000Z',
+                endTime: '2026-03-10T10:00:05.000Z',
+                status: 'Succeeded',
+              },
+            },
+            {
+              name: 'run-fail',
+              properties: {
+                startTime: '2026-03-10T11:00:00.000Z',
+                endTime: '2026-03-10T11:00:02.000Z',
+                status: 'Failed',
+                error: { code: 'SomeError', message: 'Something failed' },
+              },
+            },
+          ],
+        },
+      }),
+    ]);
+    const client = new DataverseClient({ url: 'https://example.crm.dynamics.com' }, new FakeHttpClient([]));
+    const service = new CloudFlowService(client, {
+      flowApiClient: flowApiHttpClient,
+      makerEnvironmentId: 'env-001',
+    });
+
+    const runs = await service.runs({ workflowId: 'wf-123', status: 'Failed' });
+
+    expect(runs.success).toBe(true);
+    expect(runs.data).toHaveLength(1);
+    expect(runs.data?.[0]?.id).toBe('run-fail');
+  });
+
   it('lists and inspects canvas apps through a typed service', async () => {
     const httpClient = new FakeHttpClient([
       ok({

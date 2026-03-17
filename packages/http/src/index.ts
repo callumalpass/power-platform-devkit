@@ -10,6 +10,7 @@ export interface HttpClientOptions {
   baseUrl?: string;
   defaultHeaders?: Record<string, string>;
   tokenProvider?: TokenProvider;
+  authResource?: string;
   retries?: number;
   retryDelayMs?: number;
 }
@@ -158,7 +159,7 @@ export class HttpClient {
     }
 
     if (request.authenticated !== false && this.options.tokenProvider) {
-      headers.set('authorization', `Bearer ${await this.options.tokenProvider.getAccessToken(url.origin)}`);
+      headers.set('authorization', `Bearer ${await this.options.tokenProvider.getAccessToken(this.options.authResource ?? url.origin)}`);
     }
 
     for (let attempt = 0; attempt <= this.retries; attempt += 1) {

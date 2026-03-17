@@ -87,6 +87,12 @@ interface ResolvedRemoteRuntime {
       ? C
       : never
     : never;
+  flowApiClient?: Awaited<ReturnType<typeof resolveDataverseClient>> extends OperationResult<infer T>
+    ? T extends { flowApiClient?: infer F }
+      ? F
+      : never
+    : never;
+  makerEnvironmentId?: string;
 }
 
 interface RemoteAccessRequest {
@@ -380,6 +386,7 @@ const flowRunsSchema = solutionScopeSchema.extend({
   identifier: z.string().min(1),
   status: z.string().min(1).optional(),
   since: z.string().min(1).optional(),
+  includeActions: z.boolean().optional(),
 });
 
 const flowErrorsSchema = flowRunsSchema.extend({
@@ -2068,7 +2075,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         return toToolResult('pp.flow.inspect', resolution, readOnlyPolicy());
       }
 
-      const service = new FlowService(resolution.data.client);
+      const service = new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId });
       if (identifier) {
         return toToolResult('pp.flow.inspect', await service.inspect(identifier, { solutionUniqueName }), readOnlyPolicy());
       }
@@ -2093,7 +2100,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         return toToolResult('pp.flow.connrefs', resolution, readOnlyPolicy());
       }
 
-      const result = await new FlowService(resolution.data.client).connrefs(identifier, {
+      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).connrefs(identifier, {
         solutionUniqueName,
         since,
       });
@@ -2110,17 +2117,18 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       outputSchema: outputEnvelopeSchema,
       annotations: readOnlyAnnotations('List Flow Runs'),
     },
-    async ({ identifier, solutionUniqueName, status, since, ...args }) => {
+    async ({ identifier, solutionUniqueName, status, since, includeActions, ...args }) => {
       const resolution = await resolveRemoteRuntime(args, defaults);
 
       if (!resolution.success || !resolution.data) {
         return toToolResult('pp.flow.runs', resolution, readOnlyPolicy());
       }
 
-      const result = await new FlowService(resolution.data.client).runs(identifier, {
+      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).runs(identifier, {
         solutionUniqueName,
         status,
         since,
+        includeActions,
       });
       return toToolResult('pp.flow.runs', result, readOnlyPolicy());
     }
@@ -2142,7 +2150,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         return toToolResult('pp.flow.errors', resolution, readOnlyPolicy());
       }
 
-      const result = await new FlowService(resolution.data.client).errors(identifier, {
+      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).errors(identifier, {
         solutionUniqueName,
         status,
         since,
@@ -2168,7 +2176,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         return toToolResult('pp.flow.doctor', resolution, readOnlyPolicy());
       }
 
-      const result = await new FlowService(resolution.data.client).doctor(identifier, {
+      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).doctor(identifier, {
         solutionUniqueName,
         since,
       });
@@ -2198,7 +2206,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         return toToolResult('pp.flow.monitor', normalizedBaseline, readOnlyPolicy());
       }
 
-      const result = await new FlowService(resolution.data.client).monitor(identifier, {
+      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).monitor(identifier, {
         solutionUniqueName,
         since,
         baseline: normalizedBaseline.data,
@@ -2230,7 +2238,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         );
       }
 
-      const result = await new FlowService(resolution.data.client).activate(identifier, {
+      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).activate(identifier, {
         solutionUniqueName,
       });
       return toToolResult(
@@ -2269,7 +2277,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }
 
       const workspaceRoot = resolveProjectPath(undefined, defaults);
-      const result = await new FlowService(resolution.data.client).deployArtifact(resolveWorkspacePath(inputPath, workspaceRoot), {
+      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).deployArtifact(resolveWorkspacePath(inputPath, workspaceRoot), {
         solutionUniqueName,
         target,
         createIfMissing,
@@ -2322,7 +2330,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         );
       }
 
-      const result = await new FlowService(resolution.data.client).exportArtifact(
+      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).exportArtifact(
         identifier,
         resolveWorkspacePath(outPath, resolveProjectPath(undefined, defaults)),
         {
@@ -4609,6 +4617,8 @@ async function resolveRemoteRuntime(
       environment: resolution.data.environment,
       authProfile: resolution.data.authProfile,
       client: resolution.data.client,
+      flowApiClient: resolution.data.flowApiClient,
+      makerEnvironmentId: resolution.data.makerEnvironmentId,
     },
     {
       diagnostics: resolution.diagnostics,

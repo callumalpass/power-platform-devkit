@@ -251,9 +251,9 @@ with `--default-solution`, `--display-name`, `--maker-env-id`, `--tenant-id`,
 and `--api-path`.
 
 The `--maker-env-id` flag deserves a brief explanation. It does not affect
-Dataverse resolution at all; it is optional metadata that lets `pp` print exact
-Maker deep links for workflows such as the current canvas create/import fallback
-guidance.
+Dataverse resolution, but it enables two capabilities: exact Maker deep links
+for canvas create/import fallback guidance, and cloud flow run history queries
+through the Power Automate management API (see [flow.md](flow.md) for details).
 
 For one-off runs, `pp canvas create` and `pp canvas import` also accept
 `--maker-env-id` directly so you do not have to persist that metadata on the

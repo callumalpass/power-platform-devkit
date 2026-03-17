@@ -140,6 +140,8 @@ export interface DataverseResolution {
   environment: EnvironmentAlias;
   authProfile: AuthProfile;
   client: DataverseClient;
+  flowApiClient?: HttpClient;
+  makerEnvironmentId?: string;
 }
 
 export interface ResolveDataverseClientOptions extends ConfigStoreOptions {
@@ -771,6 +773,39 @@ export interface CloudFlowRunRecord {
   errormessage?: string;
 }
 
+interface PowerAutomateRunRecord {
+  name?: string;
+  properties?: {
+    startTime?: string;
+    endTime?: string;
+    status?: string;
+    code?: string;
+    error?: { code?: string; message?: string };
+  };
+}
+
+interface PowerAutomateRunActionRecord {
+  name?: string;
+  properties?: {
+    startTime?: string;
+    endTime?: string;
+    status?: string;
+    code?: string;
+    error?: { code?: string; message?: string };
+  };
+}
+
+export interface CloudFlowRunActionSummary {
+  name: string;
+  status?: string;
+  startTime?: string;
+  endTime?: string;
+  durationMs?: number;
+  code?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export interface CloudFlowRunSummary {
   id: string;
   workflowId?: string;
@@ -782,6 +817,7 @@ export interface CloudFlowRunSummary {
   retryCount?: number;
   errorCode?: string;
   errorMessage?: string;
+  actions?: CloudFlowRunActionSummary[];
 }
 
 export interface CloudFlowRunListOptions {
@@ -790,6 +826,7 @@ export interface CloudFlowRunListOptions {
   workflowUniqueName?: string;
   status?: string;
   since?: string;
+  includeActions?: boolean;
 }
 
 interface AssetAccessRecord {
@@ -3593,8 +3630,19 @@ export class CanvasAppService {
   }
 }
 
+export interface CloudFlowServiceOptions {
+  flowApiClient?: HttpClient;
+  makerEnvironmentId?: string;
+}
+
 export class CloudFlowService {
-  constructor(private readonly dataverseClient: DataverseClient) {}
+  private readonly flowApiClient?: HttpClient;
+  private readonly makerEnvironmentId?: string;
+
+  constructor(private readonly dataverseClient: DataverseClient, options?: CloudFlowServiceOptions) {
+    this.flowApiClient = options?.flowApiClient;
+    this.makerEnvironmentId = options?.makerEnvironmentId;
+  }
 
   async list(): Promise<OperationResult<CloudFlowInspectResult[]>> {
     const workflows = await this.dataverseClient.queryAll<CloudFlowRecord>({
@@ -3680,6 +3728,27 @@ export class CloudFlowService {
   }
 
   async runs(options: CloudFlowRunListOptions = {}): Promise<OperationResult<CloudFlowRunSummary[]>> {
+    if (this.flowApiClient && this.makerEnvironmentId && options.workflowId) {
+      const flowApiResult = await queryFlowApiRuns(this.flowApiClient, this.makerEnvironmentId, options.workflowId);
+
+      if (flowApiResult.success) {
+        let filtered = (flowApiResult.data ?? [])
+          .filter((run) => !options.status || normalizeCloudFlowStatus(run.status) === normalizeCloudFlowStatus(options.status))
+          .filter((run) => !options.since || isAfterRelativeTime(run.startTime, options.since))
+          .sort(compareCloudFlowRunsDescending);
+
+        if (options.includeActions && this.flowApiClient && this.makerEnvironmentId) {
+          filtered = await enrichRunsWithActions(this.flowApiClient, this.makerEnvironmentId, options.workflowId, filtered);
+        }
+
+        return ok(filtered, {
+          supportTier: 'experimental',
+          diagnostics: flowApiResult.diagnostics,
+          warnings: flowApiResult.warnings,
+        });
+      }
+    }
+
     const runs = await queryFlowRunRecords(this.dataverseClient);
 
     if (!runs.success) {
@@ -4205,11 +4274,25 @@ export async function resolveDataverseClient(
     })
   );
 
+  const makerEnvironmentId = environmentResult.data.makerEnvironmentId;
+  const flowApiClient = makerEnvironmentId
+    ? new HttpClient({
+        baseUrl: 'https://api.flow.microsoft.com/',
+        defaultHeaders: { accept: 'application/json' },
+        retries: DATAVERSE_HTTP_RETRIES,
+        retryDelayMs: DATAVERSE_HTTP_RETRY_DELAY_MS,
+        tokenProvider: tokenProvider.data,
+        authResource: 'https://service.flow.microsoft.com',
+      })
+    : undefined;
+
   return ok(
     {
       environment: environmentResult.data,
       authProfile: authProfileResult.data,
       client,
+      flowApiClient,
+      makerEnvironmentId,
     },
     {
       supportTier: 'preview',
@@ -5459,6 +5542,112 @@ function normalizeCloudFlowRun(record: CloudFlowRunRecord): CloudFlowRunSummary 
     errorCode: record.errorcode,
     errorMessage: record.errormessage,
   };
+}
+
+function normalizeFlowApiRun(record: PowerAutomateRunRecord, workflowId: string): CloudFlowRunSummary {
+  const props = record.properties;
+  const startTime = props?.startTime;
+  const endTime = props?.endTime;
+  let durationMs: number | undefined;
+
+  if (startTime && endTime) {
+    const diff = new Date(endTime).getTime() - new Date(startTime).getTime();
+    if (Number.isFinite(diff) && diff >= 0) {
+      durationMs = diff;
+    }
+  }
+
+  return {
+    id: record.name ?? 'unknown-run',
+    workflowId,
+    status: props?.status,
+    startTime,
+    endTime,
+    durationMs,
+    errorCode: props?.error?.code ?? props?.code,
+    errorMessage: props?.error?.message,
+  };
+}
+
+async function queryFlowApiRuns(
+  flowApiClient: HttpClient,
+  makerEnvironmentId: string,
+  workflowId: string,
+): Promise<OperationResult<CloudFlowRunSummary[]>> {
+  const result = await flowApiClient.requestJson<{ value?: PowerAutomateRunRecord[] }>({
+    path: `/providers/Microsoft.ProcessSimple/environments/${makerEnvironmentId}/flows/${workflowId}/runs`,
+    query: { 'api-version': '2016-11-01' },
+  });
+
+  if (!result.success) {
+    return result as unknown as OperationResult<CloudFlowRunSummary[]>;
+  }
+
+  const runs = (result.data?.value ?? []).map((record) => normalizeFlowApiRun(record, workflowId));
+
+  return ok(runs, {
+    supportTier: 'experimental',
+    diagnostics: result.diagnostics,
+    warnings: result.warnings,
+  });
+}
+
+function normalizeFlowApiRunAction(record: PowerAutomateRunActionRecord): CloudFlowRunActionSummary {
+  const props = record.properties;
+  const startTime = props?.startTime;
+  const endTime = props?.endTime;
+  let durationMs: number | undefined;
+
+  if (startTime && endTime) {
+    const diff = new Date(endTime).getTime() - new Date(startTime).getTime();
+    if (Number.isFinite(diff) && diff >= 0) {
+      durationMs = diff;
+    }
+  }
+
+  return {
+    name: record.name ?? 'unknown-action',
+    status: props?.status,
+    startTime,
+    endTime,
+    durationMs,
+    code: props?.code,
+    errorCode: props?.error?.code,
+    errorMessage: props?.error?.message,
+  };
+}
+
+async function queryFlowApiRunActions(
+  flowApiClient: HttpClient,
+  makerEnvironmentId: string,
+  workflowId: string,
+  runId: string,
+): Promise<CloudFlowRunActionSummary[]> {
+  const result = await flowApiClient.requestJson<{ value?: PowerAutomateRunActionRecord[] }>({
+    path: `/providers/Microsoft.ProcessSimple/environments/${makerEnvironmentId}/flows/${workflowId}/runs/${runId}/actions`,
+    query: { 'api-version': '2016-11-01' },
+  });
+
+  if (!result.success) {
+    return [];
+  }
+
+  return (result.data?.value ?? []).map(normalizeFlowApiRunAction);
+}
+
+async function enrichRunsWithActions(
+  flowApiClient: HttpClient,
+  makerEnvironmentId: string,
+  workflowId: string,
+  runs: CloudFlowRunSummary[],
+): Promise<CloudFlowRunSummary[]> {
+  const enriched = await Promise.all(
+    runs.map(async (run) => {
+      const actions = await queryFlowApiRunActions(flowApiClient, makerEnvironmentId, workflowId, run.id);
+      return { ...run, actions };
+    }),
+  );
+  return enriched;
 }
 
 function normalizeModelDrivenApp(record: ModelDrivenAppRecord): ModelDrivenAppSummary {

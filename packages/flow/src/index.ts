@@ -6,6 +6,8 @@ import {
   CloudFlowService as DataverseCloudFlowService,
   ConnectionReferenceService,
   EnvironmentVariableService,
+  type CloudFlowRunActionSummary,
+  type CloudFlowServiceOptions,
   type DataverseClient,
   type CloudFlowConnectionReference as DataverseCloudFlowConnectionReference,
   type CloudFlowInspectResult as DataverseCloudFlowInspectResult,
@@ -567,6 +569,17 @@ export interface FlowPatchResult {
 
 export interface FlowRunRecord extends DataverseCloudFlowRunRecord {}
 
+export interface FlowRunActionSummary {
+  name: string;
+  status?: string;
+  startTime?: string;
+  endTime?: string;
+  durationMs?: number;
+  code?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export interface FlowRunSummary {
   id: string;
   workflowId?: string;
@@ -578,6 +591,7 @@ export interface FlowRunSummary {
   retryCount?: number;
   errorCode?: string;
   errorMessage?: string;
+  actions?: FlowRunActionSummary[];
 }
 
 export interface FlowErrorGroup {
@@ -840,7 +854,7 @@ export interface FlowVariableWrite {
 }
 
 export class FlowService {
-  constructor(private readonly dataverseClient?: DataverseClient) {}
+  constructor(private readonly dataverseClient?: DataverseClient, private readonly cloudFlowServiceOptions?: CloudFlowServiceOptions) {}
 
   async list(options: { solutionUniqueName?: string } = {}): Promise<OperationResult<FlowSummary[]>> {
     if (!this.dataverseClient) {
@@ -851,7 +865,7 @@ export class FlowService {
       );
     }
 
-    const workflows = await new DataverseCloudFlowService(this.dataverseClient).list();
+    const workflows = await new DataverseCloudFlowService(this.dataverseClient, this.cloudFlowServiceOptions).list();
 
     if (!workflows.success) {
       return workflows as unknown as OperationResult<FlowSummary[]>;
@@ -978,6 +992,7 @@ export class FlowService {
       solutionUniqueName?: string;
       status?: string;
       since?: string;
+      includeActions?: boolean;
     } = {}
   ): Promise<OperationResult<FlowRunSummary[]>> {
     const flow = await this.inspect(identifier, options);
@@ -1015,12 +1030,13 @@ export class FlowService {
       );
     }
 
-    const runs = await new DataverseCloudFlowService(this.dataverseClient).runs({
+    const runs = await new DataverseCloudFlowService(this.dataverseClient, this.cloudFlowServiceOptions).runs({
       workflowId: flow.data.id,
       workflowName: flow.data.name,
       workflowUniqueName: flow.data.uniqueName,
       status: options.status,
       since: options.since,
+      includeActions: options.includeActions,
     });
 
     if (!runs.success) {
@@ -3702,6 +3718,20 @@ function normalizeFlowRun(record: DataverseCloudFlowRunSummary): FlowRunSummary 
     retryCount: record.retryCount,
     errorCode: record.errorCode,
     errorMessage: record.errorMessage,
+    ...(record.actions ? { actions: record.actions.map(normalizeFlowRunAction) } : {}),
+  };
+}
+
+function normalizeFlowRunAction(action: CloudFlowRunActionSummary): FlowRunActionSummary {
+  return {
+    name: action.name,
+    status: action.status,
+    startTime: action.startTime,
+    endTime: action.endTime,
+    durationMs: action.durationMs,
+    code: action.code,
+    errorCode: action.errorCode,
+    errorMessage: action.errorMessage,
   };
 }
 

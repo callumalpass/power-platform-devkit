@@ -196,6 +196,36 @@ membership, and `runAfter` dependencies are preserved. Each parsed node carries
 resolved and unresolved `runAfter` edges, expression occurrences,
 dynamic-content references, and variable targets.
 
+## Cloud flow run history
+
+Cloud flow run history is available through `FlowService.runs()`,
+`FlowService.errors()`, `FlowService.doctor()`, and `FlowService.monitor()`,
+and through the corresponding MCP tools.
+
+When the target environment has a `makerEnvironmentId` configured on its
+environment alias, `pp` queries the Power Automate management API
+(`api.flow.microsoft.com`) for run history. This is the correct data source for
+cloud flow runs — the Dataverse `flowruns` table only contains desktop flow run
+records. If the Power Automate API call fails or `makerEnvironmentId` is not
+configured, `pp` falls back transparently to the Dataverse `flowruns` table.
+
+To enable the Power Automate API path, either pass `--maker-env-id` when
+registering the environment alias, or use `pp env resolve-maker-id` to discover
+and persist it:
+
+```bash
+pp env add --name dev --url https://example.crm.dynamics.com --profile dev-user --maker-env-id <guid>
+# or
+pp env resolve-maker-id dev
+```
+
+Run data includes each run's status, start and end times, computed duration, and
+error codes and messages when applicable. When `includeActions` is set (or
+`--include-actions` on the CLI), each run also includes per-action step detail
+showing the name, status, timing, and error information for every action that
+executed within the run. Action detail is only available through the Power
+Automate API path.
+
 ## Current limitations
 
 Runtime analysis depends on runtime evidence being present and fresh enough to
