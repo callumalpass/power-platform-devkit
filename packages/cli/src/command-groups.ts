@@ -367,6 +367,10 @@ export interface FlowGroupHandlers {
   runFlowValidate(args: string[]): Promise<number>;
   runFlowConnrefs(args: string[]): Promise<number>;
   runFlowAccess(args: string[]): Promise<number>;
+  runFlowRuns(args: string[]): Promise<number>;
+  runFlowErrors(args: string[]): Promise<number>;
+  runFlowDoctor(args: string[]): Promise<number>;
+  runFlowMonitor(args: string[]): Promise<number>;
   runFlowLsp(args: string[]): Promise<number>;
 }
 
@@ -388,6 +392,10 @@ export async function runFlowGroup(
         { name: 'validate', help: cliHelp.printFlowValidateHelp, run: (rest) => handlers.runFlowValidate(rest) },
         { name: 'connrefs', help: cliHelp.printFlowConnrefsHelp, run: (rest) => handlers.runFlowConnrefs(rest) },
         { name: 'access', help: cliHelp.printFlowAccessHelp, run: (rest) => handlers.runFlowAccess(rest) },
+        { name: 'runs', help: cliHelp.printFlowRunsHelp, run: (rest) => handlers.runFlowRuns(rest) },
+        { name: 'errors', help: cliHelp.printFlowErrorsHelp, run: (rest) => handlers.runFlowErrors(rest) },
+        { name: 'doctor', help: cliHelp.printFlowDoctorHelp, run: (rest) => handlers.runFlowDoctor(rest) },
+        { name: 'monitor', help: cliHelp.printFlowMonitorHelp, run: (rest) => handlers.runFlowMonitor(rest) },
         { name: 'lsp', help: cliHelp.printFlowLspHelp, run: (rest) => handlers.runFlowLsp(rest) },
       ],
     },

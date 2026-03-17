@@ -920,6 +920,10 @@ export function printFlowHelp(): void {
       '  activate <name|id|...>       activate a remote flow in place',
       '  connrefs <name|id|...>       inspect connection references used by a flow',
       '  access <name|id|...>         inspect ownership and share state',
+      '  runs <name|id|...>           list recent runs for a flow',
+      '  errors <name|id|...>         summarize recent flow errors',
+      '  doctor <name|id|...>         diagnose flow runtime health',
+      '  monitor <name|id|...>        combined health monitoring report',
       '',
       'Examples:',
       '  pp flow inspect ./flows/invoice/flow.json',
@@ -1223,13 +1227,16 @@ export function printFlowPatchHelp(): void {
 export function printFlowRunsHelp(): void {
   process.stdout.write(
     [
-      'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [options]',
+      'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--solution UNIQUE_NAME] [--status STATUS] [--since 7d] [--include-actions] [options]',
       '',
       'Behavior:',
       '  - Lists recent remote runs for one flow.',
+      '  - When --include-actions is set, each run includes per-action step detail.',
+      '  - Uses the Power Automate API when makerEnvironmentId is configured on the environment alias.',
       '',
       'Examples:',
       '  pp flow runs InvoiceSync --environment dev --since 7d --format json',
+      '  pp flow runs InvoiceSync --environment dev --since 1d --include-actions --format json',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',

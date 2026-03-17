@@ -1,8 +1,9 @@
+import { readJsonFile } from '@pp/artifacts';
 import { type AuthProfile } from '@pp/auth';
 import { type EnvironmentAlias } from '@pp/config';
 import { CloudFlowService, ModelDrivenAppService } from '@pp/dataverse';
 import { type OperationResult, createDiagnostic, fail } from '@pp/diagnostics';
-import { FlowService } from '@pp/flow';
+import { FlowService, type FlowMonitorReport } from '@pp/flow';
 import { ModelService, type ModelArtifactMutationKind, type ModelInspectResult } from '@pp/model';
 import * as cliHelp from './help';
 import { dispatchCommandRoute } from './command-dispatch';
@@ -386,6 +387,146 @@ export async function runFlowConnrefs(args: string[]): Promise<number> {
   }
 
   printByFormat(result.data, outputFormat(args, 'json'));
+  return 0;
+}
+
+export async function runFlowRuns(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow runs <name|id|uniqueName> --environment ALIAS [--status STATUS] [--since 7d] [--include-actions]')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).runs(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    status: readFlag(args, '--status'),
+    since: readFlag(args, '--since'),
+    includeActions: hasFlag(args, '--include-actions'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+export async function runFlowErrors(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow errors <name|id|uniqueName> --environment ALIAS [--status STATUS] [--since 7d] [--group-by errorCode|errorMessage|connectionReference]')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const groupBy = readFlag(args, '--group-by') as 'errorCode' | 'errorMessage' | 'connectionReference' | undefined;
+
+  const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).errors(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    status: readFlag(args, '--status'),
+    since: readFlag(args, '--since'),
+    groupBy,
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data ?? [], outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+export async function runFlowDoctor(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow doctor <name|id|uniqueName> --environment ALIAS [--since 7d]')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).doctor(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    since: readFlag(args, '--since'),
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
+  return 0;
+}
+
+export async function runFlowMonitor(args: string[]): Promise<number> {
+  const identifier = positionalArgs(args)[0];
+
+  if (!identifier) {
+    return printFailure(
+      argumentFailure('FLOW_IDENTIFIER_REQUIRED', 'Usage: flow monitor <name|id|uniqueName> --environment ALIAS [--since 7d] [--baseline FILE]')
+    );
+  }
+
+  const resolution = await resolveDataverseClientForCli(args);
+
+  if (!resolution.success || !resolution.data) {
+    return printFailure(resolution);
+  }
+
+  let baseline: FlowMonitorReport | undefined;
+  const baselinePath = readFlag(args, '--baseline');
+
+  if (baselinePath) {
+    try {
+      const raw = await readJsonFile<unknown>(baselinePath);
+      const record = raw as Record<string, unknown>;
+      baseline = (isRecord(record) && isRecord(record.data) && typeof (record.data as Record<string, unknown>).checkedAt === 'string'
+        ? record.data
+        : record) as FlowMonitorReport;
+    } catch {
+      return printFailure(
+        argumentFailure('FLOW_MONITOR_BASELINE_READ_FAILED', `Failed to read baseline file: ${baselinePath}`)
+      );
+    }
+  }
+
+  const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).monitor(identifier, {
+    solutionUniqueName: readFlag(args, '--solution'),
+    since: readFlag(args, '--since'),
+    baseline,
+  });
+
+  if (!result.success) {
+    return printFailure(result);
+  }
+
+  printByFormat(result.data, outputFormat(args, 'json'));
+  printResultDiagnostics(result, outputFormat(args, 'json'));
   return 0;
 }
 
