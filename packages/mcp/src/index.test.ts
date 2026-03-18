@@ -216,9 +216,7 @@ describe('@pp/mcp', () => {
         'pp.flow.inspect',
         'pp.flow.connrefs',
         'pp.flow.runs',
-        'pp.flow.errors',
-        'pp.flow.doctor',
-        'pp.flow.monitor',
+        'pp.flow.request',
         'pp.flow.activate',
         'pp.flow.deploy',
         'pp.flow.export',
@@ -233,6 +231,13 @@ describe('@pp/mcp', () => {
         'pp.model-app.inspect',
         'pp.canvas-app.download',
         'pp.canvas-app.import',
+        'pp.sharepoint.site.list',
+        'pp.sharepoint.site.inspect',
+        'pp.sharepoint.list.list',
+        'pp.sharepoint.list.items',
+        'pp.sharepoint.file.list',
+        'pp.sharepoint.file.inspect',
+        'pp.sharepoint.permission.list',
         'pp.domain.list',
       ])
     );
@@ -334,7 +339,7 @@ describe('@pp/mcp', () => {
         expect.objectContaining({
           name: 'flow-lifecycle',
           mutationToolsAvailable: true,
-          readTools: expect.arrayContaining(['pp.flow.inspect', 'pp.flow.connrefs', 'pp.flow.runs', 'pp.flow.errors', 'pp.flow.doctor', 'pp.flow.monitor']),
+          readTools: expect.arrayContaining(['pp.flow.inspect', 'pp.flow.connrefs', 'pp.flow.runs', 'pp.flow.request']),
           mutationTools: expect.arrayContaining(['pp.flow.activate', 'pp.flow.deploy', 'pp.flow.export']),
           notes: expect.stringContaining('in-place remediation attempt'),
         }),
@@ -351,6 +356,18 @@ describe('@pp/mcp', () => {
           readTools: expect.arrayContaining(['pp.model-app.inspect']),
           mutationTools: expect.arrayContaining(['pp.model-app.create', 'pp.model-app.attach']),
           notes: expect.stringContaining('optional solution attachment'),
+        }),
+        expect.objectContaining({
+          name: 'sharepoint',
+          readTools: expect.arrayContaining([
+            'pp.sharepoint.site.list',
+            'pp.sharepoint.site.inspect',
+            'pp.sharepoint.list.list',
+            'pp.sharepoint.list.items',
+            'pp.sharepoint.file.list',
+            'pp.sharepoint.file.inspect',
+            'pp.sharepoint.permission.list',
+          ]),
         }),
         expect.objectContaining({
           name: 'flow-local-artifacts',
@@ -1375,184 +1392,6 @@ describe('@pp/mcp', () => {
       publishWorkflows: true,
       overwriteUnmanagedCustomizations: undefined,
     });
-  });
-
-  it('passes flow monitor baseline comparison through the MCP tool surface', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
-    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
-    await writeFixtureConfig(configDir);
-
-    const runtimeFixture = (await readJsonFile(
-      resolveRepoPath('fixtures', 'flow', 'runtime', 'invoice-sync-runtime.json')
-    )) as Record<string, unknown>;
-
-    mockDataverseResolution({
-      dev: createFixtureDataverseClient(runtimeFixture),
-    });
-
-    const server = createPpMcpServer({
-      configDir,
-      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
-    }) as unknown as {
-      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
-    };
-    const monitorTool = server._registeredTools['pp.flow.monitor']!;
-
-    const baseline = await monitorTool.handler({
-        environment: 'dev',
-        solutionUniqueName: 'Core',
-        identifier: 'Invoice Sync',
-        since: '7d',
-    });
-    expect(baseline.structuredContent).toMatchObject({
-      success: true,
-    });
-
-    const changedClient = createFixtureDataverseClient(runtimeFixture);
-    const baselineQueryAll = changedClient.queryAll.bind(changedClient);
-    changedClient.queryAll = async <T>(options: { table: string }) => {
-      if (options.table === 'flowruns') {
-        const flowruns = await baselineQueryAll<T>(options);
-
-        if (!flowruns.success || !flowruns.data) {
-          return flowruns;
-        }
-
-        return {
-          ...flowruns,
-          data: [
-            {
-              flowrunid: 'run-3',
-              workflowid: 'flow-1',
-              workflowname: 'Invoice Sync',
-              status: 'Failed',
-              starttime: '2026-03-10T11:30:00.000Z',
-              endtime: '2026-03-10T11:31:00.000Z',
-              durationinms: 60000,
-              retrycount: 0,
-              errorcode: 'ConnectorTimeout',
-              errormessage: 'shared_office365 timed out',
-            } as T,
-            ...flowruns.data,
-          ],
-        };
-      }
-
-      if (options.table === 'environmentvariablevalues') {
-        return {
-          success: true as const,
-          data: [
-            {
-              environmentvariablevalueid: 'envvalue-1',
-              _environmentvariabledefinitionid_value: 'env-1',
-              value: 'https://api.example.test',
-            } as T,
-          ],
-          diagnostics: [],
-          warnings: [],
-          supportTier: 'preview' as const,
-        };
-      }
-
-      return baselineQueryAll<T>(options);
-    };
-
-    mockDataverseResolution({
-      dev: changedClient,
-    });
-
-    const compared = await monitorTool.handler({
-        environment: 'dev',
-        solutionUniqueName: 'Core',
-        identifier: 'Invoice Sync',
-        since: '7d',
-        baseline: baseline.structuredContent,
-    });
-    expect(compared.structuredContent).toMatchObject({
-      success: true,
-      data: {
-        comparison: {
-          changed: true,
-          recentRuns: {
-            totalDelta: 1,
-            failedDelta: 1,
-            latestFailureChanged: true,
-          },
-        },
-        findings: expect.arrayContaining([
-          'Compared against monitor baseline from 2026-03-10T12:00:00.000Z; runtime state changed since the prior capture.',
-        ]),
-      },
-    });
-  });
-
-  it('passes flow doctor through the MCP tool surface without re-emitting optional flowrun schema warnings', async () => {
-    const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-config-'));
-    await writeFixtureConfig(configDir);
-
-    const runtimeFixture = (await readJsonFile(
-      resolveRepoPath('fixtures', 'flow', 'runtime', 'invoice-sync-runtime.json')
-    )) as Record<string, unknown>;
-
-    const sparseClient = createFixtureDataverseClient(runtimeFixture);
-    const baseQueryAll = sparseClient.queryAll.bind(sparseClient);
-    sparseClient.queryAll = async <T>(options: { table: string }) => {
-      if (options.table === 'flowruns') {
-        const select = 'select' in options && Array.isArray((options as { select?: unknown }).select)
-          ? ((options as { select?: string[] }).select ?? [])
-          : [];
-        const missingOptionalColumn = select.find((column) => ['workflowname', 'durationinms', 'retrycount'].includes(column));
-        if (missingOptionalColumn) {
-          return fail(
-            createDiagnostic('error', 'HTTP_REQUEST_FAILED', 'GET flowruns returned 400', {
-              source: '@pp/http',
-              detail: JSON.stringify({
-                error: {
-                  code: '0x80060888',
-                  message: `Could not find a property named '${missingOptionalColumn}' on type 'Microsoft.Dynamics.CRM.flowrun'.`,
-                },
-              }),
-            })
-          ) as unknown as ReturnType<typeof sparseClient.queryAll<T>>;
-        }
-      }
-
-      return baseQueryAll(options);
-    };
-
-    mockDataverseResolution({
-      dev: sparseClient,
-    });
-
-    const server = createPpMcpServer({
-      configDir,
-      projectPath: resolveRepoPath('fixtures', 'analysis', 'project'),
-    }) as unknown as {
-      _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<{ structuredContent: unknown }> }>;
-    };
-    const doctorTool = server._registeredTools['pp.flow.doctor']!;
-
-    const doctor = await doctorTool.handler({
-      environment: 'dev',
-      identifier: 'Invoice Sync',
-      since: '7d',
-    });
-
-    expect(doctor.structuredContent).toMatchObject({
-      success: true,
-      tool: {
-        name: 'pp.flow.doctor',
-      },
-      knownLimitations: expect.arrayContaining([
-        expect.stringContaining('optional flowrun columns'),
-      ]),
-    });
-    expect((doctor.structuredContent as { warnings: Array<{ code: string }> }).warnings).not.toContainEqual(
-      expect.objectContaining({
-        code: 'DATAVERSE_FLOWRUN_OPTIONAL_COLUMNS_UNAVAILABLE',
-      })
-    );
   });
 
   it('builds a bounded cleanup plan for run-scoped bootstrap prefixes', async () => {

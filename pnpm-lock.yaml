@@ -103,6 +103,9 @@ importers:
       '@pp/model':
         specifier: workspace:*
         version: link:../model
+      '@pp/sharepoint':
+        specifier: workspace:*
+        version: link:../sharepoint
       '@pp/solution':
         specifier: workspace:*
         version: link:../solution
@@ -195,6 +198,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.27.1
         version: 1.27.1(zod@3.25.76)
+      '@pp/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
       '@pp/auth':
         specifier: workspace:*
         version: link:../auth
@@ -210,9 +216,15 @@ importers:
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
+      '@pp/flow':
+        specifier: workspace:*
+        version: link:../flow
       '@pp/model':
         specifier: workspace:*
         version: link:../model
+      '@pp/sharepoint':
+        specifier: workspace:*
+        version: link:../sharepoint
       '@pp/solution':
         specifier: workspace:*
         version: link:../solution
@@ -231,6 +243,21 @@ importers:
       '@pp/diagnostics':
         specifier: workspace:*
         version: link:../diagnostics
+
+  packages/sharepoint:
+    dependencies:
+      '@pp/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@pp/config':
+        specifier: workspace:*
+        version: link:../config
+      '@pp/diagnostics':
+        specifier: workspace:*
+        version: link:../diagnostics
+      '@pp/http':
+        specifier: workspace:*
+        version: link:../http
 
   packages/solution:
     dependencies:
