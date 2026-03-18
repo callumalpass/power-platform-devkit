@@ -441,3 +441,58 @@ export async function runModelGroup(
     [command, ...args].filter((value): value is string => value !== undefined)
   );
 }
+
+export interface SharePointGroupHandlers {
+  runSharePointSiteList(args: string[]): Promise<number>;
+  runSharePointSiteInspect(args: string[]): Promise<number>;
+  runSharePointListList(args: string[]): Promise<number>;
+  runSharePointListItems(args: string[]): Promise<number>;
+  runSharePointFileList(args: string[]): Promise<number>;
+  runSharePointFileInspect(args: string[]): Promise<number>;
+  runSharePointPermissionList(args: string[]): Promise<number>;
+}
+
+export async function runSharePointGroup(
+  command: string | undefined,
+  args: string[],
+  handlers: SharePointGroupHandlers
+): Promise<number> {
+  return dispatchCommandRoute(
+    {
+      help: cliHelp.printSharePointHelp,
+      children: [
+        {
+          name: 'site',
+          help: cliHelp.printSharePointSiteHelp,
+          children: [
+            { name: 'list', help: cliHelp.printSharePointSiteListHelp, run: (rest) => handlers.runSharePointSiteList(rest) },
+            { name: 'inspect', help: cliHelp.printSharePointSiteInspectHelp, run: (rest) => handlers.runSharePointSiteInspect(rest) },
+          ],
+        },
+        {
+          name: 'list',
+          help: cliHelp.printSharePointListHelp,
+          children: [
+            { name: 'list', help: cliHelp.printSharePointListListHelp, run: (rest) => handlers.runSharePointListList(rest) },
+            { name: 'items', help: cliHelp.printSharePointListItemsHelp, run: (rest) => handlers.runSharePointListItems(rest) },
+          ],
+        },
+        {
+          name: 'file',
+          help: cliHelp.printSharePointFileHelp,
+          children: [
+            { name: 'list', help: cliHelp.printSharePointFileListHelp, run: (rest) => handlers.runSharePointFileList(rest) },
+            { name: 'inspect', help: cliHelp.printSharePointFileInspectHelp, run: (rest) => handlers.runSharePointFileInspect(rest) },
+          ],
+        },
+        {
+          name: 'permission',
+          aliases: ['permissions'],
+          help: cliHelp.printSharePointPermissionHelp,
+          children: [{ name: 'list', help: cliHelp.printSharePointPermissionListHelp, run: (rest) => handlers.runSharePointPermissionList(rest) }],
+        },
+      ],
+    },
+    [command, ...args].filter((value): value is string => value !== undefined)
+  );
+}

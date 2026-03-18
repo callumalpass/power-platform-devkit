@@ -81,6 +81,7 @@ import {
   runEnvironmentVariableGroup,
   runFlowGroup,
   runModelGroup,
+  runSharePointGroup,
   runSolutionGroup,
 } from './command-groups';
 import { dispatchCommandRoute } from './command-dispatch';
@@ -128,6 +129,7 @@ import {
   resolveCanvasMakerEnvironmentId,
   resolveDataverseClientByFlag,
   resolveDataverseClientForCli,
+  resolveDefaultSolutionUniqueNameForCli,
   resolveSolutionIdForCli,
 } from './cli-resolution';
 import { enforceWriteAccessForCliArgs } from './cli-access';
@@ -243,6 +245,15 @@ import {
   runModelSitemap,
   runModelViews,
 } from './flow-model-commands';
+import {
+  runSharePointFileInspect,
+  runSharePointFileList,
+  runSharePointListItems,
+  runSharePointListList,
+  runSharePointPermissionList,
+  runSharePointSiteInspect,
+  runSharePointSiteList,
+} from './sharepoint-commands';
 import { dispatchMainCommand } from './routing';
 
 type AttributeListView = Extract<AttributeMetadataView, 'common' | 'raw'>;
@@ -332,6 +343,7 @@ export async function main(argv: string[]): Promise<number> {
     runCanvas,
     runFlow,
     runModel,
+    runSharePoint,
     printFailureForInvalidFormat: (result) => printFailure(result),
   });
 }
@@ -372,7 +384,6 @@ async function runMcp(command: string | undefined, args: string[]): Promise<numb
 
   return 0;
 }
-
 
 async function runDiagnostics(command: string | undefined, args: string[]): Promise<number> {
   return topLevelCommandRunners.runDiagnostics(command, args, { runDiagnosticsDoctor, runDiagnosticsBundle });
@@ -545,6 +556,18 @@ async function runModel(command: string | undefined, args: string[]): Promise<nu
     runModelViews,
     runModelDependencies,
     runModelPatch,
+  });
+}
+
+async function runSharePoint(command: string | undefined, args: string[]): Promise<number> {
+  return runSharePointGroup(command, args, {
+    runSharePointSiteList,
+    runSharePointSiteInspect,
+    runSharePointListList,
+    runSharePointListItems,
+    runSharePointFileList,
+    runSharePointFileInspect,
+    runSharePointPermissionList,
   });
 }
 
@@ -876,6 +899,7 @@ async function runSolutionCreate(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -894,6 +918,7 @@ async function runSolutionCheckpoint(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -917,6 +942,7 @@ async function runSolutionDelete(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -934,6 +960,7 @@ async function runSolutionInspect(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -957,6 +984,7 @@ async function runSolutionSetMetadata(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -980,6 +1008,7 @@ async function runSolutionPublish(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -997,6 +1026,7 @@ async function runSolutionSyncStatus(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -1014,6 +1044,7 @@ async function runSolutionComponents(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -1031,6 +1062,7 @@ async function runSolutionDependencies(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -1048,6 +1080,7 @@ async function runSolutionAnalyze(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -1066,6 +1099,7 @@ async function runSolutionCompare(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }
@@ -1083,6 +1117,7 @@ async function runSolutionExport(args: string[]): Promise<number> {
     readSolutionOutputTarget,
     readSolutionPackageTypeFlag,
     createLocalSolutionService,
+    resolveDefaultSolutionUniqueName: resolveDefaultSolutionUniqueNameForCli,
     argumentFailure,
   });
 }

@@ -29,6 +29,14 @@ const parseCache = new Map<string, ParseResult>();
 const parseInflight = new Map<string, Promise<ParseResult>>();
 let bridgeReady = false;
 const POWER_FX_BRIDGE_TIMEOUT_MS = 5_000;
+const POWER_FX_BUILD_TIMEOUT_MS = 60_000;
+
+const dotnetEnv: Record<string, string> = {
+  ...process.env as Record<string, string>,
+  DOTNET_NOLOGO: '1',
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1',
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1',
+};
 let bridgeSession: PowerFxBridgeSession | undefined;
 let bridgeCleanupRegistered = false;
 
@@ -115,7 +123,13 @@ function ensureBridgeBuilt(): void {
   const projectPath = getBridgeProjectPath();
   const build = spawnSync('dotnet', ['build', projectPath, '-c', 'Release', '-nologo'], {
     encoding: 'utf8',
+    timeout: POWER_FX_BUILD_TIMEOUT_MS,
+    env: dotnetEnv,
   });
+
+  if (build.signal === 'SIGTERM') {
+    throw new Error(`Power Fx bridge build timed out after ${POWER_FX_BUILD_TIMEOUT_MS / 1_000}s. Check your .NET SDK installation and network connectivity.`);
+  }
 
   if (build.status !== 0) {
     throw new Error(build.stderr.trim() || build.stdout.trim() || 'Failed to build Power Fx bridge.');
@@ -228,6 +242,7 @@ class PowerFxBridgeSession {
     this.stderrBuffer = '';
     const child = spawn('dotnet', [this.bridgeDllPath, '--server'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: dotnetEnv,
     });
 
     child.stdout.setEncoding('utf8');

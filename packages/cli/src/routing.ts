@@ -18,6 +18,7 @@ export interface MainGroupHandlers {
   runCanvas(command: string | undefined, args: string[]): Promise<number>;
   runFlow(command: string | undefined, args: string[]): Promise<number>;
   runModel(command: string | undefined, args: string[]): Promise<number>;
+  runSharePoint(command: string | undefined, args: string[]): Promise<number>;
   printFailureForInvalidFormat(result: OperationResult<CliOutputFormat>): number;
 }
 
@@ -75,6 +76,7 @@ export async function dispatchMainCommand(argv: string[], handlers: MainGroupHan
         { name: 'canvas', delegate: true, run: (args) => handlers.runCanvas(args[0], args.slice(1)) },
         { name: 'flow', delegate: true, run: (args) => handlers.runFlow(args[0], args.slice(1)) },
         { name: 'model', delegate: true, run: (args) => handlers.runModel(args[0], args.slice(1)) },
+        { name: 'sharepoint', delegate: true, run: (args) => handlers.runSharePoint(args[0], args.slice(1)) },
       ],
     },
     [canonicalGroup, command, ...rest].filter((value): value is string => value !== undefined)

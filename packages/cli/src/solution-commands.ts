@@ -89,6 +89,7 @@ interface SolutionCommandDependencies {
   readSolutionOutputTarget(out: string | undefined): { outPath?: string; outDir?: string };
   readSolutionPackageTypeFlag(args: string[]): OperationResult<'managed' | 'unmanaged' | 'both'>;
   createLocalSolutionService(): SolutionService;
+  resolveDefaultSolutionUniqueName?(args: string[], environmentAlias: string): Promise<string | undefined>;
   argumentFailure(code: string, message: string): OperationResult<never>;
 }
 
@@ -130,7 +131,12 @@ export async function runSolutionPublishersCommand(args: string[], deps: Solutio
 }
 
 export async function runSolutionCreateCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
+  const explicitUniqueName = deps.positionalArgs(args)[0];
+  const resolution = await deps.resolveDataverseClientForCli(args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
   if (!uniqueName) {
     return deps.printFailure(
       deps.argumentFailure(
@@ -138,11 +144,6 @@ export async function runSolutionCreateCommand(args: string[], deps: SolutionCom
         'Usage: solution create <uniqueName> --environment <alias> [--friendly-name NAME] [--version X.Y.Z.W] [--description TEXT] (--publisher-id GUID | --publisher-unique-name NAME)'
       )
     );
-  }
-
-  const resolution = await deps.resolveDataverseClientForCli(args);
-  if (!resolution.success || !resolution.data) {
-    return deps.printFailure(resolution);
   }
 
   const service = new SolutionService(resolution.data.client as never);
@@ -163,14 +164,14 @@ export async function runSolutionCreateCommand(args: string[], deps: SolutionCom
 }
 
 export async function runSolutionDeleteCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
-  if (!uniqueName) {
-    return deps.printFailure(deps.argumentFailure('SOLUTION_DELETE_ARGS_REQUIRED', 'Usage: solution delete <uniqueName> --environment <alias>'));
-  }
-
+  const explicitUniqueName = deps.positionalArgs(args)[0];
   const resolution = await deps.resolveDataverseClientForCli(args);
   if (!resolution.success || !resolution.data) {
     return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
+  if (!uniqueName) {
+    return deps.printFailure(deps.argumentFailure('SOLUTION_DELETE_ARGS_REQUIRED', 'Usage: solution delete <uniqueName> --environment <alias>'));
   }
 
   const service = new SolutionService(resolution.data.client as never);
@@ -219,14 +220,14 @@ export async function runSolutionDeleteCommand(args: string[], deps: SolutionCom
 }
 
 export async function runSolutionInspectCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
-  if (!uniqueName) {
-    return deps.printFailure(deps.argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
-  }
-
+  const explicitUniqueName = deps.positionalArgs(args)[0];
   const resolution = await deps.resolveDataverseClientForCli(args);
   if (!resolution.success || !resolution.data) {
     return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
+  if (!uniqueName) {
+    return deps.printFailure(deps.argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
   }
 
   const result = await new SolutionService(resolution.data.client as never).inspect(uniqueName);
@@ -254,15 +255,7 @@ export async function runSolutionInspectCommand(args: string[], deps: SolutionCo
 }
 
 export async function runSolutionSetMetadataCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
-  if (!uniqueName) {
-    return deps.printFailure(
-      deps.argumentFailure(
-        'SOLUTION_SET_METADATA_ARGS_REQUIRED',
-        'Usage: solution set-metadata <uniqueName> --environment <alias> [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]'
-      )
-    );
-  }
+  const explicitUniqueName = deps.positionalArgs(args)[0];
 
   const version = deps.readFlag(args, '--version');
   const publisherId = deps.readFlag(args, '--publisher-id');
@@ -280,6 +273,15 @@ export async function runSolutionSetMetadataCommand(args: string[], deps: Soluti
   if (!resolution.success || !resolution.data) {
     return deps.printFailure(resolution);
   }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
+  if (!uniqueName) {
+    return deps.printFailure(
+      deps.argumentFailure(
+        'SOLUTION_SET_METADATA_ARGS_REQUIRED',
+        'Usage: solution set-metadata <uniqueName> --environment <alias> [--version X.Y.Z.W] [--publisher-id GUID | --publisher-unique-name NAME]'
+      )
+    );
+  }
 
   const result = await new SolutionService(resolution.data.client as never).setMetadata(uniqueName, {
     version,
@@ -296,15 +298,7 @@ export async function runSolutionSetMetadataCommand(args: string[], deps: Soluti
 }
 
 export async function runSolutionPublishCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
-  if (!uniqueName) {
-    return deps.printFailure(
-      deps.argumentFailure(
-        'SOLUTION_PUBLISH_ARGS_REQUIRED',
-        'Usage: solution publish <uniqueName> --environment <alias> [--wait-for-export] [--timeout-ms N] [--poll-interval-ms N] [--managed] [--out PATH] [--manifest FILE]'
-      )
-    );
-  }
+  const explicitUniqueName = deps.positionalArgs(args)[0];
 
   const waitForExport = args.includes('--wait-for-export');
   const timeoutMs = readOptionalPositiveIntegerFlag(args, '--timeout-ms', deps);
@@ -319,6 +313,15 @@ export async function runSolutionPublishCommand(args: string[], deps: SolutionCo
   const resolution = await deps.resolveDataverseClientForCli(args);
   if (!resolution.success || !resolution.data) {
     return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
+  if (!uniqueName) {
+    return deps.printFailure(
+      deps.argumentFailure(
+        'SOLUTION_PUBLISH_ARGS_REQUIRED',
+        'Usage: solution publish <uniqueName> --environment <alias> [--wait-for-export] [--timeout-ms N] [--poll-interval-ms N] [--managed] [--out PATH] [--manifest FILE]'
+      )
+    );
   }
 
   const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));
@@ -403,15 +406,7 @@ function renderSolutionPublishProgress(uniqueName: string, event: SolutionPublis
 }
 
 export async function runSolutionSyncStatusCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
-  if (!uniqueName) {
-    return deps.printFailure(
-      deps.argumentFailure(
-        'SOLUTION_SYNC_STATUS_ARGS_REQUIRED',
-        'Usage: solution sync-status <uniqueName> --environment <alias> [--skip-export-check] [--timeout-ms N] [--managed] [--out PATH] [--manifest FILE]'
-      )
-    );
-  }
+  const explicitUniqueName = deps.positionalArgs(args)[0];
   const timeoutMs = readOptionalPositiveIntegerFlag(args, '--timeout-ms', deps);
   if (!timeoutMs.success) {
     return deps.printFailure(timeoutMs);
@@ -420,6 +415,15 @@ export async function runSolutionSyncStatusCommand(args: string[], deps: Solutio
   const resolution = await deps.resolveDataverseClientForCli(args);
   if (!resolution.success || !resolution.data) {
     return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
+  if (!uniqueName) {
+    return deps.printFailure(
+      deps.argumentFailure(
+        'SOLUTION_SYNC_STATUS_ARGS_REQUIRED',
+        'Usage: solution sync-status <uniqueName> --environment <alias> [--skip-export-check] [--timeout-ms N] [--managed] [--out PATH] [--manifest FILE]'
+      )
+    );
   }
 
   const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));
@@ -498,13 +502,14 @@ function attachStructuredFailureProgress<T>(result: OperationResult<T>, progress
 }
 
 export async function runSolutionComponentsCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
-  if (!uniqueName) {
-    return deps.printFailure(deps.argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
-  }
+  const explicitUniqueName = deps.positionalArgs(args)[0];
   const resolution = await deps.resolveDataverseClientForCli(args);
   if (!resolution.success || !resolution.data) {
     return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
+  if (!uniqueName) {
+    return deps.printFailure(deps.argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
   }
   const result = await new SolutionService(resolution.data.client as never).components(uniqueName);
   if (!result.success) {
@@ -515,13 +520,14 @@ export async function runSolutionComponentsCommand(args: string[], deps: Solutio
 }
 
 export async function runSolutionDependenciesCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
-  if (!uniqueName) {
-    return deps.printFailure(deps.argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
-  }
+  const explicitUniqueName = deps.positionalArgs(args)[0];
   const resolution = await deps.resolveDataverseClientForCli(args);
   if (!resolution.success || !resolution.data) {
     return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
+  if (!uniqueName) {
+    return deps.printFailure(deps.argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
   }
   const result = await new SolutionService(resolution.data.client as never).dependencies(uniqueName);
   if (!result.success) {
@@ -532,13 +538,14 @@ export async function runSolutionDependenciesCommand(args: string[], deps: Solut
 }
 
 export async function runSolutionAnalyzeCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
-  if (!uniqueName) {
-    return deps.printFailure(deps.argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
-  }
+  const explicitUniqueName = deps.positionalArgs(args)[0];
   const resolution = await deps.resolveDataverseClientForCli(args);
   if (!resolution.success || !resolution.data) {
     return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
+  if (!uniqueName) {
+    return deps.printFailure(deps.argumentFailure('SOLUTION_UNIQUE_NAME_REQUIRED', 'Solution unique name is required.'));
   }
   const result = await new SolutionService(resolution.data.client as never).analyze(uniqueName);
   if (!result.success) {
@@ -552,7 +559,7 @@ export async function runSolutionAnalyzeCommand(args: string[], deps: SolutionCo
 }
 
 export async function runSolutionCompareCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
+  const explicitUniqueName = deps.positionalArgs(args)[0];
   const includeModelComposition = args.includes('--include-model-composition');
   const sourceInput = readSolutionCompareInput(args, 'source', deps);
 
@@ -566,13 +573,18 @@ export async function runSolutionCompareCommand(args: string[], deps: SolutionCo
     return deps.printFailure(targetInput);
   }
 
+  let uniqueName = explicitUniqueName;
   if ((sourceInput.data.kind === 'environment' || targetInput.data.kind === 'environment') && !uniqueName) {
-    return deps.printFailure(
-      deps.argumentFailure(
-        'SOLUTION_UNIQUE_NAME_REQUIRED',
-        'Solution unique name is required when either compare side targets an environment.'
-      )
-    );
+    const envValue = sourceInput.data.kind === 'environment' ? sourceInput.data.value : targetInput.data.value;
+    uniqueName = await deps.resolveDefaultSolutionUniqueName?.(args, envValue);
+    if (!uniqueName) {
+      return deps.printFailure(
+        deps.argumentFailure(
+          'SOLUTION_UNIQUE_NAME_REQUIRED',
+          'Solution unique name is required when either compare side targets an environment.'
+        )
+      );
+    }
   }
 
   const sourceAnalysis = await resolveSolutionCompareAnalysis(
@@ -615,7 +627,12 @@ export async function runSolutionCompareCommand(args: string[], deps: SolutionCo
 }
 
 export async function runSolutionExportCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
+  const explicitUniqueName = deps.positionalArgs(args)[0];
+  const resolution = await deps.resolveDataverseClientForCli(args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
   if (!uniqueName) {
     return deps.printFailure(
       deps.argumentFailure(
@@ -623,10 +640,6 @@ export async function runSolutionExportCommand(args: string[], deps: SolutionCom
         'Usage: solution export <uniqueName> --environment <alias> [--out PATH] [--managed] [--manifest FILE]'
       )
     );
-  }
-  const resolution = await deps.resolveDataverseClientForCli(args);
-  if (!resolution.success || !resolution.data) {
-    return deps.printFailure(resolution);
   }
   const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));
   const preview = deps.maybeHandleMutationPreview(args, 'json', 'solution.export', {
@@ -654,7 +667,12 @@ export async function runSolutionExportCommand(args: string[], deps: SolutionCom
 }
 
 export async function runSolutionCheckpointCommand(args: string[], deps: SolutionCommandDependencies): Promise<number> {
-  const uniqueName = deps.positionalArgs(args)[0];
+  const explicitUniqueName = deps.positionalArgs(args)[0];
+  const resolution = await deps.resolveDataverseClientForCli(args);
+  if (!resolution.success || !resolution.data) {
+    return deps.printFailure(resolution);
+  }
+  const uniqueName = explicitUniqueName ?? await deps.resolveDefaultSolutionUniqueName?.(args, resolution.data.environment.alias);
   if (!uniqueName) {
     return deps.printFailure(
       deps.argumentFailure(
@@ -662,11 +680,6 @@ export async function runSolutionCheckpointCommand(args: string[], deps: Solutio
         'Usage: solution checkpoint <uniqueName> --environment <alias> [--out PATH] [--managed] [--manifest FILE] [--checkpoint FILE]'
       )
     );
-  }
-
-  const resolution = await deps.resolveDataverseClientForCli(args);
-  if (!resolution.success || !resolution.data) {
-    return deps.printFailure(resolution);
   }
 
   const outputTarget = deps.readSolutionOutputTarget(deps.readFlag(args, '--out'));

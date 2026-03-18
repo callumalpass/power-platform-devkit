@@ -1,7 +1,7 @@
 # pp
 
 A focused Power Platform CLI for authenticated Dataverse access, solution
-lifecycle, and local canvas and flow tooling.
+lifecycle, SharePoint inspection, and local canvas and flow tooling.
 
 ## What it does
 
@@ -16,6 +16,8 @@ lifecycle, and local canvas and flow tooling.
   harvesting of canvas source trees
 - **flow** — local validation, linting, inspection, and normalization of flow
   artifacts
+- **sharepoint** — SharePoint sites, lists, files, and permissions through
+  Microsoft Graph
 - **mcp** — stdio MCP server exposing the same capabilities to AI agents
 
 ## Getting started
@@ -44,6 +46,7 @@ pp dv whoami --env dev
 pp solution list --env dev
 pp solution inspect Core --env dev
 pp solution export Core --env dev --out .pp/solutions/Core.zip
+pp sharepoint site list --env graph-dev --resource https://graph.microsoft.com
 pp canvas validate ./apps/MyCanvas
 pp canvas build ./apps/MyCanvas --out ./dist/MyCanvas.msapp
 pp flow validate ./flows/invoice/flow.json
@@ -85,13 +88,13 @@ pp mcp serve
 ```
 
 The MCP server exposes tools matching the CLI command set: auth, environment,
-dataverse, solution, canvas, and flow operations. Connect it to any
+dataverse, solution, canvas, flow, and SharePoint operations. Connect it to any
 MCP-compatible agent.
 
 ## Workspace packages
 
 - infrastructure: `auth`, `http`, `diagnostics`, `config`, `cache`, `artifacts`
-- domains: `dataverse`, `solution`, `model`, `canvas`, `flow`
+- domains: `dataverse`, `solution`, `model`, `canvas`, `flow`, `sharepoint`
 - interfaces: `cli`, `mcp`
 
 ## Tests

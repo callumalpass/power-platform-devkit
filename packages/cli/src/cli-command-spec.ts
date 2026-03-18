@@ -31,6 +31,7 @@ const booleanFlagNames = new Set([
   '--no-publish-workflows',
   '--allow-interactive-auth',
   '--no-interactive',
+  '--no-open',
 ]);
 
 const HELP_OPTION = option('--help');
@@ -48,6 +49,7 @@ const PLAN_OPTION = option('--plan');
 const DRY_RUN_OPTION = option('--dry-run');
 const MODE_OPTION = option('--mode', ['strict', 'seeded', 'registry']);
 const KIND_OPTION = option('--kind', ['app', 'form', 'view', 'sitemap']);
+const RESOURCE_OPTION = option('--resource');
 const COMMON_OUTPUT_OPTIONS = [HELP_OPTION, FORMAT_OPTION] as const;
 const COMMON_ENVIRONMENT_OPTIONS = [HELP_OPTION, FORMAT_OPTION, CONFIG_DIR_OPTION, ENVIRONMENT_OPTION] as const;
 const COMMON_ENVIRONMENT_SOLUTION_OPTIONS = [
@@ -75,6 +77,7 @@ const COMMON_MUTATION_ENV_OPTIONS = [
   PLAN_OPTION,
   DRY_RUN_OPTION,
 ] as const;
+const COMMON_SHAREPOINT_OPTIONS = [HELP_OPTION, FORMAT_OPTION, CONFIG_DIR_OPTION, ENVIRONMENT_OPTION, RESOURCE_OPTION] as const;
 
 export const CLI_COMMAND_SPEC: CliCommandSpec = {
   name: 'pp',
@@ -349,6 +352,34 @@ export const CLI_COMMAND_SPEC: CliCommandSpec = {
         command('patch', {
           children: [
             command('plan', { options: [...COMMON_ENVIRONMENT_SOLUTION_OPTIONS, KIND_OPTION, option('--target'), option('--rename')] }),
+          ],
+        }),
+      ],
+    }),
+    command('sharepoint', {
+      children: [
+        command('site', {
+          children: [
+            command('list', { options: [...COMMON_SHAREPOINT_OPTIONS, option('--search'), option('--top')] }),
+            command('inspect', { options: COMMON_SHAREPOINT_OPTIONS }),
+          ],
+        }),
+        command('list', {
+          children: [
+            command('list', { options: [...COMMON_SHAREPOINT_OPTIONS, option('--site'), option('--top')] }),
+            command('items', { options: [...COMMON_SHAREPOINT_OPTIONS, option('--site'), option('--list'), option('--top')] }),
+          ],
+        }),
+        command('file', {
+          children: [
+            command('list', { options: [...COMMON_SHAREPOINT_OPTIONS, option('--site'), option('--drive'), option('--path'), option('--top')] }),
+            command('inspect', { options: [...COMMON_SHAREPOINT_OPTIONS, option('--site'), option('--drive')] }),
+          ],
+        }),
+        command('permission', {
+          aliases: ['permissions'],
+          children: [
+            command('list', { options: [...COMMON_SHAREPOINT_OPTIONS, option('--site'), option('--list'), option('--file'), option('--drive')] }),
           ],
         }),
       ],

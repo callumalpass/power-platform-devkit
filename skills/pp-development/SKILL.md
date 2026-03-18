@@ -1,14 +1,14 @@
 ---
 name: pp-development
-description: Use this skill for any Power Platform development, troubleshooting, or project management task involving the `pp` CLI. Trigger when the user mentions `pp`, Power Platform, Dataverse, Power Automate flows, canvas apps, model-driven apps, solutions, deploy orchestration, or when working in a directory with pp.config.yaml. Also trigger for auth setup, environment alias management, connection references, environment variables, and analysis or reporting workflows.
-version: 2.0.0
+description: Use this skill for any Power Platform development or troubleshooting task involving the `pp` CLI. Trigger when the user mentions `pp`, Power Platform, Dataverse, Power Automate flows, canvas apps, model-driven apps, SharePoint, solutions, or when working in a directory with pp.config.yaml. Also trigger for auth setup, environment alias management, connection references, environment variables, notebooks, and MCP server usage.
+version: 3.0.0
 ---
 
 # pp-development
 
 `pp` is a CLI and SDK for Power Platform engineering. Use it for Dataverse
-operations, solution lifecycle, flow artifacts, canvas apps, auth management,
-deploy orchestration, and project analysis.
+operations, solution lifecycle, SharePoint inspection, flow inspection, canvas
+apps, model-driven apps, auth management, notebooks, and MCP automation.
 
 ## Invoking pp
 
@@ -22,18 +22,19 @@ node packages/cli/dist/index.js --version  # direct fallback
 
 ---
 
-## Three operating modes
+## How pp works
 
-`pp` works in three modes depending on what's in the current directory tree.
-Understanding which mode you're in shapes every decision.
+`pp` is driven by two things: **auth profiles** and **environment aliases**.
+Every remote command takes `--environment <alias>` (or `--env` for short).
+An optional `pp.config.yaml` in a repo provides defaults so you can omit
+`--environment` and `--solution` flags.
 
-### 1. Direct mode — no project config
+### Without pp.config.yaml (direct mode)
 
 Auth profile + environment alias is all you need. Use this for:
 - troubleshooting an environment you don't own
 - one-off queries and inspections
 - exploring an unfamiliar Dataverse org
-- any task where there's no local repo or pp.config.yaml
 
 ```sh
 pp auth profile list                        # what credentials exist
@@ -41,65 +42,37 @@ pp env list                                 # what environment aliases exist
 pp dv whoami --env <alias>                  # confirm connectivity and identity
 ```
 
-Every command takes `--env <alias>` directly. No project required.
-
-### 2. Project mode — pp.config.yaml present
+### With pp.config.yaml (project defaults)
 
 `pp` walks ancestor directories to find the nearest `pp.config.yaml` (or
-`.json` / `.yml`). When found, that directory is the project root and its
-`defaults` apply: default environment alias, default solution, default stage.
+`.json` / `.yml`). When found, its `defaults` section supplies the environment
+alias and solution so you don't have to pass them on every command.
 
-Commands without explicit `--env` or `--solution` use those defaults.
-`pp project`, `pp analysis`, and `pp deploy` commands become available.
-
-```sh
-pp project doctor                           # validate config, auth, asset layout
-pp project inspect --format json            # resolved defaults and topology
-```
-
-### 3. Stage mode — topology configured
-
-When `pp.config.yaml` has a `topology` section, a single `--stage <name>`
-resolves the environment alias, solution unique name, and parameter overrides
-for that stage. This is the right mode for multi-environment promotion and
-deploy orchestration.
-
-```sh
-pp project inspect --stage prod --format json   # what "prod" resolves to
-pp deploy plan --stage prod --format json       # deployment preview for prod
-```
-
-Never hard-code environment URLs or solution unique names. If you see yourself
-writing `--env https://...` or `--solution MyOrg_Core_12345`, check whether
-topology covers it and use `--stage` instead.
+See [`references/project-config.md`](references/project-config.md) for the
+config schema.
 
 ---
 
-## Core concepts and their relationships
-
-These four things are independent layers. Confusing them causes most errors.
+## Core concepts
 
 **Auth profile** — a named set of credentials stored locally (browser login,
 client secret, device code, static token, or env-var token). Each profile
 targets a specific resource URL. Created once, referenced by name.
 
 ```sh
-pp auth login --name myprofile --resource https://myorg.crm.dynamics.com
 pp auth profile list
+pp auth profile add-user --name myprofile
+pp auth login --profile myprofile
+pp auth token --profile myprofile
 ```
 
 **Environment alias** — a local name that maps to a Dataverse environment URL
 plus an auth profile. Commands always use the alias name, never raw URLs.
-Created once per environment you work with.
 
 ```sh
 pp env add --name dev --url https://myorg.crm.dynamics.com --profile myprofile
 pp env inspect dev
 ```
-
-**Project** — an optional local config (`pp.config.yaml`) that provides
-defaults and asset discovery. Adds `pp project`, `pp analysis`, and
-`pp deploy` capabilities. Not required for raw Dataverse or solution work.
 
 **Solution** — a Dataverse solution that lives inside an environment. Required
 when authoring metadata, creating artifacts, or managing connection references
@@ -110,19 +83,7 @@ do not require `--solution`.
 
 ## Orientation by context
 
-### In an unfamiliar repo with pp.config.yaml
-
-```sh
-pp project doctor                           # health: config, auth, asset layout
-pp project inspect --format json            # defaults, stage topology, asset paths
-pp analysis context --format json           # parameter map, provider bindings
-```
-
-Read the output before touching anything. Look for: default stage, which
-environment alias is targeted, which solution is scoped, and what assets are
-declared under `assets`.
-
-### In an unfamiliar Dataverse environment (no project)
+### In an unfamiliar Dataverse environment
 
 ```sh
 pp dv whoami --env <alias>                  # identity + base URL confirmation
@@ -136,7 +97,8 @@ pp envvar list --env <alias>                # environment variable values
 
 ```sh
 # 1. Create an auth profile
-pp auth login --name dev-user --resource https://myorg.crm.dynamics.com
+pp auth profile add-user --name dev-user
+pp auth login --profile dev-user
 
 # 2. Register an environment alias
 pp env add --name dev --url https://myorg.crm.dynamics.com --profile dev-user
@@ -155,14 +117,19 @@ No `--solution` required. Safe to run in any environment.
 pp dv whoami --env <alias>
 pp dv query <table> --env <alias> --select col1,col2 --filter "..." --top 20
 pp dv get <table> <guid> --env <alias> --select col1,col2
+pp dv request <path> --env <alias>                # raw Web API request
+pp dv action <action> --env <alias> --body '{}'   # bound/unbound action
+pp dv function <function> --env <alias>           # bound/unbound function
 
 pp dv metadata tables --env <alias>
 pp dv metadata table <logicalName> --env <alias>
 pp dv metadata columns <table> --env <alias>
 pp dv metadata column <table> <col> --env <alias>
 pp dv metadata option-set <name> --env <alias>
+pp dv metadata relationship <name> --env <alias>
 pp dv metadata snapshot --env <alias> --out ./snapshot.json
 pp dv metadata diff --env <alias> --file ./snapshot.json
+pp dv metadata schema <table> --env <alias>
 ```
 
 ## Dataverse — writes (--solution required for metadata authoring)
@@ -175,6 +142,7 @@ pp dv create <table> --env <alias> --body '{"name":"Acme"}' [--plan]
 pp dv update <table> <guid> --env <alias> --body '{"name":"Renamed"}' [--plan]
 pp dv delete <table> <guid> --env <alias>
 pp dv rows apply --env <alias> --file ./rows.yaml [--plan]
+pp dv rows export <table> --env <alias> --out ./rows.yaml
 pp dv batch --env <alias> --file ./batch.yaml
 
 # Metadata authoring (solution-scoped)
@@ -193,65 +161,173 @@ See [`references/schemas.md`](references/schemas.md) for the spec file formats.
 ```sh
 pp solution list --env <alias>
 pp solution inspect <uniqueName> --env <alias> --format json
-pp solution analyze <uniqueName> --env <alias>          # dependency report
+pp solution components <uniqueName> --env <alias>
+pp solution dependencies <uniqueName> --env <alias>
+pp solution publishers --env <alias>
+pp solution analyze <uniqueName>                  # dependency report (local)
 pp solution compare <uniqueName> --source-env dev --target-env prod
+pp solution sync-status <uniqueName> --env <alias>
+pp solution checkpoint <uniqueName> --env <alias>
 pp solution publish <uniqueName> --env <alias>
 pp solution export <uniqueName> --env <alias> --out ./Core.zip
-pp solution import ./Core.zip --env <alias> [--plan] [--yes]
+pp solution import ./Core.zip --env <alias> [--plan]
+pp solution create --env <alias> --publisher-unique-name <prefix> [--plan]
+pp solution delete <uniqueName> --env <alias>
+pp solution set-metadata <uniqueName> --env <alias>
+pp solution pack <path> --out ./Core.zip
+pp solution unpack ./Core.zip --out ./solution/
 ```
 
 ## Connection references and environment variables
 
 ```sh
 pp connref list --env <alias>
+pp connref inspect <name> --env <alias>
+pp connref create --env <alias> --solution <name>
 pp connref set <name> --env <alias> --value <connectionId> --solution <name> [--plan]
-pp connref validate --env <alias> --solution <name>
+pp connref validate --env <alias>
 
 pp envvar list --env <alias>
+pp envvar inspect <schemaName> --env <alias>
+pp envvar create --env <alias> --solution <name>
 pp envvar set <schemaName> --env <alias> --value <value> --solution <name> [--plan]
 ```
 
 ## Flows
 
 ```sh
-# Remote lifecycle
+# Remote inspection
 pp flow list --env <alias> [--solution <name>]
 pp flow inspect <name|id> --env <alias>
 pp flow export <name|id> --env <alias> --solution <name> --out ./flows/myflow/
-pp flow deploy ./flows/myflow/ --env <alias> --solution <name> [--create-if-missing] [--plan]
-pp flow promote <name|id> --source-environment <alias> --target-environment <alias>
+pp flow activate <name|id> --env <alias> --solution <name> [--plan]
+pp flow connrefs <name|id> --env <alias> --solution <name>
+pp flow access <name|id> --env <alias>
+pp flow attach <name|id> --env <alias> --solution <name>
+
+# Run inspection
+pp flow runs <name|id> --env <alias> [--since 24h] [--status Failed]
+pp flow runs <name|id> --env <alias> --run-id <runId> --include-actions
+pp flow runs <name|id> --env <alias> --run-id <runId> --include-action-io
+
+# Direct Power Automate API access
+pp flow request <path> --env <alias> [--method GET|POST|PATCH|DELETE] [--query key=value] [--body '{}']
+pp flow request /flows/<flowId>/runs --env <alias> --format json
+pp flow request /flows/<flowId>/runs/<runId>/actions --env <alias>
 
 # Local artifact operations (see schemas.md for the artifact format)
-pp flow unpack ./export.json --out ./flows/myflow/
 pp flow normalize ./flows/myflow/
 pp flow validate ./flows/myflow/
-pp flow patch ./flows/myflow/ --file ./patches/dev.json --out ./flows/myflow-dev/
-pp flow pack ./flows/myflow/ --out ./dist/myflow.json
-
-# Diagnostics
-pp flow doctor <name> --env <alias> [--since 7d]
-pp flow errors <name> --env <alias> [--group-by connectionReference]
-pp flow runs <name> --env <alias> [--since 24h]
-pp flow monitor <name> --env <alias> [--since 2h]
 ```
 
-## Deploy orchestration
+## Canvas apps
 
 ```sh
-pp deploy plan [--stage <stage>] [--format json]
-pp deploy apply [--stage <stage>] --plan [--format json]   # preview
-pp deploy apply [--stage <stage>] --yes [--format json]    # apply
-pp deploy release plan --file ./release.yaml [--format json]
-pp deploy release apply --file ./release.yaml --approve <gateId> [--yes]
+# Remote
+pp canvas list --env <alias> [--solution <name>]
+pp canvas download <name|id> --env <alias> --out ./apps/myapp/
+pp canvas inspect <path-or-id> [--env <alias>]
+pp canvas probe <name|id> --env <alias> --browser-profile <name>
+pp canvas access <name|id> --env <alias>
+pp canvas create --env <alias> --solution <name> --name MyApp [--plan]
+pp canvas import <path> --env <alias> --solution <name> [--plan]
+pp canvas attach <name|id> --env <alias> --solution <name> [--plan]
+
+# Local artifact operations
+pp canvas validate <path>
+pp canvas lint <path>
+pp canvas build <path> --out ./dist/
+pp canvas diff <path1> <path2>
+pp canvas patch plan --file ./patch.yaml <path>
+pp canvas patch apply --file ./patch.yaml <path> --out ./patched/
+
+# Templates
+pp canvas templates import --registry <name> --out ./apps/myapp/
+pp canvas templates inspect <path>
+pp canvas templates diff <path>
+pp canvas templates pin <path> --out ./pinned/
+pp canvas templates refresh --current <path>
+pp canvas templates audit <path>
+
+# Workspace
+pp canvas workspace inspect [--workspace <path>] [--registry <name>]
 ```
 
-## Analysis
+## SharePoint
 
 ```sh
-pp analysis context [--stage <stage>] [--format json]
-pp analysis report
-pp analysis portfolio [--project <path>] [--format json]
-pp analysis drift [--project <path>]
+pp sharepoint site list --env <alias> --resource https://graph.microsoft.com
+pp sharepoint site inspect <site-id|hostname:/path|url> --env <alias> --resource https://graph.microsoft.com
+pp sharepoint list list --env <alias> --site <site> --resource https://graph.microsoft.com
+pp sharepoint list items <list> --env <alias> --site <site> --resource https://graph.microsoft.com
+pp sharepoint file list --env <alias> --site <site> [--drive <name>] [--path /folder] --resource https://graph.microsoft.com
+pp sharepoint file inspect <item-id|/path|url> --env <alias> --site <site> [--drive <name>] --resource https://graph.microsoft.com
+pp sharepoint permission list --env <alias> --site <site> [--list <list>|--file <path>] --resource https://graph.microsoft.com
+```
+
+## Model-driven apps
+
+```sh
+pp model list --env <alias> [--solution <name>]
+pp model inspect <name|id> --env <alias>
+pp model create --env <alias> --solution <name>
+pp model attach <name|id> --env <alias> --solution <name>
+pp model access <name|id> --env <alias>
+pp model composition <name|id> --env <alias>
+pp model impact <name|id> --env <alias> [--kind app|form|view|sitemap] [--target <name>]
+pp model sitemap <name|id> --env <alias>
+pp model forms <name|id> --env <alias>
+pp model views <name|id> --env <alias>
+pp model dependencies <name|id> --env <alias>
+pp model patch plan <name|id> --env <alias> [--kind app|form|view|sitemap] [--target <name>] [--rename <name>]
+```
+
+## Notebook — local dashboards (HTML or Markdown)
+
+`pp notebook serve` runs a local HTTP server that renders HTML or Markdown files
+with embedded `pp` commands. Use it for quick environment dashboards, comparison
+reports, or any repeatable query set you want to view in a browser.
+
+```sh
+pp notebook serve report.html                     # serve HTML and open browser
+pp notebook serve report.md                       # serve Markdown notebook
+pp notebook serve report.html --port 8080         # fixed port
+pp notebook serve report.html --no-open           # skip browser launch
+```
+
+Write standard HTML with `data-pp` attributes, or use Markdown with ` ```pp `
+fenced blocks. The value is the CLI argv without the `pp` prefix:
+
+```html
+<pre data-pp="dv whoami --environment dev --format json"></pre>
+<pre data-pp="solution list --environment dev --format table"></pre>
+```
+
+Commands run in-process using local credentials. The browser auto-reloads when
+the source file changes (via SSE file watching). Output streams in real time.
+Per-cell timeouts default to 60 seconds and are configurable via
+`data-pp-timeout`. Cell variables (`data-pp-var` + `{{name}}`) let one cell's
+output feed into another cell's command.
+
+See [`references/notebook.md`](references/notebook.md) for the full source
+format, server routes, cell attributes, variables, error display, snapshot
+export, and worked examples.
+
+## MCP server
+
+`pp mcp serve` starts an MCP server exposing pp's domain capabilities to AI
+agents.
+
+```sh
+pp mcp serve                                      # stdio transport
+pp mcp serve --allow-interactive-auth              # allow browser-based auth
+```
+
+## Diagnostics
+
+```sh
+pp diagnostics doctor                              # system health report
+pp diagnostics bundle                              # collect diagnostics for filing
 ```
 
 ---
@@ -262,7 +338,7 @@ pp analysis drift [--project <path>]
 
 ```sh
 pp auth profile list                              # what profiles exist
-pp auth token --profile <name> --resource <url>   # test token acquisition
+pp auth token --profile <name>                    # test token acquisition
 pp dv whoami --env <alias>                        # identity + URL check
 pp diagnostics doctor                             # system health report
 pp diagnostics bundle                             # collect diagnostics for filing
@@ -277,33 +353,20 @@ token is valid but for a different audience.
 Work from summary to detail:
 
 ```sh
-pp flow doctor <name> --env <alias> --since 7d
-# → shows run stats, error rate, most common failure categories
+pp flow runs <name> --env <alias> --since 7d --status Failed
+# → recent failed runs
 
-pp flow errors <name> --env <alias> --group-by connectionReference
-# → if connref issues: which references are broken
+pp flow runs <name> --env <alias> --run-id <runId> --include-actions
+# → action-level detail for a specific run
 
-pp flow runs <name> --env <alias> --since 24h
-# → individual run status for recent window
+pp flow runs <name> --env <alias> --run-id <runId> --include-action-io
+# → full action input/output payloads
 
 pp flow connrefs <name> --env <alias> --solution <name>
 # → what connection references this flow binds to
-```
 
-### Broken deploy
-
-```sh
-pp deploy plan --stage <stage> --format json
-# → shows what would be applied; look for unresolved params or missing bindings
-
-pp connref validate --env <alias> --solution <name>
-# → which connection references are unbound
-
-pp envvar list --env <alias>
-# → which environment variables have no value set
-
-pp project inspect --stage <stage> --format json
-# → confirms which env + solution the stage resolves to
+pp flow request /flows/<flowId>/runs --env <alias> --query '$filter=properties/status eq \'Failed\'' --format json
+# → direct API query for more control
 ```
 
 ### Schema drift between environments
@@ -317,15 +380,18 @@ pp solution compare <uniqueName> --source-env dev --target-env prod
 # → solution-level component diff
 ```
 
-### Parameter resolution failures
+### Broken solution import
 
-Run `pp project inspect --stage <stage> --format json` and look at the
-`parameters` section. Each parameter shows its resolved value and which
-resolution path was used (value, fromEnv, secretRef). If a required parameter
-has no value, it appears as unresolved with the missing source.
+```sh
+pp solution analyze <path>
+# → dependency report for a local solution zip
 
-Check `pp analysis context --format json` for provider binding health — a
-binding to a misconfigured or missing env alias shows as a diagnostic.
+pp connref validate --env <alias>
+# → which connection references are unbound
+
+pp envvar list --env <alias>
+# → which environment variables have no value set
+```
 
 ---
 
@@ -339,8 +405,8 @@ binding to a misconfigured or missing env alias shows as a diagnostic.
 
 The `--plan` output includes `suggestedNextActions`, `knownLimitations`, and
 `provenance`. Read them. A clean preflight does not guarantee a clean apply, but
-it catches parameter resolution failures, missing connection references, and
-authorization gaps before they cause partial state.
+it catches missing connection references and authorization gaps before they
+cause partial state.
 
 Metadata authoring and solution import are the highest-risk mutations because
 they can fail mid-operation and leave partial state. Run `--plan` first without
@@ -361,8 +427,7 @@ Leave `pp` only when:
 4. The platform surface is opaque (some Microsoft admin portals, Power Platform
    admin center operations)
 
-When you fall back, classify why. The category matters because it determines
-what to try next:
+When you fall back, classify why:
 
 - **pp gap** — not yet in `pp`; try `pac` or file an issue
 - **platform limitation** — no API exists; browser handoff or manual step is correct
@@ -378,13 +443,14 @@ Fallback order: `pp` alternative → `pac` (for admin/ALM gaps) → browser auto
 Affects how much you trust a command's output and whether to have a recovery plan.
 
 **Stable** — auth, env aliases, Dataverse reads/writes/metadata, solution lifecycle,
-project init/doctor/inspect, analysis, deploy orchestration, CLI output contract.
+connection references, environment variables, flow inspection and runs, CLI output
+contract, diagnostics, notebooks.
 
 **Preview** — canvas offline validate/build/patch, flow local artifact operations,
-flow remote export/promote, model-driven app inspection, CI adapter wrappers.
+flow remote export, model-driven app inspection, canvas templates.
 
-**Experimental** — canvas remote create/import, flow runtime correlation, broad MCP
-automation, third-party extensions.
+**Experimental** — canvas remote create/import, model-driven app patching,
+broad MCP automation.
 
 Preview and experimental commands are real but may return partial results or
 change behavior. Always inspect output before acting on it.
@@ -393,5 +459,5 @@ change behavior. Always inspect output before acting on it.
 
 ## References
 
-- [`references/schemas.md`](references/schemas.md) — spec file formats for metadata authoring, rows, flows, deploy manifests
-- [`references/project-config.md`](references/project-config.md) — pp.config.yaml schema and parameter resolution
+- [`references/schemas.md`](references/schemas.md) — spec file formats for metadata authoring, rows, and flows
+- [`references/project-config.md`](references/project-config.md) — pp.config.yaml schema

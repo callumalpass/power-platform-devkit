@@ -131,6 +131,16 @@ export async function discoverMakerEnvironmentIdForEnvironment(
   });
 }
 
+export async function resolveDefaultSolutionUniqueNameForCli(args: string[], environmentAlias: string): Promise<string | undefined> {
+  const defaults = await loadProjectDefaults(resolveDefaultInvocationPath());
+
+  if (defaults.success && defaults.data?.solution) {
+    return defaults.data.solution;
+  }
+
+  return readEnvironmentDefaultSolution(environmentAlias, readConfigOptions(args));
+}
+
 export async function readEnvironmentDefaultSolution(alias: string, configOptions: ConfigStoreOptions): Promise<string | undefined> {
   const environment = await getEnvironmentAlias(alias, configOptions);
 

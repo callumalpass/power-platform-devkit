@@ -12,7 +12,7 @@ The **core packages** provide infrastructure that every other package depends on
 
 The **domain packages** sit on top of that core layer and each own one Power Platform service area. `@pp/dataverse` covers Dataverse client resolution, rows, metadata, connection references, and environment variables. `@pp/solution` handles solution lifecycle operations: analysis, compare, pack/unpack, and import/export. `@pp/canvas` provides template registries, offline validation and build, diff, LSP support, and harvesting helpers. `@pp/flow` covers flow discovery, runtime inspection, artifact lifecycle, graph traversal, and patch helpers. `@pp/model` handles model-driven app inspection and dependency tracing. Keeping these separate from the core means each domain can evolve its API surface without entangling unrelated services.
 
-The **interface packages** are what users and tools interact with directly. `@pp/cli` is the main command-line interface. `@pp/mcp` exposes the same domain packages through an MCP server. `@pp/flow-language-server` is a standalone flow LSP server, and `@pp/vscode` is the VS Code extension for canvas and flow language support.
+The **interface packages** are what users and tools interact with directly. `@pp/cli` is the main command-line interface. `@pp/mcp` exposes the same domain packages through an MCP server. `@pp/notebook` provides a local HTML notebook server that executes embedded `pp` commands in-process -- it has zero workspace dependencies and receives `cliMain` as a parameter to avoid circular imports. `@pp/flow-language-server` is a standalone flow LSP server, and `@pp/vscode` is the VS Code extension for canvas and flow language support.
 
 ## Runtime flow
 

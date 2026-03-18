@@ -18,8 +18,9 @@ skills/
   pp-development/
     SKILL.md
     references/
-      project-shape-and-alm.md
-      fallbacks-and-diagnostics.md
+      schemas.md
+      project-config.md
+      notebook.md
 ```
 
 ## Codex and Claude Code packaging

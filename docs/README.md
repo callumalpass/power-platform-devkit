@@ -1,6 +1,6 @@
 # `pp` Documentation
 
-`pp` is a CLI tool for working with the Power Platform. It handles authentication, Dataverse inspection, solution lifecycle, canvas offline validation and build, flow artifact management, and model-driven app inspection. These docs are organized around those tasks, so you can get to the right guide quickly.
+`pp` is a CLI tool for working with the Power Platform. It handles authentication, Dataverse inspection, solution lifecycle, SharePoint inspection, canvas offline validation and build, flow artifact management, and model-driven app inspection. These docs are organized around those tasks, so you can get to the right guide quickly.
 
 ## Start here
 
@@ -31,6 +31,8 @@ Once you know the core workflow you want, these guides go deeper into individual
 - [Canvas harvesting](canvas-harvesting.md): how pinned canvas registries are refreshed from a controlled environment
 - [Flow](flow.md): remote inspection plus local `flow.json` artifact lifecycle
 - [Model-driven apps](model.md): model app inspection and create/attach authoring
+- [SharePoint](sharepoint.md): site, list, file, and permission inspection through Microsoft Graph
+- [Notebook](notebook.md): local HTML notebook with embedded pp commands
 
 ## Contributor and platform reference
 

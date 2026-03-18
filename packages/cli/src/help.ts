@@ -1351,27 +1351,165 @@ export function printModelAccessHelp(): void {
 export function printSharePointHelp(): void {
   process.stdout.write(
     [
-      'Usage: sharepoint <command> <action> [options]',
+      'Usage: sharepoint <area> <action> [options]',
       '',
-      'Commands:',
-      '  site inspect <site|binding>              inspect a SharePoint site by URL, site id, or project binding',
-      '  list inspect <list|binding> --site ...   inspect a SharePoint list by title, id, or project binding',
-      '  file inspect <file|binding> --site ...   inspect a drive item by path, id, or project binding',
-      '  permissions inspect --site ...           inspect site, list, or drive item permissions',
+      'Areas:',
+      '  site list                                list SharePoint sites visible through Microsoft Graph',
+      '  site inspect <site>                      inspect a site by site id, hostname:/path, or absolute URL',
+      '  list list --site <site>                  list lists in one site',
+      '  list items <list> --site <site>          list items from one SharePoint list',
+      '  file list --site <site>                  list files from the default or selected document library',
+      '  file inspect <item> --site <site>        inspect one drive item by id, path, or absolute URL',
+      '  permission list --site <site>            list permissions at the site, list, or file scope',
       '',
-      'Binding notes:',
-      '  - SharePoint bindings support `sharepoint-site`, `sharepoint-list`, and `sharepoint-file` kinds.',
-      '  - `sharepoint-list` and `sharepoint-file` bindings should declare `metadata.site`; file bindings can also declare `metadata.drive`.',
-      '  - Bindings can declare `metadata.authProfile` so commands do not need `--profile`.',
+      'Auth model:',
+      '  - `--environment` resolves to the auth profile bound to that alias.',
+      '  - SharePoint commands currently call Microsoft Graph, so use `--resource https://graph.microsoft.com` when the profile defaultResource still points at Dataverse.',
+      '  - Read-only commands are implemented today; no SharePoint mutations are exposed yet.',
       '',
       'Examples:',
-      '  pp sharepoint site inspect financeSite --project .',
-      '  pp sharepoint list inspect Campaigns --site financeSite --profile graph-user',
-      '  pp sharepoint file inspect financeBudget --project .',
-      '  pp sharepoint permissions inspect --site financeSite --file /Shared Documents/Budget.xlsx --drive Documents --profile graph-user',
+      '  pp sharepoint site list --environment graph-dev --search Finance',
+      '  pp sharepoint site inspect https://contoso.sharepoint.com/sites/Finance --environment graph-dev',
+      '  pp sharepoint list items Campaigns --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance',
+      '  pp sharepoint file inspect /Shared Documents/Budget.xlsx --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance',
+      '  pp sharepoint permission list --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance --file /Shared Documents/Budget.xlsx',
       '',
       'Common output options:',
       '  --format table|json|yaml|ndjson|markdown|raw',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointSiteHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint site <list|inspect> [options]',
+      '',
+      'Commands:',
+      '  list                         list sites visible through Microsoft Graph',
+      '  inspect <site>               inspect a site by id, hostname:/path, or URL',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointSiteListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint site list --environment ALIAS [--search TEXT] [--top N] [--resource URL] [options]',
+      '',
+      'Behavior:',
+      '  - Lists SharePoint sites visible to the resolved Microsoft Graph identity.',
+      '  - Uses `--search` when provided, otherwise falls back to Graph site search with `*`.',
+      '',
+      'Examples:',
+      '  pp sharepoint site list --environment graph-dev',
+      '  pp sharepoint site list --environment graph-dev --search Finance --top 20',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointSiteInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint site inspect <site-id|hostname:/path|url> --environment ALIAS [--resource URL] [options]',
+      '',
+      'Examples:',
+      '  pp sharepoint site inspect contoso.sharepoint.com:/sites/Finance --environment graph-dev',
+      '  pp sharepoint site inspect https://contoso.sharepoint.com/sites/Finance --environment graph-dev',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint list <list|items> [options]',
+      '',
+      'Commands:',
+      '  list                         list lists within one SharePoint site',
+      '  items <list>                 list items from one SharePoint list',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointListListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint list list --environment ALIAS --site SITE [--top N] [--resource URL] [options]',
+      '',
+      'Examples:',
+      '  pp sharepoint list list --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointListItemsHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint list items <list-id|name> --environment ALIAS --site SITE [--top N] [--resource URL] [options]',
+      '',
+      'Examples:',
+      '  pp sharepoint list items Campaigns --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointFileHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint file <list|inspect> [options]',
+      '',
+      'Commands:',
+      '  list                         list drive items from the root or one folder path',
+      '  inspect <item>               inspect one drive item by id, path, or URL',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointFileListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint file list --environment ALIAS --site SITE [--drive NAME_OR_ID] [--path /folder] [--top N] [--resource URL] [options]',
+      '',
+      'Examples:',
+      '  pp sharepoint file list --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance',
+      '  pp sharepoint file list --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance --drive Documents --path /Shared Documents',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointFileInspectHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint file inspect <item-id|/path|url> --environment ALIAS --site SITE [--drive NAME_OR_ID] [--resource URL] [options]',
+      '',
+      'Examples:',
+      '  pp sharepoint file inspect /Shared Documents/Budget.xlsx --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointPermissionHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint permission list --environment ALIAS --site SITE [--list LIST] [--file ITEM] [--drive NAME_OR_ID] [options]',
+      '',
+      'Behavior:',
+      '  - Without `--list` or `--file`, lists site-level permissions.',
+      '  - With `--list`, lists permissions for one SharePoint list.',
+      '  - With `--file`, lists permissions for one drive item.',
+    ].join('\n') + '\n'
+  );
+}
+
+export function printSharePointPermissionListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: sharepoint permission list --environment ALIAS --site SITE [--list LIST] [--file ITEM] [--drive NAME_OR_ID] [--resource URL] [options]',
+      '',
+      'Examples:',
+      '  pp sharepoint permission list --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance',
+      '  pp sharepoint permission list --environment graph-dev --site https://contoso.sharepoint.com/sites/Finance --file /Shared Documents/Budget.xlsx',
     ].join('\n') + '\n'
   );
 }

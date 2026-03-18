@@ -31,7 +31,7 @@ import {
   type MetadataApplyPlan,
 } from '@pp/dataverse';
 import { createDiagnostic, fail, type Diagnostic, type OperationResult, type ProvenanceRecord, type SupportTier, ok } from '@pp/diagnostics';
-import { FlowService, type FlowMonitorReport } from '@pp/flow';
+import { FlowService } from '@pp/flow';
 import { ModelService, type ModelAppSummary, type ModelInspectResult } from '@pp/model';
 import {
   SolutionService,
@@ -398,15 +398,6 @@ const flowRequestSchema = remoteBaseSchema.extend({
   body: z.unknown().optional(),
 });
 
-const flowErrorsSchema = flowRunsSchema.extend({
-  groupBy: z.enum(['errorCode', 'errorMessage', 'connectionReference']).optional(),
-});
-
-const flowMonitorSchema = solutionScopeSchema.extend({
-  identifier: z.string().min(1),
-  since: z.string().min(1).optional(),
-  baseline: z.record(z.string(), z.unknown()).optional(),
-});
 
 const flowMutationSchema = solutionScopeSchema.extend({
   target: z.string().min(1).optional(),
@@ -852,21 +843,6 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'List one remote flow\'s recent runs with structured runtime diagnostics.',
   },
   {
-    name: 'pp.flow.errors',
-    title: 'Summarize Flow Errors',
-    description: 'Group one remote flow\'s recent failures by error or connection reference.',
-  },
-  {
-    name: 'pp.flow.doctor',
-    title: 'Diagnose Flow Runtime',
-    description: 'Summarize one remote flow\'s runtime blockers, connection-reference health, and next actions.',
-  },
-  {
-    name: 'pp.flow.monitor',
-    title: 'Monitor Flow Runtime',
-    description: 'Summarize one remote flow with recent run health, grouped errors, and follow-up monitoring findings.',
-  },
-  {
     name: 'pp.flow.activate',
     title: 'Activate Flow',
     description: 'Attempt one bounded in-place activation for one remote flow and preserve structured blocker diagnostics when Dataverse rejects the update.',
@@ -1028,11 +1004,11 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     name: 'flow-lifecycle',
     kind: 'platform',
     supportTier: 'preview',
-    readTools: ['pp.flow.inspect', 'pp.flow.connrefs', 'pp.flow.runs', 'pp.flow.errors', 'pp.flow.doctor', 'pp.flow.monitor', 'pp.domain.list'],
+    readTools: ['pp.flow.inspect', 'pp.flow.connrefs', 'pp.flow.runs', 'pp.flow.request', 'pp.domain.list'],
     mutationToolsAvailable: true,
     mutationTools: ['pp.flow.activate', 'pp.flow.deploy', 'pp.flow.export'],
     notes:
-      'Use pp.flow.inspect to discover or inspect remote cloud flows inside one environment, pp.flow.runs/errors/doctor for the core runtime evidence slices, pp.flow.connrefs to map runtime/dependency health back to connection references and environment variables, pp.flow.monitor to capture one higher-level runtime follow-up summary, pp.flow.activate for one bounded in-place remediation attempt on draft solution flows, and pp.flow.deploy with createIfMissing=true when you need to create or update one explicit solution-scoped flow artifact inside MCP while still getting workflow-state follow-up guidance in the result.',
+      'Use pp.flow.inspect to discover or inspect remote cloud flows inside one environment, pp.flow.runs for structured runtime evidence, pp.flow.connrefs to map runtime/dependency health back to connection references and environment variables, pp.flow.request for direct Power Automate API access with custom OData filters or pagination, pp.flow.activate for one bounded in-place remediation attempt on draft solution flows, and pp.flow.deploy with createIfMissing=true when you need to create or update one explicit solution-scoped flow artifact inside MCP while still getting workflow-state follow-up guidance in the result.',
   },
   {
     name: 'model-lifecycle',
@@ -2196,87 +2172,6 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.flow.errors',
-    {
-      title: 'Summarize Flow Errors',
-      description: 'Group one remote flow\'s recent failures by error or connection reference.',
-      inputSchema: flowErrorsSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Summarize Flow Errors'),
-    },
-    async ({ identifier, solutionUniqueName, status, since, groupBy, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
-
-      if (!resolution.success || !resolution.data) {
-        return toToolResult('pp.flow.errors', resolution, readOnlyPolicy());
-      }
-
-      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).errors(identifier, {
-        solutionUniqueName,
-        status,
-        since,
-        groupBy,
-      });
-      return toToolResult('pp.flow.errors', result, readOnlyPolicy());
-    }
-  );
-
-  server.registerTool(
-    'pp.flow.doctor',
-    {
-      title: 'Diagnose Flow Runtime',
-      description: 'Summarize one remote flow\'s runtime blockers, connection-reference health, and next actions.',
-      inputSchema: flowConnrefsSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Diagnose Flow Runtime'),
-    },
-    async ({ identifier, solutionUniqueName, since, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
-
-      if (!resolution.success || !resolution.data) {
-        return toToolResult('pp.flow.doctor', resolution, readOnlyPolicy());
-      }
-
-      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).doctor(identifier, {
-        solutionUniqueName,
-        since,
-      });
-      return toToolResult('pp.flow.doctor', result, readOnlyPolicy());
-    }
-  );
-
-  server.registerTool(
-    'pp.flow.monitor',
-    {
-      title: 'Monitor Flow Runtime',
-      description: 'Summarize one remote flow with recent run health, grouped errors, and follow-up monitoring findings.',
-      inputSchema: flowMonitorSchema,
-      outputSchema: outputEnvelopeSchema,
-      annotations: readOnlyAnnotations('Monitor Flow Runtime'),
-    },
-    async ({ identifier, solutionUniqueName, since, baseline, ...args }) => {
-      const resolution = await resolveRemoteRuntime(args, defaults);
-
-      if (!resolution.success || !resolution.data) {
-        return toToolResult('pp.flow.monitor', resolution, readOnlyPolicy());
-      }
-
-      const normalizedBaseline = normalizeFlowMonitorBaseline(baseline);
-
-      if (!normalizedBaseline.success) {
-        return toToolResult('pp.flow.monitor', normalizedBaseline, readOnlyPolicy());
-      }
-
-      const result = await new FlowService(resolution.data.client, { flowApiClient: resolution.data.flowApiClient, makerEnvironmentId: resolution.data.makerEnvironmentId }).monitor(identifier, {
-        solutionUniqueName,
-        since,
-        baseline: normalizedBaseline.data,
-      });
-      return toToolResult('pp.flow.monitor', result, readOnlyPolicy());
-    }
-  );
-
-  server.registerTool(
     'pp.flow.activate',
     {
       title: 'Activate Flow',
@@ -3310,51 +3205,6 @@ function tryParseJsonOrYaml(contents: string): unknown {
   }
 }
 
-function normalizeFlowMonitorBaseline(value: unknown): OperationResult<FlowMonitorReport | undefined> {
-  if (value === undefined) {
-    return ok(undefined, {
-      supportTier: 'preview',
-    });
-  }
-
-  if (isFlowMonitorReport(value)) {
-    return ok(value, {
-      supportTier: 'preview',
-    });
-  }
-
-  if (isRecord(value) && isFlowMonitorReport(value.data)) {
-    return ok(value.data, {
-      supportTier: 'preview',
-    });
-  }
-
-  return fail(
-    createDiagnostic(
-      'error',
-      'FLOW_MONITOR_BASELINE_INVALID',
-      'pp.flow.monitor baseline must be a prior monitor report object or the saved MCP/CLI success payload that contains one.',
-      {
-        source: '@pp/mcp',
-      }
-    )
-  );
-}
-
-function isFlowMonitorReport(value: unknown): value is FlowMonitorReport {
-  return (
-    isRecord(value) &&
-    typeof value.checkedAt === 'string' &&
-    isRecord(value.health) &&
-    typeof value.health.status === 'string' &&
-    typeof value.health.telemetryState === 'string' &&
-    isRecord(value.recentRuns) &&
-    typeof value.recentRuns.total === 'number' &&
-    typeof value.recentRuns.failed === 'number' &&
-    Array.isArray(value.errorGroups) &&
-    Array.isArray(value.findings)
-  );
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
