@@ -33,6 +33,7 @@ import {
 import { createDiagnostic, fail, type Diagnostic, type OperationResult, type ProvenanceRecord, type SupportTier, ok } from '@pp/diagnostics';
 import { FlowService } from '@pp/flow';
 import { ModelService, type ModelAppSummary, type ModelInspectResult } from '@pp/model';
+import { SharePointService } from '@pp/sharepoint';
 import {
   SolutionService,
   type SolutionAnalysis,
@@ -658,6 +659,38 @@ const solutionCompareSchema = z.object({
   allowInteractiveAuth: z.boolean().optional(),
   includeModelComposition: z.boolean().optional(),
 });
+const sharePointBaseSchema = remoteBaseSchema.extend({
+  resource: z.string().url().optional(),
+});
+const sharePointSiteListSchema = sharePointBaseSchema.extend({
+  search: z.string().min(1).optional(),
+  top: z.number().int().positive().max(200).optional(),
+});
+const sharePointSiteInspectSchema = sharePointBaseSchema.extend({
+  identifier: z.string().min(1),
+});
+const sharePointListListSchema = sharePointBaseSchema.extend({
+  site: z.string().min(1),
+  top: z.number().int().positive().max(200).optional(),
+});
+const sharePointListItemsSchema = sharePointListListSchema.extend({
+  identifier: z.string().min(1),
+});
+const sharePointFileListSchema = sharePointListListSchema.extend({
+  drive: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+});
+const sharePointFileInspectSchema = sharePointBaseSchema.extend({
+  site: z.string().min(1),
+  identifier: z.string().min(1),
+  drive: z.string().min(1).optional(),
+});
+const sharePointPermissionListSchema = sharePointBaseSchema.extend({
+  site: z.string().min(1),
+  list: z.string().min(1).optional(),
+  file: z.string().min(1).optional(),
+  drive: z.string().min(1).optional(),
+});
 
 const dataverseDeleteSchema = remoteBaseSchema.extend({
   table: z.string().min(1),
@@ -923,6 +956,41 @@ export const initialMcpTools: McpToolDefinition[] = [
     description: 'Replace one remote canvas app inside a named solution from one explicit local `.msapp` artifact.',
   },
   {
+    name: 'pp.sharepoint.site.list',
+    title: 'List SharePoint Sites',
+    description: 'List SharePoint sites visible through Microsoft Graph for one environment-bound auth profile.',
+  },
+  {
+    name: 'pp.sharepoint.site.inspect',
+    title: 'Inspect SharePoint Site',
+    description: 'Inspect one SharePoint site by site id, hostname:/path, or absolute URL.',
+  },
+  {
+    name: 'pp.sharepoint.list.list',
+    title: 'List SharePoint Lists',
+    description: 'List SharePoint lists within one SharePoint site.',
+  },
+  {
+    name: 'pp.sharepoint.list.items',
+    title: 'List SharePoint List Items',
+    description: 'List items from one SharePoint list in one site.',
+  },
+  {
+    name: 'pp.sharepoint.file.list',
+    title: 'List SharePoint Files',
+    description: 'List files from the default or selected SharePoint document library.',
+  },
+  {
+    name: 'pp.sharepoint.file.inspect',
+    title: 'Inspect SharePoint File',
+    description: 'Inspect one SharePoint drive item by id, path, or absolute URL.',
+  },
+  {
+    name: 'pp.sharepoint.permission.list',
+    title: 'List SharePoint Permissions',
+    description: 'List SharePoint permissions at the site, list, or file scope.',
+  },
+  {
     name: 'pp.domain.list',
     title: 'List Supported Domains',
     description: 'Describe the current MCP read surface and the mutation boundary for each exposed domain.',
@@ -1029,6 +1097,24 @@ const initialSupportedDomains: SupportedDomainSummary[] = [
     mutationTools: ['pp.canvas-app.attach', 'pp.canvas-app.download', 'pp.canvas-app.import'],
     notes:
       'Use pp.canvas-app.inspect to discover or inspect remote canvas apps inside one environment or solution scope, pp.canvas-app.access to inspect ownership and explicit share state, pp.canvas-app.plan-attach to preview target-solution baseline plus containing-solution context before mutating, pp.canvas-app.download to export one remote `.msapp` with optional extracted source output, pp.canvas-app.import to replace one remote app from one explicit local `.msapp`, and pp.canvas-app.attach to keep bounded remote solution attachment inside MCP with post-attach solution-impact readback.',
+  },
+  {
+    name: 'sharepoint',
+    kind: 'provider',
+    supportTier: 'preview',
+    readTools: [
+      'pp.sharepoint.site.list',
+      'pp.sharepoint.site.inspect',
+      'pp.sharepoint.list.list',
+      'pp.sharepoint.list.items',
+      'pp.sharepoint.file.list',
+      'pp.sharepoint.file.inspect',
+      'pp.sharepoint.permission.list',
+      'pp.domain.list',
+    ],
+    mutationToolsAvailable: false,
+    notes:
+      'SharePoint is exposed as an inspect-first Microsoft Graph provider surface. Environment aliases still resolve the auth profile, but callers should set the auth resource to Microsoft Graph when the stored profile defaultResource still targets Dataverse.',
   },
   {
     name: 'flow-local-artifacts',
@@ -2729,6 +2815,153 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         ),
       );
     }
+  );
+
+  server.registerTool(
+    'pp.sharepoint.site.list',
+    {
+      title: 'List SharePoint Sites',
+      description: 'List SharePoint sites visible through Microsoft Graph for one environment-bound auth profile.',
+      inputSchema: sharePointSiteListSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('List SharePoint Sites'),
+    },
+    async ({ environment, configDir, allowInteractiveAuth, resource, search, top }) =>
+      toToolResult(
+        'pp.sharepoint.site.list',
+        await new SharePointService({
+          configDir,
+          resource,
+          publicClientLoginOptions: allowInteractiveAuth ? undefined : { allowInteractive: false },
+        }).listSites(environment, { search, top }),
+        readOnlyPolicy()
+      )
+  );
+
+  server.registerTool(
+    'pp.sharepoint.site.inspect',
+    {
+      title: 'Inspect SharePoint Site',
+      description: 'Inspect one SharePoint site by site id, hostname:/path, or absolute URL.',
+      inputSchema: sharePointSiteInspectSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect SharePoint Site'),
+    },
+    async ({ environment, configDir, allowInteractiveAuth, resource, identifier }) =>
+      toToolResult(
+        'pp.sharepoint.site.inspect',
+        await new SharePointService({
+          configDir,
+          resource,
+          publicClientLoginOptions: allowInteractiveAuth ? undefined : { allowInteractive: false },
+        }).inspectSite(environment, identifier),
+        readOnlyPolicy()
+      )
+  );
+
+  server.registerTool(
+    'pp.sharepoint.list.list',
+    {
+      title: 'List SharePoint Lists',
+      description: 'List SharePoint lists within one SharePoint site.',
+      inputSchema: sharePointListListSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('List SharePoint Lists'),
+    },
+    async ({ environment, configDir, allowInteractiveAuth, resource, site, top }) =>
+      toToolResult(
+        'pp.sharepoint.list.list',
+        await new SharePointService({
+          configDir,
+          resource,
+          publicClientLoginOptions: allowInteractiveAuth ? undefined : { allowInteractive: false },
+        }).listLists(environment, site, { top }),
+        readOnlyPolicy()
+      )
+  );
+
+  server.registerTool(
+    'pp.sharepoint.list.items',
+    {
+      title: 'List SharePoint List Items',
+      description: 'List items from one SharePoint list in one site.',
+      inputSchema: sharePointListItemsSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('List SharePoint List Items'),
+    },
+    async ({ environment, configDir, allowInteractiveAuth, resource, site, identifier, top }) =>
+      toToolResult(
+        'pp.sharepoint.list.items',
+        await new SharePointService({
+          configDir,
+          resource,
+          publicClientLoginOptions: allowInteractiveAuth ? undefined : { allowInteractive: false },
+        }).listItems(environment, site, identifier, { top }),
+        readOnlyPolicy()
+      )
+  );
+
+  server.registerTool(
+    'pp.sharepoint.file.list',
+    {
+      title: 'List SharePoint Files',
+      description: 'List files from the default or selected SharePoint document library.',
+      inputSchema: sharePointFileListSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('List SharePoint Files'),
+    },
+    async ({ environment, configDir, allowInteractiveAuth, resource, site, drive, path, top }) =>
+      toToolResult(
+        'pp.sharepoint.file.list',
+        await new SharePointService({
+          configDir,
+          resource,
+          publicClientLoginOptions: allowInteractiveAuth ? undefined : { allowInteractive: false },
+        }).listFiles(environment, site, { drive, path, top }),
+        readOnlyPolicy()
+      )
+  );
+
+  server.registerTool(
+    'pp.sharepoint.file.inspect',
+    {
+      title: 'Inspect SharePoint File',
+      description: 'Inspect one SharePoint drive item by id, path, or absolute URL.',
+      inputSchema: sharePointFileInspectSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('Inspect SharePoint File'),
+    },
+    async ({ environment, configDir, allowInteractiveAuth, resource, site, identifier, drive }) =>
+      toToolResult(
+        'pp.sharepoint.file.inspect',
+        await new SharePointService({
+          configDir,
+          resource,
+          publicClientLoginOptions: allowInteractiveAuth ? undefined : { allowInteractive: false },
+        }).inspectFile(environment, site, identifier, { drive }),
+        readOnlyPolicy()
+      )
+  );
+
+  server.registerTool(
+    'pp.sharepoint.permission.list',
+    {
+      title: 'List SharePoint Permissions',
+      description: 'List SharePoint permissions at the site, list, or file scope.',
+      inputSchema: sharePointPermissionListSchema,
+      outputSchema: outputEnvelopeSchema,
+      annotations: readOnlyAnnotations('List SharePoint Permissions'),
+    },
+    async ({ environment, configDir, allowInteractiveAuth, resource, site, list, file, drive }) =>
+      toToolResult(
+        'pp.sharepoint.permission.list',
+        await new SharePointService({
+          configDir,
+          resource,
+          publicClientLoginOptions: allowInteractiveAuth ? undefined : { allowInteractive: false },
+        }).listPermissions(environment, site, { list, file, drive }),
+        readOnlyPolicy()
+      )
   );
 
   server.registerTool(
