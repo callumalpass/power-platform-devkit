@@ -357,7 +357,7 @@ interface CanvasComparable {
 interface PreparedCanvasValidation {
   source: CanvasSourceModel;
   templateRequirements: CanvasTemplateRequirementResolution;
-  semanticModel: Awaited<ReturnType<typeof buildCanvasSemanticModel>>;
+  semanticModel?: Awaited<ReturnType<typeof buildCanvasSemanticModel>>;
   invalidPropertyChecks: CanvasPropertyCheck[];
   unresolvedTemplates: CanvasTemplateUsageIssue[];
   unsupportedTemplates: CanvasTemplateUsageIssue[];
@@ -405,6 +405,7 @@ export class CanvasService {
     options: CanvasSourceLoadOptions & {
       mode?: CanvasBuildMode;
       outPath?: string;
+      packageOnly?: boolean;
       onProgress?: (event: CanvasLocalProgressEvent) => void;
     } = {}
   ): Promise<OperationResult<CanvasBuildResult>> {
@@ -2366,6 +2367,7 @@ export async function buildCanvasApp(
   options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
     outPath?: string;
+    packageOnly?: boolean;
     onProgress?: (event: CanvasLocalProgressEvent) => void;
   } = {}
 ): Promise<OperationResult<CanvasBuildResult>> {
@@ -3471,6 +3473,7 @@ async function prepareCanvasValidation(
   path: string,
   options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
+    packageOnly?: boolean;
     onProgress?: (event: CanvasLocalProgressEvent) => void;
   }
 ): Promise<OperationResult<PreparedCanvasValidation>> {
@@ -3505,38 +3508,48 @@ async function prepareCanvasValidation(
     seeded: seeded.data,
     registry: registry.data,
   });
-  onProgress?.({ stage: 'build-powerfx-bridge' });
-  ensurePowerFxBridgeReady();
-  onProgress?.({ stage: 'build-semantic-model' });
-  const semanticModel = await buildCanvasSemanticModel(source.data, {
-    templateResolutions: templateRequirements.resolutions,
-  });
-  onProgress?.({ stage: 'validate' });
-  const formulas = collectCanvasFormulaChecks(semanticModel);
   const propertyChecks = collectPropertyChecks(source.data, templateRequirements);
   const invalidPropertyChecks = propertyChecks.filter((property) => !property.valid);
   const unresolvedTemplates = collectUnresolvedTemplateIssues(source.data, templateRequirements);
   const unsupportedTemplates = collectUnsupportedTemplateIssues(source.data, templateRequirements, mode);
   const templateResolutionHint = buildCanvasTemplateResolutionHint(source.data, mode);
   const templateResolutionNextActions = buildCanvasTemplateResolutionNextActions(source.data, mode);
+  let semanticModel: Awaited<ReturnType<typeof buildCanvasSemanticModel>> | undefined;
+  let formulas: CanvasFormulaCheck[] = [];
+  let formulaDiagnostics: Diagnostic[] = [];
+
+  if (!options.packageOnly) {
+    onProgress?.({ stage: 'build-powerfx-bridge' });
+    ensurePowerFxBridgeReady();
+    onProgress?.({ stage: 'build-semantic-model' });
+    semanticModel = await buildCanvasSemanticModel(source.data, {
+      templateResolutions: templateRequirements.resolutions,
+    });
+    formulas = collectCanvasFormulaChecks(semanticModel);
+    formulaDiagnostics = [
+      ...formulas
+        .filter((formula) => !formula.valid)
+        .map((formula) =>
+          createDiagnostic(
+            'error',
+            'CANVAS_FORMULA_PROPERTY_INVALID',
+            `Formula property ${formula.property} on ${formula.controlPath} is not supported by the current Power Fx semantic slice.`,
+            {
+              source: '@pp/canvas',
+            }
+          )
+        ),
+      ...collectUnresolvedDataSourceDiagnostics(semanticModel.formulas),
+      ...collectUnresolvedMetadataReferenceDiagnostics(semanticModel.formulas),
+    ];
+  }
+
+  onProgress?.({ stage: 'validate' });
   const diagnostics = [
     ...source.diagnostics,
     ...seeded.diagnostics,
     ...registry.diagnostics,
-    ...formulas
-      .filter((formula) => !formula.valid)
-      .map((formula) =>
-        createDiagnostic(
-          'error',
-          'CANVAS_FORMULA_PROPERTY_INVALID',
-          `Formula property ${formula.property} on ${formula.controlPath} is not supported by the current Power Fx semantic slice.`,
-          {
-            source: '@pp/canvas',
-          }
-      )
-      ),
-    ...collectUnresolvedDataSourceDiagnostics(semanticModel.formulas),
-    ...collectUnresolvedMetadataReferenceDiagnostics(semanticModel.formulas),
+    ...formulaDiagnostics,
     ...invalidPropertyChecks
       .map((property) =>
         createDiagnostic(
@@ -4430,9 +4443,15 @@ function mergeRegistrySources(
 
 function buildCanvasLintDiagnostics(prepared: PreparedCanvasValidation): CanvasLintDiagnostic[] {
   const diagnostics: CanvasLintDiagnostic[] = [];
-  const controlByPath = new Map(prepared.semanticModel.controls.map((control) => [control.path, control]));
+  const semanticModel = prepared.semanticModel;
 
-  for (const formula of prepared.semanticModel.formulas) {
+  if (!semanticModel) {
+    return diagnostics;
+  }
+
+  const controlByPath = new Map(semanticModel.controls.map((control) => [control.path, control]));
+
+  for (const formula of semanticModel.formulas) {
     if (!formula.valid) {
       diagnostics.push({
         severity: 'error',

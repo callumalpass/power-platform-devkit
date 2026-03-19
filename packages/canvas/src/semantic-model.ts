@@ -210,9 +210,16 @@ export async function buildCanvasSemanticModel(
   }
 
   // Phase 1: Parse all formulas (without binding resolution)
-  const parsedPerControl = await Promise.all(
-    controls.map((control) => parseControlFormulas(control))
-  );
+  const parsedPerControl: CanvasFormulaSemantic[][] = [];
+  const PARSE_BATCH_SIZE = 20;
+
+  for (let i = 0; i < controls.length; i += PARSE_BATCH_SIZE) {
+    const batch = controls.slice(i, i + PARSE_BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map((control) => parseControlFormulas(control))
+    );
+    parsedPerControl.push(...batchResults);
+  }
 
   // Phase 2: Discover variables declared via Set(), UpdateContext(), Collect(), ClearCollect()
   const declaredVariables = collectDeclaredVariables(parsedPerControl.flat());

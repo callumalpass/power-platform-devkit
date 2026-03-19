@@ -1818,6 +1818,48 @@ describe('cli fixture-backed workflows', () => {
     });
   });
 
+  it('supports canvas build --package-only when Power Fx formulas are invalid', async () => {
+    const tempDir = await createTempDir();
+    const appPath = await writeUnpackedCanvasFixture(tempDir, {
+      name: 'PackageOnlyCanvas',
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Ship it"',
+        '            OnSelect: =Set(varX, )',
+        '            X: =90',
+        '            Y: =120',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+    const outPath = join(tempDir, 'DiagnosticCanvas.msapp');
+    const packageOnlyBuild = await runCli([
+      'canvas',
+      'build',
+      appPath,
+      '--mode',
+      'strict',
+      '--registry',
+      './controls.json',
+      '--package-only',
+      '--out',
+      outPath,
+      '--format',
+      'json',
+    ]);
+
+    expect(packageOnlyBuild.code).toBe(0);
+    expect(stripProgressLines(packageOnlyBuild.stderr)).toBe('');
+    expect(JSON.parse(packageOnlyBuild.stdout)).toMatchObject({
+      outPath,
+    });
+  });
+
   it('covers canvas template imports through the CLI entrypoint and preserves re-import semantics', async () => {
     const tempDir = await createTempDir();
     const sourcePath = resolveRepoPath('fixtures', 'canvas', 'registries', 'import-source.json');
@@ -6014,8 +6056,9 @@ describe('cli fixture-backed workflows', () => {
     expect(buildHelp.code).toBe(0);
     expect(buildHelp.stderr).toBe('');
     expect(buildHelp.stdout).toContain(
-      'Usage: canvas build <path|workspaceApp> [--workspace FILE] [--project path] [--registry FILE] [--cache-dir DIR] [--mode strict|seeded|registry] [--out FILE] [options]'
+      'Usage: canvas build <path|workspaceApp> [--workspace FILE] [--project path] [--registry FILE] [--cache-dir DIR] [--mode strict|seeded|registry] [--out FILE] [--package-only] [options]'
     );
+    expect(buildHelp.stdout).toContain('`--package-only` skips Power Fx bridge startup and formula semantic checks');
     expect(buildHelp.stdout).toContain('Unpacked `.pa.yaml` roots can auto-consume embedded `References/Templates.json` payloads during strict builds.');
     expect(buildHelp.stdout).not.toContain('CANVAS_PATH_REQUIRED');
 

@@ -814,15 +814,17 @@ export function printCanvasValidateHelp(): void {
 export function printCanvasBuildHelp(): void {
   process.stdout.write(
     [
-      'Usage: canvas build <path|workspaceApp> [--workspace FILE] [--project path] [--registry FILE] [--cache-dir DIR] [--mode strict|seeded|registry] [--out FILE] [options]',
+      'Usage: canvas build <path|workspaceApp> [--workspace FILE] [--project path] [--registry FILE] [--cache-dir DIR] [--mode strict|seeded|registry] [--out FILE] [--package-only] [options]',
       '',
       'Behavior:',
       '  - Packages a local canvas source tree into an `.msapp`.',
+      '  - `--package-only` skips Power Fx bridge startup and formula semantic checks, but still resolves template metadata and property compatibility before packaging.',
       '  - Unpacked `.pa.yaml` roots can auto-consume embedded `References/Templates.json` payloads during strict builds.',
       '  - Legacy json-manifest roots often need either a richer `seed.templates.json` or explicit pinned registries before strict mode can succeed.',
       '',
       'Examples:',
       '  pp canvas build ./apps/MyCanvas --project . --mode strict --out ./dist/MyCanvas.msapp',
+      '  pp canvas build ./apps/MyCanvas --package-only --out ./dist/MyCanvas.msapp',
       '  pp canvas build ./apps/MyCanvas --registry ./registries/canvas-controls.json --mode registry --out ./dist/MyCanvas.msapp',
       '  pp canvas build MyCanvas --workspace ./canvas.workspace.json --mode seeded --out ./dist/MyCanvas.msapp',
       '',

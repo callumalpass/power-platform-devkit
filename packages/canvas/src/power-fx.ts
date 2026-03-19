@@ -28,6 +28,8 @@ interface PowerFxBridgeServerResponse extends PowerFxBridgeResponse {
 const parseCache = new Map<string, ParseResult>();
 const parseInflight = new Map<string, Promise<ParseResult>>();
 let bridgeReady = false;
+let bridgeBuildError: Error | undefined;
+let dotnetChecked = false;
 const POWER_FX_BRIDGE_TIMEOUT_MS = 5_000;
 const POWER_FX_BUILD_TIMEOUT_MS = 60_000;
 
@@ -119,27 +121,76 @@ export function ensurePowerFxBridgeReady(): void {
   ensureBridgeBuilt();
 }
 
+function checkDotnetAvailability(): void {
+  if (dotnetChecked) {
+    return;
+  }
+
+  const result = spawnSync('dotnet', ['--list-sdks'], {
+    encoding: 'utf8',
+    timeout: 10_000,
+    env: dotnetEnv,
+  });
+
+  if (result.error) {
+    throw new Error(
+      'The .NET SDK is not installed or "dotnet" is not on PATH. '
+      + 'Install the .NET 10 SDK from https://dotnet.microsoft.com/download/dotnet/10.0 to enable Power Fx formula analysis.'
+    );
+  }
+
+  if (result.status !== 0) {
+    throw new Error(
+      `"dotnet --list-sdks" failed (exit code ${result.status}). `
+      + 'Ensure the .NET 10 SDK is properly installed: https://dotnet.microsoft.com/download/dotnet/10.0'
+    );
+  }
+
+  const sdks = result.stdout ?? '';
+
+  if (!/^10\.\d+/m.test(sdks)) {
+    throw new Error(
+      'The Power Fx bridge requires .NET 10 but no 10.x SDK was found. '
+      + `Installed SDKs:\n${sdks.trim() || '(none)'}\n`
+      + 'Install the .NET 10 SDK from https://dotnet.microsoft.com/download/dotnet/10.0'
+    );
+  }
+
+  dotnetChecked = true;
+}
+
 function ensureBridgeBuilt(): void {
+  if (bridgeBuildError) {
+    throw bridgeBuildError;
+  }
+
   if (bridgeReady && existsSync(getBridgeDllPath())) {
     return;
   }
 
-  const projectPath = getBridgeProjectPath();
-  const build = spawnSync('dotnet', ['build', projectPath, '-c', 'Release', '-nologo'], {
-    encoding: 'utf8',
-    timeout: POWER_FX_BUILD_TIMEOUT_MS,
-    env: dotnetEnv,
-  });
+  try {
+    checkDotnetAvailability();
 
-  if (build.signal === 'SIGTERM') {
-    throw new Error(`Power Fx bridge build timed out after ${POWER_FX_BUILD_TIMEOUT_MS / 1_000}s. Check your .NET SDK installation and network connectivity.`);
+    const projectPath = getBridgeProjectPath();
+    const build = spawnSync('dotnet', ['build', projectPath, '-c', 'Release', '-nologo'], {
+      encoding: 'utf8',
+      timeout: POWER_FX_BUILD_TIMEOUT_MS,
+      env: dotnetEnv,
+    });
+
+    if (build.signal === 'SIGTERM') {
+      throw new Error(`Power Fx bridge build timed out after ${POWER_FX_BUILD_TIMEOUT_MS / 1_000}s. Check your .NET SDK installation and network connectivity.`);
+    }
+
+    if (build.status !== 0) {
+      throw new Error(build.stderr.trim() || build.stdout.trim() || 'Failed to build Power Fx bridge.');
+    }
+
+    bridgeReady = true;
+  } catch (error) {
+    bridgeBuildError = error instanceof Error ? error : new Error(String(error));
+    throw bridgeBuildError;
   }
-
-  if (build.status !== 0) {
-    throw new Error(build.stderr.trim() || build.stdout.trim() || 'Failed to build Power Fx bridge.');
-  }
-
-  bridgeReady = true;
 }
 
 async function invokeBridge(expression: string, options: { allowsSideEffects?: boolean }): Promise<PowerFxBridgeResponse> {
@@ -193,6 +244,7 @@ function getBridgeSession(): PowerFxBridgeSession {
 
 class PowerFxBridgeSession {
   private child: ChildProcessWithoutNullStreams | undefined;
+  private permanentError: Error | undefined;
   private nextId = 1;
   private stdoutBuffer = '';
   private stderrBuffer = '';
@@ -238,6 +290,10 @@ class PowerFxBridgeSession {
   }
 
   private ensureChild(): ChildProcessWithoutNullStreams {
+    if (this.permanentError) {
+      throw this.permanentError;
+    }
+
     if (this.child && this.child.exitCode === null && !this.child.killed) {
       return this.child;
     }
@@ -260,13 +316,17 @@ class PowerFxBridgeSession {
       this.stderrBuffer = `${this.stderrBuffer}${chunk}`.slice(-8_192);
     });
     child.on('error', (error) => {
-      this.failPending(new Error(`Power Fx bridge failed to start: ${error.message}`));
+      const err = new Error(`Power Fx bridge failed to start: ${error.message}`);
+      this.permanentError = err;
+      this.failPending(err);
       this.child = undefined;
     });
     child.on('close', (code, signal) => {
       const detail = this.stderrBuffer.trim();
       const suffix = detail ? ` ${detail}` : '';
-      this.failPending(new Error(`Power Fx bridge exited unexpectedly (${signal ?? code ?? 'unknown'}).${suffix}`));
+      const err = new Error(`Power Fx bridge exited unexpectedly (${signal ?? code ?? 'unknown'}).${suffix}`);
+      this.permanentError = err;
+      this.failPending(err);
       this.child = undefined;
     });
 

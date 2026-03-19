@@ -1891,7 +1891,7 @@ export async function runCanvasBuild(args: string[]): Promise<number> {
   const canvasPath = positionalArgs(args)[0];
 
   if (!canvasPath) {
-    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas build <path|workspaceApp> [--workspace FILE] [--out FILE] [--mode strict|seeded|registry]'));
+    return printFailure(argumentFailure('CANVAS_PATH_REQUIRED', 'Usage: canvas build <path|workspaceApp> [--workspace FILE] [--out FILE] [--mode strict|seeded|registry] [--package-only]'));
   }
 
   const context = await resolveCanvasCliContext(args, canvasPath);
@@ -1901,6 +1901,7 @@ export async function runCanvasBuild(args: string[]): Promise<number> {
   }
 
   const outPath = resolveOptionalInvocationPath(readFlag(args, '--out'));
+  const packageOnly = hasFlag(args, '--package-only');
   const preview = maybeHandleMutationPreview(
     args,
     'json',
@@ -1909,6 +1910,7 @@ export async function runCanvasBuild(args: string[]): Promise<number> {
       path: canvasPath,
       mode: context.data.options.mode,
       outPath: outPath ?? 'auto',
+      packageOnly,
     }
   );
 
@@ -1920,6 +1922,7 @@ export async function runCanvasBuild(args: string[]): Promise<number> {
   const result = await new CanvasService().build(context.data.path, {
     ...context.data.options,
     outPath,
+    packageOnly,
     onProgress: (event) => {
       process.stderr.write(renderCanvasLocalProgress('build', event));
     },

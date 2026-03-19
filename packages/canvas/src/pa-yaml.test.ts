@@ -692,6 +692,38 @@ describe('canvas pa.yaml source support', () => {
     );
   });
 
+  it('builds unpacked pa.yaml sources in package-only mode without the Power Fx bridge', async () => {
+    const dir = await createTempDir();
+    const appRoot = await writeUnpackedCanvasFixture(dir, {
+      screenYaml: [
+        'Screens:',
+        '  Screen1:',
+        '    Children:',
+        '      - Button1:',
+        '          Control: Classic/Button@2.2.0',
+        '          Properties:',
+        '            Text: ="Ship it"',
+        '            OnSelect: =Set(varX, )',
+        '            X: =90',
+        '            Y: =120',
+        '',
+      ].join('\n'),
+      registry: createClassicButtonRegistry(),
+    });
+    const outPath = join(dir, 'dist', 'YamlCanvas.package-only.msapp');
+
+    const packageOnlyBuild = await buildCanvasApp(appRoot, {
+      mode: 'strict',
+      registries: ['./controls.json'],
+      root: appRoot,
+      outPath,
+      packageOnly: true,
+    });
+
+    expect(packageOnlyBuild.success).toBe(true);
+    expect(packageOnlyBuild.data?.outPath).toBe(outPath);
+  });
+
   it('loads App.fx.yaml unpacks through the embedded Other/Src compatibility slice', async () => {
     const dir = await createTempDir();
     const appRoot = await writeFxCompatibilityCanvasFixture(dir, {

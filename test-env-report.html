@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pp test environment report</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --orange: #d29922;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem;
+      line-height: 1.6;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    header p {
+      color: var(--muted);
+      font-size: 0.875rem;
+      margin-top: 0.25rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+
+    .full-width { grid-column: 1 / -1; }
+
+    pre[data-pp] {
+      padding: 1rem;
+      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 3rem;
+      border-left: 3px solid var(--border);
+      margin: 0;
+    }
+
+    pre[data-pp-state="pending"] {
+      color: var(--muted);
+      border-left-color: var(--muted);
+    }
+
+    pre[data-pp-state="running"] {
+      color: var(--accent);
+      border-left-color: var(--accent);
+    }
+
+    pre[data-pp-state="done"] {
+      color: var(--text);
+      border-left-color: var(--green);
+    }
+
+    pre[data-pp-state="error"] {
+      color: var(--red);
+      border-left-color: var(--red);
+    }
+
+    section {
+      margin-bottom: 2rem;
+    }
+
+    section > h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: var(--accent);
+    }
+
+    section > p {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      background: #1f6feb33;
+      color: var(--accent);
+      margin-left: 0.5rem;
+      vertical-align: middle;
+    }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    /* ── Transform: ppJson ─────────────────────────────────── */
+    .pp-json {
+      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+    .pp-json .pp-j-key { color: #79c0ff; }
+    .pp-json .pp-j-str { color: #a5d6ff; }
+    .pp-json .pp-j-num { color: #d2a8ff; }
+    .pp-json .pp-j-bool { color: #ff7b72; }
+    .pp-json .pp-j-null { color: var(--muted); font-style: italic; }
+    .pp-json .pp-j-brace { color: var(--muted); }
+
+    /* ── Transform: ppTable ────────────────────────────────── */
+    pre[data-pp-transform="ppTable"] {
+      white-space: normal;
+      padding: 0;
+    }
+    .pp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+    }
+    .pp-table th {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+    .pp-table td {
+      padding: 0.4rem 0.75rem;
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .pp-table tr:last-child td { border-bottom: none; }
+    .pp-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+    /* ── Transform: ppFlowDonut ────────────────────────────── */
+    pre[data-pp-transform="ppFlowDonut"] {
+      white-space: normal;
+      padding: 1rem;
+      border-left: none !important;
+    }
+    pre[data-pp-transform="ppFlowDonut"][data-pp-state="done"] {
+      border-left: none !important;
+    }
+    .pp-donut { display: flex; align-items: center; gap: 1.5rem; }
+    .pp-donut svg { flex-shrink: 0; }
+    .pp-donut-legend { display: flex; flex-direction: column; gap: 0.5rem; }
+    .pp-donut-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    }
+    .pp-donut-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .pp-donut-label { color: var(--muted); }
+    .pp-donut-count {
+      color: var(--text);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>test environment report</h1>
+  <p>Live snapshot of the pp test Dataverse environment. Refresh to re-run all commands.</p>
+</header>
+
+<!-- ── Identity & Auth ────────────────────────────────────── -->
+
+<section>
+  <h2>Identity</h2>
+  <p>Who am I authenticated as in this environment?</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-header">whoami <span class="tag">json</span></div>
+      <pre data-pp="dv whoami --environment test --format json" data-pp-transform="ppJson"></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header">auth profile</div>
+      <pre data-pp="auth profile inspect --environment test --format json" data-pp-transform="ppJson"></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── Solutions ───────────────────────────────────────────── -->
+
+<section>
+  <h2>Solutions</h2>
+  <p>All solutions installed in the environment, both managed and unmanaged.</p>
+
+  <div class="card full-width">
+    <div class="card-header">solution list</div>
+    <pre data-pp="solution list --environment test --format table" data-pp-transform="ppTable"></pre>
+  </div>
+</section>
+
+<!-- ── Environment Variables & Connection References ──────── -->
+
+<section>
+  <h2>Configuration</h2>
+  <p>Environment variables and connection references configured in the environment.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-header">environment variables</div>
+      <pre data-pp="envvar list --environment test --format table" data-pp-transform="ppTable"></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header">connection references</div>
+      <pre data-pp="connref list --environment test --format table" data-pp-transform="ppTable"></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── Flows ───────────────────────────────────────────────── -->
+
+<section>
+  <h2>Flows</h2>
+  <p>Cloud flows registered in the environment across all solutions.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-header">status breakdown</div>
+      <pre data-pp="flow list --environment test --format json" data-pp-transform="ppFlowDonut" style="display:flex;align-items:center;justify-content:center;min-height:220px;"></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header">flow list</div>
+      <pre data-pp="flow list --environment test --format table" data-pp-transform="ppTable"></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── Canvas Apps ─────────────────────────────────────────── -->
+
+<section>
+  <h2>Canvas Apps</h2>
+  <p>Canvas apps in the environment, with solution membership.</p>
+
+  <div class="card full-width">
+    <div class="card-header">canvas list</div>
+    <pre data-pp="canvas list --environment test --format table" data-pp-transform="ppTable"></pre>
+  </div>
+</section>
+
+<!-- ── Dataverse Schema ────────────────────────────────────── -->
+
+<section>
+  <h2>Dataverse Schema</h2>
+  <p>Custom tables in the environment — filtered to the cr4be publisher prefix.</p>
+
+  <div class="card full-width">
+    <div class="card-header">custom tables <span class="tag">metadata</span></div>
+    <pre data-pp="dv metadata tables --environment test --format table" data-pp-transform="ppTable"></pre>
+  </div>
+</section>
+
+<!-- ── Raw Dataverse Query ─────────────────────────────────── -->
+
+<section>
+  <h2>Sample Data</h2>
+  <p>First 5 accounts in the environment, showing name and email.</p>
+
+  <div class="card full-width">
+    <div class="card-header">dv query <span class="tag">OData</span></div>
+    <pre data-pp="dv query account --select name,emailaddress1 --top 5 --environment test --format table" data-pp-transform="ppTable"></pre>
+  </div>
+</section>
+
+<!-- ── Registered Environments ─────────────────────────────── -->
+
+<section>
+  <h2>Registered Environments</h2>
+  <p>All environment aliases configured in pp.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-header">environment list</div>
+      <pre data-pp="env list --format table" data-pp-transform="ppTable"></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header">auth profiles</div>
+      <pre data-pp="auth profile list --format table" data-pp-transform="ppTable"></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── CLI Version ─────────────────────────────────────────── -->
+
+<section>
+  <h2>Tooling</h2>
+
+  <div class="card" style="max-width: 400px;">
+    <div class="card-header">pp version</div>
+    <pre data-pp="version --format json" data-pp-transform="ppJson"></pre>
+  </div>
+</section>
+
+<script>
+/* ── ppJson: syntax-highlighted JSON ─────────────────────── */
+function ppJson(el, data) {
+  var raw = (data.stdout || '').trim();
+  if (!raw) { el.textContent = '(no output)'; return; }
+  try {
+    var obj = JSON.parse(raw);
+    el.innerHTML = '<div class="pp-json">' + highlightJson(obj, 0) + '</div>';
+  } catch (e) {
+    el.textContent = raw;
+  }
+}
+function highlightJson(val, depth) {
+  var indent = '  '.repeat(depth);
+  var inner = '  '.repeat(depth + 1);
+  if (val === null) return '<span class="pp-j-null">null</span>';
+  if (typeof val === 'boolean') return '<span class="pp-j-bool">' + val + '</span>';
+  if (typeof val === 'number') return '<span class="pp-j-num">' + val + '</span>';
+  if (typeof val === 'string') return '<span class="pp-j-str">"' + escHtml(val) + '"</span>';
+  if (Array.isArray(val)) {
+    if (!val.length) return '<span class="pp-j-brace">[]</span>';
+    var items = val.map(function (v) { return inner + highlightJson(v, depth + 1); });
+    return '<span class="pp-j-brace">[</span>\n' + items.join(',\n') + '\n' + indent + '<span class="pp-j-brace">]</span>';
+  }
+  var keys = Object.keys(val);
+  if (!keys.length) return '<span class="pp-j-brace">{}</span>';
+  var pairs = keys.map(function (k) {
+    return inner + '<span class="pp-j-key">"' + escHtml(k) + '"</span>: ' + highlightJson(val[k], depth + 1);
+  });
+  return '<span class="pp-j-brace">{</span>\n' + pairs.join(',\n') + '\n' + indent + '<span class="pp-j-brace">}</span>';
+}
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ── ppFlowDonut: SVG donut chart of flow states ─────────── */
+function ppFlowDonut(el, data) {
+  var raw = (data.stdout || '').trim();
+  if (!raw) { el.textContent = '(no output)'; return; }
+  try { var flows = JSON.parse(raw); } catch (e) { el.textContent = raw; return; }
+  if (!Array.isArray(flows) || !flows.length) { el.textContent = '(no flows)'; return; }
+
+  /* count by workflowState */
+  var counts = {};
+  flows.forEach(function (f) {
+    var s = (f.workflowState || 'unknown').toLowerCase();
+    counts[s] = (counts[s] || 0) + 1;
+  });
+
+  var palette = {
+    activated: '#3fb950',
+    draft:     '#8b949e',
+    suspended: '#d29922',
+    unknown:   '#484f58'
+  };
+  var labels = {
+    activated: 'Activated',
+    draft:     'Draft',
+    suspended: 'Suspended',
+    unknown:   'Unknown'
+  };
+
+  var slices = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
+  var total = flows.length;
+
+  /* build SVG donut */
+  var size = 140, cx = size / 2, cy = size / 2;
+  var R = 56, r = 38; /* outer / inner radius */
+  var svg = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">';
+
+  var angle = -Math.PI / 2; /* start at 12 o'clock */
+  slices.forEach(function (key) {
+    var frac = counts[key] / total;
+    var sweep = frac * Math.PI * 2;
+    var large = sweep > Math.PI ? 1 : 0;
+    var x1o = cx + R * Math.cos(angle);
+    var y1o = cy + R * Math.sin(angle);
+    var x1i = cx + r * Math.cos(angle);
+    var y1i = cy + r * Math.sin(angle);
+    var endAngle = angle + sweep - 0.005; /* tiny gap between slices */
+    var x2o = cx + R * Math.cos(endAngle);
+    var y2o = cy + R * Math.sin(endAngle);
+    var x2i = cx + r * Math.cos(endAngle);
+    var y2i = cy + r * Math.sin(endAngle);
+
+    var d = 'M' + x1o + ',' + y1o
+      + ' A' + R + ',' + R + ' 0 ' + large + ' 1 ' + x2o + ',' + y2o
+      + ' L' + x2i + ',' + y2i
+      + ' A' + r + ',' + r + ' 0 ' + large + ' 0 ' + x1i + ',' + y1i
+      + ' Z';
+    svg += '<path d="' + d + '" fill="' + (palette[key] || '#484f58') + '"/>';
+    angle += sweep;
+  });
+
+  /* center label */
+  svg += '<text x="' + cx + '" y="' + (cy - 4) + '" text-anchor="middle" fill="' + '#e6edf3' + '" font-size="22" font-weight="600" font-family="-apple-system,BlinkMacSystemFont,sans-serif">' + total + '</text>';
+  svg += '<text x="' + cx + '" y="' + (cy + 14) + '" text-anchor="middle" fill="' + '#8b949e' + '" font-size="11" font-family="-apple-system,BlinkMacSystemFont,sans-serif">flows</text>';
+  svg += '</svg>';
+
+  /* legend */
+  var legend = '';
+  slices.forEach(function (key) {
+    var pct = Math.round(counts[key] / total * 100);
+    legend += '<div class="pp-donut-row">'
+      + '<span class="pp-donut-swatch" style="background:' + (palette[key] || '#484f58') + '"></span>'
+      + '<span class="pp-donut-count">' + counts[key] + '</span>'
+      + '<span class="pp-donut-label">' + (labels[key] || key) + ' (' + pct + '%)</span>'
+      + '</div>';
+  });
+
+  el.innerHTML = '<div class="pp-donut">' + svg + '<div class="pp-donut-legend">' + legend + '</div></div>';
+}
+
+/* ── ppTable: ASCII table → HTML table ───────────────────── */
+function ppTable(el, data) {
+  var raw = (data.stdout || '').trim();
+  if (!raw) { el.textContent = '(no output)'; return; }
+
+  var lines = raw.split('\n');
+  if (lines.length < 2) { el.textContent = raw; return; }
+
+  /* find the divider row (all hyphens and spaces) */
+  var divIdx = -1;
+  for (var i = 0; i < Math.min(3, lines.length); i++) {
+    if (/^[\- ]+$/.test(lines[i])) { divIdx = i; break; }
+  }
+  if (divIdx < 1) { el.textContent = raw; return; }
+
+  /* use the divider to find column boundaries:
+     each column is a run of hyphens, separated by two spaces */
+  var divider = lines[divIdx];
+  var cols = [];
+  var re = /(-+)/g;
+  var m;
+  while ((m = re.exec(divider)) !== null) {
+    cols.push({ start: m.index, end: m.index + m[0].length });
+  }
+  if (!cols.length) { el.textContent = raw; return; }
+
+  function splitRow(line) {
+    return cols.map(function (c) {
+      return (line.substring(c.start, c.end) || '').trim();
+    });
+  }
+
+  var headers = splitRow(lines[divIdx - 1]);
+  var html = '<table class="pp-table"><thead><tr>';
+  headers.forEach(function (h) { html += '<th>' + escHtml(h) + '</th>'; });
+  html += '</tr></thead><tbody>';
+
+  for (var r = divIdx + 1; r < lines.length; r++) {
+    if (!lines[r].trim()) continue;
+    var cells = splitRow(lines[r]);
+    html += '<tr>';
+    cells.forEach(function (c) { html += '<td>' + escHtml(c) + '</td>'; });
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+</script>
+
+<footer>
+  Generated by <strong>pp notebook serve</strong> &mdash; run with <code>pp notebook serve test-env-report.html</code>
+</footer>
+
+</body>
+</html>
