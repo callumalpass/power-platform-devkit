@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, extname, join, resolve as resolvePath } from 'node:path';
 import { readJsonFile, writeJsonFile } from '@pp/artifacts';
 import { AuthService, resolveBrowserProfileDirectory, type AuthProfile } from '@pp/auth';
-import { CanvasService, deriveCanvasStudioEditUrl, type CanvasBuildMode, type CanvasTemplateProvenance } from '@pp/canvas';
+import { CanvasService, deriveCanvasStudioEditUrl, type CanvasBuildMode, type CanvasLocalProgressEvent, type CanvasTemplateProvenance } from '@pp/canvas';
 import { loadProjectConfig, type ConfigStoreOptions } from '@pp/config';
 import { CanvasAppService, DataverseClient, resolveDataverseClient } from '@pp/dataverse';
 import { createDiagnostic, fail, ok, type OperationResult } from '@pp/diagnostics';
@@ -855,7 +855,15 @@ export async function runCanvasValidate(args: string[]): Promise<number> {
     return printFailure(context);
   }
 
-  const result = await new CanvasService().validate(context.data.path, context.data.options);
+  const format = outputFormat(args, 'json');
+  const result = await new CanvasService().validate(context.data.path, {
+    ...context.data.options,
+    ...(!isMachineReadableOutputFormat(format) && {
+      onProgress: (event) => {
+        process.stderr.write(renderCanvasLocalProgress('validate', event));
+      },
+    }),
+  });
 
   if (!result.success || !result.data) {
     return printFailure(result);
@@ -879,7 +887,15 @@ export async function runCanvasLint(args: string[]): Promise<number> {
     return printFailure(context);
   }
 
-  const result = await new CanvasService().lint(context.data.path, context.data.options);
+  const format = outputFormat(args, 'json');
+  const result = await new CanvasService().lint(context.data.path, {
+    ...context.data.options,
+    ...(!isMachineReadableOutputFormat(format) && {
+      onProgress: (event) => {
+        process.stderr.write(renderCanvasLocalProgress('lint', event));
+      },
+    }),
+  });
 
   if (!result.success || !result.data) {
     return printFailure(result);
@@ -1462,6 +1478,24 @@ export async function runCanvasImport(args: string[]): Promise<number> {
   return 0;
 }
 
+function renderCanvasLocalProgress(command: string, event: CanvasLocalProgressEvent): string {
+  const summary =
+    event.stage === 'load-source'
+      ? 'loading source'
+      : event.stage === 'load-registries'
+        ? 'loading template registries'
+        : event.stage === 'resolve-templates'
+          ? 'resolving templates'
+          : event.stage === 'build-semantic-model'
+            ? 'building semantic model'
+            : event.stage === 'validate'
+              ? 'running checks'
+              : event.stage === 'build-package'
+                ? 'packaging .msapp'
+                : event.stage;
+  return `[pp] canvas ${command}: ${summary}${event.detail ? ` - ${event.detail}` : ''}\n`;
+}
+
 function renderCanvasDownloadProgress(event: { stage: string; detail?: string }): string {
   const summary =
     event.stage === 'resolve-app'
@@ -1886,11 +1920,16 @@ export async function runCanvasBuild(args: string[]): Promise<number> {
     return preview;
   }
 
+  const format = outputFormat(args, 'json');
   const result = await new CanvasService().build(context.data.path, {
     ...context.data.options,
     outPath,
+    ...(!isMachineReadableOutputFormat(format) && {
+      onProgress: (event) => {
+        process.stderr.write(renderCanvasLocalProgress('build', event));
+      },
+    }),
   });
-  const format = outputFormat(args, 'json');
 
   if (!result.success || !result.data) {
     if (isMachineReadableOutputFormat(format) && result.details && typeof result.details === 'object') {

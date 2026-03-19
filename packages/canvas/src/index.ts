@@ -309,6 +309,19 @@ export interface CanvasRemoteDownloadProgressEvent {
   detail?: string;
 }
 
+export type CanvasLocalProgressStage =
+  | 'load-source'
+  | 'load-registries'
+  | 'resolve-templates'
+  | 'build-semantic-model'
+  | 'validate'
+  | 'build-package';
+
+export interface CanvasLocalProgressEvent {
+  stage: CanvasLocalProgressStage;
+  detail?: string;
+}
+
 export interface CanvasRemoteDownloadCandidateSolution {
   solutionId: string;
   uniqueName?: string;
@@ -370,6 +383,7 @@ export class CanvasService {
     path: string,
     options: CanvasSourceLoadOptions & {
       mode?: CanvasBuildMode;
+      onProgress?: (event: CanvasLocalProgressEvent) => void;
     } = {}
   ): Promise<OperationResult<CanvasValidationReport>> {
     return validateCanvasApp(path, options);
@@ -379,6 +393,7 @@ export class CanvasService {
     path: string,
     options: CanvasSourceLoadOptions & {
       mode?: CanvasBuildMode;
+      onProgress?: (event: CanvasLocalProgressEvent) => void;
     } = {}
   ): Promise<OperationResult<CanvasLintReport>> {
     return lintCanvasApp(path, options);
@@ -389,6 +404,7 @@ export class CanvasService {
     options: CanvasSourceLoadOptions & {
       mode?: CanvasBuildMode;
       outPath?: string;
+      onProgress?: (event: CanvasLocalProgressEvent) => void;
     } = {}
   ): Promise<OperationResult<CanvasBuildResult>> {
     return buildCanvasApp(path, options);
@@ -2284,6 +2300,7 @@ export async function validateCanvasApp(
   path: string,
   options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
+    onProgress?: (event: CanvasLocalProgressEvent) => void;
   } = {}
 ): Promise<OperationResult<CanvasValidationReport>> {
   const prepared = await prepareCanvasValidation(path, options);
@@ -2304,6 +2321,7 @@ export async function lintCanvasApp(
   path: string,
   options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
+    onProgress?: (event: CanvasLocalProgressEvent) => void;
   } = {}
 ): Promise<OperationResult<CanvasLintReport>> {
   const prepared = await prepareCanvasValidation(path, options);
@@ -2347,6 +2365,7 @@ export async function buildCanvasApp(
   options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
     outPath?: string;
+    onProgress?: (event: CanvasLocalProgressEvent) => void;
   } = {}
 ): Promise<OperationResult<CanvasBuildResult>> {
   const prepared = await prepareCanvasValidation(path, options);
@@ -2386,6 +2405,7 @@ export async function buildCanvasApp(
       contentHash: resolution.template.contentHash,
       matchedBy: resolution.matchedBy,
     }));
+  options.onProgress?.({ stage: 'build-package' });
   if (prepared.data.source.kind === 'pa-yaml-unpacked') {
     const nativeBuild = await buildCanvasMsappFromUnpackedSource(
       prepared.data.source,
@@ -3450,8 +3470,12 @@ async function prepareCanvasValidation(
   path: string,
   options: CanvasSourceLoadOptions & {
     mode?: CanvasBuildMode;
+    onProgress?: (event: CanvasLocalProgressEvent) => void;
   }
 ): Promise<OperationResult<PreparedCanvasValidation>> {
+  const onProgress = options.onProgress;
+
+  onProgress?.({ stage: 'load-source' });
   const source = await loadCanvasSource(path, options);
 
   if (!source.success || !source.data) {
@@ -3460,6 +3484,7 @@ async function prepareCanvasValidation(
 
   const mode = options.mode ?? 'strict';
   const registryOptions = mergeCanvasRegistryLoadOptions(options, source.data);
+  onProgress?.({ stage: 'load-registries' });
   const [seeded, registry] = await Promise.all([
     loadCanvasSeedRegistry(source.data),
     loadCanvasTemplateRegistryBundle(registryOptions),
@@ -3473,14 +3498,17 @@ async function prepareCanvasValidation(
     return registry as unknown as OperationResult<PreparedCanvasValidation>;
   }
 
+  onProgress?.({ stage: 'resolve-templates' });
   const templateRequirements = resolveCanvasTemplateRequirements(source.data.templateRequirements, {
     mode,
     seeded: seeded.data,
     registry: registry.data,
   });
+  onProgress?.({ stage: 'build-semantic-model' });
   const semanticModel = await buildCanvasSemanticModel(source.data, {
     templateResolutions: templateRequirements.resolutions,
   });
+  onProgress?.({ stage: 'validate' });
   const formulas = collectCanvasFormulaChecks(semanticModel);
   const propertyChecks = collectPropertyChecks(source.data, templateRequirements);
   const invalidPropertyChecks = propertyChecks.filter((property) => !property.valid);
