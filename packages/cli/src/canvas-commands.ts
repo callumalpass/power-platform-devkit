@@ -1480,13 +1480,15 @@ function renderCanvasLocalProgress(command: string, event: CanvasLocalProgressEv
         ? 'loading template registries'
         : event.stage === 'resolve-templates'
           ? 'resolving templates'
-          : event.stage === 'build-semantic-model'
-            ? 'building semantic model'
-            : event.stage === 'validate'
-              ? 'running checks'
-              : event.stage === 'build-package'
-                ? 'packaging .msapp'
-                : event.stage;
+          : event.stage === 'build-powerfx-bridge'
+            ? 'building Power Fx bridge'
+            : event.stage === 'build-semantic-model'
+              ? 'building semantic model'
+              : event.stage === 'validate'
+                ? 'running checks'
+                : event.stage === 'build-package'
+                  ? 'packaging .msapp'
+                  : event.stage;
   return `[pp] canvas ${command}: ${summary}${event.detail ? ` - ${event.detail}` : ''}\n`;
 }
 

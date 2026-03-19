@@ -115,6 +115,10 @@ export function visitPowerFxAst(node: PowerFxAstNode, visitor: (node: PowerFxAst
   }
 }
 
+export function ensurePowerFxBridgeReady(): void {
+  ensureBridgeBuilt();
+}
+
 function ensureBridgeBuilt(): void {
   if (bridgeReady && existsSync(getBridgeDllPath())) {
     return;

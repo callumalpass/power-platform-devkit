@@ -76,7 +76,7 @@ import type {
   CanvasWorkspaceResolvedApp,
 } from './canvas-types';
 import { type CanvasDataSourceSummary, loadCanvasPaYamlSource, resolveCanvasPaYamlRoot, type CanvasSourceReadOptions } from './pa-yaml';
-import { parsePowerFxExpression } from './power-fx';
+import { ensurePowerFxBridgeReady, parsePowerFxExpression } from './power-fx';
 import { buildCanvasSemanticModel, collectCanvasFormulaChecks, type CanvasFormulaSemantic } from './semantic-model';
 import { buildCanvasTemplateSurface } from './template-surface';
 export type {
@@ -313,6 +313,7 @@ export type CanvasLocalProgressStage =
   | 'load-source'
   | 'load-registries'
   | 'resolve-templates'
+  | 'build-powerfx-bridge'
   | 'build-semantic-model'
   | 'validate'
   | 'build-package';
@@ -3504,6 +3505,8 @@ async function prepareCanvasValidation(
     seeded: seeded.data,
     registry: registry.data,
   });
+  onProgress?.({ stage: 'build-powerfx-bridge' });
+  ensurePowerFxBridgeReady();
   onProgress?.({ stage: 'build-semantic-model' });
   const semanticModel = await buildCanvasSemanticModel(source.data, {
     templateResolutions: templateRequirements.resolutions,
