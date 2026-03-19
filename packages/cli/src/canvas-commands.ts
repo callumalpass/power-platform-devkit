@@ -855,14 +855,11 @@ export async function runCanvasValidate(args: string[]): Promise<number> {
     return printFailure(context);
   }
 
-  const format = outputFormat(args, 'json');
   const result = await new CanvasService().validate(context.data.path, {
     ...context.data.options,
-    ...(!isMachineReadableOutputFormat(format) && {
-      onProgress: (event) => {
-        process.stderr.write(renderCanvasLocalProgress('validate', event));
-      },
-    }),
+    onProgress: (event) => {
+      process.stderr.write(renderCanvasLocalProgress('validate', event));
+    },
   });
 
   if (!result.success || !result.data) {
@@ -887,14 +884,11 @@ export async function runCanvasLint(args: string[]): Promise<number> {
     return printFailure(context);
   }
 
-  const format = outputFormat(args, 'json');
   const result = await new CanvasService().lint(context.data.path, {
     ...context.data.options,
-    ...(!isMachineReadableOutputFormat(format) && {
-      onProgress: (event) => {
-        process.stderr.write(renderCanvasLocalProgress('lint', event));
-      },
-    }),
+    onProgress: (event) => {
+      process.stderr.write(renderCanvasLocalProgress('lint', event));
+    },
   });
 
   if (!result.success || !result.data) {
@@ -1924,11 +1918,9 @@ export async function runCanvasBuild(args: string[]): Promise<number> {
   const result = await new CanvasService().build(context.data.path, {
     ...context.data.options,
     outPath,
-    ...(!isMachineReadableOutputFormat(format) && {
-      onProgress: (event) => {
-        process.stderr.write(renderCanvasLocalProgress('build', event));
-      },
-    }),
+    onProgress: (event) => {
+      process.stderr.write(renderCanvasLocalProgress('build', event));
+    },
   });
 
   if (!result.success || !result.data) {

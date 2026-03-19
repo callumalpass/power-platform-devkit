@@ -38,6 +38,16 @@ afterEach(async () => {
   await cleanupTempDirs();
 });
 
+/** Strip `[pp] ...` progress lines from captured stderr. */
+function stripProgressLines(stderr: string): string {
+  return stderr.replace(/^\[pp\] [^\n]*\n/gm, '');
+}
+
+/** Strip `[pp] ...` progress lines from captured stderr before JSON-parsing diagnostics. */
+function parseStderrJson(stderr: string): unknown {
+  return JSON.parse(stripProgressLines(stderr));
+}
+
 describe('cli fixture-backed workflows', () => {
   it('prints concise top-level help with concepts and next discovery steps', async () => {
     const stdout: string[] = [];
@@ -1563,11 +1573,11 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
     expect(validate.code).toBe(0);
-    expect(validate.stderr).toBe('');
+    expect(stripProgressLines(validate.stderr)).toBe('');
     expect(lint.code).toBe(0);
-    expect(lint.stderr).toBe('');
+    expect(stripProgressLines(lint.stderr)).toBe('');
     expect(build.code).toBe(0);
-    expect(build.stderr).toBe('');
+    expect(stripProgressLines(build.stderr)).toBe('');
     expect(diff.code).toBe(0);
     expect(diff.stderr).toBe('');
     expect(JSON.stringify(JSON.parse(inspect.stdout).templateRequirements)).not.toContain('templateXml');
@@ -1629,11 +1639,11 @@ describe('cli fixture-backed workflows', () => {
     expect(JSON.parse(inspect.stdout).registries[0]?.path).toContain('/fixtures/canvas/apps/native-app/controls.json');
 
     expect(validate.code).toBe(0);
-    expect(validate.stderr).toBe('');
+    expect(stripProgressLines(validate.stderr)).toBe('');
     expect(JSON.parse(validate.stdout).valid).toBe(true);
 
     expect(build.code).toBe(0);
-    expect(build.stderr).toBe('');
+    expect(stripProgressLines(build.stderr)).toBe('');
 
     expect(diff.code).toBe(0);
     expect(diff.stderr).toBe('');
@@ -1776,13 +1786,13 @@ describe('cli fixture-backed workflows', () => {
     ]);
 
     expect(validate.code).toBe(0);
-    expect(validate.stderr).toBe('');
+    expect(stripProgressLines(validate.stderr)).toBe('');
     expect(JSON.parse(validate.stdout)).toMatchObject({
       valid: true,
     });
 
     expect(build.code).toBe(0);
-    expect(build.stderr).toBe('');
+    expect(stripProgressLines(build.stderr)).toBe('');
     expect(JSON.parse(build.stdout)).toMatchObject({
       outPath,
     });
@@ -1802,7 +1812,7 @@ describe('cli fixture-backed workflows', () => {
 
     const expectedOutPath = join(invocationRoot, 'dist', 'NativeCanvas.msapp');
     expect(build.code).toBe(0);
-    expect(build.stderr).toBe('');
+    expect(stripProgressLines(build.stderr)).toBe('');
     expect(JSON.parse(build.stdout)).toMatchObject({
       outPath: expectedOutPath,
     });
@@ -2034,9 +2044,9 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
     expect(validate.code).toBe(0);
-    expect(validate.stderr).toBe('');
+    expect(stripProgressLines(validate.stderr)).toBe('');
     expect(build.code).toBe(0);
-    expect(build.stderr).toBe('');
+    expect(stripProgressLines(build.stderr)).toBe('');
 
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/canvas/golden/native/inspect-report.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
@@ -2090,7 +2100,7 @@ describe('cli fixture-backed workflows', () => {
       valid: boolean;
       propertyChecks?: Array<{ controlPath: string; property: string; valid: boolean; source?: string }>;
     };
-    const invalidDiagnostics = JSON.parse(invalidValidate.stderr) as {
+    const invalidDiagnostics = parseStderrJson(invalidValidate.stderr) as {
       diagnostics: Array<{ code: string }>;
     };
 
@@ -2149,7 +2159,7 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(lint.stdout), 'fixtures/canvas/golden/native/lint-invalid-report.json', {
       normalize: (value) => normalizeCanvasTempRegistrySnapshot(value, tempDir),
     });
-    await expectGoldenJson(JSON.parse(lint.stderr), 'fixtures/cli/golden/protocol/canvas-lint-diagnostics.json', {
+    await expectGoldenJson(parseStderrJson(lint.stderr), 'fixtures/cli/golden/protocol/canvas-lint-diagnostics.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
   });
@@ -2167,9 +2177,9 @@ describe('cli fixture-backed workflows', () => {
     expect(inspect.code).toBe(0);
     expect(inspect.stderr).toBe('');
     expect(validate.code).toBe(0);
-    expect(validate.stderr).toBe('');
+    expect(stripProgressLines(validate.stderr)).toBe('');
     expect(build.code).toBe(0);
-    expect(build.stderr).toBe('');
+    expect(stripProgressLines(build.stderr)).toBe('');
 
     await expectGoldenJson(JSON.parse(inspect.stdout), 'fixtures/canvas/golden/formula/inspect-report.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
@@ -2252,9 +2262,9 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(build.stdout), 'fixtures/canvas/golden/semantic/cli-build-failure.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
-    await expectGoldenJson(JSON.parse(build.stderr), 'fixtures/cli/golden/protocol/canvas-semantic-diagnostics.json');
-    await expectGoldenJson(JSON.parse(inspect.stderr), 'fixtures/cli/golden/protocol/canvas-semantic-diagnostics.json');
-    await expectGoldenJson(JSON.parse(validate.stderr), 'fixtures/cli/golden/protocol/canvas-semantic-diagnostics.json');
+    await expectGoldenJson(parseStderrJson(build.stderr), 'fixtures/cli/golden/protocol/canvas-semantic-diagnostics.json');
+    await expectGoldenJson(parseStderrJson(inspect.stderr), 'fixtures/cli/golden/protocol/canvas-semantic-diagnostics.json');
+    await expectGoldenJson(parseStderrJson(validate.stderr), 'fixtures/cli/golden/protocol/canvas-semantic-diagnostics.json');
   });
 
   it('covers seeded-only and registry-only canvas mode failures through the CLI entrypoint', async () => {
@@ -2363,9 +2373,9 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(seededBuild.stdout), 'fixtures/canvas/golden/modes/cli-seeded-build-failure.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
-    await expectGoldenJson(JSON.parse(seededBuild.stderr), 'fixtures/cli/golden/protocol/canvas-seeded-diagnostics.json');
-    await expectGoldenJson(JSON.parse(seededInspect.stderr), 'fixtures/cli/golden/protocol/canvas-seeded-diagnostics.json');
-    await expectGoldenJson(JSON.parse(seededValidate.stderr), 'fixtures/cli/golden/protocol/canvas-seeded-diagnostics.json');
+    await expectGoldenJson(parseStderrJson(seededBuild.stderr), 'fixtures/cli/golden/protocol/canvas-seeded-diagnostics.json');
+    await expectGoldenJson(parseStderrJson(seededInspect.stderr), 'fixtures/cli/golden/protocol/canvas-seeded-diagnostics.json');
+    await expectGoldenJson(parseStderrJson(seededValidate.stderr), 'fixtures/cli/golden/protocol/canvas-seeded-diagnostics.json');
 
     await expectGoldenJson(JSON.parse(registryInspect.stdout), 'fixtures/canvas/golden/modes/cli-registry-inspect-report.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
@@ -2376,9 +2386,9 @@ describe('cli fixture-backed workflows', () => {
     await expectGoldenJson(JSON.parse(registryBuild.stdout), 'fixtures/canvas/golden/modes/cli-registry-build-failure.json', {
       normalize: (value) => normalizeCliSnapshot(value, tempDir),
     });
-    await expectGoldenJson(JSON.parse(registryBuild.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
-    await expectGoldenJson(JSON.parse(registryInspect.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
-    await expectGoldenJson(JSON.parse(registryValidate.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
+    await expectGoldenJson(parseStderrJson(registryBuild.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
+    await expectGoldenJson(parseStderrJson(registryInspect.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
+    await expectGoldenJson(parseStderrJson(registryValidate.stderr), 'fixtures/cli/golden/protocol/canvas-registry-diagnostics.json');
   });
 
   it('activates a remote flow in place through the CLI entrypoint', async () => {
@@ -6917,7 +6927,7 @@ describe('cli fixture-backed workflows', () => {
     const validate = await runCli(['connref', 'validate', '--env', 'source', '--solution', 'HarnessShell', '--format', 'json']);
 
     expect(validate.code).toBe(0);
-    expect(validate.stderr).toBe('');
+    expect(stripProgressLines(validate.stderr)).toBe('');
     expect(JSON.parse(validate.stdout)).toMatchObject({
       success: true,
       results: [
@@ -6960,7 +6970,7 @@ describe('cli fixture-backed workflows', () => {
     const validate = await runCli(['connref', 'validate', '--env', 'source', '--format', 'json']);
 
     expect(validate.code).toBe(0);
-    expect(validate.stderr).toBe('');
+    expect(stripProgressLines(validate.stderr)).toBe('');
     expect(JSON.parse(validate.stdout)).toMatchObject({
       success: true,
       results: [],
