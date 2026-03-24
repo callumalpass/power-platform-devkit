@@ -2,27 +2,45 @@
   "name": "pp",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@10.6.5",
   "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "pp": "./dist/index.cjs",
+    "pp-mcp": "./dist/mcp-server.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js",
+      "require": "./dist/mcp.cjs"
+    },
+    "./mcp-server": {
+      "types": "./dist/mcp-server.d.ts",
+      "import": "./dist/mcp-server.js",
+      "require": "./dist/mcp-server.cjs"
+    }
+  },
   "scripts": {
-    "build": "pnpm -r --if-present build",
-    "clean": "pnpm -r --if-present clean",
-    "dev:cli": "node --import tsx --eval \"await import('./scripts/run-pp-dev.mjs')\"",
-    "pp": "node --import tsx --eval \"await import('./scripts/run-pp-dev.mjs')\"",
-    "pack:cli": "pnpm --filter @pp/cli build && pnpm --dir packages/cli pack",
-    "fetch:canvas-catalog": "tsx scripts/fetch-canvas-control-catalog.ts",
-    "harvest:canvas": "tsx scripts/canvas-harvest.ts",
-    "smoke:live": "tsx scripts/smoke-live.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "build": "tsup src/index.ts src/mcp.ts src/mcp-server.ts --format esm,cjs --clean",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^5.0.6",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "yaml": "^2.8.1",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
-    "playwright-core": "^1.52.0",
     "tsup": "^8.4.0",
-    "tsx": "^4.19.3",
-    "typescript": "^5.8.2",
-    "vitest": "^3.0.8"
+    "typescript": "^5.8.2"
   }
 }

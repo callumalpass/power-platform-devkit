@@ -1,6 +1,0 @@
-ERROR TEST_FAILURE: Something went wrong (hint=Check the committed fixture payload. path=fixtures/cli/input.json)
-WARNING TEST_WARNING: This is only a preview warning (hint=Warnings should stay visible in the rendered contract.)
-
-Next actions:
-- Retry with --format json
-- Refresh the committed fixture if the contract changed intentionally

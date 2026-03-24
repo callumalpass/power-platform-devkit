@@ -1,8 +1,0 @@
-[
-  {
-    "id": "view-1",
-    "name": "Active Accounts",
-    "queryType": 0,
-    "table": "account"
-  }
-]

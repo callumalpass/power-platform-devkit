@@ -1,3 +1,0 @@
-friendlyname   solutionid  uniquename  version
--------------  ----------  ----------  -------
-Core Solution  sol-source  Core        1.2.0.0

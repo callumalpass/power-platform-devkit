@@ -1,1 +1,0 @@
-WARNING TEST_WARNING: This is only a preview warning hint=Warnings should stay visible in the rendered contract.
