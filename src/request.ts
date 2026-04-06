@@ -1,5 +1,5 @@
 import { createTokenProvider, decodeJwtClaims, type PublicClientLoginOptions, type TokenProvider } from './auth.js';
-import { ensureEnvironmentAccess, getAuthProfile, getEnvironment, saveEnvironment, type ConfigStoreOptions, type Environment } from './config.js';
+import { ensureEnvironmentAccess, getAccount, getEnvironment, saveEnvironment, type ConfigStoreOptions, type Environment } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { HttpClient, type HttpResponseType } from './http.js';
 
@@ -9,6 +9,7 @@ export type ApiKind = 'dv' | 'flow' | 'graph' | 'custom';
 
 export interface RequestInput {
   environmentAlias: string;
+  accountName?: string;
   path: string;
   method?: string;
   api?: ApiKind;
@@ -29,12 +30,13 @@ export interface PreparedRequest {
   path: string;
   authResource: string;
   environment: Environment;
+  accountName: string;
 }
 
 export function resourceForApi(environment: Environment, api: Exclude<ApiKind, 'custom'>): string {
   switch (api) {
     case 'dv':
-      return normalizeOrigin(environment.dataverseUrl);
+      return normalizeOrigin(environment.url);
     case 'flow':
       return 'https://service.flow.microsoft.com';
     case 'graph':
@@ -48,10 +50,10 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
   const access = await ensureEnvironmentAccess(input.environmentAlias, method, Boolean(input.readIntent), configOptions);
   if (!access.success) return fail(...access.diagnostics);
 
-  const runtime = await resolveRuntime(input.environmentAlias, configOptions, input.loginOptions);
+  const runtime = await resolveRuntime(input.environmentAlias, input.accountName, configOptions, input.loginOptions);
   if (!runtime.success || !runtime.data) return fail(...runtime.diagnostics);
 
-  const request = buildRequest(runtime.data.environment, input.path, input.api);
+  const request = buildRequest(runtime.data.environment, runtime.data.accountName, input.path, input.api);
   if (!request.success || !request.data) return fail(...request.diagnostics);
 
   const client = new HttpClient({
@@ -70,9 +72,7 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
     responseType: input.responseType ?? 'json',
     timeoutMs: input.timeoutMs,
   });
-  if (!response.success || !response.data) {
-    return fail(...response.diagnostics);
-  }
+  if (!response.success || !response.data) return fail(...response.diagnostics);
   return ok({
     request: request.data,
     response: response.data.data,
@@ -84,44 +84,44 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
 export async function addEnvironmentWithDiscovery(
   input: {
     alias: string;
-    dataverseUrl: string;
-    authProfile: string;
+    url: string;
+    account: string;
     displayName?: string;
     accessMode?: 'read-write' | 'read-only';
   },
   configOptions: ConfigStoreOptions = {},
   loginOptions: PublicClientLoginOptions = {},
 ): Promise<OperationResult<Environment>> {
-  const profile = await getAuthProfile(input.authProfile, configOptions);
-  if (!profile.success || !profile.data) {
-    return profile.success
-      ? fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${input.authProfile} was not found.`, { source: 'pp/request' }))
-      : fail(...profile.diagnostics);
+  const account = await getAccount(input.account, configOptions);
+  if (!account.success || !account.data) {
+    return account.success
+      ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${input.account} was not found.`, { source: 'pp/request' }))
+      : fail(...account.diagnostics);
   }
-  const tokenProvider = createTokenProvider(profile.data, configOptions, loginOptions);
+  const tokenProvider = createTokenProvider(account.data, configOptions, loginOptions);
   if (!tokenProvider.success || !tokenProvider.data) return fail(...tokenProvider.diagnostics);
 
-  const makerEnvironmentId = await discoverMakerEnvironmentId(input.dataverseUrl, tokenProvider.data);
+  const makerEnvironmentId = await discoverMakerEnvironmentId(input.url, tokenProvider.data);
   if (!makerEnvironmentId.success || !makerEnvironmentId.data) {
     return makerEnvironmentId.success
-      ? fail(createDiagnostic('error', 'MAKER_ENVIRONMENT_ID_DISCOVERY_FAILED', `Could not discover maker environment id for ${input.dataverseUrl}.`, { source: 'pp/request' }))
+      ? fail(createDiagnostic('error', 'MAKER_ENVIRONMENT_ID_DISCOVERY_FAILED', `Could not discover maker environment id for ${input.url}.`, { source: 'pp/request' }))
       : fail(...makerEnvironmentId.diagnostics);
   }
 
-  const dataverseTenant = await discoverTenantId(input.dataverseUrl, tokenProvider.data);
-  if (!dataverseTenant.success || !dataverseTenant.data) {
-    return dataverseTenant.success
-      ? fail(createDiagnostic('error', 'TENANT_ID_DISCOVERY_FAILED', `Could not discover tenant id for ${input.dataverseUrl}.`, { source: 'pp/request' }))
-      : fail(...dataverseTenant.diagnostics);
+  const tenantId = await discoverTenantId(input.url, tokenProvider.data);
+  if (!tenantId.success || !tenantId.data) {
+    return tenantId.success
+      ? fail(createDiagnostic('error', 'TENANT_ID_DISCOVERY_FAILED', `Could not discover tenant id for ${input.url}.`, { source: 'pp/request' }))
+      : fail(...tenantId.diagnostics);
   }
 
   const environment: Environment = {
     alias: input.alias,
-    authProfile: input.authProfile,
-    dataverseUrl: normalizeOrigin(input.dataverseUrl),
+    account: input.account,
+    url: normalizeOrigin(input.url),
     displayName: input.displayName,
     makerEnvironmentId: makerEnvironmentId.data,
-    tenantId: dataverseTenant.data,
+    tenantId: tenantId.data,
     ...(input.accessMode ? { access: { mode: input.accessMode } } : {}),
   };
   return saveEnvironment(environment, configOptions);
@@ -129,27 +129,37 @@ export async function addEnvironmentWithDiscovery(
 
 async function resolveRuntime(
   environmentAlias: string,
+  accountName: string | undefined,
   configOptions: ConfigStoreOptions,
   loginOptions?: PublicClientLoginOptions,
-): Promise<OperationResult<{ environment: Environment; tokenProvider: TokenProvider }>> {
+): Promise<OperationResult<{ environment: Environment; tokenProvider: TokenProvider; accountName: string }>> {
   const environment = await getEnvironment(environmentAlias, configOptions);
   if (!environment.success || !environment.data) {
     return environment.success
       ? fail(createDiagnostic('error', 'ENVIRONMENT_NOT_FOUND', `Environment ${environmentAlias} was not found.`, { source: 'pp/request' }))
       : fail(...environment.diagnostics);
   }
-  const profile = await getAuthProfile(environment.data.authProfile, configOptions);
-  if (!profile.success || !profile.data) {
-    return profile.success
-      ? fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${environment.data.authProfile} was not found.`, { source: 'pp/request' }))
-      : fail(...profile.diagnostics);
+
+  const resolvedAccountName = accountName ?? environment.data.account;
+  if (!resolvedAccountName) {
+    return fail(createDiagnostic('error', 'ENVIRONMENT_ACCOUNT_REQUIRED', `Environment ${environmentAlias} does not define an account and none was provided.`, {
+      source: 'pp/request',
+      hint: 'Pass --account ACCOUNT or update the environment to include an account.',
+    }));
   }
-  const tokenProvider = createTokenProvider(profile.data, configOptions, loginOptions);
+
+  const account = await getAccount(resolvedAccountName, configOptions);
+  if (!account.success || !account.data) {
+    return account.success
+      ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${resolvedAccountName} was not found.`, { source: 'pp/request' }))
+      : fail(...account.diagnostics);
+  }
+  const tokenProvider = createTokenProvider(account.data, configOptions, loginOptions);
   if (!tokenProvider.success || !tokenProvider.data) return fail(...tokenProvider.diagnostics);
-  return ok({ environment: environment.data, tokenProvider: tokenProvider.data });
+  return ok({ environment: environment.data, tokenProvider: tokenProvider.data, accountName: resolvedAccountName });
 }
 
-export function buildRequest(environment: Environment, originalPath: string, apiOverride?: ApiKind): OperationResult<PreparedRequest> {
+export function buildRequest(environment: Environment, accountName: string, originalPath: string, apiOverride?: ApiKind): OperationResult<PreparedRequest> {
   const api = detectApi(originalPath, apiOverride);
   const isUrl = isAbsoluteUrl(originalPath);
   if (api === 'custom') {
@@ -157,25 +167,26 @@ export function buildRequest(environment: Environment, originalPath: string, api
       return fail(createDiagnostic('error', 'CUSTOM_REQUEST_URL_REQUIRED', 'Custom requests require an absolute URL.', { source: 'pp/request' }));
     }
     const url = new URL(originalPath);
-    return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: url.origin, environment });
+    return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: url.origin, environment, accountName });
   }
   if (api === 'dv') {
     if (isUrl) {
       const url = new URL(originalPath);
-      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: url.origin, environment });
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: url.origin, environment, accountName });
     }
     return ok({
       api,
-      baseUrl: environment.dataverseUrl,
+      baseUrl: environment.url,
       path: normalizeDataversePath(originalPath),
-      authResource: normalizeOrigin(environment.dataverseUrl),
+      authResource: normalizeOrigin(environment.url),
       environment,
+      accountName,
     });
   }
   if (api === 'flow') {
     if (isUrl) {
       const url = new URL(originalPath);
-      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.flow.microsoft.com', environment });
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.flow.microsoft.com', environment, accountName });
     }
     return ok({
       api,
@@ -183,11 +194,12 @@ export function buildRequest(environment: Environment, originalPath: string, api
       path: normalizeFlowPath(originalPath, environment.makerEnvironmentId),
       authResource: 'https://service.flow.microsoft.com',
       environment,
+      accountName,
     });
   }
   if (isUrl) {
     const url = new URL(originalPath);
-    return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://graph.microsoft.com', environment });
+    return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://graph.microsoft.com', environment, accountName });
   }
   return ok({
     api,
@@ -195,6 +207,7 @@ export function buildRequest(environment: Environment, originalPath: string, api
     path: normalizeGraphPath(originalPath),
     authResource: 'https://graph.microsoft.com',
     environment,
+    accountName,
   });
 }
 
@@ -236,7 +249,7 @@ function defaultHeadersForApi(api: ApiKind): Record<string, string> {
   return { accept: 'application/json' };
 }
 
-async function discoverMakerEnvironmentId(dataverseUrl: string, tokenProvider: TokenProvider): Promise<OperationResult<string | undefined>> {
+async function discoverMakerEnvironmentId(url: string, tokenProvider: TokenProvider): Promise<OperationResult<string | undefined>> {
   const client = new HttpClient({
     baseUrl: 'https://api.bap.microsoft.com',
     tokenProvider,
@@ -246,7 +259,7 @@ async function discoverMakerEnvironmentId(dataverseUrl: string, tokenProvider: T
     query: { 'api-version': POWER_PLATFORM_ENVIRONMENTS_API_VERSION },
   });
   if (!response.success || !response.data) return fail(...response.diagnostics);
-  const origin = normalizeOrigin(dataverseUrl);
+  const origin = normalizeOrigin(url);
   const match = (response.data.data.value ?? []).find((candidate) => {
     const linked = candidate.properties?.linkedEnvironmentMetadata;
     return (
@@ -257,9 +270,9 @@ async function discoverMakerEnvironmentId(dataverseUrl: string, tokenProvider: T
   return ok(match?.name);
 }
 
-async function discoverTenantId(dataverseUrl: string, tokenProvider: TokenProvider): Promise<OperationResult<string | undefined>> {
+async function discoverTenantId(url: string, tokenProvider: TokenProvider): Promise<OperationResult<string | undefined>> {
   try {
-    const accessToken = await tokenProvider.getAccessToken(normalizeOrigin(dataverseUrl));
+    const accessToken = await tokenProvider.getAccessToken(normalizeOrigin(url));
     const claims = decodeJwtClaims(accessToken);
     const tid = claims?.tid;
     return ok(typeof tid === 'string' ? tid : undefined);

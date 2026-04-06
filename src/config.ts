@@ -5,10 +5,10 @@ import { z } from 'zod';
 import YAML from 'yaml';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 
-export type AuthProfileType = 'user' | 'device-code' | 'client-secret' | 'environment-token' | 'static-token';
+export type AccountKind = 'user' | 'device-code' | 'client-secret' | 'environment-token' | 'static-token';
 export type EnvironmentAccessMode = 'read-write' | 'read-only';
 
-const authProfileBaseSchema = z.object({
+const accountBaseSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   tenantId: z.string().optional(),
@@ -21,35 +21,35 @@ const authProfileBaseSchema = z.object({
   localAccountId: z.string().optional(),
 });
 
-const authProfileSchema = z.discriminatedUnion('type', [
-  authProfileBaseSchema.extend({
-    type: z.literal('static-token'),
+const accountSchema = z.discriminatedUnion('kind', [
+  accountBaseSchema.extend({
+    kind: z.literal('static-token'),
     token: z.string(),
   }),
-  authProfileBaseSchema.extend({
-    type: z.literal('environment-token'),
+  accountBaseSchema.extend({
+    kind: z.literal('environment-token'),
     environmentVariable: z.string(),
   }),
-  authProfileBaseSchema.extend({
-    type: z.literal('client-secret'),
+  accountBaseSchema.extend({
+    kind: z.literal('client-secret'),
     tenantId: z.string(),
     clientId: z.string(),
     clientSecretEnv: z.string(),
   }),
-  authProfileBaseSchema.extend({
-    type: z.literal('user'),
+  accountBaseSchema.extend({
+    kind: z.literal('user'),
     prompt: z.enum(['select_account', 'login', 'consent', 'none']).optional(),
     fallbackToDeviceCode: z.boolean().optional(),
   }),
-  authProfileBaseSchema.extend({
-    type: z.literal('device-code'),
+  accountBaseSchema.extend({
+    kind: z.literal('device-code'),
   }),
 ]);
 
 const environmentSchema = z.object({
   alias: z.string(),
-  authProfile: z.string(),
-  dataverseUrl: z.string().url(),
+  account: z.string(),
+  url: z.string().url(),
   displayName: z.string().optional(),
   makerEnvironmentId: z.string(),
   tenantId: z.string(),
@@ -57,11 +57,11 @@ const environmentSchema = z.object({
 });
 
 const globalConfigSchema = z.object({
-  authProfiles: z.record(z.string(), authProfileSchema).default({}),
+  accounts: z.record(z.string(), accountSchema).default({}),
   environments: z.record(z.string(), environmentSchema).default({}),
 });
 
-export type AuthProfile = z.infer<typeof authProfileSchema>;
+export type Account = z.infer<typeof accountSchema>;
 export type Environment = z.infer<typeof environmentSchema>;
 export type GlobalConfig = z.infer<typeof globalConfigSchema>;
 
@@ -135,37 +135,33 @@ export async function writeConfig(config: GlobalConfig, options: ConfigStoreOpti
   }
 }
 
-export async function listAuthProfiles(options: ConfigStoreOptions = {}): Promise<OperationResult<AuthProfile[]>> {
+export async function listAccounts(options: ConfigStoreOptions = {}): Promise<OperationResult<Account[]>> {
   const result = await loadConfig(options);
-  if (!result.success || !result.data) {
-    return fail(...result.diagnostics);
-  }
-  return ok(Object.values(result.data.authProfiles), result.diagnostics);
+  if (!result.success || !result.data) return fail(...result.diagnostics);
+  return ok(Object.values(result.data.accounts), result.diagnostics);
 }
 
-export async function getAuthProfile(name: string, options: ConfigStoreOptions = {}): Promise<OperationResult<AuthProfile | undefined>> {
+export async function getAccount(name: string, options: ConfigStoreOptions = {}): Promise<OperationResult<Account | undefined>> {
   const result = await loadConfig(options);
-  if (!result.success || !result.data) {
-    return fail(...result.diagnostics);
-  }
-  return ok(result.data.authProfiles[name], result.diagnostics);
+  if (!result.success || !result.data) return fail(...result.diagnostics);
+  return ok(result.data.accounts[name], result.diagnostics);
 }
 
-export async function saveAuthProfile(profile: AuthProfile, options: ConfigStoreOptions = {}): Promise<OperationResult<AuthProfile>> {
+export async function saveAccount(account: Account, options: ConfigStoreOptions = {}): Promise<OperationResult<Account>> {
   const loaded = await loadConfig(options);
   if (!loaded.success || !loaded.data) return fail(...loaded.diagnostics);
-  loaded.data.authProfiles[profile.name] = profile;
+  loaded.data.accounts[account.name] = account;
   const written = await writeConfig(loaded.data, options);
-  return written.success ? ok(profile, written.diagnostics) : fail(...written.diagnostics);
+  return written.success ? ok(account, written.diagnostics) : fail(...written.diagnostics);
 }
 
-export async function removeAuthProfile(name: string, options: ConfigStoreOptions = {}): Promise<OperationResult<boolean>> {
+export async function removeAccount(name: string, options: ConfigStoreOptions = {}): Promise<OperationResult<boolean>> {
   const loaded = await loadConfig(options);
   if (!loaded.success || !loaded.data) return fail(...loaded.diagnostics);
-  const existed = Boolean(loaded.data.authProfiles[name]);
-  delete loaded.data.authProfiles[name];
+  const existed = Boolean(loaded.data.accounts[name]);
+  delete loaded.data.accounts[name];
   for (const [alias, environment] of Object.entries(loaded.data.environments)) {
-    if (environment.authProfile === name) {
+    if (environment.account === name) {
       delete loaded.data.environments[alias];
     }
   }
@@ -175,17 +171,13 @@ export async function removeAuthProfile(name: string, options: ConfigStoreOption
 
 export async function listEnvironments(options: ConfigStoreOptions = {}): Promise<OperationResult<Environment[]>> {
   const result = await loadConfig(options);
-  if (!result.success || !result.data) {
-    return fail(...result.diagnostics);
-  }
+  if (!result.success || !result.data) return fail(...result.diagnostics);
   return ok(Object.values(result.data.environments), result.diagnostics);
 }
 
 export async function getEnvironment(alias: string, options: ConfigStoreOptions = {}): Promise<OperationResult<Environment | undefined>> {
   const result = await loadConfig(options);
-  if (!result.success || !result.data) {
-    return fail(...result.diagnostics);
-  }
+  if (!result.success || !result.data) return fail(...result.diagnostics);
   return ok(result.data.environments[alias], result.diagnostics);
 }
 

@@ -2,11 +2,10 @@ import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import YAML from 'yaml';
 import {
-  getConfigDir,
   getConfigPath,
   getDefaultConfigDir,
   writeConfig,
-  type AuthProfile,
+  type Account,
   type ConfigStoreOptions,
   type Environment,
   type GlobalConfig,
@@ -60,8 +59,6 @@ type LegacyAuthProfile =
       localAccountId?: string;
       prompt?: 'select_account' | 'login' | 'consent' | 'none';
       fallbackToDeviceCode?: boolean;
-      browserProfile?: string;
-      defaultResource?: string;
     }
   | {
       name?: string;
@@ -75,7 +72,6 @@ type LegacyAuthProfile =
       accountUsername?: string;
       homeAccountId?: string;
       localAccountId?: string;
-      defaultResource?: string;
     };
 
 interface LegacyEnvironment {
@@ -84,9 +80,7 @@ interface LegacyEnvironment {
   authProfile?: string;
   tenantId?: string;
   displayName?: string;
-  defaultSolution?: string;
   makerEnvironmentId?: string;
-  apiPath?: string;
   access?: {
     mode?: 'read-write' | 'read-only';
   };
@@ -106,7 +100,7 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
     backupPath?: string;
     migratedConfig: GlobalConfig;
     summary: {
-      authProfilesMigrated: number;
+      accountsMigrated: number;
       environmentsMigrated: number;
       environmentsSkipped: number;
     };
@@ -137,17 +131,17 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
   }
 
   const diagnostics: Diagnostic[] = [];
-  const authProfiles: Record<string, AuthProfile> = {};
+  const accounts: Record<string, Account> = {};
   const environments: Record<string, Environment> = {};
   const skippedEnvironments: Array<{ alias: string; reason: string }> = [];
 
   for (const [key, value] of Object.entries(legacy.authProfiles ?? {})) {
-    const migrated = migrateAuthProfile(key, value);
+    const migrated = migrateAccount(key, value);
     if (migrated.success) {
-      authProfiles[migrated.data.name] = migrated.data;
+      accounts[migrated.data.name] = migrated.data;
     } else {
       diagnostics.push(
-        createDiagnostic('warning', 'AUTH_PROFILE_SKIPPED', `Skipped auth profile ${key}.`, {
+        createDiagnostic('warning', 'ACCOUNT_SKIPPED', `Skipped account ${key}.`, {
           source: 'pp/migrate',
           detail: migrated.reason,
         }),
@@ -170,10 +164,7 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
     );
   }
 
-  const migratedConfig: GlobalConfig = {
-    authProfiles,
-    environments,
-  };
+  const migratedConfig: GlobalConfig = { accounts, environments };
 
   let backupPath: string | undefined;
   if (options.apply) {
@@ -183,9 +174,7 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
       await copyFile(sourcePath, backupPath);
     }
     const written = await writeConfig(migratedConfig, targetOptions);
-    if (!written.success) {
-      return fail(...written.diagnostics);
-    }
+    if (!written.success) return fail(...written.diagnostics);
   }
 
   return ok(
@@ -195,7 +184,7 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
       backupPath,
       migratedConfig,
       summary: {
-        authProfilesMigrated: Object.keys(authProfiles).length,
+        accountsMigrated: Object.keys(accounts).length,
         environmentsMigrated: Object.keys(environments).length,
         environmentsSkipped: skippedEnvironments.length,
       },
@@ -205,27 +194,27 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
   );
 }
 
-function migrateAuthProfile(name: string, profile: LegacyAuthProfile): { success: true; data: AuthProfile } | { success: false; reason: string } {
+function migrateAccount(name: string, account: LegacyAuthProfile): { success: true; data: Account } | { success: false; reason: string } {
   const base = {
-    name: profile.name ?? name,
-    description: profile.description,
-    tenantId: profile.tenantId,
-    clientId: profile.clientId,
-    scopes: profile.scopes,
+    name: account.name ?? name,
+    description: account.description,
+    tenantId: account.tenantId,
+    clientId: account.clientId,
+    scopes: account.scopes,
   };
 
-  switch (profile.type) {
+  switch (account.type) {
     case 'static-token':
-      return profile.token ? { success: true, data: { ...base, type: 'static-token', token: profile.token } } : { success: false, reason: 'Missing token.' };
+      return account.token ? { success: true, data: { ...base, kind: 'static-token', token: account.token } } : { success: false, reason: 'Missing token.' };
     case 'environment-token':
-      return profile.environmentVariable
-        ? { success: true, data: { ...base, type: 'environment-token', environmentVariable: profile.environmentVariable } }
+      return account.environmentVariable
+        ? { success: true, data: { ...base, kind: 'environment-token', environmentVariable: account.environmentVariable } }
         : { success: false, reason: 'Missing environmentVariable.' };
     case 'client-secret':
-      return profile.tenantId && profile.clientId && profile.clientSecretEnv
+      return account.tenantId && account.clientId && account.clientSecretEnv
         ? {
             success: true,
-            data: { ...base, type: 'client-secret', tenantId: profile.tenantId, clientId: profile.clientId, clientSecretEnv: profile.clientSecretEnv },
+            data: { ...base, kind: 'client-secret', tenantId: account.tenantId, clientId: account.clientId, clientSecretEnv: account.clientSecretEnv },
           }
         : { success: false, reason: 'Missing tenantId, clientId, or clientSecretEnv.' };
     case 'user':
@@ -233,14 +222,14 @@ function migrateAuthProfile(name: string, profile: LegacyAuthProfile): { success
         success: true,
         data: {
           ...base,
-          type: 'user',
-          tokenCacheKey: profile.tokenCacheKey,
-          loginHint: profile.loginHint,
-          accountUsername: profile.accountUsername,
-          homeAccountId: profile.homeAccountId,
-          localAccountId: profile.localAccountId,
-          prompt: profile.prompt,
-          fallbackToDeviceCode: profile.fallbackToDeviceCode,
+          kind: 'user',
+          tokenCacheKey: account.tokenCacheKey,
+          loginHint: account.loginHint,
+          accountUsername: account.accountUsername,
+          homeAccountId: account.homeAccountId,
+          localAccountId: account.localAccountId,
+          prompt: account.prompt,
+          fallbackToDeviceCode: account.fallbackToDeviceCode,
         },
       };
     case 'device-code':
@@ -248,43 +237,35 @@ function migrateAuthProfile(name: string, profile: LegacyAuthProfile): { success
         success: true,
         data: {
           ...base,
-          type: 'device-code',
-          tokenCacheKey: profile.tokenCacheKey,
-          loginHint: profile.loginHint,
-          accountUsername: profile.accountUsername,
-          homeAccountId: profile.homeAccountId,
-          localAccountId: profile.localAccountId,
+          kind: 'device-code',
+          tokenCacheKey: account.tokenCacheKey,
+          loginHint: account.loginHint,
+          accountUsername: account.accountUsername,
+          homeAccountId: account.homeAccountId,
+          localAccountId: account.localAccountId,
         },
       };
     default:
-      return { success: false, reason: `Unsupported or missing auth profile type: ${(profile as { type?: string }).type ?? 'unknown'}.` };
+      return { success: false, reason: `Unsupported or missing auth profile type: ${(account as { type?: string }).type ?? 'unknown'}.` };
   }
 }
 
 function migrateEnvironment(alias: string, environment: LegacyEnvironment): { success: true; data: Environment } | { success: false; reason: string } {
-  if (!environment.url) {
-    return { success: false, reason: 'Missing url.' };
-  }
-  if (!environment.authProfile) {
-    return { success: false, reason: 'Missing authProfile.' };
-  }
-  if (!environment.makerEnvironmentId) {
-    return { success: false, reason: 'Missing makerEnvironmentId. Re-add with `pp env add` to auto-discover it.' };
-  }
-  if (!environment.tenantId) {
-    return { success: false, reason: 'Missing tenantId. Re-add with `pp env add` to auto-discover it.' };
-  }
+  if (!environment.url) return { success: false, reason: 'Missing url.' };
+  if (!environment.authProfile) return { success: false, reason: 'Missing authProfile.' };
+  if (!environment.makerEnvironmentId) return { success: false, reason: 'Missing makerEnvironmentId. Re-add with `pp env add` to auto-discover it.' };
+  if (!environment.tenantId) return { success: false, reason: 'Missing tenantId. Re-add with `pp env add` to auto-discover it.' };
 
   return {
     success: true,
     data: {
       alias: environment.alias ?? alias,
-      authProfile: environment.authProfile,
-      dataverseUrl: environment.url,
-      tenantId: environment.tenantId,
+      account: environment.authProfile,
+      url: environment.url,
       displayName: environment.displayName,
       makerEnvironmentId: environment.makerEnvironmentId,
-      access: environment.access?.mode ? { mode: environment.access.mode } : undefined,
+      tenantId: environment.tenantId,
+      ...(environment.access?.mode ? { access: { mode: environment.access.mode } } : {}),
     },
   };
 }

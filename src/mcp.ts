@@ -1,8 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { AuthService, summarizeProfile } from './auth.js';
-import { getAuthProfile, getEnvironment, listAuthProfiles, listEnvironments, removeAuthProfile, removeEnvironment, saveAuthProfile, type AuthProfile, type ConfigStoreOptions } from './config.js';
+import { AuthService, summarizeAccount, type LoginAccountInput } from './auth.js';
+import { getAccount, getEnvironment, listAccounts, listEnvironments, removeAccount, removeEnvironment, saveAccount, type Account, type ConfigStoreOptions } from './config.js';
 import { addEnvironmentWithDiscovery, executeRequest, resourceForApi, type ApiKind } from './request.js';
 
 export interface PpMcpServerOptions {
@@ -27,10 +27,7 @@ const outputSchema = z.object({
 });
 
 export function createPpMcpServer(options: PpMcpServerOptions = {}): McpServer {
-  const server = new McpServer({
-    name: 'pp',
-    version: '0.1.0',
-  });
+  const server = new McpServer({ name: 'pp', version: '0.1.0' });
   registerTools(server, options);
   return server;
 }
@@ -44,39 +41,39 @@ export async function startPpMcpServer(options: PpMcpServerOptions = {}): Promis
 
 function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   server.registerTool(
-    'pp.auth_profile.list',
+    'pp.account.list',
     {
-      title: 'List Auth Profiles',
-      description: 'List configured auth profiles.',
+      title: 'List Accounts',
+      description: 'List configured accounts.',
       inputSchema: z.object({ configDir: z.string().optional() }),
       outputSchema,
     },
-    async ({ configDir }) => toolResult(await listAuthProfiles(config(configDir, defaults)).then((result) => result.success ? { ...result, data: (result.data ?? []).map(summarizeProfile) } : result)),
+    async ({ configDir }) => toolResult(await listAccounts(config(configDir, defaults)).then((result) => result.success ? { ...result, data: (result.data ?? []).map(summarizeAccount) } : result)),
   );
 
   server.registerTool(
-    'pp.auth_profile.inspect',
+    'pp.account.inspect',
     {
-      title: 'Inspect Auth Profile',
-      description: 'Inspect one auth profile.',
+      title: 'Inspect Account',
+      description: 'Inspect one account.',
       inputSchema: z.object({ name: z.string(), configDir: z.string().optional() }),
       outputSchema,
     },
     async ({ name, configDir }) => {
-      const result = await getAuthProfile(name, config(configDir, defaults));
-      return toolResult(result.success ? { ...result, data: result.data ? summarizeProfile(result.data) : undefined } : result);
+      const result = await getAccount(name, config(configDir, defaults));
+      return toolResult(result.success ? { ...result, data: result.data ? summarizeAccount(result.data) : undefined } : result);
     },
   );
 
   server.registerTool(
-    'pp.auth_profile.create',
+    'pp.account.save',
     {
-      title: 'Create Auth Profile',
-      description: 'Create or update one auth profile.',
+      title: 'Save Account',
+      description: 'Create or update one account.',
       inputSchema: z.object({
         configDir: z.string().optional(),
         name: z.string(),
-        type: z.enum(['user', 'device-code', 'client-secret', 'environment-token', 'static-token']),
+        kind: z.enum(['user', 'device-code', 'client-secret', 'environment-token', 'static-token']),
         tenantId: z.string().optional(),
         clientId: z.string().optional(),
         scopes: z.array(z.string()).optional(),
@@ -91,38 +88,48 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema,
     },
-    async ({ configDir, ...input }) => toolResult(await saveAuthProfile(input as AuthProfile, config(configDir, defaults))),
+    async ({ configDir, ...input }) => toolResult(await saveAccount(input as Account, config(configDir, defaults))),
   );
 
   server.registerTool(
-    'pp.auth_profile.remove',
+    'pp.account.remove',
     {
-      title: 'Remove Auth Profile',
-      description: 'Remove one auth profile.',
+      title: 'Remove Account',
+      description: 'Remove one account.',
       inputSchema: z.object({ name: z.string(), configDir: z.string().optional() }),
       outputSchema,
     },
-    async ({ name, configDir }) => toolResult(await removeAuthProfile(name, config(configDir, defaults))),
+    async ({ name, configDir }) => toolResult(await removeAccount(name, config(configDir, defaults))),
   );
 
   server.registerTool(
-    'pp.auth_profile.login',
+    'pp.account.login',
     {
-      title: 'Login Auth Profile',
-      description: 'Run one login flow for an auth profile.',
+      title: 'Login Account',
+      description: 'Create or update one account and run a login flow.',
       inputSchema: z.object({
-        name: z.string(),
-        resource: z.string(),
         configDir: z.string().optional(),
         allowInteractiveAuth: z.boolean().optional(),
         preferredFlow: z.enum(['interactive', 'device-code']).optional(),
         forcePrompt: z.boolean().optional(),
+        name: z.string(),
+        kind: z.enum(['user', 'device-code', 'client-secret', 'environment-token', 'static-token']),
+        tenantId: z.string().optional(),
+        clientId: z.string().optional(),
+        scopes: z.array(z.string()).optional(),
+        loginHint: z.string().optional(),
+        prompt: z.enum(['select_account', 'login', 'consent', 'none']).optional(),
+        fallbackToDeviceCode: z.boolean().optional(),
+        clientSecretEnv: z.string().optional(),
+        environmentVariable: z.string().optional(),
+        token: z.string().optional(),
+        description: z.string().optional(),
       }),
       outputSchema,
     },
-    async ({ name, resource, configDir, allowInteractiveAuth, preferredFlow, forcePrompt }) => {
+    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, ...input }) => {
       const auth = new AuthService(config(configDir, defaults));
-      return toolResult(await auth.login(name, resource, { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth, preferredFlow, forcePrompt }));
+      return toolResult(await auth.login(input as LoginAccountInput, { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth, preferredFlow, forcePrompt }));
     },
   );
 
@@ -155,8 +162,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       description: 'Create or update one environment and auto-discover makerEnvironmentId and tenantId.',
       inputSchema: z.object({
         alias: z.string(),
-        dataverseUrl: z.string().url(),
-        authProfile: z.string(),
+        url: z.string().url(),
+        account: z.string(),
         displayName: z.string().optional(),
         accessMode: z.enum(['read-write', 'read-only']).optional(),
         configDir: z.string().optional(),
@@ -164,10 +171,10 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema,
     },
-    async ({ alias, dataverseUrl, authProfile, displayName, accessMode, configDir, allowInteractiveAuth }) =>
+    async ({ alias, url, account, displayName, accessMode, configDir, allowInteractiveAuth }) =>
       toolResult(
         await addEnvironmentWithDiscovery(
-          { alias, dataverseUrl, authProfile, displayName, accessMode },
+          { alias, url, account, displayName, accessMode },
           config(configDir, defaults),
           { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth },
         ),
@@ -187,6 +194,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
 
   const requestSchema = z.object({
     environment: z.string(),
+    account: z.string().optional(),
     path: z.string(),
     method: z.string().optional(),
     api: z.enum(['dv', 'flow', 'graph', 'custom']).optional(),
@@ -209,10 +217,11 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: requestSchema,
       outputSchema,
     },
-    async ({ environment, path, method, api, query, headers, body, rawBody, responseType, timeoutMs, readIntent, configDir, allowInteractiveAuth }) =>
+    async ({ environment, account, path, method, api, query, headers, body, rawBody, responseType, timeoutMs, readIntent, configDir, allowInteractiveAuth }) =>
       toolResult(
         await executeRequest({
           environmentAlias: environment,
+          accountName: account,
           path,
           method,
           api: api as ApiKind | undefined,
@@ -238,10 +247,11 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         inputSchema: requestSchema.omit({ api: true }),
         outputSchema,
       },
-      async ({ environment, path, method, query, headers, body, rawBody, responseType, timeoutMs, readIntent, configDir, allowInteractiveAuth }) =>
+      async ({ environment, account, path, method, query, headers, body, rawBody, responseType, timeoutMs, readIntent, configDir, allowInteractiveAuth }) =>
         toolResult(
           await executeRequest({
             environmentAlias: environment,
+            accountName: account,
             path,
             method,
             api,
@@ -266,15 +276,17 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       description: 'Run Dataverse WhoAmI against one environment.',
       inputSchema: z.object({
         environment: z.string(),
+        account: z.string().optional(),
         configDir: z.string().optional(),
         allowInteractiveAuth: z.boolean().optional(),
       }),
       outputSchema,
     },
-    async ({ environment, configDir, allowInteractiveAuth }) =>
+    async ({ environment, account, configDir, allowInteractiveAuth }) =>
       toolResult(
         await executeRequest({
           environmentAlias: environment,
+          accountName: account,
           api: 'dv',
           path: '/WhoAmI',
           method: 'POST',
@@ -293,15 +305,17 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       description: 'Run a minimal authenticated health check against Dataverse, Flow, or Graph.',
       inputSchema: z.object({
         environment: z.string(),
+        account: z.string().optional(),
         api: z.enum(['dv', 'flow', 'graph']).optional(),
         configDir: z.string().optional(),
         allowInteractiveAuth: z.boolean().optional(),
       }),
       outputSchema,
     },
-    async ({ environment, api = 'dv', configDir, allowInteractiveAuth }) => {
+    async ({ environment, account, api = 'dv', configDir, allowInteractiveAuth }) => {
       const common = {
         environmentAlias: environment,
+        accountName: account,
         api,
         responseType: 'json' as const,
         configOptions: config(configDir, defaults),
@@ -310,38 +324,14 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
 
       const result =
         api === 'dv'
-          ? await executeRequest({
-              ...common,
-              path: '/WhoAmI',
-              method: 'POST',
-              readIntent: true,
-            })
+          ? await executeRequest({ ...common, path: '/WhoAmI', method: 'POST', readIntent: true })
           : api === 'flow'
-            ? await executeRequest({
-                ...common,
-                path: '/flows',
-                method: 'GET',
-                query: { 'api-version': '2016-11-01', '$top': '1' },
-              })
-            : await executeRequest({
-                ...common,
-                path: '/organization',
-                method: 'GET',
-                query: { '$top': '1' },
-              });
+            ? await executeRequest({ ...common, path: '/flows', method: 'GET', query: { 'api-version': '2016-11-01', '$top': '1' } })
+            : await executeRequest({ ...common, path: '/organization', method: 'GET', query: { '$top': '1' } });
 
       return toolResult(
         result.success && result.data
-          ? {
-              ...result,
-              data: {
-                ok: true,
-                api,
-                environment,
-                status: result.data.status,
-                request: result.data.request,
-              },
-            }
+          ? { ...result, data: { ok: true, api, environment, account: result.data.request.accountName, status: result.data.status, request: result.data.request } }
           : result,
       );
     },
@@ -354,6 +344,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       description: 'Resolve an access token for one environment and API.',
       inputSchema: z.object({
         environment: z.string(),
+        account: z.string().optional(),
         api: z.enum(['dv', 'flow', 'graph']).optional(),
         configDir: z.string().optional(),
         allowInteractiveAuth: z.boolean().optional(),
@@ -361,34 +352,23 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema,
     },
-    async ({ environment, api = 'dv', configDir, allowInteractiveAuth, preferredFlow }) => {
+    async ({ environment, account, api = 'dv', configDir, allowInteractiveAuth, preferredFlow }) => {
       const options = config(configDir, defaults);
       const environmentResult = await getEnvironment(environment, options);
-
       if (!environmentResult.success || !environmentResult.data) {
         return toolResult(
           environmentResult.success
-            ? {
-                success: false,
-                diagnostics: [
-                  {
-                    level: 'error',
-                    code: 'ENVIRONMENT_NOT_FOUND',
-                    message: `Environment ${environment} was not found.`,
-                    source: 'pp/mcp',
-                  },
-                ],
-              }
+            ? { success: false, diagnostics: [{ level: 'error', code: 'ENVIRONMENT_NOT_FOUND', message: `Environment ${environment} was not found.`, source: 'pp/mcp' }] }
             : environmentResult,
         );
       }
 
+      const resolvedAccount = account ?? environmentResult.data.account;
       const auth = new AuthService(options);
-      const tokenResult = await auth.getToken(environmentResult.data.authProfile, resourceForApi(environmentResult.data, api), {
+      const tokenResult = await auth.getToken(resolvedAccount, resourceForApi(environmentResult.data, api), {
         allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth,
         preferredFlow,
       });
-
       return toolResult(tokenResult);
     },
   );
@@ -400,12 +380,7 @@ function config(configDir: string | undefined, defaults: PpMcpServerOptions): Co
 
 function toolResult(result: { success: boolean; data?: unknown; diagnostics: unknown[] }) {
   return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(result, null, 2),
-      },
-    ],
+    content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
     structuredContent: result,
   };
 }

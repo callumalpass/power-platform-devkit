@@ -11,18 +11,19 @@ import {
   type ICachePlugin,
 } from '@azure/msal-node';
 import {
-  getAuthProfile,
+  getAccount,
   getMsalCacheDir,
-  listAuthProfiles,
-  removeAuthProfile,
-  saveAuthProfile,
-  type AuthProfile,
+  listAccounts,
+  removeAccount,
+  saveAccount,
+  type Account,
   type ConfigStoreOptions,
 } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 
 export const DEFAULT_PUBLIC_CLIENT_ID = '51f81489-12ee-4a9e-aaae-a2591f45987d';
 export const DEFAULT_USER_TENANT = 'common';
+export const DEFAULT_LOGIN_RESOURCE = 'https://graph.microsoft.com';
 
 export interface TokenProvider {
   getAccessToken(resource: string): Promise<string>;
@@ -34,57 +35,80 @@ export interface PublicClientLoginOptions {
   allowInteractive?: boolean;
 }
 
-type UserAuthProfile = Extract<AuthProfile, { type: 'user' | 'device-code' }>;
+export interface LoginAccountInput {
+  name: string;
+  kind: Account['kind'];
+  description?: string;
+  tenantId?: string;
+  clientId?: string;
+  scopes?: string[];
+  loginHint?: string;
+  prompt?: 'select_account' | 'login' | 'consent' | 'none';
+  fallbackToDeviceCode?: boolean;
+  clientSecretEnv?: string;
+  environmentVariable?: string;
+  token?: string;
+}
+
+type UserAccount = Extract<Account, { kind: 'user' | 'device-code' }>;
 
 export class AuthService {
   constructor(private readonly options: ConfigStoreOptions = {}) {}
 
-  listProfiles(): Promise<OperationResult<AuthProfile[]>> {
-    return listAuthProfiles(this.options);
+  listAccounts(): Promise<OperationResult<Account[]>> {
+    return listAccounts(this.options);
   }
 
-  getProfile(name: string): Promise<OperationResult<AuthProfile | undefined>> {
-    return getAuthProfile(name, this.options);
+  getAccount(name: string): Promise<OperationResult<Account | undefined>> {
+    return getAccount(name, this.options);
   }
 
-  saveProfile(profile: AuthProfile): Promise<OperationResult<AuthProfile>> {
-    return saveAuthProfile(profile, this.options);
+  saveAccount(account: Account): Promise<OperationResult<Account>> {
+    return saveAccount(account, this.options);
   }
 
-  removeProfile(name: string): Promise<OperationResult<boolean>> {
-    return removeAuthProfile(name, this.options);
+  removeAccount(name: string): Promise<OperationResult<boolean>> {
+    return removeAccount(name, this.options);
   }
 
-  async login(name: string, resource: string, options: PublicClientLoginOptions = {}): Promise<OperationResult<Record<string, unknown>>> {
-    const profileResult = await this.getProfile(name);
-    if (!profileResult.success || !profileResult.data) {
-      return profileResult.success
-        ? fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${name} was not found.`, { source: 'pp/auth' }))
-        : fail(...profileResult.diagnostics);
+  async login(input: LoginAccountInput, options: PublicClientLoginOptions = {}): Promise<OperationResult<Record<string, unknown>>> {
+    let accountToSave: Account;
+    try {
+      accountToSave = buildAccount(input);
+    } catch (error) {
+      return fail(
+        createDiagnostic('error', 'ACCOUNT_LOGIN_INPUT_INVALID', error instanceof Error ? error.message : String(error), {
+          source: 'pp/auth',
+        }),
+      );
     }
 
-    const provider = createTokenProvider(profileResult.data, this.options, options);
-    if (!provider.success || !provider.data) return fail(...provider.diagnostics);
-    const accessToken = await provider.data.getAccessToken(resource);
-    const claims = decodeJwtClaims(accessToken);
-    const refreshed = await this.getProfile(name);
+    const accountResult = await this.saveAccount(accountToSave);
+    if (!accountResult.success || !accountResult.data) return fail(...accountResult.diagnostics);
+
+    const resource = DEFAULT_LOGIN_RESOURCE;
+    const tokenResult = await this.getToken(accountResult.data.name, resource, options);
+    if (!tokenResult.success || !tokenResult.data) return fail(...tokenResult.diagnostics);
+
+    const claims = decodeJwtClaims(tokenResult.data);
+    const refreshed = await this.getAccount(accountResult.data.name);
 
     return ok({
-      profile: summarizeProfile(refreshed.success && refreshed.data ? refreshed.data : profileResult.data),
-      resource: normalizeResource(resource),
+      account: summarizeAccount(refreshed.success && refreshed.data ? refreshed.data : accountResult.data),
+      resource,
       tenantId: readStringClaim(claims, 'tid'),
       expiresAt: readNumericClaim(claims, 'exp'),
     });
   }
 
   async getToken(name: string, resource: string, options: PublicClientLoginOptions = {}): Promise<OperationResult<string>> {
-    const profileResult = await this.getProfile(name);
-    if (!profileResult.success || !profileResult.data) {
-      return profileResult.success
-        ? fail(createDiagnostic('error', 'AUTH_PROFILE_NOT_FOUND', `Auth profile ${name} was not found.`, { source: 'pp/auth' }))
-        : fail(...profileResult.diagnostics);
+    const accountResult = await this.getAccount(name);
+    if (!accountResult.success || !accountResult.data) {
+      return accountResult.success
+        ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${name} was not found.`, { source: 'pp/auth' }))
+        : fail(...accountResult.diagnostics);
     }
-    const provider = createTokenProvider(profileResult.data, this.options, options);
+    const provider = createTokenProvider(accountResult.data, this.options, options);
     if (!provider.success || !provider.data) return fail(...provider.diagnostics);
     return ok(await provider.data.getAccessToken(resource));
   }
@@ -101,103 +125,88 @@ class EnvironmentTokenProvider implements TokenProvider {
   constructor(private readonly variableName: string) {}
   async getAccessToken(): Promise<string> {
     const token = process.env[this.variableName];
-    if (!token) {
-      throw new Error(`Environment variable ${this.variableName} is not set.`);
-    }
+    if (!token) throw new Error(`Environment variable ${this.variableName} is not set.`);
     return token;
   }
 }
 
 class ClientSecretTokenProvider implements TokenProvider {
-  constructor(private readonly profile: Extract<AuthProfile, { type: 'client-secret' }>) {}
+  constructor(private readonly account: Extract<Account, { kind: 'client-secret' }>) {}
 
   async getAccessToken(resource: string): Promise<string> {
-    const clientSecret = process.env[this.profile.clientSecretEnv];
-    if (!clientSecret) {
-      throw new Error(`Environment variable ${this.profile.clientSecretEnv} is not set.`);
-    }
+    const clientSecret = process.env[this.account.clientSecretEnv];
+    if (!clientSecret) throw new Error(`Environment variable ${this.account.clientSecretEnv} is not set.`);
     const app = new ConfidentialClientApplication({
       auth: {
-        clientId: this.profile.clientId,
+        clientId: this.account.clientId,
         clientSecret,
-        authority: authorityForTenant(this.profile.tenantId),
+        authority: authorityForTenant(this.account.tenantId),
       },
     });
     const result = await app.acquireTokenByClientCredential({
-      scopes: resolveScopes(this.profile, resource),
+      scopes: resolveScopes(this.account, resource),
     });
-    return ensureAccessToken(result, this.profile.name);
+    return ensureAccessToken(result, this.account.name);
   }
 }
 
 class UserTokenProvider implements TokenProvider {
   constructor(
-    private readonly profile: UserAuthProfile,
+    private readonly account: UserAccount,
     private readonly options: ConfigStoreOptions,
     private readonly loginOptions: PublicClientLoginOptions,
   ) {}
 
   async getAccessToken(resource: string): Promise<string> {
-    const acquired = await acquireAndPersistPublicClientToken(this.profile, this.options, resource, this.loginOptions);
+    const acquired = await acquireAndPersistPublicClientToken(this.account, this.options, resource, this.loginOptions);
     return acquired.accessToken;
   }
 }
 
 export function createTokenProvider(
-  profile: AuthProfile,
+  account: Account,
   options: ConfigStoreOptions = {},
   loginOptions: PublicClientLoginOptions = {},
 ): OperationResult<TokenProvider> {
-  switch (profile.type) {
+  switch (account.kind) {
     case 'static-token':
-      return ok(new StaticTokenProvider(profile.token));
+      return ok(new StaticTokenProvider(account.token));
     case 'environment-token':
-      return ok(new EnvironmentTokenProvider(profile.environmentVariable));
+      return ok(new EnvironmentTokenProvider(account.environmentVariable));
     case 'client-secret':
-      return ok(new ClientSecretTokenProvider(profile));
+      return ok(new ClientSecretTokenProvider(account));
     case 'user':
     case 'device-code':
-      return ok(new UserTokenProvider(profile, options, loginOptions));
+      return ok(new UserTokenProvider(account, options, loginOptions));
   }
 }
 
-export function summarizeProfile(profile: AuthProfile): Record<string, unknown> {
-  switch (profile.type) {
+export function summarizeAccount(account: Account): Record<string, unknown> {
+  switch (account.kind) {
     case 'static-token':
-      return { name: profile.name, type: profile.type, tenantId: profile.tenantId, hasToken: true };
+      return { name: account.name, kind: account.kind, tenantId: account.tenantId, hasToken: true };
     case 'environment-token':
-      return { name: profile.name, type: profile.type, tenantId: profile.tenantId, environmentVariable: profile.environmentVariable };
+      return { name: account.name, kind: account.kind, tenantId: account.tenantId, environmentVariable: account.environmentVariable };
     case 'client-secret':
       return {
-        name: profile.name,
-        type: profile.type,
-        tenantId: profile.tenantId,
-        clientId: profile.clientId,
-        clientSecretEnv: profile.clientSecretEnv,
+        name: account.name,
+        kind: account.kind,
+        tenantId: account.tenantId,
+        clientId: account.clientId,
+        clientSecretEnv: account.clientSecretEnv,
       };
     case 'user':
-      return {
-        name: profile.name,
-        type: profile.type,
-        tenantId: profile.tenantId ?? DEFAULT_USER_TENANT,
-        clientId: profile.clientId ?? DEFAULT_PUBLIC_CLIENT_ID,
-        tokenCacheKey: resolveTokenCacheKey(profile),
-        loginHint: profile.loginHint,
-        accountUsername: profile.accountUsername,
-        homeAccountId: profile.homeAccountId,
-        localAccountId: profile.localAccountId,
-      };
     case 'device-code':
       return {
-        name: profile.name,
-        type: profile.type,
-        tenantId: profile.tenantId ?? DEFAULT_USER_TENANT,
-        clientId: profile.clientId ?? DEFAULT_PUBLIC_CLIENT_ID,
-        tokenCacheKey: resolveTokenCacheKey(profile),
-        loginHint: profile.loginHint,
-        accountUsername: profile.accountUsername,
-        homeAccountId: profile.homeAccountId,
-        localAccountId: profile.localAccountId,
+        name: account.name,
+        kind: account.kind,
+        tenantId: account.tenantId ?? DEFAULT_USER_TENANT,
+        clientId: account.clientId ?? DEFAULT_PUBLIC_CLIENT_ID,
+        tokenCacheKey: resolveTokenCacheKey(account),
+        loginHint: account.loginHint,
+        accountUsername: account.accountUsername,
+        homeAccountId: account.homeAccountId,
+        localAccountId: account.localAccountId,
       };
   }
 }
@@ -214,27 +223,67 @@ export function decodeJwtClaims(token: string): Record<string, unknown> | undefi
   }
 }
 
+function buildAccount(input: LoginAccountInput): Account {
+  const base = {
+    name: input.name,
+    description: input.description,
+    tenantId: input.tenantId,
+    clientId: input.clientId,
+    scopes: input.scopes,
+    loginHint: input.loginHint,
+  };
+
+  switch (input.kind) {
+    case 'static-token':
+      if (!input.token) throw new Error('Static-token accounts require --token.');
+      return { ...base, kind: 'static-token', token: input.token };
+    case 'environment-token':
+      if (!input.environmentVariable) throw new Error('Environment-token accounts require --env-var.');
+      return { ...base, kind: 'environment-token', environmentVariable: input.environmentVariable };
+    case 'client-secret':
+      if (!input.tenantId || !input.clientId || !input.clientSecretEnv) {
+        throw new Error('Client-secret accounts require --tenant-id, --client-id, and --client-secret-env.');
+      }
+      return {
+        ...base,
+        kind: 'client-secret',
+        tenantId: input.tenantId,
+        clientId: input.clientId,
+        clientSecretEnv: input.clientSecretEnv,
+      };
+    case 'device-code':
+      return { ...base, kind: 'device-code' };
+    case 'user':
+      return {
+        ...base,
+        kind: 'user',
+        prompt: input.prompt,
+        fallbackToDeviceCode: input.fallbackToDeviceCode,
+      };
+  }
+}
+
 async function acquireAndPersistPublicClientToken(
-  profile: UserAuthProfile,
+  account: UserAccount,
   options: ConfigStoreOptions,
   resource: string,
   loginOptions: PublicClientLoginOptions,
-): Promise<{ accessToken: string; profile: UserAuthProfile }> {
-  const app = await createPublicClientApplication(profile, options);
-  const scopes = resolveScopes(profile, resource);
-  const account = await resolveStoredAccount(app, profile);
+): Promise<{ accessToken: string; account: UserAccount }> {
+  const app = await createPublicClientApplication(account, options);
+  const scopes = resolveScopes(account, resource);
+  const storedAccount = await resolveStoredAccount(app, account);
   let result: AuthenticationResult | null = null;
 
-  if (account) {
+  if (storedAccount) {
     try {
-      result = await app.acquireTokenSilent({ account, scopes });
+      result = await app.acquireTokenSilent({ account: storedAccount, scopes });
     } catch {
       result = null;
     }
   }
 
   if (!result) {
-    const flow = loginOptions.preferredFlow ?? (profile.type === 'device-code' ? 'device-code' : 'interactive');
+    const flow = loginOptions.preferredFlow ?? (account.kind === 'device-code' ? 'device-code' : 'interactive');
     if (flow === 'device-code') {
       result = await app.acquireTokenByDeviceCode({
         scopes,
@@ -244,17 +293,17 @@ async function acquireAndPersistPublicClientToken(
       });
     } else {
       if (loginOptions.allowInteractive === false) {
-        throw new Error(`Interactive authentication is disabled for profile ${profile.name}.`);
+        throw new Error(`Interactive authentication is disabled for account ${account.name}.`);
       }
       result = await app.acquireTokenInteractive({
         scopes,
         prompt:
           loginOptions.forcePrompt
             ? PromptValue.LOGIN
-            : profile.type === 'user' && profile.prompt
-              ? promptValue(profile.prompt)
+            : account.kind === 'user' && account.prompt
+              ? promptValue(account.prompt)
               : undefined,
-        loginHint: profile.loginHint,
+        loginHint: account.loginHint,
         openBrowser: async (url) => {
           await openBrowser(url);
         },
@@ -262,23 +311,23 @@ async function acquireAndPersistPublicClientToken(
     }
   }
 
-  const accessToken = ensureAccessToken(result, profile.name);
+  const accessToken = ensureAccessToken(result, account.name);
   const accountInfo = result?.account;
-  const nextProfile: UserAuthProfile = {
-    ...profile,
-    accountUsername: accountInfo?.username ?? profile.accountUsername,
-    homeAccountId: accountInfo?.homeAccountId ?? profile.homeAccountId,
-    localAccountId: accountInfo?.localAccountId ?? profile.localAccountId,
-    tokenCacheKey: resolveTokenCacheKey(profile),
+  const nextAccount: UserAccount = {
+    ...account,
+    accountUsername: accountInfo?.username ?? account.accountUsername,
+    homeAccountId: accountInfo?.homeAccountId ?? account.homeAccountId,
+    localAccountId: accountInfo?.localAccountId ?? account.localAccountId,
+    tokenCacheKey: resolveTokenCacheKey(account),
   };
-  await saveAuthProfile(nextProfile, options);
-  return { accessToken, profile: nextProfile };
+  await saveAccount(nextAccount, options);
+  return { accessToken, account: nextAccount };
 }
 
-async function createPublicClientApplication(profile: UserAuthProfile, options: ConfigStoreOptions): Promise<PublicClientApplication> {
+async function createPublicClientApplication(account: UserAccount, options: ConfigStoreOptions): Promise<PublicClientApplication> {
   const cacheDir = getMsalCacheDir(options);
   await mkdir(cacheDir, { recursive: true });
-  const cachePath = join(cacheDir, `${resolveTokenCacheKey(profile)}.json`);
+  const cachePath = join(cacheDir, `${resolveTokenCacheKey(account)}.json`);
   const cachePlugin: ICachePlugin = {
     beforeCacheAccess: async (context) => {
       try {
@@ -293,34 +342,30 @@ async function createPublicClientApplication(profile: UserAuthProfile, options: 
   };
   return new PublicClientApplication({
     auth: {
-      clientId: profile.clientId ?? DEFAULT_PUBLIC_CLIENT_ID,
-      authority: authorityForTenant(profile.tenantId ?? DEFAULT_USER_TENANT),
+      clientId: account.clientId ?? DEFAULT_PUBLIC_CLIENT_ID,
+      authority: authorityForTenant(account.tenantId ?? DEFAULT_USER_TENANT),
     },
     cache: { cachePlugin },
   });
 }
 
-async function resolveStoredAccount(app: PublicClientApplication, profile: UserAuthProfile): Promise<AccountInfo | null> {
+async function resolveStoredAccount(app: PublicClientApplication, account: UserAccount): Promise<AccountInfo | null> {
   const accounts = await app.getTokenCache().getAllAccounts();
   if (accounts.length === 0) return null;
   return (
-    accounts.find((account) => profile.homeAccountId && account.homeAccountId === profile.homeAccountId) ??
-    accounts.find((account) => profile.localAccountId && account.localAccountId === profile.localAccountId) ??
-    accounts.find((account) => profile.accountUsername && account.username === profile.accountUsername) ??
+    accounts.find((candidate) => account.homeAccountId && candidate.homeAccountId === account.homeAccountId) ??
+    accounts.find((candidate) => account.localAccountId && candidate.localAccountId === account.localAccountId) ??
+    accounts.find((candidate) => account.accountUsername && candidate.username === account.accountUsername) ??
     accounts[0] ??
     null
   );
 }
 
-function resolveScopes(profile: AuthProfile, resource: string): string[] {
-  if (profile.scopes?.length) {
-    return profile.scopes;
-  }
+function resolveScopes(account: Account, resource: string): string[] {
+  if (account.scopes?.length) return account.scopes;
   const normalized = normalizeResource(resource);
-  if (profile.type === 'user' || profile.type === 'device-code') {
-    if (normalized === 'https://graph.microsoft.com') {
-      return [`${normalized}/.default`];
-    }
+  if (account.kind === 'user' || account.kind === 'device-code') {
+    if (normalized === 'https://graph.microsoft.com') return [`${normalized}/.default`];
     return [`${normalized}/user_impersonation`];
   }
   return [`${normalized}/.default`];
@@ -330,15 +375,13 @@ function authorityForTenant(tenantId: string): string {
   return `https://login.microsoftonline.com/${tenantId}`;
 }
 
-function ensureAccessToken(result: AuthenticationResult | null, profileName: string): string {
-  if (!result?.accessToken) {
-    throw new Error(`No access token was returned for profile ${profileName}.`);
-  }
+function ensureAccessToken(result: AuthenticationResult | null, accountName: string): string {
+  if (!result?.accessToken) throw new Error(`No access token was returned for account ${accountName}.`);
   return result.accessToken;
 }
 
-function resolveTokenCacheKey(profile: UserAuthProfile): string {
-  return profile.tokenCacheKey ?? profile.name ?? randomUUID();
+function resolveTokenCacheKey(account: UserAccount): string {
+  return account.tokenCacheKey ?? account.name ?? randomUUID();
 }
 
 function promptValue(prompt: 'select_account' | 'login' | 'consent' | 'none') {
@@ -355,14 +398,8 @@ function promptValue(prompt: 'select_account' | 'login' | 'consent' | 'none') {
 }
 
 async function openBrowser(url: string): Promise<void> {
-  const command =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
-  const args =
-    process.platform === 'darwin'
-      ? [url]
-      : process.platform === 'win32'
-        ? ['/c', 'start', '', url]
-        : [url];
+  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
+  const args = process.platform === 'darwin' ? [url] : process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
   await new Promise<void>((resolvePromise, reject) => {
     const child = spawn(command, args, { stdio: 'ignore', detached: process.platform !== 'win32' });
     child.on('error', reject);
