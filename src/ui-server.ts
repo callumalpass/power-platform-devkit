@@ -6,10 +6,26 @@ import type { LoginAccountInput } from './auth.js';
 import { getConfigDir, getConfigPath, getMsalCacheDir, type EnvironmentAccessMode } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { renderHtml } from './ui-app.js';
+import { renderAppModule } from './ui-client/app.js';
+import { renderExplorerModule } from './ui-client/explorer.js';
+import { renderFetchXmlModule } from './ui-client/fetchxml.js';
+import { renderQueryLabModule } from './ui-client/query-lab.js';
+import { renderSetupModule } from './ui-client/setup.js';
+import { renderSharedModule } from './ui-client/shared.js';
 import { UiJobStore } from './ui-jobs.js';
 import type { ApiKind } from './request.js';
 import { listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
-import { runConnectivityPing, runWhoAmICheck } from './services/checks.js';
+import { runConnectivityPing, runWhoAmICheck } from './services/api.js';
+import {
+  buildDataverseODataPath,
+  buildFetchXml,
+  executeFetchXml,
+  getDataverseEntityDetail,
+  listDataverseEntities,
+  listDataverseRecords,
+  type DataverseQuerySpec,
+  type FetchXmlSpec,
+} from './services/dataverse.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 
 export interface PpUiOptions {
@@ -107,6 +123,36 @@ interface RequestContext {
 async function handleRequest(request: IncomingMessage, response: ServerResponse, context: RequestContext): Promise<void> {
   const method = request.method ?? 'GET';
   const url = new URL(request.url ?? '/', `http://${context.host}:${context.port}`);
+
+  if (method === 'GET' && url.pathname === '/assets/ui/shared.js') {
+    sendJavaScript(response, renderSharedModule());
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/assets/ui/setup.js') {
+    sendJavaScript(response, renderSetupModule());
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/assets/ui/explorer.js') {
+    sendJavaScript(response, renderExplorerModule());
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/assets/ui/query-lab.js') {
+    sendJavaScript(response, renderQueryLabModule());
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/assets/ui/fetchxml.js') {
+    sendJavaScript(response, renderFetchXmlModule());
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/assets/ui/app.js') {
+    sendJavaScript(response, renderAppModule());
+    return;
+  }
 
   if (method === 'GET' && url.pathname === '/') {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -278,6 +324,101 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/dv/entities') {
+    const environmentAlias = optionalString(url.searchParams.get('environment'));
+    if (!environmentAlias) {
+      sendJson(response, 400, fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environment is required.', { source: 'pp/ui' })));
+      return;
+    }
+    const top = optionalInteger(url.searchParams.get('top'));
+    const result = await listDataverseEntities({
+      environmentAlias,
+      accountName: optionalString(url.searchParams.get('account')),
+      search: optionalString(url.searchParams.get('search')),
+      top: top ?? undefined,
+    }, context.configOptions);
+    sendJson(response, result.success ? 200 : 400, result);
+    return;
+  }
+
+  if (method === 'GET' && /^\/api\/dv\/entities\/[^/]+$/.test(url.pathname)) {
+    const environmentAlias = optionalString(url.searchParams.get('environment'));
+    if (!environmentAlias) {
+      sendJson(response, 400, fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environment is required.', { source: 'pp/ui' })));
+      return;
+    }
+    const logicalName = decodeURIComponent(url.pathname.slice('/api/dv/entities/'.length));
+    const result = await getDataverseEntityDetail({
+      environmentAlias,
+      logicalName,
+      accountName: optionalString(url.searchParams.get('account')),
+    }, context.configOptions);
+    sendJson(response, result.success ? 200 : 400, result);
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/dv/query/preview') {
+    const body = await readJsonBody(request);
+    if (!body.success || !body.data) {
+      sendJson(response, 400, body);
+      return;
+    }
+    const spec = readDataverseQuerySpec(body.data);
+    if (!spec.success || !spec.data) {
+      sendJson(response, 400, spec);
+      return;
+    }
+    sendJson(response, 200, ok({ path: buildDataverseODataPath(spec.data) }));
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/dv/query/execute') {
+    const body = await readJsonBody(request);
+    if (!body.success || !body.data) {
+      sendJson(response, 400, body);
+      return;
+    }
+    const spec = readDataverseQuerySpec(body.data);
+    if (!spec.success || !spec.data) {
+      sendJson(response, 400, spec);
+      return;
+    }
+    const result = await listDataverseRecords(spec.data, context.configOptions);
+    sendJson(response, result.success ? 200 : 400, result);
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/dv/fetchxml/preview') {
+    const body = await readJsonBody(request);
+    if (!body.success || !body.data) {
+      sendJson(response, 400, body);
+      return;
+    }
+    const spec = readFetchXmlSpec(body.data);
+    if (!spec.success || !spec.data) {
+      sendJson(response, 400, spec);
+      return;
+    }
+    sendJson(response, 200, ok({ fetchXml: buildFetchXml(spec.data) }));
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/dv/fetchxml/execute') {
+    const body = await readJsonBody(request);
+    if (!body.success || !body.data) {
+      sendJson(response, 400, body);
+      return;
+    }
+    const spec = readFetchXmlSpec(body.data);
+    if (!spec.success || !spec.data) {
+      sendJson(response, 400, spec);
+      return;
+    }
+    const result = await executeFetchXml(spec.data, context.configOptions);
+    sendJson(response, result.success ? 200 : 400, result);
+    return;
+  }
+
   sendJson(response, 404, fail(createDiagnostic('error', 'NOT_FOUND', `No route for ${method} ${url.pathname}.`, { source: 'pp/ui' })));
 }
 
@@ -390,6 +531,11 @@ function sendJson(response: ServerResponse, status: number, body: OperationResul
   response.end(`${JSON.stringify(body, null, 2)}\n`);
 }
 
+function sendJavaScript(response: ServerResponse, source: string): void {
+  response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
+  response.end(source);
+}
+
 function openBrowser(url: string): void {
   try {
     if (process.platform === 'darwin') {
@@ -431,6 +577,99 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function optionalInteger(value: unknown): number | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readCsv(value: unknown): string[] | undefined {
+  const text = optionalString(value);
+  if (!text) return undefined;
+  const items = text.split(',').map((item) => item.trim()).filter(Boolean);
+  return items.length ? items : undefined;
+}
+
+function readDataverseQuerySpec(value: Record<string, unknown>): OperationResult<DataverseQuerySpec> {
+  const environmentAlias = optionalString(value.environmentAlias ?? value.environment);
+  const entitySetName = optionalString(value.entitySetName);
+  const rawPath = optionalString(value.rawPath);
+  if (!environmentAlias) {
+    return fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environmentAlias is required.', { source: 'pp/ui' }));
+  }
+  if (!entitySetName && !rawPath) {
+    return fail(createDiagnostic('error', 'DV_ENTITY_SET_REQUIRED', 'entitySetName or rawPath is required.', { source: 'pp/ui' }));
+  }
+  return ok({
+    environmentAlias,
+    accountName: optionalString(value.accountName ?? value.account),
+    entitySetName: entitySetName ?? '',
+    select: readStringArray(value.select) ?? readCsv(value.selectCsv),
+    filter: optionalString(value.filter),
+    orderBy: readStringArray(value.orderBy) ?? readCsv(value.orderByCsv),
+    expand: readStringArray(value.expand) ?? readCsv(value.expandCsv),
+    top: readNumber(value.top),
+    includeCount: value.includeCount === true,
+    search: optionalString(value.search),
+    rawPath,
+  });
+}
+
+function readFetchXmlSpec(value: Record<string, unknown>): OperationResult<FetchXmlSpec> {
+  const environmentAlias = optionalString(value.environmentAlias ?? value.environment);
+  const entity = optionalString(value.entity);
+  if (!environmentAlias) {
+    return fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environmentAlias is required.', { source: 'pp/ui' }));
+  }
+  if (!entity && !optionalString(value.rawXml)) {
+    return fail(createDiagnostic('error', 'DV_FETCHXML_ENTITY_REQUIRED', 'entity or rawXml is required.', { source: 'pp/ui' }));
+  }
+  return ok({
+    environmentAlias,
+    accountName: optionalString(value.accountName ?? value.account),
+    entity: entity ?? 'unknown',
+    entitySetName: optionalString(value.entitySetName),
+    attributes: readStringArray(value.attributes) ?? readCsv(value.attributesCsv),
+    top: readNumber(value.top),
+    distinct: value.distinct === true,
+    rawXml: optionalString(value.rawXml),
+    conditions: readArrayOfRecords(value.conditions).map((condition) => ({
+      attribute: optionalString(condition.attribute) ?? '',
+      operator: optionalString(condition.operator) ?? '',
+      value: optionalString(condition.value),
+    })),
+    orders: readArrayOfRecords(value.orders).map((order) => ({
+      attribute: optionalString(order.attribute) ?? '',
+      descending: order.descending === true,
+    })),
+    linkEntities: readArrayOfRecords(value.linkEntities).map((link) => ({
+      name: optionalString(link.name) ?? '',
+      from: optionalString(link.from) ?? '',
+      to: optionalString(link.to) ?? '',
+      alias: optionalString(link.alias),
+    })),
+  });
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.map((item) => optionalString(item)).filter((item): item is string => Boolean(item));
+  return items.length ? items : undefined;
+}
+
+function readArrayOfRecords(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function readNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }

@@ -3,9 +3,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import type { LoginAccountInput } from './auth.js';
 import { saveAccount, type Account, type ConfigStoreOptions } from './config.js';
-import { executeRequest, type ApiKind } from './request.js';
-import { getEnvironmentToken, inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
-import { runConnectivityPing, runWhoAmICheck } from './services/checks.js';
+import type { ApiKind } from './request.js';
+import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
+import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 
 export interface PpMcpServerOptions {
@@ -242,7 +242,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     },
     async ({ environment, account, path, method, api, query, headers, body, rawBody, responseType, timeoutMs, readIntent, configDir, allowInteractiveAuth }) =>
       toolResult(
-        await executeRequest({
+        await executeApiRequest({
           environmentAlias: environment,
           accountName: account,
           path,
@@ -255,9 +255,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
           responseType,
           timeoutMs,
           readIntent,
-          configOptions: config(configDir, defaults),
-          loginOptions: { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth },
-        }),
+        }, config(configDir, defaults), { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth }),
       ),
   );
 
@@ -272,7 +270,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       },
       async ({ environment, account, path, method, query, headers, body, rawBody, responseType, timeoutMs, readIntent, configDir, allowInteractiveAuth }) =>
         toolResult(
-          await executeRequest({
+          await executeApiRequest({
             environmentAlias: environment,
             accountName: account,
             path,
@@ -285,9 +283,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
             responseType,
             timeoutMs,
             readIntent,
-            configOptions: config(configDir, defaults),
-            loginOptions: { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth },
-          }),
+          }, config(configDir, defaults), { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth }),
         ),
     );
   }

@@ -3,7 +3,7 @@
 import process from 'node:process';
 import type { LoginAccountInput } from './auth.js';
 import { migrateLegacyConfig } from './migrate.js';
-import { executeRequest, type ApiKind } from './request.js';
+import type { ApiKind } from './request.js';
 import {
   argumentFailure,
   hasFlag,
@@ -17,8 +17,8 @@ import {
   readQueryFlags,
 } from './cli-utils.js';
 import { startPpMcpServer } from './mcp.js';
-import { getEnvironmentToken, inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
-import { runConnectivityPing, runWhoAmICheck } from './services/checks.js';
+import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
+import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 import { startPpUi } from './ui.js';
 
@@ -248,7 +248,7 @@ async function runRequest(args: string[]): Promise<number> {
   }
   const body = await readBody(args);
   if (!body.success) return printFailure(body, args);
-  const result = await executeRequest({
+  const result = await executeApiRequest({
     environmentAlias,
     accountName: readFlag(args, '--account'),
     path,
@@ -261,9 +261,7 @@ async function runRequest(args: string[]): Promise<number> {
     responseType: (readFlag(args, '--response-type') as 'json' | 'text' | 'void' | undefined) ?? 'json',
     timeoutMs: readFlag(args, '--timeout-ms') ? Number(readFlag(args, '--timeout-ms')) : undefined,
     readIntent: hasFlag(args, '--read'),
-    configOptions: readConfigOptions(args),
-    loginOptions: { allowInteractive: !hasFlag(args, '--no-interactive-auth') },
-  });
+  }, readConfigOptions(args), { allowInteractive: !hasFlag(args, '--no-interactive-auth') });
   if (!result.success) return printFailure(result, args);
   printResult(result.data, args);
   return 0;
