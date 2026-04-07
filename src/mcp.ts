@@ -1,9 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { AuthService, summarizeAccount, type LoginAccountInput } from './auth.js';
-import { getAccount, getEnvironment, listAccounts, listEnvironments, removeAccount, removeEnvironment, saveAccount, type Account, type ConfigStoreOptions } from './config.js';
-import { addEnvironmentWithDiscovery, discoverEnvironments, executeRequest, resourceForApi, type ApiKind } from './request.js';
+import type { LoginAccountInput } from './auth.js';
+import { saveAccount, type Account, type ConfigStoreOptions } from './config.js';
+import { executeRequest, type ApiKind } from './request.js';
+import { getEnvironmentToken, inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
+import { runConnectivityPing, runWhoAmICheck } from './services/checks.js';
+import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 
 export interface PpMcpServerOptions {
   configDir?: string;
@@ -48,7 +51,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: z.object({ configDir: z.string().optional() }),
       outputSchema,
     },
-    async ({ configDir }) => toolResult(await listAccounts(config(configDir, defaults)).then((result) => result.success ? { ...result, data: (result.data ?? []).map(summarizeAccount) } : result)),
+    async ({ configDir }) => toolResult(await listAccountSummaries(config(configDir, defaults))),
   );
 
   server.registerTool(
@@ -60,8 +63,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       outputSchema,
     },
     async ({ name, configDir }) => {
-      const result = await getAccount(name, config(configDir, defaults));
-      return toolResult(result.success ? { ...result, data: result.data ? summarizeAccount(result.data) : undefined } : result);
+      const result = await inspectAccountSummary(name, config(configDir, defaults));
+      return toolResult(result);
     },
   );
 
@@ -99,7 +102,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: z.object({ name: z.string(), configDir: z.string().optional() }),
       outputSchema,
     },
-    async ({ name, configDir }) => toolResult(await removeAccount(name, config(configDir, defaults))),
+    async ({ name, configDir }) => toolResult(await removeAccountByName(name, config(configDir, defaults))),
   );
 
   server.registerTool(
@@ -127,10 +130,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema,
     },
-    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, ...input }) => {
-      const auth = new AuthService(config(configDir, defaults));
-      return toolResult(await auth.login(input as LoginAccountInput, { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth, preferredFlow, forcePrompt }));
-    },
+    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, ...input }) =>
+      toolResult(await loginAccount(input as LoginAccountInput, { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth, preferredFlow, forcePrompt }, config(configDir, defaults))),
   );
 
   server.registerTool(
@@ -141,7 +142,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: z.object({ configDir: z.string().optional() }),
       outputSchema,
     },
-    async ({ configDir }) => toolResult(await listEnvironments(config(configDir, defaults))),
+    async ({ configDir }) => toolResult(await listConfiguredEnvironments(config(configDir, defaults))),
   );
 
   server.registerTool(
@@ -152,7 +153,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: z.object({ alias: z.string(), configDir: z.string().optional() }),
       outputSchema,
     },
-    async ({ alias, configDir }) => toolResult(await getEnvironment(alias, config(configDir, defaults))),
+    async ({ alias, configDir }) => toolResult(await inspectConfiguredEnvironment(alias, config(configDir, defaults))),
   );
 
   server.registerTool(
@@ -173,7 +174,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     },
     async ({ alias, url, account, displayName, accessMode, configDir, allowInteractiveAuth }) =>
       toolResult(
-        await addEnvironmentWithDiscovery(
+        await addConfiguredEnvironment(
           { alias, url, account, displayName, accessMode },
           config(configDir, defaults),
           { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth },
@@ -195,8 +196,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     },
     async ({ account, configDir, allowInteractiveAuth }) =>
       toolResult(
-        await discoverEnvironments(
-          { accountName: account },
+        await discoverAccessibleEnvironments(
+          account,
           config(configDir, defaults),
           { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth },
         ),
@@ -211,7 +212,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: z.object({ alias: z.string(), configDir: z.string().optional() }),
       outputSchema,
     },
-    async ({ alias, configDir }) => toolResult(await removeEnvironment(alias, config(configDir, defaults))),
+    async ({ alias, configDir }) => toolResult(await removeConfiguredEnvironment(alias, config(configDir, defaults))),
   );
 
   const requestSchema = z.object({
@@ -304,20 +305,11 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema,
     },
-    async ({ environment, account, configDir, allowInteractiveAuth }) =>
-      toolResult(
-        await executeRequest({
-          environmentAlias: environment,
-          accountName: account,
-          api: 'dv',
-          path: '/WhoAmI',
-          method: 'GET',
-          responseType: 'json',
-          readIntent: true,
-          configOptions: config(configDir, defaults),
-          loginOptions: { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth },
-        }),
-      ),
+    async ({ environment, account, configDir, allowInteractiveAuth }) => toolResult(await runWhoAmICheck({
+      environmentAlias: environment,
+      accountName: account,
+      allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth,
+    }, config(configDir, defaults))),
   );
 
   server.registerTool(
@@ -334,29 +326,13 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema,
     },
-    async ({ environment, account, api = 'dv', configDir, allowInteractiveAuth }) => {
-      const common = {
+    async ({ environment, account, api = 'dv', configDir, allowInteractiveAuth }) =>
+      toolResult(await runConnectivityPing({
         environmentAlias: environment,
         accountName: account,
         api,
-        responseType: 'json' as const,
-        configOptions: config(configDir, defaults),
-        loginOptions: { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth },
-      };
-
-      const result =
-        api === 'dv'
-          ? await executeRequest({ ...common, path: '/WhoAmI', method: 'GET', readIntent: true })
-          : api === 'flow'
-            ? await executeRequest({ ...common, path: '/flows', method: 'GET', query: { 'api-version': '2016-11-01', '$top': '1' } })
-            : await executeRequest({ ...common, path: '/organization', method: 'GET', query: { '$top': '1' } });
-
-      return toolResult(
-        result.success && result.data
-          ? { ...result, data: { ok: true, api, environment, account: result.data.request.accountName, status: result.data.status, request: result.data.request } }
-          : result,
-      );
-    },
+        allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth,
+      }, config(configDir, defaults))),
   );
 
   server.registerTool(
@@ -374,25 +350,14 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema,
     },
-    async ({ environment, account, api = 'dv', configDir, allowInteractiveAuth, preferredFlow }) => {
-      const options = config(configDir, defaults);
-      const environmentResult = await getEnvironment(environment, options);
-      if (!environmentResult.success || !environmentResult.data) {
-        return toolResult(
-          environmentResult.success
-            ? { success: false, diagnostics: [{ level: 'error', code: 'ENVIRONMENT_NOT_FOUND', message: `Environment ${environment} was not found.`, source: 'pp/mcp' }] }
-            : environmentResult,
-        );
-      }
-
-      const resolvedAccount = account ?? environmentResult.data.account;
-      const auth = new AuthService(options);
-      const tokenResult = await auth.getToken(resolvedAccount, resourceForApi(environmentResult.data, api), {
+    async ({ environment, account, api = 'dv', configDir, allowInteractiveAuth, preferredFlow }) =>
+      toolResult(await getEnvironmentToken({
+        environmentAlias: environment,
+        accountName: account,
+        api,
         allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth,
         preferredFlow,
-      });
-      return toolResult(tokenResult);
-    },
+      }, config(configDir, defaults))),
   );
 }
 

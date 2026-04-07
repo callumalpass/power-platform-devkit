@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
-import { AuthService, summarizeAccount, type LoginAccountInput } from './auth.js';
-import { getEnvironment, listEnvironments, removeEnvironment } from './config.js';
+import type { LoginAccountInput } from './auth.js';
 import { migrateLegacyConfig } from './migrate.js';
-import { addEnvironmentWithDiscovery, discoverEnvironments, executeRequest, resourceForApi, type ApiKind } from './request.js';
+import { executeRequest, type ApiKind } from './request.js';
 import {
   argumentFailure,
   hasFlag,
@@ -18,6 +17,9 @@ import {
   readQueryFlags,
 } from './cli-utils.js';
 import { startPpMcpServer } from './mcp.js';
+import { getEnvironmentToken, inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
+import { runConnectivityPing, runWhoAmICheck } from './services/checks.js';
+import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 import { startPpUi } from './ui.js';
 
 async function main(args: string[]): Promise<number> {
@@ -75,16 +77,16 @@ async function runAuth(args: string[]): Promise<number> {
   }
 
   const [subcommand, ...rest] = args;
-  const auth = new AuthService(readConfigOptions(rest));
+  const configOptions = readConfigOptions(rest);
 
   if (subcommand === 'list') {
     if (wantsHelp(rest)) {
       printAuthListHelp();
       return 0;
     }
-    const result = await auth.listAccounts();
+    const result = await listAccountSummaries(configOptions);
     if (!result.success) return printFailure(result, rest);
-    printResult((result.data ?? []).map(summarizeAccount), rest);
+    printResult(result.data ?? [], rest);
     return 0;
   }
 
@@ -95,11 +97,11 @@ async function runAuth(args: string[]): Promise<number> {
     }
     const name = positionalArgs(rest)[0];
     if (!name) return printFailure(argumentFailure('ACCOUNT_NAME_REQUIRED', 'Usage: pp auth inspect <account>'), rest);
-    const result = await auth.getAccount(name);
+    const result = await inspectAccountSummary(name, configOptions);
     if (!result.success || !result.data) {
       return printFailure(result.success ? argumentFailure('ACCOUNT_NOT_FOUND', `Account ${name} was not found.`) : result, rest);
     }
-    printResult(summarizeAccount(result.data), rest);
+    printResult(result.data, rest);
     return 0;
   }
 
@@ -110,9 +112,9 @@ async function runAuth(args: string[]): Promise<number> {
     }
     const name = positionalArgs(rest)[0];
     if (!name) return printFailure(argumentFailure('ACCOUNT_NAME_REQUIRED', 'Usage: pp auth remove <account>'), rest);
-    const result = await auth.removeAccount(name);
+    const result = await removeAccountByName(name, configOptions);
     if (!result.success) return printFailure(result, rest);
-    printResult({ removed: result.data }, rest);
+    printResult(result.data, rest);
     return 0;
   }
 
@@ -123,11 +125,11 @@ async function runAuth(args: string[]): Promise<number> {
     }
     const loginInput = readLoginInput(rest);
     if (!loginInput.success || !loginInput.data) return printFailure(loginInput, rest);
-    const result = await auth.login(loginInput.data, {
+    const result = await loginAccount(loginInput.data, {
       preferredFlow: hasFlag(rest, '--device-code') ? 'device-code' : 'interactive',
       forcePrompt: hasFlag(rest, '--force-prompt'),
       allowInteractive: !hasFlag(rest, '--no-interactive-auth'),
-    });
+    }, configOptions);
     if (!result.success) return printFailure(result, rest);
     printResult(result.data, rest);
     return 0;
@@ -150,7 +152,7 @@ async function runEnv(args: string[]): Promise<number> {
       printEnvListHelp();
       return 0;
     }
-    const result = await listEnvironments(configOptions);
+    const result = await listConfiguredEnvironments(configOptions);
     if (!result.success) return printFailure(result, rest);
     printResult(result.data ?? [], rest);
     return 0;
@@ -162,7 +164,7 @@ async function runEnv(args: string[]): Promise<number> {
     }
     const alias = positionalArgs(rest)[0];
     if (!alias) return printFailure(argumentFailure('ENV_ALIAS_REQUIRED', 'Usage: pp env inspect <alias>'), rest);
-    const result = await getEnvironment(alias, configOptions);
+    const result = await inspectConfiguredEnvironment(alias, configOptions);
     if (!result.success || !result.data) return printFailure(result.success ? argumentFailure('ENV_NOT_FOUND', `Environment ${alias} was not found.`) : result, rest);
     printResult(result.data, rest);
     return 0;
@@ -178,7 +180,7 @@ async function runEnv(args: string[]): Promise<number> {
     if (!alias || !url || !account) {
       return printFailure(argumentFailure('ENV_ADD_USAGE', 'Usage: pp env add <alias> --url URL --account ACCOUNT [--display-name NAME] [--access read-only|read-write] [--no-interactive-auth]'), rest);
     }
-    const result = await addEnvironmentWithDiscovery(
+    const result = await addConfiguredEnvironment(
       {
         alias,
         url,
@@ -202,8 +204,8 @@ async function runEnv(args: string[]): Promise<number> {
     if (!account) {
       return printFailure(argumentFailure('ENV_DISCOVER_USAGE', 'Usage: pp env discover <account> [--no-interactive-auth]'), rest);
     }
-    const result = await discoverEnvironments(
-      { accountName: account },
+    const result = await discoverAccessibleEnvironments(
+      account,
       configOptions,
       { allowInteractive: !hasFlag(rest, '--no-interactive-auth') },
     );
@@ -218,9 +220,9 @@ async function runEnv(args: string[]): Promise<number> {
     }
     const alias = positionalArgs(rest)[0];
     if (!alias) return printFailure(argumentFailure('ENV_ALIAS_REQUIRED', 'Usage: pp env remove <alias>'), rest);
-    const result = await removeEnvironment(alias, configOptions);
+    const result = await removeConfiguredEnvironment(alias, configOptions);
     if (!result.success) return printFailure(result, rest);
-    printResult({ removed: result.data }, rest);
+    printResult(result.data, rest);
     return 0;
   }
   printEnvHelp();
@@ -278,17 +280,11 @@ async function runWhoAmI(args: string[]): Promise<number> {
   }
   const environmentAlias = readFlag(args, '--environment');
   if (!environmentAlias) return printFailure(argumentFailure('WHOAMI_USAGE', 'Usage: pp whoami --env ALIAS [--account ACCOUNT] [--no-interactive-auth]'), args);
-  const result = await executeRequest({
+  const result = await runWhoAmICheck({
     environmentAlias,
     accountName: readFlag(args, '--account'),
-    api: 'dv',
-    path: '/WhoAmI',
-    method: 'GET',
-    responseType: 'json',
-    readIntent: true,
-    configOptions: readConfigOptions(args),
-    loginOptions: { allowInteractive: !hasFlag(args, '--no-interactive-auth') },
-  });
+    allowInteractive: !hasFlag(args, '--no-interactive-auth'),
+  }, readConfigOptions(args));
   if (!result.success) return printFailure(result, args);
   printResult(result.data, args);
   return 0;
@@ -302,33 +298,15 @@ async function runPing(args: string[]): Promise<number> {
   const environmentAlias = readFlag(args, '--environment');
   const api = (readFlag(args, '--api') as Exclude<ApiKind, 'custom'> | undefined) ?? 'dv';
   if (!environmentAlias) return printFailure(argumentFailure('PING_USAGE', 'Usage: pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph] [--no-interactive-auth]'), args);
-  const common = {
+  const result = await runConnectivityPing({
     environmentAlias,
     accountName: readFlag(args, '--account'),
     api,
-    responseType: 'json' as const,
-    configOptions: readConfigOptions(args),
-    loginOptions: { allowInteractive: !hasFlag(args, '--no-interactive-auth') },
-  };
-  const result =
-    api === 'dv'
-      ? await executeRequest({ ...common, path: '/WhoAmI', method: 'GET', readIntent: true })
-      : api === 'flow'
-        ? await executeRequest({ ...common, path: '/flows', method: 'GET', query: { 'api-version': '2016-11-01', '$top': '1' } })
-        : await executeRequest({ ...common, path: '/organization', method: 'GET', query: { '$top': '1' } });
+    allowInteractive: !hasFlag(args, '--no-interactive-auth'),
+  }, readConfigOptions(args));
 
   if (!result.success || !result.data) return printFailure(result, args);
-  printResult(
-    {
-      ok: true,
-      api,
-      environment: environmentAlias,
-      account: result.data.request.accountName,
-      status: result.data.status,
-      request: result.data.request,
-    },
-    args,
-  );
+  printResult(result.data, args);
   return 0;
 }
 
@@ -339,20 +317,14 @@ async function runEnvironmentToken(args: string[]): Promise<number> {
   }
   const environmentAlias = readFlag(args, '--environment');
   const api = (readFlag(args, '--api') as Exclude<ApiKind, 'custom'> | undefined) ?? 'dv';
-  const configOptions = readConfigOptions(args);
   if (!environmentAlias) return printFailure(argumentFailure('TOKEN_USAGE', 'Usage: pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph] [--device-code] [--no-interactive-auth]'), args);
-
-  const environment = await getEnvironment(environmentAlias, configOptions);
-  if (!environment.success || !environment.data) {
-    return printFailure(environment.success ? argumentFailure('ENV_NOT_FOUND', `Environment ${environmentAlias} was not found.`) : environment, args);
-  }
-
-  const auth = new AuthService(configOptions);
-  const accountName = readFlag(args, '--account') ?? environment.data.account;
-  const result = await auth.getToken(accountName, resourceForApi(environment.data, api), {
+  const result = await getEnvironmentToken({
+    environmentAlias,
+    accountName: readFlag(args, '--account'),
+    api,
     preferredFlow: hasFlag(args, '--device-code') ? 'device-code' : 'interactive',
     allowInteractive: !hasFlag(args, '--no-interactive-auth'),
-  });
+  }, readConfigOptions(args));
   if (!result.success || !result.data) return printFailure(result, args);
   process.stdout.write(`${result.data}\n`);
   return 0;

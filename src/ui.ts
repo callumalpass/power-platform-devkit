@@ -2,18 +2,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { URL } from 'node:url';
-import { AuthService, summarizeAccount, type LoginAccountInput } from './auth.js';
-import {
-  getConfigDir,
-  getConfigPath,
-  getMsalCacheDir,
-  listEnvironments,
-  removeAccount,
-  removeEnvironment,
-  type EnvironmentAccessMode,
-} from './config.js';
+import type { LoginAccountInput } from './auth.js';
+import { getConfigDir, getConfigPath, getMsalCacheDir, type EnvironmentAccessMode } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
-import { addEnvironmentWithDiscovery, discoverEnvironments, executeRequest, type ApiKind } from './request.js';
+import type { ApiKind } from './request.js';
+import { listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
+import { runConnectivityPing, runWhoAmICheck } from './services/checks.js';
+import { addConfiguredEnvironment, discoverAccessibleEnvironments, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 
 export interface PpUiOptions {
   configDir?: string;
@@ -44,7 +39,6 @@ const MCP_TOOLS = [
 
 export async function startPpUi(options: PpUiOptions = {}): Promise<{ url: string; close: () => Promise<void> }> {
   const configOptions = options.configDir ? { configDir: options.configDir } : {};
-  const auth = new AuthService(configOptions);
   const host = '127.0.0.1';
   const port = options.port ?? 4733;
   const allowInteractiveAuth = options.allowInteractiveAuth ?? true;
@@ -52,7 +46,6 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<{ url: strin
   const server = createServer(async (request, response) => {
     try {
       await handleRequest(request, response, {
-        auth,
         configOptions,
         allowInteractiveAuth,
         host,
@@ -98,7 +91,6 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<{ url: strin
 }
 
 interface RequestContext {
-  auth: AuthService;
   configOptions: { configDir?: string };
   allowInteractiveAuth: boolean;
   host: string;
@@ -131,19 +123,19 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       sendJson(response, 400, input);
       return;
     }
-    const result = await context.auth.login(input.data, {
+    const result = await loginAccount(input.data, {
       preferredFlow: body.data.preferredFlow === 'device-code' ? 'device-code' : 'interactive',
       forcePrompt: Boolean(body.data.forcePrompt),
       allowInteractive: context.allowInteractiveAuth,
-    });
+    }, context.configOptions);
     sendJson(response, result.success ? 200 : 400, result);
     return;
   }
 
   if (method === 'DELETE' && url.pathname.startsWith('/api/accounts/')) {
     const name = decodeURIComponent(url.pathname.slice('/api/accounts/'.length));
-    const result = await removeAccount(name, context.configOptions);
-    sendJson(response, result.success ? 200 : 400, result.success ? ok({ removed: result.data }) : result);
+    const result = await removeAccountByName(name, context.configOptions);
+    sendJson(response, result.success ? 200 : 400, result);
     return;
   }
 
@@ -158,8 +150,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       sendJson(response, 400, fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', 'account is required.', { source: 'pp/ui' })));
       return;
     }
-    const result = await discoverEnvironments(
-      { accountName: account },
+    const result = await discoverAccessibleEnvironments(
+      account,
       context.configOptions,
       { allowInteractive: context.allowInteractiveAuth },
     );
@@ -178,7 +170,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       sendJson(response, 400, input);
       return;
     }
-    const result = await addEnvironmentWithDiscovery(input.data, context.configOptions, {
+    const result = await addConfiguredEnvironment(input.data, context.configOptions, {
       allowInteractive: context.allowInteractiveAuth,
     });
     sendJson(response, result.success ? 200 : 400, result);
@@ -187,8 +179,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
 
   if (method === 'DELETE' && url.pathname.startsWith('/api/environments/')) {
     const alias = decodeURIComponent(url.pathname.slice('/api/environments/'.length));
-    const result = await removeEnvironment(alias, context.configOptions);
-    sendJson(response, result.success ? 200 : 400, result.success ? ok({ removed: result.data }) : result);
+    const result = await removeConfiguredEnvironment(alias, context.configOptions);
+    sendJson(response, result.success ? 200 : 400, result);
     return;
   }
 
@@ -203,17 +195,11 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       sendJson(response, 400, fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environment is required.', { source: 'pp/ui' })));
       return;
     }
-    const result = await executeRequest({
+    const result = await runWhoAmICheck({
       environmentAlias: environment,
       accountName: optionalString(body.data.account),
-      api: 'dv',
-      path: '/WhoAmI',
-      method: 'GET',
-      responseType: 'json',
-      readIntent: true,
-      configOptions: context.configOptions,
-      loginOptions: { allowInteractive: context.allowInteractiveAuth },
-    });
+      allowInteractive: context.allowInteractiveAuth,
+    }, context.configOptions);
     sendJson(response, result.success ? 200 : 400, result);
     return;
   }
@@ -230,20 +216,12 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       sendJson(response, 400, fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environment is required.', { source: 'pp/ui' })));
       return;
     }
-    const common = {
+    const result = await runConnectivityPing({
       environmentAlias: environment,
       accountName: optionalString(body.data.account),
       api,
-      responseType: 'json' as const,
-      configOptions: context.configOptions,
-      loginOptions: { allowInteractive: context.allowInteractiveAuth },
-    };
-    const result =
-      api === 'dv'
-        ? await executeRequest({ ...common, path: '/WhoAmI', method: 'GET', readIntent: true })
-        : api === 'flow'
-          ? await executeRequest({ ...common, path: '/flows', method: 'GET', query: { 'api-version': '2016-11-01', '$top': '1' } })
-          : await executeRequest({ ...common, path: '/organization', method: 'GET', query: { '$top': '1' } });
+      allowInteractive: context.allowInteractiveAuth,
+    }, context.configOptions);
     sendJson(response, result.success ? 200 : 400, result);
     return;
   }
@@ -252,16 +230,16 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
 }
 
 async function loadState(context: RequestContext): Promise<OperationResult<Record<string, unknown>>> {
-  const accounts = await context.auth.listAccounts();
+  const accounts = await listAccountSummaries(context.configOptions);
   if (!accounts.success) return fail(...accounts.diagnostics);
-  const environments = await listEnvironments(context.configOptions);
+  const environments = await listConfiguredEnvironments(context.configOptions);
   if (!environments.success) return fail(...environments.diagnostics);
   return ok({
     configDir: getConfigDir(context.configOptions),
     configPath: getConfigPath(context.configOptions),
     msalCacheDir: getMsalCacheDir(context.configOptions),
     allowInteractiveAuth: context.allowInteractiveAuth,
-    accounts: (accounts.data ?? []).map(summarizeAccount),
+    accounts: accounts.data ?? [],
     environments: environments.data ?? [],
     mcp: {
       transport: 'stdio',
@@ -618,6 +596,36 @@ function renderHtml(): string {
       color: var(--muted);
       margin-top: 2px;
       word-break: break-all;
+    }
+    .health-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .health-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .health-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .health-dot.pending {
+      background: var(--border);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    .health-dot.ok { background: var(--ok); }
+    .health-dot.error { background: var(--danger); }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
     }
     .badge {
       font-size: 0.6875rem;
@@ -1141,6 +1149,47 @@ function renderHtml(): string {
     const accountCancelButton = document.getElementById('account-cancel');
     let pendingLoginController = null;
 
+    /* Environment health state: { [alias]: { dv: bool|undefined, flow: bool|undefined, graph: bool|undefined } } */
+    const health = {};
+
+    function checkHealth(environments) {
+      const apis = ['dv', 'flow', 'graph'];
+      for (const env of environments) {
+        if (!health[env.alias]) health[env.alias] = {};
+        for (const api of apis) {
+          health[env.alias][api] = undefined;
+          updateHealthDot(env.alias, api, 'pending');
+          fetch('/api/checks/ping', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ environment: env.alias, api }),
+          })
+            .then((r) => r.json())
+            .then((data) => {
+              const ok = data.success !== false;
+              health[env.alias][api] = ok;
+              updateHealthDot(env.alias, api, ok ? 'ok' : 'error');
+            })
+            .catch(() => {
+              health[env.alias][api] = false;
+              updateHealthDot(env.alias, api, 'error');
+            });
+        }
+      }
+    }
+
+    function updateHealthDot(alias, api, cls) {
+      const row = document.getElementById('health-' + alias);
+      if (!row) return;
+      const items = row.querySelectorAll('.health-item');
+      const apis = ['dv', 'flow', 'graph'];
+      const idx = apis.indexOf(api);
+      if (idx >= 0 && items[idx]) {
+        const dot = items[idx].querySelector('.health-dot');
+        if (dot) dot.className = 'health-dot ' + cls;
+      }
+    }
+
     /* Toast notifications */
     function toast(message, ok = true) {
       const el = document.createElement('div');
@@ -1260,7 +1309,16 @@ function renderHtml(): string {
               .filter(([k,v]) => v !== undefined && v !== null && v !== '' && k !== 'alias' && k !== 'account' && k !== 'url')
               .map(([k,v]) => '<div><div class="prop-label">' + esc(k) + '</div><div class="prop-value">' + esc(typeof v === 'string' ? v : JSON.stringify(v)) + '</div></div>')
               .join('');
-            return '<article class="card"><div class="card-head"><div class="card-title"><h3>' + esc(e.alias) + '</h3><span class="badge">' + esc(e.account) + '</span>' + (url ? '<div class="card-subtitle">' + esc(url) + '</div>' : '') + '</div><button class="btn btn-danger" data-remove-environment="' + esc(e.alias) + '">Remove</button></div>' + (rows ? '<div class="props">' + rows + '</div>' : '') + '</article>';
+            const alias = esc(e.alias);
+            const healthRow =
+              '<div class="health-row" id="health-' + alias + '">' +
+              ['dv', 'flow', 'graph'].map((api) => {
+                const h = health[e.alias] && health[e.alias][api];
+                const cls = h === undefined ? 'pending' : h ? 'ok' : 'error';
+                return '<span class="health-item"><span class="health-dot ' + cls + '"></span>' + api + '</span>';
+              }).join('') +
+              '</div>';
+            return '<article class="card"><div class="card-head"><div class="card-title"><h3>' + alias + '</h3><span class="badge">' + esc(e.account) + '</span>' + (url ? '<div class="card-subtitle">' + esc(url) + '</div>' : '') + '</div><button class="btn btn-danger" data-remove-environment="' + esc(e.alias) + '">Remove</button></div>' + (rows ? '<div class="props">' + rows + '</div>' : '') + healthRow + '</article>';
           }).join('')
         : '<div class="empty">No environments configured yet.<div class="empty-action"><button class="btn btn-ghost" data-action="focus-add-env">Add your first environment</button></div></div>';
 
@@ -1290,7 +1348,7 @@ function renderHtml(): string {
       return data;
     }
 
-    async function refreshState(silent) {
+    async function refreshState(silent, runHealthChecks) {
       refreshButton.disabled = true;
       try {
         const prev = resultEl.textContent;
@@ -1299,6 +1357,9 @@ function renderHtml(): string {
         if (!silent) showResult(state.data, true);
         else { resultEl.textContent = prev; }
         renderState();
+        if (runHealthChecks && state.data && state.data.data) {
+          checkHealth(state.data.data.environments || []);
+        }
       } catch (error) {
         if (!silent) {
           const message = error instanceof Error ? error.message : String(error);
@@ -1375,7 +1436,7 @@ function renderHtml(): string {
         toast('Environment added successfully');
         form.reset();
         discoveredEnvironmentsEl.innerHTML = '';
-        await refreshState(true);
+        await refreshState(true, true);
       } catch (err) {
         toast(err.message, false);
       } finally {
@@ -1410,7 +1471,7 @@ function renderHtml(): string {
       }
     });
 
-    refreshButton.addEventListener('click', () => void refreshState());
+    refreshButton.addEventListener('click', () => void refreshState(false, true));
 
     document.body.addEventListener('click', async (event) => {
       /* Empty state actions */
@@ -1507,7 +1568,7 @@ function renderHtml(): string {
       }
     });
 
-    void refreshState(true);
+    void refreshState(true, true);
   </script>
 </body>
 </html>`;
