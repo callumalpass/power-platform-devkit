@@ -43,6 +43,10 @@ async function main(args: string[]): Promise<number> {
       return runApiAlias('flow', rest);
     case 'graph':
       return runApiAlias('graph', rest);
+    case 'bap':
+      return runApiAlias('bap', rest);
+    case 'powerapps':
+      return runApiAlias('powerapps', rest);
     case 'mcp':
       if (isHelpToken(rest[0])) {
         printMcpHelp();
@@ -240,7 +244,7 @@ async function runRequest(args: string[]): Promise<number> {
   const path = positionalApi ? positional[1] : positional[0];
   const environmentAlias = readFlag(args, '--environment');
   if (!path || !environmentAlias) {
-    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--read]'), args);
+    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--read]'), args);
   }
   const body = await readBody(args);
   if (!body.success) return printFailure(body, args);
@@ -297,7 +301,7 @@ async function runPing(args: string[]): Promise<number> {
   }
   const environmentAlias = readFlag(args, '--environment');
   const api = (readFlag(args, '--api') as Exclude<ApiKind, 'custom'> | undefined) ?? 'dv';
-  if (!environmentAlias) return printFailure(argumentFailure('PING_USAGE', 'Usage: pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph] [--no-interactive-auth]'), args);
+  if (!environmentAlias) return printFailure(argumentFailure('PING_USAGE', 'Usage: pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps] [--no-interactive-auth]'), args);
   const result = await runConnectivityPing({
     environmentAlias,
     accountName: readFlag(args, '--account'),
@@ -317,7 +321,7 @@ async function runEnvironmentToken(args: string[]): Promise<number> {
   }
   const environmentAlias = readFlag(args, '--environment');
   const api = (readFlag(args, '--api') as Exclude<ApiKind, 'custom'> | undefined) ?? 'dv';
-  if (!environmentAlias) return printFailure(argumentFailure('TOKEN_USAGE', 'Usage: pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph] [--device-code] [--no-interactive-auth]'), args);
+  if (!environmentAlias) return printFailure(argumentFailure('TOKEN_USAGE', 'Usage: pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps] [--device-code] [--no-interactive-auth]'), args);
   const result = await getEnvironmentToken({
     environmentAlias,
     accountName: readFlag(args, '--account'),
@@ -337,10 +341,10 @@ function runCompletion(args: string[]): number {
   }
   const shell = positionalArgs(args)[0] ?? 'zsh';
   if (shell === 'bash') {
-    process.stdout.write('complete -W "auth env request whoami ping token ui dv flow graph mcp migrate-config completion help" pp\n');
+    process.stdout.write('complete -W "auth env request whoami ping token ui dv flow graph bap powerapps mcp migrate-config completion help" pp\n');
     return 0;
   }
-  process.stdout.write('#compdef pp\n_arguments "1: :((auth env request whoami ping token ui dv flow graph mcp migrate-config completion help))"\n');
+  process.stdout.write('#compdef pp\n_arguments "1: :((auth env request whoami ping token ui dv flow graph bap powerapps mcp migrate-config completion help))"\n');
   return 0;
 }
 
@@ -461,6 +465,8 @@ function printHelp(): void {
       '  dv              Shortcut for "request --api dv"',
       '  flow            Shortcut for "request --api flow"',
       '  graph           Shortcut for "request --api graph"',
+      '  bap             Shortcut for "request --api bap"',
+      '  powerapps       Shortcut for "request --api powerapps"',
       '  mcp             Start the MCP server',
       '  migrate-config  Migrate legacy config into pp config',
       '  completion      Print shell completion script',
@@ -578,7 +584,7 @@ function printRequestHelp(): void {
       'Send an authenticated request using an explicit environment and optional account override.',
       '',
       'Usage:',
-      '  pp request [dv|flow|graph|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--read] [--no-interactive-auth]',
+      '  pp request [dv|flow|graph|bap|powerapps|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--read] [--no-interactive-auth]',
     ].join('\n') + '\n',
   );
 }
@@ -601,11 +607,11 @@ function printWhoAmIHelp(): void {
 }
 
 function printPingHelp(): void {
-  process.stdout.write(['pp ping', '', 'Check basic API connectivity.', '', 'Usage:', '  pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph] [--no-interactive-auth]'].join('\n') + '\n');
+  process.stdout.write(['pp ping', '', 'Check basic API connectivity.', '', 'Usage:', '  pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps] [--no-interactive-auth]'].join('\n') + '\n');
 }
 
 function printEnvironmentTokenHelp(): void {
-  process.stdout.write(['pp token', '', 'Print a token for an environment.', '', 'Usage:', '  pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph] [--device-code] [--no-interactive-auth]'].join('\n') + '\n');
+  process.stdout.write(['pp token', '', 'Print a token for an environment.', '', 'Usage:', '  pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps] [--device-code] [--no-interactive-auth]'].join('\n') + '\n');
 }
 
 function printMcpHelp(): void {
@@ -634,7 +640,7 @@ function printMigrateConfigHelp(): void {
 }
 
 function isApiKind(value: string): value is ApiKind {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'custom';
+  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'custom';
 }
 
 function wantsHelp(args: string[]): boolean {

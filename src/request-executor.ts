@@ -3,7 +3,7 @@ import { ensureEnvironmentAccess, getAccount, getEnvironment, type ConfigStoreOp
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { HttpClient, type HttpResponseType } from './http.js';
 
-export type ApiKind = 'dv' | 'flow' | 'graph' | 'custom';
+export type ApiKind = 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps' | 'custom';
 
 export interface RequestInput {
   environmentAlias: string;
@@ -39,6 +39,9 @@ export function resourceForApi(environment: Environment, api: Exclude<ApiKind, '
       return 'https://service.flow.microsoft.com';
     case 'graph':
       return 'https://graph.microsoft.com';
+    case 'bap':
+    case 'powerapps':
+      return 'https://service.powerapps.com';
   }
 }
 
@@ -63,7 +66,7 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
   const response = await client.request<unknown>({
     method,
     path: request.data.path,
-    query: input.query,
+    query: { ...defaultQueryForApi(request.data.api), ...(input.query ?? {}) },
     headers: input.headers,
     body: input.body,
     rawBody: input.rawBody,
@@ -149,6 +152,34 @@ export function buildRequest(environment: Environment, accountName: string, orig
       accountName,
     });
   }
+  if (api === 'bap') {
+    if (isUrl) {
+      const url = new URL(originalPath);
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.powerapps.com', environment, accountName });
+    }
+    return ok({
+      api,
+      baseUrl: 'https://api.bap.microsoft.com',
+      path: normalizeBapPath(originalPath),
+      authResource: 'https://service.powerapps.com',
+      environment,
+      accountName,
+    });
+  }
+  if (api === 'powerapps') {
+    if (isUrl) {
+      const url = new URL(originalPath);
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.powerapps.com', environment, accountName });
+    }
+    return ok({
+      api,
+      baseUrl: 'https://api.powerapps.com',
+      path: normalizePowerAppsPath(originalPath, environment.makerEnvironmentId),
+      authResource: 'https://service.powerapps.com',
+      environment,
+      accountName,
+    });
+  }
   if (isUrl) {
     const url = new URL(originalPath);
     return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://graph.microsoft.com', environment, accountName });
@@ -167,6 +198,8 @@ function detectApi(path: string, apiOverride?: ApiKind): ApiKind {
   if (apiOverride) return apiOverride;
   const value = isAbsoluteUrl(path) ? new URL(path).toString() : path;
   if (/graph\.microsoft\.com/i.test(value) || /^\/?(v1\.0|beta)\//i.test(value)) return 'graph';
+  if (/api\.powerapps\.com/i.test(value) || /Microsoft\.PowerApps/i.test(value)) return 'powerapps';
+  if (/api\.bap\.microsoft\.com/i.test(value) || /Microsoft\.BusinessAppPlatform/i.test(value)) return 'bap';
   if (/api\.flow\.microsoft\.com/i.test(value) || /Microsoft\.ProcessSimple/i.test(value)) return 'flow';
   if (/\/api\/data\//i.test(value)) return 'dv';
   return isAbsoluteUrl(path) ? 'custom' : 'dv';
@@ -190,6 +223,19 @@ function normalizeGraphPath(path: string): string {
   return `/v1.0${trimmed}`;
 }
 
+function normalizeBapPath(path: string): string {
+  const trimmed = path.startsWith('/') ? path : `/${path}`;
+  if (trimmed.startsWith('/providers/Microsoft.BusinessAppPlatform/')) return trimmed;
+  return `/providers/Microsoft.BusinessAppPlatform${trimmed}`;
+}
+
+function normalizePowerAppsPath(path: string, makerEnvironmentId: string): string {
+  const trimmed = path.startsWith('/') ? path : `/${path}`;
+  const withEnvironment = trimmed.replaceAll('{environment}', encodeURIComponent(makerEnvironmentId));
+  if (withEnvironment.startsWith('/providers/Microsoft.PowerApps/')) return withEnvironment;
+  return `/providers/Microsoft.PowerApps${withEnvironment}`;
+}
+
 function defaultHeadersForApi(api: ApiKind): Record<string, string> {
   if (api === 'dv') {
     return {
@@ -199,6 +245,13 @@ function defaultHeadersForApi(api: ApiKind): Record<string, string> {
     };
   }
   return { accept: 'application/json' };
+}
+
+function defaultQueryForApi(api: ApiKind): Record<string, string> | undefined {
+  if (api === 'flow') return { 'api-version': '2016-11-01' };
+  if (api === 'bap') return { 'api-version': '2020-10-01' };
+  if (api === 'powerapps') return { 'api-version': '2016-11-01' };
+  return undefined;
 }
 
 export function normalizeOrigin(url: string): string {

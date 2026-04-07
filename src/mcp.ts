@@ -220,7 +220,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     account: z.string().optional(),
     path: z.string(),
     method: z.string().optional(),
-    api: z.enum(['dv', 'flow', 'graph', 'custom']).optional(),
+    api: z.enum(['dv', 'flow', 'graph', 'bap', 'powerapps', 'custom']).optional(),
     query: z.record(z.string(), z.string()).optional(),
     headers: z.record(z.string(), z.string()).optional(),
     body: z.unknown().optional(),
@@ -261,7 +261,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       ),
   );
 
-  for (const api of ['dv', 'flow', 'graph'] as const) {
+  for (const api of ['dv', 'flow', 'graph', 'bap', 'powerapps'] as const) {
     server.registerTool(
       `pp.${api}_request`,
       {
@@ -320,7 +320,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: z.object({
         environment: z.string(),
         account: z.string().optional(),
-        api: z.enum(['dv', 'flow', 'graph']).optional(),
+        api: z.enum(['dv', 'flow', 'graph', 'bap', 'powerapps']).optional(),
         configDir: z.string().optional(),
         allowInteractiveAuth: z.boolean().optional(),
       }),
@@ -343,7 +343,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: z.object({
         environment: z.string(),
         account: z.string().optional(),
-        api: z.enum(['dv', 'flow', 'graph']).optional(),
+        api: z.enum(['dv', 'flow', 'graph', 'bap', 'powerapps']).optional(),
         configDir: z.string().optional(),
         allowInteractiveAuth: z.boolean().optional(),
         preferredFlow: z.enum(['interactive', 'device-code']).optional(),

@@ -723,6 +723,8 @@ export function renderHtml(): string {
             <button type="button" class="btn btn-secondary" data-check="dv">Ping Dataverse</button>
             <button type="button" class="btn btn-secondary" data-check="flow">Ping Flow</button>
             <button type="button" class="btn btn-secondary" data-check="graph">Ping Graph</button>
+            <button type="button" class="btn btn-secondary" data-check="bap">Ping BAP</button>
+            <button type="button" class="btn btn-secondary" data-check="powerapps">Ping PowerApps</button>
           </div>
         </form>
       </div>
@@ -764,11 +766,11 @@ export function renderHtml(): string {
     const accountCancelButton = document.getElementById('account-cancel');
     let currentLoginJobId = null;
 
-    /* Environment health state: { [alias]: { dv: bool|undefined, flow: bool|undefined, graph: bool|undefined } } */
+    /* Environment health state: { [alias]: { dv|flow|graph|bap|powerapps: bool|undefined } } */
     const health = {};
 
     function checkHealth(environments) {
-      const apis = ['dv', 'flow', 'graph'];
+      const apis = ['dv', 'flow', 'graph', 'bap', 'powerapps'];
       for (const env of environments) {
         if (!health[env.alias]) health[env.alias] = {};
         for (const api of apis) {
@@ -797,7 +799,7 @@ export function renderHtml(): string {
       const row = document.getElementById('health-' + alias);
       if (!row) return;
       const items = row.querySelectorAll('.health-item');
-      const apis = ['dv', 'flow', 'graph'];
+      const apis = ['dv', 'flow', 'graph', 'bap', 'powerapps'];
       const idx = apis.indexOf(api);
       if (idx >= 0 && items[idx]) {
         const dot = items[idx].querySelector('.health-dot');
@@ -922,7 +924,7 @@ export function renderHtml(): string {
             const alias = esc(e.alias);
             const healthRow =
               '<div class="health-row" id="health-' + alias + '">' +
-              ['dv', 'flow', 'graph'].map((api) => {
+              ['dv', 'flow', 'graph', 'bap', 'powerapps'].map((api) => {
                 const h = health[e.alias] && health[e.alias][api];
                 const cls = h === undefined ? 'pending' : h ? 'ok' : 'error';
                 return '<span class="health-item"><span class="health-dot ' + cls + '"></span>' + api + '</span>';

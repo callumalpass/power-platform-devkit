@@ -46,6 +46,10 @@ export async function runConnectivityPing(
       ? await executeRequest({ ...common, path: '/WhoAmI', method: 'GET', readIntent: true })
       : api === 'flow'
         ? await executeRequest({ ...common, path: '/flows', method: 'GET', query: { 'api-version': '2016-11-01', '$top': '1' } })
+        : api === 'bap'
+          ? await executeRequest({ ...common, path: '/environments', method: 'GET', query: { '$top': '1', 'api-version': '2020-10-01' } })
+          : api === 'powerapps'
+            ? await executeRequest({ ...common, path: '/apps', method: 'GET', query: { '$top': '1', 'api-version': '2016-11-01' } })
         : await executeRequest({ ...common, path: '/organization', method: 'GET', query: { '$top': '1' } });
 
   return result.success && result.data

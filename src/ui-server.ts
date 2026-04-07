@@ -34,6 +34,8 @@ const MCP_TOOLS = [
   'pp.dv_request',
   'pp.flow_request',
   'pp.graph_request',
+  'pp.bap_request',
+  'pp.powerapps_request',
   'pp.whoami',
   'pp.ping',
   'pp.token',
@@ -422,7 +424,7 @@ function readAccessMode(value: unknown): EnvironmentAccessMode | undefined {
 }
 
 function readPingApi(value: unknown): Exclude<ApiKind, 'custom'> {
-  return value === 'flow' || value === 'graph' ? value : 'dv';
+  return value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' ? value : 'dv';
 }
 
 function optionalString(value: unknown): string | undefined {
