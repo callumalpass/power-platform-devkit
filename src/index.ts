@@ -4,7 +4,7 @@ import process from 'node:process';
 import { AuthService, summarizeAccount, type LoginAccountInput } from './auth.js';
 import { getEnvironment, listEnvironments, removeEnvironment } from './config.js';
 import { migrateLegacyConfig } from './migrate.js';
-import { addEnvironmentWithDiscovery, executeRequest, resourceForApi, type ApiKind } from './request.js';
+import { addEnvironmentWithDiscovery, discoverEnvironments, executeRequest, resourceForApi, type ApiKind } from './request.js';
 import {
   argumentFailure,
   hasFlag,
@@ -18,6 +18,7 @@ import {
   readQueryFlags,
 } from './cli-utils.js';
 import { startPpMcpServer } from './mcp.js';
+import { startPpUi } from './ui.js';
 
 async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
@@ -50,6 +51,8 @@ async function main(args: string[]): Promise<number> {
         allowInteractiveAuth: hasFlag(rest, '--allow-interactive-auth'),
       });
       return 0;
+    case 'ui':
+      return runUi(rest);
     case 'migrate-config':
       return runMigrateConfig(rest);
     case 'completion':
@@ -190,6 +193,24 @@ async function runEnv(args: string[]): Promise<number> {
     printResult(result.data, rest);
     return 0;
   }
+  if (subcommand === 'discover') {
+    if (wantsHelp(rest)) {
+      printEnvDiscoverHelp();
+      return 0;
+    }
+    const account = positionalArgs(rest)[0] ?? readFlag(rest, '--account');
+    if (!account) {
+      return printFailure(argumentFailure('ENV_DISCOVER_USAGE', 'Usage: pp env discover <account> [--no-interactive-auth]'), rest);
+    }
+    const result = await discoverEnvironments(
+      { accountName: account },
+      configOptions,
+      { allowInteractive: !hasFlag(rest, '--no-interactive-auth') },
+    );
+    if (!result.success) return printFailure(result, rest);
+    printResult(result.data ?? [], rest);
+    return 0;
+  }
   if (subcommand === 'remove') {
     if (wantsHelp(rest)) {
       printEnvRemoveHelp();
@@ -262,7 +283,7 @@ async function runWhoAmI(args: string[]): Promise<number> {
     accountName: readFlag(args, '--account'),
     api: 'dv',
     path: '/WhoAmI',
-    method: 'POST',
+    method: 'GET',
     responseType: 'json',
     readIntent: true,
     configOptions: readConfigOptions(args),
@@ -291,7 +312,7 @@ async function runPing(args: string[]): Promise<number> {
   };
   const result =
     api === 'dv'
-      ? await executeRequest({ ...common, path: '/WhoAmI', method: 'POST', readIntent: true })
+      ? await executeRequest({ ...common, path: '/WhoAmI', method: 'GET', readIntent: true })
       : api === 'flow'
         ? await executeRequest({ ...common, path: '/flows', method: 'GET', query: { 'api-version': '2016-11-01', '$top': '1' } })
         : await executeRequest({ ...common, path: '/organization', method: 'GET', query: { '$top': '1' } });
@@ -344,10 +365,10 @@ function runCompletion(args: string[]): number {
   }
   const shell = positionalArgs(args)[0] ?? 'zsh';
   if (shell === 'bash') {
-    process.stdout.write('complete -W "auth env request whoami ping token dv flow graph mcp migrate-config completion help" pp\n');
+    process.stdout.write('complete -W "auth env request whoami ping token ui dv flow graph mcp migrate-config completion help" pp\n');
     return 0;
   }
-  process.stdout.write('#compdef pp\n_arguments "1: :((auth env request whoami ping token dv flow graph mcp migrate-config completion help))"\n');
+  process.stdout.write('#compdef pp\n_arguments "1: :((auth env request whoami ping token ui dv flow graph mcp migrate-config completion help))"\n');
   return 0;
 }
 
@@ -372,6 +393,37 @@ async function runMigrateConfig(args: string[]): Promise<number> {
     },
     args,
   );
+  return 0;
+}
+
+async function runUi(args: string[]): Promise<number> {
+  if (wantsHelp(args)) {
+    printUiHelp();
+    return 0;
+  }
+  const portValue = readFlag(args, '--port');
+  const port = portValue === undefined ? undefined : Number(portValue);
+  if (portValue !== undefined && (!Number.isInteger(port) || Number(port) < 0 || Number(port) > 65535)) {
+    return printFailure(argumentFailure('UI_PORT_INVALID', 'Usage: pp ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth]'), args);
+  }
+
+  const ui = await startPpUi({
+    configDir: readFlag(args, '--config-dir'),
+    port,
+    openBrowser: !hasFlag(args, '--no-open'),
+    allowInteractiveAuth: !hasFlag(args, '--no-interactive-auth'),
+  });
+
+  const shutdown = async () => {
+    await ui.close();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
+
+  process.stdout.write('Press Ctrl+C to stop.\n');
+  await new Promise<void>(() => undefined);
   return 0;
 }
 
@@ -433,6 +485,7 @@ function printHelp(): void {
       '  whoami          Dataverse WhoAmI for an environment',
       '  ping            Basic connectivity check',
       '  token           Print a token for an environment',
+      '  ui              Start the localhost auth and environment UI',
       '  dv              Shortcut for "request --api dv"',
       '  flow            Shortcut for "request --api flow"',
       '  graph           Shortcut for "request --api graph"',
@@ -500,6 +553,7 @@ function printEnvHelp(): void {
       'Commands:',
       '  list             List environments',
       '  inspect <alias>  Show one environment',
+      '  discover <acct>  Discover environments accessible to one account',
       '  add <alias>      Add an environment and discover metadata',
       '  remove <alias>   Remove an environment',
     ].join('\n') + '\n',
@@ -523,6 +577,19 @@ function printEnvAddHelp(): void {
       '',
       'Usage:',
       '  pp env add <alias> --url URL --account ACCOUNT [--display-name NAME] [--access read-only|read-write] [--no-interactive-auth]',
+    ].join('\n') + '\n',
+  );
+}
+
+function printEnvDiscoverHelp(): void {
+  process.stdout.write(
+    [
+      'pp env discover',
+      '',
+      'Discover environments accessible to one account.',
+      '',
+      'Usage:',
+      '  pp env discover <account> [--no-interactive-auth]',
     ].join('\n') + '\n',
   );
 }
@@ -571,6 +638,19 @@ function printEnvironmentTokenHelp(): void {
 
 function printMcpHelp(): void {
   process.stdout.write(['pp mcp', '', 'Start the pp MCP server.', '', 'Usage:', '  pp mcp [--config-dir DIR] [--allow-interactive-auth]'].join('\n') + '\n');
+}
+
+function printUiHelp(): void {
+  process.stdout.write(
+    [
+      'pp ui',
+      '',
+      'Start the localhost UI for account, environment, and MCP inspection.',
+      '',
+      'Usage:',
+      '  pp ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth]',
+    ].join('\n') + '\n',
+  );
 }
 
 function printCompletionHelp(): void {

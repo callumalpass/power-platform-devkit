@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { AuthService, summarizeAccount, type LoginAccountInput } from './auth.js';
 import { getAccount, getEnvironment, listAccounts, listEnvironments, removeAccount, removeEnvironment, saveAccount, type Account, type ConfigStoreOptions } from './config.js';
-import { addEnvironmentWithDiscovery, executeRequest, resourceForApi, type ApiKind } from './request.js';
+import { addEnvironmentWithDiscovery, discoverEnvironments, executeRequest, resourceForApi, type ApiKind } from './request.js';
 
 export interface PpMcpServerOptions {
   configDir?: string;
@@ -182,6 +182,28 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
+    'pp.environment.discover',
+    {
+      title: 'Discover Environments',
+      description: 'List environments accessible to one account.',
+      inputSchema: z.object({
+        account: z.string(),
+        configDir: z.string().optional(),
+        allowInteractiveAuth: z.boolean().optional(),
+      }),
+      outputSchema,
+    },
+    async ({ account, configDir, allowInteractiveAuth }) =>
+      toolResult(
+        await discoverEnvironments(
+          { accountName: account },
+          config(configDir, defaults),
+          { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth },
+        ),
+      ),
+  );
+
+  server.registerTool(
     'pp.environment.remove',
     {
       title: 'Remove Environment',
@@ -289,7 +311,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
           accountName: account,
           api: 'dv',
           path: '/WhoAmI',
-          method: 'POST',
+          method: 'GET',
           responseType: 'json',
           readIntent: true,
           configOptions: config(configDir, defaults),
@@ -324,7 +346,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
 
       const result =
         api === 'dv'
-          ? await executeRequest({ ...common, path: '/WhoAmI', method: 'POST', readIntent: true })
+          ? await executeRequest({ ...common, path: '/WhoAmI', method: 'GET', readIntent: true })
           : api === 'flow'
             ? await executeRequest({ ...common, path: '/flows', method: 'GET', query: { 'api-version': '2016-11-01', '$top': '1' } })
             : await executeRequest({ ...common, path: '/organization', method: 'GET', query: { '$top': '1' } });

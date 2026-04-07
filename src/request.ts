@@ -33,6 +33,15 @@ export interface PreparedRequest {
   accountName: string;
 }
 
+export interface DiscoveredEnvironment {
+  accountName: string;
+  makerEnvironmentId: string;
+  displayName?: string;
+  environmentUrl?: string;
+  environmentApiUrl?: string;
+  tenantId?: string;
+}
+
 export function resourceForApi(environment: Environment, api: Exclude<ApiKind, 'custom'>): string {
   switch (api) {
     case 'dv':
@@ -125,6 +134,24 @@ export async function addEnvironmentWithDiscovery(
     ...(input.accessMode ? { access: { mode: input.accessMode } } : {}),
   };
   return saveEnvironment(environment, configOptions);
+}
+
+export async function discoverEnvironments(
+  input: {
+    accountName: string;
+  },
+  configOptions: ConfigStoreOptions = {},
+  loginOptions: PublicClientLoginOptions = {},
+): Promise<OperationResult<DiscoveredEnvironment[]>> {
+  const account = await getAccount(input.accountName, configOptions);
+  if (!account.success || !account.data) {
+    return account.success
+      ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${input.accountName} was not found.`, { source: 'pp/request' }))
+      : fail(...account.diagnostics);
+  }
+  const tokenProvider = createTokenProvider(account.data, configOptions, loginOptions);
+  if (!tokenProvider.success || !tokenProvider.data) return fail(...tokenProvider.diagnostics);
+  return listAccessibleEnvironments(tokenProvider.data, input.accountName);
 }
 
 async function resolveRuntime(
@@ -250,24 +277,51 @@ function defaultHeadersForApi(api: ApiKind): Record<string, string> {
 }
 
 async function discoverMakerEnvironmentId(url: string, tokenProvider: TokenProvider): Promise<OperationResult<string | undefined>> {
+  const environments = await listAccessibleEnvironments(tokenProvider);
+  if (!environments.success || !environments.data) return fail(...environments.diagnostics);
+  const origin = normalizeOrigin(url);
+  const match = environments.data.find((candidate) => candidate.environmentApiUrl === origin || candidate.environmentUrl === origin);
+  return ok(match?.makerEnvironmentId);
+}
+
+async function listAccessibleEnvironments(tokenProvider: TokenProvider, accountName?: string): Promise<OperationResult<DiscoveredEnvironment[]>> {
   const client = new HttpClient({
     baseUrl: 'https://api.bap.microsoft.com',
     tokenProvider,
   });
-  const response = await client.request<{ value?: Array<{ name?: string; properties?: { linkedEnvironmentMetadata?: { instanceApiUrl?: string; instanceUrl?: string } } }> }>({
+  const response = await client.request<{
+    value?: Array<{
+      name?: string;
+      properties?: {
+        displayName?: string;
+        azureTenantId?: string;
+        linkedEnvironmentMetadata?: {
+          instanceApiUrl?: string;
+          instanceUrl?: string;
+        };
+      };
+    }>;
+  }>({
     path: '/providers/Microsoft.BusinessAppPlatform/environments',
     query: { 'api-version': POWER_PLATFORM_ENVIRONMENTS_API_VERSION },
   });
   if (!response.success || !response.data) return fail(...response.diagnostics);
-  const origin = normalizeOrigin(url);
-  const match = (response.data.data.value ?? []).find((candidate) => {
-    const linked = candidate.properties?.linkedEnvironmentMetadata;
-    return (
-      (linked?.instanceApiUrl ? normalizeOrigin(linked.instanceApiUrl) : undefined) === origin ||
-      (linked?.instanceUrl ? normalizeOrigin(linked.instanceUrl) : undefined) === origin
-    );
-  });
-  return ok(match?.name);
+  return ok(
+    (response.data.data.value ?? [])
+      .filter((candidate): candidate is NonNullable<typeof candidate> & { name: string } => typeof candidate?.name === 'string' && candidate.name.length > 0)
+      .map((candidate) => ({
+        accountName: accountName ?? '',
+        makerEnvironmentId: candidate.name,
+        displayName: candidate.properties?.displayName,
+        environmentApiUrl: candidate.properties?.linkedEnvironmentMetadata?.instanceApiUrl
+          ? normalizeOrigin(candidate.properties.linkedEnvironmentMetadata.instanceApiUrl)
+          : undefined,
+        environmentUrl: candidate.properties?.linkedEnvironmentMetadata?.instanceUrl
+          ? normalizeOrigin(candidate.properties.linkedEnvironmentMetadata.instanceUrl)
+          : undefined,
+        tenantId: candidate.properties?.azureTenantId,
+      })),
+  );
 }
 
 async function discoverTenantId(url: string, tokenProvider: TokenProvider): Promise<OperationResult<string | undefined>> {
