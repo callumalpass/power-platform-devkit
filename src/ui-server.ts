@@ -14,7 +14,7 @@ import { renderSetupModule } from './ui-client/setup.js';
 import { renderSharedModule } from './ui-client/shared.js';
 import { UiJobStore } from './ui-jobs.js';
 import type { ApiKind } from './request.js';
-import { listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
+import { checkAccountTokenStatus, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import {
   buildDataverseODataPath,
@@ -233,6 +233,17 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   if (method === 'DELETE' && url.pathname.startsWith('/api/accounts/')) {
     const name = decodeURIComponent(url.pathname.slice('/api/accounts/'.length));
     const result = await removeAccountByName(name, context.configOptions);
+    sendJson(response, result.success ? 200 : 400, result);
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/accounts/token-status') {
+    const name = optionalString(url.searchParams.get('account'));
+    if (!name) {
+      sendJson(response, 400, fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', 'account query parameter is required.', { source: 'pp/ui' })));
+      return;
+    }
+    const result = await checkAccountTokenStatus(name, context.configOptions);
     sendJson(response, result.success ? 200 : 400, result);
     return;
   }
@@ -646,11 +657,19 @@ function readFetchXmlSpec(value: Record<string, unknown>): OperationResult<Fetch
       attribute: optionalString(order.attribute) ?? '',
       descending: order.descending === true,
     })),
+    filterType: readFilterType(value.filterType),
     linkEntities: readArrayOfRecords(value.linkEntities).map((link) => ({
       name: optionalString(link.name) ?? '',
       from: optionalString(link.from) ?? '',
       to: optionalString(link.to) ?? '',
       alias: optionalString(link.alias),
+      linkType: readLinkType(link.linkType),
+      attributes: readStringArray(link.attributes) ?? readCsv(link.attributesCsv),
+      conditions: readArrayOfRecords(link.conditions).map((c) => ({
+        attribute: optionalString(c.attribute) ?? '',
+        operator: optionalString(c.operator) ?? '',
+        value: optionalString(c.value),
+      })),
     })),
   });
 }
@@ -672,4 +691,12 @@ function readNumber(value: unknown): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;
+}
+
+function readFilterType(value: unknown): 'and' | 'or' | undefined {
+  return value === 'and' || value === 'or' ? value : undefined;
+}
+
+function readLinkType(value: unknown): 'inner' | 'outer' | undefined {
+  return value === 'inner' || value === 'outer' ? value : undefined;
 }

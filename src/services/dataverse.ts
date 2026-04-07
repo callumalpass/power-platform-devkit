@@ -17,6 +17,7 @@ export interface DataverseEntitySummary {
 
 export interface DataverseAttributeSummary {
   logicalName: string;
+  attributeOf?: string;
   schemaName?: string;
   displayName?: string;
   description?: string;
@@ -87,6 +88,9 @@ export interface FetchXmlLinkEntitySpec {
   from: string;
   to: string;
   alias?: string;
+  linkType?: 'inner' | 'outer';
+  attributes?: string[];
+  conditions?: FetchXmlConditionSpec[];
 }
 
 export interface FetchXmlSpec {
@@ -98,6 +102,7 @@ export interface FetchXmlSpec {
   top?: number;
   distinct?: boolean;
   conditions?: FetchXmlConditionSpec[];
+  filterType?: 'and' | 'or';
   orders?: FetchXmlOrderSpec[];
   linkEntities?: FetchXmlLinkEntitySpec[];
   rawXml?: string;
@@ -151,73 +156,85 @@ export async function getDataverseEntityDetail(
   input: { environmentAlias: string; logicalName: string; accountName?: string },
   configOptions: ConfigStoreOptions = {},
 ): Promise<OperationResult<DataverseEntityDetail>> {
-  const result = await executeApiRequest({
-    environmentAlias: input.environmentAlias,
-    accountName: input.accountName,
-    api: 'dv',
-    path: `/EntityDefinitions(LogicalName='${encodeODataLiteral(input.logicalName)}')`,
-    method: 'GET',
-    responseType: 'json',
-    readIntent: true,
-    query: {
-      '$select': [
-        'LogicalName',
-        'SchemaName',
-        'EntitySetName',
-        'DisplayName',
-        'DisplayCollectionName',
-        'Description',
-        'PrimaryIdAttribute',
-        'PrimaryNameAttribute',
-        'OwnershipType',
-        'OwnershipTypeMask',
-        'MetadataId',
-        'ObjectTypeCode',
-        'IsActivity',
-        'IsAuditEnabled',
-        'IsCustomEntity',
-        'IsIntersect',
-        'ChangeTrackingEnabled',
-      ].join(','),
-      '$expand': 'Attributes($select=LogicalName,SchemaName,DisplayName,Description,AttributeType,AttributeTypeName,RequiredLevel,IsPrimaryId,IsPrimaryName,IsValidForRead,IsValidForCreate,IsValidForUpdate,IsValidForAdvancedFind)',
-    },
-  }, configOptions);
+  const [result, lookupTargetsResult] = await Promise.all([
+    executeApiRequest({
+      environmentAlias: input.environmentAlias,
+      accountName: input.accountName,
+      api: 'dv',
+      path: `/EntityDefinitions(LogicalName='${encodeODataLiteral(input.logicalName)}')`,
+      method: 'GET',
+      responseType: 'json',
+      readIntent: true,
+      query: {
+        '$select': [
+          'LogicalName',
+          'SchemaName',
+          'EntitySetName',
+          'DisplayName',
+          'DisplayCollectionName',
+          'Description',
+          'PrimaryIdAttribute',
+          'PrimaryNameAttribute',
+          'OwnershipType',
+          'MetadataId',
+          'ObjectTypeCode',
+          'IsActivity',
+        ].join(','),
+        '$expand': 'Attributes($select=LogicalName,AttributeOf,SchemaName,DisplayName,Description,AttributeType,AttributeTypeName,RequiredLevel,IsPrimaryId,IsPrimaryName,IsValidForRead,IsValidForCreate,IsValidForUpdate,IsValidForAdvancedFind)',
+      },
+    }, configOptions),
+    getDataverseLookupTargets(input, configOptions),
+  ]);
   if (!result.success || !result.data) return fail(...result.diagnostics);
   const raw = readObject(result.data.response);
   if (!raw) {
     return fail(createDiagnostic('error', 'DV_ENTITY_NOT_FOUND', `No Dataverse entity metadata was returned for ${input.logicalName}.`, { source: 'pp/services/dataverse' }));
   }
+  const lookupTargets = lookupTargetsResult.success && lookupTargetsResult.data ? lookupTargetsResult.data : new Map<string, string[]>();
   const detail: DataverseEntityDetail = {
     ...mapEntitySummary(raw),
     description: labelText(raw.Description),
     metadataId: readString(raw.MetadataId),
-    ownershipTypeMask: readString(raw.OwnershipTypeMask),
     isAuditEnabled: readBooleanFlag(raw.IsAuditEnabled),
     isCustomEntity: readBoolean(raw.IsCustomEntity),
     isIntersect: readBoolean(raw.IsIntersect),
     changeTrackingEnabled: readBoolean(raw.ChangeTrackingEnabled),
-    attributes: readArray(raw.Attributes).map(mapAttributeSummary).sort((a, b) => a.logicalName.localeCompare(b.logicalName)),
+    attributes: readArray(raw.Attributes)
+      .map(mapAttributeSummary)
+      .map((attribute) => mergeLookupTargets(attribute, lookupTargets))
+      .sort((a, b) => a.logicalName.localeCompare(b.logicalName)),
   };
-  return ok(detail, result.diagnostics);
+  return ok(detail, [
+    ...result.diagnostics,
+    ...normalizeLookupDiagnostics(lookupTargetsResult.diagnostics),
+  ]);
 }
 
 export async function listDataverseRecords(
   input: DataverseQuerySpec,
   configOptions: ConfigStoreOptions = {},
 ): Promise<OperationResult<DataverseRecordPage>> {
-  const path = buildDataverseODataPath(input);
-  const result = await executeApiRequest({
-    environmentAlias: input.environmentAlias,
-    accountName: input.accountName,
-    api: 'dv',
-    path,
-    method: 'GET',
-    responseType: 'json',
-    readIntent: true,
-  }, configOptions);
+  const querySpec = {
+    ...input,
+    select: input.select ? [...input.select] : undefined,
+    orderBy: input.orderBy ? [...input.orderBy] : undefined,
+  };
+  const diagnostics = [];
+  let result = await runDataverseRecordQuery(querySpec, configOptions);
+  let invalidProperty = readMissingPropertyName(result.diagnostics);
+  while ((!result.success || !result.data) && invalidProperty) {
+    const removed = removeInvalidProperty(querySpec, invalidProperty);
+    if (!removed) break;
+    diagnostics.push(createDiagnostic('warning', 'DV_QUERY_PROPERTY_SKIPPED', `Skipped unsupported Dataverse property ${invalidProperty}.`, {
+      source: 'pp/services/dataverse',
+    }));
+    result = await runDataverseRecordQuery(querySpec, configOptions);
+    invalidProperty = readMissingPropertyName(result.diagnostics);
+  }
   if (!result.success || !result.data) return fail(...result.diagnostics);
   const payload = readObject(result.data.response) ?? {};
   const records = readArray(payload.value).filter(isRecord);
+  const path = buildDataverseODataPath(querySpec);
   return ok({
     entitySetName: input.entitySetName,
     logicalName: input.entitySetName,
@@ -225,7 +242,23 @@ export async function listDataverseRecords(
     records,
     count: typeof payload['@odata.count'] === 'number' ? payload['@odata.count'] : undefined,
     nextLink: readString(payload['@odata.nextLink']),
-  }, result.diagnostics);
+  }, [...diagnostics, ...result.diagnostics]);
+}
+
+async function runDataverseRecordQuery(
+  input: DataverseQuerySpec,
+  configOptions: ConfigStoreOptions,
+) {
+  const path = buildDataverseODataPath(input);
+  return executeApiRequest({
+    environmentAlias: input.environmentAlias,
+    accountName: input.accountName,
+    api: 'dv',
+    path,
+    method: 'GET',
+    responseType: 'json',
+    readIntent: true,
+  }, configOptions);
 }
 
 export function buildDataverseODataPath(spec: DataverseQuerySpec): string {
@@ -265,7 +298,8 @@ export function buildFetchXml(spec: FetchXmlSpec): string {
     }
   }
   if ((spec.conditions?.length ?? 0) > 0) {
-    parts.push('    <filter type="and">');
+    parts.push(`    <filter type="${escapeXml(spec.filterType ?? 'and')}">`);
+
     for (const condition of spec.conditions ?? []) {
       if (!condition.attribute.trim() || !condition.operator.trim()) continue;
       const value = condition.value?.trim();
@@ -279,9 +313,36 @@ export function buildFetchXml(spec: FetchXmlSpec): string {
   }
   for (const link of spec.linkEntities ?? []) {
     if (!link.name.trim() || !link.from.trim() || !link.to.trim()) continue;
-    parts.push(
-      `    <link-entity name="${escapeXml(link.name.trim())}" from="${escapeXml(link.from.trim())}" to="${escapeXml(link.to.trim())}"${link.alias?.trim() ? ` alias="${escapeXml(link.alias.trim())}"` : ''} />`,
-    );
+    const linkAttrs = [
+      `name="${escapeXml(link.name.trim())}"`,
+      `from="${escapeXml(link.from.trim())}"`,
+      `to="${escapeXml(link.to.trim())}"`,
+      link.linkType ? `link-type="${escapeXml(link.linkType)}"` : undefined,
+      link.alias?.trim() ? `alias="${escapeXml(link.alias.trim())}"` : undefined,
+    ].filter(Boolean).join(' ');
+    const hasContent = (link.attributes?.length ?? 0) > 0 || (link.conditions?.length ?? 0) > 0;
+    if (!hasContent) {
+      parts.push(`    <link-entity ${linkAttrs} />`);
+    } else {
+      parts.push(`    <link-entity ${linkAttrs}>`);
+      for (const attr of link.attributes ?? []) {
+        if (attr.trim()) parts.push(`      <attribute name="${escapeXml(attr.trim())}" />`);
+      }
+      if ((link.conditions?.length ?? 0) > 0) {
+        parts.push('      <filter type="and">');
+        for (const cond of link.conditions ?? []) {
+          if (!cond.attribute.trim() || !cond.operator.trim()) continue;
+          const val = cond.value?.trim();
+          parts.push(
+            val
+              ? `        <condition attribute="${escapeXml(cond.attribute.trim())}" operator="${escapeXml(cond.operator.trim())}" value="${escapeXml(val)}" />`
+              : `        <condition attribute="${escapeXml(cond.attribute.trim())}" operator="${escapeXml(cond.operator.trim())}" />`,
+          );
+        }
+        parts.push('      </filter>');
+      }
+      parts.push('    </link-entity>');
+    }
   }
   parts.push('  </entity>');
   parts.push('</fetch>');
@@ -335,6 +396,34 @@ function mapEntitySummary(value: Record<string, unknown>): DataverseEntitySummar
   };
 }
 
+async function getDataverseLookupTargets(
+  input: { environmentAlias: string; logicalName: string; accountName?: string },
+  configOptions: ConfigStoreOptions,
+): Promise<OperationResult<Map<string, string[]>>> {
+  const result = await executeApiRequest({
+    environmentAlias: input.environmentAlias,
+    accountName: input.accountName,
+    api: 'dv',
+    path: `/EntityDefinitions(LogicalName='${encodeODataLiteral(input.logicalName)}')/Attributes/Microsoft.Dynamics.CRM.LookupAttributeMetadata`,
+    method: 'GET',
+    responseType: 'json',
+    readIntent: true,
+    query: {
+      '$select': 'LogicalName,Targets',
+    },
+  }, configOptions);
+  if (!result.success || !result.data) return fail(...result.diagnostics);
+  const lookupTargets = new Map<string, string[]>();
+  for (const value of readArray(result.data.response)) {
+    const record = readObject(value);
+    const logicalName = readString(record?.LogicalName);
+    if (!logicalName) continue;
+    const targets = readArray(record?.Targets).filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    if (targets.length) lookupTargets.set(logicalName, targets);
+  }
+  return ok(lookupTargets, result.diagnostics);
+}
+
 function mapAttributeSummary(value: unknown): DataverseAttributeSummary {
   const record = readObject(value) ?? {};
   const optionValues = readArray(record.OptionSet?.Options).map((option) => {
@@ -344,6 +433,7 @@ function mapAttributeSummary(value: unknown): DataverseAttributeSummary {
   }).filter((item): item is { value: number; label: string | undefined } => item !== undefined);
   return {
     logicalName: readString(record.LogicalName) ?? 'unknown',
+    attributeOf: readString(record.AttributeOf),
     schemaName: readString(record.SchemaName),
     displayName: labelText(record.DisplayName),
     description: labelText(record.Description),
@@ -363,6 +453,62 @@ function mapAttributeSummary(value: unknown): DataverseAttributeSummary {
     isValidForSort: readBooleanFlag(record.IsValidForSortEnabled),
     optionValues: optionValues.length ? optionValues : undefined,
   };
+}
+
+function mergeLookupTargets(
+  attribute: DataverseAttributeSummary,
+  lookupTargets: Map<string, string[]>,
+): DataverseAttributeSummary {
+  if (attribute.targets?.length) return attribute;
+  const targets = lookupTargets.get(attribute.logicalName);
+  return targets?.length ? { ...attribute, targets } : attribute;
+}
+
+function normalizeLookupDiagnostics(diagnostics: ReturnType<typeof fail>['diagnostics']) {
+  return diagnostics.map((diagnostic) => {
+    if (diagnostic.level !== 'error') return diagnostic;
+    return createDiagnostic('warning', diagnostic.code, `Lookup targets are unavailable: ${diagnostic.message}`, {
+      source: diagnostic.source,
+      hint: diagnostic.hint,
+      detail: diagnostic.detail,
+      path: diagnostic.path,
+    });
+  });
+}
+
+function readMissingPropertyName(diagnostics: ReturnType<typeof fail>['diagnostics']): string | undefined {
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.code !== 'HTTP_REQUEST_FAILED' || !diagnostic.detail) continue;
+    try {
+      const payload = JSON.parse(diagnostic.detail) as { error?: { message?: string } };
+      const message = payload.error?.message;
+      const match = message?.match(/Could not find a property named '([^']+)'/);
+      if (match?.[1]) return match[1];
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+function removeInvalidProperty(spec: DataverseQuerySpec, propertyName: string): boolean {
+  let removed = false;
+  if (spec.select?.length) {
+    const next = spec.select.filter((item) => item !== propertyName);
+    removed = removed || next.length !== spec.select.length;
+    spec.select = next.length ? next : undefined;
+  }
+  if (spec.orderBy?.length) {
+    const next = spec.orderBy.filter((item) => !readOrderByProperty(item, propertyName));
+    removed = removed || next.length !== spec.orderBy.length;
+    spec.orderBy = next.length ? next : undefined;
+  }
+  return removed;
+}
+
+function readOrderByProperty(value: string, propertyName: string): boolean {
+  const [candidate] = value.trim().split(/\s+/, 1);
+  return candidate === propertyName;
 }
 
 function labelText(value: unknown): string | undefined {

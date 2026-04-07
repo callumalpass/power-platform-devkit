@@ -1,6 +1,6 @@
 export function renderQueryLabModule(): string {
   return String.raw`
-import { app, api, formDataObject, getGlobalEnvironment, renderEntitySidebar, toast } from '/assets/ui/shared.js'
+import { app, api, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, updateEntityContext, toast } from '/assets/ui/shared.js'
 
 const els = {
   form: document.getElementById('query-form'),
@@ -11,8 +11,7 @@ const els = {
   entitySet: document.getElementById('query-entity-set'),
   select: document.getElementById('query-select'),
   order: document.getElementById('query-order'),
-  entityList: document.getElementById('query-entity-list'),
-  entityFilter: document.getElementById('query-entity-filter')
+  entityContext: document.getElementById('query-entity-context')
 }
 
 export function initQueryLab() {
@@ -35,30 +34,21 @@ export function initQueryLab() {
       toast(error.message, true)
     }
   })
-
-  els.entityFilter.addEventListener('input', renderQueryEntities)
 }
 
-export function renderQueryEntities() {
-  if (!app.entities.length) {
-    els.entityList.innerHTML = '<div class="empty">No entities loaded.</div>'
-    return
-  }
-  renderEntitySidebar(els.entityList, els.entityFilter, (logicalName) => {
-    const entity = app.entities.find((e) => e.logicalName === logicalName)
-    if (entity) {
-      els.entitySet.value = entity.entitySetName || ''
-      els.select.value = [entity.primaryIdAttribute, entity.primaryNameAttribute].filter(Boolean).join(',')
-      els.order.value = entity.primaryNameAttribute ? entity.primaryNameAttribute + ' asc' : ''
-      toast('Applied ' + entity.logicalName)
-    }
-  })
-}
-
-export function useEntityInQuery(detail, environment) {
+export function useEntityInQuery(detail) {
   els.entitySet.value = detail.entitySetName || ''
-  els.select.value = [detail.primaryIdAttribute, detail.primaryNameAttribute].filter(Boolean).join(',')
-  els.order.value = detail.primaryNameAttribute ? detail.primaryNameAttribute + ' asc' : ''
+  const cols = app.selectedColumns.length
+    ? app.selectedColumns.join(',')
+    : getDefaultSelectedColumns(detail, 0).join(',')
+  els.select.value = cols
+  const orderColumn = getDefaultSelectedColumns(detail, 0).find((name) => name !== detail.primaryIdAttribute) || getDefaultSelectedColumns(detail, 0)[0] || ''
+  els.order.value = orderColumn ? orderColumn + ' asc' : ''
+  updateEntityContext(els.entityContext, detail)
+}
+
+export function updateQueryContext() {
+  updateEntityContext(els.entityContext, app.currentEntityDetail)
 }
 
 function readQueryPayload() {

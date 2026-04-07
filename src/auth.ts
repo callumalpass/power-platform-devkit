@@ -112,6 +112,39 @@ export class AuthService {
     if (!provider.success || !provider.data) return fail(...provider.diagnostics);
     return ok(await provider.data.getAccessToken(resource));
   }
+
+  async checkTokenStatus(name: string, resource?: string): Promise<OperationResult<{ authenticated: boolean; expiresAt?: number }>> {
+    const accountResult = await this.getAccount(name);
+    if (!accountResult.success || !accountResult.data) {
+      return ok({ authenticated: false });
+    }
+    const account = accountResult.data;
+    const targetResource = resource ?? DEFAULT_LOGIN_RESOURCE;
+
+    if (account.kind === 'static-token') {
+      return ok({ authenticated: Boolean(account.token) });
+    }
+    if (account.kind === 'environment-token') {
+      return ok({ authenticated: Boolean(process.env[account.environmentVariable]) });
+    }
+    if (account.kind === 'client-secret') {
+      return ok({ authenticated: Boolean(process.env[account.clientSecretEnv]) });
+    }
+
+    // user / device-code: try silent acquisition only
+    try {
+      const app = await createPublicClientApplication(account, this.options);
+      const scopes = resolveScopes(account, targetResource);
+      const storedAccount = await resolveStoredAccount(app, account);
+      if (!storedAccount) return ok({ authenticated: false });
+      const result = await app.acquireTokenSilent({ account: storedAccount, scopes });
+      if (!result || !result.accessToken) return ok({ authenticated: false });
+      const claims = decodeJwtClaims(result.accessToken);
+      return ok({ authenticated: true, expiresAt: readNumericClaim(claims, 'exp') });
+    } catch {
+      return ok({ authenticated: false });
+    }
+  }
 }
 
 class StaticTokenProvider implements TokenProvider {

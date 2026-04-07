@@ -1,10 +1,10 @@
 export function renderAppModule(): string {
   return String.raw`
 import { app, api, applyAccountKindVisibility, registerTabHandlers, renderMeta, optionMarkup, getGlobalEnvironment, loadEntities, toast } from '/assets/ui/shared.js'
-import { initSetup, renderSetupState } from '/assets/ui/setup.js'
+import { initSetup, renderSetupState, runInitialHealthChecks } from '/assets/ui/setup.js'
 import { initExplorer, renderExplorerEntities } from '/assets/ui/explorer.js'
-import { initQueryLab, useEntityInQuery, renderQueryEntities } from '/assets/ui/query-lab.js'
-import { initFetchXml, useEntityInFetchXml, renderFetchEntities } from '/assets/ui/fetchxml.js'
+import { initQueryLab, useEntityInQuery, updateQueryContext } from '/assets/ui/query-lab.js'
+import { initFetchXml, useEntityInFetchXml, updateFetchContext } from '/assets/ui/fetchxml.js'
 
 const globalEnv = document.getElementById('global-environment')
 let lastEnv = ''
@@ -21,6 +21,7 @@ async function refreshState(silent) {
   if (prev && environments.includes(prev)) globalEnv.value = prev
   else if (environments.length) globalEnv.value = environments[0]
 
+  runInitialHealthChecks(payload.data)
   if (!silent) toast('State refreshed')
   await onEnvironmentChange()
 }
@@ -32,8 +33,8 @@ async function onEnvironmentChange() {
   try {
     await loadEntities(env)
     renderExplorerEntities()
-    renderQueryEntities()
-    renderFetchEntities()
+    updateQueryContext()
+    updateFetchContext()
     toast('Loaded ' + app.entities.length + ' entities')
   } catch (err) {
     toast(err.message, true)
@@ -42,6 +43,7 @@ async function onEnvironmentChange() {
 
 globalEnv.addEventListener('change', () => {
   app.entitiesEnvironment = null
+  lastEnv = ''
   onEnvironmentChange().catch((err) => toast(err.message, true))
 })
 

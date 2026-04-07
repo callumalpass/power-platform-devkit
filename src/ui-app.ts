@@ -23,31 +23,33 @@ export function renderHtml(): string {
       --radius-sm: 8px;
       --mono: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0a0a0b;
-        --surface: #141416;
-        --ink: #e4e4e7;
-        --muted: #71717a;
-        --border: #27272a;
-        --accent: #3b82f6;
-        --accent-hover: #60a5fa;
-        --accent-soft: rgba(59,130,246,0.12);
-        --danger: #ef4444;
-        --ok: #22c55e;
-        --ok-soft: rgba(34,197,94,0.1);
-        --warn-soft: rgba(239,68,68,0.1);
-      }
+    html.dark {
+      --bg: #0a0a0b;
+      --surface: #141416;
+      --ink: #e4e4e7;
+      --muted: #71717a;
+      --border: #27272a;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --accent-soft: rgba(59,130,246,0.12);
+      --danger: #ef4444;
+      --ok: #22c55e;
+      --ok-soft: rgba(34,197,94,0.1);
+      --warn-soft: rgba(239,68,68,0.1);
     }
     * { box-sizing: border-box; margin: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: var(--ink);
-      background: var(--bg);
-      min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); min-height: 100vh; -webkit-font-smoothing: antialiased; }
     button, input, select, textarea { font: inherit; }
+
+    /* Scrollbars */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    *::-webkit-scrollbar { width: 6px; height: 6px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    *::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
     /* Toast */
     .toast-container { position: fixed; top: 16px; right: 16px; z-index: 100; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
@@ -60,10 +62,10 @@ export function renderHtml(): string {
 
     /* Header */
     .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; position: sticky; top: 0; z-index: 10; }
-    .header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; height: 52px; gap: 20px; }
+    .header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; height: 48px; gap: 16px; }
     .logo { font-size: 1rem; font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0; }
     .header-env { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-    .header-env label { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
+    .header-env label { font-size: 0.6875rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
     .header-env select { max-width: 280px; }
     .header-meta { display: flex; gap: 12px; align-items: center; font-size: 0.75rem; color: var(--muted); flex-shrink: 0; }
 
@@ -86,34 +88,48 @@ export function renderHtml(): string {
     .panel .desc { font-size: 0.8125rem; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
 
     /* Entity sidebar */
-    .entity-sidebar { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 0; }
+    .entity-sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; }
     .entity-sidebar .panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-    .entity-filter { margin-bottom: 12px; }
-    .entity-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; max-height: calc(100vh - 220px); }
-    .entity-item { padding: 10px 12px; border-radius: var(--radius-sm); cursor: pointer; transition: background 100ms; border: 1px solid transparent; }
+    .entity-filter { margin-bottom: 8px; }
+    .entity-count { font-size: 0.6875rem; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+    .entity-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; max-height: calc(100vh - 200px); }
+    .entity-item { padding: 8px 10px; border-radius: 6px; cursor: pointer; transition: background 80ms; border: 1px solid transparent; }
     .entity-item:hover { background: var(--bg); }
     .entity-item.active { background: var(--accent-soft); border-color: var(--accent); }
-    .entity-item-name { font-size: 0.8125rem; font-weight: 600; }
+    .entity-item-name { font-size: 0.8125rem; font-weight: 600; line-height: 1.3; }
     .entity-item-logical { font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); }
-    .entity-item-set { font-family: var(--mono); font-size: 0.6875rem; color: var(--accent); }
-    .entity-count { font-size: 0.75rem; color: var(--muted); margin-bottom: 8px; }
+    .entity-item-badges { display: flex; gap: 4px; margin-top: 2px; }
+    .entity-item-set { font-family: var(--mono); font-size: 0.625rem; color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; }
+    .entity-item-flag { font-size: 0.625rem; color: var(--muted); background: var(--bg); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); }
     .entity-loading { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 0.8125rem; }
 
     /* Detail area */
     .detail-area { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 
-    /* Metric row */
-    .metrics { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-    .metric { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; background: var(--bg); min-width: 140px; }
-    .metric-label { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; margin-bottom: 2px; }
+    /* Sub-tabs within a panel */
+    .sub-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin: -20px -20px 16px; padding: 0 20px; }
+    .sub-tab { padding: 10px 16px; font-size: 0.8125rem; font-weight: 500; color: var(--muted); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; }
+    .sub-tab:hover { color: var(--ink); }
+    .sub-tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+    .sub-panel { display: none; }
+    .sub-panel.active { display: block; }
+
+    /* Metrics */
+    .metrics { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .metric { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; background: var(--bg); min-width: 120px; }
+    .metric-label { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; margin-bottom: 2px; }
     .metric-value { font-family: var(--mono); font-size: 0.8125rem; word-break: break-all; }
 
     /* Table */
     .table-wrap { overflow: auto; max-height: 500px; }
+    .attr-filter { margin-bottom: 8px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-    th { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    th { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); z-index: 1; }
     td code { font-family: var(--mono); font-size: 0.75rem; }
+    tr.attr-row { cursor: pointer; }
+    tr.attr-row:hover { background: var(--bg); }
+    tr.attr-row.selected { background: var(--accent-soft); }
 
     /* Buttons */
     .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 0.8125rem; font-weight: 500; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; transition: background 120ms; white-space: nowrap; }
@@ -130,16 +146,29 @@ export function renderHtml(): string {
     .spinner { width: 14px; height: 14px; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; animation: spin 600ms linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* Selected columns bar */
+    .selected-cols { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; padding: 8px 0; min-height: 36px; }
+    .selected-cols-label { font-size: 0.6875rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 4px; }
+    .col-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent-soft); color: var(--accent); border-radius: 4px; padding: 2px 8px; font-size: 0.6875rem; font-family: var(--mono); font-weight: 500; cursor: pointer; }
+    .col-chip:hover { background: var(--accent); color: white; }
+    .col-chip .x { font-weight: 700; }
+
+    /* Entity context bar (for Query/FetchXML tabs) */
+    .entity-context { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 16px; }
+    .entity-context-name { font-weight: 600; font-size: 0.875rem; }
+    .entity-context-set { font-family: var(--mono); font-size: 0.75rem; color: var(--accent); }
+    .entity-context-empty { color: var(--muted); font-size: 0.8125rem; font-style: italic; }
+
     /* Forms */
     form { display: grid; gap: 14px; }
     .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
     .form-row.three { grid-template-columns: repeat(3, 1fr); }
     .field { display: grid; gap: 4px; }
-    .field-label { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .field-label { font-size: 0.6875rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
     input, select, textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 0.8125rem; background: var(--surface); color: var(--ink); transition: border-color 150ms; }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
     textarea { font-family: var(--mono); font-size: 0.8125rem; line-height: 1.5; resize: vertical; }
-    textarea.xml-editor { min-height: 300px; }
+    textarea.xml-editor { min-height: 320px; }
     .check-row { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--muted); }
     .check-row input[type="checkbox"] { width: 16px; height: 16px; min-width: 16px; padding: 0; margin: 0; border-radius: 4px; accent-color: var(--accent); cursor: pointer; }
     .conditional { display: none; }
@@ -147,10 +176,10 @@ export function renderHtml(): string {
     .check-row.conditional.visible { display: flex; }
 
     /* Viewer */
-    pre.viewer { margin: 0; padding: 14px; border-radius: var(--radius-sm); background: #1e1e2e; color: #cdd6f4; font-family: var(--mono); font-size: 0.8125rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; min-height: 120px; overflow: auto; }
+    pre.viewer { margin: 0; padding: 14px; border-radius: var(--radius-sm); background: #1e1e2e; color: #cdd6f4; font-family: var(--mono); font-size: 0.8125rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; min-height: 100px; overflow: auto; }
 
     /* Empty state */
-    .empty { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 0.8125rem; }
+    .empty { text-align: center; padding: 32px 16px; color: var(--muted); font-size: 0.8125rem; }
 
     /* Card list (setup) */
     .card-list { display: grid; gap: 8px; }
@@ -159,11 +188,59 @@ export function renderHtml(): string {
     .card-item-title { font-size: 0.8125rem; font-weight: 600; }
     .card-item-sub { font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); word-break: break-all; }
     .badge { font-size: 0.6875rem; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
-
-    /* Setup grid */
     .setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    /* Attribute picker */
+    .attr-picker { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); min-height: 40px; max-height: 160px; overflow-y: auto; }
+    .attr-chip { display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 4px; font-size: 0.6875rem; font-family: var(--mono); cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--ink); transition: background 80ms; user-select: none; }
+    .attr-chip:hover { border-color: var(--accent); }
+    .attr-chip.selected { background: var(--accent); color: white; border-color: var(--accent); }
 
-    /* Hidden */
+    /* Condition rows */
+    .condition-list { display: grid; gap: 6px; }
+    .condition-row { display: grid; grid-template-columns: 1fr 140px 1fr auto; gap: 8px; align-items: center; }
+    .condition-row select, .condition-row input { padding: 6px 8px; font-size: 0.8125rem; }
+    .condition-remove { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1rem; padding: 4px 6px; border-radius: 4px; line-height: 1; }
+    .condition-remove:hover { background: var(--warn-soft); }
+
+    /* Link entity cards */
+    .link-list { display: grid; gap: 10px; }
+    .link-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; background: var(--bg); }
+    .link-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .link-card-head span { font-size: 0.8125rem; font-weight: 600; }
+    .link-card .form-row { margin-bottom: 8px; }
+    .link-card .attr-picker { max-height: 100px; }
+    .link-card .condition-list { margin-top: 8px; }
+
+    /* Health dots */
+    .health-row { display: flex; gap: 10px; margin-top: 8px; }
+    .health-item { display: flex; align-items: center; gap: 4px; font-size: 0.6875rem; color: var(--muted); }
+    .health-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .health-dot.pending { background: var(--border); animation: pulse 1.2s ease-in-out infinite; }
+    .health-dot.ok { background: var(--ok); }
+    .health-dot.error { background: var(--danger); }
+    @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+    /* Theme toggle */
+    .theme-toggle { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 0.875rem; line-height: 1; color: var(--muted); }
+    .theme-toggle:hover { background: var(--bg); color: var(--ink); }
+
+    /* MCP section */
+    .mcp-cmd-wrap { display: flex; align-items: stretch; gap: 0; margin-bottom: 12px; }
+    .mcp-cmd { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm) 0 0 var(--radius-sm); padding: 10px 14px; font-family: var(--mono); font-size: 0.8125rem; user-select: all; overflow-x: auto; }
+    .mcp-copy { background: var(--bg); border: 1px solid var(--border); border-left: none; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 0 12px; cursor: pointer; color: var(--muted); font-size: 0.75rem; font-weight: 500; }
+    .mcp-copy:hover { background: var(--border); color: var(--ink); }
+    .tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px; }
+    .tool-grid code { font-family: var(--mono); font-size: 0.6875rem; background: var(--bg); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border); display: block; }
+
+    /* Env card detail */
+    .env-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; }
+    .env-card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .env-card-title { font-size: 0.875rem; font-weight: 600; }
+    .env-card-url { font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); word-break: break-all; }
+    .env-card-props { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .env-card-prop { font-size: 0.6875rem; color: var(--muted); }
+    .env-card-prop code { font-family: var(--mono); color: var(--ink); }
+
     .hidden { display: none !important; }
 
     @media (max-width: 900px) {
@@ -185,6 +262,7 @@ export function renderHtml(): string {
         <select id="global-environment" style="flex:1"></select>
       </div>
       <div class="header-meta" id="meta"></div>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">&#9790;</button>
     </div>
   </header>
   <nav class="tabs">
@@ -205,37 +283,54 @@ export function renderHtml(): string {
           <input type="text" id="entity-filter" class="entity-filter" placeholder="Filter entities\u2026">
           <div id="entity-count" class="entity-count"></div>
           <div id="entity-list" class="entity-list">
-            <div class="entity-loading" id="entity-loading">Select an environment to load entities.</div>
+            <div class="entity-loading">Select an environment to load entities.</div>
           </div>
         </div>
       </div>
       <div class="detail-area">
         <div class="panel" id="entity-detail-panel">
-          <h2 id="entity-title">Entity Detail</h2>
-          <p class="desc" id="entity-subtitle">Select an entity from the list to inspect its metadata.</p>
-          <div id="entity-detail-empty" class="empty">No entity selected.</div>
-          <div id="entity-detail" class="hidden">
-            <div id="entity-metrics" class="metrics"></div>
-            <div class="btn-group" style="margin-bottom:14px">
-              <button class="btn btn-secondary" id="entity-to-query" type="button">Use in Query</button>
-              <button class="btn btn-secondary" id="entity-to-fetchxml" type="button">Use in FetchXML</button>
-              <button class="btn btn-ghost" id="entity-refresh-records" type="button">Refresh Records</button>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Flags</th><th>Targets / Options</th></tr></thead>
-                <tbody id="attribute-table"></tbody>
-              </table>
-            </div>
+          <div id="entity-detail-empty">
+            <h2>Entity Detail</h2>
+            <p class="desc">Select an entity from the list to inspect its metadata and preview records.</p>
+            <div class="empty">No entity selected.</div>
           </div>
-        </div>
-        <div class="panel">
-          <h2>Record Preview</h2>
-          <p class="desc" id="record-preview-desc">Select an entity to preview sample records.</p>
-          <div id="record-preview-empty" class="empty">No entity selected.</div>
-          <div id="record-preview" class="hidden">
-            <div id="record-preview-path" style="font-family:var(--mono);font-size:0.75rem;color:var(--muted);margin-bottom:8px"></div>
-            <pre class="viewer" id="record-preview-json"></pre>
+          <div id="entity-detail" class="hidden">
+            <div class="sub-tabs">
+              <button class="sub-tab active" data-subtab="metadata">Metadata</button>
+              <button class="sub-tab" data-subtab="records">Records</button>
+            </div>
+
+            <!-- Metadata sub-panel -->
+            <div class="sub-panel active" id="subpanel-metadata">
+              <h2 id="entity-title"></h2>
+              <p class="desc" id="entity-subtitle"></p>
+              <div id="entity-metrics" class="metrics"></div>
+              <div class="btn-group" style="margin-bottom:12px">
+                <button class="btn btn-primary btn-sm" id="entity-to-query" type="button">Use in Query</button>
+                <button class="btn btn-primary btn-sm" id="entity-to-fetchxml" type="button">Use in FetchXML</button>
+              </div>
+              <div class="selected-cols" id="selected-cols">
+                <span class="selected-cols-label">Selected:</span>
+                <span style="color:var(--muted);font-size:0.75rem">Click attributes below to select columns</span>
+              </div>
+              <input type="text" id="attr-filter" class="attr-filter" placeholder="Filter attributes\u2026">
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th></th><th>Column</th><th>Type</th><th>Flags</th></tr></thead>
+                  <tbody id="attribute-table"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Records sub-panel -->
+            <div class="sub-panel" id="subpanel-records">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <h2>Record Preview</h2>
+                <button class="btn btn-secondary" id="entity-refresh-records" type="button">Refresh</button>
+              </div>
+              <div id="record-preview-path" style="font-family:var(--mono);font-size:0.75rem;color:var(--muted);margin-bottom:8px"></div>
+              <pre class="viewer" id="record-preview-json">Select an entity to preview records.</pre>
+            </div>
           </div>
         </div>
       </div>
@@ -243,16 +338,12 @@ export function renderHtml(): string {
 
     <!-- Query Tab -->
     <div class="tab-panel" id="panel-query">
-      <div class="entity-sidebar" id="query-entity-sidebar">
-        <div class="panel">
-          <h2>Entities</h2>
-          <input type="text" id="query-entity-filter" class="entity-filter" placeholder="Filter entities\u2026">
-          <div id="query-entity-list" class="entity-list"></div>
-        </div>
-      </div>
       <div class="detail-area">
         <div class="panel">
           <h2>Web API Query</h2>
+          <div class="entity-context" id="query-entity-context">
+            <span class="entity-context-empty">No entity selected \u2014 pick one in Explorer or type an entity set below</span>
+          </div>
           <form id="query-form">
             <div class="form-row">
               <div class="field">
@@ -306,68 +397,67 @@ export function renderHtml(): string {
 
     <!-- FetchXML Tab -->
     <div class="tab-panel" id="panel-fetchxml">
-      <div class="entity-sidebar" id="fetch-entity-sidebar">
-        <div class="panel">
-          <h2>Entities</h2>
-          <input type="text" id="fetch-entity-filter" class="entity-filter" placeholder="Filter entities\u2026">
-          <div id="fetch-entity-list" class="entity-list"></div>
-        </div>
-      </div>
       <div class="detail-area">
         <div class="panel">
           <h2>FetchXML</h2>
+          <div class="entity-context" id="fetch-entity-context">
+            <span class="entity-context-empty">No entity selected \u2014 pick one in Explorer or fill in the fields below</span>
+          </div>
           <form id="fetchxml-form">
-            <div class="form-row">
-              <div class="field">
-                <span class="field-label">Entity Logical Name</span>
-                <input name="entity" id="fetch-entity" placeholder="account">
-              </div>
-              <div class="field">
-                <span class="field-label">Entity Set Name</span>
-                <input name="entitySetName" id="fetch-entity-set" placeholder="accounts">
-              </div>
-            </div>
-            <div class="form-row three">
-              <div class="field">
-                <span class="field-label">Attributes (CSV)</span>
-                <input name="attributesCsv" id="fetch-attrs" placeholder="accountid,name">
-              </div>
-              <div class="field">
-                <span class="field-label">Top</span>
-                <input name="top" type="number" min="1" step="1" value="10">
-              </div>
-              <div class="field">
-                <span class="field-label">Distinct</span>
-                <select name="distinct" id="fetch-distinct"><option value="false">false</option><option value="true">true</option></select>
-              </div>
-            </div>
-            <div class="form-row three">
-              <div class="field"><span class="field-label">Condition Attr</span><input id="cond1-attribute" placeholder="name"></div>
-              <div class="field"><span class="field-label">Operator</span><input id="cond1-operator" placeholder="like"></div>
-              <div class="field"><span class="field-label">Value</span><input id="cond1-value" placeholder="%Contoso%"></div>
-            </div>
-            <div class="form-row three">
-              <div class="field"><span class="field-label">Condition 2 Attr</span><input id="cond2-attribute" placeholder="statecode"></div>
-              <div class="field"><span class="field-label">Operator</span><input id="cond2-operator" placeholder="eq"></div>
-              <div class="field"><span class="field-label">Value</span><input id="cond2-value" placeholder="0"></div>
-            </div>
-            <div class="form-row">
-              <div class="field"><span class="field-label">Order Attribute</span><input id="order-attribute" placeholder="name"></div>
-              <div class="field"><span class="field-label">Descending</span><select id="order-desc"><option value="false">false</option><option value="true">true</option></select></div>
-            </div>
             <div class="field">
-              <span class="field-label">Raw XML (overrides form fields above)</span>
-              <textarea name="rawXml" id="fetch-raw" class="xml-editor" placeholder='<fetch top="50">\\n  <entity name="account">\\n    <attribute name="name" />\\n  </entity>\\n</fetch>'></textarea>
+              <span class="field-label">FetchXML</span>
+              <textarea name="rawXml" id="fetch-raw" class="xml-editor" placeholder='<fetch top="50">&#10;  <entity name="account">&#10;    <attribute name="name" />&#10;    <filter>&#10;      <condition attribute="statecode" operator="eq" value="0" />&#10;    </filter>&#10;  </entity>&#10;</fetch>'></textarea>
             </div>
             <div class="btn-group">
-              <button class="btn btn-secondary" id="fetch-preview-btn" type="button">Build XML</button>
               <button class="btn btn-primary" id="fetch-run-btn" type="button">Run FetchXML</button>
+              <button class="btn btn-secondary" id="fetch-preview-btn" type="button">Build from fields below</button>
             </div>
+            <details style="margin-top:4px" id="fetch-builder">
+              <summary style="cursor:pointer;font-size:0.8125rem;font-weight:500;color:var(--muted)">Form builder</summary>
+              <div style="display:grid;gap:14px;margin-top:14px">
+                <div class="form-row">
+                  <div class="field">
+                    <span class="field-label">Entity</span>
+                    <select name="entity" id="fetch-entity"><option value="">select entity\u2026</option></select>
+                  </div>
+                  <div class="field">
+                    <span class="field-label">Entity Set Name</span>
+                    <input name="entitySetName" id="fetch-entity-set" placeholder="accounts" readonly tabindex="-1" style="color:var(--muted)">
+                  </div>
+                </div>
+                <div class="field">
+                  <span class="field-label">Attributes</span>
+                  <div id="fetch-attr-picker" class="attr-picker"></div>
+                  <input name="attributesCsv" id="fetch-attrs" type="hidden">
+                </div>
+                <div class="form-row three">
+                  <div class="field"><span class="field-label">Top</span><input name="top" type="number" min="1" step="1" value="50"></div>
+                  <div class="field"><span class="field-label">Distinct</span><select name="distinct" id="fetch-distinct"><option value="false">false</option><option value="true">true</option></select></div>
+                  <div class="field"><span class="field-label">Filter Type</span><select id="fetch-filter-type"><option value="and">and</option><option value="or">or</option></select></div>
+                </div>
+                <div class="field">
+                  <span class="field-label">Conditions</span>
+                  <div id="fetch-conditions" class="condition-list"></div>
+                  <button type="button" class="btn btn-ghost" id="fetch-add-condition" style="margin-top:6px;padding:4px 10px;font-size:0.75rem">+ Add condition</button>
+                </div>
+                <div class="form-row">
+                  <div class="field">
+                    <span class="field-label">Order By</span>
+                    <select id="order-attribute"><option value="">none</option></select>
+                  </div>
+                  <div class="field">
+                    <span class="field-label">Direction</span>
+                    <select id="order-desc"><option value="false">ascending</option><option value="true">descending</option></select>
+                  </div>
+                </div>
+                <div class="field">
+                  <span class="field-label">Link Entities (Joins)</span>
+                  <div id="fetch-links" class="link-list"></div>
+                  <button type="button" class="btn btn-ghost" id="fetch-add-link" style="margin-top:6px;padding:4px 10px;font-size:0.75rem">+ Add join</button>
+                </div>
+              </div>
+            </details>
           </form>
-        </div>
-        <div class="panel">
-          <h2>Generated XML</h2>
-          <pre class="viewer" id="fetch-preview">Build FetchXML here.</pre>
         </div>
         <div class="panel">
           <h2>FetchXML Result</h2>
@@ -387,8 +477,10 @@ export function renderHtml(): string {
           <div class="card-list" id="accounts-list"></div>
         </div>
         <div class="panel">
-          <h2>Environments</h2>
-          <p class="desc">Configured environments.</p>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h2>Environments</h2>
+            <button class="btn btn-ghost" id="recheck-health" type="button" style="font-size:0.75rem">Re-check health</button>
+          </div>
           <div class="card-list" id="environments-list"></div>
         </div>
       </div>
@@ -414,8 +506,8 @@ export function renderHtml(): string {
               <div class="field conditional cond-user cond-device-code"><span class="field-label">Preferred Flow</span><select name="preferredFlow"><option value="interactive">interactive</option><option value="device-code">device-code</option></select></div>
             </div>
             <div class="form-row conditional cond-user cond-device-code cond-client-secret">
-              <div class="field"><span class="field-label">Tenant ID</span><input name="tenantId"></div>
-              <div class="field"><span class="field-label">Client ID</span><input name="clientId"></div>
+              <div class="field"><span class="field-label">Tenant ID <span style="text-transform:none;font-weight:400;letter-spacing:0">(optional)</span></span><input name="tenantId" placeholder="defaults to common"></div>
+              <div class="field"><span class="field-label">Client ID <span style="text-transform:none;font-weight:400;letter-spacing:0">(optional)</span></span><input name="clientId" placeholder="defaults to built-in app"></div>
             </div>
             <div class="form-row conditional cond-user cond-device-code">
               <div class="field"><span class="field-label">Login Hint</span><input name="loginHint" placeholder="user@example.com"></div>
@@ -455,6 +547,11 @@ export function renderHtml(): string {
             <div class="btn-group"><button type="submit" class="btn btn-primary" id="env-submit">Discover & Save</button></div>
           </form>
         </div>
+      </div>
+      <div class="panel" id="mcp-panel">
+        <h2>MCP Server</h2>
+        <p class="desc">The MCP server uses stdio transport. Launch it from your MCP client.</p>
+        <div id="mcp-content"></div>
       </div>
     </div>
   </div>

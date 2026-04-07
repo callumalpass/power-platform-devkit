@@ -1,25 +1,25 @@
 export function renderExplorerModule(): string {
   return String.raw`
-import { app, api, esc, pretty, getGlobalEnvironment, renderEntitySidebar, setTab, toast } from '/assets/ui/shared.js'
+import { app, api, esc, getDefaultSelectedColumns, pretty, getGlobalEnvironment, renderEntitySidebar, renderSelectedColumns, toggleColumn, setTab, registerSubTabs, toast } from '/assets/ui/shared.js'
 
 const els = {
   entityList: document.getElementById('entity-list'),
   entityFilter: document.getElementById('entity-filter'),
   entityCount: document.getElementById('entity-count'),
-  entityLoading: document.getElementById('entity-loading'),
-  entityTitle: document.getElementById('entity-title'),
-  entitySubtitle: document.getElementById('entity-subtitle'),
   entityDetailEmpty: document.getElementById('entity-detail-empty'),
   entityDetail: document.getElementById('entity-detail'),
+  entityTitle: document.getElementById('entity-title'),
+  entitySubtitle: document.getElementById('entity-subtitle'),
   entityMetrics: document.getElementById('entity-metrics'),
   attributeTable: document.getElementById('attribute-table'),
-  recordPreviewEmpty: document.getElementById('record-preview-empty'),
-  recordPreview: document.getElementById('record-preview'),
+  attrFilter: document.getElementById('attr-filter'),
+  selectedCols: document.getElementById('selected-cols'),
   recordPreviewPath: document.getElementById('record-preview-path'),
   recordPreviewJson: document.getElementById('record-preview-json'),
   entityToQuery: document.getElementById('entity-to-query'),
   entityToFetchXml: document.getElementById('entity-to-fetchxml'),
-  entityRefreshRecords: document.getElementById('entity-refresh-records')
+  entityRefreshRecords: document.getElementById('entity-refresh-records'),
+  detailPanel: document.getElementById('entity-detail-panel')
 }
 
 let actions = {}
@@ -28,18 +28,49 @@ export function initExplorer(a) {
   actions = a
 
   els.entityFilter.addEventListener('input', renderExplorerEntities)
+  els.attrFilter.addEventListener('input', renderAttributeTable)
 
   els.entityToQuery.addEventListener('click', () => {
     if (!app.currentEntityDetail) return
-    actions.useEntityInQuery(app.currentEntityDetail, getGlobalEnvironment())
+    actions.useEntityInQuery(app.currentEntityDetail)
     setTab('query')
   })
   els.entityToFetchXml.addEventListener('click', () => {
     if (!app.currentEntityDetail) return
-    actions.useEntityInFetchXml(app.currentEntityDetail, getGlobalEnvironment())
+    actions.useEntityInFetchXml(app.currentEntityDetail)
     setTab('fetchxml')
   })
   els.entityRefreshRecords.addEventListener('click', () => loadRecordPreview().catch((e) => toast(e.message, true)))
+
+  registerSubTabs(els.detailPanel)
+
+  // Column selection: click attribute rows to toggle
+  els.attributeTable.addEventListener('click', (e) => {
+    const row = e.target.closest('tr.attr-row')
+    if (!row) return
+    const col = row.dataset.col
+    if (!col) return
+    toggleColumn(col)
+    renderAttributeTable()
+    renderSelectedColumns(els.selectedCols)
+  })
+
+  // Remove column chips
+  els.selectedCols.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-remove-col]')
+    if (chip) {
+      toggleColumn(chip.dataset.removeCol)
+      renderAttributeTable()
+      renderSelectedColumns(els.selectedCols)
+      return
+    }
+    const clear = e.target.closest('[data-action="clear-cols"]')
+    if (clear) {
+      app.selectedColumns = []
+      renderAttributeTable()
+      renderSelectedColumns(els.selectedCols)
+    }
+  })
 }
 
 export function renderExplorerEntities() {
@@ -49,9 +80,11 @@ export function renderExplorerEntities() {
     return
   }
   els.entityCount.textContent = app.entities.length + ' entities'
-  renderEntitySidebar(els.entityList, els.entityFilter, (logicalName) => {
-    loadEntityDetail(logicalName).catch((e) => toast(e.message, true))
-  })
+  renderEntitySidebar(els.entityList, els.entityFilter)
+  els.entityList.onclick = (event) => {
+    const item = event.target.closest('[data-entity]')
+    if (item) loadEntityDetail(item.dataset.entity).catch((e) => toast(e.message, true))
+  }
 }
 
 async function loadEntityDetail(logicalName) {
@@ -60,9 +93,11 @@ async function loadEntityDetail(logicalName) {
   const payload = await api('/api/dv/entities/' + encodeURIComponent(logicalName) + '?environment=' + encodeURIComponent(environment))
   app.currentEntity = app.entities.find((e) => e.logicalName === logicalName) || { logicalName }
   app.currentEntityDetail = payload.data
+  app.selectedColumns = getDefaultSelectedColumns(payload.data, 0)
   renderExplorerEntities()
   renderEntityDetail()
-  await loadRecordPreview()
+  renderSelectedColumns(els.selectedCols)
+  loadRecordPreview().catch((e) => toast(e.message, true))
 }
 
 async function loadRecordPreview() {
@@ -73,13 +108,12 @@ async function loadRecordPreview() {
     return
   }
   const environment = getGlobalEnvironment()
-  const select = []
-  if (detail.primaryIdAttribute) select.push(detail.primaryIdAttribute)
-  if (detail.primaryNameAttribute && detail.primaryNameAttribute !== detail.primaryIdAttribute) select.push(detail.primaryNameAttribute)
-  const readable = (detail.attributes || [])
-    .filter((a) => a.isValidForRead !== false && !a.isPrimaryId && !a.isPrimaryName)
-    .slice(0, 3)
-  for (const a of readable) select.push(a.logicalName)
+  const select = getDefaultSelectedColumns(detail, 3)
+  if (!select.length) {
+    app.currentRecordPreview = { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] }
+    renderRecordPreview()
+    return
+  }
   const payload = await api('/api/dv/query/execute', {
     method: 'POST',
     body: JSON.stringify({ environmentAlias: environment, entitySetName: detail.entitySetName, select, top: 5 })
@@ -91,17 +125,15 @@ async function loadRecordPreview() {
 function renderEntityDetail() {
   const detail = app.currentEntityDetail
   if (!detail) {
-    els.entityTitle.textContent = 'Entity Detail'
-    els.entitySubtitle.textContent = 'Select an entity from the list to inspect its metadata.'
     els.entityDetailEmpty.classList.remove('hidden')
-    els.entityDetailEmpty.style.display = ''
     els.entityDetail.classList.add('hidden')
     return
   }
-  els.entityTitle.textContent = detail.displayName || detail.logicalName
-  els.entitySubtitle.textContent = detail.description || detail.logicalName
   els.entityDetailEmpty.classList.add('hidden')
   els.entityDetail.classList.remove('hidden')
+
+  els.entityTitle.textContent = detail.displayName || detail.logicalName
+  els.entitySubtitle.textContent = detail.description || detail.logicalName
 
   const metrics = [
     ['Logical Name', detail.logicalName],
@@ -109,8 +141,7 @@ function renderEntityDetail() {
     ['Primary ID', detail.primaryIdAttribute],
     ['Primary Name', detail.primaryNameAttribute],
     ['Ownership', detail.ownershipType],
-    ['Schema Name', detail.schemaName],
-    ['Object Type Code', detail.objectTypeCode],
+    ['Attributes', (detail.attributes || []).length],
     ['Custom', detail.isCustomEntity],
     ['Change Tracking', detail.changeTrackingEnabled]
   ]
@@ -118,7 +149,20 @@ function renderEntityDetail() {
     '<div class="metric"><div class="metric-label">' + esc(m[0]) + '</div><div class="metric-value">' + esc(m[1] == null ? '-' : m[1]) + '</div></div>'
   ).join('')
 
-  els.attributeTable.innerHTML = (detail.attributes || []).map((a) => {
+  els.attrFilter.value = ''
+  renderAttributeTable()
+}
+
+function renderAttributeTable() {
+  const detail = app.currentEntityDetail
+  if (!detail) return
+  const filter = (els.attrFilter.value || '').toLowerCase()
+  const attrs = (detail.attributes || []).filter((a) => {
+    if (!filter) return true
+    return a.logicalName.includes(filter) || (a.displayName || '').toLowerCase().includes(filter)
+  })
+  els.attributeTable.innerHTML = attrs.map((a) => {
+    const selected = app.selectedColumns.includes(a.logicalName)
     const flags = [
       a.isPrimaryId ? 'PK' : '',
       a.isPrimaryName ? 'name' : '',
@@ -126,28 +170,21 @@ function renderEntityDetail() {
       a.isValidForCreate ? 'C' : '',
       a.isValidForUpdate ? 'U' : ''
     ].filter(Boolean).join(' ')
-    const targets = a.targets && a.targets.length ? a.targets.join(', ') : ''
-    const options = a.optionValues && a.optionValues.length
-      ? a.optionValues.slice(0, 6).map((o) => o.value + ':' + (o.label || '')).join(', ')
-      : ''
-    return '<tr>' +
+    return '<tr class="attr-row' + (selected ? ' selected' : '') + '" data-col="' + esc(a.logicalName) + '">' +
+      '<td style="width:24px;text-align:center">' + (selected ? '\u2713' : '') + '</td>' +
       '<td><strong>' + esc(a.displayName || a.logicalName) + '</strong><br><code>' + esc(a.logicalName) + '</code></td>' +
       '<td><code>' + esc(a.attributeTypeName || a.attributeType || '') + '</code></td>' +
-      '<td>' + esc(a.requiredLevel || '') + '</td>' +
       '<td><code>' + esc(flags) + '</code></td>' +
-      '<td><code>' + esc(targets || options) + '</code></td>' +
     '</tr>'
   }).join('')
 }
 
 function renderRecordPreview() {
   if (!app.currentRecordPreview) {
-    els.recordPreviewEmpty.classList.remove('hidden')
-    els.recordPreview.classList.add('hidden')
+    els.recordPreviewPath.textContent = ''
+    els.recordPreviewJson.textContent = 'Select an entity to preview records.'
     return
   }
-  els.recordPreviewEmpty.classList.add('hidden')
-  els.recordPreview.classList.remove('hidden')
   els.recordPreviewPath.textContent = app.currentRecordPreview.path || ''
   els.recordPreviewJson.textContent = pretty(app.currentRecordPreview.records || [])
 }

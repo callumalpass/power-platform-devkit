@@ -23,6 +23,11 @@ export async function loginAccount(
   return auth.login(input, loginOptions);
 }
 
+export async function checkAccountTokenStatus(name: string, configOptions: ConfigStoreOptions = {}): Promise<OperationResult<{ authenticated: boolean; expiresAt?: number }>> {
+  const auth = new AuthService(configOptions);
+  return auth.checkTokenStatus(name);
+}
+
 export async function removeAccountByName(name: string, configOptions: ConfigStoreOptions = {}): Promise<OperationResult<{ removed: boolean }>> {
   const auth = new AuthService(configOptions);
   const result = await auth.removeAccount(name);

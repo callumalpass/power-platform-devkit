@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, win32 as win32Path } from 'node:path';
 import { z } from 'zod';
@@ -69,6 +69,8 @@ export interface ConfigStoreOptions {
   configDir?: string;
 }
 
+const configWriteQueue = new Map<string, Promise<void>>();
+
 export function getDefaultConfigDir(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
@@ -120,9 +122,13 @@ export async function loadConfig(options: ConfigStoreOptions = {}): Promise<Oper
 export async function writeConfig(config: GlobalConfig, options: ConfigStoreOptions = {}): Promise<OperationResult<GlobalConfig>> {
   const path = getConfigPath(options);
   try {
-    await mkdir(dirname(path), { recursive: true });
     const normalized = globalConfigSchema.parse(config);
-    await writeFile(path, JSON.stringify(normalized, null, 2) + '\n', 'utf8');
+    await enqueueConfigWrite(path, async () => {
+      await mkdir(dirname(path), { recursive: true });
+      const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+      await writeFile(tempPath, JSON.stringify(normalized, null, 2) + '\n', 'utf8');
+      await rename(tempPath, path);
+    });
     return ok(normalized);
   } catch (error) {
     return fail(
@@ -226,5 +232,21 @@ async function exists(path: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function enqueueConfigWrite(path: string, writer: () => Promise<void>): Promise<void> {
+  const previous = configWriteQueue.get(path) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  configWriteQueue.set(path, previous.then(() => current, () => current));
+  await previous;
+  try {
+    await writer();
+  } finally {
+    release();
+    if (configWriteQueue.get(path) === current) configWriteQueue.delete(path);
   }
 }

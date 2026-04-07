@@ -2,8 +2,11 @@ export function renderSetupModule(): string {
   return String.raw`
 import { app, api, applyAccountKindVisibility, esc, formDataObject, optionMarkup, setBtnLoading, summarizeError, toast } from '/assets/ui/shared.js'
 
+const HEALTH_APIS = ['dv', 'flow', 'graph', 'bap', 'powerapps']
+
 const els = {
   refreshState: document.getElementById('refresh-state'),
+  recheckHealth: document.getElementById('recheck-health'),
   accountsList: document.getElementById('accounts-list'),
   environmentsList: document.getElementById('environments-list'),
   discoveredList: document.getElementById('discovered-list'),
@@ -12,7 +15,61 @@ const els = {
   environmentForm: document.getElementById('environment-form'),
   discoverForm: document.getElementById('discover-form'),
   discoverAccount: document.getElementById('discover-account'),
-  environmentAccount: document.getElementById('environment-account')
+  environmentAccount: document.getElementById('environment-account'),
+  mcpContent: document.getElementById('mcp-content'),
+  themeToggle: document.getElementById('theme-toggle')
+}
+
+const health = {}
+const tokenStatus = {}
+
+function initTheme() {
+  const saved = localStorage.getItem('pp-theme')
+  if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.classList.add('dark')
+  }
+  updateThemeIcon()
+}
+
+function toggleTheme() {
+  document.documentElement.classList.toggle('dark')
+  localStorage.setItem('pp-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light')
+  updateThemeIcon()
+}
+
+function updateThemeIcon() {
+  els.themeToggle.textContent = document.documentElement.classList.contains('dark') ? '\u2600' : '\u263D'
+  els.themeToggle.title = document.documentElement.classList.contains('dark') ? 'Switch to light mode' : 'Switch to dark mode'
+}
+
+function tokenDotHtml(accountName) {
+  const status = tokenStatus[accountName]
+  if (status === undefined) return '<span class="health-dot pending" title="Checking\u2026"></span>'
+  if (status === true) return '<span class="health-dot ok" title="Authenticated"></span>'
+  return '<span class="health-dot error" title="Not authenticated"></span>'
+}
+
+function checkTokenStatuses(accounts) {
+  for (const a of accounts) {
+    tokenStatus[a.name] = undefined
+    updateAccountDot(a.name)
+    fetch('/api/accounts/token-status?account=' + encodeURIComponent(a.name), { headers: { 'content-type': 'application/json' } })
+      .then((r) => r.json())
+      .then((data) => {
+        tokenStatus[a.name] = data.success && data.data && data.data.authenticated
+        updateAccountDot(a.name)
+      })
+      .catch(() => {
+        tokenStatus[a.name] = false
+        updateAccountDot(a.name)
+      })
+  }
+}
+
+function updateAccountDot(accountName) {
+  const el = document.getElementById('token-dot-' + accountName)
+  if (!el) return
+  el.innerHTML = tokenDotHtml(accountName)
 }
 
 export function renderSetupState(data) {
@@ -20,31 +77,119 @@ export function renderSetupState(data) {
   const environments = data.environments || []
 
   els.accountsList.innerHTML = accounts.length
-    ? accounts.map((a) =>
-        '<div class="card-item">' +
-          '<div class="card-item-info"><div class="card-item-title">' + esc(a.name) + '</div><div class="card-item-sub">' + esc(a.kind) + '</div></div>' +
-          '<button class="btn btn-danger" data-remove-account="' + esc(a.name) + '" type="button">Remove</button>' +
+    ? accounts.map((a) => {
+        const props = []
+        if (a.description) props.push(esc(a.description))
+        if (a.tenantId) props.push('tenant: <code>' + esc(a.tenantId) + '</code>')
+        if (a.clientId) props.push('client: <code>' + esc(a.clientId) + '</code>')
+        const isInteractive = a.kind === 'user' || a.kind === 'device-code'
+        const loginBtn = isInteractive
+          ? '<button class="btn btn-ghost" data-login-account="' + esc(a.name) + '" type="button" style="font-size:0.75rem;padding:4px 10px">Login</button>'
+          : ''
+        return '<div class="card-item" style="flex-direction:column;align-items:stretch">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center">' +
+            '<div style="display:flex;align-items:center;gap:8px">' +
+              '<span id="token-dot-' + esc(a.name) + '">' + tokenDotHtml(a.name) + '</span>' +
+              '<span class="card-item-title">' + esc(a.name) + '</span> <span class="badge">' + esc(a.kind) + '</span>' +
+            '</div>' +
+            '<div style="display:flex;gap:4px">' + loginBtn +
+              '<button class="btn btn-danger" data-remove-account="' + esc(a.name) + '" type="button">Remove</button>' +
+            '</div>' +
+          '</div>' +
+          (props.length ? '<div style="font-size:0.75rem;color:var(--muted);margin-top:4px;padding-left:19px">' + props.join(' &middot; ') + '</div>' : '') +
         '</div>'
-      ).join('')
+      }).join('')
     : '<div class="empty">No accounts configured.</div>'
 
   els.environmentsList.innerHTML = environments.length
-    ? environments.map((e) =>
-        '<div class="card-item">' +
-          '<div class="card-item-info"><div class="card-item-title">' + esc(e.alias) + ' <span class="badge">' + esc(e.account) + '</span></div><div class="card-item-sub">' + esc(e.url || '') + '</div></div>' +
-          '<button class="btn btn-danger" data-remove-environment="' + esc(e.alias) + '" type="button">Remove</button>' +
+    ? environments.map((e) => {
+        const alias = esc(e.alias)
+        const h = health[e.alias] || {}
+        const healthDots = HEALTH_APIS.map((apiName) => {
+          const cls = h[apiName] === undefined ? 'pending' : h[apiName] ? 'ok' : 'error'
+          return '<span class="health-item"><span class="health-dot ' + cls + '"></span>' + apiName + '</span>'
+        }).join('')
+        const props = []
+        if (e.makerEnvironmentId) props.push('<span class="env-card-prop">Maker ID <code>' + esc(e.makerEnvironmentId) + '</code></span>')
+        if (e.tenantId) props.push('<span class="env-card-prop">Tenant <code>' + esc(e.tenantId) + '</code></span>')
+        if (e.accessMode) props.push('<span class="env-card-prop">Access <code>' + esc(e.accessMode) + '</code></span>')
+        return '<div class="env-card">' +
+          '<div class="env-card-head">' +
+            '<div>' +
+              '<div class="env-card-title">' + alias + ' <span class="badge">' + esc(e.account) + '</span>' + (e.displayName && e.displayName !== e.alias ? ' <span style="color:var(--muted);font-weight:400">' + esc(e.displayName) + '</span>' : '') + '</div>' +
+              '<div class="env-card-url">' + esc(e.url || '') + '</div>' +
+            '</div>' +
+            '<button class="btn btn-danger" data-remove-environment="' + esc(e.alias) + '" type="button">Remove</button>' +
+          '</div>' +
+          (props.length ? '<div class="env-card-props">' + props.join('') + '</div>' : '') +
+          '<div class="health-row" id="health-' + alias + '">' + healthDots + '</div>' +
         '</div>'
-      ).join('')
+      }).join('')
     : '<div class="empty">No environments configured.</div>'
 
   const accountNames = accounts.map((a) => a.name)
   els.discoverAccount.innerHTML = optionMarkup(accountNames, 'select account')
   els.environmentAccount.innerHTML = optionMarkup(accountNames)
+
+  if (data.mcp) {
+    els.mcpContent.innerHTML =
+      '<div style="margin-bottom:12px"><span class="field-label">Launch Command</span></div>' +
+      '<div class="mcp-cmd-wrap"><div class="mcp-cmd" id="mcp-cmd">' + esc(data.mcp.launchCommand) + '</div><button class="mcp-copy" id="mcp-copy-btn">Copy</button></div>' +
+      '<div style="margin-bottom:8px"><span class="field-label">Available Tools (' + data.mcp.tools.length + ')</span></div>' +
+      '<div class="tool-grid">' + data.mcp.tools.map((t) => '<code>' + esc(t) + '</code>').join('') + '</div>'
+  }
+}
+
+function checkHealth(environments) {
+  for (const env of environments) {
+    if (!health[env.alias]) health[env.alias] = {}
+    for (const apiName of HEALTH_APIS) {
+      health[env.alias][apiName] = undefined
+      updateHealthDot(env.alias, apiName, 'pending')
+      fetch('/api/checks/ping', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ environment: env.alias, api: apiName })
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          const ok = data.success !== false
+          health[env.alias][apiName] = ok
+          updateHealthDot(env.alias, apiName, ok ? 'ok' : 'error')
+        })
+        .catch(() => {
+          health[env.alias][apiName] = false
+          updateHealthDot(env.alias, apiName, 'error')
+        })
+    }
+  }
+}
+
+function updateHealthDot(alias, apiName, cls) {
+  const row = document.getElementById('health-' + alias)
+  if (!row) return
+  const items = row.querySelectorAll('.health-item')
+  const idx = HEALTH_APIS.indexOf(apiName)
+  if (idx >= 0 && items[idx]) {
+    const dot = items[idx].querySelector('.health-dot')
+    if (dot) dot.className = 'health-dot ' + cls
+  }
 }
 
 export function initSetup(refreshState) {
+  initTheme()
+  els.themeToggle.addEventListener('click', toggleTheme)
+
   els.refreshState.addEventListener('click', () => {
     refreshState(false).catch((err) => toast(err.message, true))
+  })
+
+  els.recheckHealth.addEventListener('click', () => {
+    if (app.state && app.state.data) {
+      checkHealth(app.state.data.environments || [])
+      checkTokenStatuses(app.state.data.accounts || [])
+      toast('Health checks started')
+    }
   })
 
   els.accountForm.addEventListener('submit', async (event) => {
@@ -53,15 +198,19 @@ export function initSetup(refreshState) {
     const kind = document.getElementById('account-kind').value
     const isInteractive = kind === 'user' || kind === 'device-code'
     setBtnLoading(btn, true, isInteractive ? 'Waiting for login\u2026' : 'Saving\u2026')
-    els.accountCancel.classList.remove('hidden')
+    if (isInteractive) els.accountCancel.classList.remove('hidden')
     try {
       const started = await api('/api/jobs/account-login', { method: 'POST', body: JSON.stringify(formDataObject(event.currentTarget)) })
       app.currentLoginJobId = started.data.id
-      await waitForLoginJob(app.currentLoginJobId)
+      const result = await waitForLoginJob(app.currentLoginJobId)
       event.currentTarget.reset()
       document.getElementById('account-kind').value = 'user'
       applyAccountKindVisibility()
-      toast('Account saved')
+      if (result && result.data && result.data.expiresAt) {
+        toast('Account saved and authenticated')
+      } else {
+        toast('Account saved but login may not have completed', true)
+      }
       await refreshState(true)
     } catch (err) {
       toast(err.message, true)
@@ -140,6 +289,27 @@ export function initSetup(refreshState) {
         .catch((err) => toast(err.message, true))
       return
     }
+    const loginAccount = event.target.closest('[data-login-account]')
+    if (loginAccount) {
+      const name = loginAccount.dataset.loginAccount
+      const btn = loginAccount
+      setBtnLoading(btn, true, 'Logging in\u2026')
+      api('/api/jobs/account-login', { method: 'POST', body: JSON.stringify({ name, kind: 'user' }) })
+        .then(async (started) => {
+          app.currentLoginJobId = started.data.id
+          const result = await waitForLoginJob(app.currentLoginJobId)
+          app.currentLoginJobId = null
+          if (result && result.data && result.data.expiresAt) {
+            toast(name + ' authenticated')
+          } else {
+            toast(name + ' login may not have completed', true)
+          }
+          await refreshState(true)
+        })
+        .catch((err) => { toast(err.message, true); app.currentLoginJobId = null })
+        .finally(() => setBtnLoading(btn, false, 'Login'))
+      return
+    }
     const useDiscovered = event.target.closest('[data-use-discovered]')
     if (useDiscovered) {
       const payload = JSON.parse(decodeURIComponent(useDiscovered.dataset.useDiscovered))
@@ -150,8 +320,23 @@ export function initSetup(refreshState) {
       form.elements.account.value = payload.accountName || ''
       form.elements.url.value = payload.environmentApiUrl || payload.environmentUrl || ''
       form.elements.displayName.value = payload.displayName || ''
+      return
+    }
+    if (event.target.id === 'mcp-copy-btn' || event.target.closest('#mcp-copy-btn')) {
+      const cmd = document.getElementById('mcp-cmd')
+      if (cmd) {
+        navigator.clipboard.writeText(cmd.textContent).then(
+          () => { toast('Copied to clipboard'); event.target.textContent = 'Copied!'; setTimeout(() => { event.target.textContent = 'Copy' }, 1500) },
+          () => toast('Failed to copy', true)
+        )
+      }
     }
   })
+}
+
+export function runInitialHealthChecks(data) {
+  checkHealth(data.environments || [])
+  checkTokenStatuses(data.accounts || [])
 }
 
 async function waitForLoginJob(jobId) {
