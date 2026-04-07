@@ -1,6 +1,6 @@
 export function renderSetupModule(): string {
   return String.raw`
-import { app, api, applyAccountKindVisibility, esc, formDataObject, optionMarkup, showLastResponse, summarizeError, toast } from '/assets/ui/shared.js'
+import { app, api, applyAccountKindVisibility, esc, formDataObject, optionMarkup, setBtnLoading, summarizeError, toast } from '/assets/ui/shared.js'
 
 const els = {
   refreshState: document.getElementById('refresh-state'),
@@ -12,12 +12,7 @@ const els = {
   environmentForm: document.getElementById('environment-form'),
   discoverForm: document.getElementById('discover-form'),
   discoverAccount: document.getElementById('discover-account'),
-  environmentAccount: document.getElementById('environment-account'),
-  explorerEnvironment: document.getElementById('explorer-environment'),
-  queryEnvironment: document.getElementById('query-environment'),
-  fetchEnvironment: document.getElementById('fetch-environment'),
-  queryAccount: document.getElementById('query-account'),
-  fetchAccount: document.getElementById('fetch-account')
+  environmentAccount: document.getElementById('environment-account')
 }
 
 export function renderSetupState(data) {
@@ -25,62 +20,55 @@ export function renderSetupState(data) {
   const environments = data.environments || []
 
   els.accountsList.innerHTML = accounts.length
-    ? accounts.map((account) => {
-        return '<div class="item">' +
-          '<div class="item-title">' + esc(account.name) + '</div>' +
-          '<div class="mono-subtle">' + esc(account.kind) + '</div>' +
-          '<div class="pill-row"><button class="btn danger" data-remove-account="' + esc(account.name) + '" type="button">Remove</button></div>' +
+    ? accounts.map((a) =>
+        '<div class="card-item">' +
+          '<div class="card-item-info"><div class="card-item-title">' + esc(a.name) + '</div><div class="card-item-sub">' + esc(a.kind) + '</div></div>' +
+          '<button class="btn btn-danger" data-remove-account="' + esc(a.name) + '" type="button">Remove</button>' +
         '</div>'
-      }).join('')
-    : '<div class="empty">No accounts configured yet.</div>'
+      ).join('')
+    : '<div class="empty">No accounts configured.</div>'
 
   els.environmentsList.innerHTML = environments.length
-    ? environments.map((environment) => {
-        const subtitle = environment.url || ''
-        return '<div class="item">' +
-          '<div class="item-title">' + esc(environment.alias) + '</div>' +
-          '<div class="mono-subtle">' + esc(subtitle) + '</div>' +
-          '<div class="pill-row">' +
-          '<span class="pill">' + esc(environment.account) + '</span>' +
-          (environment.makerEnvironmentId ? '<span class="pill">' + esc(environment.makerEnvironmentId) + '</span>' : '') +
-          '<button class="btn danger" data-remove-environment="' + esc(environment.alias) + '" type="button">Remove</button>' +
-          '</div>' +
+    ? environments.map((e) =>
+        '<div class="card-item">' +
+          '<div class="card-item-info"><div class="card-item-title">' + esc(e.alias) + ' <span class="badge">' + esc(e.account) + '</span></div><div class="card-item-sub">' + esc(e.url || '') + '</div></div>' +
+          '<button class="btn btn-danger" data-remove-environment="' + esc(e.alias) + '" type="button">Remove</button>' +
         '</div>'
-      }).join('')
-    : '<div class="empty">No environments configured yet.</div>'
+      ).join('')
+    : '<div class="empty">No environments configured.</div>'
 
-  const accountNames = accounts.map((account) => account.name)
-  const environmentAliases = environments.map((environment) => environment.alias)
+  const accountNames = accounts.map((a) => a.name)
   els.discoverAccount.innerHTML = optionMarkup(accountNames, 'select account')
   els.environmentAccount.innerHTML = optionMarkup(accountNames)
-  els.explorerEnvironment.innerHTML = optionMarkup(environmentAliases, 'select environment')
-  els.queryEnvironment.innerHTML = optionMarkup(environmentAliases, 'select environment')
-  els.fetchEnvironment.innerHTML = optionMarkup(environmentAliases, 'select environment')
-  els.queryAccount.innerHTML = optionMarkup(accountNames, 'environment default')
-  els.fetchAccount.innerHTML = optionMarkup(accountNames, 'environment default')
 }
 
 export function initSetup(refreshState) {
   els.refreshState.addEventListener('click', () => {
-    refreshState(false).catch((error) => toast(error.message, true))
+    refreshState(false).catch((err) => toast(err.message, true))
   })
 
   els.accountForm.addEventListener('submit', async (event) => {
     event.preventDefault()
+    const btn = document.getElementById('account-submit')
+    const kind = document.getElementById('account-kind').value
+    const isInteractive = kind === 'user' || kind === 'device-code'
+    setBtnLoading(btn, true, isInteractive ? 'Waiting for login\u2026' : 'Saving\u2026')
+    els.accountCancel.classList.remove('hidden')
     try {
       const started = await api('/api/jobs/account-login', { method: 'POST', body: JSON.stringify(formDataObject(event.currentTarget)) })
       app.currentLoginJobId = started.data.id
-      els.accountCancel.hidden = false
       await waitForLoginJob(app.currentLoginJobId)
       event.currentTarget.reset()
       document.getElementById('account-kind').value = 'user'
       applyAccountKindVisibility()
-      els.accountCancel.hidden = true
-      app.currentLoginJobId = null
       toast('Account saved')
       await refreshState(true)
-    } catch (error) {
-      toast(error.message, true)
+    } catch (err) {
+      toast(err.message, true)
+    } finally {
+      app.currentLoginJobId = null
+      els.accountCancel.classList.add('hidden')
+      setBtnLoading(btn, false, 'Save & Login')
     }
   })
 
@@ -91,40 +79,47 @@ export function initSetup(refreshState) {
       toast('Pending login cancelled', true)
     } finally {
       app.currentLoginJobId = null
-      els.accountCancel.hidden = true
+      els.accountCancel.classList.add('hidden')
     }
   })
 
   els.environmentForm.addEventListener('submit', async (event) => {
     event.preventDefault()
+    const btn = document.getElementById('env-submit')
+    setBtnLoading(btn, true, 'Discovering\u2026')
     try {
       await api('/api/environments', { method: 'POST', body: JSON.stringify(formDataObject(event.currentTarget)) })
       event.currentTarget.reset()
       els.discoveredList.innerHTML = ''
       toast('Environment added')
       await refreshState(true)
-    } catch (error) {
-      toast(error.message, true)
+    } catch (err) {
+      toast(err.message, true)
+    } finally {
+      setBtnLoading(btn, false, 'Discover & Save')
     }
   })
 
   els.discoverForm.addEventListener('submit', async (event) => {
     event.preventDefault()
+    const btn = document.getElementById('discover-submit')
+    setBtnLoading(btn, true, 'Discovering\u2026')
     try {
       const payload = await api('/api/environments/discover', { method: 'POST', body: JSON.stringify(formDataObject(event.currentTarget)) })
       const items = payload.data || []
       els.discoveredList.innerHTML = items.length
-        ? items.map((item) => {
-            return '<div class="item">' +
-              '<div class="item-title">' + esc(item.displayName || item.makerEnvironmentId || 'environment') + '</div>' +
-              '<div class="mono-subtle">' + esc(item.environmentApiUrl || item.environmentUrl || '') + '</div>' +
-              '<div class="pill-row"><button class="btn ghost" data-use-discovered="' + esc(encodeURIComponent(JSON.stringify(item))) + '" type="button">Use</button></div>' +
+        ? items.map((item) =>
+            '<div class="card-item">' +
+              '<div class="card-item-info"><div class="card-item-title">' + esc(item.displayName || item.makerEnvironmentId || 'environment') + '</div><div class="card-item-sub">' + esc(item.environmentApiUrl || item.environmentUrl || '') + '</div></div>' +
+              '<button class="btn btn-ghost" data-use-discovered="' + esc(encodeURIComponent(JSON.stringify(item))) + '" type="button">Use</button>' +
             '</div>'
-          }).join('')
-        : '<div class="empty">No environments returned for that account.</div>'
+          ).join('')
+        : '<div class="empty">No environments returned.</div>'
       toast(items.length + ' environment' + (items.length === 1 ? '' : 's') + ' found')
-    } catch (error) {
-      toast(error.message, true)
+    } catch (err) {
+      toast(err.message, true)
+    } finally {
+      setBtnLoading(btn, false, 'Discover')
     }
   })
 
@@ -133,26 +128,18 @@ export function initSetup(refreshState) {
     if (removeAccount) {
       if (!confirm('Remove account "' + removeAccount.dataset.removeAccount + '"?')) return
       api('/api/accounts/' + encodeURIComponent(removeAccount.dataset.removeAccount), { method: 'DELETE' })
-        .then(() => {
-          toast('Account removed')
-          return refreshState(true)
-        })
-        .catch((error) => toast(error.message, true))
+        .then(() => { toast('Account removed'); return refreshState(true) })
+        .catch((err) => toast(err.message, true))
       return
     }
-
     const removeEnvironment = event.target.closest('[data-remove-environment]')
     if (removeEnvironment) {
       if (!confirm('Remove environment "' + removeEnvironment.dataset.removeEnvironment + '"?')) return
       api('/api/environments/' + encodeURIComponent(removeEnvironment.dataset.removeEnvironment), { method: 'DELETE' })
-        .then(() => {
-          toast('Environment removed')
-          return refreshState(true)
-        })
-        .catch((error) => toast(error.message, true))
+        .then(() => { toast('Environment removed'); return refreshState(true) })
+        .catch((err) => toast(err.message, true))
       return
     }
-
     const useDiscovered = event.target.closest('[data-use-discovered]')
     if (useDiscovered) {
       const payload = JSON.parse(decodeURIComponent(useDiscovered.dataset.useDiscovered))
@@ -174,7 +161,6 @@ async function waitForLoginJob(jobId) {
     const payload = await response.json()
     const job = payload.data
     if (!job || job.status === 'pending') continue
-    showLastResponse(payload)
     if (job.status === 'cancelled') throw new Error('Login cancelled.')
     if (job.result && job.result.success === false) throw new Error(summarizeError(job.result))
     return job.result

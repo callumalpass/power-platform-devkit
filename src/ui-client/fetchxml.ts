@@ -1,6 +1,6 @@
 export function renderFetchXmlModule(): string {
   return String.raw`
-import { api, formDataObject, toast } from '/assets/ui/shared.js'
+import { app, api, formDataObject, getGlobalEnvironment, renderEntitySidebar, toast } from '/assets/ui/shared.js'
 
 const els = {
   form: document.getElementById('fetchxml-form'),
@@ -8,7 +8,6 @@ const els = {
   runButton: document.getElementById('fetch-run-btn'),
   preview: document.getElementById('fetch-preview'),
   result: document.getElementById('fetch-result'),
-  environment: document.getElementById('fetch-environment'),
   entity: document.getElementById('fetch-entity'),
   entitySet: document.getElementById('fetch-entity-set'),
   attributes: document.getElementById('fetch-attrs'),
@@ -20,7 +19,9 @@ const els = {
   cond2Operator: document.getElementById('cond2-operator'),
   cond2Value: document.getElementById('cond2-value'),
   orderAttribute: document.getElementById('order-attribute'),
-  orderDesc: document.getElementById('order-desc')
+  orderDesc: document.getElementById('order-desc'),
+  entityList: document.getElementById('fetch-entity-list'),
+  entityFilter: document.getElementById('fetch-entity-filter')
 }
 
 export function initFetchXml() {
@@ -44,12 +45,26 @@ export function initFetchXml() {
     }
   })
 
-  els.preview.textContent = 'Build FetchXML here.'
-  els.result.textContent = 'Run FetchXML to inspect the response payload.'
+  els.entityFilter.addEventListener('input', renderFetchEntities)
+}
+
+export function renderFetchEntities() {
+  if (!app.entities.length) {
+    els.entityList.innerHTML = '<div class="empty">No entities loaded.</div>'
+    return
+  }
+  renderEntitySidebar(els.entityList, els.entityFilter, (logicalName) => {
+    const entity = app.entities.find((e) => e.logicalName === logicalName)
+    if (entity) {
+      els.entity.value = entity.logicalName
+      els.entitySet.value = entity.entitySetName || ''
+      els.attributes.value = [entity.primaryIdAttribute, entity.primaryNameAttribute].filter(Boolean).join(',')
+      toast('Applied ' + entity.logicalName)
+    }
+  })
 }
 
 export function useEntityInFetchXml(detail, environment) {
-  els.environment.value = environment || ''
   els.entity.value = detail.logicalName || ''
   els.entitySet.value = detail.entitySetName || ''
   els.attributes.value = [detail.primaryIdAttribute, detail.primaryNameAttribute].filter(Boolean).join(',')
@@ -57,11 +72,12 @@ export function useEntityInFetchXml(detail, environment) {
 
 function readFetchPayload() {
   const payload = formDataObject(els.form)
+  payload.environmentAlias = getGlobalEnvironment()
   payload.distinct = els.distinct.value === 'true'
   payload.conditions = [
     { attribute: els.cond1Attribute.value, operator: els.cond1Operator.value, value: els.cond1Value.value },
     { attribute: els.cond2Attribute.value, operator: els.cond2Operator.value, value: els.cond2Value.value }
-  ].filter((item) => item.attribute && item.operator)
+  ].filter((c) => c.attribute && c.operator)
   payload.orders = els.orderAttribute.value
     ? [{ attribute: els.orderAttribute.value, descending: els.orderDesc.value === 'true' }]
     : []

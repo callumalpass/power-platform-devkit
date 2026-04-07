@@ -1,6 +1,6 @@
 export function renderQueryLabModule(): string {
   return String.raw`
-import { api, formDataObject, toast } from '/assets/ui/shared.js'
+import { app, api, formDataObject, getGlobalEnvironment, renderEntitySidebar, toast } from '/assets/ui/shared.js'
 
 const els = {
   form: document.getElementById('query-form'),
@@ -8,10 +8,11 @@ const els = {
   runButton: document.getElementById('query-run-btn'),
   preview: document.getElementById('query-preview'),
   result: document.getElementById('query-result'),
-  environment: document.getElementById('query-environment'),
   entitySet: document.getElementById('query-entity-set'),
   select: document.getElementById('query-select'),
-  order: document.getElementById('query-order')
+  order: document.getElementById('query-order'),
+  entityList: document.getElementById('query-entity-list'),
+  entityFilter: document.getElementById('query-entity-filter')
 }
 
 export function initQueryLab() {
@@ -35,19 +36,35 @@ export function initQueryLab() {
     }
   })
 
-  els.preview.textContent = 'Preview a Dataverse path here.'
-  els.result.textContent = 'Run a query to inspect the response payload.'
+  els.entityFilter.addEventListener('input', renderQueryEntities)
+}
+
+export function renderQueryEntities() {
+  if (!app.entities.length) {
+    els.entityList.innerHTML = '<div class="empty">No entities loaded.</div>'
+    return
+  }
+  renderEntitySidebar(els.entityList, els.entityFilter, (logicalName) => {
+    const entity = app.entities.find((e) => e.logicalName === logicalName)
+    if (entity) {
+      els.entitySet.value = entity.entitySetName || ''
+      els.select.value = [entity.primaryIdAttribute, entity.primaryNameAttribute].filter(Boolean).join(',')
+      els.order.value = entity.primaryNameAttribute ? entity.primaryNameAttribute + ' asc' : ''
+      toast('Applied ' + entity.logicalName)
+    }
+  })
 }
 
 export function useEntityInQuery(detail, environment) {
-  els.environment.value = environment || ''
   els.entitySet.value = detail.entitySetName || ''
   els.select.value = [detail.primaryIdAttribute, detail.primaryNameAttribute].filter(Boolean).join(',')
   els.order.value = detail.primaryNameAttribute ? detail.primaryNameAttribute + ' asc' : ''
 }
 
 function readQueryPayload() {
-  return formDataObject(els.form)
+  const data = formDataObject(els.form)
+  data.environmentAlias = getGlobalEnvironment()
+  return data
 }
 `;
 }

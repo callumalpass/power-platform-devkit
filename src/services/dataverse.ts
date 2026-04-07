@@ -107,7 +107,7 @@ export async function listDataverseEntities(
   input: { environmentAlias: string; accountName?: string; search?: string; top?: number },
   configOptions: ConfigStoreOptions = {},
 ) {
-  const top = clamp(input.top ?? 100, 1, 500);
+  const top = clamp(input.top ?? 5000, 1, 5000);
   const result = await executeApiRequest({
     environmentAlias: input.environmentAlias,
     accountName: input.accountName,
@@ -129,20 +129,20 @@ export async function listDataverseEntities(
         'IsActivity',
         'ObjectTypeCode',
       ].join(','),
-      '$orderby': 'LogicalName asc',
-      '$top': String(top),
     },
   }, configOptions);
   if (!result.success || !result.data) return fail(...result.diagnostics);
   const entities = readArray(result.data.response).map((value) => mapEntitySummary(readObject(value) ?? {}));
+  entities.sort((a, b) => a.logicalName.localeCompare(b.logicalName));
   const search = normalizeSearch(input.search);
+  const filtered = entities.filter((entity) => {
+    if (!search) return true;
+    return [entity.logicalName, entity.schemaName, entity.displayName, entity.entitySetName]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => value.toLowerCase().includes(search));
+  });
   return ok(
-    entities.filter((entity) => {
-      if (!search) return true;
-      return [entity.logicalName, entity.schemaName, entity.displayName, entity.entitySetName]
-        .filter((value): value is string => Boolean(value))
-        .some((value) => value.toLowerCase().includes(search));
-    }),
+    top < filtered.length ? filtered.slice(0, top) : filtered,
     result.diagnostics,
   );
 }
@@ -179,7 +179,7 @@ export async function getDataverseEntityDetail(
         'IsIntersect',
         'ChangeTrackingEnabled',
       ].join(','),
-      '$expand': "Attributes($select=LogicalName,SchemaName,DisplayName,Description,AttributeType,AttributeTypeName,RequiredLevel,MaxLength,MinValue,MaxValue,Targets,IsPrimaryId,IsPrimaryName,IsValidForRead,IsValidForCreate,IsValidForUpdate,IsValidForAdvancedFind,IsValidForSortEnabled;)",
+      '$expand': 'Attributes($select=LogicalName,SchemaName,DisplayName,Description,AttributeType,AttributeTypeName,RequiredLevel,IsPrimaryId,IsPrimaryName,IsValidForRead,IsValidForCreate,IsValidForUpdate,IsValidForAdvancedFind)',
     },
   }, configOptions);
   if (!result.success || !result.data) return fail(...result.diagnostics);

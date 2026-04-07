@@ -1,33 +1,59 @@
 export function renderAppModule(): string {
   return String.raw`
-import { app, applyAccountKindVisibility, registerTabHandlers, renderMeta, showLastResponse, toast } from '/assets/ui/shared.js'
+import { app, api, applyAccountKindVisibility, registerTabHandlers, renderMeta, optionMarkup, getGlobalEnvironment, loadEntities, toast } from '/assets/ui/shared.js'
 import { initSetup, renderSetupState } from '/assets/ui/setup.js'
-import { initExplorer } from '/assets/ui/explorer.js'
-import { initQueryLab, useEntityInQuery } from '/assets/ui/query-lab.js'
-import { initFetchXml, useEntityInFetchXml } from '/assets/ui/fetchxml.js'
-import { api } from '/assets/ui/shared.js'
+import { initExplorer, renderExplorerEntities } from '/assets/ui/explorer.js'
+import { initQueryLab, useEntityInQuery, renderQueryEntities } from '/assets/ui/query-lab.js'
+import { initFetchXml, useEntityInFetchXml, renderFetchEntities } from '/assets/ui/fetchxml.js'
+
+const globalEnv = document.getElementById('global-environment')
+let lastEnv = ''
 
 async function refreshState(silent) {
   const payload = await api('/api/state')
   app.state = payload
   renderMeta(payload.data)
   renderSetupState(payload.data)
+
+  const environments = (payload.data.environments || []).map((e) => e.alias)
+  const prev = globalEnv.value
+  globalEnv.innerHTML = optionMarkup(environments, 'Select environment')
+  if (prev && environments.includes(prev)) globalEnv.value = prev
+  else if (environments.length) globalEnv.value = environments[0]
+
   if (!silent) toast('State refreshed')
+  await onEnvironmentChange()
 }
 
+async function onEnvironmentChange() {
+  const env = getGlobalEnvironment()
+  if (!env || env === lastEnv) return
+  lastEnv = env
+  try {
+    await loadEntities(env)
+    renderExplorerEntities()
+    renderQueryEntities()
+    renderFetchEntities()
+    toast('Loaded ' + app.entities.length + ' entities')
+  } catch (err) {
+    toast(err.message, true)
+  }
+}
+
+globalEnv.addEventListener('change', () => {
+  app.entitiesEnvironment = null
+  onEnvironmentChange().catch((err) => toast(err.message, true))
+})
+
 function bootstrap() {
-  showLastResponse('Waiting for the first response...')
   registerTabHandlers()
   document.getElementById('account-kind').addEventListener('change', applyAccountKindVisibility)
   applyAccountKindVisibility()
 
   initSetup(refreshState)
+  initExplorer({ useEntityInQuery, useEntityInFetchXml })
   initQueryLab()
   initFetchXml()
-  initExplorer({
-    useEntityInQuery,
-    useEntityInFetchXml
-  })
 
   refreshState(true).catch((error) => toast(error.message, true))
 }

@@ -2,13 +2,19 @@ export function renderSharedModule(): string {
   return String.raw`
 export const app = {
   state: null,
-  currentLoginJobId: null
+  currentLoginJobId: null,
+  entities: [],
+  currentEntity: null,
+  currentEntityDetail: null,
+  currentRecordPreview: null,
+  entitiesEnvironment: null
 }
 
 export const els = {
-  lastResponse: document.getElementById('last-response'),
+  lastResponse: null,
   meta: document.getElementById('meta'),
-  toasts: document.getElementById('toasts')
+  toasts: document.getElementById('toasts'),
+  globalEnv: document.getElementById('global-environment')
 }
 
 export function esc(value) {
@@ -26,14 +32,13 @@ export function pretty(value) {
 
 export function toast(message, isError = false) {
   const el = document.createElement('div')
-  el.className = 'toast' + (isError ? ' error' : '')
+  el.className = 'toast' + (isError ? ' error' : ' ok')
   el.textContent = message
   els.toasts.appendChild(el)
-  setTimeout(() => el.remove(), isError ? 5000 : 2500)
-}
-
-export function showLastResponse(value) {
-  els.lastResponse.textContent = pretty(value)
+  setTimeout(() => {
+    el.classList.add('fade-out')
+    el.addEventListener('animationend', () => el.remove())
+  }, isError ? 5000 : 2500)
 }
 
 export function summarizeError(data) {
@@ -46,7 +51,6 @@ export function summarizeError(data) {
 export async function api(path, options) {
   const response = await fetch(path, Object.assign({ headers: { 'content-type': 'application/json' } }, options || {}))
   const data = await response.json()
-  showLastResponse(data)
   if (!response.ok || data.success === false) {
     throw new Error(summarizeError(data))
   }
@@ -74,37 +78,86 @@ export function formDataObject(form) {
 
 export function setTab(tab) {
   for (const el of document.querySelectorAll('.tab')) el.classList.toggle('active', el.dataset.tab === tab)
-  for (const el of document.querySelectorAll('.panel')) el.classList.toggle('active', el.id === 'panel-' + tab)
+  for (const el of document.querySelectorAll('.tab-panel')) el.classList.toggle('active', el.id === 'panel-' + tab)
+  window.location.hash = tab
 }
 
 export function registerTabHandlers() {
   for (const tab of document.querySelectorAll('.tab')) {
     tab.addEventListener('click', () => setTab(tab.dataset.tab))
   }
+  const hash = window.location.hash.slice(1)
+  if (hash && document.getElementById('panel-' + hash)) setTab(hash)
 }
 
 export function applyAccountKindVisibility() {
   const kind = document.getElementById('account-kind').value
-  const kinds = ['user', 'device-code', 'client-secret', 'environment-token', 'static-token']
-  for (const value of kinds) {
-    for (const el of document.querySelectorAll('.account-' + value)) {
-      el.hidden = !el.classList.contains('account-' + kind)
-    }
-  }
+  const form = document.getElementById('account-form')
+  form.querySelectorAll('.conditional').forEach((el) => {
+    el.classList.toggle('visible', el.classList.contains('cond-' + kind))
+  })
 }
 
 export function renderMeta(data) {
   const accounts = data.accounts || []
   const environments = data.environments || []
   els.meta.innerHTML =
-    '<div class="chip">Config <code>' + esc(data.configDir) + '</code></div>' +
-    '<div class="chip">Auth <code>' + esc(data.allowInteractiveAuth ? 'interactive' : 'non-interactive') + '</code></div>' +
-    '<div class="chip">Accounts <code>' + esc(accounts.length) + '</code></div>' +
-    '<div class="chip">Environments <code>' + esc(environments.length) + '</code></div>'
+    '<span>' + accounts.length + ' accounts</span>' +
+    '<span>' + environments.length + ' environments</span>'
 }
 
-export function readSelectedValue(selectId, label = 'value') {
-  const value = document.getElementById(selectId).value
+export function getGlobalEnvironment() {
+  return els.globalEnv.value
+}
+
+export function setBtnLoading(btn, loading, label) {
+  if (loading) {
+    btn._origLabel = btn.textContent
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner"></span>' + esc(label || btn._origLabel)
+  } else {
+    btn.disabled = false
+    btn.textContent = btn._origLabel || label || ''
+  }
+}
+
+export async function loadEntities(environment) {
+  if (!environment) return
+  if (app.entitiesEnvironment === environment && app.entities.length) return
+  const payload = await api('/api/dv/entities?environment=' + encodeURIComponent(environment))
+  app.entities = payload.data || []
+  app.entitiesEnvironment = environment
+  app.currentEntity = null
+  app.currentEntityDetail = null
+  app.currentRecordPreview = null
+}
+
+export function renderEntitySidebar(listEl, filterEl, onSelect) {
+  const filter = (filterEl.value || '').toLowerCase()
+  const filtered = filter
+    ? app.entities.filter((e) => e.logicalName.includes(filter) || (e.displayName || '').toLowerCase().includes(filter) || (e.entitySetName || '').toLowerCase().includes(filter))
+    : app.entities
+  listEl.innerHTML = filtered.length
+    ? filtered.map((e) => {
+        const active = app.currentEntity && app.currentEntity.logicalName === e.logicalName ? ' active' : ''
+        return '<div class="entity-item' + active + '" data-entity="' + esc(e.logicalName) + '">' +
+          '<div class="entity-item-name">' + esc(e.displayName || e.logicalName) + '</div>' +
+          '<div class="entity-item-logical">' + esc(e.logicalName) + '</div>' +
+          (e.entitySetName ? '<div class="entity-item-set">' + esc(e.entitySetName) + '</div>' : '') +
+        '</div>'
+      }).join('')
+    : '<div class="empty">No entities match.</div>'
+
+  listEl.onclick = (event) => {
+    const item = event.target.closest('[data-entity]')
+    if (item) onSelect(item.dataset.entity)
+  }
+}
+
+export function showLastResponse() {}
+
+export function readSelectedValue(id, label) {
+  const value = document.getElementById(id).value
   if (!value) throw new Error('Select ' + label + ' first.')
   return value
 }

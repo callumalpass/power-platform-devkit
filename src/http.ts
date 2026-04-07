@@ -35,7 +35,7 @@ export class HttpClient {
   async request<T>(request: HttpRequestOptions): Promise<OperationResult<HttpResponse<T>>> {
     try {
       const url = new URL(request.path, this.options.baseUrl);
-      applyQuery(url.searchParams, request.query);
+      applyQuery(url, request.query);
       const headers = new Headers({ ...(this.options.defaultHeaders ?? {}), ...(request.headers ?? {}) });
       if (this.options.tokenProvider) {
         headers.set('authorization', `Bearer ${await this.options.tokenProvider.getAccessToken(this.options.authResource ?? url.origin)}`);
@@ -84,18 +84,26 @@ export class HttpClient {
   }
 }
 
-function applyQuery(searchParams: URLSearchParams, query: Record<string, HttpQueryValue> | undefined): void {
+function applyQuery(url: URL, query: Record<string, HttpQueryValue> | undefined): void {
   if (!query) return;
+  const parts: string[] = [];
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === null) continue;
     if (Array.isArray(value)) {
       for (const item of value) {
-        if (item !== undefined && item !== null) searchParams.append(key, String(item));
+        if (item !== undefined && item !== null) parts.push(`${key}=${encodeODataValue(String(item))}`);
       }
       continue;
     }
-    searchParams.set(key, String(value));
+    parts.push(`${key}=${encodeODataValue(String(value))}`);
   }
+  if (!parts.length) return;
+  const existing = url.search ? url.search.slice(1) : '';
+  url.search = existing ? `${existing}&${parts.join('&')}` : parts.join('&');
+}
+
+function encodeODataValue(value: string): string {
+  return value.replace(/ /g, '%20').replace(/#/g, '%23');
 }
 
 function resolveRequestBody(request: HttpRequestOptions): string | undefined {
