@@ -12,10 +12,14 @@ const els = {
   flowSubtitle: document.getElementById('flow-subtitle'),
   flowMetrics: document.getElementById('flow-metrics'),
   flowRuns: document.getElementById('flow-runs'),
+  flowRunFilter: document.getElementById('flow-run-filter'),
+  flowRunStatusFilter: document.getElementById('flow-run-status-filter'),
   flowRunsPanel: document.getElementById('flow-runs-panel'),
   flowActionsPanel: document.getElementById('flow-actions-panel'),
   flowRunSummary: document.getElementById('flow-run-summary'),
   flowActions: document.getElementById('flow-actions'),
+  flowActionFilter: document.getElementById('flow-action-filter'),
+  flowActionStatusFilter: document.getElementById('flow-action-status-filter'),
   flowActionsBack: document.getElementById('flow-actions-back'),
   flowActionDetailPanel: document.getElementById('flow-action-detail-panel'),
   flowActionTitle: document.getElementById('flow-action-title'),
@@ -36,6 +40,10 @@ let currentAction = null
 
 export function initAutomate() {
   els.flowFilter.addEventListener('input', renderFlowList)
+  els.flowRunFilter.addEventListener('input', renderRuns)
+  els.flowRunStatusFilter.addEventListener('change', renderRuns)
+  els.flowActionFilter.addEventListener('input', renderActions)
+  els.flowActionStatusFilter.addEventListener('change', renderActions)
   els.flowRefresh.addEventListener('click', () => {
     flowsEnvironment = null
     loadFlows().then(() => toast('Flows refreshed')).catch(e => toast(e.message, true))
@@ -203,7 +211,24 @@ function renderRuns() {
     els.flowRuns.innerHTML = '<div class="empty">No recent runs.</div>'
     return
   }
-  els.flowRuns.innerHTML = currentRuns.map((r, i) => {
+  const textFilter = (els.flowRunFilter.value || '').toLowerCase().trim()
+  const statusFilter = els.flowRunStatusFilter.value || ''
+  const filteredRuns = currentRuns
+    .map((run, index) => ({ run, index }))
+    .filter(({ run }) => {
+      const status = prop(run, 'properties.status') || ''
+      const trigger = prop(run, 'properties.trigger.name') || ''
+      const haystack = [run.name || '', status, trigger].join(' ').toLowerCase()
+      return (!statusFilter || status === statusFilter) && (!textFilter || haystack.includes(textFilter))
+    })
+    .sort((a, b) => statusRank(prop(a.run, 'properties.status')) - statusRank(prop(b.run, 'properties.status')))
+
+  if (!filteredRuns.length) {
+    els.flowRuns.innerHTML = '<div class="empty">No runs match the current filters.</div>'
+    return
+  }
+
+  els.flowRuns.innerHTML = filteredRuns.map(({ run: r, index: i }) => {
     const status = prop(r, 'properties.status') || 'Unknown'
     const startTime = prop(r, 'properties.startTime')
     const endTime = prop(r, 'properties.endTime')
@@ -212,10 +237,17 @@ function renderRuns() {
     const active = currentRun && currentRun.name === r.name ? ' active' : ''
     const duration = startTime && endTime ? formatDuration(new Date(startTime), new Date(endTime)) : ''
     return '<div class="run-item' + active + '" data-run-idx="' + i + '">' +
-      '<span class="health-dot ' + cls + '"></span>' +
-      '<span class="run-status">' + esc(status) + '</span>' +
-      (trigger ? '<span class="action-item-type">' + esc(trigger) + '</span>' : '') +
-      (duration ? '<span class="run-duration">' + esc(duration) + '</span>' : '') +
+      '<div class="run-main">' +
+        '<span class="health-dot ' + cls + '"></span>' +
+        '<div class="run-text">' +
+          '<div class="run-status">' + esc(status) + '</div>' +
+          '<div class="run-sub">' +
+            (trigger ? '<span class="action-item-type">' + esc(trigger) + '</span>' : '') +
+            (duration ? '<span class="run-duration">' + esc(duration) + '</span>' : '') +
+            (r.name ? '<span class="action-item-type">' + esc(shortId(r.name)) + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
       '<span class="run-time">' + esc(formatDate(startTime)) + '</span>' +
     '</div>'
   }).join('')
@@ -246,11 +278,17 @@ async function loadRunActions(run) {
   const duration = startTime && endTime ? formatDuration(new Date(startTime), new Date(endTime)) : '-'
   const statusCls = status === 'Succeeded' ? 'ok' : status === 'Failed' ? 'error' : 'pending'
   els.flowRunSummary.innerHTML =
-    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
       '<span class="health-dot ' + statusCls + '"></span>' +
       '<strong style="font-size:0.8125rem">' + esc(status) + '</strong>' +
       '<span style="font-size:0.75rem;color:var(--muted)">' + esc(formatDate(startTime)) + '</span>' +
       '<span class="run-duration">' + esc(duration) + '</span>' +
+    '</div>' +
+    '<div class="run-summary-grid">' +
+      summaryCard('Run ID', run.name || '-') +
+      summaryCard('Trigger', prop(run, 'properties.trigger.name') || '-') +
+      summaryCard('Started', formatDate(startTime)) +
+      summaryCard('Ended', formatDate(endTime)) +
     '</div>'
 
   els.flowActions.innerHTML = '<div class="empty">Loading actions\u2026</div>'
@@ -274,7 +312,34 @@ function renderActions() {
     els.flowActions.innerHTML = '<div class="empty">No actions in this run.</div>'
     return
   }
-  els.flowActions.innerHTML = currentActions.map((a, i) => {
+  const textFilter = (els.flowActionFilter.value || '').toLowerCase().trim()
+  const statusFilter = els.flowActionStatusFilter.value || ''
+  const filteredActions = currentActions
+    .map((action, index) => ({ action, index }))
+    .filter(({ action }) => {
+      const name = action.name || ''
+      const status = prop(action, 'properties.status') || ''
+      const type = prop(action, 'properties.type') || ''
+      const code = prop(action, 'properties.code') || ''
+      const haystack = [name, status, type, code].join(' ').toLowerCase()
+      return (!statusFilter || status === statusFilter) && (!textFilter || haystack.includes(textFilter))
+    })
+    .sort((a, b) => statusRank(prop(a.action, 'properties.status')) - statusRank(prop(b.action, 'properties.status')))
+
+  if (!filteredActions.length) {
+    els.flowActions.innerHTML = '<div class="empty">No actions match the current filters.</div>'
+    return
+  }
+
+  const counts = summarizeActionCounts(currentActions)
+  els.flowActions.innerHTML =
+    '<div class="run-summary-grid" style="margin-bottom:12px">' +
+      summaryCard('Actions', String(currentActions.length)) +
+      summaryCard('Failed', String(counts.Failed || 0)) +
+      summaryCard('Running', String(counts.Running || 0)) +
+      summaryCard('Succeeded', String(counts.Succeeded || 0)) +
+    '</div>' +
+    filteredActions.map(({ action: a, index: i }) => {
     const name = a.name || 'Unknown'
     const status = prop(a, 'properties.status') || 'Unknown'
     const type = prop(a, 'properties.type') || ''
@@ -288,6 +353,7 @@ function renderActions() {
       '<span class="health-dot ' + cls + '"></span>' +
       '<span class="action-item-name" title="' + esc(name) + '">' + esc(name) + '</span>' +
       '<div class="action-item-meta">' +
+        '<span class="action-item-type">' + esc(status) + '</span>' +
         (type ? '<span class="action-item-type">' + esc(type) + '</span>' : '') +
         (code && code !== status ? '<span class="action-item-type">' + esc(code) + '</span>' : '') +
         (duration ? '<span class="run-duration">' + esc(duration) + '</span>' : '') +
@@ -470,6 +536,35 @@ function formatDuration(start, end) {
   if (mins < 60) return mins + 'm ' + remainSecs + 's'
   const hours = Math.floor(mins / 60)
   return hours + 'h ' + (mins % 60) + 'm'
+}
+
+function statusRank(status) {
+  switch (status) {
+    case 'Failed': return 0
+    case 'Running': return 1
+    case 'Cancelled': return 2
+    case 'Skipped': return 3
+    case 'Succeeded': return 4
+    default: return 5
+  }
+}
+
+function summarizeActionCounts(actions) {
+  const counts = {}
+  for (const action of actions) {
+    const status = prop(action, 'properties.status') || 'Unknown'
+    counts[status] = (counts[status] || 0) + 1
+  }
+  return counts
+}
+
+function summaryCard(label, value) {
+  return '<div class="run-summary-card"><div class="run-summary-card-label">' + esc(label) + '</div><div class="run-summary-card-value">' + esc(value) + '</div></div>'
+}
+
+function shortId(value) {
+  const text = String(value || '')
+  return text.length > 12 ? text.slice(0, 8) + '…' + text.slice(-4) : text
 }
 `;
 }

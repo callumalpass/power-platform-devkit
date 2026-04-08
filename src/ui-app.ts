@@ -414,9 +414,18 @@ export function renderHtml(): string {
     .run-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.8125rem; cursor: pointer; transition: all 100ms; }
     .run-item:hover { background: var(--bg); border-color: var(--accent); }
     .run-item.active { background: var(--accent-soft); border-color: var(--accent); }
-    .run-status { font-weight: 500; }
+    .run-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+    .run-text { min-width: 0; flex: 1; }
+    .run-status { font-weight: 600; }
+    .run-sub { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; font-size: 0.6875rem; color: var(--muted); }
     .run-time { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
     .run-duration { font-size: 0.6875rem; color: var(--muted); font-family: var(--mono); }
+    .run-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .run-toolbar input, .run-toolbar select { max-width: 220px; }
+    .run-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .run-summary-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--bg); }
+    .run-summary-card-label { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; margin-bottom: 3px; }
+    .run-summary-card-value { font-size: 0.8125rem; font-family: var(--mono); word-break: break-word; }
 
     /* Action items */
     .action-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: all 100ms; }
@@ -425,6 +434,8 @@ export function renderHtml(): string {
     .action-item-name { font-size: 0.8125rem; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .action-item-type { font-size: 0.6875rem; color: var(--muted); font-family: var(--mono); }
     .action-item-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .action-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .action-toolbar input, .action-toolbar select { max-width: 240px; }
     .action-io-section { margin-bottom: 16px; }
     .action-io-section h3 { font-size: 0.8125rem; font-weight: 600; margin-bottom: 8px; }
     .action-io-section pre.viewer { max-height: 400px; }
@@ -987,6 +998,16 @@ export function renderHtml(): string {
         </div>
         <div class="panel" id="flow-runs-panel" style="display:none">
           <h2 style="margin-bottom:12px">Runs</h2>
+          <div class="run-toolbar">
+            <input type="text" id="flow-run-filter" placeholder="Filter runs by status or trigger…">
+            <select id="flow-run-status-filter">
+              <option value="">All statuses</option>
+              <option value="Failed">Failed</option>
+              <option value="Running">Running</option>
+              <option value="Succeeded">Succeeded</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
           <div id="flow-runs" class="card-list">
             <div class="empty">Select a flow to see runs.</div>
           </div>
@@ -997,6 +1018,16 @@ export function renderHtml(): string {
             <button class="btn btn-ghost" id="flow-actions-back" type="button" style="font-size:0.75rem;padding:4px 10px">\u2190 Back to runs</button>
           </div>
           <div id="flow-run-summary" style="margin-bottom:12px"></div>
+          <div class="action-toolbar">
+            <input type="text" id="flow-action-filter" placeholder="Filter actions by name, type, or code…">
+            <select id="flow-action-status-filter">
+              <option value="">All statuses</option>
+              <option value="Failed">Failed</option>
+              <option value="Running">Running</option>
+              <option value="Succeeded">Succeeded</option>
+              <option value="Skipped">Skipped</option>
+            </select>
+          </div>
           <div id="flow-actions" class="card-list"></div>
         </div>
         <div class="panel" id="flow-action-detail-panel" style="display:none">
