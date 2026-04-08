@@ -51,25 +51,27 @@ export class HttpClient {
           }, request.timeoutMs)
         : undefined;
       try {
+        const method = request.method ?? 'GET';
         const response = await fetch(url, {
-          method: request.method ?? 'GET',
+          method,
           headers,
           body,
           ...(controller ? { signal: controller.signal } : {}),
         });
-        const parsed = await readResponse<T>(response, request.responseType ?? 'json');
+        const parsed = await readResponse<T>(response, request.responseType ?? 'json', method, url.toString());
+        if (!parsed.success || !parsed.data) return fail(...parsed.diagnostics);
         if (!response.ok) {
           return fail(
-            createDiagnostic('error', 'HTTP_REQUEST_FAILED', `${request.method ?? 'GET'} ${url.toString()} returned ${response.status}.`, {
+            createDiagnostic('error', 'HTTP_REQUEST_FAILED', `${method} ${url.toString()} returned ${response.status}.`, {
               source: 'pp/http',
-              detail: parsed.text,
+              detail: parsed.data.text,
             }),
           );
         }
         return ok({
           status: response.status,
           headers: headersToObject(response.headers),
-          data: parsed.data,
+          data: parsed.data.data,
         });
       } finally {
         if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -113,22 +115,33 @@ function resolveRequestBody(request: HttpRequestOptions): string | undefined {
   return JSON.stringify(request.body);
 }
 
-async function readResponse<T>(response: Response, responseType: HttpResponseType): Promise<{ data: T; text?: string }> {
+async function readResponse<T>(
+  response: Response,
+  responseType: HttpResponseType,
+  method: string,
+  url: string,
+): Promise<OperationResult<{ data: T; text?: string }>> {
   if (responseType === 'void' || response.status === 204 || response.status === 205) {
-    return { data: undefined as T };
+    return ok({ data: undefined as T });
   }
   const text = await response.text();
   if (responseType === 'text') {
-    return { data: text as T, text };
+    return ok({ data: text as T, text });
   }
   if (!text) {
-    return { data: undefined as T, text };
+    return ok({ data: undefined as T, text });
   }
   try {
-    return { data: JSON.parse(text) as T, text };
-  } catch {
-    if (!response.ok) return { data: undefined as T, text };
-    throw new Error('Expected JSON response.');
+    return ok({ data: JSON.parse(text) as T, text });
+  } catch (error) {
+    if (!response.ok) return ok({ data: undefined as T, text });
+    const snippet = text.length > 600 ? `${text.slice(0, 600)}…` : text;
+    return fail(
+      createDiagnostic('error', 'HTTP_RESPONSE_PARSE_FAILED', `${method} ${url} returned invalid JSON.`, {
+        source: 'pp/http',
+        detail: `Status: ${response.status}\n${error instanceof Error ? error.message : String(error)}\n\n${snippet}`,
+      }),
+    );
   }
 }
 

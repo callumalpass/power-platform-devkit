@@ -647,6 +647,7 @@ export function runInitialHealthChecks(data) {
 }
 
 async function waitForLoginJob(jobId) {
+  let parseFailures = 0
   while (true) {
     await new Promise((resolve) => setTimeout(resolve, 1200))
     const response = await fetch('/api/jobs/' + encodeURIComponent(jobId), { headers: { 'content-type': 'application/json' } })
@@ -654,9 +655,15 @@ async function waitForLoginJob(jobId) {
     let payload
     try { payload = JSON.parse(text) }
     catch (e) {
+      parseFailures += 1
+      const snippet = text.length > 240 ? text.slice(0, 240) + '…' : text
+      if (parseFailures >= 2) {
+        throw new Error('Invalid JSON while polling login job (' + response.status + '): ' + (e.message || 'parse error') + (snippet ? '. Response starts with: ' + snippet : ''))
+      }
       console.warn('Job poll parse error (length=' + text.length + '):', e.message)
       continue
     }
+    parseFailures = 0
     const job = payload.data
     if (job && job.metadata) {
       if (Array.isArray(job.metadata.loginTargets)) {

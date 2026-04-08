@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ConfidentialClientApplication,
@@ -156,7 +156,7 @@ export class AuthService {
       });
     }
 
-    const claims = decodeJwtClaims(primaryToken);
+    const claims = decodeJwtClaims(primaryToken ?? '');
     const refreshed = await this.getAccount(accountResult.data.name);
 
     return ok({
@@ -175,9 +175,14 @@ export class AuthService {
         ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${name} was not found.`, { source: 'pp/auth' }))
         : fail(...accountResult.diagnostics);
     }
+    const account = accountResult.data;
     const provider = createTokenProvider(accountResult.data, this.options, options);
     if (!provider.success || !provider.data) return fail(...provider.diagnostics);
-    return ok(await provider.data.getAccessToken(resource));
+    try {
+      return ok(await provider.data.getAccessToken(resource));
+    } catch (error) {
+      return fail(loginFailureDiagnostic(account, resource, error));
+    }
   }
 
   async checkTokenStatus(name: string, resource?: string): Promise<OperationResult<{ authenticated: boolean; expiresAt?: number }>> {
@@ -430,6 +435,25 @@ async function acquireAndPersistPublicClientToken(
   return { accessToken, account: nextAccount };
 }
 
+function loginFailureDiagnostic(account: Account, resource: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalizedResource = normalizeResource(resource);
+  const isInteractive = account.kind === 'user' || account.kind === 'device-code';
+  const code =
+    isInteractive && /JSON/i.test(message)
+      ? 'INTERACTIVE_LOGIN_RESPONSE_INVALID'
+      : isInteractive
+        ? 'INTERACTIVE_LOGIN_FAILED'
+        : 'TOKEN_ACQUISITION_FAILED';
+  return createDiagnostic('error', code, `Failed to acquire a token for ${account.name} on ${normalizedResource}.`, {
+    source: 'pp/auth',
+    detail: message + (error instanceof Error && error.stack ? `\n\n${error.stack}` : ''),
+    hint: isInteractive
+      ? 'Try device code for this account or re-run login for just this API to isolate the failing resource.'
+      : undefined,
+  });
+}
+
 async function createPublicClientApplication(account: UserAccount, options: ConfigStoreOptions): Promise<PublicClientApplication> {
   const cacheDir = getMsalCacheDir(options);
   await mkdir(cacheDir, { recursive: true });
@@ -438,12 +462,23 @@ async function createPublicClientApplication(account: UserAccount, options: Conf
     beforeCacheAccess: async (context) => {
       try {
         const cache = await readFile(cachePath, 'utf8');
+        try {
+          JSON.parse(cache);
+        } catch {
+          await quarantineCorruptCacheFile(cachePath);
+          return;
+        }
         context.tokenCache.deserialize(cache);
       } catch {}
     },
     afterCacheAccess: async (context) => {
       if (!context.cacheHasChanged) return;
-      await writeFile(cachePath, context.tokenCache.serialize(), 'utf8');
+      try {
+        await writeFile(cachePath, context.tokenCache.serialize(), 'utf8');
+      } catch (error) {
+        await quarantineCorruptCacheFile(cachePath);
+        throw new Error(`Failed to write MSAL cache for ${account.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     },
   };
   return new PublicClientApplication({
@@ -492,7 +527,8 @@ function resolveTokenCacheKey(account: UserAccount): string {
 
 function normalizeLoginTargets(targets?: LoginTarget[]): LoginTarget[] {
   const seen = new Set<string>();
-  const normalized = (targets?.length ? targets : [{ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' }])
+  const defaultTarget: LoginTarget = { resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' };
+  const normalized = (targets?.length ? targets : [defaultTarget])
     .map((target) => ({
       ...target,
       resource: normalizeResource(target.resource),
@@ -502,7 +538,14 @@ function normalizeLoginTargets(targets?: LoginTarget[]): LoginTarget[] {
       seen.add(target.resource);
       return true;
     });
-  return normalized.length ? normalized : [{ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' }];
+  return normalized.length ? normalized : [defaultTarget];
+}
+
+async function quarantineCorruptCacheFile(cachePath: string): Promise<void> {
+  const suffix = new Date().toISOString().replaceAll(':', '').replaceAll('.', '');
+  try {
+    await rename(cachePath, `${cachePath}.corrupt-${suffix}`);
+  } catch {}
 }
 
 function promptValue(prompt: 'select_account' | 'login' | 'consent' | 'none') {

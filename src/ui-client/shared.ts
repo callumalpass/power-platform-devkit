@@ -50,11 +50,23 @@ export function summarizeError(data) {
 
 export async function api(path, options) {
   const response = await fetch(path, Object.assign({ headers: { 'content-type': 'application/json' } }, options || {}))
-  const data = await response.json()
+  const text = await response.text()
+  let data
+  try {
+    data = text ? JSON.parse(text) : {}
+  } catch (error) {
+    const snippet = text.length > 240 ? text.slice(0, 240) + '…' : text
+    throw new Error('Invalid JSON from ' + path + ' (' + response.status + '). ' + summarizeParseError(error, snippet))
+  }
   if (!response.ok || data.success === false) {
     throw new Error(summarizeError(data))
   }
   return data
+}
+
+function summarizeParseError(error, snippet) {
+  const message = error && error.message ? error.message : 'Failed to parse response.'
+  return snippet ? message + ' Response starts with: ' + snippet : message
 }
 
 export function optionMarkup(values, emptyLabel) {
@@ -311,4 +323,3 @@ export function showLoading(container, message) {
 }
 `;
 }
-
