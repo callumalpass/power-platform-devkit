@@ -34,6 +34,7 @@ let panViewStart = { x: 0, y: 0 }
 let lastClickTime = 0
 let lastClickNodeId = null
 let needsRender = false
+let dragMoved = false
 
 const NODE_W = 160
 const NODE_H = 44
@@ -52,24 +53,8 @@ export function initRelationships() {
   els.svg.addEventListener('touchend', onMouseUp)
 
   els.svg.addEventListener('click', (e) => {
-    const nodeEl = e.target.closest('[data-node-id]')
-    if (!nodeEl) {
-      if (!e.target.closest('#rel-tooltip')) els.tooltip.classList.add('hidden')
-      return
-    }
-    const id = nodeEl.dataset.nodeId
-    const node = nodes.find(n => n.id === id)
-    if (!node) return
-    const now = Date.now()
-    if (lastClickNodeId === id && now - lastClickTime < 400) {
-      lastClickTime = 0
-      lastClickNodeId = null
+    if (!e.target.closest('[data-node-id]') && !e.target.closest('#rel-tooltip')) {
       els.tooltip.classList.add('hidden')
-      expandNode(node).catch(err => toast(err.message, true))
-    } else {
-      lastClickTime = now
-      lastClickNodeId = id
-      showTooltip(node, e)
     }
   })
 
@@ -313,10 +298,10 @@ function onMouseDown(e) {
     const node = nodes.find(n => n.id === nodeEl.dataset.nodeId)
     if (!node) return
     dragNode = node
+    dragMoved = false
     const pt = svgPoint(e)
     dragOffset.x = pt.x - node.x
     dragOffset.y = pt.y - node.y
-    e.preventDefault()
     return
   }
   isPanning = true
@@ -327,6 +312,7 @@ function onMouseDown(e) {
 
 function onMouseMove(e) {
   if (dragNode) {
+    dragMoved = true
     const pt = svgPoint(e)
     dragNode.x = pt.x - dragOffset.x
     dragNode.y = pt.y - dragOffset.y
@@ -343,7 +329,23 @@ function onMouseMove(e) {
   }
 }
 
-function onMouseUp() {
+function onMouseUp(e) {
+  if (dragNode && !dragMoved) {
+    const node = dragNode
+    dragNode = null
+    const now = Date.now()
+    if (lastClickNodeId === node.id && now - lastClickTime < 400) {
+      lastClickTime = 0
+      lastClickNodeId = null
+      els.tooltip.classList.add('hidden')
+      expandNode(node).catch(err => toast(err.message, true))
+    } else {
+      lastClickTime = now
+      lastClickNodeId = node.id
+      showTooltip(node, e)
+    }
+    return
+  }
   dragNode = null
   isPanning = false
 }
