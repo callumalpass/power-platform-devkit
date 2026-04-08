@@ -160,12 +160,16 @@ function renderDeviceCode() {
 function tokenDotHtml(accountName) {
   const info = tokenStatus[accountName]
   if (info === undefined) return '<span class="health-dot pending" title="Checking\u2026"></span>'
-  if (info && info.authenticated) {
-    const expiry = formatTimeRemaining(info.expiresAt)
-    const expiryHtml = expiry ? ' <span class="token-expiry ' + (expiry.cls || '') + '">' + esc(expiry.text) + '</span>' : ''
-    return '<span class="health-dot ok" title="Authenticated"></span>' + expiryHtml
-  }
+  if (info && info.authenticated) return '<span class="health-dot ok" title="Authenticated"></span>'
   return '<span class="health-dot error" title="Not authenticated"></span>'
+}
+
+function tokenExpiryHtml(accountName) {
+  const info = tokenStatus[accountName]
+  if (!info || !info.authenticated || !info.expiresAt) return ''
+  const expiry = formatTimeRemaining(info.expiresAt)
+  if (!expiry) return ''
+  return '<span class="token-expiry ' + (expiry.cls || '') + '">' + esc(expiry.text) + '</span>'
 }
 
 function checkTokenStatuses(accounts) {
@@ -187,8 +191,9 @@ function checkTokenStatuses(accounts) {
 
 function updateAccountDot(accountName) {
   const el = document.getElementById('token-dot-' + accountName)
-  if (!el) return
-  el.innerHTML = tokenDotHtml(accountName)
+  if (el) el.innerHTML = tokenDotHtml(accountName)
+  const expiryEl = document.getElementById('token-expiry-' + accountName)
+  if (expiryEl) expiryEl.innerHTML = tokenExpiryHtml(accountName)
 }
 
 export function renderSetupState(data) {
@@ -241,6 +246,7 @@ export function renderSetupState(data) {
                   '<span class="badge">' + esc(a.kind) + '</span>' +
                 '</div>' +
                 (email ? '<div class="account-card-email">' + esc(email) + '</div>' : '') +
+                '<div id="token-expiry-' + esc(a.name) + '">' + tokenExpiryHtml(a.name) + '</div>' +
               '</div>' +
             '</div>' +
             '<div class="account-card-actions">' + loginBtn +
