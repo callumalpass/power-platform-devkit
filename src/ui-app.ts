@@ -452,7 +452,7 @@ export function renderHtml(): string {
     .rel-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 0.6875rem; color: var(--muted); background: var(--surface); padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); pointer-events: none; white-space: nowrap; }
     .rel-edge line { stroke: var(--border); stroke-width: 1.5; }
     .rel-edge:hover line { stroke: var(--accent); stroke-width: 2; }
-    .rel-edge-hit { fill: transparent; stroke: none; pointer-events: all; }
+    .rel-edge-hit { stroke: transparent; stroke-width: 12; fill: none; pointer-events: stroke; }
     .rel-arrowhead { fill: var(--border); }
     .rel-edge:hover .rel-arrowhead { fill: var(--accent); }
     .rel-edge-label { font-size: 9px; fill: var(--muted); text-anchor: middle; pointer-events: none; opacity: 0; transition: opacity 150ms; }
