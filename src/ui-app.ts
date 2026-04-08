@@ -395,6 +395,34 @@ export function renderHtml(): string {
     .run-status { font-weight: 500; }
     .run-time { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
 
+    /* Setup add sections */
+    .setup-add-section { margin-top: 14px; border: 1px dashed var(--border); border-radius: var(--radius-sm); }
+    .setup-add-section[open] { border-style: solid; }
+    .setup-add-trigger { padding: 10px 14px; cursor: pointer; font-size: 0.8125rem; font-weight: 500; color: var(--accent); user-select: none; list-style: none; }
+    .setup-add-trigger::-webkit-details-marker { display: none; }
+    .setup-add-trigger::marker { content: ''; }
+    .setup-add-trigger:hover { color: var(--accent-hover); }
+    .setup-add-body { padding: 0 14px 14px; }
+
+    /* Account cards */
+    .account-card { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; transition: border-color 150ms; }
+    .account-card-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; cursor: pointer; gap: 12px; }
+    .account-card-head:hover { background: var(--bg); }
+    .account-card-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .account-card-name { font-size: 0.8125rem; font-weight: 600; }
+    .account-card-email { font-size: 0.75rem; color: var(--muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .account-card-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .account-card-body { border-top: 1px solid var(--border); padding: 14px; background: var(--bg); display: none; animation: slideDown 150ms ease; }
+    .account-card.expanded .account-card-body { display: block; }
+    .account-card-props { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .account-card-prop { font-size: 0.6875rem; }
+    .account-card-prop-label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; margin-bottom: 2px; }
+    .account-card-prop-value { font-family: var(--mono); font-size: 0.75rem; word-break: break-all; }
+    .account-edit-form { display: grid; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .account-edit-form .form-row { gap: 10px; }
+    .account-edit-form input, .account-edit-form textarea { padding: 6px 8px; font-size: 0.75rem; }
+    .account-edit-form .field-label { font-size: 0.625rem; }
+
     .hidden { display: none !important; }
 
     @media (max-width: 900px) {
@@ -436,99 +464,103 @@ export function renderHtml(): string {
 
     <!-- ===== Setup ===== -->
     <div class="tab-panel stack" id="panel-setup">
-      <div class="setup-grid">
-        <div class="panel">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h2>Accounts</h2>
-            <button class="btn btn-secondary" id="refresh-state" type="button">Refresh</button>
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2>Accounts</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" id="refresh-state" type="button" style="font-size:0.75rem;padding:4px 10px">Refresh</button>
           </div>
-          <div class="card-list" id="accounts-list"></div>
         </div>
-        <div class="panel">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h2>Environments</h2>
-            <button class="btn btn-ghost" id="recheck-health" type="button" style="font-size:0.75rem">Re-check health</button>
+        <div class="card-list" id="accounts-list"></div>
+        <div id="login-link-panel" class="login-link-panel hidden" style="margin-top:14px">
+          <div class="login-link-head">
+            <span class="field-label">Authentication Links</span>
+            <button type="button" class="btn btn-ghost" id="login-link-copy" style="font-size:0.75rem;padding:4px 10px">Copy URLs</button>
           </div>
-          <div class="card-list" id="environments-list"></div>
+          <div id="login-link-status" class="login-link-status">Waiting for the identity provider to return a sign-in link\u2026</div>
+          <div id="login-link-targets" style="display:grid;gap:8px"></div>
         </div>
-      </div>
-      <div class="setup-grid">
-        <div class="panel">
-          <h2>Add Account</h2>
-          <p class="desc">Interactive logins run as background jobs.</p>
-          <form id="account-form">
-            <div class="form-row">
-              <div class="field"><span class="field-label">Name</span><input name="name" required placeholder="my-work-account"></div>
-              <div class="field"><span class="field-label">Kind</span>
-                <select name="kind" id="account-kind">
-                  <option value="user">user</option>
-                  <option value="device-code">device-code</option>
-                  <option value="client-secret">client-secret</option>
-                  <option value="environment-token">environment-token</option>
-                  <option value="static-token">static-token</option>
-                </select>
+        <details class="setup-add-section" id="add-account-section">
+          <summary class="setup-add-trigger">+ Add account</summary>
+          <div class="setup-add-body">
+            <form id="account-form">
+              <div class="form-row">
+                <div class="field"><span class="field-label">Name</span><input name="name" required placeholder="my-work-account"></div>
+                <div class="field"><span class="field-label">Kind</span>
+                  <select name="kind" id="account-kind">
+                    <option value="user">user</option>
+                    <option value="device-code">device-code</option>
+                    <option value="client-secret">client-secret</option>
+                    <option value="environment-token">environment-token</option>
+                    <option value="static-token">static-token</option>
+                  </select>
+                </div>
               </div>
-            </div>
-            <div class="form-row">
-              <div class="field"><span class="field-label">Description</span><input name="description" placeholder="Optional"></div>
-              <div class="field conditional cond-user cond-device-code"><span class="field-label">Preferred Flow</span><select name="preferredFlow"><option value="interactive">interactive</option><option value="device-code">device-code</option></select></div>
-            </div>
-            <div class="form-row conditional cond-user cond-device-code cond-client-secret">
-              <div class="field"><span class="field-label">Tenant ID <span style="text-transform:none;font-weight:400;letter-spacing:0">(optional)</span></span><input name="tenantId" placeholder="defaults to common"></div>
-              <div class="field"><span class="field-label">Client ID <span style="text-transform:none;font-weight:400;letter-spacing:0">(optional)</span></span><input name="clientId" placeholder="defaults to built-in app"></div>
-            </div>
-            <div class="form-row conditional cond-user cond-device-code">
-              <div class="field"><span class="field-label">Login Hint</span><input name="loginHint" placeholder="user@example.com"></div>
-              <div class="field"><span class="field-label">Prompt</span><select name="prompt"><option value="">default</option><option value="select_account">select_account</option><option value="login">login</option><option value="consent">consent</option><option value="none">none</option></select></div>
-            </div>
-            <div class="form-row conditional cond-client-secret"><div class="field"><span class="field-label">Client Secret Env Var</span><input name="clientSecretEnv" placeholder="MY_CLIENT_SECRET"></div><div class="field"></div></div>
-            <div class="form-row conditional cond-environment-token"><div class="field"><span class="field-label">Token Env Var</span><input name="environmentVariable" placeholder="MY_TOKEN_VAR"></div><div class="field"></div></div>
-            <div class="conditional cond-static-token"><div class="field"><span class="field-label">Static Token</span><textarea name="token" placeholder="Paste token"></textarea></div></div>
-            <div class="check-row conditional cond-user cond-device-code"><input type="checkbox" name="forcePrompt" id="forcePrompt"><label for="forcePrompt">Force prompt on next login</label></div>
-            <div class="check-row conditional cond-user"><input type="checkbox" name="fallbackToDeviceCode" id="fallbackToDeviceCode"><label for="fallbackToDeviceCode">Allow fallback to device code</label></div>
-            <div class="btn-group">
-              <button type="submit" class="btn btn-primary" id="account-submit">Save & Login</button>
-              <button type="button" class="btn btn-danger hidden" id="account-cancel">Cancel Pending Login</button>
-            </div>
-            <div id="login-link-panel" class="login-link-panel hidden">
-              <div class="login-link-head">
-                <span class="field-label">Authentication Links</span>
-                <button type="button" class="btn btn-ghost" id="login-link-copy" style="font-size:0.75rem;padding:4px 10px">Copy URLs</button>
+              <div class="form-row">
+                <div class="field"><span class="field-label">Description</span><input name="description" placeholder="Optional"></div>
+                <div class="field conditional cond-user cond-device-code"><span class="field-label">Preferred Flow</span><select name="preferredFlow"><option value="interactive">interactive</option><option value="device-code">device-code</option></select></div>
               </div>
-              <div id="login-link-status" class="login-link-status">Waiting for the identity provider to return a sign-in link\u2026</div>
-              <div id="login-link-targets" style="display:grid;gap:8px"></div>
-            </div>
-          </form>
-        </div>
-        <div class="panel">
-          <h2>Add Environment</h2>
-          <p class="desc">Discover from account or add manually.</p>
-          <form id="discover-form" style="margin-bottom:16px">
-            <div class="form-row">
-              <div class="field"><span class="field-label">Account</span><select name="account" id="discover-account"></select></div>
-              <div class="field" style="align-self:end"><button type="submit" class="btn btn-secondary" id="discover-submit">Discover</button></div>
-            </div>
-          </form>
-          <div class="card-list" id="discovered-list" style="margin-bottom:16px"></div>
-          <form id="environment-form">
-            <div class="form-row">
-              <div class="field"><span class="field-label">Alias</span><input name="alias" required placeholder="dev, prod"></div>
-              <div class="field"><span class="field-label">Account</span><select name="account" id="environment-account"></select></div>
-            </div>
-            <div class="form-row">
-              <div class="field"><span class="field-label">URL</span><input name="url" required placeholder="https://org.crm.dynamics.com"></div>
-              <div class="field"><span class="field-label">Display Name</span><input name="displayName" placeholder="Optional"></div>
-            </div>
-            <div class="field"><span class="field-label">Access</span><select name="accessMode"><option value="">read-write (default)</option><option value="read-write">read-write</option><option value="read-only">read-only</option></select></div>
-            <div class="btn-group"><button type="submit" class="btn btn-primary" id="env-submit">Discover & Save</button></div>
-          </form>
-        </div>
+              <div class="form-row conditional cond-user cond-device-code cond-client-secret">
+                <div class="field"><span class="field-label">Tenant ID <span style="text-transform:none;font-weight:400;letter-spacing:0">(optional)</span></span><input name="tenantId" placeholder="defaults to common"></div>
+                <div class="field"><span class="field-label">Client ID <span style="text-transform:none;font-weight:400;letter-spacing:0">(optional)</span></span><input name="clientId" placeholder="defaults to built-in app"></div>
+              </div>
+              <div class="form-row conditional cond-user cond-device-code">
+                <div class="field"><span class="field-label">Login Hint</span><input name="loginHint" placeholder="user@example.com"></div>
+                <div class="field"><span class="field-label">Prompt</span><select name="prompt"><option value="">default</option><option value="select_account">select_account</option><option value="login">login</option><option value="consent">consent</option><option value="none">none</option></select></div>
+              </div>
+              <div class="form-row conditional cond-client-secret"><div class="field"><span class="field-label">Client Secret Env Var</span><input name="clientSecretEnv" placeholder="MY_CLIENT_SECRET"></div><div class="field"></div></div>
+              <div class="form-row conditional cond-environment-token"><div class="field"><span class="field-label">Token Env Var</span><input name="environmentVariable" placeholder="MY_TOKEN_VAR"></div><div class="field"></div></div>
+              <div class="conditional cond-static-token"><div class="field"><span class="field-label">Static Token</span><textarea name="token" placeholder="Paste token"></textarea></div></div>
+              <div class="check-row conditional cond-user cond-device-code"><input type="checkbox" name="forcePrompt" id="forcePrompt"><label for="forcePrompt">Force prompt on next login</label></div>
+              <div class="check-row conditional cond-user"><input type="checkbox" name="fallbackToDeviceCode" id="fallbackToDeviceCode"><label for="fallbackToDeviceCode">Allow fallback to device code</label></div>
+              <div class="btn-group">
+                <button type="submit" class="btn btn-primary" id="account-submit">Save & Login</button>
+                <button type="button" class="btn btn-danger hidden" id="account-cancel">Cancel Pending Login</button>
+              </div>
+            </form>
+          </div>
+        </details>
       </div>
-      <div class="panel" id="mcp-panel">
-        <h2>MCP Server</h2>
-        <p class="desc">The MCP server uses stdio transport. Launch it from your MCP client.</p>
-        <div id="mcp-content"></div>
+
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2>Environments</h2>
+          <button class="btn btn-ghost" id="recheck-health" type="button" style="font-size:0.75rem;padding:4px 10px">Re-check health</button>
+        </div>
+        <div class="card-list" id="environments-list"></div>
+        <details class="setup-add-section">
+          <summary class="setup-add-trigger">+ Add environment</summary>
+          <div class="setup-add-body">
+            <form id="discover-form" style="margin-bottom:16px">
+              <div class="form-row">
+                <div class="field"><span class="field-label">Account</span><select name="account" id="discover-account"></select></div>
+                <div class="field" style="align-self:end"><button type="submit" class="btn btn-secondary" id="discover-submit">Discover</button></div>
+              </div>
+            </form>
+            <div class="card-list" id="discovered-list" style="margin-bottom:16px"></div>
+            <form id="environment-form">
+              <div class="form-row">
+                <div class="field"><span class="field-label">Alias</span><input name="alias" required placeholder="dev, prod"></div>
+                <div class="field"><span class="field-label">Account</span><select name="account" id="environment-account"></select></div>
+              </div>
+              <div class="form-row">
+                <div class="field"><span class="field-label">URL</span><input name="url" required placeholder="https://org.crm.dynamics.com"></div>
+                <div class="field"><span class="field-label">Display Name</span><input name="displayName" placeholder="Optional"></div>
+              </div>
+              <div class="field"><span class="field-label">Access</span><select name="accessMode"><option value="">read-write (default)</option><option value="read-write">read-write</option><option value="read-only">read-only</option></select></div>
+              <div class="btn-group"><button type="submit" class="btn btn-primary" id="env-submit">Discover & Save</button></div>
+            </form>
+          </div>
+        </details>
       </div>
+
+      <details class="setup-add-section" style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:0">
+        <summary class="setup-add-trigger" style="padding:16px 20px">MCP Server</summary>
+        <div style="padding:0 20px 20px">
+          <p class="desc">The MCP server uses stdio transport. Launch it from your MCP client.</p>
+          <div id="mcp-content"></div>
+        </div>
+      </details>
     </div>
 
     <!-- ===== API Console ===== -->

@@ -139,25 +139,69 @@ export function renderSetupState(data) {
 
   els.accountsList.innerHTML = accounts.length
     ? accounts.map((a) => {
-        const props = []
-        if (a.description) props.push(esc(a.description))
-        if (a.tenantId) props.push('tenant: <code>' + esc(a.tenantId) + '</code>')
-        if (a.clientId) props.push('client: <code>' + esc(a.clientId) + '</code>')
         const isInteractive = a.kind === 'user' || a.kind === 'device-code'
+        const email = a.accountUsername || a.loginHint || ''
         const loginBtn = isInteractive
           ? '<button class="btn btn-ghost" data-login-account="' + esc(a.name) + '" type="button" style="font-size:0.75rem;padding:4px 10px">Login</button>'
           : ''
-        return '<div class="card-item" style="flex-direction:column;align-items:stretch">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center">' +
-            '<div style="display:flex;align-items:center;gap:8px">' +
+
+        const detailProps = []
+        if (a.description) detailProps.push({ label: 'Description', value: a.description })
+        if (a.tenantId) detailProps.push({ label: 'Tenant ID', value: a.tenantId })
+        if (a.clientId) detailProps.push({ label: 'Client ID', value: a.clientId })
+        if (a.accountUsername) detailProps.push({ label: 'Username', value: a.accountUsername })
+        if (a.loginHint) detailProps.push({ label: 'Login Hint', value: a.loginHint })
+        if (a.tokenCacheKey) detailProps.push({ label: 'Cache Key', value: a.tokenCacheKey })
+        if (a.clientSecretEnv) detailProps.push({ label: 'Secret Env', value: a.clientSecretEnv })
+        if (a.environmentVariable) detailProps.push({ label: 'Token Env', value: a.environmentVariable })
+
+        const propsHtml = detailProps.length
+          ? '<div class="account-card-props">' + detailProps.map((p) =>
+              '<div class="account-card-prop"><div class="account-card-prop-label">' + esc(p.label) + '</div><div class="account-card-prop-value">' + esc(p.value) + '</div></div>'
+            ).join('') + '</div>'
+          : ''
+
+        const editFields = isInteractive
+          ? '<div class="form-row"><div class="field"><span class="field-label">Description</span><input name="description" value="' + esc(a.description || '') + '" placeholder="Optional"></div>' +
+            '<div class="field"><span class="field-label">Login Hint</span><input name="loginHint" value="' + esc(a.loginHint || '') + '" placeholder="user@example.com"></div></div>' +
+            '<div class="form-row"><div class="field"><span class="field-label">Tenant ID</span><input name="tenantId" value="' + esc(a.tenantId || '') + '" placeholder="common"></div>' +
+            '<div class="field"><span class="field-label">Client ID</span><input name="clientId" value="' + esc(a.clientId || '') + '" placeholder="default"></div></div>'
+          : a.kind === 'client-secret'
+            ? '<div class="form-row"><div class="field"><span class="field-label">Description</span><input name="description" value="' + esc(a.description || '') + '" placeholder="Optional"></div>' +
+              '<div class="field"><span class="field-label">Client Secret Env</span><input name="clientSecretEnv" value="' + esc(a.clientSecretEnv || '') + '"></div></div>' +
+              '<div class="form-row"><div class="field"><span class="field-label">Tenant ID</span><input name="tenantId" value="' + esc(a.tenantId || '') + '"></div>' +
+              '<div class="field"><span class="field-label">Client ID</span><input name="clientId" value="' + esc(a.clientId || '') + '"></div></div>'
+            : '<div class="field"><span class="field-label">Description</span><input name="description" value="' + esc(a.description || '') + '" placeholder="Optional"></div>'
+
+        return '<div class="account-card" data-account-card="' + esc(a.name) + '">' +
+          '<div class="account-card-head" data-toggle-account="' + esc(a.name) + '">' +
+            '<div class="account-card-identity">' +
               '<span id="token-dot-' + esc(a.name) + '">' + tokenDotHtml(a.name) + '</span>' +
-              '<span class="card-item-title">' + esc(a.name) + '</span> <span class="badge">' + esc(a.kind) + '</span>' +
+              '<div style="min-width:0">' +
+                '<div style="display:flex;align-items:center;gap:8px">' +
+                  '<span class="account-card-name">' + esc(a.name) + '</span>' +
+                  '<span class="badge">' + esc(a.kind) + '</span>' +
+                '</div>' +
+                (email ? '<div class="account-card-email">' + esc(email) + '</div>' : '') +
+              '</div>' +
             '</div>' +
-            '<div style="display:flex;gap:4px">' + loginBtn +
+            '<div class="account-card-actions">' + loginBtn +
               '<button class="btn btn-danger" data-remove-account="' + esc(a.name) + '" type="button">Remove</button>' +
             '</div>' +
           '</div>' +
-          (props.length ? '<div style="font-size:0.75rem;color:var(--muted);margin-top:4px;padding-left:19px">' + props.join(' &middot; ') + '</div>' : '') +
+          '<div class="account-card-body">' +
+            propsHtml +
+            '<form class="account-edit-form" data-edit-account="' + esc(a.name) + '">' +
+              '<input type="hidden" name="name" value="' + esc(a.name) + '">' +
+              '<input type="hidden" name="kind" value="' + esc(a.kind) + '">' +
+              '<input type="hidden" name="accountUsername" value="' + esc(a.accountUsername || '') + '">' +
+              '<input type="hidden" name="homeAccountId" value="' + esc(a.homeAccountId || '') + '">' +
+              '<input type="hidden" name="localAccountId" value="' + esc(a.localAccountId || '') + '">' +
+              '<input type="hidden" name="tokenCacheKey" value="' + esc(a.tokenCacheKey || '') + '">' +
+              editFields +
+              '<div class="btn-group"><button type="submit" class="btn btn-secondary" style="font-size:0.75rem;padding:5px 12px">Save Changes</button></div>' +
+            '</form>' +
+          '</div>' +
         '</div>'
       }).join('')
     : '<div class="empty">No accounts configured.</div>'
@@ -493,9 +537,34 @@ export function initSetup(refreshState) {
       )
       return
     }
+    const toggleAccount = event.target.closest('[data-toggle-account]')
+    if (toggleAccount && !event.target.closest('button')) {
+      const name = toggleAccount.dataset.toggleAccount
+      const card = document.querySelector('[data-account-card="' + name + '"]')
+      if (card) card.classList.toggle('expanded')
+      return
+    }
     const healthItem = event.target.closest('[data-health-alias][data-health-api]')
     if (healthItem) {
       renderHealthDetail(healthItem.dataset.healthAlias, healthItem.dataset.healthApi)
+    }
+  })
+
+  document.body.addEventListener('submit', async (event) => {
+    const editForm = event.target.closest('[data-edit-account]')
+    if (!editForm) return
+    event.preventDefault()
+    const name = editForm.dataset.editAccount
+    const data = formDataObject(editForm)
+    try {
+      await api('/api/accounts/' + encodeURIComponent(name), {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      })
+      toast('Account updated')
+      await refreshState(true)
+    } catch (err) {
+      toast(err.message, true)
     }
   })
 }

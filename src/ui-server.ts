@@ -22,6 +22,7 @@ import { renderSetupModule } from './ui-client/setup.js';
 import { renderSharedModule } from './ui-client/shared.js';
 import { UiJobStore } from './ui-jobs.js';
 import { normalizeOrigin, type ApiKind } from './request.js';
+import { saveAccount, type Account } from './config.js';
 import { executeApiRequest } from './services/api.js';
 import { checkAccountTokenStatus, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { runConnectivityPing, runWhoAmICheck } from './services/api.js';
@@ -296,6 +297,39 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
   if (method === 'DELETE' && url.pathname.startsWith('/api/accounts/')) {
     const name = decodeURIComponent(url.pathname.slice('/api/accounts/'.length));
     const result = await removeAccountByName(name, context.configOptions);
+    sendJson(response, result.success ? 200 : 400, result);
+    return;
+  }
+
+  if (method === 'PUT' && url.pathname.startsWith('/api/accounts/')) {
+    const name = decodeURIComponent(url.pathname.slice('/api/accounts/'.length));
+    const body = await readJsonBody(request);
+    if (!body.success || !body.data) {
+      sendJson(response, 400, body);
+      return;
+    }
+    const account: Partial<Account> = {
+      name,
+      kind: readAccountKind(body.data.kind) ?? 'user',
+      description: optionalString(body.data.description),
+      tenantId: optionalString(body.data.tenantId),
+      clientId: optionalString(body.data.clientId),
+      loginHint: optionalString(body.data.loginHint),
+      accountUsername: optionalString(body.data.accountUsername),
+      homeAccountId: optionalString(body.data.homeAccountId),
+      localAccountId: optionalString(body.data.localAccountId),
+      tokenCacheKey: optionalString(body.data.tokenCacheKey),
+    } as Account;
+    if (body.data.kind === 'client-secret') {
+      (account as any).clientSecretEnv = optionalString(body.data.clientSecretEnv) ?? '';
+    }
+    if (body.data.kind === 'environment-token') {
+      (account as any).environmentVariable = optionalString(body.data.environmentVariable) ?? '';
+    }
+    if (body.data.kind === 'static-token') {
+      (account as any).token = optionalString(body.data.token) ?? '';
+    }
+    const result = await saveAccount(account as Account, context.configOptions);
     sendJson(response, result.success ? 200 : 400, result);
     return;
   }
