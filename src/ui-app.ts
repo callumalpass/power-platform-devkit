@@ -290,13 +290,39 @@ export function renderHtml(): string {
     .link-card .condition-list { margin-top: 8px; }
 
     /* Health dots */
-    .health-row { display: flex; gap: 10px; margin-top: 8px; }
+    .health-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
     .health-item { display: flex; align-items: center; gap: 4px; font-size: 0.6875rem; color: var(--muted); }
+    .health-item-btn { border: 1px solid var(--border); background: var(--bg); border-radius: 999px; padding: 4px 10px; cursor: pointer; color: var(--ink); font-size: 0.6875rem; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; transition: all 120ms; }
+    .health-item-btn:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
     .health-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .health-dot.pending { background: var(--border); animation: pulse 1.2s ease-in-out infinite; }
     .health-dot.ok { background: var(--ok); }
     .health-dot.error { background: var(--danger); }
+    .health-summary { margin-top: 8px; font-size: 0.6875rem; color: var(--muted); line-height: 1.4; }
+    .health-detail { margin-top: 10px; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); font-size: 0.75rem; color: var(--ink); animation: slideDown 150ms ease; }
+    .health-detail-title { font-weight: 600; margin-bottom: 6px; font-size: 0.8125rem; }
+    .health-detail-meta { color: var(--muted); margin-top: 6px; font-family: var(--mono); font-size: 0.6875rem; }
+    .health-detail-pre { margin-top: 8px; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); background: var(--surface); padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); max-height: 160px; overflow: auto; }
+    .health-detail-hint { margin-top: 10px; padding: 8px 10px; background: var(--accent-soft); color: var(--accent); border-radius: 6px; font-size: 0.6875rem; line-height: 1.4; }
     @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Login link panel */
+    .login-link-panel { margin-top: 14px; padding: 14px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent-soft); animation: slideDown 150ms ease; }
+    .login-link-panel .login-link-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .login-link-panel .login-link-head .field-label { margin: 0; color: var(--accent); }
+    .login-link-status { font-size: 0.75rem; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
+    .login-target { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--surface); transition: border-color 150ms; }
+    .login-target.active { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.08); }
+    .login-target-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+    .login-target-head-left { display: flex; align-items: center; gap: 8px; }
+    .login-target-head-left strong { font-size: 0.8125rem; }
+    .login-target-status { font-size: 0.6875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
+    .login-target-status.running { color: var(--accent); }
+    .login-target-status.completed { color: var(--ok); }
+    .login-target-status.pending { color: var(--muted); }
+    .login-target-url { font-family: var(--mono); font-size: 0.6875rem; word-break: break-all; color: var(--accent); text-decoration: none; }
+    .login-target-url:hover { text-decoration: underline; }
 
     /* Theme toggle */
     .theme-toggle { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 0.875rem; line-height: 1; color: var(--muted); }
@@ -464,12 +490,12 @@ export function renderHtml(): string {
               <button type="submit" class="btn btn-primary" id="account-submit">Save & Login</button>
               <button type="button" class="btn btn-danger hidden" id="account-cancel">Cancel Pending Login</button>
             </div>
-            <div id="login-link-panel" class="hidden" style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-alt)">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px">
-                <span class="field-label" style="margin:0">Authentication Links</span>
-                <button type="button" class="btn btn-ghost" id="login-link-copy" style="font-size:0.75rem;padding:4px 10px">Copy</button>
+            <div id="login-link-panel" class="login-link-panel hidden">
+              <div class="login-link-head">
+                <span class="field-label">Authentication Links</span>
+                <button type="button" class="btn btn-ghost" id="login-link-copy" style="font-size:0.75rem;padding:4px 10px">Copy URLs</button>
               </div>
-              <div id="login-link-status" style="font-size:0.75rem;color:var(--muted);margin-bottom:8px">Waiting for the identity provider to return a sign-in link…</div>
+              <div id="login-link-status" class="login-link-status">Waiting for the identity provider to return a sign-in link\u2026</div>
               <div id="login-link-targets" style="display:grid;gap:8px"></div>
             </div>
           </form>

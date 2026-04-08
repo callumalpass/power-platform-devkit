@@ -78,21 +78,23 @@ function renderLoginLink() {
     ? 'Follow the current link, then continue through the remaining API logins below.'
     : available.length
       ? 'Authentication links captured for this login session.'
-      : 'Waiting for the identity provider to return sign-in links…'
+      : 'Waiting for the identity provider to return sign-in links\u2026'
   els.loginLinkTargets.innerHTML = loginTargets.length
     ? loginTargets.map((target) => {
         const tone = target.status === 'completed' ? 'ok' : target.status === 'running' ? 'pending' : 'error'
-        const status = target.status === 'completed' ? 'ready' : target.status === 'running' ? (target.url ? 'action required' : 'waiting') : 'pending'
+        const statusLabel = target.status === 'completed' ? 'completed' : target.status === 'running' ? (target.url ? 'action required' : 'waiting') : 'pending'
+        const statusCls = target.status === 'completed' ? 'completed' : target.status === 'running' ? 'running' : 'pending'
+        const isActive = target.status === 'running' && target.url
         const link = target.url
-          ? '<a href="' + esc(target.url) + '" target="_blank" rel="noreferrer" style="font-family:var(--font-mono);font-size:0.75rem;word-break:break-all">' + esc(target.url) + '</a>'
-          : '<span style="font-size:0.75rem;color:var(--muted)">No URL needed yet.</span>'
-        return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px">' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px">' +
-            '<div style="display:flex;align-items:center;gap:8px">' +
+          ? '<a href="' + esc(target.url) + '" target="_blank" rel="noreferrer" class="login-target-url">' + esc(target.url) + '</a>'
+          : '<span style="font-size:0.6875rem;color:var(--muted)">Waiting\u2026</span>'
+        return '<div class="login-target' + (isActive ? ' active' : '') + '">' +
+          '<div class="login-target-head">' +
+            '<div class="login-target-head-left">' +
               '<span class="health-dot ' + tone + '"></span>' +
-              '<strong style="font-size:0.8125rem">' + esc(target.label || target.api || target.resource) + '</strong>' +
+              '<strong>' + esc(target.label || target.api || target.resource) + '</strong>' +
             '</div>' +
-            '<span style="font-size:0.75rem;color:var(--muted);text-transform:capitalize">' + esc(status) + '</span>' +
+            '<span class="login-target-status ' + statusCls + '">' + esc(statusLabel) + '</span>' +
           '</div>' +
           link +
         '</div>'
@@ -165,9 +167,19 @@ export function renderSetupState(data) {
         const alias = esc(e.alias)
         const h = health[e.alias] || {}
         const healthDots = HEALTH_APIS.map((apiName) => {
-          const cls = h[apiName] === undefined ? 'pending' : h[apiName] ? 'ok' : 'error'
-          return '<span class="health-item"><span class="health-dot ' + cls + '"></span>' + apiName + '</span>'
+          const state = h[apiName]
+          const cls = !state || state.status === 'pending' ? 'pending' : state.status === 'ok' ? 'ok' : 'error'
+          const label = state && state.summary ? state.summary : (cls === 'ok' ? 'OK' : cls === 'error' ? 'Failed' : 'Checking…')
+          return '<button class="health-item health-item-btn" data-health-alias="' + alias + '" data-health-api="' + apiName + '" title="' + esc(apiName + ': ' + label) + '">' +
+            '<span class="health-dot ' + cls + '"></span>' + apiName +
+          '</button>'
         }).join('')
+        const failed = HEALTH_APIS.filter((apiName) => h[apiName] && h[apiName].status === 'error')
+        const summary = failed.length
+          ? failed.length + ' failing: ' + failed.join(', ')
+          : HEALTH_APIS.some((apiName) => h[apiName] && h[apiName].status === 'ok')
+            ? 'Health checks available. Click an API for details.'
+            : 'Running health checks…'
         const props = []
         if (e.makerEnvironmentId) props.push('<span class="env-card-prop">Maker ID <code>' + esc(e.makerEnvironmentId) + '</code></span>')
         if (e.tenantId) props.push('<span class="env-card-prop">Tenant <code>' + esc(e.tenantId) + '</code></span>')
@@ -182,6 +194,8 @@ export function renderSetupState(data) {
           '</div>' +
           (props.length ? '<div class="env-card-props">' + props.join('') + '</div>' : '') +
           '<div class="health-row" id="health-' + alias + '">' + healthDots + '</div>' +
+          '<div class="health-summary">' + esc(summary) + '</div>' +
+          '<div class="health-detail hidden" id="health-detail-' + alias + '"></div>' +
         '</div>'
       }).join('')
     : '<div class="empty">No environments configured.</div>'
@@ -203,7 +217,7 @@ function checkHealth(environments) {
   for (const env of environments) {
     if (!health[env.alias]) health[env.alias] = {}
     for (const apiName of HEALTH_APIS) {
-      health[env.alias][apiName] = undefined
+      health[env.alias][apiName] = { status: 'pending', summary: 'Checking…' }
       updateHealthDot(env.alias, apiName, 'pending')
       fetch('/api/checks/ping', {
         method: 'POST',
@@ -214,10 +228,12 @@ function checkHealth(environments) {
         .then((data) => {
           const ok = data.success !== false
           health[env.alias][apiName] = ok
+            ? { status: 'ok', summary: 'Reachable' }
+            : summarizeHealthFailure(data)
           updateHealthDot(env.alias, apiName, ok ? 'ok' : 'error')
         })
         .catch(() => {
-          health[env.alias][apiName] = false
+          health[env.alias][apiName] = { status: 'error', summary: 'Request failed', detail: 'The health check request did not complete.' }
           updateHealthDot(env.alias, apiName, 'error')
         })
     }
@@ -233,6 +249,62 @@ function updateHealthDot(alias, apiName, cls) {
     const dot = items[idx].querySelector('.health-dot')
     if (dot) dot.className = 'health-dot ' + cls
   }
+}
+
+function summarizeHealthFailure(payload) {
+  const diagnostic = payload && Array.isArray(payload.diagnostics) ? payload.diagnostics[0] : null
+  const message = diagnostic && diagnostic.message ? diagnostic.message : 'Health check failed'
+  const detail = diagnostic && diagnostic.detail ? diagnostic.detail : ''
+  const summary = /Interactive authentication is disabled/i.test(message)
+    ? 'Needs login for this API'
+    : /returned 401/i.test(message) || /returned 403/i.test(message)
+      ? 'Permission or consent required'
+      : /returned 404/i.test(message)
+        ? 'API endpoint unavailable'
+        : message
+  return { status: 'error', summary, message, detail, code: diagnostic && diagnostic.code ? diagnostic.code : '' }
+}
+
+function renderHealthDetail(alias, apiName) {
+  const detailEl = document.getElementById('health-detail-' + alias)
+  if (!detailEl) return
+  const state = health[alias] && health[alias][apiName]
+  if (!state || (!detailEl.classList.contains('hidden') && detailEl.dataset.activeApi === apiName)) {
+    detailEl.classList.add('hidden')
+    detailEl.innerHTML = ''
+    detailEl.dataset.activeApi = ''
+    return
+  }
+  detailEl.dataset.activeApi = apiName
+  const statusIcon = state.status === 'ok' ? '\u2713' : state.status === 'error' ? '\u2717' : '\u2026'
+  const lines = []
+  lines.push('<div style="display:flex;justify-content:space-between;align-items:flex-start">')
+  lines.push('<div class="health-detail-title">' + esc(statusIcon + ' ' + apiName) + ' \u2014 ' + esc(state.summary || 'Status unknown') + '</div>')
+  lines.push('<button class="condition-remove" data-dismiss-health style="flex-shrink:0">\u00d7</button>')
+  lines.push('</div>')
+  if (state.message && state.message !== state.summary) lines.push('<div style="margin-top:4px;line-height:1.4">' + esc(state.message) + '</div>')
+  if (state.code) lines.push('<div class="health-detail-meta">Code: ' + esc(state.code) + '</div>')
+  if (state.detail) lines.push('<pre class="health-detail-pre">' + esc(trimHealthDetail(state.detail)) + '</pre>')
+  if (state.status === 'error' && /login|consent|permission/i.test((state.summary || '') + ' ' + (state.message || ''))) {
+    lines.push('<div class="health-detail-hint">This usually means the account is valid but no cached token is available for this API. Use the Login button on your account above, then re-check health.</div>')
+  }
+  detailEl.innerHTML = lines.join('')
+  detailEl.classList.remove('hidden')
+
+  const dismissBtn = detailEl.querySelector('[data-dismiss-health]')
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      detailEl.classList.add('hidden')
+      detailEl.innerHTML = ''
+      detailEl.dataset.activeApi = ''
+    })
+  }
+}
+
+function trimHealthDetail(detail) {
+  const text = String(detail || '').trim()
+  return text.length > 700 ? text.slice(0, 700) + '…' : text
 }
 
 export function initSetup(refreshState) {
@@ -419,6 +491,11 @@ export function initSetup(refreshState) {
         () => toast('Copied login URLs'),
         () => toast('Failed to copy login URLs', true)
       )
+      return
+    }
+    const healthItem = event.target.closest('[data-health-alias][data-health-api]')
+    if (healthItem) {
+      renderHealthDetail(healthItem.dataset.healthAlias, healthItem.dataset.healthApi)
     }
   })
 }
