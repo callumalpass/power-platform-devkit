@@ -363,6 +363,7 @@ export function renderHtml(): string {
     .env-card-props { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
     .env-card-prop { font-size: 0.6875rem; color: var(--muted); }
     .env-card-prop code { font-family: var(--mono); color: var(--ink); }
+    .env-card-account { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 0.75rem; font-weight: 500; color: var(--muted); }
 
     /* ===== API Console ===== */
     .console-bar { display: flex; gap: 0; border: 2px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; transition: border-color 200ms; }

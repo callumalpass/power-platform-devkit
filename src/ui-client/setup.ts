@@ -292,11 +292,19 @@ export function renderSetupState(data) {
         if (e.makerEnvironmentId) props.push('<span class="env-card-prop">Maker ID <code>' + esc(e.makerEnvironmentId) + '</code></span>')
         if (e.tenantId) props.push('<span class="env-card-prop">Tenant <code>' + esc(e.tenantId) + '</code></span>')
         if (e.accessMode) props.push('<span class="env-card-prop">Access <code>' + esc(e.accessMode) + '</code></span>')
+        const acctInfo = tokenStatus[e.account]
+        const acctAuth = acctInfo && acctInfo.authenticated
+        const acctDotCls = acctInfo === undefined ? 'pending' : acctAuth ? 'ok' : 'error'
+        const acctLabel = acctInfo === undefined ? 'Checking\u2026' : acctAuth ? 'Authenticated' : 'Not authenticated'
+        const acctExpiry = acctAuth ? formatTimeRemaining(acctInfo.expiresAt) : null
+        const acctExpiryHtml = acctExpiry ? ' <span class="token-expiry ' + (acctExpiry.cls || '') + '">' + esc(acctExpiry.text) + '</span>' : ''
+
         return '<div class="env-card">' +
           '<div class="env-card-head">' +
             '<div>' +
-              '<div class="env-card-title">' + alias + ' <span class="badge">' + esc(e.account) + '</span>' + (e.displayName && e.displayName !== e.alias ? ' <span style="color:var(--muted);font-weight:400">' + esc(e.displayName) + '</span>' : '') + '</div>' +
+              '<div class="env-card-title">' + alias + (e.displayName && e.displayName !== e.alias ? ' <span style="color:var(--muted);font-weight:400">' + esc(e.displayName) + '</span>' : '') + '</div>' +
               '<div class="env-card-url">' + esc(e.url || '') + '</div>' +
+              '<div class="env-card-account"><span class="health-dot ' + acctDotCls + '" title="' + esc(acctLabel) + '"></span> ' + esc(e.account) + acctExpiryHtml + '</div>' +
             '</div>' +
             '<button class="btn btn-danger" data-remove-environment="' + esc(e.alias) + '" type="button">Remove</button>' +
           '</div>' +
