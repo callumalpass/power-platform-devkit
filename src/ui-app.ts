@@ -335,6 +335,14 @@ export function renderHtml(): string {
     .device-code-label { font-size: 0.6875rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
     .device-code-value { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; letter-spacing: 0.15em; color: var(--ink); user-select: all; flex: 1; }
 
+    /* API scope checkboxes */
+    .api-scope-checks { display: flex; flex-wrap: wrap; gap: 6px; }
+    .api-scope-check { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 120ms; user-select: none; }
+    .api-scope-check:hover { border-color: var(--accent); }
+    .api-scope-check:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+    .api-scope-check input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+    .api-scope-note { font-size: 0.625rem; color: var(--muted); font-weight: 400; font-style: italic; }
+
     /* Theme toggle */
     .theme-toggle { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 0.875rem; line-height: 1; color: var(--muted); }
     .theme-toggle:hover { background: var(--bg); color: var(--ink); }
@@ -524,6 +532,17 @@ export function renderHtml(): string {
               <div class="conditional cond-static-token"><div class="field"><span class="field-label">Static Token</span><textarea name="token" placeholder="Paste token"></textarea></div></div>
               <div class="check-row conditional cond-user cond-device-code"><input type="checkbox" name="forcePrompt" id="forcePrompt"><label for="forcePrompt">Force prompt on next login</label></div>
               <div class="check-row conditional cond-user"><input type="checkbox" name="fallbackToDeviceCode" id="fallbackToDeviceCode"><label for="fallbackToDeviceCode">Allow fallback to device code</label></div>
+              <div class="conditional cond-user cond-device-code" id="api-scope-section">
+                <div class="field">
+                  <span class="field-label">API Scopes to Authenticate</span>
+                  <div class="api-scope-checks" id="api-scope-checks">
+                    <label class="api-scope-check"><input type="checkbox" value="dv" checked> Dataverse</label>
+                    <label class="api-scope-check"><input type="checkbox" value="flow" checked> Flow</label>
+                    <label class="api-scope-check"><input type="checkbox" value="powerapps" checked> Power Apps & BAP <span class="api-scope-note">shared token</span></label>
+                    <label class="api-scope-check"><input type="checkbox" value="graph"> Graph <span class="api-scope-note">optional</span></label>
+                  </div>
+                </div>
+              </div>
               <div class="btn-group">
                 <button type="submit" class="btn btn-primary" id="account-submit">Save & Login</button>
                 <button type="button" class="btn btn-danger hidden" id="account-cancel">Cancel Pending Login</button>

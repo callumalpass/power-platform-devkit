@@ -249,7 +249,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       sendJson(response, 400, fail(...environments.diagnostics));
       return;
     }
-    const loginTargets = buildLoginTargets(input.data.name, environments.data, optionalString(bodyData.environmentAlias));
+    const excludeApis = Array.isArray(bodyData.excludeApis) ? bodyData.excludeApis.filter((v: unknown): v is string => typeof v === 'string') : undefined;
+    const loginTargets = buildLoginTargets(input.data.name, environments.data, optionalString(bodyData.environmentAlias), excludeApis);
     const job = context.jobs.createJob('account-login', (update) =>
       loginAccount(input.data!, {
         preferredFlow: bodyData.preferredFlow === 'device-code' ? 'device-code' : 'interactive',
@@ -627,27 +628,39 @@ function quoteShell(value: string): string {
   return JSON.stringify(value);
 }
 
-function buildLoginTargets(accountName: string, environments: Array<{ alias: string; account: string; url: string }>, selectedEnvironmentAlias?: string): LoginTarget[] {
+function buildLoginTargets(
+  accountName: string,
+  environments: Array<{ alias: string; account: string; url: string }>,
+  selectedEnvironmentAlias?: string,
+  excludeApis?: string[],
+): LoginTarget[] {
+  const excluded = new Set(excludeApis ?? []);
   const targets: LoginTarget[] = [];
   // Dataverse environments first — most important, least likely to fail
-  const relevantEnvironments = [
-    ...environments.filter((environment) => environment.alias === selectedEnvironmentAlias),
-    ...environments.filter((environment) => environment.account === accountName && environment.alias !== selectedEnvironmentAlias),
-  ];
-  for (const environment of relevantEnvironments) {
-    targets.push({
-      resource: normalizeOrigin(environment.url),
-      label: `Dataverse (${environment.alias})`,
-      api: 'dv',
-    });
+  if (!excluded.has('dv')) {
+    const relevantEnvironments = [
+      ...environments.filter((environment) => environment.alias === selectedEnvironmentAlias),
+      ...environments.filter((environment) => environment.account === accountName && environment.alias !== selectedEnvironmentAlias),
+    ];
+    for (const environment of relevantEnvironments) {
+      targets.push({
+        resource: normalizeOrigin(environment.url),
+        label: `Dataverse (${environment.alias})`,
+        api: 'dv',
+      });
+    }
   }
-  // Power Platform APIs
-  targets.push(
-    { resource: 'https://service.flow.microsoft.com', label: 'Flow', api: 'flow' },
-    { resource: 'https://service.powerapps.com', label: 'Power Apps / BAP', api: 'powerapps' },
-  );
+  // Power Platform APIs (Power Apps and BAP share the same OAuth resource)
+  if (!excluded.has('flow')) {
+    targets.push({ resource: 'https://service.flow.microsoft.com', label: 'Flow', api: 'flow' });
+  }
+  if (!excluded.has('powerapps') && !excluded.has('bap')) {
+    targets.push({ resource: 'https://service.powerapps.com', label: 'Power Apps & BAP', api: 'powerapps' });
+  }
   // Graph last — some accounts don't have access, and failure here shouldn't block the rest
-  targets.push({ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' });
+  if (!excluded.has('graph')) {
+    targets.push({ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' });
+  }
   return dedupeLoginTargets(targets);
 }
 

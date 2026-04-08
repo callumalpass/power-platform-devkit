@@ -435,7 +435,7 @@ export function initSetup(refreshState) {
     try {
       const started = await api('/api/jobs/account-login', {
         method: 'POST',
-        body: JSON.stringify({ ...formDataObject(form), environmentAlias: getSelectedEnvironment() })
+        body: JSON.stringify({ ...formDataObject(form), environmentAlias: getSelectedEnvironment(), excludeApis: getExcludedApis() })
       })
       app.currentLoginJobId = started.data.id
       if (started.data.metadata && Array.isArray(started.data.metadata.loginTargets)) {
@@ -540,7 +540,7 @@ export function initSetup(refreshState) {
       showLoginLinkPanel()
       api('/api/jobs/account-login', {
         method: 'POST',
-        body: JSON.stringify({ name, kind: 'user', environmentAlias: getSelectedEnvironment() })
+        body: JSON.stringify({ name, kind: 'user', environmentAlias: getSelectedEnvironment(), excludeApis: getExcludedApis() })
       })
         .then(async (started) => {
           app.currentLoginJobId = started.data.id
@@ -655,6 +655,14 @@ async function waitForLoginJob(jobId) {
 function getSelectedEnvironment() {
   const global = document.getElementById('global-environment')
   return global && global.value ? global.value : undefined
+}
+
+function getExcludedApis() {
+  const allApis = ['dv', 'flow', 'powerapps', 'graph']
+  const checks = document.querySelectorAll('#api-scope-checks input[type="checkbox"]')
+  const checked = new Set()
+  for (const cb of checks) if (cb.checked) checked.add(cb.value)
+  return allApis.filter((api) => !checked.has(api))
 }
 `;
 }
