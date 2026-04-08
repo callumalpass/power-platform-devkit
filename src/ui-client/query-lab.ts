@@ -1,6 +1,7 @@
 export function renderQueryLabModule(): string {
   return String.raw`
-import { app, api, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, updateEntityContext, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
+import { api, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, updateEntityContext, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
+import { getDataverseState } from '/assets/ui/state.js'
 
 const els = {
   form: document.getElementById('query-form'),
@@ -66,9 +67,10 @@ function renderResult() {
 }
 
 export function useEntityInQuery(detail) {
+  const dataverse = getDataverseState()
   els.entitySet.value = detail.entitySetName || ''
-  const cols = app.selectedColumns.length
-    ? app.selectedColumns.join(',')
+  const cols = dataverse.selectedColumns.length
+    ? dataverse.selectedColumns.join(',')
     : getDefaultSelectedColumns(detail, 0).join(',')
   els.select.value = cols
   const orderColumn = getDefaultSelectedColumns(detail, 0).find((name) => name !== detail.primaryIdAttribute) || getDefaultSelectedColumns(detail, 0)[0] || ''
@@ -77,7 +79,7 @@ export function useEntityInQuery(detail) {
 }
 
 export function updateQueryContext() {
-  updateEntityContext(els.entityContext, app.currentEntityDetail)
+  updateEntityContext(els.entityContext, getDataverseState().currentEntityDetail)
 }
 
 function readQueryPayload() {

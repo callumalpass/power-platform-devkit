@@ -29,6 +29,8 @@ import { renderPlatformModule } from './ui-client/platform.js';
 import { renderQueryLabModule } from './ui-client/query-lab.js';
 import { renderSetupModule } from './ui-client/setup.js';
 import { renderSharedModule } from './ui-client/shared.js';
+import { renderRuntimeModule } from './ui-client/runtime.js';
+import { renderStateModule } from './ui-client/state.js';
 import type { UiJobStore } from './ui-jobs.js';
 import { normalizeOrigin } from './request.js';
 import { checkAccountTokenStatus, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
@@ -55,6 +57,8 @@ export interface UiRequestContext {
 
 const UI_ASSET_MODULES: Record<string, () => string> = {
   '/assets/ui/shared.js': renderSharedModule,
+  '/assets/ui/runtime.js': renderRuntimeModule,
+  '/assets/ui/state.js': renderStateModule,
   '/assets/ui/setup.js': renderSetupModule,
   '/assets/ui/explorer.js': renderExplorerModule,
   '/assets/ui/query-lab.js': renderQueryLabModule,

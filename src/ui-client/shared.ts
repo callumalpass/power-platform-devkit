@@ -1,92 +1,24 @@
 export function renderSharedModule(): string {
   return String.raw`
-export const app = {
-  state: null,
-  currentLoginJobId: null,
-  entities: [],
-  currentEntity: null,
-  currentEntityDetail: null,
-  currentRecordPreview: null,
-  entitiesEnvironment: null,
-  selectedColumns: []
-}
+import {
+  api,
+  copyToClipboard,
+  els,
+  esc,
+  formatBytes,
+  formatTimeRemaining,
+  formDataObject,
+  getGlobalEnvironment,
+  optionMarkup,
+  pretty,
+  renderMeta,
+  setBtnLoading,
+  showLoading,
+  toast
+} from '/assets/ui/runtime.js'
+import { app, ensureEntitiesLoaded, getDataverseState, toggleSelectedColumn } from '/assets/ui/state.js'
 
-export const els = {
-  meta: document.getElementById('meta'),
-  toasts: document.getElementById('toasts'),
-  globalEnv: document.getElementById('global-environment')
-}
-
-export function esc(value) {
-  return String(value == null ? '' : value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
-}
-
-export function pretty(value) {
-  return JSON.stringify(value, null, 2)
-}
-
-export function toast(message, isError = false) {
-  const el = document.createElement('div')
-  el.className = 'toast' + (isError ? ' error' : ' ok')
-  el.textContent = message
-  els.toasts.appendChild(el)
-  setTimeout(() => {
-    el.classList.add('fade-out')
-    el.addEventListener('animationend', () => el.remove())
-  }, isError ? 5000 : 2500)
-}
-
-export function summarizeError(data) {
-  if (data && Array.isArray(data.diagnostics) && data.diagnostics.length) {
-    return data.diagnostics[0].message || 'Request failed'
-  }
-  return 'Request failed'
-}
-
-export async function api(path, options) {
-  const response = await fetch(path, Object.assign({ headers: { 'content-type': 'application/json' } }, options || {}))
-  const text = await response.text()
-  let data
-  try {
-    data = text ? JSON.parse(text) : {}
-  } catch (error) {
-    const snippet = text.length > 240 ? text.slice(0, 240) + '…' : text
-    throw new Error('Invalid JSON from ' + path + ' (' + response.status + '). ' + summarizeParseError(error, snippet))
-  }
-  if (!response.ok || data.success === false) {
-    throw new Error(summarizeError(data))
-  }
-  return data
-}
-
-function summarizeParseError(error, snippet) {
-  const message = error && error.message ? error.message : 'Failed to parse response.'
-  return snippet ? message + ' Response starts with: ' + snippet : message
-}
-
-export function optionMarkup(values, emptyLabel) {
-  const items = []
-  if (emptyLabel !== undefined) items.push('<option value="">' + esc(emptyLabel) + '</option>')
-  for (const value of values) items.push('<option value="' + esc(value) + '">' + esc(value) + '</option>')
-  return items.join('')
-}
-
-export function formDataObject(form) {
-  const data = {}
-  const fd = new FormData(form)
-  for (const [key, value] of fd.entries()) {
-    if (typeof value === 'string' && value.trim() !== '') data[key] = value
-  }
-  for (const checkbox of form.querySelectorAll('input[type="checkbox"]')) {
-    data[checkbox.name] = checkbox.checked
-  }
-  return data
-}
+export { api, app, copyToClipboard, els, esc, formatBytes, formatTimeRemaining, formDataObject, getGlobalEnvironment, optionMarkup, pretty, renderMeta, setBtnLoading, showLoading, toast }
 
 export function setTab(tab) {
   for (const el of document.querySelectorAll('.tab')) el.classList.toggle('active', el.dataset.tab === tab)
@@ -110,49 +42,22 @@ export function applyAccountKindVisibility() {
   })
 }
 
-export function renderMeta(data) {
-  const accounts = data.accounts || []
-  const environments = data.environments || []
-  els.meta.innerHTML =
-    '<span>' + accounts.length + ' accounts</span>' +
-    '<span>' + environments.length + ' envs</span>'
-}
-
-export function getGlobalEnvironment() {
-  return els.globalEnv.value
-}
-
-export function setBtnLoading(btn, loading, label) {
-  if (loading) {
-    btn._origLabel = btn.textContent
-    btn.disabled = true
-    btn.innerHTML = '<span class="spinner"></span>' + esc(label || btn._origLabel)
-  } else {
-    btn.disabled = false
-    btn.textContent = btn._origLabel || label || ''
-  }
-}
-
 export async function loadEntities(environment) {
-  if (!environment) return
-  if (app.entitiesEnvironment === environment && app.entities.length) return
-  const payload = await api('/api/dv/entities?environment=' + encodeURIComponent(environment) + '&allowInteractive=false')
-  app.entities = payload.data || []
-  app.entitiesEnvironment = environment
-  app.currentEntity = null
-  app.currentEntityDetail = null
-  app.currentRecordPreview = null
-  app.selectedColumns = []
+  return ensureEntitiesLoaded(environment, async (targetEnvironment) => {
+    const payload = await api('/api/dv/entities?environment=' + encodeURIComponent(targetEnvironment) + '&allowInteractive=false')
+    return payload.data || []
+  })
 }
 
 export function renderEntitySidebar(listEl, filterEl) {
+  const dataverse = getDataverseState()
   const filter = (filterEl.value || '').toLowerCase()
   const filtered = filter
-    ? app.entities.filter((e) => e.logicalName.includes(filter) || (e.displayName || '').toLowerCase().includes(filter) || (e.entitySetName || '').toLowerCase().includes(filter))
-    : app.entities
+    ? dataverse.entities.filter((e) => e.logicalName.includes(filter) || (e.displayName || '').toLowerCase().includes(filter) || (e.entitySetName || '').toLowerCase().includes(filter))
+    : dataverse.entities
   listEl.innerHTML = filtered.length
     ? filtered.map((e) => {
-        const active = app.currentEntity && app.currentEntity.logicalName === e.logicalName ? ' active' : ''
+        const active = dataverse.currentEntity && dataverse.currentEntity.logicalName === e.logicalName ? ' active' : ''
         const flags = []
         if (e.isCustomEntity) flags.push('<span class="entity-item-flag">custom</span>')
         if (e.isActivity) flags.push('<span class="entity-item-flag">activity</span>')
@@ -169,9 +74,7 @@ export function renderEntitySidebar(listEl, filterEl) {
 }
 
 export function toggleColumn(logicalName) {
-  const idx = app.selectedColumns.indexOf(logicalName)
-  if (idx >= 0) app.selectedColumns.splice(idx, 1)
-  else app.selectedColumns.push(logicalName)
+  toggleSelectedColumn(logicalName)
 }
 
 export function isSelectableAttribute(attribute) {
@@ -215,13 +118,14 @@ export function getDefaultSelectedColumns(detail, extraCount = 3) {
 }
 
 export function renderSelectedColumns(containerEl) {
-  if (!app.selectedColumns.length) {
+  const dataverse = getDataverseState()
+  if (!dataverse.selectedColumns.length) {
     containerEl.innerHTML = '<span class="selected-cols-label">Selected:</span><span style="color:var(--muted);font-size:0.75rem">Click attributes below to select columns</span>'
     return
   }
   containerEl.innerHTML =
     '<span class="selected-cols-label">Selected:</span>' +
-    app.selectedColumns.map((col) => '<span class="col-chip" data-remove-col="' + esc(col) + '">' + esc(col) + ' <span class="x">\u00d7</span></span>').join('') +
+    dataverse.selectedColumns.map((col) => '<span class="col-chip" data-remove-col="' + esc(col) + '">' + esc(col) + ' <span class="x">\u00d7</span></span>').join('') +
     '<button class="btn btn-ghost" style="padding:2px 8px;font-size:0.6875rem" data-action="clear-cols">Clear all</button>'
 }
 
@@ -290,36 +194,5 @@ export function renderResultTable(records, entityLogicalName) {
   return '<div class="result-table-wrap"><table class="result-table">' + head + body + '</table></div>'
 }
 
-export function copyToClipboard(text, label) {
-  navigator.clipboard.writeText(text).then(
-    () => toast((label || 'Copied') + ' to clipboard'),
-    () => toast('Failed to copy', true)
-  )
-}
-
-export function formatTimeRemaining(expiresAt) {
-  if (!expiresAt) return null
-  const exp = expiresAt > 1e12 ? expiresAt : expiresAt * 1000
-  const diff = exp - Date.now()
-  if (diff <= 0) return { text: 'expired', cls: 'expired' }
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return { text: mins + 'm left', cls: mins < 10 ? 'expiring-soon' : '' }
-  const hours = Math.floor(mins / 60)
-  return { text: hours + 'h ' + (mins % 60) + 'm left', cls: '' }
-}
-
-export function formatBytes(bytes) {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / 1048576).toFixed(1) + ' MB'
-}
-
-export function showLoading(container, message) {
-  const el = document.createElement('div')
-  el.className = 'workspace-loading'
-  el.innerHTML = '<span class="spinner"></span>' + esc(message || 'Loading\u2026')
-  container.prepend(el)
-  return () => el.remove()
-}
 `;
 }

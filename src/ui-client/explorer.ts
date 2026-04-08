@@ -1,6 +1,7 @@
 export function renderExplorerModule(): string {
   return String.raw`
-import { app, api, esc, getDefaultSelectedColumns, pretty, getGlobalEnvironment, renderEntitySidebar, renderSelectedColumns, toggleColumn, registerSubTabs, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
+import { api, esc, getDefaultSelectedColumns, getGlobalEnvironment, renderEntitySidebar, renderSelectedColumns, toggleColumn, registerSubTabs, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
+import { clearSelectedColumns, getDataverseState, setCurrentEntity, setCurrentEntityDetail, setCurrentRecordPreview, setSelectedColumns } from '/assets/ui/state.js'
 
 const els = {
   entityList: document.getElementById('entity-list'),
@@ -41,13 +42,15 @@ export function initExplorer(a) {
   els.attrFilter.addEventListener('input', renderAttributeTable)
 
   els.entityToQuery.addEventListener('click', () => {
-    if (!app.currentEntityDetail) return
-    actions.useEntityInQuery(app.currentEntityDetail)
+    const detail = getDataverseState().currentEntityDetail
+    if (!detail) return
+    actions.useEntityInQuery(detail)
     switchDvSubTab('dv-query')
   })
   els.entityToFetchXml.addEventListener('click', () => {
-    if (!app.currentEntityDetail) return
-    actions.useEntityInFetchXml(app.currentEntityDetail)
+    const detail = getDataverseState().currentEntityDetail
+    if (!detail) return
+    actions.useEntityInFetchXml(detail)
     switchDvSubTab('dv-fetchxml')
   })
   els.entityRefreshRecords.addEventListener('click', () => loadRecordPreview().catch((e) => toast(e.message, true)))
@@ -84,7 +87,7 @@ export function initExplorer(a) {
     }
     const clear = e.target.closest('[data-action="clear-cols"]')
     if (clear) {
-      app.selectedColumns = []
+      clearSelectedColumns()
       renderAttributeTable()
       renderSelectedColumns(els.selectedCols)
     }
@@ -92,12 +95,13 @@ export function initExplorer(a) {
 }
 
 export function renderExplorerEntities() {
-  if (!app.entities.length) {
+  const dataverse = getDataverseState()
+  if (!dataverse.entities.length) {
     els.entityList.innerHTML = '<div class="entity-loading">Select an environment to load entities.</div>'
     els.entityCount.textContent = ''
     return
   }
-  els.entityCount.textContent = app.entities.length + ' entities'
+  els.entityCount.textContent = dataverse.entities.length + ' entities'
   renderEntitySidebar(els.entityList, els.entityFilter)
   els.entityList.onclick = (event) => {
     const item = event.target.closest('[data-entity]')
@@ -109,9 +113,10 @@ async function loadEntityDetail(logicalName) {
   const environment = getGlobalEnvironment()
   if (!environment) throw new Error('Select an environment first.')
   const payload = await api('/api/dv/entities/' + encodeURIComponent(logicalName) + '?environment=' + encodeURIComponent(environment))
-  app.currentEntity = app.entities.find((e) => e.logicalName === logicalName) || { logicalName }
-  app.currentEntityDetail = payload.data
-  app.selectedColumns = getDefaultSelectedColumns(payload.data, 0)
+  const dataverse = getDataverseState()
+  setCurrentEntity(dataverse.entities.find((e) => e.logicalName === logicalName) || { logicalName })
+  setCurrentEntityDetail(payload.data)
+  setSelectedColumns(getDefaultSelectedColumns(payload.data, 0))
   renderExplorerEntities()
   renderEntityDetail()
   renderSelectedColumns(els.selectedCols)
@@ -119,16 +124,16 @@ async function loadEntityDetail(logicalName) {
 }
 
 async function loadRecordPreview() {
-  const detail = app.currentEntityDetail
+  const detail = getDataverseState().currentEntityDetail
   if (!detail || !detail.entitySetName) {
-    app.currentRecordPreview = null
+    setCurrentRecordPreview(null)
     renderRecordPreview()
     return
   }
   const environment = getGlobalEnvironment()
   const select = getDefaultSelectedColumns(detail, 3)
   if (!select.length) {
-    app.currentRecordPreview = { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] }
+    setCurrentRecordPreview({ entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] })
     renderRecordPreview()
     return
   }
@@ -136,12 +141,12 @@ async function loadRecordPreview() {
     method: 'POST',
     body: JSON.stringify({ environmentAlias: environment, entitySetName: detail.entitySetName, select, top: 5 })
   })
-  app.currentRecordPreview = payload.data
+  setCurrentRecordPreview(payload.data)
   renderRecordPreview()
 }
 
 function renderEntityDetail() {
-  const detail = app.currentEntityDetail
+  const detail = getDataverseState().currentEntityDetail
   if (!detail) {
     els.entityDetailEmpty.classList.remove('hidden')
     els.entityDetail.classList.add('hidden')
@@ -172,7 +177,7 @@ function renderEntityDetail() {
 }
 
 function renderAttributeTable() {
-  const detail = app.currentEntityDetail
+  const detail = getDataverseState().currentEntityDetail
   if (!detail) return
   const filter = (els.attrFilter.value || '').toLowerCase()
   const attrs = (detail.attributes || []).filter((a) => {
@@ -180,7 +185,7 @@ function renderAttributeTable() {
     return a.logicalName.includes(filter) || (a.displayName || '').toLowerCase().includes(filter)
   })
   els.attributeTable.innerHTML = attrs.map((a) => {
-    const selected = app.selectedColumns.includes(a.logicalName)
+    const selected = getDataverseState().selectedColumns.includes(a.logicalName)
     const flags = [
       a.isPrimaryId ? 'PK' : '',
       a.isPrimaryName ? 'name' : '',
@@ -198,7 +203,8 @@ function renderAttributeTable() {
 }
 
 function renderRecordPreview() {
-  if (!app.currentRecordPreview) {
+  const recordPreview = getDataverseState().currentRecordPreview
+  if (!recordPreview) {
     els.recordPreviewPath.textContent = ''
     els.recordPreviewTable.innerHTML = ''
     els.recordPreviewTable.style.display = 'none'
@@ -206,9 +212,9 @@ function renderRecordPreview() {
     els.recordPreviewJson.textContent = 'Select an entity to preview records.'
     return
   }
-  els.recordPreviewPath.textContent = app.currentRecordPreview.path || ''
-  const records = app.currentRecordPreview.records || []
-  const entityName = app.currentRecordPreview.logicalName || ''
+  els.recordPreviewPath.textContent = recordPreview.path || ''
+  const records = recordPreview.records || []
+  const entityName = recordPreview.logicalName || ''
   if (recordPreviewView === 'table' && records.length) {
     els.recordPreviewTable.innerHTML = renderResultTable(records, entityName)
     els.recordPreviewTable.style.display = ''

@@ -1,6 +1,7 @@
 export function renderSetupModule(): string {
   return String.raw`
-import { app, api, applyAccountKindVisibility, esc, formDataObject, formatTimeRemaining, optionMarkup, setBtnLoading, summarizeError, toast } from '/assets/ui/shared.js'
+import { api, applyAccountKindVisibility, esc, formDataObject, formatTimeRemaining, optionMarkup, setBtnLoading, summarizeError, toast } from '/assets/ui/shared.js'
+import { getCurrentLoginJobId, getShellPayload, setCurrentLoginJobId } from '/assets/ui/state.js'
 
 const HEALTH_APIS = ['dv', 'flow', 'graph', 'bap', 'powerapps']
 
@@ -432,9 +433,10 @@ export function initSetup(refreshState) {
   })
 
   els.recheckHealth.addEventListener('click', () => {
-    if (app.state && app.state.data) {
-      checkHealth(app.state.data.environments || [])
-      checkTokenStatuses(app.state.data.accounts || [])
+    const payload = getShellPayload()
+    if (payload && payload.data) {
+      checkHealth(payload.data.environments || [])
+      checkTokenStatuses(payload.data.accounts || [])
       toast('Health checks started')
     }
   })
@@ -455,11 +457,11 @@ export function initSetup(refreshState) {
         method: 'POST',
         body: JSON.stringify({ ...formDataObject(form), environmentAlias: getSelectedEnvironment(), excludeApis: getExcludedApis() })
       })
-      app.currentLoginJobId = started.data.id
+      setCurrentLoginJobId(started.data.id)
       if (started.data.metadata && Array.isArray(started.data.metadata.loginTargets)) {
         setLoginTargets(started.data.metadata.loginTargets)
       }
-      const result = await waitForLoginJob(app.currentLoginJobId)
+      const result = await waitForLoginJob(started.data.id)
       form.reset()
       document.getElementById('account-kind').value = 'user'
       applyAccountKindVisibility()
@@ -472,7 +474,7 @@ export function initSetup(refreshState) {
     } catch (err) {
       toast(err.message, true)
     } finally {
-      app.currentLoginJobId = null
+      setCurrentLoginJobId(null)
       els.accountCancel.classList.add('hidden')
       hideLoginLinkPanel()
       setBtnLoading(btn, false, 'Save & Login')
@@ -480,12 +482,13 @@ export function initSetup(refreshState) {
   })
 
   els.accountCancel.addEventListener('click', async () => {
-    if (!app.currentLoginJobId) return
+    const activeJobId = getCurrentLoginJobId()
+    if (!activeJobId) return
     try {
-      await fetch('/api/jobs/' + encodeURIComponent(app.currentLoginJobId), { method: 'DELETE', headers: { 'content-type': 'application/json' } })
+      await fetch('/api/jobs/' + encodeURIComponent(activeJobId), { method: 'DELETE', headers: { 'content-type': 'application/json' } })
       toast('Pending login cancelled', true)
     } finally {
-      app.currentLoginJobId = null
+      setCurrentLoginJobId(null)
       els.accountCancel.classList.add('hidden')
       hideLoginLinkPanel()
     }
@@ -561,12 +564,12 @@ export function initSetup(refreshState) {
         body: JSON.stringify({ name, kind: 'user', environmentAlias: getSelectedEnvironment(), excludeApis: getExcludedApis() })
       })
         .then(async (started) => {
-          app.currentLoginJobId = started.data.id
+          setCurrentLoginJobId(started.data.id)
           if (started.data.metadata && Array.isArray(started.data.metadata.loginTargets)) {
             setLoginTargets(started.data.metadata.loginTargets)
           }
-          const result = await waitForLoginJob(app.currentLoginJobId)
-          app.currentLoginJobId = null
+          const result = await waitForLoginJob(started.data.id)
+          setCurrentLoginJobId(null)
           if (result && result.data && result.data.expiresAt) {
             toast(name + ' authenticated')
           } else {
@@ -574,7 +577,7 @@ export function initSetup(refreshState) {
           }
           await refreshState(true)
         })
-        .catch((err) => { toast(err.message, true); app.currentLoginJobId = null })
+        .catch((err) => { toast(err.message, true); setCurrentLoginJobId(null) })
         .finally(() => { hideLoginLinkPanel(); setBtnLoading(btn, false, 'Login') })
       return
     }

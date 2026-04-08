@@ -9,7 +9,8 @@ import { getCM, vim } from '@replit/codemirror-vim'
 import { searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view'
-import { app, api, esc, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, getSelectableAttributes, updateEntityContext, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
+import { api, esc, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, getSelectableAttributes, updateEntityContext, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
+import { getDataverseState } from '/assets/ui/state.js'
 
 const OPERATORS = [
   'eq', 'ne', 'gt', 'ge', 'lt', 'le',
@@ -76,7 +77,7 @@ class FetchXmlLanguageClient {
       source,
       cursor,
       environmentAlias: getGlobalEnvironment(),
-      rootEntityName: els.entitySelect.value || (app.currentEntityDetail && app.currentEntityDetail.logicalName) || undefined
+      rootEntityName: els.entitySelect.value || (getDataverseState().currentEntityDetail && getDataverseState().currentEntityDetail.logicalName) || undefined
     }
     const key = JSON.stringify(payload)
     if (this.inFlight.has(key)) return this.inFlight.get(key)
@@ -319,7 +320,7 @@ function setRawXml(value) {
 async function loadBuilderEntity(logicalName) {
   const env = getGlobalEnvironment()
   if (!env) throw new Error('Select an environment first.')
-  const match = app.entities.find((e) => e.logicalName === logicalName)
+  const match = getDataverseState().entities.find((e) => e.logicalName === logicalName)
   if (match) els.entitySet.value = match.entitySetName || ''
   const payload = await api('/api/dv/entities/' + encodeURIComponent(logicalName) + '?environment=' + encodeURIComponent(env))
   builderEntity = payload.data
@@ -338,7 +339,8 @@ export function useEntityInFetchXml(detail) {
   els.entitySet.value = detail.entitySetName || ''
   builderEntity = detail
   selectedAttrs = new Set()
-  const cols = app.selectedColumns.length ? app.selectedColumns : getDefaultSelectedColumns(detail, 0)
+  const dataverse = getDataverseState()
+  const cols = dataverse.selectedColumns.length ? dataverse.selectedColumns : getDefaultSelectedColumns(detail, 0)
   for (const c of cols) selectedAttrs.add(c)
   syncAttrsInput()
   renderAttrPicker()
@@ -351,7 +353,7 @@ export function useEntityInFetchXml(detail) {
 }
 
 export function updateFetchContext() {
-  updateEntityContext(els.entityContext, app.currentEntityDetail)
+  updateEntityContext(els.entityContext, getDataverseState().currentEntityDetail)
   renderEntityDropdown()
   refreshDiagnostics().catch(() => {})
 }
@@ -359,7 +361,7 @@ export function updateFetchContext() {
 function renderEntityDropdown() {
   const prev = els.entitySelect.value
   els.entitySelect.innerHTML = '<option value="">select entity\u2026</option>' +
-    app.entities.map((e) =>
+    getDataverseState().entities.map((e) =>
       '<option value="' + esc(e.logicalName) + '">' + esc((e.displayName || e.logicalName) + ' (' + e.logicalName + ')') + '</option>'
     ).join('')
   if (prev) els.entitySelect.value = prev
@@ -367,7 +369,7 @@ function renderEntityDropdown() {
 
 function buildEntityOptions(selectedValue) {
   return '<option value="">select entity\u2026</option>' +
-    app.entities.map((e) => {
+    getDataverseState().entities.map((e) => {
       const sel = e.logicalName === selectedValue ? ' selected' : ''
       return '<option value="' + esc(e.logicalName) + '"' + sel + '>' + esc((e.displayName || e.logicalName) + ' (' + e.logicalName + ')') + '</option>'
     }).join('')

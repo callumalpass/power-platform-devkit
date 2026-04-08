@@ -1,6 +1,8 @@
 export function renderAppModule(): string {
   return String.raw`
 import { app, api, applyAccountKindVisibility, renderMeta, optionMarkup, getGlobalEnvironment, loadEntities, setTab, showLoading, toast } from '/assets/ui/shared.js'
+import { clearDataverseSelection, setShellPayload } from '/assets/ui/state.js'
+import { setGlobalEnvironment } from '/assets/ui/runtime.js'
 import { initSetup, renderSetupState, runInitialHealthChecks } from '/assets/ui/setup.js'
 import { initExplorer, renderExplorerEntities } from '/assets/ui/explorer.js'
 import { initQueryLab, useEntityInQuery, updateQueryContext } from '/assets/ui/query-lab.js'
@@ -24,15 +26,16 @@ const workspaceContainers = {
 
 async function refreshState(silent) {
   const payload = await api('/api/state')
-  app.state = payload
+  setShellPayload(payload)
   renderMeta(payload.data)
   renderSetupState(payload.data)
 
   const environments = (payload.data.environments || []).map((e) => e.alias)
   const prev = globalEnv.value
   globalEnv.innerHTML = optionMarkup(environments, 'Select environment')
-  if (prev && environments.includes(prev)) globalEnv.value = prev
-  else if (environments.length) globalEnv.value = environments[0]
+  if (prev && environments.includes(prev)) setGlobalEnvironment(prev)
+  else if (environments.length) setGlobalEnvironment(environments[0])
+  else setGlobalEnvironment('')
 
   runInitialHealthChecks(payload.data)
   updateEmptyStates(payload.data)
@@ -127,7 +130,7 @@ function updateEmptyStates(data) {
 }
 
 globalEnv.addEventListener('change', () => {
-  app.entitiesEnvironment = null
+  clearDataverseSelection()
   lastEnv = ''
   onEnvironmentChange().catch((err) => toast(err.message, true))
 })
