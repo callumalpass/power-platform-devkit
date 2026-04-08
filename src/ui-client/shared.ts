@@ -124,7 +124,7 @@ export function setBtnLoading(btn, loading, label) {
 export async function loadEntities(environment) {
   if (!environment) return
   if (app.entitiesEnvironment === environment && app.entities.length) return
-  const payload = await api('/api/dv/entities?environment=' + encodeURIComponent(environment))
+  const payload = await api('/api/dv/entities?environment=' + encodeURIComponent(environment) + '&allowInteractive=false')
   app.entities = payload.data || []
   app.entitiesEnvironment = environment
   app.currentEntity = null

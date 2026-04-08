@@ -10,13 +10,17 @@ export interface UiJob<T = unknown> {
   status: UiJobStatus;
   createdAt: string;
   updatedAt: string;
+  metadata?: Record<string, unknown>;
   result?: OperationResult<T>;
 }
 
 export class UiJobStore {
   private readonly jobs = new Map<string, UiJob>();
 
-  createJob<T>(kind: UiJobKind, run: () => Promise<OperationResult<T>>): UiJob<T> {
+  createJob<T>(
+    kind: UiJobKind,
+    run: (update: (metadata: Record<string, unknown>) => void) => Promise<OperationResult<T>>,
+  ): UiJob<T> {
     const now = new Date().toISOString();
     const job: UiJob<T> = {
       id: randomUUID(),
@@ -42,9 +46,17 @@ export class UiJobStore {
     return job;
   }
 
-  private async runJob<T>(id: string, run: () => Promise<OperationResult<T>>): Promise<void> {
+  private async runJob<T>(
+    id: string,
+    run: (update: (metadata: Record<string, unknown>) => void) => Promise<OperationResult<T>>,
+  ): Promise<void> {
     try {
-      const result = await run();
+      const result = await run((metadata) => {
+        const job = this.jobs.get(id) as UiJob<T> | undefined;
+        if (!job || job.status !== 'pending') return;
+        job.metadata = { ...(job.metadata ?? {}), ...metadata };
+        job.updatedAt = new Date().toISOString();
+      });
       const job = this.jobs.get(id) as UiJob<T> | undefined;
       if (!job || job.status === 'cancelled') return;
       job.result = result;

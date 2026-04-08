@@ -5,6 +5,29 @@ export function renderHtml(): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>pp</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "@codemirror/autocomplete": "/assets/vendor/@codemirror/autocomplete",
+        "@codemirror/commands": "/assets/vendor/@codemirror/commands",
+        "@codemirror/lang-xml": "/assets/vendor/@codemirror/lang-xml",
+        "@codemirror/language": "/assets/vendor/@codemirror/language",
+        "@codemirror/lint": "/assets/vendor/@codemirror/lint",
+        "@codemirror/search": "/assets/vendor/@codemirror/search",
+        "@codemirror/state": "/assets/vendor/@codemirror/state",
+        "@codemirror/view": "/assets/vendor/@codemirror/view",
+        "@lezer/common": "/assets/vendor/@lezer/common",
+        "@lezer/highlight": "/assets/vendor/@lezer/highlight",
+        "@lezer/lr": "/assets/vendor/@lezer/lr",
+        "@lezer/xml": "/assets/vendor/@lezer/xml",
+        "@marijn/find-cluster-break": "/assets/vendor/@marijn/find-cluster-break",
+        "@replit/codemirror-vim": "/assets/vendor/@replit/codemirror-vim",
+        "crelt": "/assets/vendor/crelt",
+        "style-mod": "/assets/vendor/style-mod",
+        "w3c-keyname": "/assets/vendor/w3c-keyname"
+      }
+    }
+  </script>
   <style>
     :root {
       --bg: #f9fafb;
@@ -75,6 +98,7 @@ export function renderHtml(): string {
     .tab { padding: 10px 18px; font-size: 0.8125rem; font-weight: 500; color: var(--muted); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; transition: color 150ms; white-space: nowrap; }
     .tab:hover { color: var(--ink); }
     .tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+    .tab-sep { width: 1px; background: var(--border); margin: 8px 2px; flex-shrink: 0; }
 
     /* Layout */
     .main { max-width: 1400px; margin: 0 auto; padding: 20px; }
@@ -96,15 +120,24 @@ export function renderHtml(): string {
     .entity-item { padding: 8px 10px; border-radius: 6px; cursor: pointer; transition: background 80ms; border: 1px solid transparent; }
     .entity-item:hover { background: var(--bg); }
     .entity-item.active { background: var(--accent-soft); border-color: var(--accent); }
-    .entity-item-name { font-size: 0.8125rem; font-weight: 600; line-height: 1.3; }
+    .entity-item-name { font-size: 0.8125rem; font-weight: 600; line-height: 1.3; display: flex; align-items: center; }
     .entity-item-logical { font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); }
     .entity-item-badges { display: flex; gap: 4px; margin-top: 2px; }
     .entity-item-set { font-family: var(--mono); font-size: 0.625rem; color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; }
     .entity-item-flag { font-size: 0.625rem; color: var(--muted); background: var(--bg); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); }
     .entity-loading { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 0.8125rem; }
 
+    /* Inventory sidebar (shared by automate/apps/platform) */
+    .inventory-sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; }
+    .inventory-sidebar .panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
     /* Detail area */
     .detail-area { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+
+    /* Dataverse workspace sub-tabs */
+    .dv-sub-nav { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+    .dv-subpanel { display: none; }
+    .dv-subpanel.active { display: flex; flex-direction: column; gap: 20px; }
 
     /* Sub-tabs within a panel */
     .sub-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin: -20px -20px 16px; padding: 0 20px; }
@@ -169,6 +202,51 @@ export function renderHtml(): string {
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
     textarea { font-family: var(--mono); font-size: 0.8125rem; line-height: 1.5; resize: vertical; }
     textarea.xml-editor { min-height: 320px; }
+    .fetchxml-editor-shell { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+    .fetchxml-editor-toolbar { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: 0.6875rem; color: var(--muted); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 78%, var(--bg)); }
+    .fetchxml-editor-toolbar-left,
+    .fetchxml-editor-toolbar-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .fetchxml-vim-mode { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 0.6875rem; }
+    .fetchxml-vim-mode.insert { border-color: var(--ok); color: var(--ok); }
+    .fetchxml-vim-mode.normal { border-color: var(--accent); color: var(--accent); }
+    .fetchxml-vim-mode.visual { border-color: #d97706; color: #d97706; }
+    .fetchxml-vim-mode.replace { border-color: var(--danger); color: var(--danger); }
+    .fetchxml-editor-mount .cm-editor { min-height: 320px; font-family: var(--mono); font-size: 0.8125rem; }
+    .fetchxml-editor-mount .cm-scroller { overflow: auto; }
+    .fetchxml-editor-mount .cm-content { padding: 12px; }
+    .fetchxml-editor-mount .cm-focused { outline: none; }
+    .fetchxml-editor-mount .cm-panels { background: var(--surface); color: var(--ink); border-color: var(--border); }
+    .fetchxml-editor-mount .cm-panel { background: var(--surface); color: var(--ink); }
+    .fetchxml-editor-mount .cm-tooltip { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,0.16); }
+    .fetchxml-editor-mount .cm-tooltip .cm-tooltip-arrow:before { border-top-color: var(--border); border-bottom-color: var(--border); }
+    .fetchxml-editor-mount .cm-tooltip .cm-tooltip-arrow:after { border-top-color: var(--surface); border-bottom-color: var(--surface); }
+    .fetchxml-editor-mount .cm-tooltip-autocomplete { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .fetchxml-editor-mount .cm-tooltip-autocomplete > ul { background: var(--surface); color: var(--ink); }
+    .fetchxml-editor-mount .cm-tooltip-autocomplete > ul > li { color: var(--ink); border-top: 1px solid transparent; border-bottom: 1px solid transparent; }
+    .fetchxml-editor-mount .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent-soft); color: var(--ink); }
+    .fetchxml-editor-mount .cm-completionIcon { color: var(--muted); opacity: 0.9; }
+    .fetchxml-editor-mount .cm-completionLabel { color: inherit; }
+    .fetchxml-editor-mount .cm-completionDetail,
+    .fetchxml-editor-mount .cm-completionInfo,
+    .fetchxml-editor-mount .cm-completionMatchedText { color: inherit; }
+    .fetchxml-editor-mount .cm-completionMatchedText { text-decoration-color: var(--accent); }
+    .fetchxml-editor-mount .cm-tooltip-lint ul { background: var(--surface); color: var(--ink); }
+    .fetchxml-editor-mount .cm-diagnostic { border-left: 3px solid var(--border); background: var(--surface); color: var(--ink); }
+    .fetchxml-editor-mount .cm-diagnostic-error { border-left-color: var(--danger); }
+    .fetchxml-editor-mount .cm-diagnostic-warning { border-left-color: #d97706; }
+    .fetchxml-editor-mount .cm-diagnostic-info { border-left-color: var(--accent); }
+    .fetchxml-editor-mount .cm-lintPoint-warning { border-bottom-color: #d97706; }
+    .fetchxml-editor-mount .cm-lintPoint-error { border-bottom-color: var(--danger); }
+    .fetchxml-diagnostics { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .fetchxml-diagnostic { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; background: var(--bg); }
+    .fetchxml-diagnostic.warning { border-left-color: #d97706; }
+    .fetchxml-diagnostic.error { border-left-color: var(--danger); }
+    .fetchxml-diagnostic.info { border-left-color: var(--accent); }
+    .fetchxml-diagnostic-code { font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); }
+    .fetchxml-diagnostic-message { font-size: 0.75rem; line-height: 1.4; margin-top: 2px; }
+    .fetchxml-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: var(--ok); vertical-align: middle; margin-right: 6px; }
+    .fetchxml-status-dot.warn { background: #d97706; }
+    .fetchxml-status-dot.error { background: var(--danger); }
     .check-row { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--muted); }
     .check-row input[type="checkbox"] { width: 16px; height: 16px; min-width: 16px; padding: 0; margin: 0; border-radius: 4px; accent-color: var(--accent); cursor: pointer; }
     .conditional { display: none; }
@@ -241,14 +319,66 @@ export function renderHtml(): string {
     .env-card-prop { font-size: 0.6875rem; color: var(--muted); }
     .env-card-prop code { font-family: var(--mono); color: var(--ink); }
 
+    /* ===== API Console ===== */
+    .console-bar { display: flex; gap: 0; border: 2px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; transition: border-color 200ms; }
+    .console-bar:focus-within { border-color: var(--accent); }
+    .console-bar select { border: none; border-right: 1px solid var(--border); border-radius: 0; padding: 10px 12px; font-weight: 600; font-size: 0.8125rem; background: var(--bg); min-width: 0; }
+    .console-bar select:focus { outline: none; box-shadow: none; }
+    .console-bar input { border: none; border-radius: 0; flex: 1; padding: 10px 14px; font-family: var(--mono); font-size: 0.8125rem; min-width: 0; }
+    .console-bar input:focus { outline: none; box-shadow: none; }
+    .console-bar .btn { border-radius: 0; border: none; border-left: 1px solid var(--border); padding: 10px 20px; font-weight: 600; }
+    #console-api { width: 155px; }
+    #console-method { width: 90px; font-family: var(--mono); }
+
+    .console-scope-hint { font-size: 0.6875rem; color: var(--muted); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .console-scope-badge { font-size: 0.625rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .console-scope-badge.env { background: var(--accent-soft); color: var(--accent); }
+    .console-scope-badge.account { background: var(--ok-soft); color: var(--ok); }
+
+    .console-sections { display: grid; gap: 10px; margin-bottom: 16px; }
+    .console-sections details { border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .console-sections summary { padding: 10px 14px; cursor: pointer; font-size: 0.8125rem; font-weight: 500; color: var(--muted); user-select: none; }
+    .console-sections summary:hover { color: var(--ink); }
+    .console-sections .section-body { padding: 0 14px 14px; }
+
+    .kv-list { display: grid; gap: 6px; }
+    .kv-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; }
+    .kv-row input { padding: 6px 8px; font-size: 0.8125rem; }
+
+    .console-status-badge { display: inline-flex; align-items: center; justify-content: center; padding: 2px 10px; border-radius: 999px; font-family: var(--mono); font-size: 0.75rem; font-weight: 600; background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+    .console-status-badge.success { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+    .console-status-badge.error { background: var(--warn-soft); color: var(--danger); border-color: var(--danger); }
+    .console-status-badge.small { font-size: 0.625rem; padding: 1px 6px; }
+
+    /* History */
+    .history-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: background 80ms; }
+    .history-item:hover { background: var(--bg); }
+    .history-item-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .history-item-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .history-method { font-family: var(--mono); font-size: 0.6875rem; font-weight: 700; min-width: 42px; }
+    .history-method.get { color: var(--ok); }
+    .history-method.post { color: var(--accent); }
+    .history-method.put, .history-method.patch { color: #d97706; }
+    .history-method.delete { color: var(--danger); }
+    .history-path { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .history-time { font-size: 0.6875rem; color: var(--muted); }
+    .history-api { font-size: 0.625rem; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+
+    /* Run items (flow runs) */
+    .run-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem; }
+    .run-status { font-weight: 500; }
+    .run-time { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
+
     .hidden { display: none !important; }
 
     @media (max-width: 900px) {
       .tab-panel.active { flex-direction: column; }
-      .entity-sidebar { width: 100%; }
+      .entity-sidebar, .inventory-sidebar { width: 100%; }
       .entity-list { max-height: 300px; }
       .setup-grid, .form-row, .form-row.three { grid-template-columns: 1fr; }
       .header-meta { display: none; }
+      .console-bar { flex-wrap: wrap; }
+      #console-api, #console-method { width: auto; flex: 1; }
     }
   </style>
 </head>
@@ -267,206 +397,18 @@ export function renderHtml(): string {
   </header>
   <nav class="tabs">
     <div class="tabs-inner">
-      <button class="tab active" data-tab="explorer">Explorer</button>
-      <button class="tab" data-tab="query">Query</button>
-      <button class="tab" data-tab="fetchxml">FetchXML</button>
       <button class="tab" data-tab="setup">Setup</button>
+      <button class="tab" data-tab="console">Console</button>
+      <div class="tab-sep"></div>
+      <button class="tab active" data-tab="dataverse">Dataverse</button>
+      <button class="tab" data-tab="automate">Automate</button>
+      <button class="tab" data-tab="apps">Apps</button>
+      <button class="tab" data-tab="platform">Platform</button>
     </div>
   </nav>
   <div class="main">
 
-    <!-- Explorer Tab -->
-    <div class="tab-panel active" id="panel-explorer">
-      <div class="entity-sidebar">
-        <div class="panel">
-          <h2>Entities</h2>
-          <input type="text" id="entity-filter" class="entity-filter" placeholder="Filter entities\u2026">
-          <div id="entity-count" class="entity-count"></div>
-          <div id="entity-list" class="entity-list">
-            <div class="entity-loading">Select an environment to load entities.</div>
-          </div>
-        </div>
-      </div>
-      <div class="detail-area">
-        <div class="panel" id="entity-detail-panel">
-          <div id="entity-detail-empty">
-            <h2>Entity Detail</h2>
-            <p class="desc">Select an entity from the list to inspect its metadata and preview records.</p>
-            <div class="empty">No entity selected.</div>
-          </div>
-          <div id="entity-detail" class="hidden">
-            <div class="sub-tabs">
-              <button class="sub-tab active" data-subtab="metadata">Metadata</button>
-              <button class="sub-tab" data-subtab="records">Records</button>
-            </div>
-
-            <!-- Metadata sub-panel -->
-            <div class="sub-panel active" id="subpanel-metadata">
-              <h2 id="entity-title"></h2>
-              <p class="desc" id="entity-subtitle"></p>
-              <div id="entity-metrics" class="metrics"></div>
-              <div class="btn-group" style="margin-bottom:12px">
-                <button class="btn btn-primary btn-sm" id="entity-to-query" type="button">Use in Query</button>
-                <button class="btn btn-primary btn-sm" id="entity-to-fetchxml" type="button">Use in FetchXML</button>
-              </div>
-              <div class="selected-cols" id="selected-cols">
-                <span class="selected-cols-label">Selected:</span>
-                <span style="color:var(--muted);font-size:0.75rem">Click attributes below to select columns</span>
-              </div>
-              <input type="text" id="attr-filter" class="attr-filter" placeholder="Filter attributes\u2026">
-              <div class="table-wrap">
-                <table>
-                  <thead><tr><th></th><th>Column</th><th>Type</th><th>Flags</th></tr></thead>
-                  <tbody id="attribute-table"></tbody>
-                </table>
-              </div>
-            </div>
-
-            <!-- Records sub-panel -->
-            <div class="sub-panel" id="subpanel-records">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                <h2>Record Preview</h2>
-                <button class="btn btn-secondary" id="entity-refresh-records" type="button">Refresh</button>
-              </div>
-              <div id="record-preview-path" style="font-family:var(--mono);font-size:0.75rem;color:var(--muted);margin-bottom:8px"></div>
-              <pre class="viewer" id="record-preview-json">Select an entity to preview records.</pre>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Query Tab -->
-    <div class="tab-panel" id="panel-query">
-      <div class="detail-area">
-        <div class="panel">
-          <h2>Web API Query</h2>
-          <div class="entity-context" id="query-entity-context">
-            <span class="entity-context-empty">No entity selected \u2014 pick one in Explorer or type an entity set below</span>
-          </div>
-          <form id="query-form">
-            <div class="form-row">
-              <div class="field">
-                <span class="field-label">Entity Set</span>
-                <input name="entitySetName" id="query-entity-set" placeholder="accounts">
-              </div>
-              <div class="field">
-                <span class="field-label">Top</span>
-                <input name="top" type="number" min="1" step="1" value="10">
-              </div>
-            </div>
-            <div class="field">
-              <span class="field-label">Select Columns (CSV)</span>
-              <input name="selectCsv" id="query-select" placeholder="accountid,name,accountnumber">
-            </div>
-            <div class="field">
-              <span class="field-label">Filter</span>
-              <input name="filter" id="query-filter" placeholder="contains(name,'Contoso')">
-            </div>
-            <div class="form-row">
-              <div class="field">
-                <span class="field-label">Order By (CSV)</span>
-                <input name="orderByCsv" id="query-order" placeholder="name asc,createdon desc">
-              </div>
-              <div class="field">
-                <span class="field-label">Expand (CSV)</span>
-                <input name="expandCsv" id="query-expand" placeholder="primarycontactid($select=fullname)">
-              </div>
-            </div>
-            <div class="field">
-              <span class="field-label">Raw Path Override</span>
-              <input name="rawPath" id="query-raw-path" placeholder="/api/data/v9.2/accounts?$select=name">
-            </div>
-            <div class="check-row"><input type="checkbox" name="includeCount" id="query-count"><label for="query-count">Include count</label></div>
-            <div class="btn-group">
-              <button class="btn btn-secondary" id="query-preview-btn" type="button">Preview Path</button>
-              <button class="btn btn-primary" id="query-run-btn" type="button">Run Query</button>
-            </div>
-          </form>
-        </div>
-        <div class="panel">
-          <h2>Generated Path</h2>
-          <pre class="viewer" id="query-preview">Preview a Dataverse path here.</pre>
-        </div>
-        <div class="panel">
-          <h2>Query Result</h2>
-          <pre class="viewer" id="query-result">Run a query to see the response.</pre>
-        </div>
-      </div>
-    </div>
-
-    <!-- FetchXML Tab -->
-    <div class="tab-panel" id="panel-fetchxml">
-      <div class="detail-area">
-        <div class="panel">
-          <h2>FetchXML</h2>
-          <div class="entity-context" id="fetch-entity-context">
-            <span class="entity-context-empty">No entity selected \u2014 pick one in Explorer or fill in the fields below</span>
-          </div>
-          <form id="fetchxml-form">
-            <div class="field">
-              <span class="field-label">FetchXML</span>
-              <textarea name="rawXml" id="fetch-raw" class="xml-editor" placeholder='<fetch top="50">&#10;  <entity name="account">&#10;    <attribute name="name" />&#10;    <filter>&#10;      <condition attribute="statecode" operator="eq" value="0" />&#10;    </filter>&#10;  </entity>&#10;</fetch>'></textarea>
-            </div>
-            <div class="btn-group">
-              <button class="btn btn-primary" id="fetch-run-btn" type="button">Run FetchXML</button>
-              <button class="btn btn-secondary" id="fetch-preview-btn" type="button">Build from fields below</button>
-            </div>
-            <details style="margin-top:4px" id="fetch-builder">
-              <summary style="cursor:pointer;font-size:0.8125rem;font-weight:500;color:var(--muted)">Form builder</summary>
-              <div style="display:grid;gap:14px;margin-top:14px">
-                <div class="form-row">
-                  <div class="field">
-                    <span class="field-label">Entity</span>
-                    <select name="entity" id="fetch-entity"><option value="">select entity\u2026</option></select>
-                  </div>
-                  <div class="field">
-                    <span class="field-label">Entity Set Name</span>
-                    <input name="entitySetName" id="fetch-entity-set" placeholder="accounts" readonly tabindex="-1" style="color:var(--muted)">
-                  </div>
-                </div>
-                <div class="field">
-                  <span class="field-label">Attributes</span>
-                  <div id="fetch-attr-picker" class="attr-picker"></div>
-                  <input name="attributesCsv" id="fetch-attrs" type="hidden">
-                </div>
-                <div class="form-row three">
-                  <div class="field"><span class="field-label">Top</span><input name="top" type="number" min="1" step="1" value="50"></div>
-                  <div class="field"><span class="field-label">Distinct</span><select name="distinct" id="fetch-distinct"><option value="false">false</option><option value="true">true</option></select></div>
-                  <div class="field"><span class="field-label">Filter Type</span><select id="fetch-filter-type"><option value="and">and</option><option value="or">or</option></select></div>
-                </div>
-                <div class="field">
-                  <span class="field-label">Conditions</span>
-                  <div id="fetch-conditions" class="condition-list"></div>
-                  <button type="button" class="btn btn-ghost" id="fetch-add-condition" style="margin-top:6px;padding:4px 10px;font-size:0.75rem">+ Add condition</button>
-                </div>
-                <div class="form-row">
-                  <div class="field">
-                    <span class="field-label">Order By</span>
-                    <select id="order-attribute"><option value="">none</option></select>
-                  </div>
-                  <div class="field">
-                    <span class="field-label">Direction</span>
-                    <select id="order-desc"><option value="false">ascending</option><option value="true">descending</option></select>
-                  </div>
-                </div>
-                <div class="field">
-                  <span class="field-label">Link Entities (Joins)</span>
-                  <div id="fetch-links" class="link-list"></div>
-                  <button type="button" class="btn btn-ghost" id="fetch-add-link" style="margin-top:6px;padding:4px 10px;font-size:0.75rem">+ Add join</button>
-                </div>
-              </div>
-            </details>
-          </form>
-        </div>
-        <div class="panel">
-          <h2>FetchXML Result</h2>
-          <pre class="viewer" id="fetch-result">Run FetchXML to see the response.</pre>
-        </div>
-      </div>
-    </div>
-
-    <!-- Setup Tab -->
+    <!-- ===== Setup ===== -->
     <div class="tab-panel stack" id="panel-setup">
       <div class="setup-grid">
         <div class="panel">
@@ -522,6 +464,14 @@ export function renderHtml(): string {
               <button type="submit" class="btn btn-primary" id="account-submit">Save & Login</button>
               <button type="button" class="btn btn-danger hidden" id="account-cancel">Cancel Pending Login</button>
             </div>
+            <div id="login-link-panel" class="hidden" style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-alt)">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px">
+                <span class="field-label" style="margin:0">Open This Login URL</span>
+                <button type="button" class="btn btn-ghost" id="login-link-copy" style="font-size:0.75rem;padding:4px 10px">Copy</button>
+              </div>
+              <div id="login-link-status" style="font-size:0.75rem;color:var(--muted);margin-bottom:8px">Waiting for the identity provider to return a sign-in link…</div>
+              <div id="login-link-url" style="font-family:var(--font-mono);font-size:0.75rem;word-break:break-all"></div>
+            </div>
           </form>
         </div>
         <div class="panel">
@@ -554,6 +504,388 @@ export function renderHtml(): string {
         <div id="mcp-content"></div>
       </div>
     </div>
+
+    <!-- ===== API Console ===== -->
+    <div class="tab-panel stack" id="panel-console">
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2>API Console</h2>
+          <select id="console-preset" style="max-width:260px;font-size:0.8125rem"></select>
+        </div>
+        <div class="console-bar">
+          <select id="console-api"></select>
+          <select id="console-method"></select>
+          <input type="text" id="console-path" placeholder="/WhoAmI">
+          <button class="btn btn-primary" id="console-send">Send</button>
+        </div>
+        <div class="console-scope-hint" id="console-scope-hint"></div>
+        <div class="console-sections">
+          <details>
+            <summary>Query Parameters</summary>
+            <div class="section-body">
+              <div id="console-query-params" class="kv-list"></div>
+              <button class="btn btn-ghost" id="console-add-query-param" type="button" style="margin-top:6px;padding:4px 10px;font-size:0.75rem">+ Add parameter</button>
+            </div>
+          </details>
+          <details>
+            <summary>Headers</summary>
+            <div class="section-body">
+              <div id="console-headers" class="kv-list"></div>
+              <button class="btn btn-ghost" id="console-add-header" type="button" style="margin-top:6px;padding:4px 10px;font-size:0.75rem">+ Add header</button>
+            </div>
+          </details>
+          <details id="console-body-section">
+            <summary>Request Body</summary>
+            <div class="section-body">
+              <textarea id="console-body" rows="8" placeholder='{ "key": "value" }'></textarea>
+            </div>
+          </details>
+        </div>
+      </div>
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2>Response <span id="console-response-status" class="console-status-badge" style="margin-left:8px"></span></h2>
+          <span id="console-response-time" style="font-size:0.75rem;color:var(--muted);font-family:var(--mono)"></span>
+        </div>
+        <details style="margin-bottom:8px;display:none">
+          <summary style="cursor:pointer;font-size:0.75rem;color:var(--muted)">Response Headers</summary>
+          <pre class="viewer" id="console-response-headers-body" style="min-height:40px;margin-top:6px"></pre>
+        </details>
+        <pre class="viewer" id="console-response-body">Send a request to see the response.</pre>
+      </div>
+      <div class="panel">
+        <h2 style="margin-bottom:12px">History</h2>
+        <div id="console-history" class="card-list">
+          <div class="empty">No requests yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Dataverse Workspace ===== -->
+    <div class="tab-panel active" id="panel-dataverse">
+      <div class="entity-sidebar">
+        <div class="panel">
+          <h2>Entities</h2>
+          <input type="text" id="entity-filter" class="entity-filter" placeholder="Filter entities\u2026">
+          <div id="entity-count" class="entity-count"></div>
+          <div id="entity-list" class="entity-list">
+            <div class="entity-loading">Select an environment to load entities.</div>
+          </div>
+        </div>
+      </div>
+      <div class="detail-area" id="dv-workspace-area">
+        <div class="dv-sub-nav">
+          <button class="sub-tab active" data-dvtab="dv-explorer">Explorer</button>
+          <button class="sub-tab" data-dvtab="dv-query">Query</button>
+          <button class="sub-tab" data-dvtab="dv-fetchxml">FetchXML</button>
+        </div>
+
+        <!-- Explorer sub-panel -->
+        <div class="dv-subpanel active" id="dv-subpanel-dv-explorer">
+          <div class="panel" id="entity-detail-panel">
+            <div id="entity-detail-empty">
+              <h2>Entity Detail</h2>
+              <p class="desc">Select an entity from the list to inspect its metadata and preview records.</p>
+              <div class="empty">No entity selected.</div>
+            </div>
+            <div id="entity-detail" class="hidden">
+              <div class="sub-tabs">
+                <button class="sub-tab active" data-subtab="metadata">Metadata</button>
+                <button class="sub-tab" data-subtab="records">Records</button>
+              </div>
+
+              <!-- Metadata sub-panel -->
+              <div class="sub-panel active" id="subpanel-metadata">
+                <h2 id="entity-title"></h2>
+                <p class="desc" id="entity-subtitle"></p>
+                <div id="entity-metrics" class="metrics"></div>
+                <div class="btn-group" style="margin-bottom:12px">
+                  <button class="btn btn-primary btn-sm" id="entity-to-query" type="button">Use in Query</button>
+                  <button class="btn btn-primary btn-sm" id="entity-to-fetchxml" type="button">Use in FetchXML</button>
+                </div>
+                <div class="selected-cols" id="selected-cols">
+                  <span class="selected-cols-label">Selected:</span>
+                  <span style="color:var(--muted);font-size:0.75rem">Click attributes below to select columns</span>
+                </div>
+                <input type="text" id="attr-filter" class="attr-filter" placeholder="Filter attributes\u2026">
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th></th><th>Column</th><th>Type</th><th>Flags</th></tr></thead>
+                    <tbody id="attribute-table"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Records sub-panel -->
+              <div class="sub-panel" id="subpanel-records">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                  <h2>Record Preview</h2>
+                  <button class="btn btn-secondary" id="entity-refresh-records" type="button">Refresh</button>
+                </div>
+                <div id="record-preview-path" style="font-family:var(--mono);font-size:0.75rem;color:var(--muted);margin-bottom:8px"></div>
+                <pre class="viewer" id="record-preview-json">Select an entity to preview records.</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Query sub-panel -->
+        <div class="dv-subpanel" id="dv-subpanel-dv-query">
+          <div class="panel">
+            <h2>Web API Query</h2>
+            <div class="entity-context" id="query-entity-context">
+              <span class="entity-context-empty">No entity selected \u2014 pick one in Explorer or type an entity set below</span>
+            </div>
+            <form id="query-form">
+              <div class="form-row">
+                <div class="field">
+                  <span class="field-label">Entity Set</span>
+                  <input name="entitySetName" id="query-entity-set" placeholder="accounts">
+                </div>
+                <div class="field">
+                  <span class="field-label">Top</span>
+                  <input name="top" type="number" min="1" step="1" value="10">
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-label">Select Columns (CSV)</span>
+                <input name="selectCsv" id="query-select" placeholder="accountid,name,accountnumber">
+              </div>
+              <div class="field">
+                <span class="field-label">Filter</span>
+                <input name="filter" id="query-filter" placeholder="contains(name,'Contoso')">
+              </div>
+              <div class="form-row">
+                <div class="field">
+                  <span class="field-label">Order By (CSV)</span>
+                  <input name="orderByCsv" id="query-order" placeholder="name asc,createdon desc">
+                </div>
+                <div class="field">
+                  <span class="field-label">Expand (CSV)</span>
+                  <input name="expandCsv" id="query-expand" placeholder="primarycontactid($select=fullname)">
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-label">Raw Path Override</span>
+                <input name="rawPath" id="query-raw-path" placeholder="/api/data/v9.2/accounts?$select=name">
+              </div>
+              <div class="check-row"><input type="checkbox" name="includeCount" id="query-count"><label for="query-count">Include count</label></div>
+              <div class="btn-group">
+                <button class="btn btn-secondary" id="query-preview-btn" type="button">Preview Path</button>
+                <button class="btn btn-primary" id="query-run-btn" type="button">Run Query</button>
+              </div>
+            </form>
+          </div>
+          <div class="panel">
+            <h2>Generated Path</h2>
+            <pre class="viewer" id="query-preview">Preview a Dataverse path here.</pre>
+          </div>
+          <div class="panel">
+            <h2>Query Result</h2>
+            <pre class="viewer" id="query-result">Run a query to see the response.</pre>
+          </div>
+        </div>
+
+        <!-- FetchXML sub-panel -->
+        <div class="dv-subpanel" id="dv-subpanel-dv-fetchxml">
+          <div class="panel">
+            <h2>FetchXML</h2>
+            <div class="entity-context" id="fetch-entity-context">
+              <span class="entity-context-empty">No entity selected \u2014 pick one in Explorer or fill in the fields below</span>
+            </div>
+            <form id="fetchxml-form">
+              <div class="field">
+                <span class="field-label">FetchXML</span>
+                <div class="fetchxml-editor-shell">
+                  <div class="fetchxml-editor-toolbar">
+                    <div class="fetchxml-editor-toolbar-left">
+                      <span id="fetch-editor-status"><span class="fetchxml-status-dot"></span>IntelliSense ready</span>
+                      <span id="fetch-vim-mode" class="fetchxml-vim-mode normal">NORMAL</span>
+                    </div>
+                    <div class="fetchxml-editor-toolbar-right">
+                      <span>Autocomplete for FetchXML structure, entities, attributes, operators, and join fields. Vim mode enabled.</span>
+                    </div>
+                  </div>
+                  <div id="fetch-editor" class="fetchxml-editor-mount"></div>
+                </div>
+                <textarea name="rawXml" id="fetch-raw" class="xml-editor" hidden placeholder='<fetch top="50">&#10;  <entity name="account">&#10;    <attribute name="name" />&#10;    <filter>&#10;      <condition attribute="statecode" operator="eq" value="0" />&#10;    </filter>&#10;  </entity>&#10;</fetch>'></textarea>
+                <div id="fetch-diagnostics" class="fetchxml-diagnostics"></div>
+              </div>
+              <div class="btn-group">
+                <button class="btn btn-primary" id="fetch-run-btn" type="button">Run FetchXML</button>
+                <button class="btn btn-secondary" id="fetch-preview-btn" type="button">Build from fields below</button>
+              </div>
+              <details style="margin-top:4px" id="fetch-builder">
+                <summary style="cursor:pointer;font-size:0.8125rem;font-weight:500;color:var(--muted)">Form builder</summary>
+                <div style="display:grid;gap:14px;margin-top:14px">
+                  <div class="form-row">
+                    <div class="field">
+                      <span class="field-label">Entity</span>
+                      <select name="entity" id="fetch-entity"><option value="">select entity\u2026</option></select>
+                    </div>
+                    <div class="field">
+                      <span class="field-label">Entity Set Name</span>
+                      <input name="entitySetName" id="fetch-entity-set" placeholder="accounts" readonly tabindex="-1" style="color:var(--muted)">
+                    </div>
+                  </div>
+                  <div class="field">
+                    <span class="field-label">Attributes</span>
+                    <div id="fetch-attr-picker" class="attr-picker"></div>
+                    <input name="attributesCsv" id="fetch-attrs" type="hidden">
+                  </div>
+                  <div class="form-row three">
+                    <div class="field"><span class="field-label">Top</span><input name="top" type="number" min="1" step="1" value="50"></div>
+                    <div class="field"><span class="field-label">Distinct</span><select name="distinct" id="fetch-distinct"><option value="false">false</option><option value="true">true</option></select></div>
+                    <div class="field"><span class="field-label">Filter Type</span><select id="fetch-filter-type"><option value="and">and</option><option value="or">or</option></select></div>
+                  </div>
+                  <div class="field">
+                    <span class="field-label">Conditions</span>
+                    <div id="fetch-conditions" class="condition-list"></div>
+                    <button type="button" class="btn btn-ghost" id="fetch-add-condition" style="margin-top:6px;padding:4px 10px;font-size:0.75rem">+ Add condition</button>
+                  </div>
+                  <div class="form-row">
+                    <div class="field">
+                      <span class="field-label">Order By</span>
+                      <select id="order-attribute"><option value="">none</option></select>
+                    </div>
+                    <div class="field">
+                      <span class="field-label">Direction</span>
+                      <select id="order-desc"><option value="false">ascending</option><option value="true">descending</option></select>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <span class="field-label">Link Entities (Joins)</span>
+                    <div id="fetch-links" class="link-list"></div>
+                    <button type="button" class="btn btn-ghost" id="fetch-add-link" style="margin-top:6px;padding:4px 10px;font-size:0.75rem">+ Add join</button>
+                  </div>
+                </div>
+              </details>
+            </form>
+          </div>
+          <div class="panel">
+            <h2>FetchXML Result</h2>
+            <pre class="viewer" id="fetch-result">Run FetchXML to see the response.</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Automate Workspace ===== -->
+    <div class="tab-panel" id="panel-automate">
+      <div class="inventory-sidebar">
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h2>Flows</h2>
+            <button class="btn btn-ghost" id="flow-refresh" type="button" style="font-size:0.75rem;padding:4px 10px">Refresh</button>
+          </div>
+          <input type="text" id="flow-filter" class="entity-filter" placeholder="Filter flows\u2026">
+          <div id="flow-count" class="entity-count"></div>
+          <div id="flow-list" class="entity-list">
+            <div class="entity-loading">Select an environment to load flows.</div>
+          </div>
+        </div>
+      </div>
+      <div class="detail-area">
+        <div class="panel">
+          <div id="flow-detail-empty">
+            <h2>Flow Detail</h2>
+            <p class="desc">Select a flow from the list to inspect its properties and recent runs.</p>
+            <div class="empty">No flow selected.</div>
+          </div>
+          <div id="flow-detail" class="hidden">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <div>
+                <h2 id="flow-title"></h2>
+                <p class="desc" id="flow-subtitle" style="margin-bottom:0"></p>
+              </div>
+              <button class="btn btn-ghost" id="flow-open-console" type="button" style="font-size:0.75rem">Open in Console</button>
+            </div>
+            <div id="flow-metrics" class="metrics"></div>
+          </div>
+        </div>
+        <div class="panel" id="flow-runs-panel" style="display:none">
+          <h2 style="margin-bottom:12px">Recent Runs</h2>
+          <div id="flow-runs" class="card-list">
+            <div class="empty">Select a flow to see runs.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Apps Workspace ===== -->
+    <div class="tab-panel" id="panel-apps">
+      <div class="inventory-sidebar">
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h2>Apps</h2>
+            <button class="btn btn-ghost" id="app-refresh" type="button" style="font-size:0.75rem;padding:4px 10px">Refresh</button>
+          </div>
+          <input type="text" id="app-filter" class="entity-filter" placeholder="Filter apps\u2026">
+          <div id="app-count" class="entity-count"></div>
+          <div id="app-list" class="entity-list">
+            <div class="entity-loading">Select an environment to load apps.</div>
+          </div>
+        </div>
+      </div>
+      <div class="detail-area">
+        <div class="panel">
+          <div id="app-detail-empty">
+            <h2>App Detail</h2>
+            <p class="desc">Select an app from the list to inspect its metadata and connections.</p>
+            <div class="empty">No app selected.</div>
+          </div>
+          <div id="app-detail" class="hidden">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <div>
+                <h2 id="app-title"></h2>
+                <p class="desc" id="app-subtitle" style="margin-bottom:0"></p>
+              </div>
+              <button class="btn btn-ghost" id="app-open-console" type="button" style="font-size:0.75rem">Open in Console</button>
+            </div>
+            <div id="app-metrics" class="metrics"></div>
+            <div id="app-connections"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Platform Workspace ===== -->
+    <div class="tab-panel" id="panel-platform">
+      <div class="inventory-sidebar">
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h2>Environments</h2>
+            <button class="btn btn-ghost" id="plat-env-refresh" type="button" style="font-size:0.75rem;padding:4px 10px">Refresh</button>
+          </div>
+          <input type="text" id="plat-env-filter" class="entity-filter" placeholder="Filter environments\u2026">
+          <div id="plat-env-count" class="entity-count"></div>
+          <div id="plat-env-list" class="entity-list">
+            <div class="entity-loading">Select an environment to discover platform environments.</div>
+          </div>
+        </div>
+      </div>
+      <div class="detail-area">
+        <div class="panel">
+          <div id="plat-env-detail-empty">
+            <h2>Environment Detail</h2>
+            <p class="desc">Select an environment from the list to inspect its platform metadata.</p>
+            <div class="empty">No environment selected.</div>
+          </div>
+          <div id="plat-env-detail" class="hidden">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <div>
+                <h2 id="plat-env-title"></h2>
+                <p class="desc" id="plat-env-subtitle" style="margin-bottom:0"></p>
+              </div>
+              <button class="btn btn-ghost" id="plat-env-open-console" type="button" style="font-size:0.75rem">Open in Console</button>
+            </div>
+            <div id="plat-env-metrics" class="metrics"></div>
+            <div id="plat-env-linked"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script type="module" src="/assets/ui/app.js"></script>

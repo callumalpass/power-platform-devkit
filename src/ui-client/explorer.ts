@@ -1,6 +1,6 @@
 export function renderExplorerModule(): string {
   return String.raw`
-import { app, api, esc, getDefaultSelectedColumns, pretty, getGlobalEnvironment, renderEntitySidebar, renderSelectedColumns, toggleColumn, setTab, registerSubTabs, toast } from '/assets/ui/shared.js'
+import { app, api, esc, getDefaultSelectedColumns, pretty, getGlobalEnvironment, renderEntitySidebar, renderSelectedColumns, toggleColumn, registerSubTabs, toast } from '/assets/ui/shared.js'
 
 const els = {
   entityList: document.getElementById('entity-list'),
@@ -24,6 +24,13 @@ const els = {
 
 let actions = {}
 
+function switchDvSubTab(tabName) {
+  const area = document.getElementById('dv-workspace-area')
+  if (!area) return
+  area.querySelectorAll('.dv-sub-nav .sub-tab').forEach((t) => t.classList.toggle('active', t.dataset.dvtab === tabName))
+  area.querySelectorAll('.dv-subpanel').forEach((p) => p.classList.toggle('active', p.id === 'dv-subpanel-' + tabName))
+}
+
 export function initExplorer(a) {
   actions = a
 
@@ -33,12 +40,12 @@ export function initExplorer(a) {
   els.entityToQuery.addEventListener('click', () => {
     if (!app.currentEntityDetail) return
     actions.useEntityInQuery(app.currentEntityDetail)
-    setTab('query')
+    switchDvSubTab('dv-query')
   })
   els.entityToFetchXml.addEventListener('click', () => {
     if (!app.currentEntityDetail) return
     actions.useEntityInFetchXml(app.currentEntityDetail)
-    setTab('fetchxml')
+    switchDvSubTab('dv-fetchxml')
   })
   els.entityRefreshRecords.addEventListener('click', () => loadRecordPreview().catch((e) => toast(e.message, true)))
 

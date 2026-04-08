@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -33,6 +32,7 @@ export interface PublicClientLoginOptions {
   forcePrompt?: boolean;
   preferredFlow?: 'interactive' | 'device-code';
   allowInteractive?: boolean;
+  onInteractiveUrl?: (url: string) => void | Promise<void>;
 }
 
 export interface LoginAccountInput {
@@ -338,6 +338,7 @@ async function acquireAndPersistPublicClientToken(
               : undefined,
         loginHint: account.loginHint,
         openBrowser: async (url) => {
+          await loginOptions.onInteractiveUrl?.(url);
           await openBrowser(url);
         },
       });
@@ -431,14 +432,7 @@ function promptValue(prompt: 'select_account' | 'login' | 'consent' | 'none') {
 }
 
 async function openBrowser(url: string): Promise<void> {
-  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
-  const args = process.platform === 'darwin' ? [url] : process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  await new Promise<void>((resolvePromise, reject) => {
-    const child = spawn(command, args, { stdio: 'ignore', detached: process.platform !== 'win32' });
-    child.on('error', reject);
-    child.unref();
-    resolvePromise();
-  });
+  process.stderr.write(`Open this login URL to continue authentication:\n${url}\n`);
 }
 
 function normalizeResource(resource: string): string {

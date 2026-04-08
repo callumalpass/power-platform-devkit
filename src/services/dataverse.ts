@@ -1,3 +1,4 @@
+import type { PublicClientLoginOptions } from '../auth.js';
 import { createDiagnostic, fail, ok, type OperationResult } from '../diagnostics.js';
 import { executeApiRequest } from './api.js';
 import type { ConfigStoreOptions } from '../config.js';
@@ -111,6 +112,7 @@ export interface FetchXmlSpec {
 export async function listDataverseEntities(
   input: { environmentAlias: string; accountName?: string; search?: string; top?: number },
   configOptions: ConfigStoreOptions = {},
+  loginOptions: PublicClientLoginOptions = {},
 ) {
   const top = clamp(input.top ?? 5000, 1, 5000);
   const result = await executeApiRequest({
@@ -135,7 +137,7 @@ export async function listDataverseEntities(
         'ObjectTypeCode',
       ].join(','),
     },
-  }, configOptions);
+  }, configOptions, loginOptions);
   if (!result.success || !result.data) return fail(...result.diagnostics);
   const entities = readArray(result.data.response).map((value) => mapEntitySummary(readObject(value) ?? {}));
   entities.sort((a, b) => a.logicalName.localeCompare(b.logicalName));
@@ -155,6 +157,7 @@ export async function listDataverseEntities(
 export async function getDataverseEntityDetail(
   input: { environmentAlias: string; logicalName: string; accountName?: string },
   configOptions: ConfigStoreOptions = {},
+  loginOptions: PublicClientLoginOptions = {},
 ): Promise<OperationResult<DataverseEntityDetail>> {
   const [result, lookupTargetsResult] = await Promise.all([
     executeApiRequest({
@@ -182,8 +185,8 @@ export async function getDataverseEntityDetail(
         ].join(','),
         '$expand': 'Attributes($select=LogicalName,AttributeOf,SchemaName,DisplayName,Description,AttributeType,AttributeTypeName,RequiredLevel,IsPrimaryId,IsPrimaryName,IsValidForRead,IsValidForCreate,IsValidForUpdate,IsValidForAdvancedFind)',
       },
-    }, configOptions),
-    getDataverseLookupTargets(input, configOptions),
+    }, configOptions, loginOptions),
+    getDataverseLookupTargets(input, configOptions, loginOptions),
   ]);
   if (!result.success || !result.data) return fail(...result.diagnostics);
   const raw = readObject(result.data.response);
@@ -213,6 +216,7 @@ export async function getDataverseEntityDetail(
 export async function listDataverseRecords(
   input: DataverseQuerySpec,
   configOptions: ConfigStoreOptions = {},
+  loginOptions: PublicClientLoginOptions = {},
 ): Promise<OperationResult<DataverseRecordPage>> {
   const querySpec = {
     ...input,
@@ -220,7 +224,7 @@ export async function listDataverseRecords(
     orderBy: input.orderBy ? [...input.orderBy] : undefined,
   };
   const diagnostics = [];
-  let result = await runDataverseRecordQuery(querySpec, configOptions);
+  let result = await runDataverseRecordQuery(querySpec, configOptions, loginOptions);
   let invalidProperty = readMissingPropertyName(result.diagnostics);
   while ((!result.success || !result.data) && invalidProperty) {
     const removed = removeInvalidProperty(querySpec, invalidProperty);
@@ -228,7 +232,7 @@ export async function listDataverseRecords(
     diagnostics.push(createDiagnostic('warning', 'DV_QUERY_PROPERTY_SKIPPED', `Skipped unsupported Dataverse property ${invalidProperty}.`, {
       source: 'pp/services/dataverse',
     }));
-    result = await runDataverseRecordQuery(querySpec, configOptions);
+    result = await runDataverseRecordQuery(querySpec, configOptions, loginOptions);
     invalidProperty = readMissingPropertyName(result.diagnostics);
   }
   if (!result.success || !result.data) return fail(...result.diagnostics);
@@ -248,6 +252,7 @@ export async function listDataverseRecords(
 async function runDataverseRecordQuery(
   input: DataverseQuerySpec,
   configOptions: ConfigStoreOptions,
+  loginOptions: PublicClientLoginOptions = {},
 ) {
   const path = buildDataverseODataPath(input);
   return executeApiRequest({
@@ -258,7 +263,7 @@ async function runDataverseRecordQuery(
     method: 'GET',
     responseType: 'json',
     readIntent: true,
-  }, configOptions);
+  }, configOptions, loginOptions);
 }
 
 export function buildDataverseODataPath(spec: DataverseQuerySpec): string {
@@ -352,6 +357,7 @@ export function buildFetchXml(spec: FetchXmlSpec): string {
 export async function executeFetchXml(
   spec: FetchXmlSpec,
   configOptions: ConfigStoreOptions = {},
+  loginOptions: PublicClientLoginOptions = {},
 ): Promise<OperationResult<DataverseRecordPage & { fetchXml: string }>> {
   const fetchXml = buildFetchXml(spec);
   const entitySetName = spec.entitySetName?.trim();
@@ -367,7 +373,7 @@ export async function executeFetchXml(
     method: 'GET',
     responseType: 'json',
     readIntent: true,
-  }, configOptions);
+  }, configOptions, loginOptions);
   if (!result.success || !result.data) return fail(...result.diagnostics);
   const payload = readObject(result.data.response) ?? {};
   return ok({
@@ -399,6 +405,7 @@ function mapEntitySummary(value: Record<string, unknown>): DataverseEntitySummar
 async function getDataverseLookupTargets(
   input: { environmentAlias: string; logicalName: string; accountName?: string },
   configOptions: ConfigStoreOptions,
+  loginOptions: PublicClientLoginOptions = {},
 ): Promise<OperationResult<Map<string, string[]>>> {
   const result = await executeApiRequest({
     environmentAlias: input.environmentAlias,
@@ -411,7 +418,7 @@ async function getDataverseLookupTargets(
     query: {
       '$select': 'LogicalName,Targets',
     },
-  }, configOptions);
+  }, configOptions, loginOptions);
   if (!result.success || !result.data) return fail(...result.diagnostics);
   const lookupTargets = new Map<string, string[]>();
   for (const value of readArray(result.data.response)) {

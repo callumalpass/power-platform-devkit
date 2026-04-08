@@ -17,11 +17,16 @@ const els = {
   discoverAccount: document.getElementById('discover-account'),
   environmentAccount: document.getElementById('environment-account'),
   mcpContent: document.getElementById('mcp-content'),
-  themeToggle: document.getElementById('theme-toggle')
+  themeToggle: document.getElementById('theme-toggle'),
+  loginLinkPanel: document.getElementById('login-link-panel'),
+  loginLinkStatus: document.getElementById('login-link-status'),
+  loginLinkUrl: document.getElementById('login-link-url'),
+  loginLinkCopy: document.getElementById('login-link-copy')
 }
 
 const health = {}
 const tokenStatus = {}
+let currentLoginUrl = ''
 
 function initTheme() {
   const saved = localStorage.getItem('pp-theme')
@@ -40,6 +45,32 @@ function toggleTheme() {
 function updateThemeIcon() {
   els.themeToggle.textContent = document.documentElement.classList.contains('dark') ? '\u2600' : '\u263D'
   els.themeToggle.title = document.documentElement.classList.contains('dark') ? 'Switch to light mode' : 'Switch to dark mode'
+}
+
+function showLoginLinkPanel() {
+  els.loginLinkPanel.classList.remove('hidden')
+  renderLoginLink()
+}
+
+function hideLoginLinkPanel() {
+  currentLoginUrl = ''
+  els.loginLinkPanel.classList.add('hidden')
+  renderLoginLink()
+}
+
+function setLoginUrl(url) {
+  currentLoginUrl = url || ''
+  renderLoginLink()
+}
+
+function renderLoginLink() {
+  els.loginLinkStatus.textContent = currentLoginUrl
+    ? 'Open the link in any browser to continue sign-in.'
+    : 'Waiting for the identity provider to return a sign-in link…'
+  els.loginLinkUrl.innerHTML = currentLoginUrl
+    ? '<a href="' + esc(currentLoginUrl) + '" target="_blank" rel="noreferrer">' + esc(currentLoginUrl) + '</a>'
+    : ''
+  els.loginLinkCopy.disabled = !currentLoginUrl
 }
 
 function tokenDotHtml(accountName) {
@@ -194,16 +225,20 @@ export function initSetup(refreshState) {
 
   els.accountForm.addEventListener('submit', async (event) => {
     event.preventDefault()
+    const form = event.currentTarget
     const btn = document.getElementById('account-submit')
     const kind = document.getElementById('account-kind').value
     const isInteractive = kind === 'user' || kind === 'device-code'
     setBtnLoading(btn, true, isInteractive ? 'Waiting for login\u2026' : 'Saving\u2026')
-    if (isInteractive) els.accountCancel.classList.remove('hidden')
+    if (isInteractive) {
+      els.accountCancel.classList.remove('hidden')
+      showLoginLinkPanel()
+    }
     try {
-      const started = await api('/api/jobs/account-login', { method: 'POST', body: JSON.stringify(formDataObject(event.currentTarget)) })
+      const started = await api('/api/jobs/account-login', { method: 'POST', body: JSON.stringify(formDataObject(form)) })
       app.currentLoginJobId = started.data.id
       const result = await waitForLoginJob(app.currentLoginJobId)
-      event.currentTarget.reset()
+      form.reset()
       document.getElementById('account-kind').value = 'user'
       applyAccountKindVisibility()
       if (result && result.data && result.data.expiresAt) {
@@ -217,6 +252,7 @@ export function initSetup(refreshState) {
     } finally {
       app.currentLoginJobId = null
       els.accountCancel.classList.add('hidden')
+      hideLoginLinkPanel()
       setBtnLoading(btn, false, 'Save & Login')
     }
   })
@@ -229,16 +265,18 @@ export function initSetup(refreshState) {
     } finally {
       app.currentLoginJobId = null
       els.accountCancel.classList.add('hidden')
+      hideLoginLinkPanel()
     }
   })
 
   els.environmentForm.addEventListener('submit', async (event) => {
     event.preventDefault()
+    const form = event.currentTarget
     const btn = document.getElementById('env-submit')
     setBtnLoading(btn, true, 'Discovering\u2026')
     try {
-      await api('/api/environments', { method: 'POST', body: JSON.stringify(formDataObject(event.currentTarget)) })
-      event.currentTarget.reset()
+      await api('/api/environments', { method: 'POST', body: JSON.stringify(formDataObject(form)) })
+      form.reset()
       els.discoveredList.innerHTML = ''
       toast('Environment added')
       await refreshState(true)
@@ -251,10 +289,11 @@ export function initSetup(refreshState) {
 
   els.discoverForm.addEventListener('submit', async (event) => {
     event.preventDefault()
+    const form = event.currentTarget
     const btn = document.getElementById('discover-submit')
     setBtnLoading(btn, true, 'Discovering\u2026')
     try {
-      const payload = await api('/api/environments/discover', { method: 'POST', body: JSON.stringify(formDataObject(event.currentTarget)) })
+      const payload = await api('/api/environments/discover', { method: 'POST', body: JSON.stringify(formDataObject(form)) })
       const items = payload.data || []
       els.discoveredList.innerHTML = items.length
         ? items.map((item) =>
@@ -294,6 +333,7 @@ export function initSetup(refreshState) {
       const name = loginAccount.dataset.loginAccount
       const btn = loginAccount
       setBtnLoading(btn, true, 'Logging in\u2026')
+      showLoginLinkPanel()
       api('/api/jobs/account-login', { method: 'POST', body: JSON.stringify({ name, kind: 'user' }) })
         .then(async (started) => {
           app.currentLoginJobId = started.data.id
@@ -307,7 +347,7 @@ export function initSetup(refreshState) {
           await refreshState(true)
         })
         .catch((err) => { toast(err.message, true); app.currentLoginJobId = null })
-        .finally(() => setBtnLoading(btn, false, 'Login'))
+        .finally(() => { hideLoginLinkPanel(); setBtnLoading(btn, false, 'Login') })
       return
     }
     const useDiscovered = event.target.closest('[data-use-discovered]')
@@ -330,6 +370,14 @@ export function initSetup(refreshState) {
           () => toast('Failed to copy', true)
         )
       }
+      return
+    }
+    if (event.target.id === 'login-link-copy' || event.target.closest('#login-link-copy')) {
+      if (!currentLoginUrl) return
+      navigator.clipboard.writeText(currentLoginUrl).then(
+        () => toast('Copied login URL'),
+        () => toast('Failed to copy login URL', true)
+      )
     }
   })
 }
@@ -345,6 +393,9 @@ async function waitForLoginJob(jobId) {
     const response = await fetch('/api/jobs/' + encodeURIComponent(jobId), { headers: { 'content-type': 'application/json' } })
     const payload = await response.json()
     const job = payload.data
+    if (job && job.metadata && typeof job.metadata.loginUrl === 'string') {
+      setLoginUrl(job.metadata.loginUrl)
+    }
     if (!job || job.status === 'pending') continue
     if (job.status === 'cancelled') throw new Error('Login cancelled.')
     if (job.result && job.result.success === false) throw new Error(summarizeError(job.result))

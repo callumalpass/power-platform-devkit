@@ -1,5 +1,14 @@
 export function renderFetchXmlModule(): string {
   return String.raw`
+import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, startCompletion } from '@codemirror/autocomplete'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { xml } from '@codemirror/lang-xml'
+import { bracketMatching } from '@codemirror/language'
+import { linter } from '@codemirror/lint'
+import { getCM, vim } from '@replit/codemirror-vim'
+import { searchKeymap } from '@codemirror/search'
+import { Compartment, EditorState, Prec } from '@codemirror/state'
+import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view'
 import { app, api, esc, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, getSelectableAttributes, updateEntityContext, toast } from '/assets/ui/shared.js'
 
 const OPERATORS = [
@@ -24,6 +33,10 @@ const els = {
   runButton: document.getElementById('fetch-run-btn'),
   result: document.getElementById('fetch-result'),
   raw: document.getElementById('fetch-raw'),
+  editorMount: document.getElementById('fetch-editor'),
+  diagnostics: document.getElementById('fetch-diagnostics'),
+  editorStatus: document.getElementById('fetch-editor-status'),
+  vimMode: document.getElementById('fetch-vim-mode'),
   entitySelect: document.getElementById('fetch-entity'),
   entitySet: document.getElementById('fetch-entity-set'),
   attrs: document.getElementById('fetch-attrs'),
@@ -43,9 +56,42 @@ let builderEntity = null
 let selectedAttrs = new Set()
 let conditionCount = 0
 let linkCount = 0
-const linkDetails = {} // linkId -> loaded entity detail
+const linkDetails = {}
+
+const diagnosticsCompartment = new Compartment()
+let editorView = null
+let latestDiagnostics = []
+
+class FetchXmlLanguageClient {
+  constructor() {
+    this.inFlight = new Map()
+  }
+
+  analyze(source, cursor) {
+    const payload = {
+      source,
+      cursor,
+      environmentAlias: getGlobalEnvironment(),
+      rootEntityName: els.entitySelect.value || (app.currentEntityDetail && app.currentEntityDetail.logicalName) || undefined
+    }
+    const key = JSON.stringify(payload)
+    if (this.inFlight.has(key)) return this.inFlight.get(key)
+    const request = api('/api/dv/fetchxml/intellisense', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+      .then((result) => result.data)
+      .finally(() => this.inFlight.delete(key))
+    this.inFlight.set(key, request)
+    return request
+  }
+}
+
+const languageClient = new FetchXmlLanguageClient()
 
 export function initFetchXml() {
+  initEditor()
+
   els.runButton.addEventListener('click', async () => {
     try {
       const payload = await api('/api/dv/fetchxml/execute', { method: 'POST', body: JSON.stringify(readRunPayload()) })
@@ -59,7 +105,8 @@ export function initFetchXml() {
   els.previewButton.addEventListener('click', async () => {
     try {
       const payload = await api('/api/dv/fetchxml/preview', { method: 'POST', body: JSON.stringify(readFormPayload()) })
-      els.raw.value = payload.data.fetchXml || ''
+      setRawXml(payload.data.fetchXml || '')
+      await refreshDiagnostics()
       toast('XML generated')
     } catch (error) {
       toast(error.message, true)
@@ -68,6 +115,7 @@ export function initFetchXml() {
 
   els.entitySelect.addEventListener('change', () => {
     const logicalName = els.entitySelect.value
+    refreshDiagnostics().catch(() => {})
     if (!logicalName) {
       builderEntity = null
       renderAttrPicker()
@@ -94,6 +142,165 @@ export function initFetchXml() {
   els.addLink.addEventListener('click', () => addLinkCard())
 
   addConditionRow()
+  refreshDiagnostics().catch(() => {})
+}
+
+function initEditor() {
+  const acceptCompletionIfOpen = (view) => completionStatus(view.state) === 'active' ? acceptCompletion(view) : false
+
+  const completionSource = async (context) => {
+    const before = context.matchBefore(/[^\\s<>"'=\\/]*$/)
+    const triggerChar = context.pos > 0 ? context.state.sliceDoc(context.pos - 1, context.pos) : ''
+    if (!context.explicit && !before && !'<="/ '.includes(triggerChar)) return null
+    const analysis = await languageClient.analyze(context.state.doc.toString(), context.pos)
+    applyAnalysis(analysis)
+    if (!analysis.completions.length) return null
+    return {
+      from: analysis.context.from,
+      to: analysis.context.to,
+      options: analysis.completions.map(toCompletionOption)
+    }
+  }
+
+  const diagnosticSource = async (view) => {
+    const analysis = await languageClient.analyze(view.state.doc.toString(), view.state.selection.main.head)
+    applyAnalysis(analysis)
+    return analysis.diagnostics.map((item) => ({
+      from: item.from,
+      to: item.to,
+      severity: item.level === 'error' ? 'error' : item.level === 'warning' ? 'warning' : 'info',
+      message: item.message,
+      source: item.code
+    }))
+  }
+
+  const theme = EditorView.theme({
+    '&': { fontSize: '13px' },
+    '.cm-content': { caretColor: 'var(--ink)' },
+    '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--ink)' },
+    '&.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(37,99,235,0.18)' },
+    '.cm-activeLine': { backgroundColor: 'rgba(37,99,235,0.06)' },
+    '.cm-gutters': { backgroundColor: 'var(--bg)', borderRight: '1px solid var(--border)', color: 'var(--muted)' }
+  })
+
+  editorView = new EditorView({
+    parent: els.editorMount,
+    state: EditorState.create({
+      doc: els.raw.value || '',
+      extensions: [
+        lineNumbers(),
+        history(),
+        drawSelection(),
+        highlightActiveLine(),
+        xml(),
+        vim(),
+        bracketMatching(),
+        closeBrackets(),
+        autocompletion({ override: [completionSource], activateOnTyping: true, defaultKeymap: false, icons: true }),
+        diagnosticsCompartment.of(linter(diagnosticSource, { delay: 250 })),
+        Prec.highest(keymap.of([
+          { key: 'Tab', run: acceptCompletionIfOpen },
+          { key: 'Enter', run: acceptCompletionIfOpen }
+        ])),
+        keymap.of([
+          indentWithTab,
+          ...closeBracketsKeymap,
+          ...defaultKeymap,
+          ...historyKeymap,
+          ...searchKeymap,
+          ...completionKeymap
+        ]),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) syncRawInput(update.state.doc.toString())
+          if (update.docChanged || update.selectionSet) {
+            queueMicrotask(() => refreshDiagnostics().catch(() => {}))
+          }
+          if (update.docChanged) startCompletion(update.view)
+        }),
+        theme
+      ]
+    })
+  })
+
+  const cm = getCM(editorView)
+  if (cm && typeof cm.on === 'function') {
+    cm.on('vim-mode-change', (event) => renderVimMode(event))
+  }
+  renderVimMode({ mode: 'normal' })
+}
+
+async function refreshDiagnostics() {
+  if (!editorView) return
+  const analysis = await languageClient.analyze(editorView.state.doc.toString(), editorView.state.selection.main.head)
+  applyAnalysis(analysis)
+}
+
+function applyAnalysis(analysis) {
+  latestDiagnostics = analysis.diagnostics || []
+  renderDiagnostics(latestDiagnostics)
+  renderEditorStatus(latestDiagnostics)
+}
+
+function renderDiagnostics(items) {
+  if (!items.length) {
+    els.diagnostics.innerHTML = ''
+    return
+  }
+  els.diagnostics.innerHTML = items.slice(0, 6).map((item) =>
+    '<div class="fetchxml-diagnostic ' + esc(item.level) + '">' +
+      '<div class="fetchxml-diagnostic-code">' + esc(item.code) + ' @ ' + item.from + '</div>' +
+      '<div class="fetchxml-diagnostic-message">' + esc(item.message) + '</div>' +
+    '</div>'
+  ).join('')
+}
+
+function renderEditorStatus(items) {
+  const hasError = items.some((item) => item.level === 'error')
+  const hasWarning = !hasError && items.some((item) => item.level === 'warning')
+  if (hasError) {
+    els.editorStatus.innerHTML = '<span class="fetchxml-status-dot error"></span>' + items.length + ' issue' + (items.length === 1 ? '' : 's')
+    return
+  }
+  if (hasWarning) {
+    els.editorStatus.innerHTML = '<span class="fetchxml-status-dot warn"></span>' + items.length + ' advisory warning' + (items.length === 1 ? '' : 's')
+    return
+  }
+  els.editorStatus.innerHTML = '<span class="fetchxml-status-dot"></span>IntelliSense ready'
+}
+
+function renderVimMode(event) {
+  const mode = String(event && event.mode ? event.mode : 'normal').toLowerCase()
+  const subMode = String(event && event.subMode ? event.subMode : '').toLowerCase()
+  const label = subMode ? (mode + ' ' + subMode) : mode
+  els.vimMode.className = 'fetchxml-vim-mode ' + esc(mode)
+  els.vimMode.textContent = label.toUpperCase()
+}
+
+function toCompletionOption(item) {
+  return {
+    label: item.label,
+    type: item.type === 'keyword' ? 'keyword' : item.type,
+    detail: item.detail,
+    info: item.info,
+    apply: item.apply || item.label,
+    boost: item.boost
+  }
+}
+
+function syncRawInput(value) {
+  els.raw.value = value
+}
+
+function getRawXml() {
+  return editorView ? editorView.state.doc.toString() : els.raw.value
+}
+
+function setRawXml(value) {
+  syncRawInput(value)
+  if (!editorView) return
+  editorView.dispatch({
+    changes: { from: 0, to: editorView.state.doc.length, insert: value }
+  })
 }
 
 async function loadBuilderEntity(logicalName) {
@@ -109,6 +316,7 @@ async function loadBuilderEntity(logicalName) {
   renderOrderSelect()
   rebuildConditionSelects()
   rebuildLinkFromSelects()
+  refreshDiagnostics().catch(() => {})
 }
 
 export function useEntityInFetchXml(detail) {
@@ -125,12 +333,14 @@ export function useEntityInFetchXml(detail) {
   rebuildConditionSelects()
   rebuildLinkFromSelects()
   const attrs = Array.from(selectedAttrs).map((a) => '    <attribute name="' + a + '" />').join('\n')
-  els.raw.value = '<fetch top="50">\n  <entity name="' + (detail.logicalName || '') + '">\n' + attrs + '\n  </entity>\n</fetch>'
+  setRawXml('<fetch top="50">\n  <entity name="' + (detail.logicalName || '') + '">\n' + attrs + '\n  </entity>\n</fetch>')
+  refreshDiagnostics().catch(() => {})
 }
 
 export function updateFetchContext() {
   updateEntityContext(els.entityContext, app.currentEntityDetail)
   renderEntityDropdown()
+  refreshDiagnostics().catch(() => {})
 }
 
 function renderEntityDropdown() {
@@ -189,8 +399,6 @@ function buildOperatorOptions() {
     OPERATORS.map((op) => '<option value="' + esc(op) + '">' + esc(op) + '</option>').join('')
 }
 
-// --- Conditions ---
-
 function addConditionRow(container, detail, attr, op, val) {
   const target = container || els.conditions
   conditionCount++
@@ -236,8 +444,6 @@ function readConditionsFrom(container) {
   return result
 }
 
-// --- Link entities ---
-
 function addLinkCard() {
   linkCount++
   const id = linkCount
@@ -262,13 +468,11 @@ function addLinkCard() {
     '<div class="field"><span class="field-label">Linked Conditions</span><div class="condition-list" data-role="link-conditions"></div>' +
     '<button type="button" class="btn btn-ghost" data-add-link-condition="' + id + '" style="margin-top:4px;padding:3px 8px;font-size:0.6875rem">+ Condition</button></div>'
 
-  // Wire up entity change to load linked entity detail
   const entitySelect = card.querySelector('[data-role="link-entity"]')
   entitySelect.addEventListener('change', () => {
     loadLinkEntityDetail(id, entitySelect.value).catch((e) => toast(e.message, true))
   })
 
-  // Wire up attribute chip clicks
   const attrPicker = card.querySelector('[data-role="link-attrs"]')
   attrPicker.addEventListener('click', (e) => {
     const chip = e.target.closest('.attr-chip')
@@ -276,14 +480,12 @@ function addLinkCard() {
     chip.classList.toggle('selected')
   })
 
-  // Wire up add condition
   card.querySelector('[data-add-link-condition]').addEventListener('click', () => {
     const condContainer = card.querySelector('[data-role="link-conditions"]')
     const detail = linkDetails[id]
     addConditionRow(condContainer, detail)
   })
 
-  // Wire up remove
   card.querySelector('[data-remove-link]').addEventListener('click', () => {
     delete linkDetails[id]
     card.remove()
@@ -312,13 +514,11 @@ function renderLinkCard(linkId) {
   if (!card) return
   const detail = linkDetails[linkId]
 
-  // Update "from" dropdown (linked entity attributes)
   const fromSelect = card.querySelector('[data-role="link-from"]')
   const prevFrom = fromSelect.value
   fromSelect.innerHTML = detail ? buildAttributeOptions(detail) : '<option value="">select\u2026</option>'
   if (prevFrom) fromSelect.value = prevFrom
 
-  // Update attribute picker
   const attrPicker = card.querySelector('[data-role="link-attrs"]')
   if (!detail || !detail.attributes) {
     attrPicker.innerHTML = '<span style="color:var(--muted);font-size:0.6875rem">Select a linked entity first</span>'
@@ -329,7 +529,6 @@ function renderLinkCard(linkId) {
     '<span class="attr-chip" data-attr="' + esc(a.logicalName) + '" title="' + esc(a.displayName || a.logicalName) + '">' + esc(a.logicalName) + '</span>'
   ).join('')
 
-  // Rebuild condition attribute selects
   const condRows = card.querySelectorAll('.condition-row')
   for (const row of condRows) {
     const attrSelect = row.querySelector('[data-role="attr"]')
@@ -346,7 +545,6 @@ function clearLinks() {
 }
 
 function rebuildLinkFromSelects() {
-  // Rebuild the "to" (parent entity) selects in all link cards
   const cards = els.links.querySelectorAll('.link-card')
   for (const card of cards) {
     const toSelect = card.querySelector('[data-role="link-to"]')
@@ -385,8 +583,6 @@ function readLinkEntities() {
   return result
 }
 
-// --- Sync & payload ---
-
 function syncAttrsInput() {
   els.attrs.value = Array.from(selectedAttrs).join(',')
 }
@@ -405,7 +601,7 @@ function readFormPayload() {
 }
 
 function readRunPayload() {
-  const rawXml = els.raw.value.trim()
+  const rawXml = getRawXml().trim()
   if (rawXml) {
     return {
       environmentAlias: getGlobalEnvironment(),

@@ -1,19 +1,28 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { URL } from 'node:url';
 import type { LoginAccountInput } from './auth.js';
 import { getConfigDir, getConfigPath, getMsalCacheDir, type EnvironmentAccessMode } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
+import { FetchXmlMetadataCatalog, type FetchXmlLanguageRequest } from './fetchxml-language-service.js';
 import { renderHtml } from './ui-app.js';
 import { renderAppModule } from './ui-client/app.js';
+import { renderAppsModule } from './ui-client/apps.js';
+import { renderAutomateModule } from './ui-client/automate.js';
+import { renderConsoleModule } from './ui-client/console.js';
 import { renderExplorerModule } from './ui-client/explorer.js';
 import { renderFetchXmlModule } from './ui-client/fetchxml.js';
+import { renderPlatformModule } from './ui-client/platform.js';
 import { renderQueryLabModule } from './ui-client/query-lab.js';
 import { renderSetupModule } from './ui-client/setup.js';
 import { renderSharedModule } from './ui-client/shared.js';
 import { UiJobStore } from './ui-jobs.js';
 import type { ApiKind } from './request.js';
+import { executeApiRequest } from './services/api.js';
 import { checkAccountTokenStatus, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import {
@@ -27,6 +36,15 @@ import {
   type FetchXmlSpec,
 } from './services/dataverse.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
+
+const moduleRequire: NodeJS.Require = (() => {
+  try {
+    return eval('require') as NodeJS.Require;
+  } catch {
+    const anchor = process.argv[1] ? path.resolve(process.argv[1]) : path.join(process.cwd(), '__pp_runtime__.js');
+    return createRequire(anchor);
+  }
+})();
 
 export interface PpUiOptions {
   configDir?: string;
@@ -63,6 +81,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<{ url: strin
   const port = options.port ?? 4733;
   const allowInteractiveAuth = options.allowInteractiveAuth ?? true;
   const jobs = new UiJobStore();
+  const fetchXmlCatalog = new FetchXmlMetadataCatalog();
 
   const server = createServer(async (request, response) => {
     try {
@@ -72,6 +91,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<{ url: strin
         host,
         port,
         jobs,
+        fetchXmlCatalog,
       });
     } catch (error) {
       sendJson(
@@ -118,6 +138,7 @@ interface RequestContext {
   host: string;
   port: number;
   jobs: UiJobStore;
+  fetchXmlCatalog: FetchXmlMetadataCatalog;
 }
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse, context: RequestContext): Promise<void> {
@@ -149,8 +170,33 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/assets/ui/console.js') {
+    sendJavaScript(response, renderConsoleModule());
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/assets/ui/automate.js') {
+    sendJavaScript(response, renderAutomateModule());
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/assets/ui/apps.js') {
+    sendJavaScript(response, renderAppsModule());
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/assets/ui/platform.js') {
+    sendJavaScript(response, renderPlatformModule());
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/assets/ui/app.js') {
     sendJavaScript(response, renderAppModule());
+    return;
+  }
+
+  if (method === 'GET' && url.pathname.startsWith('/assets/vendor/')) {
+    await sendVendorModule(response, decodeURIComponent(url.pathname.slice('/assets/vendor/'.length)));
     return;
   }
 
@@ -197,11 +243,14 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       sendJson(response, 400, input);
       return;
     }
-    const job = context.jobs.createJob('account-login', () =>
+    const job = context.jobs.createJob('account-login', (update) =>
       loginAccount(input.data!, {
         preferredFlow: bodyData.preferredFlow === 'device-code' ? 'device-code' : 'interactive',
         forcePrompt: Boolean(bodyData.forcePrompt),
         allowInteractive: context.allowInteractiveAuth,
+        onInteractiveUrl: async (loginUrl) => {
+          update({ loginUrl });
+        },
       }, context.configOptions),
     );
     sendJson(response, 202, ok(job));
@@ -307,7 +356,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
     const result = await runWhoAmICheck({
       environmentAlias: environment,
       accountName: optionalString(body.data.account),
-      allowInteractive: context.allowInteractiveAuth,
+      allowInteractive: false,
     }, context.configOptions);
     sendJson(response, result.success ? 200 : 400, result);
     return;
@@ -329,7 +378,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       environmentAlias: environment,
       accountName: optionalString(body.data.account),
       api,
-      allowInteractive: context.allowInteractiveAuth,
+      allowInteractive: false,
     }, context.configOptions);
     sendJson(response, result.success ? 200 : 400, result);
     return;
@@ -337,6 +386,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
 
   if (method === 'GET' && url.pathname === '/api/dv/entities') {
     const environmentAlias = optionalString(url.searchParams.get('environment'));
+    const allowInteractive = optionalBoolean(url.searchParams.get('allowInteractive')) ?? context.allowInteractiveAuth;
     if (!environmentAlias) {
       sendJson(response, 400, fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environment is required.', { source: 'pp/ui' })));
       return;
@@ -347,7 +397,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       accountName: optionalString(url.searchParams.get('account')),
       search: optionalString(url.searchParams.get('search')),
       top: top ?? undefined,
-    }, context.configOptions);
+    }, context.configOptions, { allowInteractive });
     sendJson(response, result.success ? 200 : 400, result);
     return;
   }
@@ -426,6 +476,60 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       return;
     }
     const result = await executeFetchXml(spec.data, context.configOptions);
+    sendJson(response, result.success ? 200 : 400, result);
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/dv/fetchxml/intellisense') {
+    const body = await readJsonBody(request);
+    if (!body.success || !body.data) {
+      sendJson(response, 400, body);
+      return;
+    }
+    const languageRequest = readFetchXmlLanguageRequest(body.data);
+    if (!languageRequest.success || !languageRequest.data) {
+      sendJson(response, 400, languageRequest);
+      return;
+    }
+    sendJson(response, 200, ok(await context.fetchXmlCatalog.analyze(languageRequest.data, context.configOptions)));
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/request/execute') {
+    const body = await readJsonBody(request);
+    if (!body.success || !body.data) {
+      sendJson(response, 400, body);
+      return;
+    }
+    const environment = optionalString(body.data.environment);
+    const apiKind = readGenericApi(body.data.api);
+    const reqMethod = optionalString(body.data.method) ?? 'GET';
+    const reqPath = optionalString(body.data.path);
+    if (!environment) {
+      sendJson(response, 400, fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environment is required.', { source: 'pp/ui' })));
+      return;
+    }
+    if (!reqPath) {
+      sendJson(response, 400, fail(createDiagnostic('error', 'PATH_REQUIRED', 'path is required.', { source: 'pp/ui' })));
+      return;
+    }
+    const reqQuery = isRecord(body.data.query) ? body.data.query as Record<string, string> : undefined;
+    const reqHeaders = isRecord(body.data.headers) ? body.data.headers as Record<string, string> : undefined;
+    const reqBody = body.data.body;
+    const isRead = reqMethod.toUpperCase() === 'GET' || reqMethod.toUpperCase() === 'HEAD';
+    const allowInteractive = body.data.allowInteractive === undefined ? context.allowInteractiveAuth : Boolean(body.data.allowInteractive);
+    const result = await executeApiRequest({
+      environmentAlias: environment,
+      accountName: optionalString(body.data.account),
+      api: apiKind,
+      method: reqMethod,
+      path: reqPath,
+      query: reqQuery,
+      headers: reqHeaders,
+      body: reqBody,
+      responseType: 'json',
+      readIntent: isRead,
+    }, context.configOptions, { allowInteractive });
     sendJson(response, result.success ? 200 : 400, result);
     return;
   }
@@ -547,6 +651,83 @@ function sendJavaScript(response: ServerResponse, source: string): void {
   response.end(source);
 }
 
+async function sendVendorModule(response: ServerResponse, specifier: string): Promise<void> {
+  try {
+    const resolved = await resolveVendorModulePath(specifier);
+    if (resolved.redirect) {
+      response.writeHead(302, { location: resolved.redirect, 'cache-control': 'public, max-age=3600' });
+      response.end();
+      return;
+    }
+    const source = await readFile(resolved.path, 'utf8');
+    response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600' });
+    response.end(source);
+  } catch (error) {
+    sendJson(
+      response,
+      404,
+      fail(createDiagnostic('error', 'UI_VENDOR_MODULE_NOT_FOUND', `Could not resolve browser module ${specifier}.`, {
+        source: 'pp/ui',
+        detail: error instanceof Error ? error.message : String(error),
+      })),
+    );
+  }
+}
+
+async function resolveVendorModulePath(specifier: string): Promise<{ path: string; redirect?: string }> {
+  const { packageName, packageSubpath } = splitPackageSpecifier(specifier);
+  const cjsEntryPath = moduleRequire.resolve(packageName);
+  const packageRoot = derivePackageRoot(cjsEntryPath, packageName);
+  if (!packageSubpath) {
+    const relativeEntry = readBrowserEntryRelativePath(packageRoot, cjsEntryPath);
+    return { path: path.join(packageRoot, relativeEntry), redirect: `/assets/vendor/${packageName}/${relativeEntry}` };
+  }
+  const resolvedPath = path.resolve(packageRoot, packageSubpath);
+  const normalizedRoot = packageRoot.endsWith(path.sep) ? packageRoot : `${packageRoot}${path.sep}`;
+  if (!(resolvedPath === packageRoot || resolvedPath.startsWith(normalizedRoot))) {
+    throw new Error(`Rejected vendor path traversal for ${specifier}.`);
+  }
+  return { path: resolvedPath };
+}
+
+function splitPackageSpecifier(specifier: string): { packageName: string; packageSubpath: string } {
+  const parts = specifier.split('/').filter(Boolean);
+  if (!parts.length) throw new Error('Empty vendor specifier.');
+  if (specifier.startsWith('@')) {
+    return {
+      packageName: parts.slice(0, 2).join('/'),
+      packageSubpath: parts.slice(2).join('/'),
+    };
+  }
+  return {
+    packageName: parts[0],
+    packageSubpath: parts.slice(1).join('/'),
+  };
+}
+
+function derivePackageRoot(entryPath: string, packageName: string): string {
+  const marker = `${path.sep}${packageName.split('/').join(path.sep)}${path.sep}`;
+  const index = entryPath.lastIndexOf(marker);
+  if (index < 0) throw new Error(`Could not derive package root for ${packageName}.`);
+  return entryPath.slice(0, index + marker.length - 1);
+}
+
+function readBrowserEntryRelativePath(packageRoot: string, cjsEntryPath: string): string {
+  const packageJson = moduleRequire(path.join(packageRoot, 'package.json')) as {
+    exports?: string | { import?: string };
+    module?: string;
+  };
+  const exportsField = packageJson.exports;
+  if (typeof exportsField === 'string') return stripLeadingDotSlash(exportsField);
+  if (exportsField && typeof exportsField.import === 'string') return stripLeadingDotSlash(exportsField.import);
+  if (typeof packageJson.module === 'string') return stripLeadingDotSlash(packageJson.module);
+  return path.relative(packageRoot, cjsEntryPath).split(path.sep).join('/');
+}
+
+function stripLeadingDotSlash(value: string): string {
+  return value.startsWith('./') ? value.slice(2) : value;
+}
+
 function openBrowser(url: string): void {
   try {
     if (process.platform === 'darwin') {
@@ -584,6 +765,10 @@ function readPingApi(value: unknown): Exclude<ApiKind, 'custom'> {
   return value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' ? value : 'dv';
 }
 
+function readGenericApi(value: unknown): ApiKind {
+  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' ? value : 'dv';
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
@@ -592,6 +777,10 @@ function optionalInteger(value: unknown): number | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return value === true || value === 'true' ? true : value === false || value === 'false' ? false : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -671,6 +860,20 @@ function readFetchXmlSpec(value: Record<string, unknown>): OperationResult<Fetch
         value: optionalString(c.value),
       })),
     })),
+  });
+}
+
+function readFetchXmlLanguageRequest(value: Record<string, unknown>): OperationResult<FetchXmlLanguageRequest> {
+  const cursor = readNumber(value.cursor);
+  if (cursor === undefined || !Number.isInteger(cursor) || cursor < 0) {
+    return fail(createDiagnostic('error', 'FETCHXML_CURSOR_REQUIRED', 'cursor must be a non-negative integer.', { source: 'pp/ui' }));
+  }
+  const safeCursor = cursor;
+  return ok({
+    environmentAlias: optionalString(value.environmentAlias ?? value.environment),
+    source: typeof value.source === 'string' ? value.source : '',
+    cursor: safeCursor,
+    rootEntityName: optionalString(value.rootEntityName ?? value.entity),
   });
 }
 
