@@ -1,0 +1,1128 @@
+import { createDiagnostic } from './diagnostics.js';
+const FLOW_ROOT_PROPERTIES = ['$schema', 'contentVersion', 'parameters', 'triggers', 'actions', 'outputs', 'description', 'staticResults'];
+const ACTION_PROPERTIES = ['type', 'inputs', 'runAfter', 'actions', 'else', 'expression', 'cases', 'default', 'foreach', 'limit', 'metadata', 'operationOptions', 'description', 'runtimeConfiguration'];
+const RUN_AFTER_STATUSES = ['Succeeded', 'Failed', 'Skipped', 'TimedOut'];
+const ACTION_TYPE_OPTIONS = [
+    'ApiConnection',
+    'Compose',
+    'Condition',
+    'Foreach',
+    'If',
+    'InitializeVariable',
+    'AppendToArrayVariable',
+    'AppendToStringVariable',
+    'IncrementVariable',
+    'DecrementVariable',
+    'SetVariable',
+    'Scope',
+    'Response',
+    'Http',
+    'Until',
+    'Switch',
+    'Workflow',
+    'ServiceProvider',
+];
+const RAW_FUNCTION_SPECS = {
+    actions: { minArgs: 1, maxArgs: 1, info: 'Reference another action result.' },
+    body: { minArgs: 1, maxArgs: 1, info: 'Reference the body of another action.' },
+    outputs: { minArgs: 1, maxArgs: 1, info: 'Reference another action outputs.' },
+    variables: { minArgs: 1, maxArgs: 1, info: 'Reference a workflow variable.' },
+    parameters: { minArgs: 1, maxArgs: 1, info: 'Reference a workflow parameter.' },
+    items: { minArgs: 1, maxArgs: 1, info: 'Reference a foreach loop item by loop name.' },
+    item: { minArgs: 0, maxArgs: 0, info: 'Reference the current foreach item.' },
+    trigger: { minArgs: 0, maxArgs: 0, info: 'Reference trigger metadata.' },
+    triggerBody: { minArgs: 0, maxArgs: 0, info: 'Reference the trigger body.' },
+    triggerOutputs: { minArgs: 0, maxArgs: 0, info: 'Reference trigger outputs.' },
+    equals: { minArgs: 2, info: 'Compare two values.' },
+    and: { minArgs: 2, info: 'Logical AND.' },
+    or: { minArgs: 2, info: 'Logical OR.' },
+    not: { minArgs: 1, maxArgs: 1, info: 'Logical NOT.' },
+    contains: { minArgs: 2, maxArgs: 2, info: 'Check whether a collection or string contains a value.' },
+    empty: { minArgs: 1, maxArgs: 1, info: 'Check whether a value is empty.' },
+    length: { minArgs: 1, maxArgs: 1, info: 'Return the length of a collection or string.' },
+    createArray: { minArgs: 0, info: 'Create an array value.' },
+    if: { minArgs: 3, maxArgs: 3, info: 'Return one of two values based on a condition.' },
+    add: { minArgs: 2, maxArgs: 2, info: 'Add numbers.' },
+    addDays: { minArgs: 2, maxArgs: 2, info: 'Add days to a timestamp.' },
+    addHours: { minArgs: 2, maxArgs: 2, info: 'Add hours to a timestamp.' },
+    addMinutes: { minArgs: 2, maxArgs: 2, info: 'Add minutes to a timestamp.' },
+    mod: { minArgs: 2, maxArgs: 2, info: 'Modulo.' },
+    less: { minArgs: 2, maxArgs: 2, info: 'Less-than comparison.' },
+    lessOrEquals: { minArgs: 2, maxArgs: 2, info: 'Less-than-or-equal comparison.' },
+    greater: { minArgs: 2, maxArgs: 2, info: 'Greater-than comparison.' },
+    greaterOrEquals: { minArgs: 2, maxArgs: 2, info: 'Greater-than-or-equal comparison.' },
+    json: { minArgs: 1, maxArgs: 1, info: 'Parse JSON from a string.' },
+    encodeURIComponent: { minArgs: 1, maxArgs: 1, info: 'Encode a URI component.' },
+    base64ToString: { minArgs: 1, maxArgs: 1, info: 'Decode base64 text.' },
+    utcNow: { minArgs: 0, maxArgs: 0, info: 'Current UTC timestamp.' },
+    formatDateTime: { minArgs: 1, maxArgs: 2, info: 'Format a timestamp using an optional format string.' },
+    convertToUtc: { minArgs: 2, maxArgs: 2, info: 'Convert a time to UTC.' },
+    convertFromUtc: { minArgs: 2, maxArgs: 2, info: 'Convert UTC to a timezone.' },
+    dayOfWeek: { minArgs: 1, maxArgs: 1, info: 'Get weekday number.' },
+    startOfDay: { minArgs: 1, maxArgs: 1, info: 'Start of day.' },
+    coalesce: { minArgs: 2, info: 'Return first non-null argument.' },
+    concat: { minArgs: 2, info: 'Concatenate values.' },
+};
+const FUNCTION_SPECS = Object.fromEntries(Object.entries(RAW_FUNCTION_SPECS).map(([name, spec]) => [name.toLowerCase(), spec]));
+export function analyzeFlow(source, cursor = 0) {
+    const parseResult = parseJsonDocument(source);
+    const fallbackContext = readFallbackContext(source, cursor);
+    if (!parseResult.root) {
+        return {
+            context: fallbackContext,
+            diagnostics: parseResult.diagnostics,
+            completions: fallbackContext.kind === 'expression' ? completeExpression(fallbackContext.text, fallbackContext.to, [], [], []) : [],
+            outline: [],
+            symbols: [],
+            references: [],
+            knowledge: { level: 'structural', sources: ['strict-json-parser'] },
+            summary: { wrapperKind: 'unknown', triggerCount: 0, actionCount: 0, variableCount: 0, parameterCount: 0 },
+        };
+    }
+    const model = buildFlowModel(parseResult.root);
+    const context = readCursorContext(parseResult.root, source, cursor, model) ?? fallbackContext;
+    const diagnostics = [...parseResult.diagnostics, ...model.diagnostics];
+    const symbols = buildSymbols(model);
+    const references = analyzeReferences(model, diagnostics);
+    const completions = buildCompletions(context, model, source, cursor);
+    return {
+        context,
+        diagnostics,
+        completions,
+        outline: buildOutline(model),
+        symbols,
+        references,
+        knowledge: { level: 'built-in', sources: ['workflow-graph', 'expression-engine', 'built-in-function-pack'] },
+        summary: {
+            wrapperKind: model.wrapperKind,
+            triggerCount: model.triggers.length,
+            actionCount: flattenActions(model.actions).length,
+            variableCount: model.variables.length,
+            parameterCount: model.parameters.length,
+        },
+    };
+}
+export function explainFlowSymbol(source, symbolName) {
+    const analysis = analyzeFlow(source, 0);
+    const symbol = analysis.symbols.find((item) => item.name === symbolName);
+    return {
+        symbol,
+        inboundReferences: analysis.references.filter((item) => item.name === symbolName),
+        outboundReferences: analysis.references.filter((item) => item.sourceAction === symbolName),
+        diagnostics: analysis.diagnostics.filter((item) => item.message.includes(symbolName) || item.path === symbolName),
+        summary: symbol ? { kind: symbol.kind, detail: symbol.detail, container: symbol.container } : undefined,
+    };
+}
+function buildFlowModel(root) {
+    const diagnostics = [];
+    const extracted = extractDefinition(root);
+    if (!extracted.definitionNode) {
+        diagnostics.push(rangeDiagnostic('error', 'FLOW_DEFINITION_MISSING', 'Could not find a workflow definition in this file.', root.from, root.to));
+        return {
+            wrapperKind: extracted.wrapperKind,
+            actions: [],
+            triggers: [],
+            variables: [],
+            parameters: [],
+            expressions: [],
+            diagnostics,
+        };
+    }
+    const definitionNode = extracted.definitionNode;
+    const triggersNode = objectPropertyValue(definitionNode, 'triggers');
+    const actionsNode = objectPropertyValue(definitionNode, 'actions');
+    const parametersNode = objectPropertyValue(definitionNode, 'parameters');
+    const actions = actionsNode?.type === 'object' ? collectActions(actionsNode, diagnostics, 'workflow', 'workflow', undefined) : [];
+    const triggers = triggersNode?.type === 'object' ? collectTriggerNodes(triggersNode, diagnostics) : [];
+    const parameters = parametersNode?.type === 'object' ? collectParameters(parametersNode) : [];
+    const variables = collectVariables(actions);
+    const expressions = collectExpressions(definitionNode, actions);
+    return {
+        wrapperKind: extracted.wrapperKind,
+        definitionNode,
+        actions,
+        triggers,
+        variables,
+        parameters,
+        expressions,
+        diagnostics,
+    };
+}
+function collectTriggerNodes(node, diagnostics) {
+    const seen = new Set();
+    return node.properties.flatMap((property, index) => {
+        if (property.valueNode.type !== 'object')
+            return [];
+        if (seen.has(property.key)) {
+            diagnostics.push(rangeDiagnostic('error', 'FLOW_TRIGGER_DUPLICATE_NAME', `Duplicate trigger ${property.key}.`, property.keyNode.from, property.keyNode.to));
+        }
+        seen.add(property.key);
+        return [{
+                kind: 'trigger',
+                name: property.key,
+                type: readStringProperty(property.valueNode, 'type') ?? 'Unknown',
+                from: property.keyNode.from,
+                to: property.valueNode.to,
+                containerId: 'workflow:triggers',
+                containerKind: 'workflow',
+                siblingIndex: index,
+                runAfter: [],
+                node: property.valueNode,
+                children: [],
+            }];
+    });
+}
+function collectActions(node, diagnostics, containerId, containerKind, parentAction) {
+    const seen = new Set();
+    const siblings = [];
+    for (const [index, property] of node.properties.entries()) {
+        if (property.valueNode.type !== 'object')
+            continue;
+        if (seen.has(property.key)) {
+            diagnostics.push(rangeDiagnostic('error', 'FLOW_ACTION_DUPLICATE_NAME', `Duplicate action ${property.key}.`, property.keyNode.from, property.keyNode.to));
+        }
+        seen.add(property.key);
+        const actionNode = property.valueNode;
+        const type = readStringProperty(actionNode, 'type') ?? 'Unknown';
+        const next = {
+            kind: 'action',
+            name: property.key,
+            type,
+            from: property.keyNode.from,
+            to: actionNode.to,
+            containerId,
+            containerKind,
+            parentAction,
+            siblingIndex: index,
+            runAfter: readRunAfterTargets(actionNode),
+            node: actionNode,
+            children: [],
+        };
+        next.children = collectNestedActions(next, diagnostics);
+        siblings.push(next);
+    }
+    validateRunAfterTargets(siblings, diagnostics);
+    return siblings;
+}
+function collectNestedActions(action, diagnostics) {
+    const nested = [];
+    const actionsNode = objectPropertyValue(action.node, 'actions');
+    if (actionsNode?.type === 'object') {
+        nested.push(...collectActions(actionsNode, diagnostics, `${action.name}:actions`, classifyContainerKind(action.type, 'scope'), action.name));
+    }
+    const elseNode = objectPropertyValue(action.node, 'else');
+    if (elseNode?.type === 'object') {
+        const elseActions = objectPropertyValue(elseNode, 'actions');
+        if (elseActions?.type === 'object') {
+            nested.push(...collectActions(elseActions, diagnostics, `${action.name}:else`, 'if-false', action.name));
+        }
+    }
+    const defaultNode = objectPropertyValue(action.node, 'default');
+    if (defaultNode?.type === 'object') {
+        const defaultActions = objectPropertyValue(defaultNode, 'actions');
+        if (defaultActions?.type === 'object') {
+            nested.push(...collectActions(defaultActions, diagnostics, `${action.name}:default`, 'switch-default', action.name));
+        }
+    }
+    const casesNode = objectPropertyValue(action.node, 'cases');
+    if (casesNode?.type === 'object') {
+        for (const caseProperty of casesNode.properties) {
+            if (caseProperty.valueNode.type !== 'object')
+                continue;
+            const caseActions = objectPropertyValue(caseProperty.valueNode, 'actions');
+            if (caseActions?.type === 'object') {
+                nested.push(...collectActions(caseActions, diagnostics, `${action.name}:case:${caseProperty.key}`, 'switch-case', action.name));
+            }
+        }
+    }
+    return nested;
+}
+function classifyContainerKind(type, fallback) {
+    const normalized = type.toLowerCase();
+    if (normalized.includes('foreach'))
+        return 'foreach';
+    if (normalized.includes('until'))
+        return 'until';
+    if (normalized === 'if' || normalized === 'condition')
+        return 'if-true';
+    return fallback;
+}
+function collectParameters(node) {
+    return node.properties
+        .filter((property) => property.valueNode.type === 'object')
+        .map((property) => ({
+        name: property.key,
+        type: readStringProperty(property.valueNode, 'type'),
+        from: property.keyNode.from,
+        to: property.valueNode.to,
+    }));
+}
+function collectVariables(actions) {
+    const all = flattenActions(actions);
+    const variables = new Map();
+    for (const action of all) {
+        if (action.type === 'InitializeVariable') {
+            const inputs = objectPropertyValue(action.node, 'inputs');
+            const variableArray = inputs?.type === 'object' ? objectPropertyValue(inputs, 'variables') : undefined;
+            if (variableArray?.type === 'array') {
+                for (const item of variableArray.items) {
+                    if (item.type !== 'object')
+                        continue;
+                    const nameNode = objectPropertyValue(item, 'name');
+                    const typeNode = objectPropertyValue(item, 'type');
+                    if (nameNode?.type !== 'string')
+                        continue;
+                    variables.set(nameNode.value, {
+                        name: nameNode.value,
+                        type: typeNode?.type === 'string' ? typeNode.value : undefined,
+                        from: nameNode.from,
+                        to: item.to,
+                        declaredBy: action.name,
+                    });
+                }
+            }
+        }
+    }
+    return [...variables.values()];
+}
+function collectExpressions(definitionNode, actions) {
+    const actionRanges = buildActionRangeIndex(actions);
+    const expressions = [];
+    walkJson(definitionNode, (node) => {
+        if (node.type !== 'string')
+            return;
+        for (const occurrence of extractExpressionsFromString(node)) {
+            occurrence.actionName = findNearestActionName(actionRanges, occurrence.from);
+            expressions.push(occurrence);
+        }
+    });
+    return expressions;
+}
+function buildActionRangeIndex(actions) {
+    return flattenActions(actions).map((item) => ({ from: item.from, to: item.to, name: item.name }));
+}
+function findNearestActionName(actions, pos) {
+    const match = actions.find((item) => pos >= item.from && pos <= item.to);
+    return match?.name;
+}
+function analyzeReferences(model, diagnostics) {
+    const actionMap = new Map(flattenActions(model.actions).map((item) => [item.name, item]));
+    const variableMap = new Map(model.variables.map((item) => [item.name, item]));
+    const parameterMap = new Map(model.parameters.map((item) => [item.name, item]));
+    const references = [];
+    for (const occurrence of model.expressions) {
+        const parsed = parseExpression(occurrence.expression, occurrence.from);
+        diagnostics.push(...parsed.diagnostics);
+        if (!parsed.root)
+            continue;
+        walkExpression(parsed.root, (node) => {
+            if (node.kind !== 'call')
+                return;
+            const lowered = node.name.toLowerCase();
+            const first = node.args[0];
+            const stringArg = first?.kind === 'string' ? String(first.value) : undefined;
+            const pushReference = (kind, name, resolved) => {
+                if (!name)
+                    return;
+                references.push({ kind, name, from: node.from, to: node.to, sourceAction: occurrence.actionName, expression: occurrence.expression, resolved });
+            };
+            if (FUNCTION_SPECS[lowered]) {
+                validateFunctionCall(node, diagnostics);
+            }
+            else {
+                diagnostics.push(rangeDiagnostic('warning', 'FLOW_EXPR_FUNCTION_UNKNOWN', `Unknown function ${node.name}.`, node.from, node.to));
+            }
+            if (lowered === 'actions' || lowered === 'body' || lowered === 'outputs') {
+                const target = stringArg ?? '';
+                const resolved = actionMap.has(target);
+                pushReference('action', target, resolved);
+                if (!resolved)
+                    diagnostics.push(rangeDiagnostic('error', 'FLOW_REFERENCE_UNRESOLVED', `Expression references missing action ${target}.`, node.from, node.to));
+                else
+                    validateActionReferenceAvailability(occurrence.actionName, target, actionMap, diagnostics, node.from, node.to);
+            }
+            if (lowered === 'variables') {
+                const target = stringArg ?? '';
+                const resolved = variableMap.has(target);
+                pushReference('variable', target, resolved);
+                if (!resolved)
+                    diagnostics.push(rangeDiagnostic('error', 'FLOW_VARIABLE_UNRESOLVED', `Expression references missing variable ${target}.`, node.from, node.to));
+            }
+            if (lowered === 'parameters') {
+                const target = stringArg ?? '';
+                const resolved = parameterMap.has(target);
+                pushReference('parameter', target, resolved);
+                if (!resolved)
+                    diagnostics.push(rangeDiagnostic('warning', 'FLOW_PARAMETER_UNRESOLVED', `Expression references missing parameter ${target}.`, node.from, node.to));
+            }
+            if (lowered === 'items') {
+                const target = stringArg ?? '';
+                const resolved = Boolean(target);
+                pushReference('loop', target, resolved);
+            }
+            if (lowered === 'trigger' || lowered === 'triggerbody' || lowered === 'triggeroutputs') {
+                references.push({ kind: 'trigger', name: model.triggers[0]?.name ?? 'trigger', from: node.from, to: node.to, sourceAction: occurrence.actionName, expression: occurrence.expression, resolved: model.triggers.length > 0 });
+            }
+        });
+    }
+    return references;
+}
+function validateActionReferenceAvailability(sourceActionName, targetActionName, actionMap, diagnostics, from, to) {
+    if (!sourceActionName)
+        return;
+    const source = actionMap.get(sourceActionName);
+    const target = actionMap.get(targetActionName);
+    if (!source || !target)
+        return;
+    if (source.containerId === target.containerId && target.siblingIndex > source.siblingIndex) {
+        diagnostics.push(rangeDiagnostic('warning', 'FLOW_REFERENCE_FUTURE_ACTION', `Expression references ${targetActionName} before it appears in the same scope.`, from, to));
+    }
+    if (!shareScopeLineage(source, target, actionMap)) {
+        diagnostics.push(rangeDiagnostic('info', 'FLOW_REFERENCE_SCOPE_AMBIGUOUS', `Expression references ${targetActionName} from a different scope.`, from, to));
+    }
+}
+function shareScopeLineage(source, target, actionMap) {
+    if (source.containerId === target.containerId)
+        return true;
+    const sourceLineage = new Set(actionLineage(source, actionMap));
+    for (const item of actionLineage(target, actionMap)) {
+        if (sourceLineage.has(item))
+            return true;
+    }
+    return false;
+}
+function actionLineage(action, actionMap) {
+    const lineage = [action.containerId, action.name];
+    let parent = action.parentAction;
+    while (parent) {
+        lineage.push(parent);
+        parent = actionMap.get(parent)?.parentAction;
+    }
+    return lineage;
+}
+function validateFunctionCall(node, diagnostics) {
+    const spec = FUNCTION_SPECS[node.name.toLowerCase()];
+    if (!spec)
+        return;
+    if (node.args.length < spec.minArgs || (typeof spec.maxArgs === 'number' && node.args.length > spec.maxArgs)) {
+        diagnostics.push(rangeDiagnostic('warning', 'FLOW_EXPR_ARGUMENT_INVALID', `${node.name} expects ${formatArity(spec)} argument(s), found ${node.args.length}.`, node.from, node.to));
+    }
+}
+function buildSymbols(model) {
+    return [
+        ...model.parameters.map((item) => ({ kind: 'parameter', name: item.name, detail: item.type, from: item.from, to: item.to })),
+        ...model.variables.map((item) => ({ kind: 'variable', name: item.name, detail: item.type, from: item.from, to: item.to, container: item.declaredBy })),
+        ...model.triggers.map((item) => ({ kind: 'trigger', name: item.name, detail: item.type, from: item.from, to: item.to })),
+        ...flattenActions(model.actions).map((item) => ({ kind: 'action', name: item.name, detail: item.type, from: item.from, to: item.to, container: item.parentAction })),
+    ];
+}
+function buildOutline(model) {
+    const children = [];
+    if (model.parameters.length) {
+        children.push({
+            kind: 'parameter',
+            name: 'parameters',
+            detail: `${model.parameters.length}`,
+            from: model.parameters[0].from,
+            to: model.parameters[model.parameters.length - 1].to,
+            children: model.parameters.map((item) => ({ kind: 'parameter', name: item.name, detail: item.type, from: item.from, to: item.to })),
+        });
+    }
+    if (model.triggers.length) {
+        children.push({
+            kind: 'trigger',
+            name: 'triggers',
+            detail: `${model.triggers.length}`,
+            from: model.triggers[0].from,
+            to: model.triggers[model.triggers.length - 1].to,
+            children: model.triggers.map((item) => ({ kind: 'trigger', name: item.name, detail: item.type, from: item.from, to: item.to })),
+        });
+    }
+    if (model.actions.length) {
+        children.push({
+            kind: 'action',
+            name: 'actions',
+            detail: `${model.actions.length}`,
+            from: model.actions[0].from,
+            to: model.actions[model.actions.length - 1].to,
+            children: model.actions.map(actionOutline),
+        });
+    }
+    if (model.variables.length) {
+        children.push({
+            kind: 'variable',
+            name: 'variables',
+            detail: `${model.variables.length}`,
+            from: model.variables[0].from,
+            to: model.variables[model.variables.length - 1].to,
+            children: model.variables.map((item) => ({ kind: 'variable', name: item.name, detail: item.type, from: item.from, to: item.to })),
+        });
+    }
+    return [{
+            kind: 'workflow',
+            name: 'workflow',
+            detail: model.wrapperKind,
+            from: model.definitionNode?.from ?? 0,
+            to: model.definitionNode?.to ?? 0,
+            children,
+        }];
+}
+function actionOutline(action) {
+    return {
+        kind: action.children.length ? 'scope' : 'action',
+        name: action.name,
+        detail: action.type,
+        from: action.from,
+        to: action.to,
+        children: action.children.length ? action.children.map(actionOutline) : undefined,
+    };
+}
+function buildCompletions(context, model, source, cursor) {
+    if (context.kind === 'expression') {
+        return completeExpression(context.text, cursor - context.from, flattenActions(model.actions), model.variables, model.parameters);
+    }
+    if (context.kind === 'property-key') {
+        if (context.path.length === 1)
+            return FLOW_ROOT_PROPERTIES.map((item) => ({ label: item, type: 'property', apply: `"${item}": ` }));
+        if (context.path.includes('runAfter')) {
+            const siblingActions = collectSiblingActionNames(model, context.nearestAction);
+            return [
+                ...siblingActions.map((item) => ({ label: item, type: 'action', apply: `"${item}": ["Succeeded"]` })),
+                ...RUN_AFTER_STATUSES.map((item) => ({ label: item, type: 'value' })),
+            ];
+        }
+        return ACTION_PROPERTIES.map((item) => ({ label: item, type: 'property', apply: `"${item}": ` }));
+    }
+    if (context.kind === 'property-value' && context.propertyName === 'type') {
+        return ACTION_TYPE_OPTIONS.map((item) => ({ label: item, type: 'value', apply: `"${item}"` }));
+    }
+    return [];
+}
+function collectSiblingActionNames(model, actionName) {
+    const all = flattenActions(model.actions);
+    const current = actionName ? all.find((item) => item.name === actionName) : undefined;
+    if (!current)
+        return all.map((item) => item.name);
+    return all.filter((item) => item.containerId === current.containerId && item.name !== current.name).map((item) => item.name);
+}
+function completeExpression(text, relativeCursor, actions, variables, parameters) {
+    const before = text.slice(0, Math.max(0, relativeCursor));
+    const targetNamePrefixMatch = before.match(/(?:actions|body|outputs|items|variables|parameters)\(\s*'([^']*)$/i);
+    if (targetNamePrefixMatch) {
+        const prefix = targetNamePrefixMatch[1] ?? '';
+        const functionName = before.match(/([A-Za-z_][A-Za-z0-9_]*)\(\s*'[^']*$/)?.[1]?.toLowerCase();
+        const items = functionName === 'variables'
+            ? variables.map((item) => ({ label: item.name, type: 'variable' }))
+            : functionName === 'parameters'
+                ? parameters.map((item) => ({ label: item.name, type: 'parameter' }))
+                : actions.map((item) => ({ label: item.name, type: 'action' }));
+        return filterCompletionPrefix(items.map((item) => ({ ...item, apply: item.label })), prefix);
+    }
+    const identPrefix = before.match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0] ?? '';
+    const functionItems = Object.entries(FUNCTION_SPECS).map(([label, spec]) => ({
+        label,
+        type: 'function',
+        detail: formatArity(spec),
+        info: spec.info,
+        apply: `${label}()`,
+    }));
+    return filterCompletionPrefix(functionItems, identPrefix);
+}
+function filterCompletionPrefix(items, prefix) {
+    const normalized = prefix.toLowerCase();
+    const filtered = normalized ? items.filter((item) => item.label.toLowerCase().includes(normalized)) : items;
+    return filtered.sort((a, b) => scoreCompletion(a, normalized) - scoreCompletion(b, normalized)).slice(0, 30);
+}
+function scoreCompletion(item, prefix) {
+    if (!prefix)
+        return 0;
+    const label = item.label.toLowerCase();
+    if (label.startsWith(prefix))
+        return 0;
+    const index = label.indexOf(prefix);
+    return index >= 0 ? index + 5 : 1000;
+}
+function readCursorContext(root, source, cursor, model) {
+    const context = locateJsonContext(root, cursor);
+    if (context?.kind === 'string-value') {
+        const expression = findExpressionAtCursor(context.node, cursor);
+        if (expression) {
+            return {
+                kind: 'expression',
+                text: expression.expression,
+                from: expression.from,
+                to: expression.to,
+                path: context.node.path,
+                nearestAction: findNearestActionName(buildActionRangeIndex(model.actions), cursor),
+            };
+        }
+        return {
+            kind: 'property-value',
+            text: context.node.value,
+            from: context.node.from,
+            to: context.node.to,
+            path: context.node.path,
+            propertyName: context.propertyName,
+            nearestAction: findNearestActionName(buildActionRangeIndex(model.actions), cursor),
+        };
+    }
+    if (context?.kind === 'property-key') {
+        return {
+            kind: 'property-key',
+            text: context.property.key,
+            from: context.property.keyNode.from,
+            to: context.property.keyNode.to,
+            path: context.path,
+            nearestAction: findNearestActionName(buildActionRangeIndex(model.actions), cursor),
+            propertyName: context.property.key,
+        };
+    }
+    return readFallbackContext(source, cursor);
+}
+function readFallbackContext(source, cursor) {
+    const windowStart = Math.max(0, cursor - 160);
+    const windowEnd = Math.min(source.length, cursor + 40);
+    const local = source.slice(windowStart, windowEnd);
+    const exprStart = local.lastIndexOf('@');
+    if (exprStart >= 0) {
+        return {
+            kind: 'expression',
+            text: local.slice(exprStart).replace(/^@\{?/, '').replace(/\}?$/, ''),
+            from: windowStart + exprStart,
+            to: windowEnd,
+            path: [],
+        };
+    }
+    return { kind: 'unknown', text: '', from: cursor, to: cursor, path: [] };
+}
+function locateJsonContext(node, cursor) {
+    if (cursor < node.from || cursor > node.to)
+        return undefined;
+    if (node.type === 'object') {
+        for (const property of node.properties) {
+            if (cursor >= property.keyNode.from && cursor <= property.keyNode.to) {
+                return { kind: 'property-key', property, path: property.valueNode.path };
+            }
+            const nested = locateJsonContext(property.valueNode, cursor);
+            if (nested?.kind === 'string-value' && !nested.propertyName)
+                nested.propertyName = property.key;
+            if (nested)
+                return nested;
+        }
+    }
+    if (node.type === 'array') {
+        for (const item of node.items) {
+            const nested = locateJsonContext(item, cursor);
+            if (nested)
+                return nested;
+        }
+    }
+    if (node.type === 'string')
+        return { kind: 'string-value', node };
+    return undefined;
+}
+function findExpressionAtCursor(node, cursor) {
+    return extractExpressionsFromString(node).find((item) => cursor >= item.from && cursor <= item.to);
+}
+function extractExpressionsFromString(node) {
+    const results = [];
+    const raw = node.value;
+    if (!raw.includes('@'))
+        return results;
+    if (raw.startsWith('@') && !raw.startsWith('@{')) {
+        results.push({ expression: raw.slice(1), from: node.from + 1, to: node.to - 1, hostString: node });
+        return results;
+    }
+    let index = 0;
+    while (index < raw.length) {
+        const start = raw.indexOf('@{', index);
+        if (start < 0)
+            break;
+        let depth = 1;
+        let cursor = start + 2;
+        while (cursor < raw.length && depth > 0) {
+            const char = raw[cursor];
+            if (char === '{')
+                depth += 1;
+            if (char === '}')
+                depth -= 1;
+            cursor += 1;
+        }
+        const end = depth === 0 ? cursor - 1 : raw.length;
+        results.push({
+            expression: raw.slice(start + 2, end),
+            from: node.from + 1 + start + 1,
+            to: node.from + 1 + end,
+            hostString: node,
+        });
+        index = cursor;
+    }
+    return results;
+}
+function extractDefinition(root) {
+    if (looksLikeWorkflowDefinition(root))
+        return { wrapperKind: 'raw-definition', definitionNode: root };
+    const directDefinition = objectPropertyValue(root, 'definition');
+    if (directDefinition?.type === 'object' && looksLikeWorkflowDefinition(directDefinition)) {
+        return { wrapperKind: 'definition-wrapper', definitionNode: directDefinition };
+    }
+    const propertiesNode = objectPropertyValue(root, 'properties');
+    if (propertiesNode?.type === 'object') {
+        const nestedDefinition = objectPropertyValue(propertiesNode, 'definition');
+        if (nestedDefinition?.type === 'object' && looksLikeWorkflowDefinition(nestedDefinition)) {
+            return { wrapperKind: 'resource-properties-definition', definitionNode: nestedDefinition };
+        }
+    }
+    const resourcesNode = objectPropertyValue(root, 'resources');
+    if (resourcesNode?.type === 'array') {
+        for (const item of resourcesNode.items) {
+            if (item.type !== 'object')
+                continue;
+            const resourceProperties = objectPropertyValue(item, 'properties');
+            if (resourceProperties?.type !== 'object')
+                continue;
+            const resourceDefinition = objectPropertyValue(resourceProperties, 'definition');
+            if (resourceDefinition?.type === 'object' && looksLikeWorkflowDefinition(resourceDefinition)) {
+                return { wrapperKind: 'arm-template-resource-definition', definitionNode: resourceDefinition };
+            }
+        }
+    }
+    return { wrapperKind: 'unknown' };
+}
+function looksLikeWorkflowDefinition(node) {
+    return objectPropertyValue(node, 'actions')?.type === 'object' || objectPropertyValue(node, 'triggers')?.type === 'object';
+}
+function objectPropertyValue(node, key) {
+    return node.properties.find((property) => property.key === key)?.valueNode;
+}
+function readStringProperty(node, key) {
+    const valueNode = objectPropertyValue(node, key);
+    return valueNode?.type === 'string' ? valueNode.value : undefined;
+}
+function readRunAfterTargets(actionNode) {
+    const runAfterNode = objectPropertyValue(actionNode, 'runAfter');
+    if (runAfterNode?.type !== 'object')
+        return [];
+    return runAfterNode.properties.map((property) => property.key);
+}
+function validateRunAfterTargets(actions, diagnostics) {
+    const seen = new Set(actions.map((item) => item.name));
+    for (const action of actions) {
+        const runAfterNode = objectPropertyValue(action.node, 'runAfter');
+        if (runAfterNode?.type === 'object') {
+            for (const property of runAfterNode.properties) {
+                if (!seen.has(property.key)) {
+                    diagnostics.push(rangeDiagnostic('error', 'FLOW_RUN_AFTER_TARGET_MISSING', `${action.name} depends on missing action ${property.key}.`, property.keyNode.from, property.keyNode.to));
+                }
+                const statuses = property.valueNode.type === 'array' ? property.valueNode.items.filter((item) => item.type === 'string').map((item) => item.value) : [];
+                for (const status of statuses) {
+                    if (!RUN_AFTER_STATUSES.includes(status)) {
+                        diagnostics.push(rangeDiagnostic('warning', 'FLOW_RUN_AFTER_STATUS_UNKNOWN', `${status} is not a standard runAfter status.`, property.valueNode.from, property.valueNode.to));
+                    }
+                }
+            }
+        }
+    }
+}
+function flattenActions(actions) {
+    return actions.flatMap((action) => [action, ...flattenActions(action.children)]);
+}
+function walkJson(node, visit) {
+    visit(node);
+    if (node.type === 'object') {
+        for (const property of node.properties)
+            walkJson(property.valueNode, visit);
+    }
+    if (node.type === 'array') {
+        for (const item of node.items)
+            walkJson(item, visit);
+    }
+}
+function walkExpression(node, visit) {
+    visit(node);
+    if (node.kind === 'call')
+        node.args.forEach((item) => walkExpression(item, visit));
+    if (node.kind === 'member')
+        walkExpression(node.object, visit);
+    if (node.kind === 'index') {
+        walkExpression(node.object, visit);
+        walkExpression(node.index, visit);
+    }
+}
+function formatArity(spec) {
+    return typeof spec.maxArgs === 'number' && spec.maxArgs === spec.minArgs ? `${spec.minArgs}` : `${spec.minArgs}+`;
+}
+function rangeDiagnostic(level, code, message, from, to, extra = {}) {
+    return { ...createDiagnostic(level, code, message, { source: 'pp/flow-language' }), from, to, ...extra };
+}
+function parseJsonDocument(source) {
+    const parser = new JsonParser(source);
+    const diagnostics = [];
+    try {
+        const value = parser.parseValue([]);
+        parser.skipWhitespace();
+        if (parser.index < source.length) {
+            diagnostics.push(rangeDiagnostic('error', 'FLOW_JSON_TRAILING_CONTENT', 'Unexpected content after valid JSON value.', parser.index, source.length));
+        }
+        if (value.type !== 'object') {
+            diagnostics.push(rangeDiagnostic('error', 'FLOW_JSON_ROOT_OBJECT_REQUIRED', 'Flow file must contain a JSON object at the root.', value.from, value.to));
+            return { diagnostics };
+        }
+        return { root: value, diagnostics };
+    }
+    catch (error) {
+        const failure = error;
+        diagnostics.push(rangeDiagnostic('error', failure.code ?? 'FLOW_JSON_INVALID', failure.message, failure.from, failure.to));
+        return { diagnostics };
+    }
+}
+class JsonParseFailure extends Error {
+    code;
+    from;
+    to;
+    constructor(message, from, to, code) {
+        super(message);
+        this.from = from;
+        this.to = to;
+        this.code = code;
+    }
+}
+class JsonParser {
+    source;
+    index = 0;
+    constructor(source) {
+        this.source = source;
+    }
+    skipWhitespace() {
+        while (this.index < this.source.length && /\s/.test(this.source[this.index]))
+            this.index += 1;
+    }
+    parseValue(path) {
+        this.skipWhitespace();
+        const start = this.index;
+        const char = this.source[this.index];
+        if (char === '{')
+            return this.parseObject(path);
+        if (char === '[')
+            return this.parseArray(path);
+        if (char === '"')
+            return this.parseString(path);
+        if (char === '-' || /\d/.test(char ?? ''))
+            return this.parseNumber(path);
+        if (this.source.startsWith('true', this.index))
+            return this.parseKeyword('true', true, path);
+        if (this.source.startsWith('false', this.index))
+            return this.parseKeyword('false', false, path);
+        if (this.source.startsWith('null', this.index))
+            return this.parseKeyword('null', null, path);
+        throw new JsonParseFailure('Invalid JSON value.', start, Math.min(this.source.length, start + 1), 'FLOW_JSON_INVALID');
+    }
+    parseObject(path) {
+        const start = this.index;
+        this.index += 1;
+        const properties = [];
+        const value = {};
+        this.skipWhitespace();
+        if (this.source[this.index] === '}') {
+            this.index += 1;
+            return { type: 'object', from: start, to: this.index, properties, value, path };
+        }
+        while (this.index < this.source.length) {
+            this.skipWhitespace();
+            if (this.source[this.index] !== '"')
+                throw new JsonParseFailure('Expected a JSON object key.', this.index, this.index + 1, 'FLOW_JSON_OBJECT_KEY_REQUIRED');
+            const keyNode = this.parseString(path.concat(['<key>']));
+            this.skipWhitespace();
+            if (this.source[this.index] !== ':')
+                throw new JsonParseFailure('Expected ":" after object key.', this.index, this.index + 1, 'FLOW_JSON_COLON_REQUIRED');
+            const propertyStart = keyNode.from;
+            this.index += 1;
+            const valueNode = this.parseValue(path.concat([keyNode.value]));
+            properties.push({ key: keyNode.value, keyNode, valueNode, from: propertyStart, to: valueNode.to });
+            value[keyNode.value] = valueNode.value;
+            this.skipWhitespace();
+            if (this.source[this.index] === '}') {
+                this.index += 1;
+                return { type: 'object', from: start, to: this.index, properties, value, path };
+            }
+            if (this.source[this.index] !== ',')
+                throw new JsonParseFailure('Expected "," between object properties.', this.index, this.index + 1, 'FLOW_JSON_COMMA_REQUIRED');
+            this.index += 1;
+        }
+        throw new JsonParseFailure('Unterminated JSON object.', start, this.source.length, 'FLOW_JSON_OBJECT_UNTERMINATED');
+    }
+    parseArray(path) {
+        const start = this.index;
+        this.index += 1;
+        const items = [];
+        const value = [];
+        this.skipWhitespace();
+        if (this.source[this.index] === ']') {
+            this.index += 1;
+            return { type: 'array', from: start, to: this.index, items, value, path };
+        }
+        let itemIndex = 0;
+        while (this.index < this.source.length) {
+            const item = this.parseValue(path.concat([String(itemIndex)]));
+            items.push(item);
+            value.push(item.value);
+            itemIndex += 1;
+            this.skipWhitespace();
+            if (this.source[this.index] === ']') {
+                this.index += 1;
+                return { type: 'array', from: start, to: this.index, items, value, path };
+            }
+            if (this.source[this.index] !== ',')
+                throw new JsonParseFailure('Expected "," between array items.', this.index, this.index + 1, 'FLOW_JSON_COMMA_REQUIRED');
+            this.index += 1;
+        }
+        throw new JsonParseFailure('Unterminated JSON array.', start, this.source.length, 'FLOW_JSON_ARRAY_UNTERMINATED');
+    }
+    parseString(path) {
+        const start = this.index;
+        let value = '';
+        this.index += 1;
+        while (this.index < this.source.length) {
+            const char = this.source[this.index];
+            if (char === '"') {
+                this.index += 1;
+                return { type: 'string', from: start, to: this.index, value, path };
+            }
+            if (char === '\\') {
+                const next = this.source[this.index + 1];
+                if (next === '"' || next === '\\' || next === '/')
+                    value += next;
+                else if (next === 'b')
+                    value += '\b';
+                else if (next === 'f')
+                    value += '\f';
+                else if (next === 'n')
+                    value += '\n';
+                else if (next === 'r')
+                    value += '\r';
+                else if (next === 't')
+                    value += '\t';
+                else if (next === 'u') {
+                    const hex = this.source.slice(this.index + 2, this.index + 6);
+                    if (!/^[0-9a-fA-F]{4}$/.test(hex))
+                        throw new JsonParseFailure('Invalid unicode escape in string.', this.index, this.index + 6, 'FLOW_JSON_STRING_ESCAPE_INVALID');
+                    value += String.fromCharCode(Number.parseInt(hex, 16));
+                    this.index += 4;
+                }
+                else {
+                    throw new JsonParseFailure('Invalid string escape sequence.', this.index, this.index + 2, 'FLOW_JSON_STRING_ESCAPE_INVALID');
+                }
+                this.index += 2;
+                continue;
+            }
+            value += char;
+            this.index += 1;
+        }
+        throw new JsonParseFailure('Unterminated JSON string.', start, this.source.length, 'FLOW_JSON_STRING_UNTERMINATED');
+    }
+    parseNumber(path) {
+        const start = this.index;
+        const match = this.source.slice(this.index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+        if (!match)
+            throw new JsonParseFailure('Invalid number literal.', start, start + 1, 'FLOW_JSON_NUMBER_INVALID');
+        this.index += match[0].length;
+        return { type: 'number', from: start, to: this.index, value: Number(match[0]), path };
+    }
+    parseKeyword(keyword, value, path) {
+        const start = this.index;
+        this.index += keyword.length;
+        return { type: keyword === 'null' ? 'null' : 'boolean', from: start, to: this.index, value, path };
+    }
+}
+function parseExpression(source, offset = 0) {
+    const tokenizer = new ExpressionTokenizer(source, offset);
+    const parser = new ExpressionParser(tokenizer.tokens);
+    return parser.parse();
+}
+class ExpressionTokenizer {
+    tokens = [];
+    source;
+    offset;
+    index = 0;
+    constructor(source, offset) {
+        this.source = source;
+        this.offset = offset;
+        this.tokenize();
+    }
+    tokenize() {
+        while (this.index < this.source.length) {
+            const char = this.source[this.index];
+            if (/\s/.test(char)) {
+                this.index += 1;
+                continue;
+            }
+            const from = this.offset + this.index;
+            if (/[A-Za-z_]/.test(char)) {
+                const match = this.source.slice(this.index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+                const value = match[0];
+                this.index += value.length;
+                if (value === 'true' || value === 'false')
+                    this.tokens.push({ type: 'boolean', value, from, to: from + value.length });
+                else if (value === 'null')
+                    this.tokens.push({ type: 'null', value, from, to: from + value.length });
+                else
+                    this.tokens.push({ type: 'identifier', value, from, to: from + value.length });
+                continue;
+            }
+            if (char === '\'') {
+                const token = this.readString();
+                this.tokens.push(token);
+                continue;
+            }
+            if (char === '-' || /\d/.test(char)) {
+                const match = this.source.slice(this.index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?/);
+                const value = match[0];
+                this.index += value.length;
+                this.tokens.push({ type: 'number', value, from, to: from + value.length });
+                continue;
+            }
+            if (char === '(')
+                this.tokens.push({ type: 'paren-open', value: char, from, to: from + 1 });
+            else if (char === ')')
+                this.tokens.push({ type: 'paren-close', value: char, from, to: from + 1 });
+            else if (char === ',')
+                this.tokens.push({ type: 'comma', value: char, from, to: from + 1 });
+            else if (char === '.')
+                this.tokens.push({ type: 'dot', value: char, from, to: from + 1 });
+            else if (char === '[')
+                this.tokens.push({ type: 'bracket-open', value: char, from, to: from + 1 });
+            else if (char === ']')
+                this.tokens.push({ type: 'bracket-close', value: char, from, to: from + 1 });
+            else if (char === '?')
+                this.tokens.push({ type: 'question', value: char, from, to: from + 1 });
+            this.index += 1;
+        }
+        this.tokens.push({ type: 'eof', value: '', from: this.offset + this.source.length, to: this.offset + this.source.length });
+    }
+    readString() {
+        const start = this.index;
+        this.index += 1;
+        let value = '';
+        while (this.index < this.source.length) {
+            const char = this.source[this.index];
+            if (char === '\'') {
+                if (this.source[this.index + 1] === '\'') {
+                    value += '\'';
+                    this.index += 2;
+                    continue;
+                }
+                this.index += 1;
+                return { type: 'string', value, from: this.offset + start, to: this.offset + this.index };
+            }
+            value += char;
+            this.index += 1;
+        }
+        return { type: 'string', value, from: this.offset + start, to: this.offset + this.index };
+    }
+}
+class ExpressionParser {
+    tokens;
+    index = 0;
+    constructor(tokens) {
+        this.tokens = tokens;
+    }
+    parse() {
+        const diagnostics = [];
+        try {
+            const root = this.parseExpression();
+            return { root, diagnostics };
+        }
+        catch (error) {
+            const failure = error;
+            diagnostics.push(rangeDiagnostic('error', failure.code ?? 'FLOW_EXPR_SYNTAX_INVALID', failure.message, failure.from, failure.to));
+            return { diagnostics };
+        }
+    }
+    parseExpression() {
+        return this.parseMember();
+    }
+    parseMember() {
+        let node = this.parsePrimary();
+        while (true) {
+            const token = this.peek();
+            if (token.type === 'question') {
+                this.advance();
+                continue;
+            }
+            if (token.type === 'dot') {
+                this.advance();
+                const property = this.expect('identifier');
+                node = { kind: 'member', object: node, property: property.value, from: node.from, to: property.to };
+                continue;
+            }
+            if (token.type === 'bracket-open') {
+                const from = node.from;
+                this.advance();
+                const index = this.parseExpression();
+                this.expect('bracket-close');
+                node = { kind: 'index', object: node, index, from, to: index.to };
+                continue;
+            }
+            break;
+        }
+        return node;
+    }
+    parsePrimary() {
+        const token = this.peek();
+        if (token.type === 'identifier') {
+            this.advance();
+            if (this.peek().type === 'paren-open') {
+                this.advance();
+                const args = [];
+                if (this.peek().type !== 'paren-close') {
+                    while (true) {
+                        args.push(this.parseExpression());
+                        if (this.peek().type === 'comma') {
+                            this.advance();
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                const close = this.expect('paren-close');
+                return { kind: 'call', name: token.value, args, from: token.from, to: close.to };
+            }
+            return { kind: 'identifier', name: token.value, from: token.from, to: token.to };
+        }
+        if (token.type === 'string') {
+            this.advance();
+            return { kind: 'string', value: token.value, from: token.from, to: token.to };
+        }
+        if (token.type === 'number') {
+            this.advance();
+            return { kind: 'number', value: Number(token.value), from: token.from, to: token.to };
+        }
+        if (token.type === 'boolean') {
+            this.advance();
+            return { kind: 'boolean', value: token.value === 'true', from: token.from, to: token.to };
+        }
+        if (token.type === 'null') {
+            this.advance();
+            return { kind: 'null', value: null, from: token.from, to: token.to };
+        }
+        if (token.type === 'paren-open') {
+            this.advance();
+            const expression = this.parseExpression();
+            this.expect('paren-close');
+            return expression;
+        }
+        throw new JsonParseFailure('Invalid expression syntax.', token.from, token.to, 'FLOW_EXPR_SYNTAX_INVALID');
+    }
+    expect(type) {
+        const token = this.peek();
+        if (token.type !== type)
+            throw new JsonParseFailure(`Expected ${type} in expression.`, token.from, token.to, 'FLOW_EXPR_SYNTAX_INVALID');
+        return this.advance();
+    }
+    peek() {
+        return this.tokens[this.index];
+    }
+    advance() {
+        return this.tokens[this.index++];
+    }
+}

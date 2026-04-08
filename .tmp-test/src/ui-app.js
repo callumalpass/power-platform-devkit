@@ -1,5 +1,5 @@
-export function renderHtml(): string {
-  return `<!doctype html>
+export function renderHtml() {
+    return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">

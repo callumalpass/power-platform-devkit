@@ -1,0 +1,105 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import { once } from 'node:events';
+import { createServer } from 'node:net';
+import { analyzeFlow } from '../src/flow-language.js';
+const execFileAsync = promisify(execFile);
+function fixturePath(name) {
+    return path.resolve(process.cwd(), 'test/fixtures/flows', name);
+}
+async function readFixture(name) {
+    return readFile(fixturePath(name), 'utf8');
+}
+async function findOpenPort() {
+    const server = createServer();
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const port = address.port;
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    return port;
+}
+test('analyzeFlow understands a workflow definition wrapper from a real sample', async () => {
+    const source = await readFixture('ratings-workflow.json');
+    const result = analyzeFlow(source, source.indexOf("Get_records_that_haven"));
+    assert.equal(result.summary.wrapperKind, 'definition-wrapper');
+    assert.ok(result.summary.actionCount > 5);
+    assert.ok(result.summary.variableCount >= 2);
+    assert.ok(result.symbols.some((item) => item.kind === 'action' && item.name === 'For_each_record'));
+    assert.ok(result.references.some((item) => item.kind === 'action' && item.name === 'Get_Blob_for_this_product'));
+});
+test('analyzeFlow extracts definitions from ARM template resources', async () => {
+    const source = await readFixture('recurrence-template.json');
+    const result = analyzeFlow(source, source.indexOf('ExecuteRecurrenceJob'));
+    assert.equal(result.summary.wrapperKind, 'arm-template-resource-definition');
+    assert.ok(result.summary.actionCount > 3);
+    assert.ok(result.outline.length > 0);
+});
+test('analyzeFlow emits actionable diagnostics for broken references', async () => {
+    const source = await readFixture('broken-power-automate-wrapper.json');
+    const result = analyzeFlow(source, source.indexOf("DoesNotExist"));
+    const codes = new Set(result.diagnostics.map((item) => item.code));
+    assert.ok(codes.has('FLOW_REFERENCE_UNRESOLVED'));
+    assert.ok(codes.has('FLOW_RUN_AFTER_TARGET_MISSING'));
+});
+test('pp flow validate returns a failing exit code for broken files', async () => {
+    const cliEntry = path.resolve(process.cwd(), '.tmp-test/src/index.js');
+    try {
+        await execFileAsync('node', [cliEntry, 'flow', 'validate', fixturePath('broken-power-automate-wrapper.json')], { cwd: process.cwd() });
+        assert.fail('expected validation command to fail');
+    }
+    catch (error) {
+        const failure = error;
+        assert.equal(failure.code, 1);
+        assert.match(failure.stdout ?? '', /FLOW_REFERENCE_UNRESOLVED/);
+        assert.match(failure.stdout ?? '', /FLOW_RUN_AFTER_TARGET_MISSING/);
+    }
+});
+test('pp flow inspect returns structured summary data for valid files', async () => {
+    const cliEntry = path.resolve(process.cwd(), '.tmp-test/src/index.js');
+    const { stdout } = await execFileAsync('node', [cliEntry, 'flow', 'inspect', fixturePath('ratings-workflow.json')], { cwd: process.cwd() });
+    assert.match(stdout, /"outline"/);
+    assert.match(stdout, /"summary"/);
+    assert.match(stdout, /"actionCount"/);
+});
+test('pp ui serves flow language analysis over HTTP', async () => {
+    const cliEntry = path.resolve(process.cwd(), '.tmp-test/src/index.js');
+    const port = await findOpenPort();
+    const child = spawn('node', [cliEntry, 'ui', '--no-open', '--port', String(port), '--no-interactive-auth'], {
+        cwd: process.cwd(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += String(chunk); });
+    child.stderr.on('data', (chunk) => { stderr += String(chunk); });
+    await waitFor(() => stdout.includes('pp UI listening at'), 10000, 'UI server did not start');
+    const response = await fetch(`http://127.0.0.1:${port}/api/flow/language/analyze`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+            source: await readFixture('broken-power-automate-wrapper.json'),
+            cursor: 0,
+        }),
+    });
+    const payload = await response.json();
+    child.kill('SIGTERM');
+    await once(child, 'exit');
+    assert.equal(response.status, 200, stderr || stdout);
+    assert.equal(payload.success, true);
+    assert.equal(payload.data?.summary?.wrapperKind, 'resource-properties-definition');
+    assert.ok(payload.data?.diagnostics?.some((item) => item.code === 'FLOW_REFERENCE_UNRESOLVED'));
+});
+async function waitFor(predicate, timeoutMs, message) {
+    const start = Date.now();
+    while (!predicate()) {
+        if (Date.now() - start > timeoutMs)
+            throw new Error(message);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+}

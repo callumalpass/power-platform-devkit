@@ -1,5 +1,5 @@
-export function renderAutomateModule(): string {
-  return String.raw`
+export function renderAutomateModule() {
+    return String.raw `
 import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, startCompletion } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching } from '@codemirror/language'
@@ -212,14 +212,12 @@ function renderFlowList() {
         const state = prop(f, 'properties.state') || ''
         const active = currentFlow && flowIdentifier(currentFlow) === flowIdentifier(f) ? ' active' : ''
         const stateCls = state === 'Started' ? 'ok' : state === 'Stopped' ? 'error' : 'pending'
-        const modified = prop(f, 'properties.lastModifiedTime')
-        const trigger = prop(f, 'properties.definitionSummary.triggers.0.type') || ''
         return '<div class="entity-item' + active + '" data-flow="' + esc(flowIdentifier(f)) + '">' +
           '<div class="entity-item-name">' +
             '<span class="health-dot ' + stateCls + '" style="margin-right:6px"></span>' +
             esc(displayName) +
           '</div>' +
-          '<div class="entity-item-logical">' + (trigger ? esc(trigger) + ' \u00b7 ' : '') + esc(modified ? formatDateShort(modified) : '-') + '</div>' +
+          '<div class="entity-item-logical">' + esc(f.source === 'dv' ? (f.workflowid || f.name || '-') : (f.name || '-')) + '</div>' +
           (state ? '<div class="entity-item-badges"><span class="entity-item-flag">' + esc(state.toLowerCase()) + '</span></div>' : '') +
         '</div>'
       }).join('')
@@ -262,20 +260,14 @@ function renderFlowDetail() {
   els.flowTitle.textContent = p.displayName || currentFlow.name
   els.flowSubtitle.textContent = p.description || (currentFlow.source === 'dv' ? flowIdentifier(currentFlow) : currentFlow.name)
 
-  const state = (p.state || '').toLowerCase()
-  const stateBadgeCls = state === 'started' ? 'started' : state === 'stopped' ? 'stopped' : 'unknown'
-  const badgeContainer = document.getElementById('flow-state-badge-container')
-  if (badgeContainer) {
-    badgeContainer.innerHTML = '<span class="flow-state-badge ' + stateBadgeCls + '"><span class="health-dot ' + (state === 'started' ? 'ok' : state === 'stopped' ? 'error' : 'pending') + '"></span>' + esc(p.state || 'Unknown') + '</span>'
-  }
-
   const metrics = [
+    ['State', p.state || '-'],
     ['Created', formatDate(p.createdTime)],
     ['Modified', formatDate(p.lastModifiedTime)],
     ['Creator', prop(currentFlow, 'properties.creator.objectId') || '-'],
     ['Trigger', prop(currentFlow, 'properties.definitionSummary.triggers.0.type') || '-'],
     ['Actions', (prop(currentFlow, 'properties.definitionSummary.actions') || []).length || '-'],
-    ['Source', currentFlow.source === 'dv' ? 'Dataverse fallback' : 'Flow API']
+    ['Source', currentFlow.source === 'dv' ? 'Dataverse workflow fallback' : 'Flow API']
   ]
   els.flowMetrics.innerHTML = metrics.map(m =>
     '<div class="metric"><div class="metric-label">' + esc(m[0]) + '</div><div class="metric-value">' + esc(m[1]) + '</div></div>'
@@ -555,7 +547,7 @@ function renderRuns() {
     const cls = status === 'Succeeded' ? 'ok' : status === 'Failed' ? 'error' : status === 'Running' ? 'pending' : 'pending'
     const active = currentRun && currentRun.name === r.name ? ' active' : ''
     const duration = startTime && endTime ? formatDuration(new Date(startTime), new Date(endTime)) : ''
-    return '<div class="run-item status-' + cls + active + '" data-run-idx="' + i + '">' +
+    return '<div class="run-item' + active + '" data-run-idx="' + i + '">' +
       '<div class="run-main">' +
         '<span class="health-dot ' + cls + '"></span>' +
         '<div class="run-text">' +
@@ -591,32 +583,23 @@ async function loadRunActions(run) {
 
   showView('actions')
 
-  const flowName = prop(currentFlow, 'properties.displayName') || currentFlow.name || 'Flow'
-  const bcEl = document.getElementById('flow-actions-breadcrumb')
-  if (bcEl) {
-    bcEl.innerHTML =
-      '<span class="flow-breadcrumb-item" data-bc-runs>Runs</span>' +
-      '<span class="flow-breadcrumb-sep">\u203A</span>' +
-      '<span class="flow-breadcrumb-current">' + esc(shortId(run.name)) + '</span>'
-    bcEl.querySelector('[data-bc-runs]').addEventListener('click', () => {
-      currentRun = null
-      currentActions = []
-      currentAction = null
-      showView('runs')
-    })
-  }
-
   const status = prop(run, 'properties.status') || 'Unknown'
   const startTime = prop(run, 'properties.startTime')
   const endTime = prop(run, 'properties.endTime')
   const duration = startTime && endTime ? formatDuration(new Date(startTime), new Date(endTime)) : '-'
   const statusCls = status === 'Succeeded' ? 'ok' : status === 'Failed' ? 'error' : 'pending'
   els.flowRunSummary.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<span class="health-dot ' + statusCls + '"></span>' +
+      '<strong style="font-size:0.8125rem">' + esc(status) + '</strong>' +
+      '<span style="font-size:0.75rem;color:var(--muted)">' + esc(formatDate(startTime)) + '</span>' +
+      '<span class="run-duration">' + esc(duration) + '</span>' +
+    '</div>' +
     '<div class="run-summary-grid">' +
-      summaryCard('Status', status) +
+      summaryCard('Run ID', run.name || '-') +
       summaryCard('Trigger', prop(run, 'properties.trigger.name') || '-') +
       summaryCard('Started', formatDate(startTime)) +
-      summaryCard('Duration', duration) +
+      summaryCard('Ended', formatDate(endTime)) +
     '</div>'
 
   els.flowActions.innerHTML = '<div class="empty">Loading actions\u2026</div>'
@@ -708,27 +691,6 @@ async function loadActionDetail(action) {
   if (!env) return
 
   showView('action-detail')
-
-  const bcEl = document.getElementById('flow-action-breadcrumb')
-  if (bcEl) {
-    bcEl.innerHTML =
-      '<span class="flow-breadcrumb-item" data-bc-runs>Runs</span>' +
-      '<span class="flow-breadcrumb-sep">\u203A</span>' +
-      '<span class="flow-breadcrumb-item" data-bc-actions>' + esc(shortId(currentRun.name)) + '</span>' +
-      '<span class="flow-breadcrumb-sep">\u203A</span>' +
-      '<span class="flow-breadcrumb-current">' + esc(action.name) + '</span>'
-    bcEl.querySelector('[data-bc-runs]').addEventListener('click', () => {
-      currentRun = null
-      currentActions = []
-      currentAction = null
-      showView('runs')
-    })
-    bcEl.querySelector('[data-bc-actions]').addEventListener('click', () => {
-      currentAction = null
-      showView('actions')
-    })
-  }
-
   els.flowActionTitle.textContent = action.name || 'Action Detail'
 
   const status = prop(action, 'properties.status') || '-'
@@ -936,14 +898,6 @@ function formatDate(value) {
   try {
     const d = new Date(value)
     return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-  } catch { return String(value) }
-}
-
-function formatDateShort(value) {
-  if (!value) return '-'
-  try {
-    const d = new Date(value)
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   } catch { return String(value) }
 }
 
