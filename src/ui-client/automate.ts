@@ -27,6 +27,12 @@ const els = {
   flowLanguageSummary: document.getElementById('flow-language-summary'),
   flowLanguageDiagnostics: document.getElementById('flow-language-diagnostics'),
   flowLanguageOutline: document.getElementById('flow-language-outline'),
+  flowOutlinePanel: document.getElementById('flow-outline-panel'),
+  flowOutlineCanvas: document.getElementById('flow-outline-canvas'),
+  flowCanvasContainer: document.getElementById('flow-canvas-container'),
+  flowOutlineZoomFit: document.getElementById('flow-outline-zoom-fit'),
+  flowOutlineZoomIn: document.getElementById('flow-outline-zoom-in'),
+  flowOutlineZoomOut: document.getElementById('flow-outline-zoom-out'),
   flowRuns: document.getElementById('flow-runs'),
   flowRunFilter: document.getElementById('flow-run-filter'),
   flowRunStatusFilter: document.getElementById('flow-run-status-filter'),
@@ -58,6 +64,9 @@ let flowEditorView = null
 let latestFlowAnalysis = null
 let latestFlowDocumentText = ''
 let analysisTimer = null
+let canvasView = { x: 0, y: 0, scale: 1 }
+let canvasPan = null
+let canvasNodes = []
 
 class FlowLanguageClient {
   constructor() {
@@ -121,6 +130,31 @@ export function initAutomate() {
   els.flowLanguageAnalyze.addEventListener('click', () => {
     analyzeCurrentFlowDocument().catch((e) => toast(e.message, true))
   })
+
+  const canvas = els.flowOutlineCanvas
+  if (canvas) {
+    canvas.addEventListener('mousedown', (e) => {
+      canvasPan = { x: e.clientX, y: e.clientY, vx: canvasView.x, vy: canvasView.y }
+      e.preventDefault()
+    })
+    canvas.addEventListener('mousemove', (e) => {
+      if (!canvasPan) return
+      canvasView.x = canvasPan.vx + (e.clientX - canvasPan.x) / canvasView.scale
+      canvasView.y = canvasPan.vy + (e.clientY - canvasPan.y) / canvasView.scale
+      drawOutlineCanvas()
+    })
+    canvas.addEventListener('mouseup', () => { canvasPan = null })
+    canvas.addEventListener('mouseleave', () => { canvasPan = null })
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault()
+      const factor = e.deltaY > 0 ? 0.9 : 1.1
+      canvasView.scale = Math.max(0.2, Math.min(3, canvasView.scale * factor))
+      drawOutlineCanvas()
+    }, { passive: false })
+  }
+  if (els.flowOutlineZoomFit) els.flowOutlineZoomFit.addEventListener('click', fitCanvas)
+  if (els.flowOutlineZoomIn) els.flowOutlineZoomIn.addEventListener('click', () => { canvasView.scale = Math.min(3, canvasView.scale * 1.3); drawOutlineCanvas() })
+  if (els.flowOutlineZoomOut) els.flowOutlineZoomOut.addEventListener('click', () => { canvasView.scale = Math.max(0.2, canvasView.scale / 1.3); drawOutlineCanvas() })
 }
 
 function showView(view) {
@@ -252,6 +286,7 @@ function renderFlowDetail() {
     els.flowDetailEmpty.classList.remove('hidden')
     els.flowDetail.classList.add('hidden')
     els.flowLanguagePanel.style.display = 'none'
+    if (els.flowOutlinePanel) els.flowOutlinePanel.style.display = 'none'
     els.flowRunsPanel.style.display = 'none'
     els.flowActionsPanel.style.display = 'none'
     els.flowActionDetailPanel.style.display = 'none'
@@ -260,6 +295,7 @@ function renderFlowDetail() {
   els.flowDetailEmpty.classList.add('hidden')
   els.flowDetail.classList.remove('hidden')
   els.flowLanguagePanel.style.display = ''
+  if (els.flowOutlinePanel) els.flowOutlinePanel.style.display = ''
   els.flowRunsPanel.style.display = ''
 
   const p = currentFlow.properties || {}
@@ -483,22 +519,259 @@ function renderFlowLanguageDiagnostics(items) {
 }
 
 function renderFlowLanguageOutline(items) {
+  canvasNodes = []
   if (!items.length) {
-    els.flowLanguageOutline.innerHTML = '<div class="empty">No outline yet.</div>'
+    drawOutlineCanvas()
     return
   }
-  els.flowLanguageOutline.innerHTML = items.map(renderOutlineItem).join('')
+  layoutOutlineNodes(items, 0, 0, 0)
+  fitCanvas()
 }
 
-function renderOutlineItem(item) {
-  return '<div class="flow-outline-item">' +
-    '<div class="flow-outline-header">' +
-      '<span class="flow-outline-kind">' + esc(item.kind) + '</span>' +
-      '<span class="flow-outline-name">' + esc(item.name) + '</span>' +
-    '</div>' +
-    (item.detail ? '<div class="flow-outline-detail">' + esc(item.detail) + '</div>' : '') +
-    (item.children && item.children.length ? '<div class="flow-outline-children">' + item.children.map(renderOutlineItem).join('') + '</div>' : '') +
-  '</div>'
+const NODE_PAD_X = 20
+const NODE_PAD_Y = 16
+const NODE_GAP_Y = 14
+const NODE_GAP_X = 24
+const NODE_MIN_W = 180
+const NODE_H = 46
+const SCOPE_PAD = 12
+const CONNECTOR_R = 3
+
+const KIND_COLORS = {
+  trigger: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' },
+  action: { bg: '#f0fdf4', border: '#22c55e', text: '#166534' },
+  scope: { bg: '#fefce8', border: '#eab308', text: '#854d0e' },
+  condition: { bg: '#fef2f2', border: '#ef4444', text: '#991b1b' },
+  foreach: { bg: '#f5f3ff', border: '#8b5cf6', text: '#5b21b6' },
+  switch: { bg: '#fff7ed', border: '#f97316', text: '#9a3412' },
+  default: { bg: '#f9fafb', border: '#9ca3af', text: '#374151' }
+}
+
+function layoutOutlineNodes(items, depth, startX, startY) {
+  let cursorY = startY
+  for (const item of items) {
+    const kind = (item.kind || '').toLowerCase()
+    const hasChildren = item.children && item.children.length
+    const colors = KIND_COLORS[kind] || KIND_COLORS.default
+
+    if (hasChildren) {
+      const headerH = NODE_H
+      const childStartY = cursorY + headerH + NODE_GAP_Y
+      const childStartX = startX + SCOPE_PAD
+      const childBottom = layoutOutlineNodes(item.children, depth + 1, childStartX, childStartY)
+      const scopeW = Math.max(NODE_MIN_W + SCOPE_PAD * 2, getSubtreeWidth(item.children) + SCOPE_PAD * 2)
+      const scopeH = childBottom - cursorY + SCOPE_PAD
+
+      canvasNodes.push({
+        type: 'scope',
+        x: startX, y: cursorY,
+        w: scopeW, h: scopeH,
+        label: item.name,
+        kind: item.kind || kind,
+        detail: item.detail,
+        colors,
+        depth
+      })
+
+      canvasNodes.push({
+        type: 'node',
+        x: startX + SCOPE_PAD, y: cursorY + 6,
+        w: NODE_MIN_W, h: NODE_H - 12,
+        label: item.name,
+        kind: item.kind || kind,
+        detail: item.detail,
+        colors,
+        depth: depth + 1
+      })
+
+      cursorY += scopeH + NODE_GAP_Y
+    } else {
+      canvasNodes.push({
+        type: 'node',
+        x: startX, y: cursorY,
+        w: NODE_MIN_W, h: NODE_H,
+        label: item.name,
+        kind: item.kind || kind,
+        detail: item.detail,
+        colors,
+        depth
+      })
+      cursorY += NODE_H + NODE_GAP_Y
+    }
+  }
+  return cursorY
+}
+
+function getSubtreeWidth(items) {
+  let maxW = NODE_MIN_W
+  for (const item of items) {
+    if (item.children && item.children.length) {
+      maxW = Math.max(maxW, getSubtreeWidth(item.children) + SCOPE_PAD * 2)
+    }
+  }
+  return maxW
+}
+
+function drawOutlineCanvas() {
+  const canvas = els.flowOutlineCanvas
+  if (!canvas) return
+  const container = els.flowCanvasContainer
+  const dpr = window.devicePixelRatio || 1
+  const w = container.clientWidth
+  const h = container.clientHeight || 500
+  canvas.width = w * dpr
+  canvas.height = h * dpr
+  canvas.style.width = w + 'px'
+  canvas.style.height = h + 'px'
+
+  const ctx = canvas.getContext('2d')
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, w, h)
+
+  if (!canvasNodes.length) {
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#6b7280'
+    ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('Load a flow definition to see the outline', w / 2, h / 2)
+    return
+  }
+
+  ctx.save()
+  ctx.translate(w / 2, 20)
+  ctx.scale(canvasView.scale, canvasView.scale)
+  ctx.translate(canvasView.x, canvasView.y)
+
+  const isDark = document.documentElement.classList.contains('dark')
+  const borderColor = isDark ? '#27272a' : '#e5e7eb'
+  const textColor = isDark ? '#e4e4e7' : '#111111'
+  const mutedColor = isDark ? '#71717a' : '#6b7280'
+
+  // Draw scopes first (backgrounds)
+  for (const node of canvasNodes) {
+    if (node.type !== 'scope') continue
+    ctx.fillStyle = isDark ? adjustAlpha(node.colors.bg, 0.15) : node.colors.bg
+    ctx.strokeStyle = node.colors.border
+    ctx.lineWidth = 1.5
+    roundRect(ctx, node.x, node.y, node.w, node.h, 10)
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  // Draw connectors between sequential nodes
+  const regularNodes = canvasNodes.filter(n => n.type === 'node')
+  for (let i = 0; i < regularNodes.length - 1; i++) {
+    const a = regularNodes[i]
+    const b = regularNodes[i + 1]
+    if (a.depth !== b.depth) continue
+    const ax = a.x + a.w / 2
+    const ay = a.y + a.h
+    const bx = b.x + b.w / 2
+    const by = b.y
+    ctx.strokeStyle = borderColor
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(ax, ay)
+    ctx.lineTo(ax, ay + NODE_GAP_Y / 2)
+    if (Math.abs(ax - bx) > 1) {
+      ctx.lineTo(bx, ay + NODE_GAP_Y / 2)
+    }
+    ctx.lineTo(bx, by)
+    ctx.stroke()
+
+    // Arrow dot
+    ctx.fillStyle = borderColor
+    ctx.beginPath()
+    ctx.arc(bx, by, CONNECTOR_R, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // Draw nodes
+  for (const node of canvasNodes) {
+    if (node.type !== 'node') continue
+    ctx.fillStyle = isDark ? adjustAlpha(node.colors.bg, 0.25) : node.colors.bg
+    ctx.strokeStyle = node.colors.border
+    ctx.lineWidth = 1.5
+    roundRect(ctx, node.x, node.y, node.w, node.h, 8)
+    ctx.fill()
+    ctx.stroke()
+
+    // Kind badge
+    ctx.fillStyle = node.colors.text
+    ctx.font = 'bold 9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    ctx.textAlign = 'left'
+    const kindText = (node.kind || '').toUpperCase()
+    ctx.fillText(kindText, node.x + 10, node.y + 14)
+
+    // Name
+    ctx.fillStyle = textColor
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    const maxTextW = node.w - 20
+    let nameText = node.label || ''
+    if (ctx.measureText(nameText).width > maxTextW) {
+      while (nameText.length > 3 && ctx.measureText(nameText + '\u2026').width > maxTextW) {
+        nameText = nameText.slice(0, -1)
+      }
+      nameText += '\u2026'
+    }
+    ctx.fillText(nameText, node.x + 10, node.y + 30)
+
+    // Detail
+    if (node.detail) {
+      ctx.fillStyle = mutedColor
+      ctx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      let detailText = node.detail
+      if (ctx.measureText(detailText).width > maxTextW) {
+        while (detailText.length > 3 && ctx.measureText(detailText + '\u2026').width > maxTextW) {
+          detailText = detailText.slice(0, -1)
+        }
+        detailText += '\u2026'
+      }
+      ctx.fillText(detailText, node.x + 10, node.y + 42)
+    }
+  }
+
+  ctx.restore()
+}
+
+function fitCanvas() {
+  if (!canvasNodes.length) { drawOutlineCanvas(); return }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const n of canvasNodes) {
+    minX = Math.min(minX, n.x)
+    minY = Math.min(minY, n.y)
+    maxX = Math.max(maxX, n.x + n.w)
+    maxY = Math.max(maxY, n.y + n.h)
+  }
+  const container = els.flowCanvasContainer
+  const cw = container.clientWidth || 600
+  const ch = container.clientHeight || 400
+  const contentW = maxX - minX + 60
+  const contentH = maxY - minY + 60
+  canvasView.scale = Math.min(1.5, Math.min((cw - 40) / contentW, (ch - 40) / contentH))
+  canvasView.x = -(minX + maxX) / 2
+  canvasView.y = -(minY) + 10
+  drawOutlineCanvas()
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + w - r, y)
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+  ctx.lineTo(x + w, y + h - r)
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+  ctx.lineTo(x + r, y + h)
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+  ctx.lineTo(x, y + r)
+  ctx.quadraticCurveTo(x, y, x + r, y)
+  ctx.closePath()
+}
+
+function adjustAlpha(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')'
 }
 
 function toCompletionOption(item) {

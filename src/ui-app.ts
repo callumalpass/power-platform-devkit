@@ -254,6 +254,9 @@ export function renderHtml(): string {
     .flow-outline-name { font-family: var(--mono); font-size: 0.75rem; font-weight: 600; }
     .flow-outline-detail { font-size: 0.6875rem; color: var(--muted); margin-top: 2px; }
     .flow-outline-children { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-left: 12px; border-left: 1px solid var(--border); }
+    .flow-canvas-container { position: relative; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); overflow: hidden; }
+    .flow-outline-canvas { width: 100%; height: calc(100vh - 280px); min-height: 400px; cursor: grab; display: block; }
+    .flow-outline-canvas:active { cursor: grabbing; }
     .flow-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
     .check-row { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--muted); }
     .check-row input[type="checkbox"] { width: 16px; height: 16px; min-width: 16px; padding: 0; margin: 0; border-radius: 4px; accent-color: var(--accent); cursor: pointer; }
@@ -1114,15 +1117,23 @@ export function renderHtml(): string {
             </div>
             <div id="flow-language-editor" class="fetchxml-editor-mount"></div>
           </div>
-          <div style="display:grid;grid-template-columns:minmax(0, 1fr) minmax(260px, 320px);gap:16px;margin-top:14px">
-            <div>
-              <div id="flow-language-summary" class="flow-summary-grid" style="margin-bottom:12px"></div>
-              <div id="flow-language-diagnostics" class="fetchxml-diagnostics"></div>
+          <div style="margin-top:14px">
+            <div id="flow-language-summary" class="flow-summary-grid" style="margin-bottom:12px"></div>
+            <div id="flow-language-diagnostics" class="fetchxml-diagnostics"></div>
+          </div>
+        </div>
+        <div class="panel" id="flow-outline-panel" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2>Flow Outline</h2>
+            <div class="btn-group">
+              <button class="btn btn-ghost flow-outline-zoom-btn" id="flow-outline-zoom-fit" type="button" style="font-size:0.6875rem;padding:3px 8px">Fit</button>
+              <button class="btn btn-ghost flow-outline-zoom-btn" id="flow-outline-zoom-in" type="button" style="font-size:0.6875rem;padding:3px 8px">+</button>
+              <button class="btn btn-ghost flow-outline-zoom-btn" id="flow-outline-zoom-out" type="button" style="font-size:0.6875rem;padding:3px 8px">\u2212</button>
             </div>
-            <div>
-              <h2 style="margin-bottom:8px">Outline</h2>
-              <div id="flow-language-outline" class="flow-outline"></div>
-            </div>
+          </div>
+          <div class="flow-canvas-container" id="flow-canvas-container">
+            <canvas id="flow-outline-canvas" class="flow-outline-canvas"></canvas>
+            <div id="flow-language-outline" class="hidden"></div>
           </div>
         </div>
         <div class="panel" id="flow-runs-panel" style="display:none">
