@@ -20,13 +20,13 @@ const els = {
   themeToggle: document.getElementById('theme-toggle'),
   loginLinkPanel: document.getElementById('login-link-panel'),
   loginLinkStatus: document.getElementById('login-link-status'),
-  loginLinkUrl: document.getElementById('login-link-url'),
+  loginLinkTargets: document.getElementById('login-link-targets'),
   loginLinkCopy: document.getElementById('login-link-copy')
 }
 
 const health = {}
 const tokenStatus = {}
-let currentLoginUrl = ''
+let loginTargets = []
 
 function initTheme() {
   const saved = localStorage.getItem('pp-theme')
@@ -53,24 +53,52 @@ function showLoginLinkPanel() {
 }
 
 function hideLoginLinkPanel() {
-  currentLoginUrl = ''
+  loginTargets = []
   els.loginLinkPanel.classList.add('hidden')
   renderLoginLink()
 }
 
-function setLoginUrl(url) {
-  currentLoginUrl = url || ''
+function setLoginTargets(targets) {
+  loginTargets = Array.isArray(targets) ? targets.slice() : []
+  renderLoginLink()
+}
+
+function applyLoginTargetUpdate(update) {
+  if (!update || !update.resource) return
+  const idx = loginTargets.findIndex((target) => target.resource === update.resource)
+  if (idx >= 0) loginTargets[idx] = { ...loginTargets[idx], ...update }
+  else loginTargets.push(update)
   renderLoginLink()
 }
 
 function renderLoginLink() {
-  els.loginLinkStatus.textContent = currentLoginUrl
-    ? 'Open the link in any browser to continue sign-in.'
-    : 'Waiting for the identity provider to return a sign-in link…'
-  els.loginLinkUrl.innerHTML = currentLoginUrl
-    ? '<a href="' + esc(currentLoginUrl) + '" target="_blank" rel="noreferrer">' + esc(currentLoginUrl) + '</a>'
+  const active = loginTargets.find((target) => target.status === 'running')
+  const available = loginTargets.filter((target) => target.url)
+  els.loginLinkStatus.textContent = active
+    ? 'Follow the current link, then continue through the remaining API logins below.'
+    : available.length
+      ? 'Authentication links captured for this login session.'
+      : 'Waiting for the identity provider to return sign-in links…'
+  els.loginLinkTargets.innerHTML = loginTargets.length
+    ? loginTargets.map((target) => {
+        const tone = target.status === 'completed' ? 'ok' : target.status === 'running' ? 'pending' : 'error'
+        const status = target.status === 'completed' ? 'ready' : target.status === 'running' ? (target.url ? 'action required' : 'waiting') : 'pending'
+        const link = target.url
+          ? '<a href="' + esc(target.url) + '" target="_blank" rel="noreferrer" style="font-family:var(--font-mono);font-size:0.75rem;word-break:break-all">' + esc(target.url) + '</a>'
+          : '<span style="font-size:0.75rem;color:var(--muted)">No URL needed yet.</span>'
+        return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px">' +
+            '<div style="display:flex;align-items:center;gap:8px">' +
+              '<span class="health-dot ' + tone + '"></span>' +
+              '<strong style="font-size:0.8125rem">' + esc(target.label || target.api || target.resource) + '</strong>' +
+            '</div>' +
+            '<span style="font-size:0.75rem;color:var(--muted);text-transform:capitalize">' + esc(status) + '</span>' +
+          '</div>' +
+          link +
+        '</div>'
+      }).join('')
     : ''
-  els.loginLinkCopy.disabled = !currentLoginUrl
+  els.loginLinkCopy.disabled = !available.length
 }
 
 function tokenDotHtml(accountName) {
@@ -235,8 +263,14 @@ export function initSetup(refreshState) {
       showLoginLinkPanel()
     }
     try {
-      const started = await api('/api/jobs/account-login', { method: 'POST', body: JSON.stringify(formDataObject(form)) })
+      const started = await api('/api/jobs/account-login', {
+        method: 'POST',
+        body: JSON.stringify({ ...formDataObject(form), environmentAlias: getSelectedEnvironment() })
+      })
       app.currentLoginJobId = started.data.id
+      if (started.data.metadata && Array.isArray(started.data.metadata.loginTargets)) {
+        setLoginTargets(started.data.metadata.loginTargets)
+      }
       const result = await waitForLoginJob(app.currentLoginJobId)
       form.reset()
       document.getElementById('account-kind').value = 'user'
@@ -334,9 +368,15 @@ export function initSetup(refreshState) {
       const btn = loginAccount
       setBtnLoading(btn, true, 'Logging in\u2026')
       showLoginLinkPanel()
-      api('/api/jobs/account-login', { method: 'POST', body: JSON.stringify({ name, kind: 'user' }) })
+      api('/api/jobs/account-login', {
+        method: 'POST',
+        body: JSON.stringify({ name, kind: 'user', environmentAlias: getSelectedEnvironment() })
+      })
         .then(async (started) => {
           app.currentLoginJobId = started.data.id
+          if (started.data.metadata && Array.isArray(started.data.metadata.loginTargets)) {
+            setLoginTargets(started.data.metadata.loginTargets)
+          }
           const result = await waitForLoginJob(app.currentLoginJobId)
           app.currentLoginJobId = null
           if (result && result.data && result.data.expiresAt) {
@@ -373,10 +413,11 @@ export function initSetup(refreshState) {
       return
     }
     if (event.target.id === 'login-link-copy' || event.target.closest('#login-link-copy')) {
-      if (!currentLoginUrl) return
-      navigator.clipboard.writeText(currentLoginUrl).then(
-        () => toast('Copied login URL'),
-        () => toast('Failed to copy login URL', true)
+      const links = loginTargets.filter((target) => target.url).map((target) => (target.label || target.api || target.resource) + ': ' + target.url)
+      if (!links.length) return
+      navigator.clipboard.writeText(links.join('\n')).then(
+        () => toast('Copied login URLs'),
+        () => toast('Failed to copy login URLs', true)
       )
     }
   })
@@ -393,14 +434,24 @@ async function waitForLoginJob(jobId) {
     const response = await fetch('/api/jobs/' + encodeURIComponent(jobId), { headers: { 'content-type': 'application/json' } })
     const payload = await response.json()
     const job = payload.data
-    if (job && job.metadata && typeof job.metadata.loginUrl === 'string') {
-      setLoginUrl(job.metadata.loginUrl)
+    if (job && job.metadata) {
+      if (Array.isArray(job.metadata.loginTargets)) {
+        setLoginTargets(job.metadata.loginTargets)
+      }
+      if (job.metadata.activeLoginTarget && typeof job.metadata.activeLoginTarget === 'object') {
+        applyLoginTargetUpdate(job.metadata.activeLoginTarget)
+      }
     }
     if (!job || job.status === 'pending') continue
     if (job.status === 'cancelled') throw new Error('Login cancelled.')
     if (job.result && job.result.success === false) throw new Error(summarizeError(job.result))
     return job.result
   }
+}
+
+function getSelectedEnvironment() {
+  const global = document.getElementById('global-environment')
+  return global && global.value ? global.value : undefined
 }
 `;
 }

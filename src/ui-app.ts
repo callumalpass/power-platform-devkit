@@ -466,11 +466,11 @@ export function renderHtml(): string {
             </div>
             <div id="login-link-panel" class="hidden" style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-alt)">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px">
-                <span class="field-label" style="margin:0">Open This Login URL</span>
+                <span class="field-label" style="margin:0">Authentication Links</span>
                 <button type="button" class="btn btn-ghost" id="login-link-copy" style="font-size:0.75rem;padding:4px 10px">Copy</button>
               </div>
               <div id="login-link-status" style="font-size:0.75rem;color:var(--muted);margin-bottom:8px">Waiting for the identity provider to return a sign-in link…</div>
-              <div id="login-link-url" style="font-family:var(--font-mono);font-size:0.75rem;word-break:break-all"></div>
+              <div id="login-link-targets" style="display:grid;gap:8px"></div>
             </div>
           </form>
         </div>

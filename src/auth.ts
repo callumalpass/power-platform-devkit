@@ -24,6 +24,12 @@ export const DEFAULT_PUBLIC_CLIENT_ID = '51f81489-12ee-4a9e-aaae-a2591f45987d';
 export const DEFAULT_USER_TENANT = 'common';
 export const DEFAULT_LOGIN_RESOURCE = 'https://graph.microsoft.com';
 
+export interface LoginTarget {
+  resource: string;
+  label?: string;
+  api?: 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps';
+}
+
 export interface TokenProvider {
   getAccessToken(resource: string): Promise<string>;
 }
@@ -33,6 +39,14 @@ export interface PublicClientLoginOptions {
   preferredFlow?: 'interactive' | 'device-code';
   allowInteractive?: boolean;
   onInteractiveUrl?: (url: string) => void | Promise<void>;
+  loginTargets?: LoginTarget[];
+  onLoginTargetUpdate?: (update: {
+    target: LoginTarget;
+    index: number;
+    total: number;
+    status: 'running' | 'completed';
+    url?: string;
+  }) => void | Promise<void>;
 }
 
 export interface LoginAccountInput {
@@ -86,16 +100,47 @@ export class AuthService {
     const accountResult = await this.saveAccount(accountToSave);
     if (!accountResult.success || !accountResult.data) return fail(...accountResult.diagnostics);
 
-    const resource = DEFAULT_LOGIN_RESOURCE;
-    const tokenResult = await this.getToken(accountResult.data.name, resource, options);
-    if (!tokenResult.success || !tokenResult.data) return fail(...tokenResult.diagnostics);
+    const targets = normalizeLoginTargets(options.loginTargets);
+    let primaryToken: string | undefined;
+    for (const [index, target] of targets.entries()) {
+      await options.onLoginTargetUpdate?.({
+        target,
+        index,
+        total: targets.length,
+        status: 'running',
+      });
+      const tokenResult = await this.getToken(accountResult.data.name, target.resource, {
+        ...options,
+        loginTargets: undefined,
+        onLoginTargetUpdate: undefined,
+        onInteractiveUrl: async (url) => {
+          await options.onInteractiveUrl?.(url);
+          await options.onLoginTargetUpdate?.({
+            target,
+            index,
+            total: targets.length,
+            status: 'running',
+            url,
+          });
+        },
+      });
+      if (!tokenResult.success || !tokenResult.data) return fail(...tokenResult.diagnostics);
+      if (!primaryToken) primaryToken = tokenResult.data;
+      await options.onLoginTargetUpdate?.({
+        target,
+        index,
+        total: targets.length,
+        status: 'completed',
+      });
+    }
 
-    const claims = decodeJwtClaims(tokenResult.data);
+    const claims = decodeJwtClaims(primaryToken);
     const refreshed = await this.getAccount(accountResult.data.name);
 
     return ok({
       account: summarizeAccount(refreshed.success && refreshed.data ? refreshed.data : accountResult.data),
-      resource,
+      resources: targets.map((target) => target.resource),
+      resource: targets[0]?.resource ?? DEFAULT_LOGIN_RESOURCE,
       tenantId: readStringClaim(claims, 'tid'),
       expiresAt: readNumericClaim(claims, 'exp'),
     });
@@ -416,6 +461,21 @@ function ensureAccessToken(result: AuthenticationResult | null, accountName: str
 
 function resolveTokenCacheKey(account: UserAccount): string {
   return account.tokenCacheKey ?? account.name ?? randomUUID();
+}
+
+function normalizeLoginTargets(targets?: LoginTarget[]): LoginTarget[] {
+  const seen = new Set<string>();
+  const normalized = (targets?.length ? targets : [{ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' }])
+    .map((target) => ({
+      ...target,
+      resource: normalizeResource(target.resource),
+    }))
+    .filter((target) => {
+      if (!target.resource || seen.has(target.resource)) return false;
+      seen.add(target.resource);
+      return true;
+    });
+  return normalized.length ? normalized : [{ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' }];
 }
 
 function promptValue(prompt: 'select_account' | 'login' | 'consent' | 'none') {

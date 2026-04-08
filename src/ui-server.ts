@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { URL } from 'node:url';
-import type { LoginAccountInput } from './auth.js';
+import { DEFAULT_LOGIN_RESOURCE, type LoginAccountInput, type LoginTarget } from './auth.js';
 import { getConfigDir, getConfigPath, getMsalCacheDir, type EnvironmentAccessMode } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { FetchXmlMetadataCatalog, type FetchXmlLanguageRequest } from './fetchxml-language-service.js';
@@ -21,7 +21,7 @@ import { renderQueryLabModule } from './ui-client/query-lab.js';
 import { renderSetupModule } from './ui-client/setup.js';
 import { renderSharedModule } from './ui-client/shared.js';
 import { UiJobStore } from './ui-jobs.js';
-import type { ApiKind } from './request.js';
+import { normalizeOrigin, type ApiKind } from './request.js';
 import { executeApiRequest } from './services/api.js';
 import { checkAccountTokenStatus, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { runConnectivityPing, runWhoAmICheck } from './services/api.js';
@@ -243,16 +243,30 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
       sendJson(response, 400, input);
       return;
     }
+    const environments = await listConfiguredEnvironments(context.configOptions);
+    if (!environments.success || !environments.data) {
+      sendJson(response, 400, fail(...environments.diagnostics));
+      return;
+    }
+    const loginTargets = buildLoginTargets(input.data.name, environments.data, optionalString(bodyData.environmentAlias));
     const job = context.jobs.createJob('account-login', (update) =>
       loginAccount(input.data!, {
         preferredFlow: bodyData.preferredFlow === 'device-code' ? 'device-code' : 'interactive',
         forcePrompt: Boolean(bodyData.forcePrompt),
         allowInteractive: context.allowInteractiveAuth,
-        onInteractiveUrl: async (loginUrl) => {
-          update({ loginUrl });
+        loginTargets,
+        onLoginTargetUpdate: async (progress) => {
+          update({
+            activeLoginTarget: {
+              ...progress.target,
+              status: progress.status,
+              url: progress.url,
+            },
+          });
         },
       }, context.configOptions),
     );
+    job.metadata = { ...(job.metadata ?? {}), loginTargets: loginTargets.map((target) => ({ ...target, status: 'pending' })) };
     sendJson(response, 202, ok(job));
     return;
   }
@@ -568,6 +582,35 @@ function buildMcpLaunchCommand(context: RequestContext): string {
 function quoteShell(value: string): string {
   if (/^[A-Za-z0-9_./:-]+$/.test(value)) return value;
   return JSON.stringify(value);
+}
+
+function buildLoginTargets(accountName: string, environments: Array<{ alias: string; account: string; url: string }>, selectedEnvironmentAlias?: string): LoginTarget[] {
+  const targets: LoginTarget[] = [
+    { resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' },
+    { resource: 'https://service.flow.microsoft.com', label: 'Flow', api: 'flow' },
+    { resource: 'https://service.powerapps.com', label: 'Power Apps / BAP', api: 'powerapps' },
+  ];
+  const relevantEnvironments = [
+    ...environments.filter((environment) => environment.alias === selectedEnvironmentAlias),
+    ...environments.filter((environment) => environment.account === accountName && environment.alias !== selectedEnvironmentAlias),
+  ];
+  for (const environment of relevantEnvironments) {
+    targets.push({
+      resource: normalizeOrigin(environment.url),
+      label: `Dataverse (${environment.alias})`,
+      api: 'dv',
+    });
+  }
+  return dedupeLoginTargets(targets);
+}
+
+function dedupeLoginTargets(targets: LoginTarget[]): LoginTarget[] {
+  const seen = new Set<string>();
+  return targets.filter((target) => {
+    if (!target.resource || seen.has(target.resource)) return false;
+    seen.add(target.resource);
+    return true;
+  });
 }
 
 function readLoginInput(value: unknown): OperationResult<LoginAccountInput> {
