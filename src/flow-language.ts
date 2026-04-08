@@ -256,7 +256,7 @@ const ACTION_TYPE_OPTIONS = [
   'ServiceProvider',
 ];
 
-const FUNCTION_SPECS: Record<string, FunctionSpec> = {
+const RAW_FUNCTION_SPECS: Record<string, FunctionSpec> = {
   actions: { minArgs: 1, maxArgs: 1, info: 'Reference another action result.' },
   body: { minArgs: 1, maxArgs: 1, info: 'Reference the body of another action.' },
   outputs: { minArgs: 1, maxArgs: 1, info: 'Reference another action outputs.' },
@@ -275,17 +275,21 @@ const FUNCTION_SPECS: Record<string, FunctionSpec> = {
   empty: { minArgs: 1, maxArgs: 1, info: 'Check whether a value is empty.' },
   length: { minArgs: 1, maxArgs: 1, info: 'Return the length of a collection or string.' },
   createArray: { minArgs: 0, info: 'Create an array value.' },
+  if: { minArgs: 3, maxArgs: 3, info: 'Return one of two values based on a condition.' },
   add: { minArgs: 2, maxArgs: 2, info: 'Add numbers.' },
   addDays: { minArgs: 2, maxArgs: 2, info: 'Add days to a timestamp.' },
   addHours: { minArgs: 2, maxArgs: 2, info: 'Add hours to a timestamp.' },
   addMinutes: { minArgs: 2, maxArgs: 2, info: 'Add minutes to a timestamp.' },
   mod: { minArgs: 2, maxArgs: 2, info: 'Modulo.' },
   less: { minArgs: 2, maxArgs: 2, info: 'Less-than comparison.' },
+  lessOrEquals: { minArgs: 2, maxArgs: 2, info: 'Less-than-or-equal comparison.' },
   greater: { minArgs: 2, maxArgs: 2, info: 'Greater-than comparison.' },
+  greaterOrEquals: { minArgs: 2, maxArgs: 2, info: 'Greater-than-or-equal comparison.' },
   json: { minArgs: 1, maxArgs: 1, info: 'Parse JSON from a string.' },
   encodeURIComponent: { minArgs: 1, maxArgs: 1, info: 'Encode a URI component.' },
   base64ToString: { minArgs: 1, maxArgs: 1, info: 'Decode base64 text.' },
   utcNow: { minArgs: 0, maxArgs: 0, info: 'Current UTC timestamp.' },
+  formatDateTime: { minArgs: 1, maxArgs: 2, info: 'Format a timestamp using an optional format string.' },
   convertToUtc: { minArgs: 2, maxArgs: 2, info: 'Convert a time to UTC.' },
   convertFromUtc: { minArgs: 2, maxArgs: 2, info: 'Convert UTC to a timezone.' },
   dayOfWeek: { minArgs: 1, maxArgs: 1, info: 'Get weekday number.' },
@@ -293,6 +297,10 @@ const FUNCTION_SPECS: Record<string, FunctionSpec> = {
   coalesce: { minArgs: 2, info: 'Return first non-null argument.' },
   concat: { minArgs: 2, info: 'Concatenate values.' },
 };
+
+const FUNCTION_SPECS: Record<string, FunctionSpec> = Object.fromEntries(
+  Object.entries(RAW_FUNCTION_SPECS).map(([name, spec]) => [name.toLowerCase(), spec]),
+);
 
 export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
   const parseResult = parseJsonDocument(source);
@@ -618,9 +626,28 @@ function validateActionReferenceAvailability(
   if (source.containerId === target.containerId && target.siblingIndex > source.siblingIndex) {
     diagnostics.push(rangeDiagnostic('warning', 'FLOW_REFERENCE_FUTURE_ACTION', `Expression references ${targetActionName} before it appears in the same scope.`, from, to));
   }
-  if (source.containerId !== target.containerId && source.parentAction !== target.parentAction && source.parentAction !== target.name) {
+  if (!shareScopeLineage(source, target, actionMap)) {
     diagnostics.push(rangeDiagnostic('info', 'FLOW_REFERENCE_SCOPE_AMBIGUOUS', `Expression references ${targetActionName} from a different scope.`, from, to));
   }
+}
+
+function shareScopeLineage(source: FlowActionNode, target: FlowActionNode, actionMap: Map<string, FlowActionNode>): boolean {
+  if (source.containerId === target.containerId) return true;
+  const sourceLineage = new Set(actionLineage(source, actionMap));
+  for (const item of actionLineage(target, actionMap)) {
+    if (sourceLineage.has(item)) return true;
+  }
+  return false;
+}
+
+function actionLineage(action: FlowActionNode, actionMap: Map<string, FlowActionNode>): string[] {
+  const lineage = [action.containerId, action.name];
+  let parent = action.parentAction;
+  while (parent) {
+    lineage.push(parent);
+    parent = actionMap.get(parent)?.parentAction;
+  }
+  return lineage;
 }
 
 function validateFunctionCall(node: ExpressionCallNode, diagnostics: FlowRangeDiagnostic[]): void {
