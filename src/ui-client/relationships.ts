@@ -1,7 +1,7 @@
 export function renderRelationshipsModule(): string {
   return String.raw`
 import { api, esc, getGlobalEnvironment, toast } from '/assets/ui/shared.js'
-import { getDataverseState } from '/assets/ui/state.js'
+import { getDataverseState, subscribe } from '/assets/ui/state.js'
 
 const els = {
   svg: document.getElementById('rel-svg'),
@@ -28,10 +28,13 @@ let entityCache = {}
 let simulation = null
 let dragNode = null
 let dragOffset = { x: 0, y: 0 }
-let viewBox = { x: -400, y: -300, w: 800, h: 600 }
+let viewBox = { x: -500, y: -400, w: 1000, h: 800 }
 let isPanning = false
 let panStart = { x: 0, y: 0 }
 let panViewStart = { x: 0, y: 0 }
+
+let lastClickTime = 0
+let lastClickNodeId = null
 
 const NODE_W = 160
 const NODE_H = 44
@@ -50,29 +53,40 @@ export function initRelationships() {
   els.svg.addEventListener('touchmove', onTouchMove, { passive: false })
   els.svg.addEventListener('touchend', onMouseUp)
 
-  els.svg.addEventListener('dblclick', (e) => {
-    const nodeEl = e.target.closest('[data-node-id]')
-    if (!nodeEl) return
-    const id = nodeEl.dataset.nodeId
-    const node = nodes.find(n => n.id === id)
-    if (!node) return
-    expandNode(node).catch(err => toast(err.message, true))
-  })
-
   els.svg.addEventListener('click', (e) => {
     const nodeEl = e.target.closest('[data-node-id]')
-    if (!nodeEl) return
+    if (!nodeEl) {
+      if (!e.target.closest('#rel-tooltip')) els.tooltip.classList.add('hidden')
+      return
+    }
     const id = nodeEl.dataset.nodeId
     const node = nodes.find(n => n.id === id)
     if (!node) return
-    showTooltip(node, e)
-  })
 
-  els.container.addEventListener('click', (e) => {
-    if (!e.target.closest('[data-node-id]') && !e.target.closest('#rel-tooltip')) {
+    const now = Date.now()
+    if (lastClickNodeId === id && now - lastClickTime < 400) {
+      lastClickTime = 0
+      lastClickNodeId = null
       els.tooltip.classList.add('hidden')
+      expandNode(node).catch(err => toast(err.message, true))
+    } else {
+      lastClickTime = now
+      lastClickNodeId = id
+      showTooltip(node, e)
     }
   })
+
+  subscribe((scope) => {
+    if (scope === 'dataverse') updateRelationshipsEntityList()
+  })
+
+  resizeCanvas()
+  window.addEventListener('resize', resizeCanvas)
+}
+
+function resizeCanvas() {
+  const height = Math.max(600, window.innerHeight - 200)
+  els.svg.style.height = height + 'px'
 }
 
 export function updateRelationshipsEntityList() {
@@ -82,10 +96,12 @@ export function updateRelationshipsEntityList() {
     dataverse.entities.map(e =>
       '<option value="' + esc(e.logicalName) + '">' + esc((e.displayName || e.logicalName) + ' (' + e.logicalName + ')') + '</option>'
     ).join('')
-  if (prev) els.entitySelect.value = prev
 
-  const current = dataverse.currentEntityDetail
-  if (current && !prev) els.entitySelect.value = current.logicalName
+  if (dataverse.currentEntityDetail) {
+    els.entitySelect.value = dataverse.currentEntityDetail.logicalName
+  } else if (prev) {
+    els.entitySelect.value = prev
+  }
 }
 
 async function loadGraph() {
@@ -170,7 +186,6 @@ async function loadEntityRelationships(entityName, remainingDepth, env) {
 async function expandNode(node) {
   const env = getGlobalEnvironment()
   if (!env) return
-  const currentDepth = parseInt(els.depthSelect.value, 10) || 1
   els.status.textContent = 'Expanding ' + node.label + '\u2026'
   await loadEntityRelationships(node.id, 1, env)
   layoutNewNodes()
@@ -181,7 +196,7 @@ async function expandNode(node) {
 
 function layoutGraph() {
   const count = nodes.length
-  const radius = Math.max(120, count * 30)
+  const radius = Math.max(150, count * 35)
   nodes.forEach((node, i) => {
     if (node.isRoot) {
       node.x = 0
@@ -224,10 +239,10 @@ function startSimulation() {
 
 function tick() {
   const alpha = 0.3
-  const repulsion = 8000
-  const attraction = 0.005
-  const centerPull = 0.01
-  const damping = 0.85
+  const repulsion = 10000
+  const attraction = 0.004
+  const centerPull = 0.008
+  const damping = 0.82
 
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
@@ -248,7 +263,7 @@ function tick() {
     if (!a || !b) continue
     const dx = b.x - a.x, dy = b.y - a.y
     const dist = Math.sqrt(dx * dx + dy * dy) || 1
-    const idealDist = 220
+    const idealDist = 260
     const force = (dist - idealDist) * attraction * alpha
     const fx = (dx / dist) * force
     const fy = (dy / dist) * force
@@ -268,19 +283,40 @@ function tick() {
 }
 
 function render() {
+  const edgeGroups = {}
+  for (const edge of edges) {
+    const key = [edge.source, edge.target].sort().join('|')
+    if (!edgeGroups[key]) edgeGroups[key] = []
+    edgeGroups[key].push(edge)
+  }
+
   const edgesSvg = edges.map(edge => {
     const a = nodes.find(n => n.id === edge.source)
     const b = nodes.find(n => n.id === edge.target)
     if (!a || !b) return ''
+
+    const key = [edge.source, edge.target].sort().join('|')
+    const group = edgeGroups[key]
+    const idx = group.indexOf(edge)
+    const offset = (idx - (group.length - 1) / 2) * 14
+
     const dx = b.x - a.x, dy = b.y - a.y
     const dist = Math.sqrt(dx * dx + dy * dy) || 1
-    const sx = a.x + (dx / dist) * (NODE_W / 2)
-    const sy = a.y + (dy / dist) * (NODE_H / 2)
-    const tx = b.x - (dx / dist) * (NODE_W / 2)
-    const ty = b.y - (dy / dist) * (NODE_H / 2)
-    const mx = (sx + tx) / 2, my = (sy + ty) / 2
-    return '<g class="rel-edge">' +
+    const nx = -dy / dist, ny = dx / dist
+
+    const sx = a.x + (dx / dist) * (NODE_W / 2) + nx * offset
+    const sy = a.y + (dy / dist) * (NODE_H / 2) + ny * offset
+    const tx = b.x - (dx / dist) * (NODE_W / 2) + nx * offset
+    const ty = b.y - (dy / dist) * (NODE_H / 2) + ny * offset
+    const mx = (sx + tx) / 2 + nx * offset * 0.3
+    const my = (sy + ty) / 2 + ny * offset * 0.3
+
+    const hitW = Math.max(Math.abs(tx - sx), 8)
+    const hitH = Math.max(Math.abs(ty - sy), 8)
+
+    return '<g class="rel-edge" data-edge-label="' + esc(edge.label) + '">' +
       '<line x1="' + sx + '" y1="' + sy + '" x2="' + tx + '" y2="' + ty + '" />' +
+      '<rect x="' + (Math.min(sx, tx) - 4) + '" y="' + (Math.min(sy, ty) - 4) + '" width="' + (hitW + 8) + '" height="' + (hitH + 8) + '" class="rel-edge-hit" />' +
       '<circle cx="' + tx + '" cy="' + ty + '" r="3" class="rel-arrowhead" />' +
       '<text x="' + mx + '" y="' + (my - 6) + '" class="rel-edge-label">' + esc(edge.label) + '</text>' +
     '</g>'
@@ -297,7 +333,7 @@ function render() {
     '</g>'
   }).join('')
 
-  els.svg.innerHTML = '<defs><marker id="rel-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="var(--muted)" /></marker></defs>' + edgesSvg + nodesSvg
+  els.svg.innerHTML = edgesSvg + nodesSvg
   els.svg.setAttribute('viewBox', viewBox.x + ' ' + viewBox.y + ' ' + viewBox.w + ' ' + viewBox.h)
 }
 
@@ -306,19 +342,30 @@ function showTooltip(node, event) {
   const lookupCount = detail && detail.attributes
     ? detail.attributes.filter(a => (a.targets && a.targets.length)).length
     : 0
+  const outEdges = edges.filter(e => e.source === node.id)
+  const inEdges = edges.filter(e => e.target === node.id)
+
   let html = '<strong>' + esc(node.label) + '</strong><br>' +
     '<span style="font-family:var(--mono);font-size:0.6875rem">' + esc(node.logicalName) + '</span><br>' +
-    '<span style="color:var(--muted)">' + node.attrCount + ' attributes \u00b7 ' + lookupCount + ' lookups</span>'
+    '<span style="color:var(--muted)">' + node.attrCount + ' attrs \u00b7 ' + lookupCount + ' lookups</span>'
   if (node.entitySetName) html += '<br><span style="color:var(--accent);font-size:0.6875rem">' + esc(node.entitySetName) + '</span>'
-  html += '<br><span style="font-size:0.625rem;color:var(--muted)">Double-click to expand \u00b7 Drag to move</span>'
+  if (outEdges.length) {
+    html += '<br><span style="font-size:0.625rem;color:var(--muted)">References: ' + outEdges.map(e => esc(e.label)).join(', ') + '</span>'
+  }
+  if (inEdges.length) {
+    html += '<br><span style="font-size:0.625rem;color:var(--muted)">Referenced by: ' + inEdges.map(e => esc(e.source + '.' + e.label)).join(', ') + '</span>'
+  }
+  html += '<br><span style="font-size:0.625rem;color:var(--accent)">Double-click to expand</span>'
   els.tooltip.innerHTML = html
   els.tooltip.classList.remove('hidden')
 
   const rect = els.container.getBoundingClientRect()
-  const tx = event.clientX - rect.left + 12
-  const ty = event.clientY - rect.top + 12
-  els.tooltip.style.left = tx + 'px'
-  els.tooltip.style.top = ty + 'px'
+  let tx = event.clientX - rect.left + 12
+  let ty = event.clientY - rect.top + 12
+  if (tx + 280 > rect.width) tx = rect.width - 290
+  if (ty + 200 > rect.height) ty = ty - 200
+  els.tooltip.style.left = Math.max(4, tx) + 'px'
+  els.tooltip.style.top = Math.max(4, ty) + 'px'
 }
 
 function svgPoint(e) {
@@ -389,12 +436,10 @@ function onWheel(e) {
   const rect = els.svg.getBoundingClientRect()
   const mx = ((e.clientX - rect.left) / rect.width) * viewBox.w + viewBox.x
   const my = ((e.clientY - rect.top) / rect.height) * viewBox.h + viewBox.y
-  const nw = viewBox.w * factor
-  const nh = viewBox.h * factor
   viewBox.x = mx - (mx - viewBox.x) * factor
   viewBox.y = my - (my - viewBox.y) * factor
-  viewBox.w = nw
-  viewBox.h = nh
+  viewBox.w *= factor
+  viewBox.h *= factor
   render()
 }
 
