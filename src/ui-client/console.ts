@@ -1,6 +1,6 @@
 export function renderConsoleModule(): string {
   return String.raw`
-import { app, api, esc, getGlobalEnvironment, setBtnLoading, highlightJson, copyToClipboard, formatBytes, toast } from '/assets/ui/shared.js'
+import { api, esc, getGlobalEnvironment, setBtnLoading, highlightJson, copyToClipboard, formatBytes, toast } from '/assets/ui/shared.js'
 
 const APIS = [
   {
@@ -394,4 +394,3 @@ function renderSaved() {
 }
 `;
 }
-

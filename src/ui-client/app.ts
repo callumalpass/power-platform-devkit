@@ -1,7 +1,7 @@
 export function renderAppModule(): string {
   return String.raw`
-import { app, api, applyAccountKindVisibility, renderMeta, optionMarkup, getGlobalEnvironment, loadEntities, setTab, showLoading, toast } from '/assets/ui/shared.js'
-import { clearDataverseSelection, setShellPayload } from '/assets/ui/state.js'
+import { api, applyAccountKindVisibility, renderMeta, optionMarkup, getGlobalEnvironment, loadEntities, setTab, showLoading, toast } from '/assets/ui/shared.js'
+import { clearDataverseSelection, getDataverseState, setShellPayload } from '/assets/ui/state.js'
 import { setGlobalEnvironment } from '/assets/ui/runtime.js'
 import { initSetup, renderSetupState, runInitialHealthChecks } from '/assets/ui/setup.js'
 import { initExplorer, renderExplorerEntities } from '/assets/ui/explorer.js'
@@ -69,7 +69,7 @@ async function loadWorkspaceData() {
       renderExplorerEntities()
       updateQueryContext()
       updateFetchContext()
-      toast('Loaded ' + app.entities.length + ' entities')
+      toast('Loaded ' + getDataverseState().entities.length + ' entities')
     } else if (activeWorkspace === 'automate') {
       if (container) hideLoading = showLoading(container, 'Loading flows\u2026')
       await loadFlows()

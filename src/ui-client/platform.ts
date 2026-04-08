@@ -1,6 +1,6 @@
 export function renderPlatformModule(): string {
   return String.raw`
-import { app, api, esc, getGlobalEnvironment, toast } from '/assets/ui/shared.js'
+import { api, esc, getGlobalEnvironment, toast } from '/assets/ui/shared.js'
 
 const els = {
   envList: document.getElementById('plat-env-list'),

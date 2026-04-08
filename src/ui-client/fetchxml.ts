@@ -10,7 +10,7 @@ import { searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view'
 import { api, esc, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, getSelectableAttributes, updateEntityContext, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
-import { getDataverseState } from '/assets/ui/state.js'
+import { getDataverseState, subscribe } from '/assets/ui/state.js'
 
 const OPERATORS = [
   'eq', 'ne', 'gt', 'ge', 'lt', 'le',
@@ -96,6 +96,9 @@ const languageClient = new FetchXmlLanguageClient()
 
 export function initFetchXml() {
   initEditor()
+  subscribe((scope) => {
+    if (scope === 'dataverse') updateFetchContext()
+  })
 
   els.runButton.addEventListener('click', async () => {
     try {

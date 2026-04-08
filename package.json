@@ -30,6 +30,8 @@
   "scripts": {
     "build": "tsup src/index.ts src/mcp.ts src/mcp-server.ts --format esm,cjs --clean",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "clean:test": "node -e \"require('node:fs').rmSync('.tmp-test',{recursive:true,force:true})\"",
+    "test": "pnpm run clean:test && tsc -p tsconfig.test.json && node --test .tmp-test/test/**/*.test.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

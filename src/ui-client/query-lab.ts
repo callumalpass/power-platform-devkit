@@ -1,7 +1,7 @@
 export function renderQueryLabModule(): string {
   return String.raw`
 import { api, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, updateEntityContext, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
-import { getDataverseState } from '/assets/ui/state.js'
+import { getDataverseState, subscribe } from '/assets/ui/state.js'
 
 const els = {
   form: document.getElementById('query-form'),
@@ -21,6 +21,9 @@ let lastResultData = null
 let resultView = 'table'
 
 export function initQueryLab() {
+  subscribe((scope) => {
+    if (scope === 'dataverse') updateQueryContext()
+  })
   els.previewButton.addEventListener('click', async () => {
     try {
       const payload = await api('/api/dv/query/preview', { method: 'POST', body: JSON.stringify(readQueryPayload()) })

@@ -1,7 +1,7 @@
 export function renderExplorerModule(): string {
   return String.raw`
 import { api, esc, getDefaultSelectedColumns, getGlobalEnvironment, renderEntitySidebar, renderSelectedColumns, toggleColumn, registerSubTabs, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
-import { clearSelectedColumns, getDataverseState, setCurrentEntity, setCurrentEntityDetail, setCurrentRecordPreview, setSelectedColumns } from '/assets/ui/state.js'
+import { clearSelectedColumns, getDataverseState, setCurrentEntity, setCurrentEntityDetail, setCurrentRecordPreview, setSelectedColumns, subscribe } from '/assets/ui/state.js'
 
 const els = {
   entityList: document.getElementById('entity-list'),
@@ -65,6 +65,11 @@ export function initExplorer(a) {
     renderRecordPreview()
   })
 
+  subscribe((scope) => {
+    if (scope !== 'dataverse') return
+    renderSelectedColumns(els.selectedCols)
+  })
+
   // Column selection: click attribute rows to toggle
   els.attributeTable.addEventListener('click', (e) => {
     const row = e.target.closest('tr.attr-row')
@@ -89,7 +94,6 @@ export function initExplorer(a) {
     if (clear) {
       clearSelectedColumns()
       renderAttributeTable()
-      renderSelectedColumns(els.selectedCols)
     }
   })
 }

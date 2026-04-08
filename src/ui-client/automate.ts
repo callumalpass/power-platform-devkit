@@ -1,6 +1,6 @@
 export function renderAutomateModule(): string {
   return String.raw`
-import { app, api, esc, getGlobalEnvironment, highlightJson, toast } from '/assets/ui/shared.js'
+import { api, esc, getGlobalEnvironment, highlightJson, toast } from '/assets/ui/shared.js'
 
 const els = {
   flowList: document.getElementById('flow-list'),
