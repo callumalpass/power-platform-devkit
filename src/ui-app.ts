@@ -411,9 +411,23 @@ export function renderHtml(): string {
     .history-api { font-size: 0.625rem; font-weight: 600; color: var(--muted); text-transform: uppercase; }
 
     /* Run items (flow runs) */
-    .run-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem; }
+    .run-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.8125rem; cursor: pointer; transition: all 100ms; }
+    .run-item:hover { background: var(--bg); border-color: var(--accent); }
+    .run-item.active { background: var(--accent-soft); border-color: var(--accent); }
     .run-status { font-weight: 500; }
     .run-time { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
+    .run-duration { font-size: 0.6875rem; color: var(--muted); font-family: var(--mono); }
+
+    /* Action items */
+    .action-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: all 100ms; }
+    .action-item:hover { background: var(--bg); border-color: var(--accent); }
+    .action-item.active { background: var(--accent-soft); border-color: var(--accent); }
+    .action-item-name { font-size: 0.8125rem; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .action-item-type { font-size: 0.6875rem; color: var(--muted); font-family: var(--mono); }
+    .action-item-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .action-io-section { margin-bottom: 16px; }
+    .action-io-section h3 { font-size: 0.8125rem; font-weight: 600; margin-bottom: 8px; }
+    .action-io-section pre.viewer { max-height: 400px; }
 
     /* JSON syntax highlighting */
     pre.viewer .json-key { color: #89b4fa; }
@@ -972,10 +986,26 @@ export function renderHtml(): string {
           </div>
         </div>
         <div class="panel" id="flow-runs-panel" style="display:none">
-          <h2 style="margin-bottom:12px">Recent Runs</h2>
+          <h2 style="margin-bottom:12px">Runs</h2>
           <div id="flow-runs" class="card-list">
             <div class="empty">Select a flow to see runs.</div>
           </div>
+        </div>
+        <div class="panel" id="flow-actions-panel" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2>Run Actions</h2>
+            <button class="btn btn-ghost" id="flow-actions-back" type="button" style="font-size:0.75rem;padding:4px 10px">\u2190 Back to runs</button>
+          </div>
+          <div id="flow-run-summary" style="margin-bottom:12px"></div>
+          <div id="flow-actions" class="card-list"></div>
+        </div>
+        <div class="panel" id="flow-action-detail-panel" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 id="flow-action-title">Action Detail</h2>
+            <button class="btn btn-ghost" id="flow-action-back" type="button" style="font-size:0.75rem;padding:4px 10px">\u2190 Back to actions</button>
+          </div>
+          <div id="flow-action-metrics" class="metrics" style="margin-bottom:12px"></div>
+          <div id="flow-action-io"></div>
         </div>
       </div>
     </div>
