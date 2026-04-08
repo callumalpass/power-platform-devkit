@@ -100,16 +100,20 @@ export function initAutomate() {
         : { api: 'flow', method: 'GET', path: '/flows/' + flowIdentifier(currentFlow) }
     }))
   })
-  els.flowActionsBack.addEventListener('click', () => {
-    currentRun = null
-    currentActions = []
-    currentAction = null
-    showView('runs')
-  })
-  els.flowActionBack.addEventListener('click', () => {
-    currentAction = null
-    showView('actions')
-  })
+  if (els.flowActionsBack) {
+    els.flowActionsBack.addEventListener('click', () => {
+      currentRun = null
+      currentActions = []
+      currentAction = null
+      showView('runs')
+    })
+  }
+  if (els.flowActionBack) {
+    els.flowActionBack.addEventListener('click', () => {
+      currentAction = null
+      showView('actions')
+    })
+  }
   els.flowLanguageLoad.addEventListener('click', () => {
     if (!currentFlow) return
     loadSelectedFlowDefinition(currentFlow).catch((e) => toast(e.message, true))
