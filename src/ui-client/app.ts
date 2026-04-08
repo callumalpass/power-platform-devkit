@@ -11,6 +11,7 @@ import { initConsole } from '/assets/ui/console.js'
 import { initAutomate, loadFlows, resetFlows } from '/assets/ui/automate.js'
 import { initApps, loadApps, resetApps } from '/assets/ui/apps.js'
 import { initPlatform, loadPlatformEnvironments, resetPlatform } from '/assets/ui/platform.js'
+import { initRelationships, updateRelationshipsEntityList } from '/assets/ui/relationships.js'
 
 const globalEnv = document.getElementById('global-environment')
 let lastEnv = ''
@@ -69,6 +70,7 @@ async function loadWorkspaceData() {
       renderExplorerEntities()
       updateQueryContext()
       updateFetchContext()
+      updateRelationshipsEntityList()
       toast('Loaded ' + getDataverseState().entities.length + ' entities')
     } else if (activeWorkspace === 'automate') {
       if (container) hideLoading = showLoading(container, 'Loading flows\u2026')
@@ -217,6 +219,7 @@ function bootstrap() {
   initAutomate()
   initApps()
   initPlatform()
+  initRelationships()
   initDvSubTabs()
 
   refreshState(true).catch((error) => toast(error.message, true))

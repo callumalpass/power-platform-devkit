@@ -13,6 +13,7 @@ import { renderExplorerModule } from './ui-client/explorer.js';
 import { renderFetchXmlModule } from './ui-client/fetchxml.js';
 import { renderPlatformModule } from './ui-client/platform.js';
 import { renderQueryLabModule } from './ui-client/query-lab.js';
+import { renderRelationshipsModule } from './ui-client/relationships.js';
 import { renderRenderUtilsModule } from './ui-client/render-utils.js';
 import { renderRuntimeModule } from './ui-client/runtime.js';
 import { renderSetupModule } from './ui-client/setup.js';
@@ -38,6 +39,7 @@ const UI_ASSET_MODULES: Record<string, () => string> = {
   '/assets/ui/automate.js': renderAutomateModule,
   '/assets/ui/apps.js': renderAppsModule,
   '/assets/ui/platform.js': renderPlatformModule,
+  '/assets/ui/relationships.js': renderRelationshipsModule,
   '/assets/ui/app.js': renderAppModule,
 };
 

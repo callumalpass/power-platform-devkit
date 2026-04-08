@@ -440,6 +440,30 @@ export function renderHtml(): string {
     .action-io-section h3 { font-size: 0.8125rem; font-weight: 600; margin-bottom: 8px; }
     .action-io-section pre.viewer { max-height: 400px; }
 
+    /* Relationship graph */
+    .rel-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .rel-toolbar-group { display: flex; align-items: center; gap: 4px; }
+    .rel-toolbar-label { font-size: 0.6875rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .rel-toolbar-check { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--muted); cursor: pointer; user-select: none; }
+    .rel-toolbar-check input { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
+    .rel-canvas-container { position: relative; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); overflow: hidden; min-height: 500px; }
+    .rel-svg { width: 100%; height: 500px; cursor: grab; }
+    .rel-svg:active { cursor: grabbing; }
+    .rel-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 0.6875rem; color: var(--muted); background: var(--surface); padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); pointer-events: none; white-space: nowrap; }
+    .rel-edge line { stroke: var(--border); stroke-width: 1.5; }
+    .rel-edge:hover line { stroke: var(--accent); stroke-width: 2; }
+    .rel-arrowhead { fill: var(--border); }
+    .rel-edge:hover .rel-arrowhead { fill: var(--accent); }
+    .rel-edge-label { font-size: 9px; fill: var(--muted); text-anchor: middle; pointer-events: none; }
+    .rel-edge:hover .rel-edge-label { fill: var(--accent); }
+    .rel-node rect { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; cursor: pointer; transition: stroke 100ms; }
+    .rel-node:hover rect { stroke: var(--accent); stroke-width: 2; }
+    .rel-node.root rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+    .rel-node.custom rect { stroke: var(--ok); }
+    .rel-node-label { font-size: 11px; font-weight: 600; fill: var(--ink); text-anchor: middle; pointer-events: none; }
+    .rel-node-sub { font-size: 9px; fill: var(--muted); text-anchor: middle; pointer-events: none; font-family: var(--mono); }
+    .rel-tooltip { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 0.75rem; line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,0.12); pointer-events: none; z-index: 5; max-width: 280px; }
+
     /* JSON syntax highlighting */
     pre.viewer .json-key { color: #89b4fa; }
     pre.viewer .json-str { color: #a6e3a1; }
@@ -752,6 +776,7 @@ export function renderHtml(): string {
           <button class="sub-tab active" data-dvtab="dv-explorer">Explorer</button>
           <button class="sub-tab" data-dvtab="dv-query">Query</button>
           <button class="sub-tab" data-dvtab="dv-fetchxml">FetchXML</button>
+          <button class="sub-tab" data-dvtab="dv-relationships">Relationships</button>
         </div>
 
         <!-- Explorer sub-panel -->
@@ -958,6 +983,31 @@ export function renderHtml(): string {
             </div>
             <div id="fetch-result-table"></div>
             <pre class="viewer" id="fetch-result" style="display:none">Run FetchXML to see the response.</pre>
+          </div>
+        </div>
+
+        <!-- Relationships sub-panel -->
+        <div class="dv-subpanel" id="dv-subpanel-dv-relationships">
+          <div class="panel" style="padding:14px">
+            <div class="rel-toolbar">
+              <select id="rel-entity" style="max-width:240px"></select>
+              <div class="rel-toolbar-group">
+                <label class="rel-toolbar-label">Depth</label>
+                <select id="rel-depth" style="width:60px">
+                  <option value="1">1</option>
+                  <option value="2" selected>2</option>
+                  <option value="3">3</option>
+                </select>
+              </div>
+              <label class="rel-toolbar-check"><input type="checkbox" id="rel-hide-system" checked> Hide system</label>
+              <button class="btn btn-primary" id="rel-load" style="padding:5px 14px;font-size:0.75rem">Load Graph</button>
+              <span id="rel-status" style="font-size:0.6875rem;color:var(--muted);margin-left:auto"></span>
+            </div>
+            <div class="rel-canvas-container" id="rel-container">
+              <svg id="rel-svg" class="rel-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+              <div id="rel-tooltip" class="rel-tooltip hidden"></div>
+              <div class="rel-hint">Select an entity and click Load Graph. Drag nodes to rearrange. Double-click to expand. Scroll to zoom. Click+drag background to pan.</div>
+            </div>
           </div>
         </div>
       </div>
