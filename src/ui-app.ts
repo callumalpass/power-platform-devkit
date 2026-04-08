@@ -463,7 +463,7 @@ export function renderHtml(): string {
     .rel-node.custom rect { stroke: var(--ok); }
     .rel-node-label { font-size: 11px; font-weight: 600; fill: var(--ink); text-anchor: middle; pointer-events: none; }
     .rel-node-sub { font-size: 9px; fill: var(--muted); text-anchor: middle; pointer-events: none; font-family: var(--mono); }
-    .rel-tooltip { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 0.75rem; line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,0.12); pointer-events: none; z-index: 5; max-width: 280px; }
+    .rel-tooltip { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 0.75rem; line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 5; max-width: 280px; }
 
     /* JSON syntax highlighting */
     pre.viewer .json-key { color: #89b4fa; }
@@ -1007,7 +1007,7 @@ export function renderHtml(): string {
             <div class="rel-canvas-container" id="rel-container">
               <svg id="rel-svg" class="rel-svg" xmlns="http://www.w3.org/2000/svg"></svg>
               <div id="rel-tooltip" class="rel-tooltip hidden"></div>
-              <div class="rel-hint">Select an entity and click Load Graph. Drag nodes to rearrange. Double-click to expand. Scroll to zoom. Click+drag background to pan.</div>
+              <div class="rel-hint">Select an entity and click Load Graph. Click a node to expand or explore. Drag to rearrange. Scroll to zoom.</div>
             </div>
           </div>
         </div>

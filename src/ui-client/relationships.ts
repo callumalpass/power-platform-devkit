@@ -31,8 +31,6 @@ let viewBox = { x: -500, y: -400, w: 1000, h: 800 }
 let isPanning = false
 let panStart = { x: 0, y: 0 }
 let panViewStart = { x: 0, y: 0 }
-let lastClickTime = 0
-let lastClickNodeId = null
 let needsRender = false
 let dragMoved = false
 
@@ -272,9 +270,23 @@ function showTooltip(node, event) {
   if (node.entitySetName) html += '<br><span style="color:var(--accent);font-size:0.6875rem">' + esc(node.entitySetName) + '</span>'
   if (outEdges.length) html += '<br><span style="font-size:0.625rem;color:var(--muted)">References: ' + outEdges.map(e => esc(e.label)).join(', ') + '</span>'
   if (inEdges.length) html += '<br><span style="font-size:0.625rem;color:var(--muted)">Referenced by: ' + inEdges.map(e => esc(e.source + '.' + e.label)).join(', ') + '</span>'
-  html += '<br><span style="font-size:0.625rem;color:var(--accent)">Double-click to expand \u00b7 Drag to move</span>'
+  html += '<div style="margin-top:6px;display:flex;gap:6px">' +
+    '<button class="btn btn-primary" data-expand-node="' + esc(node.id) + '" style="font-size:0.6875rem;padding:3px 10px">Expand</button>' +
+    '<button class="btn btn-ghost" data-explore-node="' + esc(node.id) + '" style="font-size:0.6875rem;padding:3px 10px">Open in Explorer</button>' +
+  '</div>'
   els.tooltip.innerHTML = html
   els.tooltip.classList.remove('hidden')
+  els.tooltip.style.pointerEvents = 'auto'
+
+  els.tooltip.querySelector('[data-expand-node]').addEventListener('click', () => {
+    els.tooltip.classList.add('hidden')
+    expandNode(node).catch(err => toast(err.message, true))
+  })
+  els.tooltip.querySelector('[data-explore-node]').addEventListener('click', () => {
+    els.tooltip.classList.add('hidden')
+    window.dispatchEvent(new CustomEvent('pp:navigate-entity', { detail: { entity: node.id } }))
+  })
+
   const rect = els.container.getBoundingClientRect()
   let tx = event.clientX - rect.left + 12
   let ty = event.clientY - rect.top + 12
@@ -333,17 +345,7 @@ function onMouseUp(e) {
   if (dragNode && !dragMoved) {
     const node = dragNode
     dragNode = null
-    const now = Date.now()
-    if (lastClickNodeId === node.id && now - lastClickTime < 400) {
-      lastClickTime = 0
-      lastClickNodeId = null
-      els.tooltip.classList.add('hidden')
-      expandNode(node).catch(err => toast(err.message, true))
-    } else {
-      lastClickTime = now
-      lastClickNodeId = node.id
-      showTooltip(node, e)
-    }
+    showTooltip(node, e)
     return
   }
   dragNode = null
