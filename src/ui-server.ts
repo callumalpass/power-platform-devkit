@@ -745,8 +745,26 @@ async function readJsonBody(request: IncomingMessage): Promise<OperationResult<R
 }
 
 function sendJson(response: ServerResponse, status: number, body: OperationResult<unknown>): void {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-  response.end(`${JSON.stringify(body, null, 2)}\n`);
+  let json: string;
+  try {
+    json = JSON.stringify(body, null, 2);
+  } catch (error) {
+    // Fall back to compact serialization if pretty-print fails (e.g. circular refs)
+    try {
+      json = JSON.stringify(body);
+    } catch {
+      json = JSON.stringify({
+        success: false,
+        diagnostics: [{ level: 'error', code: 'SERIALIZE_ERROR', message: 'Failed to serialize response.', source: 'pp/ui' }],
+      });
+    }
+  }
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(json, 'utf8').toString(),
+  });
+  response.end(json);
 }
 
 function sendJavaScript(response: ServerResponse, source: string): void {

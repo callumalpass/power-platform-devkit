@@ -650,7 +650,13 @@ async function waitForLoginJob(jobId) {
   while (true) {
     await new Promise((resolve) => setTimeout(resolve, 1200))
     const response = await fetch('/api/jobs/' + encodeURIComponent(jobId), { headers: { 'content-type': 'application/json' } })
-    const payload = await response.json()
+    const text = await response.text()
+    let payload
+    try { payload = JSON.parse(text) }
+    catch (e) {
+      console.warn('Job poll parse error (length=' + text.length + '):', e.message)
+      continue
+    }
     const job = payload.data
     if (job && job.metadata) {
       if (Array.isArray(job.metadata.loginTargets)) {
