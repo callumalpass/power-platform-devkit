@@ -1,6 +1,6 @@
 export function renderAppModule(): string {
   return String.raw`
-import { app, api, applyAccountKindVisibility, renderMeta, optionMarkup, getGlobalEnvironment, loadEntities, setTab, toast } from '/assets/ui/shared.js'
+import { app, api, applyAccountKindVisibility, renderMeta, optionMarkup, getGlobalEnvironment, loadEntities, setTab, showLoading, toast } from '/assets/ui/shared.js'
 import { initSetup, renderSetupState, runInitialHealthChecks } from '/assets/ui/setup.js'
 import { initExplorer, renderExplorerEntities } from '/assets/ui/explorer.js'
 import { initQueryLab, useEntityInQuery, updateQueryContext } from '/assets/ui/query-lab.js'
@@ -15,6 +15,13 @@ let lastEnv = ''
 let activeWorkspace = 'dataverse'
 let entitiesNeedReload = true
 
+const workspaceContainers = {
+  dataverse: () => document.getElementById('dv-workspace-area'),
+  automate: () => document.querySelector('#panel-automate .detail-area'),
+  apps: () => document.querySelector('#panel-apps .detail-area'),
+  platform: () => document.querySelector('#panel-platform .detail-area')
+}
+
 async function refreshState(silent) {
   const payload = await api('/api/state')
   app.state = payload
@@ -28,6 +35,7 @@ async function refreshState(silent) {
   else if (environments.length) globalEnv.value = environments[0]
 
   runInitialHealthChecks(payload.data)
+  updateEmptyStates(payload.data)
   if (!silent) toast('State refreshed')
   await onEnvironmentChange()
 }
@@ -46,8 +54,13 @@ async function onEnvironmentChange() {
 }
 
 async function loadWorkspaceData() {
+  const containerFn = workspaceContainers[activeWorkspace]
+  const container = containerFn && containerFn()
+  let hideLoading = null
+
   try {
     if (activeWorkspace === 'dataverse' && entitiesNeedReload) {
+      if (container) hideLoading = showLoading(container, 'Loading entities\u2026')
       await loadEntities(getGlobalEnvironment())
       entitiesNeedReload = false
       renderExplorerEntities()
@@ -55,14 +68,61 @@ async function loadWorkspaceData() {
       updateFetchContext()
       toast('Loaded ' + app.entities.length + ' entities')
     } else if (activeWorkspace === 'automate') {
+      if (container) hideLoading = showLoading(container, 'Loading flows\u2026')
       await loadFlows()
     } else if (activeWorkspace === 'apps') {
+      if (container) hideLoading = showLoading(container, 'Loading apps\u2026')
       await loadApps()
     } else if (activeWorkspace === 'platform') {
+      if (container) hideLoading = showLoading(container, 'Loading environments\u2026')
       await loadPlatformEnvironments()
     }
   } catch (err) {
     toast(err.message, true)
+  } finally {
+    if (hideLoading) hideLoading()
+  }
+}
+
+function updateEmptyStates(data) {
+  const hasAccounts = (data.accounts || []).length > 0
+  const hasEnvs = (data.environments || []).length > 0
+  const emptyContainers = document.querySelectorAll('[data-empty-cta]')
+  for (const el of emptyContainers) el.remove()
+
+  if (!hasAccounts) {
+    const panels = ['panel-dataverse', 'panel-automate', 'panel-apps', 'panel-platform', 'panel-console']
+    for (const panelId of panels) {
+      const panel = document.getElementById(panelId)
+      if (!panel) continue
+      const existing = panel.querySelector('.empty-cta')
+      if (existing) existing.remove()
+      const cta = document.createElement('div')
+      cta.className = 'empty-cta'
+      cta.setAttribute('data-empty-cta', '')
+      cta.innerHTML = '<div class="empty-cta-icon">\u{1F511}</div><p>No accounts configured yet.<br>Add an account in Setup to get started.</p>' +
+        '<button class="btn btn-primary" data-goto-setup>Go to Setup</button>'
+      cta.querySelector('[data-goto-setup]').addEventListener('click', () => {
+        origSetTab('setup')
+        document.getElementById('add-account-section').open = true
+      })
+      panel.prepend(cta)
+    }
+  } else if (!hasEnvs) {
+    const panels = ['panel-dataverse', 'panel-automate', 'panel-apps', 'panel-platform']
+    for (const panelId of panels) {
+      const panel = document.getElementById(panelId)
+      if (!panel) continue
+      const existing = panel.querySelector('.empty-cta')
+      if (existing) existing.remove()
+      const cta = document.createElement('div')
+      cta.className = 'empty-cta'
+      cta.setAttribute('data-empty-cta', '')
+      cta.innerHTML = '<div class="empty-cta-icon">\u{1F310}</div><p>No environments configured.<br>Add an environment in Setup to start exploring.</p>' +
+        '<button class="btn btn-primary" data-goto-setup>Go to Setup</button>'
+      cta.querySelector('[data-goto-setup]').addEventListener('click', () => origSetTab('setup'))
+      panel.prepend(cta)
+    }
   }
 }
 
@@ -89,11 +149,12 @@ function onTabChange(tabName) {
   }
 }
 
+let origSetTab
+
 // Listen for pp:open-console custom events from workspace modules
 window.addEventListener('pp:open-console', (e) => {
   const detail = e.detail || {}
-  setTab('console')
-  onTabChange('console')
+  origSetTab('console')
   if (detail.api) {
     const apiSelect = document.getElementById('console-api')
     if (apiSelect) apiSelect.value = detail.api
@@ -110,9 +171,24 @@ window.addEventListener('pp:open-console', (e) => {
   }
 })
 
+// Listen for record link clicks to navigate to Explorer
+document.body.addEventListener('click', (e) => {
+  const link = e.target.closest('.record-link')
+  if (!link) return
+  const entity = link.dataset.entity
+  if (entity) {
+    origSetTab('dataverse')
+    // Switch to explorer sub-tab
+    const area = document.getElementById('dv-workspace-area')
+    if (area) {
+      area.querySelectorAll('.dv-sub-nav .sub-tab').forEach((t) => t.classList.toggle('active', t.dataset.dvtab === 'dv-explorer'))
+      area.querySelectorAll('.dv-subpanel').forEach((p) => p.classList.toggle('active', p.id === 'dv-subpanel-dv-explorer'))
+    }
+  }
+})
+
 function bootstrap() {
-  // Wrap registerTabHandlers to hook into tab changes
-  const origSetTab = (tab) => {
+  origSetTab = (tab) => {
     for (const el of document.querySelectorAll('.tab')) el.classList.toggle('active', el.dataset.tab === tab)
     for (const el of document.querySelectorAll('.tab-panel')) el.classList.toggle('active', el.id === 'panel-' + tab)
     window.location.hash = tab

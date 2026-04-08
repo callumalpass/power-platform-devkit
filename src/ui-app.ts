@@ -414,6 +414,56 @@ export function renderHtml(): string {
     .run-status { font-weight: 500; }
     .run-time { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
 
+    /* JSON syntax highlighting */
+    pre.viewer .json-key { color: #89b4fa; }
+    pre.viewer .json-str { color: #a6e3a1; }
+    pre.viewer .json-num { color: #fab387; }
+    pre.viewer .json-bool { color: #cba6f7; }
+    pre.viewer .json-null { color: #6c7086; font-style: italic; }
+
+    /* Result table */
+    .result-table-wrap { overflow: auto; max-height: 500px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .result-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+    .result-table th { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); z-index: 1; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .result-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); font-family: var(--mono); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .result-table tr:hover td { background: var(--bg); }
+    .result-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 10px; }
+    .result-toggle-btn { padding: 5px 14px; font-size: 0.6875rem; font-weight: 500; cursor: pointer; border: none; background: none; color: var(--muted); transition: all 100ms; }
+    .result-toggle-btn:hover { color: var(--ink); }
+    .result-toggle-btn.active { background: var(--accent-soft); color: var(--accent); }
+
+    /* Record links */
+    .record-link { color: var(--accent); cursor: pointer; }
+    .record-link:hover { text-decoration: underline; }
+
+    /* Loading / skeleton */
+    .workspace-loading { display: flex; align-items: center; justify-content: center; padding: 48px 20px; color: var(--muted); font-size: 0.8125rem; gap: 10px; }
+    .workspace-loading .spinner { width: 18px; height: 18px; }
+
+    /* Empty state with CTA */
+    .empty-cta { text-align: center; padding: 40px 20px; }
+    .empty-cta-icon { font-size: 1.5rem; margin-bottom: 8px; color: var(--muted); }
+    .empty-cta p { color: var(--muted); font-size: 0.8125rem; margin-bottom: 12px; line-height: 1.5; }
+
+    /* Token expiry */
+    .token-expiry { font-size: 0.625rem; color: var(--muted); font-family: var(--mono); margin-left: 4px; }
+    .token-expiry.expiring-soon { color: #d97706; }
+    .token-expiry.expired { color: var(--danger); }
+
+    /* Response toolbar */
+    .response-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .response-meta { display: flex; align-items: center; gap: 12px; }
+    .response-size { font-size: 0.6875rem; color: var(--muted); font-family: var(--mono); }
+
+    /* Saved requests */
+    .saved-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: background 80ms; gap: 10px; }
+    .saved-item:hover { background: var(--bg); }
+    .saved-item-main { display: flex; align-items: center; gap: 10px; min-width: 0; overflow: hidden; }
+    .saved-item-name { font-size: 0.75rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pin-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 0.875rem; padding: 2px 4px; line-height: 1; }
+    .pin-btn:hover { color: var(--accent); }
+    .pin-btn.pinned { color: var(--accent); }
+
     /* Setup add sections */
     .setup-add-section { margin-top: 14px; border: 1px dashed var(--border); border-radius: var(--radius-sm); }
     .setup-add-section[open] { border-style: solid; }
@@ -639,7 +689,17 @@ export function renderHtml(): string {
           <summary style="cursor:pointer;font-size:0.75rem;color:var(--muted)">Response Headers</summary>
           <pre class="viewer" id="console-response-headers-body" style="min-height:40px;margin-top:6px"></pre>
         </details>
+        <div class="response-toolbar">
+          <div class="response-meta">
+            <span id="console-response-size" class="response-size"></span>
+          </div>
+          <button class="btn btn-ghost" id="console-copy-response" type="button" style="font-size:0.75rem;padding:4px 10px">Copy</button>
+        </div>
         <pre class="viewer" id="console-response-body">Send a request to see the response.</pre>
+      </div>
+      <div class="panel" id="console-saved-panel" style="display:none">
+        <h2 style="margin-bottom:12px">Saved Requests</h2>
+        <div id="console-saved" class="card-list"></div>
       </div>
       <div class="panel">
         <h2 style="margin-bottom:12px">History</h2>
@@ -711,7 +771,12 @@ export function renderHtml(): string {
                   <button class="btn btn-secondary" id="entity-refresh-records" type="button">Refresh</button>
                 </div>
                 <div id="record-preview-path" style="font-family:var(--mono);font-size:0.75rem;color:var(--muted);margin-bottom:8px"></div>
-                <pre class="viewer" id="record-preview-json">Select an entity to preview records.</pre>
+                <div class="result-toggle" id="record-preview-toggle" style="margin-top:8px">
+                  <button class="result-toggle-btn active" data-view="table">Table</button>
+                  <button class="result-toggle-btn" data-view="json">JSON</button>
+                </div>
+                <div id="record-preview-table"></div>
+                <pre class="viewer" id="record-preview-json" style="display:none">Select an entity to preview records.</pre>
               </div>
             </div>
           </div>
@@ -769,8 +834,15 @@ export function renderHtml(): string {
             <pre class="viewer" id="query-preview">Preview a Dataverse path here.</pre>
           </div>
           <div class="panel">
-            <h2>Query Result</h2>
-            <pre class="viewer" id="query-result">Run a query to see the response.</pre>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <h2>Query Result</h2>
+              <div class="result-toggle" id="query-result-toggle">
+                <button class="result-toggle-btn active" data-view="table">Table</button>
+                <button class="result-toggle-btn" data-view="json">JSON</button>
+              </div>
+            </div>
+            <div id="query-result-table"></div>
+            <pre class="viewer" id="query-result" style="display:none">Run a query to see the response.</pre>
           </div>
         </div>
 
@@ -851,8 +923,15 @@ export function renderHtml(): string {
             </form>
           </div>
           <div class="panel">
-            <h2>FetchXML Result</h2>
-            <pre class="viewer" id="fetch-result">Run FetchXML to see the response.</pre>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <h2>FetchXML Result</h2>
+              <div class="result-toggle" id="fetch-result-toggle">
+                <button class="result-toggle-btn active" data-view="table">Table</button>
+                <button class="result-toggle-btn" data-view="json">JSON</button>
+              </div>
+            </div>
+            <div id="fetch-result-table"></div>
+            <pre class="viewer" id="fetch-result" style="display:none">Run FetchXML to see the response.</pre>
           </div>
         </div>
       </div>

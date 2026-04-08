@@ -9,7 +9,7 @@ import { getCM, vim } from '@replit/codemirror-vim'
 import { searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view'
-import { app, api, esc, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, getSelectableAttributes, updateEntityContext, toast } from '/assets/ui/shared.js'
+import { app, api, esc, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, getSelectableAttributes, updateEntityContext, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
 
 const OPERATORS = [
   'eq', 'ne', 'gt', 'ge', 'lt', 'le',
@@ -32,6 +32,8 @@ const els = {
   previewButton: document.getElementById('fetch-preview-btn'),
   runButton: document.getElementById('fetch-run-btn'),
   result: document.getElementById('fetch-result'),
+  resultTable: document.getElementById('fetch-result-table'),
+  resultToggle: document.getElementById('fetch-result-toggle'),
   raw: document.getElementById('fetch-raw'),
   editorMount: document.getElementById('fetch-editor'),
   diagnostics: document.getElementById('fetch-diagnostics'),
@@ -57,6 +59,8 @@ let selectedAttrs = new Set()
 let conditionCount = 0
 let linkCount = 0
 const linkDetails = {}
+let lastFetchResultData = null
+let fetchResultView = 'table'
 
 const diagnosticsCompartment = new Compartment()
 let editorView = null
@@ -95,11 +99,20 @@ export function initFetchXml() {
   els.runButton.addEventListener('click', async () => {
     try {
       const payload = await api('/api/dv/fetchxml/execute', { method: 'POST', body: JSON.stringify(readRunPayload()) })
-      els.result.textContent = JSON.stringify(payload.data, null, 2)
+      lastFetchResultData = payload.data
+      renderFetchResult()
       toast('FetchXML executed')
     } catch (error) {
       toast(error.message, true)
     }
+  })
+
+  els.resultToggle.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-view]')
+    if (!btn) return
+    fetchResultView = btn.dataset.view
+    els.resultToggle.querySelectorAll('.result-toggle-btn').forEach((b) => b.classList.toggle('active', b === btn))
+    renderFetchResult()
   })
 
   els.previewButton.addEventListener('click', async () => {
@@ -611,6 +624,21 @@ function readRunPayload() {
     }
   }
   return readFormPayload()
+}
+
+function renderFetchResult() {
+  if (!lastFetchResultData) return
+  const records = lastFetchResultData.records || []
+  const entityName = lastFetchResultData.logicalName || ''
+  if (fetchResultView === 'table' && records.length) {
+    els.resultTable.innerHTML = renderResultTable(records, entityName)
+    els.resultTable.style.display = ''
+    els.result.style.display = 'none'
+  } else {
+    els.resultTable.style.display = 'none'
+    els.result.style.display = ''
+    els.result.innerHTML = highlightJson(lastFetchResultData)
+  }
 }
 `;
 }

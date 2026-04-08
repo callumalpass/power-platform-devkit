@@ -1,6 +1,6 @@
 export function renderSetupModule(): string {
   return String.raw`
-import { app, api, applyAccountKindVisibility, esc, formDataObject, optionMarkup, setBtnLoading, summarizeError, toast } from '/assets/ui/shared.js'
+import { app, api, applyAccountKindVisibility, esc, formDataObject, formatTimeRemaining, optionMarkup, setBtnLoading, summarizeError, toast } from '/assets/ui/shared.js'
 
 const HEALTH_APIS = ['dv', 'flow', 'graph', 'bap', 'powerapps']
 
@@ -158,9 +158,13 @@ function renderDeviceCode() {
 }
 
 function tokenDotHtml(accountName) {
-  const status = tokenStatus[accountName]
-  if (status === undefined) return '<span class="health-dot pending" title="Checking\u2026"></span>'
-  if (status === true) return '<span class="health-dot ok" title="Authenticated"></span>'
+  const info = tokenStatus[accountName]
+  if (info === undefined) return '<span class="health-dot pending" title="Checking\u2026"></span>'
+  if (info && info.authenticated) {
+    const expiry = formatTimeRemaining(info.expiresAt)
+    const expiryHtml = expiry ? ' <span class="token-expiry ' + (expiry.cls || '') + '">' + esc(expiry.text) + '</span>' : ''
+    return '<span class="health-dot ok" title="Authenticated"></span>' + expiryHtml
+  }
   return '<span class="health-dot error" title="Not authenticated"></span>'
 }
 
@@ -171,11 +175,11 @@ function checkTokenStatuses(accounts) {
     fetch('/api/accounts/token-status?account=' + encodeURIComponent(a.name), { headers: { 'content-type': 'application/json' } })
       .then((r) => r.json())
       .then((data) => {
-        tokenStatus[a.name] = data.success && data.data && data.data.authenticated
+        tokenStatus[a.name] = data.success && data.data ? data.data : { authenticated: false }
         updateAccountDot(a.name)
       })
       .catch(() => {
-        tokenStatus[a.name] = false
+        tokenStatus[a.name] = { authenticated: false }
         updateAccountDot(a.name)
       })
   }

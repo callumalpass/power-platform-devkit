@@ -1,6 +1,6 @@
 export function renderQueryLabModule(): string {
   return String.raw`
-import { app, api, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, updateEntityContext, toast } from '/assets/ui/shared.js'
+import { app, api, formDataObject, getDefaultSelectedColumns, getGlobalEnvironment, updateEntityContext, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
 
 const els = {
   form: document.getElementById('query-form'),
@@ -8,11 +8,16 @@ const els = {
   runButton: document.getElementById('query-run-btn'),
   preview: document.getElementById('query-preview'),
   result: document.getElementById('query-result'),
+  resultTable: document.getElementById('query-result-table'),
+  resultToggle: document.getElementById('query-result-toggle'),
   entitySet: document.getElementById('query-entity-set'),
   select: document.getElementById('query-select'),
   order: document.getElementById('query-order'),
   entityContext: document.getElementById('query-entity-context')
 }
+
+let lastResultData = null
+let resultView = 'table'
 
 export function initQueryLab() {
   els.previewButton.addEventListener('click', async () => {
@@ -27,13 +32,37 @@ export function initQueryLab() {
   els.runButton.addEventListener('click', async () => {
     try {
       const payload = await api('/api/dv/query/execute', { method: 'POST', body: JSON.stringify(readQueryPayload()) })
-      els.result.textContent = JSON.stringify(payload.data, null, 2)
+      lastResultData = payload.data
       if (payload.data && payload.data.path) els.preview.textContent = payload.data.path
+      renderResult()
       toast('Query executed')
     } catch (error) {
       toast(error.message, true)
     }
   })
+
+  els.resultToggle.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-view]')
+    if (!btn) return
+    resultView = btn.dataset.view
+    els.resultToggle.querySelectorAll('.result-toggle-btn').forEach((b) => b.classList.toggle('active', b === btn))
+    renderResult()
+  })
+}
+
+function renderResult() {
+  if (!lastResultData) return
+  const records = lastResultData.records || []
+  const entityName = lastResultData.logicalName || ''
+  if (resultView === 'table' && records.length) {
+    els.resultTable.innerHTML = renderResultTable(records, entityName)
+    els.resultTable.style.display = ''
+    els.result.style.display = 'none'
+  } else {
+    els.resultTable.style.display = 'none'
+    els.result.style.display = ''
+    els.result.innerHTML = highlightJson(lastResultData)
+  }
 }
 
 export function useEntityInQuery(detail) {

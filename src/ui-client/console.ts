@@ -1,6 +1,6 @@
 export function renderConsoleModule(): string {
   return String.raw`
-import { app, api, esc, getGlobalEnvironment, setBtnLoading, toast } from '/assets/ui/shared.js'
+import { app, api, esc, getGlobalEnvironment, setBtnLoading, highlightJson, copyToClipboard, formatBytes, toast } from '/assets/ui/shared.js'
 
 const APIS = [
   {
@@ -67,12 +67,30 @@ const els = {
   responseTime: document.getElementById('console-response-time'),
   responseBody: document.getElementById('console-response-body'),
   responseHeadersEl: document.getElementById('console-response-headers-body'),
+  responseSize: document.getElementById('console-response-size'),
+  copyResponse: document.getElementById('console-copy-response'),
   historyList: document.getElementById('console-history'),
+  savedPanel: document.getElementById('console-saved-panel'),
+  savedList: document.getElementById('console-saved'),
   bodySection: document.getElementById('console-body-section'),
   scopeHint: document.getElementById('console-scope-hint')
 }
 
-const history = []
+let history = []
+let savedRequests = []
+
+function loadPersistedState() {
+  try { history = JSON.parse(localStorage.getItem('pp-console-history') || '[]') } catch { history = [] }
+  try { savedRequests = JSON.parse(localStorage.getItem('pp-console-saved') || '[]') } catch { savedRequests = [] }
+}
+
+function persistHistory() {
+  try { localStorage.setItem('pp-console-history', JSON.stringify(history.slice(0, 50))) } catch {}
+}
+
+function persistSaved() {
+  try { localStorage.setItem('pp-console-saved', JSON.stringify(savedRequests.slice(0, 30))) } catch {}
+}
 
 export function initConsole() {
   els.apiSelect.innerHTML = APIS.map(a =>
@@ -123,6 +141,15 @@ export function initConsole() {
 
   els.addQueryParam.addEventListener('click', () => addKvRow(els.queryParams))
   els.addHeader.addEventListener('click', () => addKvRow(els.headersContainer))
+
+  els.copyResponse.addEventListener('click', () => {
+    const text = els.responseBody.textContent || ''
+    if (text && text !== 'Send a request to see the response.') copyToClipboard(text, 'Response copied')
+  })
+
+  loadPersistedState()
+  renderHistory()
+  renderSaved()
 
   const firstApi = APIS[0]
   if (firstApi) {
@@ -252,7 +279,9 @@ function renderResponse(status, elapsed, body, headers) {
   }
 
   els.responseTime.textContent = elapsed + 'ms'
-  els.responseBody.textContent = typeof body === 'string' ? body : JSON.stringify(body, null, 2)
+  const bodyStr = typeof body === 'string' ? body : JSON.stringify(body, null, 2)
+  els.responseBody.innerHTML = highlightJson(bodyStr)
+  els.responseSize.textContent = formatBytes(new Blob([bodyStr]).size)
 
   if (headers && Object.keys(headers).length) {
     els.responseHeadersEl.textContent = Object.entries(headers).map(([k, v]) => k + ': ' + v).join('\n')
@@ -265,6 +294,7 @@ function renderResponse(status, elapsed, body, headers) {
 function addHistoryEntry(entry) {
   history.unshift(entry)
   if (history.length > 50) history.pop()
+  persistHistory()
   renderHistory()
 }
 
@@ -273,8 +303,10 @@ function renderHistory() {
     els.historyList.innerHTML = '<div class="empty">No requests yet.</div>'
     return
   }
+  const isPinned = (h) => savedRequests.some((s) => s.api === h.api && s.method === h.method && s.path === h.path)
   els.historyList.innerHTML = history.slice(0, 20).map((h, i) => {
     const statusCls = h.status >= 200 && h.status < 300 ? 'success' : h.status >= 400 ? 'error' : ''
+    const pinned = isPinned(h)
     return '<div class="history-item" data-history-idx="' + i + '">' +
       '<div class="history-item-main">' +
         '<span class="history-method ' + esc(h.method.toLowerCase()) + '">' + esc(h.method) + '</span>' +
@@ -284,27 +316,82 @@ function renderHistory() {
         '<span class="console-status-badge small ' + statusCls + '">' + (h.status || 'ERR') + '</span>' +
         '<span class="history-time">' + h.elapsed + 'ms</span>' +
         '<span class="history-api">' + esc(h.api) + '</span>' +
+        '<button class="pin-btn' + (pinned ? ' pinned' : '') + '" data-pin-idx="' + i + '" title="' + (pinned ? 'Unpin' : 'Save request') + '">\u2606</button>' +
       '</div>' +
     '</div>'
   }).join('')
 
   els.historyList.onclick = (e) => {
+    const pinBtn = e.target.closest('[data-pin-idx]')
+    if (pinBtn) {
+      const idx = parseInt(pinBtn.dataset.pinIdx, 10)
+      const entry = history[idx]
+      if (!entry) return
+      const existingIdx = savedRequests.findIndex((s) => s.api === entry.api && s.method === entry.method && s.path === entry.path)
+      if (existingIdx >= 0) {
+        savedRequests.splice(existingIdx, 1)
+      } else {
+        savedRequests.unshift({ api: entry.api, method: entry.method, path: entry.path, name: entry.method + ' ' + entry.path })
+      }
+      persistSaved()
+      renderSaved()
+      renderHistory()
+      return
+    }
     const item = e.target.closest('[data-history-idx]')
     if (!item) return
     const idx = parseInt(item.dataset.historyIdx, 10)
     const entry = history[idx]
     if (!entry) return
-    els.apiSelect.value = entry.api
-    els.methodSelect.value = entry.method
-    els.pathInput.value = entry.path
-    updateMethodColor()
-    updateBodyVisibility()
-    const a = currentApi()
-    if (a) {
-      populatePresets(a)
-      updateScopeHint(a)
+    applyRequest(entry)
+  }
+}
+
+function applyRequest(entry) {
+  els.apiSelect.value = entry.api
+  els.methodSelect.value = entry.method
+  els.pathInput.value = entry.path
+  updateMethodColor()
+  updateBodyVisibility()
+  const a = currentApi()
+  if (a) {
+    populatePresets(a)
+    updateScopeHint(a)
+  }
+}
+
+function renderSaved() {
+  if (!savedRequests.length) {
+    els.savedPanel.style.display = 'none'
+    return
+  }
+  els.savedPanel.style.display = ''
+  els.savedList.innerHTML = savedRequests.map((s, i) =>
+    '<div class="saved-item" data-saved-idx="' + i + '">' +
+      '<div class="saved-item-main">' +
+        '<span class="history-method ' + esc(s.method.toLowerCase()) + '">' + esc(s.method) + '</span>' +
+        '<span class="saved-item-name">' + esc(s.path) + '</span>' +
+        '<span class="history-api">' + esc(s.api) + '</span>' +
+      '</div>' +
+      '<button class="pin-btn pinned" data-unsave-idx="' + i + '" title="Remove">\u2716</button>' +
+    '</div>'
+  ).join('')
+
+  els.savedList.onclick = (e) => {
+    const unsaveBtn = e.target.closest('[data-unsave-idx]')
+    if (unsaveBtn) {
+      savedRequests.splice(parseInt(unsaveBtn.dataset.unsaveIdx, 10), 1)
+      persistSaved()
+      renderSaved()
+      renderHistory()
+      return
     }
+    const item = e.target.closest('[data-saved-idx]')
+    if (!item) return
+    const entry = savedRequests[parseInt(item.dataset.savedIdx, 10)]
+    if (entry) applyRequest(entry)
   }
 }
 `;
 }
+

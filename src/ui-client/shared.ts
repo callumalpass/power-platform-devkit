@@ -240,5 +240,75 @@ export function updateEntityContext(contextEl, detail) {
     '<span class="entity-context-name">' + esc(detail.displayName || detail.logicalName) + '</span>' +
     (detail.entitySetName ? '<span class="entity-context-set">' + esc(detail.entitySetName) + '</span>' : '')
 }
+
+export function highlightJson(value) {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  if (!raw) return ''
+  return esc(raw)
+    .replace(/"([^"\\\\]|\\\\.)*"\s*:/g, (m) => '<span class="json-key">' + m + '</span>')
+    .replace(/:\s*"([^"\\\\]|\\\\.)*"/g, (m) => ': <span class="json-str">' + m.slice(m.indexOf('"')) + '</span>')
+    .replace(/:\s*(-?\d+\.?\d*([eE][+-]?\d+)?)\b/g, (m, n) => ': <span class="json-num">' + n + '</span>')
+    .replace(/:\s*(true|false)\b/g, (m, b) => ': <span class="json-bool">' + b + '</span>')
+    .replace(/:\s*(null)\b/g, (m, n) => ': <span class="json-null">' + n + '</span>')
+}
+
+export function renderResultTable(records, entityLogicalName) {
+  if (!Array.isArray(records) || !records.length) return ''
+  const allKeys = []
+  const seen = new Set()
+  for (const row of records) {
+    for (const key of Object.keys(row)) {
+      if (key.startsWith('@odata') || key.startsWith('_') && key.endsWith('_value')) continue
+      if (!seen.has(key)) { seen.add(key); allKeys.push(key) }
+    }
+  }
+  if (!allKeys.length) return ''
+  const head = '<thead><tr>' + allKeys.map((k) => '<th>' + esc(k) + '</th>').join('') + '</tr></thead>'
+  const body = '<tbody>' + records.map((row) =>
+    '<tr>' + allKeys.map((k) => {
+      const val = row[k]
+      const display = val == null ? '' : typeof val === 'object' ? JSON.stringify(val) : String(val)
+      const isId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(display)
+      const inner = isId && entityLogicalName
+        ? '<span class="record-link" data-entity="' + esc(entityLogicalName) + '" data-id="' + esc(display) + '">' + esc(display) + '</span>'
+        : esc(display)
+      return '<td>' + inner + '</td>'
+    }).join('') + '</tr>'
+  ).join('') + '</tbody>'
+  return '<div class="result-table-wrap"><table class="result-table">' + head + body + '</table></div>'
+}
+
+export function copyToClipboard(text, label) {
+  navigator.clipboard.writeText(text).then(
+    () => toast((label || 'Copied') + ' to clipboard'),
+    () => toast('Failed to copy', true)
+  )
+}
+
+export function formatTimeRemaining(expiresAt) {
+  if (!expiresAt) return null
+  const exp = expiresAt > 1e12 ? expiresAt : expiresAt * 1000
+  const diff = exp - Date.now()
+  if (diff <= 0) return { text: 'expired', cls: 'expired' }
+  const mins = Math.floor(diff / 60000)
+  if (mins < 60) return { text: mins + 'm left', cls: mins < 10 ? 'expiring-soon' : '' }
+  const hours = Math.floor(mins / 60)
+  return { text: hours + 'h ' + (mins % 60) + 'm left', cls: '' }
+}
+
+export function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1048576).toFixed(1) + ' MB'
+}
+
+export function showLoading(container, message) {
+  const el = document.createElement('div')
+  el.className = 'workspace-loading'
+  el.innerHTML = '<span class="spinner"></span>' + esc(message || 'Loading\u2026')
+  container.prepend(el)
+  return () => el.remove()
+}
 `;
 }
+

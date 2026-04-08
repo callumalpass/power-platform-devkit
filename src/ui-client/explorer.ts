@@ -1,6 +1,6 @@
 export function renderExplorerModule(): string {
   return String.raw`
-import { app, api, esc, getDefaultSelectedColumns, pretty, getGlobalEnvironment, renderEntitySidebar, renderSelectedColumns, toggleColumn, registerSubTabs, toast } from '/assets/ui/shared.js'
+import { app, api, esc, getDefaultSelectedColumns, pretty, getGlobalEnvironment, renderEntitySidebar, renderSelectedColumns, toggleColumn, registerSubTabs, highlightJson, renderResultTable, toast } from '/assets/ui/shared.js'
 
 const els = {
   entityList: document.getElementById('entity-list'),
@@ -15,7 +15,9 @@ const els = {
   attrFilter: document.getElementById('attr-filter'),
   selectedCols: document.getElementById('selected-cols'),
   recordPreviewPath: document.getElementById('record-preview-path'),
+  recordPreviewTable: document.getElementById('record-preview-table'),
   recordPreviewJson: document.getElementById('record-preview-json'),
+  recordPreviewToggle: document.getElementById('record-preview-toggle'),
   entityToQuery: document.getElementById('entity-to-query'),
   entityToFetchXml: document.getElementById('entity-to-fetchxml'),
   entityRefreshRecords: document.getElementById('entity-refresh-records'),
@@ -23,6 +25,7 @@ const els = {
 }
 
 let actions = {}
+let recordPreviewView = 'table'
 
 function switchDvSubTab(tabName) {
   const area = document.getElementById('dv-workspace-area')
@@ -50,6 +53,14 @@ export function initExplorer(a) {
   els.entityRefreshRecords.addEventListener('click', () => loadRecordPreview().catch((e) => toast(e.message, true)))
 
   registerSubTabs(els.detailPanel)
+
+  els.recordPreviewToggle.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-view]')
+    if (!btn) return
+    recordPreviewView = btn.dataset.view
+    els.recordPreviewToggle.querySelectorAll('.result-toggle-btn').forEach((b) => b.classList.toggle('active', b === btn))
+    renderRecordPreview()
+  })
 
   // Column selection: click attribute rows to toggle
   els.attributeTable.addEventListener('click', (e) => {
@@ -189,11 +200,24 @@ function renderAttributeTable() {
 function renderRecordPreview() {
   if (!app.currentRecordPreview) {
     els.recordPreviewPath.textContent = ''
+    els.recordPreviewTable.innerHTML = ''
+    els.recordPreviewTable.style.display = 'none'
+    els.recordPreviewJson.style.display = ''
     els.recordPreviewJson.textContent = 'Select an entity to preview records.'
     return
   }
   els.recordPreviewPath.textContent = app.currentRecordPreview.path || ''
-  els.recordPreviewJson.textContent = pretty(app.currentRecordPreview.records || [])
+  const records = app.currentRecordPreview.records || []
+  const entityName = app.currentRecordPreview.logicalName || ''
+  if (recordPreviewView === 'table' && records.length) {
+    els.recordPreviewTable.innerHTML = renderResultTable(records, entityName)
+    els.recordPreviewTable.style.display = ''
+    els.recordPreviewJson.style.display = 'none'
+  } else {
+    els.recordPreviewTable.style.display = 'none'
+    els.recordPreviewJson.style.display = ''
+    els.recordPreviewJson.innerHTML = highlightJson(records)
+  }
 }
 `;
 }
