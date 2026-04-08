@@ -103,6 +103,7 @@ export class AuthService {
 
     const targets = normalizeLoginTargets(options.loginTargets);
     let primaryToken: string | undefined;
+    const collectedDiagnostics: import('./diagnostics.js').Diagnostic[] = [];
     for (const [index, target] of targets.entries()) {
       await options.onLoginTargetUpdate?.({
         target,
@@ -125,7 +126,27 @@ export class AuthService {
           });
         },
       });
-      if (!tokenResult.success || !tokenResult.data) return fail(...tokenResult.diagnostics);
+      if (!tokenResult.success || !tokenResult.data) {
+        if (!primaryToken) {
+          // First target failure is fatal — no token at all
+          return fail(...tokenResult.diagnostics);
+        }
+        // Subsequent target failures are non-fatal — collect as warnings and continue
+        for (const d of tokenResult.diagnostics) {
+          collectedDiagnostics.push({
+            ...d,
+            level: 'warning',
+            message: `${target.label ?? target.resource}: ${d.message}`,
+          });
+        }
+        await options.onLoginTargetUpdate?.({
+          target,
+          index,
+          total: targets.length,
+          status: 'completed',
+        });
+        continue;
+      }
       if (!primaryToken) primaryToken = tokenResult.data;
       await options.onLoginTargetUpdate?.({
         target,
@@ -144,7 +165,7 @@ export class AuthService {
       resource: targets[0]?.resource ?? DEFAULT_LOGIN_RESOURCE,
       tenantId: readStringClaim(claims, 'tid'),
       expiresAt: readNumericClaim(claims, 'exp'),
-    });
+    }, collectedDiagnostics);
   }
 
   async getToken(name: string, resource: string, options: PublicClientLoginOptions = {}): Promise<OperationResult<string>> {

@@ -628,11 +628,8 @@ function quoteShell(value: string): string {
 }
 
 function buildLoginTargets(accountName: string, environments: Array<{ alias: string; account: string; url: string }>, selectedEnvironmentAlias?: string): LoginTarget[] {
-  const targets: LoginTarget[] = [
-    { resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' },
-    { resource: 'https://service.flow.microsoft.com', label: 'Flow', api: 'flow' },
-    { resource: 'https://service.powerapps.com', label: 'Power Apps / BAP', api: 'powerapps' },
-  ];
+  const targets: LoginTarget[] = [];
+  // Dataverse environments first — most important, least likely to fail
   const relevantEnvironments = [
     ...environments.filter((environment) => environment.alias === selectedEnvironmentAlias),
     ...environments.filter((environment) => environment.account === accountName && environment.alias !== selectedEnvironmentAlias),
@@ -644,6 +641,13 @@ function buildLoginTargets(accountName: string, environments: Array<{ alias: str
       api: 'dv',
     });
   }
+  // Power Platform APIs
+  targets.push(
+    { resource: 'https://service.flow.microsoft.com', label: 'Flow', api: 'flow' },
+    { resource: 'https://service.powerapps.com', label: 'Power Apps / BAP', api: 'powerapps' },
+  );
+  // Graph last — some accounts don't have access, and failure here shouldn't block the rest
+  targets.push({ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' });
   return dedupeLoginTargets(targets);
 }
 
