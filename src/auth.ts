@@ -39,6 +39,7 @@ export interface PublicClientLoginOptions {
   preferredFlow?: 'interactive' | 'device-code';
   allowInteractive?: boolean;
   onInteractiveUrl?: (url: string) => void | Promise<void>;
+  onDeviceCode?: (info: { verificationUri: string; userCode: string; message: string }) => void | Promise<void>;
   loginTargets?: LoginTarget[];
   onLoginTargetUpdate?: (update: {
     target: LoginTarget;
@@ -365,8 +366,13 @@ async function acquireAndPersistPublicClientToken(
     if (flow === 'device-code') {
       result = await app.acquireTokenByDeviceCode({
         scopes,
-        deviceCodeCallback: (response) => {
+        deviceCodeCallback: async (response) => {
           process.stderr.write(`${response.message}\n`);
+          await loginOptions.onDeviceCode?.({
+            verificationUri: response.verificationUri,
+            userCode: response.userCode,
+            message: response.message,
+          });
         },
       });
     } else {

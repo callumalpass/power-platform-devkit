@@ -324,6 +324,17 @@ export function renderHtml(): string {
     .login-target-url { font-family: var(--mono); font-size: 0.6875rem; word-break: break-all; color: var(--accent); text-decoration: none; }
     .login-target-url:hover { text-decoration: underline; }
 
+    /* Device code card */
+    .device-code-card { border: 2px solid var(--accent); border-radius: var(--radius); padding: 16px; background: var(--surface); margin-bottom: 12px; animation: slideDown 150ms ease; }
+    .device-code-instruction { font-size: 0.8125rem; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
+    .device-code-url-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .device-code-url { font-family: var(--mono); font-size: 0.8125rem; color: var(--accent); text-decoration: none; word-break: break-all; }
+    .device-code-url:hover { text-decoration: underline; }
+    .device-code-open-btn { font-size: 0.75rem !important; padding: 4px 10px !important; flex-shrink: 0; }
+    .device-code-box { display: flex; align-items: center; gap: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; }
+    .device-code-label { font-size: 0.6875rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .device-code-value { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; letter-spacing: 0.15em; color: var(--ink); user-select: all; flex: 1; }
+
     /* Theme toggle */
     .theme-toggle { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 0.875rem; line-height: 1; color: var(--muted); }
     .theme-toggle:hover { background: var(--bg); color: var(--ink); }

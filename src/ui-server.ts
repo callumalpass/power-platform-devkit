@@ -265,6 +265,15 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
             },
           });
         },
+        onDeviceCode: async (info) => {
+          update({
+            deviceCode: {
+              verificationUri: info.verificationUri,
+              userCode: info.userCode,
+              message: info.message,
+            },
+          });
+        },
       }, context.configOptions),
     );
     job.metadata = { ...(job.metadata ?? {}), loginTargets: loginTargets.map((target) => ({ ...target, status: 'pending' })) };

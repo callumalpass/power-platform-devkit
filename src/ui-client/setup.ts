@@ -55,6 +55,7 @@ function showLoginLinkPanel() {
 function hideLoginLinkPanel() {
   loginTargets = []
   els.loginLinkPanel.classList.add('hidden')
+  clearDeviceCode()
   renderLoginLink()
 }
 
@@ -101,6 +102,59 @@ function renderLoginLink() {
       }).join('')
     : ''
   els.loginLinkCopy.disabled = !available.length
+}
+
+let activeDeviceCode = null
+
+function showDeviceCode(info) {
+  activeDeviceCode = info
+  els.loginLinkPanel.classList.remove('hidden')
+  renderDeviceCode()
+}
+
+function clearDeviceCode() {
+  activeDeviceCode = null
+  const el = document.getElementById('device-code-panel')
+  if (el) el.remove()
+}
+
+function renderDeviceCode() {
+  if (!activeDeviceCode) return
+  let panel = document.getElementById('device-code-panel')
+  if (!panel) {
+    panel = document.createElement('div')
+    panel.id = 'device-code-panel'
+    els.loginLinkTargets.parentNode.insertBefore(panel, els.loginLinkTargets)
+  }
+  const info = activeDeviceCode
+  panel.innerHTML =
+    '<div class="device-code-card">' +
+      '<div class="device-code-instruction">Go to the following URL and enter the code to sign in:</div>' +
+      '<div class="device-code-url-row">' +
+        '<a href="' + esc(info.verificationUri) + '" target="_blank" rel="noreferrer" class="device-code-url">' + esc(info.verificationUri) + '</a>' +
+        '<button type="button" class="btn btn-ghost device-code-open-btn" data-open-device-url="' + esc(info.verificationUri) + '">Open</button>' +
+      '</div>' +
+      '<div class="device-code-box">' +
+        '<span class="device-code-label">Your code</span>' +
+        '<span class="device-code-value" id="device-code-value">' + esc(info.userCode) + '</span>' +
+        '<button type="button" class="btn btn-ghost" id="device-code-copy" style="font-size:0.75rem;padding:4px 10px">Copy</button>' +
+      '</div>' +
+    '</div>'
+  const copyBtn = panel.querySelector('#device-code-copy')
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(info.userCode).then(
+        () => { toast('Code copied'); copyBtn.textContent = 'Copied!'; setTimeout(() => { copyBtn.textContent = 'Copy' }, 1500) },
+        () => toast('Failed to copy', true)
+      )
+    })
+  }
+  const openBtn = panel.querySelector('[data-open-device-url]')
+  if (openBtn) {
+    openBtn.addEventListener('click', () => {
+      window.open(info.verificationUri, '_blank', 'noreferrer')
+    })
+  }
 }
 
 function tokenDotHtml(accountName) {
@@ -586,6 +640,9 @@ async function waitForLoginJob(jobId) {
       }
       if (job.metadata.activeLoginTarget && typeof job.metadata.activeLoginTarget === 'object') {
         applyLoginTargetUpdate(job.metadata.activeLoginTarget)
+      }
+      if (job.metadata.deviceCode && typeof job.metadata.deviceCode === 'object') {
+        showDeviceCode(job.metadata.deviceCode)
       }
     }
     if (!job || job.status === 'pending') continue
