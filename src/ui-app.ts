@@ -247,6 +247,14 @@ export function renderHtml(): string {
     .fetchxml-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: var(--ok); vertical-align: middle; margin-right: 6px; }
     .fetchxml-status-dot.warn { background: #d97706; }
     .fetchxml-status-dot.error { background: var(--danger); }
+    .flow-outline { display: flex; flex-direction: column; gap: 6px; }
+    .flow-outline-item { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: 8px 10px; }
+    .flow-outline-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .flow-outline-kind { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+    .flow-outline-name { font-family: var(--mono); font-size: 0.75rem; font-weight: 600; }
+    .flow-outline-detail { font-size: 0.6875rem; color: var(--muted); margin-top: 2px; }
+    .flow-outline-children { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-left: 12px; border-left: 1px solid var(--border); }
+    .flow-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
     .check-row { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--muted); }
     .check-row input[type="checkbox"] { width: 16px; height: 16px; min-width: 16px; padding: 0; margin: 0; border-radius: 4px; accent-color: var(--accent); cursor: pointer; }
     .conditional { display: none; }
@@ -1045,6 +1053,40 @@ export function renderHtml(): string {
               <button class="btn btn-ghost" id="flow-open-console" type="button" style="font-size:0.75rem">Open in Console</button>
             </div>
             <div id="flow-metrics" class="metrics"></div>
+          </div>
+        </div>
+        <div class="panel" id="flow-language-panel" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+            <div>
+              <h2>Definition Lab</h2>
+              <p class="desc" style="margin-bottom:0">Inspect the selected flow definition with shared CLI/UI validation, graph diagnostics, and expression-aware completions.</p>
+            </div>
+            <div class="btn-group">
+              <span id="flow-language-status" style="font-size:0.75rem;color:var(--muted)"><span class="fetchxml-status-dot warn"></span>Definition not loaded</span>
+              <button class="btn btn-secondary" id="flow-language-load" type="button">Load definition</button>
+              <button class="btn btn-primary" id="flow-language-analyze" type="button">Analyze</button>
+            </div>
+          </div>
+          <div class="fetchxml-editor-shell">
+            <div class="fetchxml-editor-toolbar">
+              <div class="fetchxml-editor-toolbar-left">
+                <span>Workflow definition JSON</span>
+              </div>
+              <div class="fetchxml-editor-toolbar-right">
+                <span id="flow-language-summary-text">No analysis yet</span>
+              </div>
+            </div>
+            <div id="flow-language-editor" class="fetchxml-editor-mount"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:minmax(0, 1fr) minmax(260px, 320px);gap:16px;margin-top:14px">
+            <div>
+              <div id="flow-language-summary" class="flow-summary-grid" style="margin-bottom:12px"></div>
+              <div id="flow-language-diagnostics" class="fetchxml-diagnostics"></div>
+            </div>
+            <div>
+              <h2 style="margin-bottom:8px">Outline</h2>
+              <div id="flow-language-outline" class="flow-outline"></div>
+            </div>
           </div>
         </div>
         <div class="panel" id="flow-runs-panel" style="display:none">

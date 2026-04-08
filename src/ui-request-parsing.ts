@@ -2,6 +2,7 @@ import type { LoginAccountInput } from './auth.js';
 import type { EnvironmentAccessMode, Account } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import type { FetchXmlLanguageRequest } from './fetchxml-language-service.js';
+import type { FlowLanguageRequest } from './flow-language-service.js';
 import type { ApiKind } from './request.js';
 import type { DataverseQuerySpec, FetchXmlSpec } from './services/dataverse.js';
 
@@ -208,6 +209,20 @@ export function readFetchXmlLanguageRequest(value: unknown): OperationResult<Fet
     source: typeof value.source === 'string' ? value.source : '',
     cursor,
     rootEntityName: optionalString(value.rootEntityName ?? value.entity),
+  });
+}
+
+export function readFlowLanguageRequest(value: unknown): OperationResult<FlowLanguageRequest> {
+  if (!isRecord(value)) {
+    return fail(createDiagnostic('error', 'INVALID_FLOW_LANGUAGE_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
+  }
+  const cursor = readNumber(value.cursor);
+  if (cursor === undefined || !Number.isInteger(cursor) || cursor < 0) {
+    return fail(createDiagnostic('error', 'FLOW_CURSOR_REQUIRED', 'cursor must be a non-negative integer.', { source: 'pp/ui' }));
+  }
+  return ok({
+    source: typeof value.source === 'string' ? value.source : '',
+    cursor,
   });
 }
 

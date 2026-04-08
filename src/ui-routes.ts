@@ -8,6 +8,7 @@ import { handleAccountDelete, handleAccountLogin, handleAccountLoginJob, handleA
 import { handleUiAssetRoute, loadUiState } from './ui-route-assets.js';
 import { handleDataverseQueryExecute, handleDataverseQueryPreview, handleEntityDetail, handleEntityList, handleFetchXmlExecute, handleFetchXmlIntellisense, handleFetchXmlPreview } from './ui-route-dataverse.js';
 import { handleEnvironmentCreate, handleEnvironmentDelete, handleEnvironmentDiscover, handlePing, handleWhoAmICheck } from './ui-route-environments.js';
+import { handleFlowLanguageAnalyze } from './ui-route-flow-language.js';
 import { handleRequestExecute } from './ui-route-requests.js';
 
 export interface UiRequestContext {
@@ -49,6 +50,7 @@ export async function handleUiRequest(
     if (url.pathname === '/api/dv/fetchxml/preview') return void handleFetchXmlPreview(request, response);
     if (url.pathname === '/api/dv/fetchxml/execute') return void handleFetchXmlExecute(request, response, context);
     if (url.pathname === '/api/dv/fetchxml/intellisense') return void handleFetchXmlIntellisense(request, response, context);
+    if (url.pathname === '/api/flow/language/analyze') return void handleFlowLanguageAnalyze(request, response);
     if (url.pathname === '/api/request/execute') return void handleRequestExecute(request, response, context);
   }
 

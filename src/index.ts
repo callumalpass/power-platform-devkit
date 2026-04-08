@@ -20,6 +20,7 @@ import { startPpMcpServer } from './mcp.js';
 import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
+import { analyzeFlowFile, explainFlowFileSymbol } from './services/flow-language.js';
 import { startPpUi } from './ui.js';
 
 async function main(args: string[]): Promise<number> {
@@ -40,7 +41,7 @@ async function main(args: string[]): Promise<number> {
     case 'dv':
       return runApiAlias('dv', rest);
     case 'flow':
-      return runApiAlias('flow', rest);
+      return runFlow(rest);
     case 'graph':
       return runApiAlias('graph', rest);
     case 'bap':
@@ -275,6 +276,62 @@ async function runApiAlias(api: Exclude<ApiKind, 'custom'>, args: string[]): Pro
   return runRequest([...args, '--api', api]);
 }
 
+async function runFlow(args: string[]): Promise<number> {
+  if (args.length === 0 || wantsHelp(args)) {
+    printFlowHelp();
+    return 0;
+  }
+  const [subcommand, ...rest] = args;
+  if (!isFlowLanguageSubcommand(subcommand)) {
+    return runApiAlias('flow', args);
+  }
+  const filePath = positionalArgs(rest)[0];
+  if (!filePath) {
+    return printFailure(argumentFailure('FLOW_FILE_REQUIRED', `Usage: pp flow ${subcommand} <file> ${subcommand === 'explain' ? '--symbol NAME' : ''}`.trim()), args);
+  }
+
+  if (subcommand === 'validate' || subcommand === 'inspect' || subcommand === 'symbols') {
+    const result = await analyzeFlowFile(filePath);
+    if (!result.success || !result.data) return printFailure(result, args);
+    if (subcommand === 'validate') {
+      printResult({
+        success: !result.data.diagnostics.some((item) => item.level === 'error'),
+        summary: result.data.summary,
+        diagnostics: result.data.diagnostics,
+      }, args);
+      return result.data.diagnostics.some((item) => item.level === 'error') ? 1 : 0;
+    }
+    if (subcommand === 'symbols') {
+      printResult({
+        summary: result.data.summary,
+        symbols: result.data.symbols,
+        references: result.data.references,
+      }, args);
+      return 0;
+    }
+    printResult({
+      summary: result.data.summary,
+      outline: result.data.outline,
+      symbols: result.data.symbols,
+      diagnostics: result.data.diagnostics,
+      knowledge: result.data.knowledge,
+    }, args);
+    return 0;
+  }
+
+  if (subcommand === 'explain') {
+    const symbolName = readFlag(rest, '--symbol') ?? readFlag(rest, '--action');
+    if (!symbolName) return printFailure(argumentFailure('FLOW_SYMBOL_REQUIRED', 'Usage: pp flow explain <file> --symbol NAME'), args);
+    const result = await explainFlowFileSymbol(filePath, symbolName);
+    if (!result.success || !result.data) return printFailure(result, args);
+    printResult(result.data, args);
+    return result.data.symbol ? 0 : 1;
+  }
+
+  printFlowHelp();
+  return 1;
+}
+
 async function runWhoAmI(args: string[]): Promise<number> {
   if (wantsHelp(args)) {
     printWhoAmIHelp();
@@ -456,12 +513,12 @@ function printHelp(): void {
       '  auth            Manage accounts',
       '  env             Manage named environments',
       '  request         Send an authenticated request',
+      '  flow            Validate, inspect, or request against Power Automate',
       '  whoami          Dataverse WhoAmI for an environment',
       '  ping            Basic connectivity check',
       '  token           Print a token for an environment',
       '  ui              Start the localhost auth and environment UI',
       '  dv              Shortcut for "request --api dv"',
-      '  flow            Shortcut for "request --api flow"',
       '  graph           Shortcut for "request --api graph"',
       '  bap             Shortcut for "request --api bap"',
       '  powerapps       Shortcut for "request --api powerapps"',
@@ -600,6 +657,25 @@ function printRequestAliasHelp(api: Exclude<ApiKind, 'custom'>): void {
   );
 }
 
+function printFlowHelp(): void {
+  process.stdout.write(
+    [
+      'pp flow',
+      '',
+      'Power Automate workflow tooling plus a request shortcut fallback.',
+      '',
+      'Language commands:',
+      '  pp flow validate <file>',
+      '  pp flow inspect <file>',
+      '  pp flow symbols <file>',
+      '  pp flow explain <file> --symbol NAME',
+      '',
+      'Request shortcut:',
+      '  pp flow <path> --env ALIAS [same flags as pp request --api flow]',
+    ].join('\n') + '\n',
+  );
+}
+
 function printWhoAmIHelp(): void {
   process.stdout.write(['pp whoami', '', 'Run Dataverse WhoAmI.', '', 'Usage:', '  pp whoami --env ALIAS [--account ACCOUNT] [--no-interactive-auth]'].join('\n') + '\n');
 }
@@ -639,6 +715,10 @@ function printMigrateConfigHelp(): void {
 
 function isApiKind(value: string): value is ApiKind {
   return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'custom';
+}
+
+function isFlowLanguageSubcommand(value: string | undefined): value is 'validate' | 'inspect' | 'symbols' | 'explain' {
+  return value === 'validate' || value === 'inspect' || value === 'symbols' || value === 'explain';
 }
 
 function wantsHelp(args: string[]): boolean {

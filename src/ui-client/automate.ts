@@ -1,5 +1,12 @@
 export function renderAutomateModule(): string {
   return String.raw`
+import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, startCompletion } from '@codemirror/autocomplete'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { bracketMatching } from '@codemirror/language'
+import { linter } from '@codemirror/lint'
+import { searchKeymap } from '@codemirror/search'
+import { EditorState, Prec } from '@codemirror/state'
+import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view'
 import { api, esc, getGlobalEnvironment, highlightJson, toast } from '/assets/ui/shared.js'
 
 const els = {
@@ -11,6 +18,15 @@ const els = {
   flowTitle: document.getElementById('flow-title'),
   flowSubtitle: document.getElementById('flow-subtitle'),
   flowMetrics: document.getElementById('flow-metrics'),
+  flowLanguagePanel: document.getElementById('flow-language-panel'),
+  flowLanguageStatus: document.getElementById('flow-language-status'),
+  flowLanguageSummaryText: document.getElementById('flow-language-summary-text'),
+  flowLanguageLoad: document.getElementById('flow-language-load'),
+  flowLanguageAnalyze: document.getElementById('flow-language-analyze'),
+  flowLanguageEditor: document.getElementById('flow-language-editor'),
+  flowLanguageSummary: document.getElementById('flow-language-summary'),
+  flowLanguageDiagnostics: document.getElementById('flow-language-diagnostics'),
+  flowLanguageOutline: document.getElementById('flow-language-outline'),
   flowRuns: document.getElementById('flow-runs'),
   flowRunFilter: document.getElementById('flow-run-filter'),
   flowRunStatusFilter: document.getElementById('flow-run-status-filter'),
@@ -37,8 +53,36 @@ let currentRuns = []
 let currentRun = null
 let currentActions = []
 let currentAction = null
+let flowListSource = 'flow'
+let flowEditorView = null
+let latestFlowAnalysis = null
+let latestFlowDocumentText = ''
+let analysisTimer = null
+
+class FlowLanguageClient {
+  constructor() {
+    this.inFlight = new Map()
+  }
+
+  analyze(source, cursor) {
+    const payload = { source, cursor }
+    const key = JSON.stringify(payload)
+    if (this.inFlight.has(key)) return this.inFlight.get(key)
+    const request = api('/api/flow/language/analyze', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+      .then((result) => result.data)
+      .finally(() => this.inFlight.delete(key))
+    this.inFlight.set(key, request)
+    return request
+  }
+}
+
+const flowLanguageClient = new FlowLanguageClient()
 
 export function initAutomate() {
+  initFlowEditor()
   els.flowFilter.addEventListener('input', renderFlowList)
   els.flowRunFilter.addEventListener('input', renderRuns)
   els.flowRunStatusFilter.addEventListener('change', renderRuns)
@@ -51,7 +95,9 @@ export function initAutomate() {
   els.flowOpenConsole.addEventListener('click', () => {
     if (!currentFlow) return
     window.dispatchEvent(new CustomEvent('pp:open-console', {
-      detail: { api: 'flow', method: 'GET', path: '/flows/' + currentFlow.name }
+      detail: currentFlow.source === 'dv'
+        ? { api: 'dv', method: 'GET', path: '/workflows(' + flowIdentifier(currentFlow) + ')' }
+        : { api: 'flow', method: 'GET', path: '/flows/' + flowIdentifier(currentFlow) }
     }))
   })
   els.flowActionsBack.addEventListener('click', () => {
@@ -63,6 +109,13 @@ export function initAutomate() {
   els.flowActionBack.addEventListener('click', () => {
     currentAction = null
     showView('actions')
+  })
+  els.flowLanguageLoad.addEventListener('click', () => {
+    if (!currentFlow) return
+    loadSelectedFlowDefinition(currentFlow).catch((e) => toast(e.message, true))
+  })
+  els.flowLanguageAnalyze.addEventListener('click', () => {
+    analyzeCurrentFlowDocument().catch((e) => toast(e.message, true))
   })
 }
 
@@ -78,21 +131,46 @@ export async function loadFlows() {
   if (env === flowsEnvironment && flows.length) return
   flowsEnvironment = env
   try {
-    const result = await api('/api/request/execute', {
-      method: 'POST',
-      body: JSON.stringify({ environment: env, api: 'flow', method: 'GET', path: '/flows', allowInteractive: false })
-    })
-    const data = result.data && result.data.response
-    flows = (data && data.value) || []
+    try {
+      const result = await api('/api/request/execute', {
+        method: 'POST',
+        body: JSON.stringify({ environment: env, api: 'flow', method: 'GET', path: '/flows', allowInteractive: false })
+      })
+      const data = result.data && result.data.response
+      flows = ((data && data.value) || []).map(normalizeFlowApiItem)
+      flowListSource = 'flow'
+    } catch (error) {
+      const result = await api('/api/request/execute', {
+        method: 'POST',
+        body: JSON.stringify({
+          environment: env,
+          api: 'dv',
+          method: 'GET',
+          path: "/workflows?$filter=category eq 5&$select=name,workflowid,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200",
+          allowInteractive: false
+        })
+      })
+      const data = result.data && result.data.response
+      flows = ((data && data.value) || []).map(normalizeDataverseFlow)
+      flowListSource = 'dv'
+      if (flows.length) {
+        toast('Flow list API failed for this environment. Showing Dataverse workflow fallback instead.', true)
+      } else {
+        throw error
+      }
+    }
     currentFlow = null
     currentRun = null
     currentActions = []
     currentAction = null
+    resetFlowLanguage()
     renderFlowList()
     renderFlowDetail()
   } catch (e) {
+    flowListSource = 'flow'
     flows = []
     currentFlow = null
+    resetFlowLanguage()
     renderFlowList()
     renderFlowDetail()
     toast(e.message, true)
@@ -101,11 +179,13 @@ export async function loadFlows() {
 
 export function resetFlows() {
   flowsEnvironment = null
+  flowListSource = 'flow'
   flows = []
   currentFlow = null
   currentRun = null
   currentActions = []
   currentAction = null
+  resetFlowLanguage()
 }
 
 function renderFlowList() {
@@ -117,7 +197,9 @@ function renderFlowList() {
       })
     : flows
 
-  els.flowCount.textContent = flows.length ? flows.length + ' flows' : ''
+  els.flowCount.textContent = flows.length
+    ? flows.length + ' flows' + (flowListSource === 'dv' ? ' via Dataverse fallback' : '')
+    : ''
 
   if (!flows.length) {
     els.flowList.innerHTML = '<div class="entity-loading">Select an environment to load flows.</div>'
@@ -128,14 +210,14 @@ function renderFlowList() {
     ? filtered.map(f => {
         const displayName = prop(f, 'properties.displayName') || f.name || 'Unnamed'
         const state = prop(f, 'properties.state') || ''
-        const active = currentFlow && currentFlow.name === f.name ? ' active' : ''
+        const active = currentFlow && flowIdentifier(currentFlow) === flowIdentifier(f) ? ' active' : ''
         const stateCls = state === 'Started' ? 'ok' : state === 'Stopped' ? 'error' : 'pending'
-        return '<div class="entity-item' + active + '" data-flow="' + esc(f.name) + '">' +
+        return '<div class="entity-item' + active + '" data-flow="' + esc(flowIdentifier(f)) + '">' +
           '<div class="entity-item-name">' +
             '<span class="health-dot ' + stateCls + '" style="margin-right:6px"></span>' +
             esc(displayName) +
           '</div>' +
-          '<div class="entity-item-logical">' + esc(f.name) + '</div>' +
+          '<div class="entity-item-logical">' + esc(f.source === 'dv' ? (f.workflowid || f.name || '-') : (f.name || '-')) + '</div>' +
           (state ? '<div class="entity-item-badges"><span class="entity-item-flag">' + esc(state.toLowerCase()) + '</span></div>' : '') +
         '</div>'
       }).join('')
@@ -144,7 +226,7 @@ function renderFlowList() {
   els.flowList.onclick = (e) => {
     const item = e.target.closest('[data-flow]')
     if (!item) return
-    const f = flows.find(fl => fl.name === item.dataset.flow)
+    const f = flows.find(fl => flowIdentifier(fl) === item.dataset.flow)
     if (f) {
       currentFlow = f
       currentRun = null
@@ -154,6 +236,7 @@ function renderFlowList() {
       renderFlowDetail()
       showView('runs')
       loadFlowRuns(f).catch(() => {})
+      loadSelectedFlowDefinition(f).catch(() => {})
     }
   }
 }
@@ -162,6 +245,7 @@ function renderFlowDetail() {
   if (!currentFlow) {
     els.flowDetailEmpty.classList.remove('hidden')
     els.flowDetail.classList.add('hidden')
+    els.flowLanguagePanel.style.display = 'none'
     els.flowRunsPanel.style.display = 'none'
     els.flowActionsPanel.style.display = 'none'
     els.flowActionDetailPanel.style.display = 'none'
@@ -169,11 +253,12 @@ function renderFlowDetail() {
   }
   els.flowDetailEmpty.classList.add('hidden')
   els.flowDetail.classList.remove('hidden')
+  els.flowLanguagePanel.style.display = ''
   els.flowRunsPanel.style.display = ''
 
   const p = currentFlow.properties || {}
   els.flowTitle.textContent = p.displayName || currentFlow.name
-  els.flowSubtitle.textContent = p.description || currentFlow.name
+  els.flowSubtitle.textContent = p.description || (currentFlow.source === 'dv' ? flowIdentifier(currentFlow) : currentFlow.name)
 
   const metrics = [
     ['State', p.state || '-'],
@@ -181,11 +266,237 @@ function renderFlowDetail() {
     ['Modified', formatDate(p.lastModifiedTime)],
     ['Creator', prop(currentFlow, 'properties.creator.objectId') || '-'],
     ['Trigger', prop(currentFlow, 'properties.definitionSummary.triggers.0.type') || '-'],
-    ['Actions', (prop(currentFlow, 'properties.definitionSummary.actions') || []).length || '-']
+    ['Actions', (prop(currentFlow, 'properties.definitionSummary.actions') || []).length || '-'],
+    ['Source', currentFlow.source === 'dv' ? 'Dataverse workflow fallback' : 'Flow API']
   ]
   els.flowMetrics.innerHTML = metrics.map(m =>
     '<div class="metric"><div class="metric-label">' + esc(m[0]) + '</div><div class="metric-value">' + esc(m[1]) + '</div></div>'
   ).join('')
+}
+
+function initFlowEditor() {
+  const acceptCompletionIfOpen = (view) => completionStatus(view.state) === 'active' ? acceptCompletion(view) : false
+  const completionSource = async (context) => {
+    const before = context.matchBefore(/[A-Za-z0-9_'"@.?()[\]-]*$/)
+    if (!context.explicit && !before) return null
+    const analysis = await flowLanguageClient.analyze(context.state.doc.toString(), context.pos)
+    applyFlowAnalysis(analysis)
+    if (!analysis.completions || !analysis.completions.length) return null
+    return {
+      from: analysis.context ? analysis.context.from : context.pos,
+      to: analysis.context ? analysis.context.to : context.pos,
+      options: analysis.completions.map(toCompletionOption)
+    }
+  }
+
+  const diagnosticSource = async (view) => {
+    const analysis = await flowLanguageClient.analyze(view.state.doc.toString(), view.state.selection.main.head)
+    applyFlowAnalysis(analysis)
+    return (analysis.diagnostics || []).map((item) => ({
+      from: item.from,
+      to: item.to,
+      severity: item.level === 'error' ? 'error' : item.level === 'warning' ? 'warning' : 'info',
+      message: item.message
+    }))
+  }
+
+  flowEditorView = new EditorView({
+    state: EditorState.create({
+      doc: '',
+      extensions: [
+        lineNumbers(),
+        drawSelection(),
+        highlightActiveLine(),
+        history(),
+        bracketMatching(),
+        closeBrackets(),
+        autocompletion({ override: [completionSource] }),
+        linter(diagnosticSource),
+        EditorView.lineWrapping,
+        Prec.high(keymap.of([
+          { key: 'Tab', run: acceptCompletionIfOpen },
+          { key: 'Ctrl-Space', run: startCompletion },
+          { key: 'Mod-Space', run: startCompletion },
+          indentWithTab,
+          ...closeBracketsKeymap,
+          ...completionKeymap,
+          ...defaultKeymap,
+          ...historyKeymap,
+          ...searchKeymap
+        ])),
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged && !update.selectionSet) return
+          latestFlowDocumentText = update.state.doc.toString()
+          scheduleFlowAnalysis()
+        })
+      ]
+    }),
+    parent: els.flowLanguageEditor
+  })
+}
+
+function resetFlowLanguage() {
+  latestFlowAnalysis = null
+  latestFlowDocumentText = ''
+  if (analysisTimer) {
+    clearTimeout(analysisTimer)
+    analysisTimer = null
+  }
+  setFlowEditorText('')
+  els.flowLanguageStatus.innerHTML = '<span class="fetchxml-status-dot warn"></span>Definition not loaded'
+  els.flowLanguageSummaryText.textContent = 'No analysis yet'
+  els.flowLanguageSummary.innerHTML = ''
+  els.flowLanguageDiagnostics.innerHTML = '<div class="empty">Load a flow definition to analyze it.</div>'
+  els.flowLanguageOutline.innerHTML = '<div class="empty">No outline yet.</div>'
+}
+
+async function loadSelectedFlowDefinition(flow) {
+  const env = getGlobalEnvironment()
+  if (!env || !flow) return
+  els.flowLanguageStatus.innerHTML = '<span class="fetchxml-status-dot warn"></span>Loading definition'
+  let detail = flow
+  if (flow.source !== 'dv') {
+    try {
+      const result = await api('/api/request/execute', {
+        method: 'POST',
+        body: JSON.stringify({ environment: env, api: 'flow', method: 'GET', path: '/flows/' + flowIdentifier(flow), allowInteractive: false })
+      })
+      detail = (result.data && result.data.response) || flow
+    } catch {
+      detail = flow
+    }
+  }
+  const document = buildFlowDocument(detail)
+  setFlowEditorText(document)
+  latestFlowDocumentText = document
+  els.flowLanguageStatus.innerHTML = '<span class="fetchxml-status-dot"></span>Definition loaded'
+  await analyzeCurrentFlowDocument()
+}
+
+function buildFlowDocument(detail) {
+  const definition = prop(detail, 'properties.definition') || detail.definition || detail
+  const connectionReferences = prop(detail, 'properties.connectionReferences')
+  if (definition && typeof definition === 'object') {
+    return JSON.stringify({
+      name: detail.name,
+      id: detail.id || detail.workflowid,
+      type: detail.type,
+      properties: {
+        displayName: prop(detail, 'properties.displayName'),
+        state: prop(detail, 'properties.state'),
+        connectionReferences,
+        definition
+      }
+    }, null, 2)
+  }
+  if (typeof definition === 'string') return definition
+  return JSON.stringify(detail || {}, null, 2)
+}
+
+function setFlowEditorText(text) {
+  if (!flowEditorView) return
+  const next = String(text || '')
+  const current = flowEditorView.state.doc.toString()
+  if (current === next) return
+  flowEditorView.dispatch({ changes: { from: 0, to: current.length, insert: next } })
+}
+
+function scheduleFlowAnalysis() {
+  if (!flowEditorView) return
+  if (analysisTimer) clearTimeout(analysisTimer)
+  analysisTimer = setTimeout(() => {
+    analyzeCurrentFlowDocument().catch(() => {})
+  }, 220)
+}
+
+async function analyzeCurrentFlowDocument() {
+  if (!flowEditorView) return
+  const source = flowEditorView.state.doc.toString()
+  latestFlowDocumentText = source
+  const analysis = await flowLanguageClient.analyze(source, flowEditorView.state.selection.main.head)
+  applyFlowAnalysis(analysis)
+}
+
+function applyFlowAnalysis(analysis) {
+  latestFlowAnalysis = analysis
+  const diagnostics = analysis.diagnostics || []
+  const errors = diagnostics.filter((item) => item.level === 'error').length
+  const warnings = diagnostics.filter((item) => item.level === 'warning').length
+  if (errors) {
+    els.flowLanguageStatus.innerHTML = '<span class="fetchxml-status-dot error"></span>' + errors + ' error' + (errors === 1 ? '' : 's')
+  } else if (warnings) {
+    els.flowLanguageStatus.innerHTML = '<span class="fetchxml-status-dot warn"></span>' + warnings + ' warning' + (warnings === 1 ? '' : 's')
+  } else {
+    els.flowLanguageStatus.innerHTML = '<span class="fetchxml-status-dot"></span>Analysis clean'
+  }
+  const summary = analysis.summary || {}
+  els.flowLanguageSummaryText.textContent =
+    (summary.actionCount || 0) + ' actions, ' +
+    (summary.triggerCount || 0) + ' trigger' + ((summary.triggerCount || 0) === 1 ? '' : 's') +
+    ', wrapper: ' + (summary.wrapperKind || 'unknown')
+  renderFlowLanguageSummary(analysis)
+  renderFlowLanguageDiagnostics(diagnostics)
+  renderFlowLanguageOutline(analysis.outline || [])
+}
+
+function renderFlowLanguageSummary(analysis) {
+  const summary = analysis.summary || {}
+  const refs = analysis.references || []
+  const unresolved = refs.filter((item) => item.resolved === false).length
+  const cards = [
+    ['Wrapper', summary.wrapperKind || 'unknown'],
+    ['Triggers', String(summary.triggerCount || 0)],
+    ['Actions', String(summary.actionCount || 0)],
+    ['Variables', String(summary.variableCount || 0)],
+    ['Parameters', String(summary.parameterCount || 0)],
+    ['Unresolved refs', String(unresolved)]
+  ]
+  els.flowLanguageSummary.innerHTML = cards.map((item) =>
+    '<div class="metric"><div class="metric-label">' + esc(item[0]) + '</div><div class="metric-value">' + esc(item[1]) + '</div></div>'
+  ).join('')
+}
+
+function renderFlowLanguageDiagnostics(items) {
+  if (!items.length) {
+    els.flowLanguageDiagnostics.innerHTML = '<div class="empty">No diagnostics.</div>'
+    return
+  }
+  els.flowLanguageDiagnostics.innerHTML = items.slice(0, 30).map((item) =>
+    '<div class="fetchxml-diagnostic ' + esc(item.level) + '">' +
+      '<div class="fetchxml-diagnostic-code">' + esc(item.code) + ' @ ' + item.from + '</div>' +
+      '<div class="fetchxml-diagnostic-message">' + esc(item.message) + '</div>' +
+      (item.detail ? '<div class="flow-outline-detail">' + esc(item.detail) + '</div>' : '') +
+    '</div>'
+  ).join('')
+}
+
+function renderFlowLanguageOutline(items) {
+  if (!items.length) {
+    els.flowLanguageOutline.innerHTML = '<div class="empty">No outline yet.</div>'
+    return
+  }
+  els.flowLanguageOutline.innerHTML = items.map(renderOutlineItem).join('')
+}
+
+function renderOutlineItem(item) {
+  return '<div class="flow-outline-item">' +
+    '<div class="flow-outline-header">' +
+      '<span class="flow-outline-kind">' + esc(item.kind) + '</span>' +
+      '<span class="flow-outline-name">' + esc(item.name) + '</span>' +
+    '</div>' +
+    (item.detail ? '<div class="flow-outline-detail">' + esc(item.detail) + '</div>' : '') +
+    (item.children && item.children.length ? '<div class="flow-outline-children">' + item.children.map(renderOutlineItem).join('') + '</div>' : '') +
+  '</div>'
+}
+
+function toCompletionOption(item) {
+  return {
+    label: item.label,
+    type: item.type,
+    detail: item.detail,
+    info: item.info,
+    apply: item.apply
+  }
 }
 
 async function loadFlowRuns(flow) {
@@ -195,7 +506,7 @@ async function loadFlowRuns(flow) {
   try {
     const result = await api('/api/request/execute', {
       method: 'POST',
-      body: JSON.stringify({ environment: env, api: 'flow', method: 'GET', path: '/flows/' + flow.name + '/runs?$top=20' })
+      body: JSON.stringify({ environment: env, api: 'flow', method: 'GET', path: '/flows/' + flowIdentifier(flow) + '/runs?$top=20' })
     })
     const data = result.data && result.data.response
     currentRuns = (data && data.value) || []
@@ -296,7 +607,7 @@ async function loadRunActions(run) {
   try {
     const result = await api('/api/request/execute', {
       method: 'POST',
-      body: JSON.stringify({ environment: env, api: 'flow', method: 'GET', path: '/flows/' + currentFlow.name + '/runs/' + run.name + '/actions' })
+      body: JSON.stringify({ environment: env, api: 'flow', method: 'GET', path: '/flows/' + flowIdentifier(currentFlow) + '/runs/' + run.name + '/actions' })
     })
     const data = result.data && result.data.response
     currentActions = (data && data.value) || []
@@ -411,7 +722,7 @@ async function loadActionDetail(action) {
         environment: env,
         api: 'flow',
         method: 'GET',
-        path: '/flows/' + currentFlow.name + '/runs/' + currentRun.name + '/actions/' + action.name
+        path: '/flows/' + flowIdentifier(currentFlow) + '/runs/' + currentRun.name + '/actions/' + action.name
       })
     })
     const detail = result.data && result.data.response
@@ -515,6 +826,71 @@ async function loadActionDetail(action) {
 
 function prop(obj, path) {
   return path.split('.').reduce((o, k) => o && o[k], obj)
+}
+
+function flowIdentifier(flow) {
+  return flow && (flow.workflowid || flow.name)
+}
+
+function normalizeFlowApiItem(flow) {
+  return {
+    ...flow,
+    source: 'flow',
+    workflowid: flow.workflowid || flow.name,
+    properties: {
+      ...(flow.properties || {}),
+      displayName: prop(flow, 'properties.displayName') || flow.name || 'Unnamed',
+      definition: prop(flow, 'properties.definition'),
+      connectionReferences: prop(flow, 'properties.connectionReferences')
+    }
+  }
+}
+
+function normalizeDataverseFlow(flow) {
+  const definition = parseClientdataDefinition(flow.clientdata)
+  const triggerEntries = Object.entries((definition && definition.triggers) || {})
+  const actionEntries = Object.entries((definition && definition.actions) || {})
+  return {
+    source: 'dv',
+    name: flow.name,
+    workflowid: flow.workflowid,
+    properties: {
+      displayName: flow.name || flow.workflowid || 'Unnamed',
+      description: flow.description || '',
+      state: flow.statecode === 0 ? 'Started' : flow.statecode === 1 ? 'Stopped' : 'Unknown',
+      createdTime: flow.createdon,
+      lastModifiedTime: flow.modifiedon,
+      creator: { objectId: flow._ownerid_value || '' },
+      definition,
+      connectionReferences: parseClientdataConnectionReferences(flow.clientdata),
+      definitionSummary: {
+        triggers: triggerEntries.map(([name, value]) => ({ name, type: value && value.type ? value.type : '-' })),
+        actions: actionEntries.map(([name, value]) => ({ name, type: value && value.type ? value.type : '-' }))
+      }
+    }
+  }
+}
+
+function parseClientdataDefinition(clientdata) {
+  if (!clientdata) return null
+  try {
+    const parsed = JSON.parse(clientdata)
+    return parsed && parsed.properties && parsed.properties.definition ? parsed.properties.definition : null
+  } catch {
+    return null
+  }
+}
+
+function parseClientdataConnectionReferences(clientdata) {
+  if (!clientdata) return null
+  try {
+    const parsed = JSON.parse(clientdata)
+    return parsed && parsed.properties && parsed.properties.connectionReferences
+      ? parsed.properties.connectionReferences
+      : null
+  } catch {
+    return null
+  }
 }
 
 function formatDate(value) {

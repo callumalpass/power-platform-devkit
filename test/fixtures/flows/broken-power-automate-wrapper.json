@@ -1,0 +1,61 @@
+{
+  "name": "BrokenFlow",
+  "type": "Microsoft.ProcessSimple/environments/flows",
+  "properties": {
+    "displayName": "Broken Flow",
+    "connectionReferences": {
+      "shared_sharepointonline": {
+        "api": {
+          "name": "shared_sharepointonline"
+        }
+      }
+    },
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "siteUrl": {
+          "type": "String"
+        }
+      },
+      "triggers": {
+        "manual": {
+          "type": "Request",
+          "kind": "Button",
+          "inputs": {
+            "schema": {}
+          }
+        }
+      },
+      "actions": {
+        "InitializeCounter": {
+          "type": "InitializeVariable",
+          "inputs": {
+            "variables": [
+              {
+                "name": "counter",
+                "type": "integer",
+                "value": 0
+              }
+            ]
+          },
+          "runAfter": {}
+        },
+        "UseMissingAction": {
+          "type": "Compose",
+          "inputs": "@body('DoesNotExist')",
+          "runAfter": {
+            "NeverCreated": [
+              "Succeeded"
+            ]
+          }
+        },
+        "LaterAction": {
+          "type": "Compose",
+          "inputs": "@concat(parameters('siteUrl'), '-', variables('counter'))",
+          "runAfter": {}
+        }
+      }
+    }
+  }
+}
