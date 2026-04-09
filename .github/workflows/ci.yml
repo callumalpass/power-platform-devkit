@@ -75,7 +75,17 @@ jobs:
 
       - name: Install Inno Setup
         shell: pwsh
-        run: winget install --id JRSoftware.InnoSetup -e -s winget --accept-package-agreements --accept-source-agreements --disable-interactivity
+        run: |
+          $paths = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+            (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+          )
+          $iscc = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($iscc) {
+            Write-Host "Inno Setup already installed at $iscc"
+            exit 0
+          }
+          winget install --id JRSoftware.InnoSetup -e -s winget --accept-package-agreements --accept-source-agreements --disable-interactivity
 
       - name: Build installer
         shell: pwsh
