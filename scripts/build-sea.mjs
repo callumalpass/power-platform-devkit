@@ -1,10 +1,12 @@
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
+const require = createRequire(import.meta.url);
 const distDir = path.join(repoRoot, 'dist');
 const outputDir = path.join(repoRoot, 'release', 'win32-x64');
 const sentinelFuse = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
@@ -34,12 +36,12 @@ for (const entry of entries) {
 
   await run(process.execPath, ['--experimental-sea-config', configPath]);
   await copyFile(process.execPath, exePath);
-  await run(postjectCommand(), [exePath, 'NODE_SEA_BLOB', blobPath, '--sentinel-fuse', sentinelFuse]);
+  await run(process.execPath, [postjectCliPath(), exePath, 'NODE_SEA_BLOB', blobPath, '--sentinel-fuse', sentinelFuse]);
 }
 
-function postjectCommand() {
-  const suffix = process.platform === 'win32' ? '.cmd' : '';
-  return path.join(repoRoot, 'node_modules', '.bin', `postject${suffix}`);
+function postjectCliPath() {
+  const packageJsonPath = require.resolve('postject/package.json');
+  return path.join(path.dirname(packageJsonPath), 'dist', 'cli.js');
 }
 
 function run(command, args) {
