@@ -1,10 +1,10 @@
 import { UI_VENDOR_MODULES } from './generated/ui-vendor.js';
+import { UI_CLIENT_BUNDLE } from './generated/ui-client.js';
 import type { ServerResponse } from 'node:http';
 import type { URL } from 'node:url';
 import { getConfigDir, getConfigPath, getMsalCacheDir } from './config.js';
 import { fail, ok, type OperationResult } from './diagnostics.js';
 import { renderHtml } from './ui-app.js';
-import { renderAppModule } from './ui-client/app.js';
 import { renderAppsModule } from './ui-client/apps.js';
 import { renderAutomateModule } from './ui-client/automate.js';
 import { renderConsoleModule } from './ui-client/console.js';
@@ -41,7 +41,6 @@ const UI_ASSET_MODULES: Record<string, () => string> = {
   '/assets/ui/apps.js': renderAppsModule,
   '/assets/ui/platform.js': renderPlatformModule,
   '/assets/ui/relationships.js': renderRelationshipsModule,
-  '/assets/ui/app.js': renderAppModule,
 };
 
 const MCP_TOOLS = [
@@ -70,6 +69,10 @@ export async function handleUiAssetRoute(url: URL, response: ServerResponse, con
   const assetModule = UI_ASSET_MODULES[url.pathname];
   if (assetModule) {
     sendJavaScript(response, assetModule());
+    return true;
+  }
+  if (url.pathname === '/assets/ui/app.js') {
+    sendJavaScript(response, UI_CLIENT_BUNDLE);
     return true;
   }
   if (url.pathname.startsWith('/assets/vendor/')) {
