@@ -99,6 +99,10 @@ export function getMsalCacheDir(options: ConfigStoreOptions = {}): string {
   return join(getConfigDir(options), 'msal');
 }
 
+export function getUiStatePath(options: ConfigStoreOptions = {}): string {
+  return join(getConfigDir(options), 'ui-state.json');
+}
+
 export async function loadConfig(options: ConfigStoreOptions = {}): Promise<OperationResult<GlobalConfig>> {
   const path = getConfigPath(options);
   try {

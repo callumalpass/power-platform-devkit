@@ -1,3 +1,4 @@
+import { UI_VENDOR_MODULES } from './generated/ui-vendor.js';
 import type { ServerResponse } from 'node:http';
 import type { URL } from 'node:url';
 import { getConfigDir, getConfigPath, getMsalCacheDir } from './config.js';
@@ -72,6 +73,11 @@ export async function handleUiAssetRoute(url: URL, response: ServerResponse, con
     return true;
   }
   if (url.pathname.startsWith('/assets/vendor/')) {
+    const source = UI_VENDOR_MODULES[url.pathname];
+    if (source !== undefined) {
+      sendJavaScript(response, source);
+      return true;
+    }
     await context.sendVendorModule(response, decodeURIComponent(url.pathname.slice('/assets/vendor/'.length)));
     return true;
   }

@@ -1,15 +1,26 @@
 {
   "name": "pp",
   "version": "0.1.0",
-  "private": true,
+  "description": "CLI, MCP server, and browser UI for working with Microsoft Power Platform.",
   "type": "module",
+  "license": "UNLICENSED",
+  "private": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
     "pp": "./dist/index.cjs",
-    "pp-mcp": "./dist/mcp-server.js"
+    "pp-mcp": "./dist/mcp-server.js",
+    "pp-ui": "./dist/ui-launcher.cjs"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@10.7.0",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -28,7 +39,10 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/mcp.ts src/mcp-server.ts --format esm,cjs --clean",
+    "build:ui-vendor": "node scripts/build-ui-vendor.mjs",
+    "build": "pnpm run build:ui-vendor && tsup src/index.ts src/mcp.ts src/mcp-server.ts src/ui-launcher.ts --format esm,cjs --dts --clean",
+    "prepack": "pnpm run build",
+    "build:sea": "pnpm run build && node scripts/build-sea.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "clean:test": "node -e \"require('node:fs').rmSync('.tmp-test',{recursive:true,force:true})\"",
     "test": "pnpm run clean:test && tsc -p tsconfig.test.json && node --test .tmp-test/test/**/*.test.js",
@@ -59,7 +73,9 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "esbuild": "^0.25.3",
     "@types/node": "^22.13.10",
+    "postject": "^1.0.0-alpha.6",
     "tsup": "^8.4.0",
     "typescript": "^5.8.2"
   }

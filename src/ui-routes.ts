@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
+import process from 'node:process';
+import { getConfigDir } from './config.js';
 import { createDiagnostic, fail } from './diagnostics.js';
 import type { FetchXmlMetadataCatalog } from './fetchxml-language-service.js';
 import { sendJson } from './ui-http.js';
@@ -19,6 +21,8 @@ export interface UiRequestContext {
   jobs: UiJobStore;
   fetchXmlCatalog: FetchXmlMetadataCatalog;
   sendVendorModule: (response: ServerResponse, specifier: string) => Promise<void>;
+  instanceId: string;
+  serverUrl: string;
 }
 
 export async function handleUiRequest(
@@ -31,6 +35,19 @@ export async function handleUiRequest(
 
   if (method === 'GET') {
     if (await handleUiAssetRoute(url, response, context)) return;
+    if (url.pathname === '/api/ui/status') {
+      return void sendJson(response, 200, {
+        success: true,
+        diagnostics: [],
+        data: {
+          kind: 'pp-ui',
+          instanceId: context.instanceId,
+          url: context.serverUrl,
+          configDir: getConfigDir(context.configOptions),
+          pid: process.pid,
+        },
+      });
+    }
     if (url.pathname === '/api/state') return void sendJson(response, 200, await loadUiState(context));
     if (url.pathname === '/api/accounts/token-status') return void handleAccountTokenStatus(url, response, context);
     if (url.pathname === '/api/dv/entities') return void handleEntityList(url, response, context);

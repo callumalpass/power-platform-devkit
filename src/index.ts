@@ -395,6 +395,16 @@ function runCompletion(args: string[]): number {
     return 0;
   }
   const shell = positionalArgs(args)[0] ?? 'zsh';
+  if (shell === 'powershell') {
+    process.stdout.write([
+      '@(',
+      "  'auth','env','request','whoami','ping','token','ui','dv','flow','graph','bap','powerapps','mcp','migrate-config','completion','help'",
+      ') | ForEach-Object {',
+      "  Register-ArgumentCompleter -CommandName pp -ScriptBlock { param($wordToComplete) $_ | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) } }",
+      '}',
+    ].join('\n') + '\n');
+    return 0;
+  }
   if (shell === 'bash') {
     process.stdout.write('complete -W "auth env request whoami ping token ui dv flow graph bap powerapps mcp migrate-config completion help" pp\n');
     return 0;
@@ -444,6 +454,8 @@ async function runUi(args: string[]): Promise<number> {
     openBrowser: !hasFlag(args, '--no-open'),
     allowInteractiveAuth: !hasFlag(args, '--no-interactive-auth'),
   });
+
+  if (ui.reused) return 0;
 
   const shutdown = async () => {
     await ui.close();
@@ -706,7 +718,7 @@ function printUiHelp(): void {
 }
 
 function printCompletionHelp(): void {
-  process.stdout.write(['pp completion', '', 'Print a shell completion script.', '', 'Usage:', '  pp completion [zsh|bash]'].join('\n') + '\n');
+  process.stdout.write(['pp completion', '', 'Print a shell completion script.', '', 'Usage:', '  pp completion [zsh|bash|powershell]'].join('\n') + '\n');
 }
 
 function printMigrateConfigHelp(): void {

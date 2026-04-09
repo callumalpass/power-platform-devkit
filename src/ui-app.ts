@@ -1,4 +1,7 @@
+import { createUiVendorImportMap } from './ui-vendor-spec.js';
+
 export function renderHtml(): string {
+  const importMap = JSON.stringify({ imports: createUiVendorImportMap() }, null, 2);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -6,27 +9,7 @@ export function renderHtml(): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>pp</title>
   <script type="importmap">
-    {
-      "imports": {
-        "@codemirror/autocomplete": "/assets/vendor/@codemirror/autocomplete",
-        "@codemirror/commands": "/assets/vendor/@codemirror/commands",
-        "@codemirror/lang-xml": "/assets/vendor/@codemirror/lang-xml",
-        "@codemirror/language": "/assets/vendor/@codemirror/language",
-        "@codemirror/lint": "/assets/vendor/@codemirror/lint",
-        "@codemirror/search": "/assets/vendor/@codemirror/search",
-        "@codemirror/state": "/assets/vendor/@codemirror/state",
-        "@codemirror/view": "/assets/vendor/@codemirror/view",
-        "@lezer/common": "/assets/vendor/@lezer/common",
-        "@lezer/highlight": "/assets/vendor/@lezer/highlight",
-        "@lezer/lr": "/assets/vendor/@lezer/lr",
-        "@lezer/xml": "/assets/vendor/@lezer/xml",
-        "@marijn/find-cluster-break": "/assets/vendor/@marijn/find-cluster-break",
-        "@replit/codemirror-vim": "/assets/vendor/@replit/codemirror-vim",
-        "crelt": "/assets/vendor/crelt",
-        "style-mod": "/assets/vendor/style-mod",
-        "w3c-keyname": "/assets/vendor/w3c-keyname"
-      }
-    }
+${importMap}
   </script>
   <style>
     :root {

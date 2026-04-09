@@ -4,14 +4,51 @@ CLI and library for working with Microsoft Power Platform.
 
 `pp` provides authenticated access to Dataverse, Power Automate, Microsoft Graph, BAP, and Power Apps APIs. It includes an MCP server for AI assistant integration and a localhost web UI for managing accounts, environments, and querying Dataverse.
 
-## Install and build
+## Install
+
+### npm
+
+If you already have Node.js 22+ installed:
+
+```sh
+npm install -g pp
+```
+
+Or run without a global install:
+
+```sh
+npx pp --help
+```
+
+The package exposes three binaries:
+
+- `pp` for the CLI
+- `pp-mcp` for the MCP server
+- `pp-ui` for the browser UI launcher
+
+### Windows
+
+The repo now includes a Windows packaging path:
+
+- self-contained executables via `pnpm run build:sea`
+- an Inno Setup installer script at `packaging/windows/pp.iss`
+
+The intended installed experience is:
+
+- `pp.exe` and `pp-mcp.exe` on `PATH`
+- a Start menu shortcut for `PP UI`
+- user state stored under `%APPDATA%\pp`
+
+Building the Windows installer currently requires a Windows machine or Windows CI.
+
+## Build From Source
 
 ```sh
 pnpm install
 pnpm build
 ```
 
-This produces ESM and CJS outputs in `dist/`. The package exposes two binaries: `pp` (CLI) and `pp-mcp` (MCP server).
+This produces ESM and CJS outputs in `dist/`, including the `pp`, `pp-mcp`, and `pp-ui` binaries. The build now bundles browser-side vendor modules up front so `pp ui` no longer depends on resolving `node_modules` at runtime.
 
 ## Quick start
 
@@ -56,10 +93,10 @@ pp dv /accounts --env dev
 | `pp whoami --env ALIAS` | Run Dataverse WhoAmI |
 | `pp ping --env ALIAS` | Check API connectivity |
 | `pp token --env ALIAS` | Print a bearer token |
-| `pp ui` | Start the web UI |
+| `pp ui` | Start or reuse the web UI |
 | `pp mcp` | Start the MCP server |
 | `pp migrate-config` | Migrate legacy config |
-| `pp completion [zsh\|bash]` | Print shell completion script |
+| `pp completion [zsh\|bash\|powershell]` | Print shell completion script |
 
 All commands accept `--help` for usage details. Most commands accept `--config-dir DIR` to override the config location and `--no-interactive-auth` to disable browser-based auth prompts.
 
@@ -140,7 +177,15 @@ Add to your Claude Desktop MCP config:
 pp ui
 ```
 
-Starts a localhost HTTP server and opens a browser. The UI provides:
+Starts or reuses a localhost HTTP server and opens a browser. If another `pp ui` instance is already running for the same config directory, the command reuses it instead of starting a duplicate process. If the default port is busy, `pp ui` automatically falls back to another localhost port.
+
+You can also launch the UI directly with:
+
+```sh
+pp-ui
+```
+
+The UI provides:
 
 - **Setup** -- Manage accounts and environments
 - **Explorer** -- Browse Dataverse entities and metadata
@@ -152,6 +197,45 @@ Options:
 - `--port PORT` -- Set the server port (default: auto-assigned)
 - `--no-open` -- Don't open a browser on startup
 - `--config-dir DIR` -- Override config directory
+
+### Windows UX notes
+
+The intended non-technical Windows path is:
+
+1. Install the packaged app.
+2. Launch `PP UI` from the Start menu, which targets `pp-ui.exe`.
+3. Use `pp.exe` from PowerShell only when CLI access is needed.
+
+The installer is expected to preserve config under `%APPDATA%\pp` across upgrades.
+
+## Packaging
+
+### Self-contained Windows executables
+
+On Windows, build self-contained executables with:
+
+```sh
+pnpm run build:sea
+```
+
+This emits release artifacts under `release/win32-x64/`:
+
+- `pp.exe`
+- `pp-mcp.exe`
+- `pp-ui.exe`
+
+The SEA build currently runs on Windows hosts only.
+
+### Inno Setup installer
+
+The Inno Setup definition lives at `packaging/windows/pp.iss`.
+
+It is set up to:
+
+- install into `Program Files\pp`
+- optionally add the install directory to `PATH`
+- create a Start menu shortcut for `PP UI`
+- register uninstall support
 
 ## Library usage
 

@@ -17,6 +17,8 @@ function createContext(): UiRequestContext {
       analyze: async () => ({ diagnostics: [], completions: [], context: { from: 0, to: 0 } }),
     } as unknown as UiRequestContext['fetchXmlCatalog'],
     sendVendorModule: async () => { throw new Error('not used'); },
+    instanceId: 'test-instance',
+    serverUrl: 'http://127.0.0.1:4733',
   };
 }
 
@@ -50,4 +52,12 @@ test('handleUiRequest returns 404 for unknown routes', async () => {
   await handleUiRequest({ method: 'GET', url: '/api/unknown' } as any, response as any, createContext());
   assert.equal(response.statusCode, 404);
   assert.match(response.body, /NOT_FOUND/);
+});
+
+test('handleUiRequest exposes UI status metadata', async () => {
+  const response = createResponse();
+  await handleUiRequest({ method: 'GET', url: '/api/ui/status' } as any, response as any, createContext());
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body, /test-instance/);
+  assert.match(response.body, /127\.0\.0\.1:4733/);
 });

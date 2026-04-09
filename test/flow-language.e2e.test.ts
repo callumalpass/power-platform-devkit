@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { once } from 'node:events';
@@ -108,6 +109,27 @@ test('pp ui serves flow language analysis over HTTP', async () => {
   assert.equal(payload.success, true);
   assert.equal(payload.data?.summary?.wrapperKind, 'resource-properties-definition');
   assert.ok(payload.data?.diagnostics?.some((item) => item.code === 'FLOW_REFERENCE_UNRESOLVED'));
+});
+
+test('pp ui reuses an existing running instance for the same config', async () => {
+  const cliEntry = path.resolve(process.cwd(), '.tmp-test/src/index.js');
+  const port = await findOpenPort();
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'pp-ui-reuse-'));
+  const first = spawn('node', [cliEntry, 'ui', '--no-open', '--port', String(port), '--config-dir', configDir, '--no-interactive-auth'], {
+    cwd: process.cwd(),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let firstStdout = '';
+  first.stdout.on('data', (chunk) => { firstStdout += String(chunk); });
+  await waitFor(() => firstStdout.includes('pp UI listening at'), 10000, 'Initial UI server did not start');
+
+  const { stdout } = await execFileAsync('node', [cliEntry, 'ui', '--no-open', '--config-dir', configDir, '--no-interactive-auth'], { cwd: process.cwd() });
+  assert.match(stdout, /pp UI already running at/);
+
+  first.kill('SIGTERM');
+  await once(first, 'exit');
+  await rm(configDir, { recursive: true, force: true });
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs: number, message: string): Promise<void> {
