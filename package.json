@@ -39,9 +39,8 @@
     }
   },
   "scripts": {
-    "build:ui-vendor": "node scripts/build-ui-vendor.mjs",
     "build:ui-client": "node scripts/build-ui-client.mjs",
-    "build": "pnpm run build:ui-vendor && pnpm run build:ui-client && tsup src/index.ts src/mcp.ts src/mcp-server.ts src/ui-launcher.ts --format esm,cjs --dts --clean",
+    "build": "pnpm run build:ui-client && tsup src/index.ts src/mcp.ts src/mcp-server.ts src/ui-launcher.ts --format esm,cjs --dts --clean",
     "prepack": "pnpm run build",
     "build:sea": "pnpm run build && node scripts/build-sea.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",

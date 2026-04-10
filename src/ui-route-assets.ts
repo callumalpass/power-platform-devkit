@@ -1,47 +1,13 @@
-import { UI_VENDOR_MODULES } from './generated/ui-vendor.js';
 import { UI_CLIENT_BUNDLE } from './generated/ui-client.js';
 import type { ServerResponse } from 'node:http';
 import type { URL } from 'node:url';
 import { getConfigDir, getConfigPath, getMsalCacheDir } from './config.js';
 import { fail, ok, type OperationResult } from './diagnostics.js';
 import { renderHtml } from './ui-app.js';
-import { renderAppsModule } from './ui-client/apps.js';
-import { renderAutomateModule } from './ui-client/automate.js';
-import { renderConsoleModule } from './ui-client/console.js';
-import { renderDataverseSharedModule } from './ui-client/dataverse-shared.js';
-import { renderDomUtilsModule } from './ui-client/dom-utils.js';
-import { renderExplorerModule } from './ui-client/explorer.js';
-import { renderFetchXmlModule } from './ui-client/fetchxml.js';
-import { renderPlatformModule } from './ui-client/platform.js';
-import { renderQueryLabModule } from './ui-client/query-lab.js';
-import { renderRelationshipsModule } from './ui-client/relationships.js';
-import { renderRenderUtilsModule } from './ui-client/render-utils.js';
-import { renderRuntimeModule } from './ui-client/runtime.js';
-import { renderSetupModule } from './ui-client/setup.js';
-import { renderSharedModule } from './ui-client/shared.js';
-import { renderStateModule } from './ui-client/state.js';
 import { sendJavaScript } from './ui-http.js';
 import type { UiRequestContext } from './ui-routes.js';
 import { listAccountSummaries } from './services/accounts.js';
 import { listConfiguredEnvironments } from './services/environments.js';
-
-const UI_ASSET_MODULES: Record<string, () => string> = {
-  '/assets/ui/shared.js': renderSharedModule,
-  '/assets/ui/runtime.js': renderRuntimeModule,
-  '/assets/ui/state.js': renderStateModule,
-  '/assets/ui/dom-utils.js': renderDomUtilsModule,
-  '/assets/ui/render-utils.js': renderRenderUtilsModule,
-  '/assets/ui/dataverse-shared.js': renderDataverseSharedModule,
-  '/assets/ui/setup.js': renderSetupModule,
-  '/assets/ui/explorer.js': renderExplorerModule,
-  '/assets/ui/query-lab.js': renderQueryLabModule,
-  '/assets/ui/fetchxml.js': renderFetchXmlModule,
-  '/assets/ui/console.js': renderConsoleModule,
-  '/assets/ui/automate.js': renderAutomateModule,
-  '/assets/ui/apps.js': renderAppsModule,
-  '/assets/ui/platform.js': renderPlatformModule,
-  '/assets/ui/relationships.js': renderRelationshipsModule,
-};
 
 const MCP_TOOLS = [
   'pp.account.list',
@@ -66,22 +32,8 @@ const MCP_TOOLS = [
 ];
 
 export async function handleUiAssetRoute(url: URL, response: ServerResponse, context: UiRequestContext): Promise<boolean> {
-  const assetModule = UI_ASSET_MODULES[url.pathname];
-  if (assetModule) {
-    sendJavaScript(response, assetModule());
-    return true;
-  }
   if (url.pathname === '/assets/ui/app.js') {
     sendJavaScript(response, UI_CLIENT_BUNDLE);
-    return true;
-  }
-  if (url.pathname.startsWith('/assets/vendor/')) {
-    const source = UI_VENDOR_MODULES[url.pathname];
-    if (source !== undefined) {
-      sendJavaScript(response, source);
-      return true;
-    }
-    await context.sendVendorModule(response, decodeURIComponent(url.pathname.slice('/assets/vendor/'.length)));
     return true;
   }
   if (url.pathname === '/') {

@@ -1,16 +1,10 @@
-import { createUiVendorImportMap } from './ui-vendor-spec.js';
-
 export function renderHtml(): string {
-  const importMap = JSON.stringify({ imports: createUiVendorImportMap() }, null, 2);
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>pp</title>
-  <script type="importmap">
-${importMap}
-  </script>
   <style>
     :root {
       --bg: #f9fafb;

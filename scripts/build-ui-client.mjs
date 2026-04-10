@@ -16,7 +16,10 @@ async function buildClientBundle() {
     target: 'es2022',
     write: false,
     sourcemap: false,
-    minify: false,
+    minify: true,
+    define: {
+      'process.env.NODE_ENV': '"production"',
+    },
     logLevel: 'silent',
   });
 
