@@ -584,6 +584,8 @@ ${importMap}
   </style>
 </head>
 <body>
+  <div id="app-root"></div>
+  <div id="legacy-shell" hidden>
   <div class="toast-container" id="toasts"></div>
   <header class="header">
     <div class="header-inner">
@@ -1233,6 +1235,7 @@ ${importMap}
       </div>
     </div>
 
+  </div>
   </div>
 
   <script type="module" src="/assets/ui/app.js"></script>

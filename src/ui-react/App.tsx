@@ -15,11 +15,8 @@ import {
   renderResultTable,
   summarizeError,
 } from './utils.js';
-import {
-  LegacyAutomatePanel,
-  LegacyFetchXmlPanel,
-  LegacyRelationshipsPanel,
-} from './legacy-bridges.js';
+import { FetchXmlTab, RelationshipsTab } from './DataversePanels.js';
+import { AutomateTab } from './AutomateTab.js';
 
 type TabName = 'setup' | 'console' | 'dataverse' | 'automate' | 'apps' | 'platform';
 type DataverseSubTab = 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
@@ -451,11 +448,15 @@ export function App() {
           />
         </div>
 
-        {activeTab === 'automate' || true ? (
-          <div style={activeTab === 'automate' ? undefined : { display: 'none' }}>
-            <LegacyAutomatePanel active={activeTab === 'automate'} environment={globalEnvironment} onError={(message) => pushToast(message, true)} />
-          </div>
-        ) : null}
+        <AutomateTab
+          active={activeTab === 'automate'}
+          environment={globalEnvironment}
+          openConsole={(seed) => {
+            setConsoleSeed(seed);
+            setActiveTab('console');
+          }}
+          toast={pushToast}
+        />
 
         <div className={`tab-panel ${activeTab === 'apps' ? 'active' : ''}`} id="panel-apps">
           <AppsTab
@@ -1315,6 +1316,16 @@ function DataverseTab(props: {
   toast: (message: string, isError?: boolean) => void;
 }) {
   const { dataverse, setDataverse, environment, loadEntityDetail, loadRecordPreview, toast } = props;
+  const [queryForm, setQueryForm] = useState({
+    entitySetName: '',
+    top: '10',
+    selectCsv: '',
+    filter: '',
+    orderByCsv: '',
+    expandCsv: '',
+    rawPath: '',
+    includeCount: false,
+  });
   const filteredEntities = dataverse.entityFilter
     ? dataverse.entities.filter((item: any) => item.logicalName.includes(dataverse.entityFilter.toLowerCase()) || (item.displayName || '').toLowerCase().includes(dataverse.entityFilter.toLowerCase()) || (item.entitySetName || '').toLowerCase().includes(dataverse.entityFilter.toLowerCase()))
     : dataverse.entities;
@@ -1327,13 +1338,33 @@ function DataverseTab(props: {
       })
     : [];
 
+  useEffect(() => {
+    setQueryForm((current) => ({
+      ...current,
+      entitySetName: dataverse.currentEntityDetail?.entitySetName || '',
+      selectCsv: (dataverse.selectedColumns.length
+        ? dataverse.selectedColumns
+        : getDefaultSelectedColumns(dataverse.currentEntityDetail, 0)).join(','),
+      orderByCsv: orderByDefault(dataverse.currentEntityDetail),
+    }));
+  }, [dataverse.currentEntityDetail, dataverse.selectedColumns]);
+
   async function runQuery(event: FormEvent<HTMLFormElement>, previewOnly = false) {
     event.preventDefault();
-    const form = event.currentTarget;
     try {
       const payload = await api<any>(previewOnly ? '/api/dv/query/preview' : '/api/dv/query/execute', {
         method: 'POST',
-        body: JSON.stringify({ ...formDataObject(form), environmentAlias: environment }),
+        body: JSON.stringify({
+          environmentAlias: environment,
+          entitySetName: queryForm.entitySetName,
+          top: queryForm.top,
+          selectCsv: queryForm.selectCsv,
+          filter: queryForm.filter,
+          orderByCsv: queryForm.orderByCsv,
+          expandCsv: queryForm.expandCsv,
+          rawPath: queryForm.rawPath,
+          includeCount: queryForm.includeCount,
+        }),
       });
       if (previewOnly) {
         setDataverse((current: any) => ({ ...current, queryPreview: payload.data.path || '' }));
@@ -1349,14 +1380,6 @@ function DataverseTab(props: {
       toast(error instanceof Error ? error.message : String(error), true);
     }
   }
-
-  const dataverseBridgeState = {
-    environment,
-    entities: dataverse.entities,
-    currentEntity: dataverse.currentEntity,
-    currentEntityDetail: dataverse.currentEntityDetail,
-    selectedColumns: dataverse.selectedColumns,
-  };
 
   return (
     <>
@@ -1504,40 +1527,36 @@ function DataverseTab(props: {
               <div className="form-row">
                 <div className="field">
                   <span className="field-label">Entity Set</span>
-                  <input name="entitySetName" id="query-entity-set" placeholder="accounts" defaultValue={dataverse.currentEntityDetail?.entitySetName || ''} />
+                  <input name="entitySetName" id="query-entity-set" placeholder="accounts" value={queryForm.entitySetName} onChange={(event) => setQueryForm((current) => ({ ...current, entitySetName: event.target.value }))} />
                 </div>
                 <div className="field">
                   <span className="field-label">Top</span>
-                  <input name="top" type="number" min="1" step="1" defaultValue="10" />
+                  <input name="top" type="number" min="1" step="1" value={queryForm.top} onChange={(event) => setQueryForm((current) => ({ ...current, top: event.target.value }))} />
                 </div>
               </div>
               <div className="field">
                 <span className="field-label">Select Columns (CSV)</span>
-                <input name="selectCsv" id="query-select" placeholder="accountid,name,accountnumber" defaultValue={(dataverse.selectedColumns.length ? dataverse.selectedColumns : getDefaultSelectedColumns(dataverse.currentEntityDetail, 0)).join(',')} />
+                <input name="selectCsv" id="query-select" placeholder="accountid,name,accountnumber" value={queryForm.selectCsv} onChange={(event) => setQueryForm((current) => ({ ...current, selectCsv: event.target.value }))} />
               </div>
               <div className="field">
                 <span className="field-label">Filter</span>
-                <input name="filter" id="query-filter" placeholder="contains(name,'Contoso')" />
+                <input name="filter" id="query-filter" placeholder="contains(name,'Contoso')" value={queryForm.filter} onChange={(event) => setQueryForm((current) => ({ ...current, filter: event.target.value }))} />
               </div>
               <div className="form-row">
                 <div className="field">
                   <span className="field-label">Order By (CSV)</span>
-                  <input name="orderByCsv" id="query-order" placeholder="name asc,createdon desc" defaultValue={(() => {
-                    const cols = getDefaultSelectedColumns(dataverse.currentEntityDetail, 0);
-                    const orderColumn = cols.find((name) => name !== dataverse.currentEntityDetail?.primaryIdAttribute) || cols[0] || '';
-                    return orderColumn ? `${orderColumn} asc` : '';
-                  })()} />
+                  <input name="orderByCsv" id="query-order" placeholder="name asc,createdon desc" value={queryForm.orderByCsv} onChange={(event) => setQueryForm((current) => ({ ...current, orderByCsv: event.target.value }))} />
                 </div>
                 <div className="field">
                   <span className="field-label">Expand (CSV)</span>
-                  <input name="expandCsv" id="query-expand" placeholder="primarycontactid($select=fullname)" />
+                  <input name="expandCsv" id="query-expand" placeholder="primarycontactid($select=fullname)" value={queryForm.expandCsv} onChange={(event) => setQueryForm((current) => ({ ...current, expandCsv: event.target.value }))} />
                 </div>
               </div>
               <div className="field">
                 <span className="field-label">Raw Path Override</span>
-                <input name="rawPath" id="query-raw-path" placeholder="/api/data/v9.2/accounts?$select=name" />
+                <input name="rawPath" id="query-raw-path" placeholder="/api/data/v9.2/accounts?$select=name" value={queryForm.rawPath} onChange={(event) => setQueryForm((current) => ({ ...current, rawPath: event.target.value }))} />
               </div>
-              <div className="check-row"><input type="checkbox" name="includeCount" id="query-count" /><label htmlFor="query-count">Include count</label></div>
+              <div className="check-row"><input type="checkbox" name="includeCount" id="query-count" checked={queryForm.includeCount} onChange={(event) => setQueryForm((current) => ({ ...current, includeCount: event.target.checked }))} /><label htmlFor="query-count">Include count</label></div>
               <div className="btn-group">
                 <button className="btn btn-secondary" id="query-preview-btn" type="button" onClick={(event) => void runQuery(event as any, true)}>Preview Path</button>
                 <button className="btn btn-primary" id="query-run-btn" type="submit">Run Query</button>
@@ -1564,14 +1583,20 @@ function DataverseTab(props: {
         </div>
 
         <div style={{ display: dataverse.dvSubTab === 'dv-fetchxml' ? undefined : 'none' }}>
-          <LegacyFetchXmlPanel dataverse={dataverseBridgeState} active={dataverse.dvSubTab === 'dv-fetchxml'} onError={(message) => toast(message, true)} />
+          <FetchXmlTab dataverse={dataverse} environment={environment} toast={toast} />
         </div>
         <div style={{ display: dataverse.dvSubTab === 'dv-relationships' ? undefined : 'none' }}>
-          <LegacyRelationshipsPanel dataverse={dataverseBridgeState} onError={(message) => toast(message, true)} />
+          <RelationshipsTab dataverse={dataverse} environment={environment} loadEntityDetail={loadEntityDetail} toast={toast} />
         </div>
       </div>
     </>
   );
+}
+
+function orderByDefault(detail: any) {
+  const cols = getDefaultSelectedColumns(detail, 0);
+  const orderColumn = cols.find((name) => name !== detail?.primaryIdAttribute) || cols[0] || '';
+  return orderColumn ? `${orderColumn} asc` : '';
 }
 
 function AppsTab(props: { state: any; setState: React.Dispatch<React.SetStateAction<any>>; environment: string; reload: () => Promise<void>; openConsole: (path: string) => void; toast: (message: string, isError?: boolean) => void }) {

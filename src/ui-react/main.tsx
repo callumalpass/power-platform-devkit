@@ -4,7 +4,6 @@ import { App } from './App.js';
 
 let container = document.getElementById('app-root');
 if (!container) {
-  document.body.innerHTML = '';
   container = document.createElement('div');
   container.id = 'app-root';
   document.body.appendChild(container);
