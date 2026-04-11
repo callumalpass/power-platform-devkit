@@ -38,10 +38,10 @@ export async function loadFlowDefinitionDocument(environment: string, flow: Flow
   return buildFlowDocument(detail as FlowItem);
 }
 
-export async function analyzeFlowDocument(source: string): Promise<FlowAnalysis> {
+export async function analyzeFlowDocument(source: string, cursor = source.length): Promise<FlowAnalysis> {
   const payload = await api<ApiEnvelope<FlowAnalysis>>('/api/flow/language/analyze', {
     method: 'POST',
-    body: JSON.stringify({ source, cursor: source.length }),
+    body: JSON.stringify({ source, cursor }),
   });
   return payload.data;
 }

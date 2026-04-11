@@ -1,3 +1,12 @@
+import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, startCompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { xml } from '@codemirror/lang-xml';
+import { bracketMatching } from '@codemirror/language';
+import { linter } from '@codemirror/lint';
+import { searchKeymap } from '@codemirror/search';
+import { Compartment, EditorState, Prec } from '@codemirror/state';
+import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers, type ViewUpdate } from '@codemirror/view';
+import { getCM, vim } from '@replit/codemirror-vim';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction, type WheelEvent as ReactWheelEvent } from 'react';
 import {
   formatDate,
@@ -12,6 +21,8 @@ import {
   executeFetchXml,
   getEntityDetail,
   previewFetchXml,
+  type FetchXmlAnalysis,
+  type FetchXmlCompletionItem,
   type FetchXmlPayload,
 } from './dataverse-data.js';
 import type {
@@ -61,7 +72,7 @@ type RelationshipsGraph = {
 };
 
 type RelationshipsViewBox = { x: number; y: number; width: number; height: number };
-type RelationshipsTooltip = { x: number; y: number; title: string; detail: string };
+type RelationshipsTooltip = { x: number; y: number; title: string; detail: string; nodeId?: string };
 type RelationshipsDrag =
   | { kind: 'node'; pointerId: number; nodeId: string; offsetX: number; offsetY: number }
   | { kind: 'pan'; pointerId: number; startClientX: number; startClientY: number; startViewBox: RelationshipsViewBox };
@@ -89,6 +100,15 @@ const SYSTEM_ENTITIES = new Set([
   'importdata', 'importfile', 'importlog', 'duplicaterecord', 'duplicaterule',
   'plugintracelog', 'sdkmessageprocessingstep', 'workflow', 'sla', 'slaitem',
 ]);
+
+const codeMirrorTheme = EditorView.theme({
+  '&': { fontSize: '13px' },
+  '.cm-content': { caretColor: 'var(--ink)' },
+  '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--ink)' },
+  '&.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(37,99,235,0.18)' },
+  '.cm-activeLine': { backgroundColor: 'rgba(37,99,235,0.06)' },
+  '.cm-gutters': { backgroundColor: 'var(--bg)', borderRight: '1px solid var(--border)', color: 'var(--muted)' },
+});
 
 function nextId() {
   return Date.now() + Math.floor(Math.random() * 1000);
@@ -140,6 +160,7 @@ export function FetchXmlTab(props: {
   const [result, setResult] = useState<DataverseRecordPage | null>(null);
   const [resultView, setResultView] = useState<'table' | 'json'>('table');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [vimMode, setVimMode] = useState('normal');
 
   const selectableAttributes = useMemo(
     (): DataverseAttribute[] => (entityDetail ? getSelectableAttributes(entityDetail) : []),
@@ -189,7 +210,7 @@ export function FetchXmlTab(props: {
         source: rawXml,
         rootEntityName: entityName || undefined,
       })
-        .then(setDiagnostics)
+        .then((analysis) => setDiagnostics(analysis.diagnostics))
         .catch(() => setDiagnostics([]))
         .finally(() => setIsAnalyzing(false));
     }, 250);
@@ -383,15 +404,22 @@ export function FetchXmlTab(props: {
                 </span>
               </div>
               <div className="fetchxml-editor-toolbar-right">
-                <span>Native React port. IntelliSense diagnostics retained; editor shortcuts deferred.</span>
+                <span className={`fetchxml-vim-mode ${vimMode}`}>{vimMode.toUpperCase()}</span>
+                <span>Tab/Enter accept completions. Ctrl-Space opens suggestions.</span>
               </div>
             </div>
-            <textarea
-              className="xml-editor"
-              style={{ display: 'block', minHeight: 320 }}
+            <FetchXmlCodeEditor
               value={rawXml}
-              onChange={(event) => setRawXml(event.target.value)}
-              placeholder={`<fetch top="50">\n  <entity name="account">\n    <attribute name="name" />\n  </entity>\n</fetch>`}
+              environment={environment}
+              rootEntityName={entityName || dataverse.currentEntityDetail?.logicalName}
+              onChange={setRawXml}
+              onAnalysis={(analysis) => {
+                setDiagnostics(analysis.diagnostics);
+                setIsAnalyzing(false);
+              }}
+              onAnalyzeStart={() => setIsAnalyzing(true)}
+              onVimMode={setVimMode}
+              toast={toast}
             />
           </div>
           <div className="fetchxml-diagnostics">
@@ -422,6 +450,153 @@ export function FetchXmlTab(props: {
       </div>
     </div>
   );
+}
+
+function FetchXmlCodeEditor(props: {
+  value: string;
+  environment: string;
+  rootEntityName?: string;
+  onChange: (value: string) => void;
+  onAnalysis: (analysis: FetchXmlAnalysis) => void;
+  onAnalyzeStart: () => void;
+  onVimMode: (mode: string) => void;
+  toast: ToastFn;
+}) {
+  const { value, environment, rootEntityName, onChange, onAnalysis, onAnalyzeStart, onVimMode, toast } = props;
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const valueRef = useRef(value);
+  const requestRef = useRef(new Map<string, Promise<FetchXmlAnalysis>>());
+  const onChangeRef = useRef(onChange);
+  const onAnalysisRef = useRef(onAnalysis);
+  const onAnalyzeStartRef = useRef(onAnalyzeStart);
+  const onVimModeRef = useRef(onVimMode);
+
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => { onAnalysisRef.current = onAnalysis; }, [onAnalysis]);
+  useEffect(() => { onAnalyzeStartRef.current = onAnalyzeStart; }, [onAnalyzeStart]);
+  useEffect(() => { onVimModeRef.current = onVimMode; }, [onVimMode]);
+
+  useEffect(() => {
+    valueRef.current = value;
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current === value) return;
+    view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
+  }, [value]);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+
+    const analyze = (source: string, cursor: number) => {
+      const key = JSON.stringify({ source, cursor, environment, rootEntityName });
+      const cached = requestRef.current.get(key);
+      if (cached) return cached;
+      onAnalyzeStartRef.current();
+      const request = analyzeFetchXml({
+        environmentAlias: environment,
+        source,
+        cursor,
+        rootEntityName,
+      }).finally(() => requestRef.current.delete(key));
+      requestRef.current.set(key, request);
+      return request;
+    };
+
+    const acceptCompletionIfOpen = (view: EditorView) => completionStatus(view.state) === 'active' ? acceptCompletion(view) : false;
+    const completionSource = async (context: CompletionContext): Promise<CompletionResult | null> => {
+      const before = context.matchBefore(/[^\s<>"'=\/]*$/);
+      const triggerChar = context.pos > 0 ? context.state.sliceDoc(context.pos - 1, context.pos) : '';
+      if (!context.explicit && !before && !'<="/ '.includes(triggerChar)) return null;
+      const analysis = await analyze(context.state.doc.toString(), context.pos);
+      onAnalysisRef.current(analysis);
+      if (!analysis.completions.length) return null;
+      return {
+        from: analysis.context?.from ?? context.pos,
+        to: analysis.context?.to ?? context.pos,
+        options: analysis.completions.map(toCodeMirrorCompletion),
+      };
+    };
+
+    const diagnosticSource = async (view: EditorView) => {
+      const analysis = await analyze(view.state.doc.toString(), view.state.selection.main.head);
+      onAnalysisRef.current(analysis);
+      return analysis.diagnostics.map((item) => ({
+        from: item.from ?? 0,
+        to: item.to ?? item.from ?? 0,
+        severity: item.level === 'error' ? 'error' as const : item.level === 'warning' ? 'warning' as const : 'info' as const,
+        message: item.message,
+        source: item.code,
+      }));
+    };
+
+    const diagnosticsCompartment = new Compartment();
+    const view = new EditorView({
+      parent: mount,
+      state: EditorState.create({
+        doc: valueRef.current || '',
+        extensions: [
+          lineNumbers(),
+          history(),
+          drawSelection(),
+          highlightActiveLine(),
+          xml(),
+          vim(),
+          bracketMatching(),
+          closeBrackets(),
+          autocompletion({ override: [completionSource], activateOnTyping: true, defaultKeymap: false, icons: true }),
+          diagnosticsCompartment.of(linter(diagnosticSource, { delay: 250 })),
+          Prec.highest(keymap.of([
+            { key: 'Tab', run: acceptCompletionIfOpen },
+            { key: 'Enter', run: acceptCompletionIfOpen },
+          ])),
+          keymap.of([
+            indentWithTab,
+            ...closeBracketsKeymap,
+            ...defaultKeymap,
+            ...historyKeymap,
+            ...searchKeymap,
+            ...completionKeymap,
+          ]),
+          EditorView.updateListener.of((update: ViewUpdate) => {
+            if (update.docChanged) {
+              const next = update.state.doc.toString();
+              valueRef.current = next;
+              onChangeRef.current(next);
+              startCompletion(update.view);
+            }
+          }),
+          codeMirrorTheme,
+        ],
+      }),
+    });
+
+    viewRef.current = view;
+    const cm = getCM(view);
+    if (cm && typeof cm.on === 'function') {
+      cm.on('vim-mode-change', (event: { mode?: string }) => onVimModeRef.current(event.mode || 'normal'));
+    }
+    onVimModeRef.current('normal');
+
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [environment, rootEntityName]);
+
+  return <div ref={mountRef} className="fetchxml-editor-mount" />;
+}
+
+function toCodeMirrorCompletion(item: FetchXmlCompletionItem) {
+  return {
+    label: item.label,
+    type: item.type,
+    detail: item.detail,
+    info: item.info,
+    apply: item.apply,
+  };
 }
 
 function FetchXmlLinksEditor(props: {
@@ -619,10 +794,21 @@ export function RelationshipsTab(props: {
 
   function showNodeTooltip(node: RelationshipsNode, event: ReactPointerEvent<SVGElement>) {
     const position = tooltipPosition(event);
+    const detail = graph.cache[node.id];
+    const lookupCount = detail?.attributes?.filter((attribute) => attribute.targets?.length).length || 0;
+    const outEdges = graph.edges.filter((edge) => edge.source === node.id);
+    const inEdges = graph.edges.filter((edge) => edge.target === node.id);
     setTooltip({
       ...position,
       title: node.label,
-      detail: `${node.logicalName}${node.entitySetName ? ` · ${node.entitySetName}` : ''}`,
+      detail: [
+        node.logicalName,
+        `${node.attrCount} attrs · ${lookupCount} lookups`,
+        node.entitySetName,
+        outEdges.length ? `References: ${outEdges.map((edge) => edge.label).join(', ')}` : '',
+        inEdges.length ? `Referenced by: ${inEdges.map((edge) => `${edge.source}.${edge.label}`).join(', ')}` : '',
+      ].filter(Boolean).join('\n'),
+      nodeId: node.id,
     });
   }
 
@@ -812,7 +998,7 @@ export function RelationshipsTab(props: {
                   onPointerDown={(event) => startNodeDrag(node, event)}
                   onPointerEnter={(event) => showNodeTooltip(node, event)}
                   onPointerMove={(event) => { if (!drag) showNodeTooltip(node, event); }}
-                  onPointerLeave={() => { if (!drag) setTooltip(null); }}
+                  onClick={(event) => showNodeTooltip(node, event as unknown as ReactPointerEvent<SVGElement>)}
                 >
                   <rect width="160" height="44" rx="10"></rect>
                   <text x="80" y="17" className="rel-node-label">{node.label}</text>
@@ -822,10 +1008,25 @@ export function RelationshipsTab(props: {
             })}
           </svg>
           {tooltip ? (
-            <div className="rel-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+            <div className="rel-tooltip" style={{ left: tooltip.x, top: tooltip.y, whiteSpace: 'pre-line', pointerEvents: tooltip.nodeId ? 'auto' : undefined }}>
               <strong>{tooltip.title}</strong>
               <br />
               <span>{tooltip.detail}</span>
+              {tooltip.nodeId ? (
+                <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+                  <button className="btn btn-primary" type="button" style={{ fontSize: '0.6875rem', padding: '3px 10px' }} onClick={() => {
+                    const nodeId = tooltip.nodeId;
+                    if (!nodeId) return;
+                    setTooltip(null);
+                    void expandRelationshipsNode(nodeId, environment, hideSystem, graph, setGraph, toast);
+                  }}>Expand</button>
+                  <button className="btn btn-ghost" type="button" style={{ fontSize: '0.6875rem', padding: '3px 10px' }} onClick={() => {
+                    const node = graph.nodes.find((item) => item.id === tooltip.nodeId);
+                    setTooltip(null);
+                    if (node) void loadEntityDetail(node.logicalName);
+                  }}>Open in Explorer</button>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <div className="rel-hint">Drag nodes to rearrange. Drag the canvas to pan. Scroll to zoom.</div>

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, startCompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { bracketMatching } from '@codemirror/language';
+import { linter } from '@codemirror/lint';
+import { searchKeymap } from '@codemirror/search';
+import { EditorState, Prec } from '@codemirror/state';
+import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers, type ViewUpdate } from '@codemirror/view';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDate, formatDateShort, highlightJson, prop } from './utils.js';
 import {
   analyzeFlowDocument,
@@ -10,6 +17,45 @@ import {
   loadRunActions,
 } from './automate-data.js';
 import type { FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowItem, FlowRun, ToastFn } from './ui-types.js';
+
+type FlowCanvasNode = {
+  type: 'scope' | 'node';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+  kind: string;
+  detail?: string;
+  depth: number;
+  colors: { bg: string; border: string; text: string };
+};
+
+type FlowCanvasView = { x: number; y: number; scale: number };
+
+const automateEditorTheme = EditorView.theme({
+  '&': { fontSize: '13px' },
+  '.cm-content': { caretColor: 'var(--ink)' },
+  '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--ink)' },
+  '&.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(37,99,235,0.18)' },
+  '.cm-activeLine': { backgroundColor: 'rgba(37,99,235,0.06)' },
+  '.cm-gutters': { backgroundColor: 'var(--bg)', borderRight: '1px solid var(--border)', color: 'var(--muted)' },
+});
+
+const NODE_GAP_Y = 14;
+const NODE_MIN_W = 180;
+const NODE_H = 46;
+const SCOPE_PAD = 12;
+const CONNECTOR_R = 3;
+const KIND_COLORS: Record<string, { bg: string; border: string; text: string }> = {
+  trigger: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' },
+  action: { bg: '#f0fdf4', border: '#22c55e', text: '#166534' },
+  scope: { bg: '#fefce8', border: '#eab308', text: '#854d0e' },
+  condition: { bg: '#fef2f2', border: '#ef4444', text: '#991b1b' },
+  foreach: { bg: '#f5f3ff', border: '#8b5cf6', text: '#5b21b6' },
+  switch: { bg: '#fff7ed', border: '#f97316', text: '#9a3412' },
+  default: { bg: '#f9fafb', border: '#9ca3af', text: '#374151' },
+};
 
 export function AutomateTab(props: {
   active: boolean;
@@ -215,7 +261,16 @@ export function AutomateTab(props: {
                 <h2>Definition</h2>
                 <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{analyzing ? 'Analyzing…' : analysis ? 'Analysis updated' : 'Definition not loaded'}</div>
               </div>
-              <textarea className="xml-editor" style={{ display: 'block', minHeight: 280 }} value={flowDocument} onChange={(event) => setFlowDocument(event.target.value)} />
+              <div className="fetchxml-editor-shell">
+                <FlowCodeEditor
+                  value={flowDocument}
+                  onChange={setFlowDocument}
+                  onAnalysis={setAnalysis}
+                  onAnalyzeStart={() => setAnalyzing(true)}
+                  onAnalyzeEnd={() => setAnalyzing(false)}
+                  toast={toast}
+                />
+              </div>
               <div className="flow-summary-grid" style={{ marginTop: 12 }}>
                 {[
                   ['Wrapper', analysis?.summary?.wrapperKind || 'unknown'],
@@ -238,7 +293,7 @@ export function AutomateTab(props: {
               </div>
               <div style={{ marginTop: 12 }}>
                 <h3 style={{ marginBottom: 8 }}>Outline</h3>
-                {analysis?.outline?.length ? <FlowOutline items={analysis.outline} /> : <div className="empty">No outline yet.</div>}
+                <FlowOutlineCanvas items={analysis?.outline || []} />
               </div>
             </div>
 
@@ -341,21 +396,365 @@ export function AutomateTab(props: {
   );
 }
 
-function FlowOutline(props: { items: FlowAnalysisOutlineItem[] }) {
+function FlowCodeEditor(props: {
+  value: string;
+  onChange: (value: string) => void;
+  onAnalysis: (analysis: FlowAnalysis) => void;
+  onAnalyzeStart: () => void;
+  onAnalyzeEnd: () => void;
+  toast: ToastFn;
+}) {
+  const { value, onChange, onAnalysis, onAnalyzeStart, onAnalyzeEnd, toast } = props;
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const valueRef = useRef(value);
+  const requestRef = useRef(new Map<string, Promise<FlowAnalysis>>());
+  const onChangeRef = useRef(onChange);
+  const onAnalysisRef = useRef(onAnalysis);
+  const onAnalyzeStartRef = useRef(onAnalyzeStart);
+  const onAnalyzeEndRef = useRef(onAnalyzeEnd);
+
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => { onAnalysisRef.current = onAnalysis; }, [onAnalysis]);
+  useEffect(() => { onAnalyzeStartRef.current = onAnalyzeStart; }, [onAnalyzeStart]);
+  useEffect(() => { onAnalyzeEndRef.current = onAnalyzeEnd; }, [onAnalyzeEnd]);
+
+  useEffect(() => {
+    valueRef.current = value;
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current !== value) view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
+  }, [value]);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    const analyze = (source: string, cursor: number) => {
+      const key = JSON.stringify({ source, cursor });
+      const cached = requestRef.current.get(key);
+      if (cached) return cached;
+      onAnalyzeStartRef.current();
+      const request = analyzeFlowDocument(source, cursor).finally(() => {
+        requestRef.current.delete(key);
+        onAnalyzeEndRef.current();
+      });
+      requestRef.current.set(key, request);
+      return request;
+    };
+    const acceptCompletionIfOpen = (view: EditorView) => completionStatus(view.state) === 'active' ? acceptCompletion(view) : false;
+    const completionSource = async (context: CompletionContext): Promise<CompletionResult | null> => {
+      const analysis = await analyze(context.state.doc.toString(), context.pos);
+      onAnalysisRef.current(analysis);
+      if (!analysis.completions?.length) return null;
+      return {
+        from: analysis.context?.from ?? context.pos,
+        to: analysis.context?.to ?? context.pos,
+        options: analysis.completions.map((item) => ({
+          label: item.label,
+          type: item.type,
+          detail: item.detail,
+          info: item.info,
+          apply: item.apply,
+        })),
+      };
+    };
+    const diagnosticSource = async (view: EditorView) => {
+      const analysis = await analyze(view.state.doc.toString(), view.state.selection.main.head);
+      onAnalysisRef.current(analysis);
+      return (analysis.diagnostics || []).map((item) => ({
+        from: item.from ?? 0,
+        to: item.to ?? item.from ?? 0,
+        severity: item.level === 'error' ? 'error' as const : item.level === 'warning' ? 'warning' as const : 'info' as const,
+        message: item.message,
+        source: item.code,
+      }));
+    };
+    const view = new EditorView({
+      parent: mount,
+      state: EditorState.create({
+        doc: valueRef.current || '',
+        extensions: [
+          lineNumbers(),
+          drawSelection(),
+          highlightActiveLine(),
+          history(),
+          bracketMatching(),
+          closeBrackets(),
+          autocompletion({ override: [completionSource] }),
+          linter(diagnosticSource),
+          EditorView.lineWrapping,
+          Prec.high(keymap.of([
+            { key: 'Tab', run: acceptCompletionIfOpen },
+            { key: 'Ctrl-Space', run: startCompletion },
+            { key: 'Mod-Space', run: startCompletion },
+            indentWithTab,
+            ...closeBracketsKeymap,
+            ...completionKeymap,
+            ...defaultKeymap,
+            ...historyKeymap,
+            ...searchKeymap,
+          ])),
+          EditorView.updateListener.of((update: ViewUpdate) => {
+            if (!update.docChanged && !update.selectionSet) return;
+            if (update.docChanged) {
+              const next = update.state.doc.toString();
+              valueRef.current = next;
+              onChangeRef.current(next);
+            }
+            window.setTimeout(() => {
+              void analyze(update.state.doc.toString(), update.state.selection.main.head)
+                .then(onAnalysisRef.current)
+                .catch((error) => toast(error instanceof Error ? error.message : String(error), true));
+            }, 0);
+          }),
+          automateEditorTheme,
+        ],
+      }),
+    });
+    viewRef.current = view;
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [toast]);
+
+  return <div ref={mountRef} className="fetchxml-editor-mount" />;
+}
+
+function FlowOutlineCanvas(props: { items: FlowAnalysisOutlineItem[] }) {
   const { items } = props;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const nodesRef = useRef<FlowCanvasNode[]>([]);
+  const viewRef = useRef<FlowCanvasView>({ x: 0, y: 0, scale: 1 });
+  const panRef = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
+
+  function draw() {
+    drawOutlineCanvas(canvasRef.current, containerRef.current, nodesRef.current, viewRef.current);
+  }
+
+  function fit() {
+    fitCanvas(nodesRef.current, containerRef.current, viewRef.current);
+    draw();
+  }
+
+  useEffect(() => {
+    nodesRef.current = layoutOutlineCanvasNodes(items);
+    fit();
+  }, [items]);
+
+  useEffect(() => {
+    const handler = () => draw();
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
   return (
-    <div className="card-list">
-      {items.map((item, index) => (
-        <div key={`${item.name}-${index}`} className="card-item" style={{ padding: '10px 12px' }}>
-          <div className="card-item-info">
-            <div className="card-item-title">{item.name}</div>
-            <div className="card-item-sub">{String(item.kind || 'node')}{item.detail ? ` · ${item.detail}` : ''}</div>
-          </div>
-          {item.children?.length ? <div style={{ marginTop: 10, width: '100%' }}><FlowOutline items={item.children} /></div> : null}
-        </div>
-      ))}
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 8 }}>
+        <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={fit}>Fit</button>
+        <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => { viewRef.current.scale = Math.min(3, viewRef.current.scale * 1.3); draw(); }}>Zoom in</button>
+        <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => { viewRef.current.scale = Math.max(0.2, viewRef.current.scale / 1.3); draw(); }}>Zoom out</button>
+      </div>
+      <div
+        ref={containerRef}
+        className="flow-canvas-container"
+        style={{ height: 500, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)', overflow: 'hidden', cursor: panRef.current ? 'grabbing' : 'grab' }}
+      >
+        <canvas
+          ref={canvasRef}
+          onMouseDown={(event) => { panRef.current = { x: event.clientX, y: event.clientY, vx: viewRef.current.x, vy: viewRef.current.y }; }}
+          onMouseMove={(event) => {
+            const pan = panRef.current;
+            if (!pan) return;
+            viewRef.current.x = pan.vx + (event.clientX - pan.x) / viewRef.current.scale;
+            viewRef.current.y = pan.vy + (event.clientY - pan.y) / viewRef.current.scale;
+            draw();
+          }}
+          onMouseUp={() => { panRef.current = null; }}
+          onMouseLeave={() => { panRef.current = null; }}
+          onWheel={(event) => {
+            event.preventDefault();
+            const factor = event.deltaY > 0 ? 0.9 : 1.1;
+            viewRef.current.scale = Math.max(0.2, Math.min(3, viewRef.current.scale * factor));
+            draw();
+          }}
+        />
+      </div>
     </div>
   );
+}
+
+function layoutOutlineCanvasNodes(items: FlowAnalysisOutlineItem[]) {
+  const nodes: FlowCanvasNode[] = [];
+  layoutOutlineNodes(items, 0, 0, 0, nodes);
+  return nodes;
+}
+
+function layoutOutlineNodes(items: FlowAnalysisOutlineItem[], depth: number, startX: number, startY: number, nodes: FlowCanvasNode[]) {
+  let cursorY = startY;
+  for (const item of items) {
+    const kind = String(item.kind || '').toLowerCase();
+    const hasChildren = Boolean(item.children?.length);
+    const colors = KIND_COLORS[kind] || KIND_COLORS.default;
+    if (hasChildren) {
+      const headerH = NODE_H;
+      const childStartY = cursorY + headerH + NODE_GAP_Y;
+      const childStartX = startX + SCOPE_PAD;
+      const childBottom = layoutOutlineNodes(item.children || [], depth + 1, childStartX, childStartY, nodes);
+      const scopeW = Math.max(NODE_MIN_W + SCOPE_PAD * 2, getSubtreeWidth(item.children || []) + SCOPE_PAD * 2);
+      const scopeH = childBottom - cursorY + SCOPE_PAD;
+      nodes.push({ type: 'scope', x: startX, y: cursorY, w: scopeW, h: scopeH, label: item.name || '', kind: item.kind || kind, detail: item.detail, colors, depth });
+      nodes.push({ type: 'node', x: startX + SCOPE_PAD, y: cursorY + 6, w: NODE_MIN_W, h: NODE_H - 12, label: item.name || '', kind: item.kind || kind, detail: item.detail, colors, depth: depth + 1 });
+      cursorY += scopeH + NODE_GAP_Y;
+    } else {
+      nodes.push({ type: 'node', x: startX, y: cursorY, w: NODE_MIN_W, h: NODE_H, label: item.name || '', kind: item.kind || kind, detail: item.detail, colors, depth });
+      cursorY += NODE_H + NODE_GAP_Y;
+    }
+  }
+  return cursorY;
+}
+
+function getSubtreeWidth(items: FlowAnalysisOutlineItem[]) {
+  let maxW = NODE_MIN_W;
+  for (const item of items) {
+    if (item.children?.length) maxW = Math.max(maxW, getSubtreeWidth(item.children) + SCOPE_PAD * 2);
+  }
+  return maxW;
+}
+
+function fitCanvas(nodes: FlowCanvasNode[], container: HTMLDivElement | null, view: FlowCanvasView) {
+  if (!nodes.length) return;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const node of nodes) {
+    minX = Math.min(minX, node.x);
+    minY = Math.min(minY, node.y);
+    maxX = Math.max(maxX, node.x + node.w);
+    maxY = Math.max(maxY, node.y + node.h);
+  }
+  const cw = container?.clientWidth || 600;
+  const ch = container?.clientHeight || 400;
+  view.scale = Math.min(1.5, Math.min((cw - 40) / (maxX - minX + 60), (ch - 40) / (maxY - minY + 60)));
+  view.x = -(minX + maxX) / 2;
+  view.y = -minY + 10;
+}
+
+function drawOutlineCanvas(canvas: HTMLCanvasElement | null, container: HTMLDivElement | null, nodes: FlowCanvasNode[], view: FlowCanvasView) {
+  if (!canvas || !container) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = container.clientWidth || 600;
+  const h = container.clientHeight || 500;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!nodes.length) {
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#6b7280';
+    ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Load a flow definition to see the outline', w / 2, h / 2);
+    return;
+  }
+  ctx.save();
+  ctx.translate(w / 2, 20);
+  ctx.scale(view.scale, view.scale);
+  ctx.translate(view.x, view.y);
+  const isDark = document.documentElement.classList.contains('dark');
+  const borderColor = isDark ? '#27272a' : '#e5e7eb';
+  const textColor = isDark ? '#e4e4e7' : '#111111';
+  const mutedColor = isDark ? '#71717a' : '#6b7280';
+
+  for (const node of nodes) {
+    if (node.type !== 'scope') continue;
+    ctx.fillStyle = isDark ? adjustAlpha(node.colors.bg, 0.15) : node.colors.bg;
+    ctx.strokeStyle = node.colors.border;
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, node.x, node.y, node.w, node.h, 10);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  const regularNodes = nodes.filter((node) => node.type === 'node');
+  for (let index = 0; index < regularNodes.length - 1; index++) {
+    const a = regularNodes[index];
+    const b = regularNodes[index + 1];
+    if (a.depth !== b.depth) continue;
+    const ax = a.x + a.w / 2;
+    const ay = a.y + a.h;
+    const bx = b.x + b.w / 2;
+    const by = b.y;
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax, ay + NODE_GAP_Y / 2);
+    if (Math.abs(ax - bx) > 1) ctx.lineTo(bx, ay + NODE_GAP_Y / 2);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+    ctx.fillStyle = borderColor;
+    ctx.beginPath();
+    ctx.arc(bx, by, CONNECTOR_R, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  for (const node of nodes) {
+    if (node.type !== 'node') continue;
+    ctx.fillStyle = isDark ? adjustAlpha(node.colors.bg, 0.25) : node.colors.bg;
+    ctx.strokeStyle = node.colors.border;
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, node.x, node.y, node.w, node.h, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = node.colors.text;
+    ctx.font = 'bold 9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText((node.kind || '').toUpperCase(), node.x + 10, node.y + 14);
+    ctx.fillStyle = textColor;
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.fillText(ellipsize(ctx, node.label || '', node.w - 20), node.x + 10, node.y + 30);
+    if (node.detail) {
+      ctx.fillStyle = mutedColor;
+      ctx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.fillText(ellipsize(ctx, node.detail, node.w - 20), node.x + 10, node.y + 42);
+    }
+  }
+  ctx.restore();
+}
+
+function ellipsize(ctx: CanvasRenderingContext2D, value: string, maxWidth: number) {
+  let text = value;
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  while (text.length > 3 && ctx.measureText(`${text}…`).width > maxWidth) text = text.slice(0, -1);
+  return `${text}…`;
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function adjustAlpha(hex: string, alpha: number) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 function SummaryCard(props: { label: string; value: string }) {

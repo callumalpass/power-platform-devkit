@@ -6,6 +6,20 @@ import type {
   DiagnosticItem,
 } from './ui-types.js';
 
+export type FetchXmlCompletionItem = {
+  label: string;
+  type?: string;
+  detail?: string;
+  info?: string;
+  apply?: string;
+};
+
+export type FetchXmlAnalysis = {
+  diagnostics: DiagnosticItem[];
+  completions: FetchXmlCompletionItem[];
+  context?: { from?: number; to?: number };
+};
+
 export type FetchXmlCondition = { attribute: string; operator: string; value?: string };
 export type FetchXmlLinkEntity = {
   name: string;
@@ -40,17 +54,22 @@ export async function analyzeFetchXml(input: {
   environmentAlias: string;
   source: string;
   rootEntityName?: string;
-}): Promise<DiagnosticItem[]> {
-  const payload = await api<ApiEnvelope<{ diagnostics?: DiagnosticItem[] }>>('/api/dv/fetchxml/intellisense', {
+  cursor?: number;
+}): Promise<FetchXmlAnalysis> {
+  const payload = await api<ApiEnvelope<Partial<FetchXmlAnalysis>>>('/api/dv/fetchxml/intellisense', {
     method: 'POST',
     body: JSON.stringify({
       environmentAlias: input.environmentAlias,
       source: input.source,
-      cursor: input.source.length,
+      cursor: input.cursor ?? input.source.length,
       rootEntityName: input.rootEntityName,
     }),
   });
-  return payload.data?.diagnostics || [];
+  return {
+    diagnostics: payload.data?.diagnostics || [],
+    completions: payload.data?.completions || [],
+    context: payload.data?.context,
+  };
 }
 
 export async function previewFetchXml(payload: FetchXmlPayload): Promise<string> {

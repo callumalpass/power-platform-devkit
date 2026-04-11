@@ -156,4 +156,6 @@ export type FlowAnalysis = {
   references?: Array<{ resolved?: boolean }>;
   diagnostics?: DiagnosticItem[];
   outline?: FlowAnalysisOutlineItem[];
+  completions?: Array<{ label: string; type?: string; detail?: string; info?: string; apply?: string }>;
+  context?: { from?: number; to?: number };
 };
