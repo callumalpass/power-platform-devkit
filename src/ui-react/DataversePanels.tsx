@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
-  api,
   formatDate,
   getDefaultSelectedColumns,
   getSelectableAttributes,
@@ -8,6 +7,21 @@ import {
   prop,
   renderResultTable,
 } from './utils.js';
+import {
+  analyzeFetchXml,
+  executeFetchXml,
+  getEntityDetail,
+  previewFetchXml,
+  type FetchXmlPayload,
+} from './dataverse-data.js';
+import type {
+  DataverseAttribute,
+  DataverseEntityDetail,
+  DataverseRecordPage,
+  DataverseState,
+  DiagnosticItem,
+  ToastFn,
+} from './ui-types.js';
 
 type ConditionRow = { id: number; attribute: string; operator: string; value: string };
 type LinkRow = {
@@ -38,6 +52,12 @@ type RelationshipsEdge = {
   source: string;
   target: string;
   label: string;
+};
+
+type RelationshipsGraph = {
+  nodes: RelationshipsNode[];
+  edges: RelationshipsEdge[];
+  cache: Record<string, DataverseEntityDetail>;
 };
 
 const OPERATORS = [
@@ -80,7 +100,7 @@ function removeConditionRow(rows: ConditionRow[], id: number) {
   return rows.filter((row) => row.id !== id);
 }
 
-function formatDiagnosticsCount(items: any[]) {
+function formatDiagnosticsCount(items: DiagnosticItem[]) {
   const errors = items.filter((item) => item.level === 'error').length;
   const warnings = items.filter((item) => item.level === 'warning').length;
   if (errors) return `${errors} issue${errors === 1 ? '' : 's'}`;
@@ -88,20 +108,20 @@ function formatDiagnosticsCount(items: any[]) {
   return 'IntelliSense ready';
 }
 
-function orderByDefault(detail: any) {
+function orderByDefault(detail: DataverseEntityDetail | null) {
   const cols = getDefaultSelectedColumns(detail, 0);
   const orderColumn = cols.find((name) => name !== detail?.primaryIdAttribute) || cols[0] || '';
   return orderColumn ? `${orderColumn} asc` : '';
 }
 
 export function FetchXmlTab(props: {
-  dataverse: any;
+  dataverse: DataverseState;
   environment: string;
-  toast: (message: string, isError?: boolean) => void;
+  toast: ToastFn;
 }) {
   const { dataverse, environment, toast } = props;
   const [entityName, setEntityName] = useState('');
-  const [entityDetail, setEntityDetail] = useState<any>(null);
+  const [entityDetail, setEntityDetail] = useState<DataverseEntityDetail | null>(null);
   const [selectedAttrs, setSelectedAttrs] = useState<string[]>([]);
   const [conditions, setConditions] = useState<ConditionRow[]>([{ id: nextId(), attribute: '', operator: '', value: '' }]);
   const [links, setLinks] = useState<LinkRow[]>([]);
@@ -110,37 +130,38 @@ export function FetchXmlTab(props: {
   const [orderAttribute, setOrderAttribute] = useState('');
   const [orderDescending, setOrderDescending] = useState(false);
   const [rawXml, setRawXml] = useState('');
-  const [diagnostics, setDiagnostics] = useState<any[]>([]);
-  const [result, setResult] = useState<any>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticItem[]>([]);
+  const [result, setResult] = useState<DataverseRecordPage | null>(null);
   const [resultView, setResultView] = useState<'table' | 'json'>('table');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const selectableAttributes = useMemo(
-    () => (entityDetail ? getSelectableAttributes(entityDetail) : []),
+    (): DataverseAttribute[] => (entityDetail ? getSelectableAttributes(entityDetail) : []),
     [entityDetail],
   );
 
   useEffect(() => {
-    if (!dataverse.currentEntityDetail) return;
-    setEntityName(dataverse.currentEntityDetail.logicalName || '');
-    setEntityDetail(dataverse.currentEntityDetail);
+    const detail = dataverse.currentEntityDetail;
+    if (!detail) return;
+    setEntityName(detail.logicalName || '');
+    setEntityDetail(detail);
     const cols = dataverse.selectedColumns.length
       ? dataverse.selectedColumns
-      : getDefaultSelectedColumns(dataverse.currentEntityDetail, 0);
+      : getDefaultSelectedColumns(detail, 0);
     setSelectedAttrs(cols);
-    setOrderAttribute(cols.find((name: string) => name !== dataverse.currentEntityDetail?.primaryIdAttribute) || '');
-    setRawXml((current) => current || buildRawFetchXml(dataverse.currentEntityDetail.logicalName, cols));
+    setOrderAttribute(cols.find((name: string) => name !== detail.primaryIdAttribute) || '');
+    setRawXml((current) => current || buildRawFetchXml(detail.logicalName, cols));
   }, [dataverse.currentEntityDetail, dataverse.selectedColumns]);
 
   useEffect(() => {
     if (!environment || !entityName) return;
     if (entityDetail?.logicalName === entityName) return;
     let cancelled = false;
-    void api<any>(`/api/dv/entities/${encodeURIComponent(entityName)}?environment=${encodeURIComponent(environment)}`)
-      .then((payload) => {
+    void getEntityDetail(environment, entityName)
+      .then((detail) => {
         if (cancelled) return;
-        setEntityDetail(payload.data);
-        setSelectedAttrs((current) => current.length ? current : getDefaultSelectedColumns(payload.data, 0));
+        setEntityDetail(detail);
+        setSelectedAttrs((current) => current.length ? current : getDefaultSelectedColumns(detail, 0));
       })
       .catch((error) => {
         if (!cancelled) toast(error instanceof Error ? error.message : String(error), true);
@@ -157,16 +178,12 @@ export function FetchXmlTab(props: {
     }
     const timer = window.setTimeout(() => {
       setIsAnalyzing(true);
-      void api<any>('/api/dv/fetchxml/intellisense', {
-        method: 'POST',
-        body: JSON.stringify({
-          environmentAlias: environment,
-          source: rawXml,
-          cursor: rawXml.length,
-          rootEntityName: entityName || undefined,
-        }),
+      void analyzeFetchXml({
+        environmentAlias: environment,
+        source: rawXml,
+        rootEntityName: entityName || undefined,
       })
-        .then((payload) => setDiagnostics(payload.data?.diagnostics || []))
+        .then(setDiagnostics)
         .catch(() => setDiagnostics([]))
         .finally(() => setIsAnalyzing(false));
     }, 250);
@@ -184,7 +201,7 @@ export function FetchXmlTab(props: {
     setRawXml(buildRawFetchXml(entityDetail.logicalName, selectedAttrs));
   }
 
-  function buildPreviewPayload() {
+  function buildPreviewPayload(): FetchXmlPayload {
     return {
       environmentAlias: environment,
       entity: entityName,
@@ -215,11 +232,7 @@ export function FetchXmlTab(props: {
 
   async function preview() {
     try {
-      const payload = await api<any>('/api/dv/fetchxml/preview', {
-        method: 'POST',
-        body: JSON.stringify(buildPreviewPayload()),
-      });
-      setRawXml(payload.data?.fetchXml || '');
+      setRawXml(await previewFetchXml(buildPreviewPayload()));
       toast('XML generated');
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
@@ -228,17 +241,14 @@ export function FetchXmlTab(props: {
 
   async function execute() {
     try {
-      const payload = await api<any>('/api/dv/fetchxml/execute', {
-        method: 'POST',
-        body: JSON.stringify({
+      const payload = await executeFetchXml({
           environmentAlias: environment,
           entity: entityName || entityDetail?.logicalName || 'unknown',
           entitySetName: entityDetail?.entitySetName,
           rawXml: rawXml.trim() || undefined,
           ...(rawXml.trim() ? {} : buildPreviewPayload()),
-        }),
       });
-      setResult(payload.data);
+      setResult(payload);
       toast('FetchXML executed');
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
@@ -262,7 +272,7 @@ export function FetchXmlTab(props: {
             <span className="field-label">Entity</span>
             <select value={entityName} onChange={(event) => setEntityName(event.target.value)}>
               <option value="">select entity…</option>
-              {dataverse.entities.map((item: any) => (
+              {dataverse.entities.map((item) => (
                 <option key={item.logicalName} value={item.logicalName}>
                   {(item.displayName || item.logicalName)} ({item.logicalName})
                 </option>
@@ -277,7 +287,7 @@ export function FetchXmlTab(props: {
         <div className="field">
           <span className="field-label">Attributes</span>
           <div className="attr-picker">
-            {selectableAttributes.length ? selectableAttributes.map((attribute: any) => (
+            {selectableAttributes.length ? selectableAttributes.map((attribute) => (
               <span
                 key={attribute.logicalName}
                 className={`attr-chip ${selectedAttrs.includes(attribute.logicalName) ? 'selected' : ''}`}
@@ -320,7 +330,7 @@ export function FetchXmlTab(props: {
               <div key={row.id} className="condition-row">
                 <select value={row.attribute} onChange={(event) => setConditions((current) => replaceConditionRow(current, row.id, { attribute: event.target.value }))}>
                   <option value="">select…</option>
-                  {selectableAttributes.map((attribute: any) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
+                  {selectableAttributes.map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
                 </select>
                 <select value={row.operator} onChange={(event) => setConditions((current) => replaceConditionRow(current, row.id, { operator: event.target.value }))}>
                   <option value="">select…</option>
@@ -338,7 +348,7 @@ export function FetchXmlTab(props: {
             <span className="field-label">Order By</span>
             <select value={orderAttribute} onChange={(event) => setOrderAttribute(event.target.value)}>
               <option value="">none</option>
-              {selectableAttributes.map((attribute: any) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
+              {selectableAttributes.map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
             </select>
           </div>
           <div className="field">
@@ -409,14 +419,14 @@ export function FetchXmlTab(props: {
 }
 
 function FetchXmlLinksEditor(props: {
-  dataverse: any;
+  dataverse: DataverseState;
   environment: string;
   links: LinkRow[];
   setLinks: Dispatch<SetStateAction<LinkRow[]>>;
-  toast: (message: string, isError?: boolean) => void;
+  toast: ToastFn;
 }) {
   const { dataverse, environment, links, setLinks, toast } = props;
-  const [details, setDetails] = useState<Record<number, any>>({});
+  const [details, setDetails] = useState<Record<number, DataverseEntityDetail>>({});
 
   useEffect(() => {
     setDetails({});
@@ -432,8 +442,8 @@ function FetchXmlLinksEditor(props: {
       return;
     }
     try {
-      const payload = await api<any>(`/api/dv/entities/${encodeURIComponent(logicalName)}?environment=${encodeURIComponent(environment)}`);
-      setDetails((current) => ({ ...current, [id]: payload.data }));
+      const detail = await getEntityDetail(environment, logicalName);
+      setDetails((current) => ({ ...current, [id]: detail }));
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
     }
@@ -449,7 +459,7 @@ function FetchXmlLinksEditor(props: {
       <div className="link-list">
         {links.map((link) => {
           const detail = details[link.id];
-          const linkAttributes = detail ? getSelectableAttributes(detail) : [];
+          const linkAttributes: DataverseAttribute[] = detail ? getSelectableAttributes(detail) : [];
           return (
             <div key={link.id} className="link-card">
               <div className="link-card-head">
@@ -465,7 +475,7 @@ function FetchXmlLinksEditor(props: {
                     void loadLinkDetail(link.id, value);
                   }}>
                     <option value="">select entity…</option>
-                    {dataverse.entities.map((item: any) => <option key={item.logicalName} value={item.logicalName}>{(item.displayName || item.logicalName)} ({item.logicalName})</option>)}
+                    {dataverse.entities.map((item) => <option key={item.logicalName} value={item.logicalName}>{(item.displayName || item.logicalName)} ({item.logicalName})</option>)}
                   </select>
                 </div>
                 <div className="field">
@@ -481,14 +491,14 @@ function FetchXmlLinksEditor(props: {
                   <span className="field-label">From (linked attr)</span>
                   <select value={link.from} onChange={(event) => updateLink(link.id, { from: event.target.value })}>
                     <option value="">select…</option>
-                    {linkAttributes.map((attribute: any) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
+                    {linkAttributes.map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
                   </select>
                 </div>
                 <div className="field">
                   <span className="field-label">To (parent attr)</span>
                   <select value={link.to} onChange={(event) => updateLink(link.id, { to: event.target.value })}>
                     <option value="">select…</option>
-                    {dataverse.currentEntityDetail ? getSelectableAttributes(dataverse.currentEntityDetail).map((attribute: any) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>) : null}
+                    {dataverse.currentEntityDetail ? (getSelectableAttributes(dataverse.currentEntityDetail) as DataverseAttribute[]).map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>) : null}
                   </select>
                 </div>
               </div>
@@ -499,7 +509,7 @@ function FetchXmlLinksEditor(props: {
               <div className="field" style={{ marginBottom: 8 }}>
                 <span className="field-label">Linked Attributes</span>
                 <div className="attr-picker">
-                  {linkAttributes.length ? linkAttributes.map((attribute: any) => (
+                  {linkAttributes.length ? linkAttributes.map((attribute) => (
                     <span
                       key={attribute.logicalName}
                       className={`attr-chip ${link.attributes.includes(attribute.logicalName) ? 'selected' : ''}`}
@@ -521,7 +531,7 @@ function FetchXmlLinksEditor(props: {
                     <div key={row.id} className="condition-row">
                       <select value={row.attribute} onChange={(event) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { attribute: event.target.value }) })}>
                         <option value="">select…</option>
-                        {linkAttributes.map((attribute: any) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
+                        {linkAttributes.map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
                       </select>
                       <select value={row.operator} onChange={(event) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { operator: event.target.value }) })}>
                         <option value="">select…</option>
@@ -558,16 +568,16 @@ function buildRawFetchXml(entityName: string, attributes: string[]) {
 }
 
 export function RelationshipsTab(props: {
-  dataverse: any;
+  dataverse: DataverseState;
   environment: string;
   loadEntityDetail: (logicalName: string) => Promise<void>;
-  toast: (message: string, isError?: boolean) => void;
+  toast: ToastFn;
 }) {
   const { dataverse, environment, loadEntityDetail, toast } = props;
   const [entityName, setEntityName] = useState('');
   const [depth, setDepth] = useState(2);
   const [hideSystem, setHideSystem] = useState(true);
-  const [graph, setGraph] = useState<{ nodes: RelationshipsNode[]; edges: RelationshipsEdge[]; cache: Record<string, any> }>({ nodes: [], edges: [], cache: {} });
+  const [graph, setGraph] = useState<RelationshipsGraph>({ nodes: [], edges: [], cache: {} });
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -589,7 +599,7 @@ export function RelationshipsTab(props: {
     }
     setLoading(true);
     try {
-      const cache: Record<string, any> = {};
+      const cache: Record<string, DataverseEntityDetail> = {};
       const nodes: RelationshipsNode[] = [];
       const edges: RelationshipsEdge[] = [];
       await loadRelationshipsRecursive(entityName, depth, environment, hideSystem, cache, nodes, edges);
@@ -619,7 +629,7 @@ export function RelationshipsTab(props: {
         <div className="rel-toolbar">
           <select value={entityName} onChange={(event) => setEntityName(event.target.value)} style={{ maxWidth: 240 }}>
             <option value="">select entity…</option>
-            {dataverse.entities.map((item: any) => <option key={item.logicalName} value={item.logicalName}>{(item.displayName || item.logicalName)} ({item.logicalName})</option>)}
+            {dataverse.entities.map((item) => <option key={item.logicalName} value={item.logicalName}>{(item.displayName || item.logicalName)} ({item.logicalName})</option>)}
           </select>
           <div className="rel-toolbar-group">
             <label className="rel-toolbar-label">Depth</label>
@@ -742,18 +752,16 @@ async function loadRelationshipsRecursive(
   remainingDepth: number,
   environment: string,
   hideSystem: boolean,
-  cache: Record<string, any>,
+  cache: Record<string, DataverseEntityDetail>,
   nodes: RelationshipsNode[],
   edges: RelationshipsEdge[],
 ) {
   if (cache[entityName]) return;
-  let detail: any;
+  let detail: DataverseEntityDetail;
   try {
-    const payload = await api<any>(`/api/dv/entities/${encodeURIComponent(entityName)}?environment=${encodeURIComponent(environment)}`);
-    detail = payload.data;
+    detail = await getEntityDetail(environment, entityName);
     cache[entityName] = detail;
   } catch {
-    cache[entityName] = { logicalName: entityName, attributes: [], error: true };
     return;
   }
   if (!nodes.find((node) => node.id === entityName)) {
@@ -770,7 +778,7 @@ async function loadRelationshipsRecursive(
     });
   }
   if (remainingDepth <= 0) return;
-  const lookups = (detail.attributes || []).filter((attribute: any) => {
+  const lookups = (detail.attributes || []).filter((attribute: DataverseAttribute) => {
     const typeName = String(attribute.attributeTypeName || attribute.attributeType || '').toLowerCase();
     return ['lookuptype', 'lookup', 'customer', 'owner'].includes(typeName) && attribute.targets?.length;
   });
@@ -823,9 +831,9 @@ async function expandRelationshipsNode(
   entityName: string,
   environment: string,
   hideSystem: boolean,
-  graph: { nodes: RelationshipsNode[]; edges: RelationshipsEdge[]; cache: Record<string, any> },
-  setGraph: Dispatch<SetStateAction<{ nodes: RelationshipsNode[]; edges: RelationshipsEdge[]; cache: Record<string, any> }>>,
-  toast: (message: string, isError?: boolean) => void,
+  graph: RelationshipsGraph,
+  setGraph: Dispatch<SetStateAction<RelationshipsGraph>>,
+  toast: ToastFn,
 ) {
   try {
     const cache = { ...graph.cache };
