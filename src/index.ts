@@ -445,7 +445,10 @@ async function runUi(args: string[]): Promise<number> {
   const portValue = readFlag(args, '--port');
   const port = portValue === undefined ? undefined : Number(portValue);
   if (portValue !== undefined && (!Number.isInteger(port) || Number(port) < 0 || Number(port) > 65535)) {
-    return printFailure(argumentFailure('UI_PORT_INVALID', 'Usage: pp ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth]'), args);
+    return printFailure(argumentFailure('UI_PORT_INVALID', 'Usage: pp ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth] [--lan --pair]'), args);
+  }
+  if (hasFlag(args, '--lan') && !hasFlag(args, '--pair')) {
+    return printFailure(argumentFailure('UI_LAN_REQUIRES_PAIR', 'LAN UI access requires --pair.'), args);
   }
 
   const ui = await startPpUi({
@@ -453,6 +456,8 @@ async function runUi(args: string[]): Promise<number> {
     port,
     openBrowser: !hasFlag(args, '--no-open'),
     allowInteractiveAuth: !hasFlag(args, '--no-interactive-auth'),
+    lan: hasFlag(args, '--lan'),
+    pair: hasFlag(args, '--pair'),
   });
 
   if (ui.reused) return 0;
@@ -709,10 +714,14 @@ function printUiHelp(): void {
     [
       'pp ui',
       '',
-      'Start the localhost UI for account, environment, and MCP inspection.',
+      'Start the UI for account, environment, and MCP inspection.',
       '',
       'Usage:',
-      '  pp ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth]',
+      '  pp ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth] [--lan --pair]',
+      '',
+      'Options:',
+      '  --lan   Listen on the local network instead of localhost. Requires --pair.',
+      '  --pair  Require a short-lived pairing code before browsers can use the UI.',
     ].join('\n') + '\n',
   );
 }

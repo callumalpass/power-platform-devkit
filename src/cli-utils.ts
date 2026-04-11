@@ -11,7 +11,9 @@ const BOOLEAN_FLAGS = new Set([
   '--allow-interactive-auth',
   '--device-code',
   '--force-prompt',
+  '--lan',
   '--no-interactive-auth',
+  '--pair',
   '--read',
 ]);
 

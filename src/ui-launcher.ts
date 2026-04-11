@@ -13,7 +13,11 @@ async function main(args: string[]): Promise<number> {
   const portValue = readFlag(args, '--port');
   const port = portValue === undefined ? undefined : Number(portValue);
   if (portValue !== undefined && (!Number.isInteger(port) || Number(port) < 0 || Number(port) > 65535)) {
-    process.stderr.write('Usage: pp-ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth]\n');
+    process.stderr.write('Usage: pp-ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth] [--lan --pair]\n');
+    return 1;
+  }
+  if (hasFlag(args, '--lan') && !hasFlag(args, '--pair')) {
+    process.stderr.write('LAN UI access requires --pair.\n');
     return 1;
   }
 
@@ -22,6 +26,8 @@ async function main(args: string[]): Promise<number> {
     port,
     openBrowser: !hasFlag(args, '--no-open'),
     allowInteractiveAuth: !hasFlag(args, '--no-interactive-auth'),
+    lan: hasFlag(args, '--lan'),
+    pair: hasFlag(args, '--pair'),
   });
 
   if (ui.reused) return 0;
@@ -46,7 +52,11 @@ function printHelp(): void {
       'Ensure the pp browser UI is running, then open it.',
       '',
       'Usage:',
-      '  pp-ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth]',
+      '  pp-ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth] [--lan --pair]',
+      '',
+      'Options:',
+      '  --lan   Listen on the local network instead of localhost. Requires --pair.',
+      '  --pair  Require a short-lived pairing code before browsers can use the UI.',
     ].join('\n') + '\n',
   );
 }

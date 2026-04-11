@@ -179,6 +179,14 @@ pp ui
 
 Starts or reuses a localhost HTTP server and opens a browser. If another `pp ui` instance is already running for the same config directory, the command reuses it instead of starting a duplicate process. If the default port is busy, `pp ui` automatically falls back to another localhost port.
 
+To serve the UI to another browser on the same trusted network, start the host machine with LAN pairing enabled:
+
+```sh
+pp ui --lan --pair --no-open
+```
+
+The command prints LAN URLs plus a short-lived pairing URL/code. Open the pairing URL from the client browser, or open the LAN URL and enter the code shown on the host. Pairing is in-memory and lasts only for the running UI process; restart `pp ui` to revoke paired browsers. LAN mode uses plain HTTP, so use it only on a trusted LAN or behind your own HTTPS/VPN layer.
+
 You can also launch the UI directly with:
 
 ```sh
@@ -197,6 +205,8 @@ Options:
 - `--port PORT` -- Set the server port (default: auto-assigned)
 - `--no-open` -- Don't open a browser on startup
 - `--config-dir DIR` -- Override config directory
+- `--lan` -- Listen on the local network instead of localhost (requires `--pair`)
+- `--pair` -- Require a short-lived pairing code before browsers can use the UI
 
 ### Windows UX notes
 
