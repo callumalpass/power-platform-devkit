@@ -1101,10 +1101,6 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
     clearSeed();
   }, [active, clearSeed, seed]);
 
-  useEffect(() => {
-    setPath(currentApi.defaultPath);
-  }, [apiKey]);
-
   async function sendRequest() {
     if (!environment) {
       toast('Select an environment first.', true);
@@ -1183,7 +1179,11 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
           </select>
         </div>
         <div className="console-bar">
-          <select id="console-api" value={apiKey} onChange={(event) => setApiKey(event.target.value)}>
+          <select id="console-api" value={apiKey} onChange={(event) => {
+            const nextApi = APIS.find((item) => item.key === event.target.value) || APIS[0];
+            setApiKey(nextApi.key);
+            setPath(nextApi.defaultPath);
+          }}>
             {APIS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
           </select>
           <select id="console-method" value={method} onChange={(event) => setMethod(event.target.value)} style={{ color: METHOD_COLORS[method] || 'var(--ink)' }}>
