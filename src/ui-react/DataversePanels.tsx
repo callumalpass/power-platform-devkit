@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction, type WheelEvent as ReactWheelEvent } from 'react';
 import {
   formatDate,
   getDefaultSelectedColumns,
@@ -59,6 +59,12 @@ type RelationshipsGraph = {
   edges: RelationshipsEdge[];
   cache: Record<string, DataverseEntityDetail>;
 };
+
+type RelationshipsViewBox = { x: number; y: number; width: number; height: number };
+type RelationshipsTooltip = { x: number; y: number; title: string; detail: string };
+type RelationshipsDrag =
+  | { kind: 'node'; pointerId: number; nodeId: string; offsetX: number; offsetY: number }
+  | { kind: 'pan'; pointerId: number; startClientX: number; startClientY: number; startViewBox: RelationshipsViewBox };
 
 const OPERATORS = [
   'eq', 'ne', 'gt', 'ge', 'lt', 'le',
@@ -580,6 +586,10 @@ export function RelationshipsTab(props: {
   const [graph, setGraph] = useState<RelationshipsGraph>({ nodes: [], edges: [], cache: {} });
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [viewBox, setViewBox] = useState<RelationshipsViewBox>({ x: -500, y: -380, width: 1000, height: 760 });
+  const [drag, setDrag] = useState<RelationshipsDrag | null>(null);
+  const [tooltip, setTooltip] = useState<RelationshipsTooltip | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
     if (dataverse.currentEntityDetail?.logicalName) setEntityName(dataverse.currentEntityDetail.logicalName);
@@ -587,6 +597,107 @@ export function RelationshipsTab(props: {
 
   const selectedNode = graph.nodes.find((node) => node.id === selectedNodeId) || null;
   const selectedDetail = selectedNode ? graph.cache[selectedNode.id] : null;
+
+  function eventToSvgPoint(event: ReactPointerEvent<SVGElement>) {
+    const svg = svgRef.current;
+    const matrix = svg?.getScreenCTM();
+    if (!svg || !matrix) return { x: 0, y: 0 };
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const transformed = point.matrixTransform(matrix.inverse());
+    return { x: transformed.x, y: transformed.y };
+  }
+
+  function tooltipPosition(event: ReactPointerEvent<SVGElement>) {
+    const bounds = svgRef.current?.parentElement?.getBoundingClientRect();
+    return {
+      x: event.clientX - (bounds?.left || 0) + 12,
+      y: event.clientY - (bounds?.top || 0) + 12,
+    };
+  }
+
+  function showNodeTooltip(node: RelationshipsNode, event: ReactPointerEvent<SVGElement>) {
+    const position = tooltipPosition(event);
+    setTooltip({
+      ...position,
+      title: node.label,
+      detail: `${node.logicalName}${node.entitySetName ? ` · ${node.entitySetName}` : ''}`,
+    });
+  }
+
+  function showEdgeTooltip(edge: RelationshipsEdge, event: ReactPointerEvent<SVGElement>) {
+    const position = tooltipPosition(event);
+    setTooltip({
+      ...position,
+      title: edge.label,
+      detail: `${edge.source} → ${edge.target}`,
+    });
+  }
+
+  function startNodeDrag(node: RelationshipsNode, event: ReactPointerEvent<SVGGElement>) {
+    event.stopPropagation();
+    const point = eventToSvgPoint(event);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSelectedNodeId(node.id);
+    setTooltip(null);
+    setDrag({ kind: 'node', pointerId: event.pointerId, nodeId: node.id, offsetX: point.x - node.x, offsetY: point.y - node.y });
+  }
+
+  function startPan(event: ReactPointerEvent<SVGSVGElement>) {
+    if (event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setTooltip(null);
+    setDrag({ kind: 'pan', pointerId: event.pointerId, startClientX: event.clientX, startClientY: event.clientY, startViewBox: viewBox });
+  }
+
+  function moveGraphPointer(event: ReactPointerEvent<SVGSVGElement>) {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (drag.kind === 'node') {
+      const point = eventToSvgPoint(event);
+      setGraph((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) => (
+          node.id === drag.nodeId ? { ...node, x: point.x - drag.offsetX, y: point.y - drag.offsetY } : node
+        )),
+      }));
+      return;
+    }
+    const svg = svgRef.current;
+    const rect = svg?.getBoundingClientRect();
+    if (!rect) return;
+    const scaleX = drag.startViewBox.width / rect.width;
+    const scaleY = drag.startViewBox.height / rect.height;
+    setViewBox({
+      ...drag.startViewBox,
+      x: drag.startViewBox.x - (event.clientX - drag.startClientX) * scaleX,
+      y: drag.startViewBox.y - (event.clientY - drag.startClientY) * scaleY,
+    });
+  }
+
+  function endGraphPointer(event: ReactPointerEvent<SVGSVGElement>) {
+    if (drag?.pointerId === event.pointerId) setDrag(null);
+  }
+
+  function zoomGraph(event: ReactWheelEvent<SVGSVGElement>) {
+    event.preventDefault();
+    const svg = svgRef.current;
+    const rect = svg?.getBoundingClientRect();
+    if (!rect) return;
+    const factor = event.deltaY > 0 ? 1.12 : 0.88;
+    const nextWidth = Math.max(320, Math.min(2400, viewBox.width * factor));
+    const nextHeight = Math.max(240, Math.min(1800, viewBox.height * factor));
+    const relX = (event.clientX - rect.left) / rect.width;
+    const relY = (event.clientY - rect.top) / rect.height;
+    const anchorX = viewBox.x + viewBox.width * relX;
+    const anchorY = viewBox.y + viewBox.height * relY;
+    setViewBox({
+      x: anchorX - nextWidth * relX,
+      y: anchorY - nextHeight * relY,
+      width: nextWidth,
+      height: nextHeight,
+    });
+  }
 
   async function loadGraph() {
     if (!entityName) {
@@ -644,7 +755,18 @@ export function RelationshipsTab(props: {
           <span style={{ fontSize: '0.6875rem', color: 'var(--muted)', marginLeft: 'auto' }}>{graph.nodes.length ? `${graph.nodes.length} entities, ${graph.edges.length} relationships` : ''}</span>
         </div>
         <div className="rel-canvas-container">
-          <svg className="rel-svg" xmlns="http://www.w3.org/2000/svg" viewBox="-500 -380 1000 760">
+          <svg
+            ref={svgRef}
+            className="rel-svg"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+            onPointerDown={startPan}
+            onPointerMove={moveGraphPointer}
+            onPointerUp={endGraphPointer}
+            onPointerCancel={endGraphPointer}
+            onPointerLeave={() => { if (!drag) setTooltip(null); }}
+            onWheel={zoomGraph}
+          >
             {graph.edges.map((edge) => {
               const source = graph.nodes.find((node) => node.id === edge.source);
               const target = graph.nodes.find((node) => node.id === edge.target);
@@ -665,7 +787,14 @@ export function RelationshipsTab(props: {
               const mx = (sx + tx) / 2 + nx * 6;
               const my = (sy + ty) / 2 + ny * 6;
               return (
-                <g key={edge.id} className="rel-edge">
+                <g
+                  key={edge.id}
+                  className="rel-edge"
+                  onPointerEnter={(event) => showEdgeTooltip(edge, event)}
+                  onPointerMove={(event) => showEdgeTooltip(edge, event)}
+                  onPointerLeave={() => setTooltip(null)}
+                >
+                  <line className="rel-edge-hit" x1={sx} y1={sy} x2={tx} y2={ty}></line>
                   <line x1={sx} y1={sy} x2={tx} y2={ty}></line>
                   <circle cx={tx} cy={ty} r={3} className="rel-arrowhead"></circle>
                   <text x={mx} y={my - 6} className="rel-edge-label">{edge.label}</text>
@@ -678,9 +807,12 @@ export function RelationshipsTab(props: {
               return (
                 <g
                   key={node.id}
-                  className={`rel-node ${node.isRoot ? 'root' : ''} ${node.isCustom ? 'custom' : ''}`}
+                  className={`rel-node ${node.isRoot ? 'root' : ''} ${node.isCustom ? 'custom' : ''} ${selectedNodeId === node.id ? 'selected' : ''}`}
                   transform={`translate(${x},${y})`}
-                  onClick={() => setSelectedNodeId(node.id)}
+                  onPointerDown={(event) => startNodeDrag(node, event)}
+                  onPointerEnter={(event) => showNodeTooltip(node, event)}
+                  onPointerMove={(event) => { if (!drag) showNodeTooltip(node, event); }}
+                  onPointerLeave={() => { if (!drag) setTooltip(null); }}
                 >
                   <rect width="160" height="44" rx="10"></rect>
                   <text x="80" y="17" className="rel-node-label">{node.label}</text>
@@ -689,7 +821,14 @@ export function RelationshipsTab(props: {
               );
             })}
           </svg>
-          <div className="rel-hint">Click a node to inspect it. Load again after changing depth or system filters.</div>
+          {tooltip ? (
+            <div className="rel-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+              <strong>{tooltip.title}</strong>
+              <br />
+              <span>{tooltip.detail}</span>
+            </div>
+          ) : null}
+          <div className="rel-hint">Drag nodes to rearrange. Drag the canvas to pan. Scroll to zoom.</div>
         </div>
       </div>
       <div className="panel">

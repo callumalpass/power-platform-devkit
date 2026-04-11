@@ -468,7 +468,7 @@ export function renderHtml(): string {
     .rel-toolbar-check { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--muted); cursor: pointer; user-select: none; }
     .rel-toolbar-check input { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
     .rel-canvas-container { position: relative; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); overflow: hidden; }
-    .rel-svg { width: 100%; height: calc(100vh - 200px); min-height: 500px; cursor: grab; }
+    .rel-svg { width: 100%; height: calc(100vh - 200px); min-height: 500px; cursor: grab; touch-action: none; }
     .rel-svg:active { cursor: grabbing; }
     .rel-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 0.6875rem; color: var(--muted); background: var(--surface); padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); pointer-events: none; white-space: nowrap; }
     .rel-edge line { stroke: var(--border); stroke-width: 1.5; }
@@ -480,6 +480,7 @@ export function renderHtml(): string {
     .rel-edge:hover .rel-edge-label { fill: var(--accent); opacity: 1; }
     .rel-node rect { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; cursor: pointer; transition: stroke 100ms; }
     .rel-node:hover rect { stroke: var(--accent); stroke-width: 2; }
+    .rel-node.selected rect { stroke: var(--accent); stroke-width: 2.5; }
     .rel-node.root rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
     .rel-node.custom rect { stroke: var(--ok); }
     .rel-node-label { font-size: 11px; font-weight: 600; fill: var(--ink); text-anchor: middle; pointer-events: none; }
