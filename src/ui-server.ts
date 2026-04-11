@@ -2,7 +2,8 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { networkInterfaces } from 'node:os';
 import { spawn } from 'node:child_process';
 import { createDiagnostic, fail } from './diagnostics.js';
 import { FetchXmlMetadataCatalog } from './fetchxml-language-service.js';
@@ -20,6 +21,8 @@ export interface PpUiOptions {
   openBrowser?: boolean;
   allowInteractiveAuth?: boolean;
   reuseExisting?: boolean;
+  lan?: boolean;
+  pair?: boolean;
 }
 
 export interface PpUiHandle {
@@ -49,13 +52,16 @@ interface ExistingUiInstance {
 export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> {
   const configOptions = options.configDir ? { configDir: options.configDir } : {};
   const configDir = getConfigDir(configOptions);
-  const host = '127.0.0.1';
+  if (options.lan && !options.pair) {
+    throw new Error('LAN UI access requires --pair.');
+  }
+  const host = options.lan ? '0.0.0.0' : '127.0.0.1';
   const preferredPort = options.port ?? DEFAULT_UI_PORT;
   const explicitPort = options.port !== undefined;
   const allowInteractiveAuth = options.allowInteractiveAuth ?? true;
   const statePath = getUiStatePath(configOptions);
 
-  if (options.reuseExisting !== false) {
+  if (options.reuseExisting !== false && !options.lan && !options.pair) {
     const existing = await findExistingUiInstance(statePath, configDir);
     if (existing && (!explicitPort || existing.port === preferredPort)) {
       process.stdout.write(`pp UI already running at ${existing.url}\n`);
@@ -72,6 +78,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
   const jobs = new UiJobStore();
   const fetchXmlCatalog = new FetchXmlMetadataCatalog();
   const instanceId = randomUUID();
+  const pairing = options.pair ? createPairingState() : undefined;
   const initialPort = explicitPort ? preferredPort : DEFAULT_UI_PORT;
   const server = await listenWithFallback(
     () => createUiServer({
@@ -83,6 +90,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
       fetchXmlCatalog,
       instanceId,
       serverUrl: '',
+      pairing,
       sendVendorModule: async (response, specifier) => {
         sendJson(
           response,
@@ -98,7 +106,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
 
   const address = server.address();
   const resolvedPort = typeof address === 'object' && address ? address.port : preferredPort;
-  const url = `http://${host}:${resolvedPort}`;
+  const url = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${resolvedPort}`;
   const context = (server as Server & { __ppContext?: Parameters<typeof createUiServer>[0] }).__ppContext;
   if (context) {
     context.port = resolvedPort;
@@ -118,6 +126,19 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
 
   await persistUiState(statePath, state);
   process.stdout.write(`pp UI listening at ${url}\n`);
+  if (host === '0.0.0.0') {
+    for (const lanUrl of getLanUrls(resolvedPort)) {
+      process.stdout.write(`LAN URL: ${lanUrl}\n`);
+    }
+  }
+  if (pairing) {
+    const pairUrls = host === '0.0.0.0' ? getLanUrls(resolvedPort) : [url];
+    process.stdout.write(`Pairing code: ${pairing.code}\n`);
+    process.stdout.write(`Pairing expires at ${new Date(pairing.expiresAt).toLocaleString()}\n`);
+    for (const pairUrl of pairUrls) {
+      process.stdout.write(`Pair URL: ${pairUrl}/pair?code=${pairing.code}\n`);
+    }
+  }
   if (resolvedPort !== preferredPort) {
     process.stdout.write(`Preferred port ${preferredPort} was unavailable; using ${resolvedPort} instead.\n`);
   }
@@ -139,7 +160,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
   };
 }
 
-function createUiServer(context: Parameters<typeof handleUiRequest>[2]): Server {
+function createUiServer(context: RequestContext): Server {
   const server = createServer(async (request, response) => {
     try {
       await handleRequest(request, response, context);
@@ -155,7 +176,7 @@ function createUiServer(context: Parameters<typeof handleUiRequest>[2]): Server 
       );
     }
   });
-  (server as Server & { __ppContext?: Parameters<typeof handleUiRequest>[2] }).__ppContext = context;
+  (server as Server & { __ppContext?: RequestContext }).__ppContext = context;
   return server;
 }
 
@@ -169,10 +190,145 @@ interface RequestContext {
   sendVendorModule: (response: ServerResponse, specifier: string) => Promise<void>;
   instanceId: string;
   serverUrl: string;
+  pairing?: PairingState;
 }
 
 async function handleRequest(request: Parameters<typeof handleUiRequest>[0], response: ServerResponse, context: RequestContext): Promise<void> {
+  if (await handlePairingRequest(request, response, context)) return;
   await handleUiRequest(request, response, context);
+}
+
+interface PairingState {
+  code: string;
+  expiresAt: number;
+  sessions: Set<string>;
+}
+
+function createPairingState(): PairingState {
+  return {
+    code: String(randomInt(100000, 999999)),
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    sessions: new Set<string>(),
+  };
+}
+
+async function handlePairingRequest(request: Parameters<typeof handleUiRequest>[0], response: ServerResponse, context: RequestContext): Promise<boolean> {
+  const pairing = context.pairing;
+  if (!pairing) return false;
+
+  const method = request.method ?? 'GET';
+  const url = new URL(request.url ?? '/', `http://${context.host}:${context.port}`);
+
+  if (url.pathname === UI_STATUS_PATH && isLoopbackAddress(request.socket.remoteAddress)) {
+    return false;
+  }
+
+  if (url.pathname === '/pair' && method === 'GET') {
+    const code = url.searchParams.get('code')?.trim();
+    if (!code) {
+      sendPairPage(response, pairing, undefined);
+      return true;
+    }
+    if (Date.now() > pairing.expiresAt) {
+      sendPairPage(response, pairing, 'This pairing code has expired. Restart pp ui to generate a new one.');
+      return true;
+    }
+    if (!constantTimeEqual(code, pairing.code)) {
+      sendPairPage(response, pairing, 'That pairing code is not valid.');
+      return true;
+    }
+    const session = randomBytes(32).toString('base64url');
+    pairing.sessions.add(session);
+    response.writeHead(302, {
+      location: '/',
+      'set-cookie': `pp_ui_session=${session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`,
+      'cache-control': 'no-store',
+    });
+    response.end();
+    return true;
+  }
+
+  if (hasValidSession(request, pairing)) return false;
+
+  sendPairRequired(response);
+  return true;
+}
+
+function hasValidSession(request: Parameters<typeof handleUiRequest>[0], pairing: PairingState): boolean {
+  const cookie = request.headers.cookie;
+  if (!cookie) return false;
+  for (const part of cookie.split(';')) {
+    const [rawName, ...rawValue] = part.trim().split('=');
+    if (rawName !== 'pp_ui_session') continue;
+    const value = rawValue.join('=');
+    for (const session of pairing.sessions) {
+      if (constantTimeEqual(value, session)) return true;
+    }
+  }
+  return false;
+}
+
+function sendPairRequired(response: ServerResponse): void {
+  response.writeHead(401, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  response.end(renderPairHtml('Pair this browser', 'Enter the pairing code shown on the machine running pp ui.'));
+}
+
+function sendPairPage(response: ServerResponse, pairing: PairingState, error: string | undefined): void {
+  const message = error ?? `Enter the pairing code shown on the host. This code expires at ${new Date(pairing.expiresAt).toLocaleString()}.`;
+  response.writeHead(error ? 401 : 200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  response.end(renderPairHtml(error ? 'Pairing failed' : 'Pair this browser', message));
+}
+
+function renderPairHtml(title: string, message: string): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, sans-serif; background: #f6f7f9; color: #16181d; }
+    main { width: min(420px, calc(100vw - 32px)); }
+    h1 { margin: 0 0 12px; font-size: 1.5rem; }
+    p { margin: 0 0 18px; color: #4d5663; line-height: 1.5; }
+    form { display: flex; gap: 8px; }
+    input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #b8c0cc; border-radius: 8px; font: inherit; }
+    button { padding: 10px 14px; border: 1px solid #1c5fb8; border-radius: 8px; background: #1c5fb8; color: white; font: inherit; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>${escapeHtml(title)}</h1>
+    <p>${escapeHtml(message)}</p>
+    <form method="get" action="/pair">
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" autofocus placeholder="Pairing code">
+      <button type="submit">Pair</button>
+    </form>
+  </main>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function randomInt(min: number, max: number): number {
+  const range = max - min + 1;
+  return min + (randomBytes(4).readUInt32BE(0) % range);
 }
 
 async function listenWithFallback(create: () => Server, host: string, preferredPort: number, strictPort: boolean): Promise<Server> {
@@ -262,6 +418,21 @@ async function readUiState(statePath: string): Promise<UiInstanceState | undefin
   } catch {
     return undefined;
   }
+}
+
+function getLanUrls(port: number): string[] {
+  const urls: string[] = [];
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family !== 'IPv4' || address.internal) continue;
+      urls.push(`http://${address.address}:${port}`);
+    }
+  }
+  return urls.length > 0 ? urls : [`http://<host-ip>:${port}`];
+}
+
+function isLoopbackAddress(address: string | undefined): boolean {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }
 
 function openBrowser(url: string): void {

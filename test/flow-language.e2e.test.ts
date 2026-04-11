@@ -132,6 +132,43 @@ test('pp ui reuses an existing running instance for the same config', async () =
   await rm(configDir, { recursive: true, force: true });
 });
 
+test('pp ui pairing blocks unpaired browsers and grants a session cookie', async () => {
+  const cliEntry = path.resolve(process.cwd(), '.tmp-test/src/index.js');
+  const port = await findOpenPort();
+  const child = spawn('node', [cliEntry, 'ui', '--no-open', '--port', String(port), '--lan', '--pair', '--no-interactive-auth'], {
+    cwd: process.cwd(),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk) => { stdout += String(chunk); });
+  child.stderr.on('data', (chunk) => { stderr += String(chunk); });
+
+  try {
+    await waitFor(() => stdout.includes('Pairing code:'), 10000, 'UI pairing code was not printed');
+    assert.match(stdout, /LAN URL:/);
+    const code = /Pairing code: (\d+)/.exec(stdout)?.[1];
+    assert.ok(code, stdout);
+
+    const blocked = await fetch(`http://127.0.0.1:${port}/`);
+    assert.equal(blocked.status, 401, stderr || stdout);
+
+    const paired = await fetch(`http://127.0.0.1:${port}/pair?code=${code}`, { redirect: 'manual' });
+    assert.equal(paired.status, 302, stderr || stdout);
+    const cookie = paired.headers.get('set-cookie');
+    assert.match(cookie ?? '', /pp_ui_session=/);
+
+    const allowed = await fetch(`http://127.0.0.1:${port}/`, { headers: { cookie: cookie?.split(';')[0] ?? '' } });
+    assert.equal(allowed.status, 200, stderr || stdout);
+  } finally {
+    if (child.exitCode === null) {
+      child.kill('SIGTERM');
+      await once(child, 'exit');
+    }
+  }
+});
+
 async function waitFor(predicate: () => boolean, timeoutMs: number, message: string): Promise<void> {
   const start = Date.now();
   while (!predicate()) {
