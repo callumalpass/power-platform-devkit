@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { AuthSessionStore } from '../src/ui-auth-sessions.js';
 import { handleUiRequest, type UiRequestContext } from '../src/ui-routes.js';
 
 function createContext(overrides: Partial<UiRequestContext> = {}): UiRequestContext {
@@ -16,6 +17,7 @@ function createContext(overrides: Partial<UiRequestContext> = {}): UiRequestCont
       getJob() { return undefined; },
       cancelJob() { return undefined; },
     } as unknown as UiRequestContext['jobs'],
+    authSessions: new AuthSessionStore(),
     fetchXmlCatalog: {
       analyze: async () => ({ diagnostics: [], completions: [], context: { from: 0, to: 0 } }),
     } as unknown as UiRequestContext['fetchXmlCatalog'],
@@ -95,6 +97,25 @@ test('handleUiRequest saves non-interactive accounts with POST /api/accounts', a
   const config = JSON.parse(await readFile(join(configDir, 'config.json'), 'utf8'));
   assert.equal(config.accounts['token-account'].kind, 'environment-token');
   assert.equal(config.accounts['token-account'].environmentVariable, 'PP_TEST_TOKEN');
+});
+
+test('handleUiRequest saves interactive accounts without starting login', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-ui-routes-'));
+  const response = createResponse();
+  const request = createJsonRequest('POST', '/api/accounts', {
+    name: 'work',
+    kind: 'user',
+    loginHint: 'admin@example.com',
+  });
+
+  await handleUiRequest(request as any, response as any, createContext({ configOptions: { configDir } }));
+
+  assert.equal(response.statusCode, 201);
+  assert.doesNotMatch(response.body, /loginJobId/);
+
+  const config = JSON.parse(await readFile(join(configDir, 'config.json'), 'utf8'));
+  assert.equal(config.accounts.work.kind, 'user');
+  assert.equal(config.accounts.work.loginHint, 'admin@example.com');
 });
 
 test('handleUiRequest validates Dataverse create route before execution', async () => {

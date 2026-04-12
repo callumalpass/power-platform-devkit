@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   api,
   esc,
@@ -331,7 +331,7 @@ export function App() {
     try {
       const payload = await api<any>('/api/request/execute', {
         method: 'POST',
-        body: JSON.stringify({ environment: globalEnvironment, api: 'powerapps', method: 'GET', path: '/apps', allowInteractive: false }),
+        body: JSON.stringify({ environment: globalEnvironment, api: 'powerapps', method: 'GET', path: '/apps', allowInteractive: false, softFail: true }),
       });
       setAppsState((current) => ({
         ...current,
@@ -350,7 +350,7 @@ export function App() {
     try {
       const payload = await api<any>('/api/request/execute', {
         method: 'POST',
-        body: JSON.stringify({ environment: globalEnvironment, api: 'bap', method: 'GET', path: '/environments', allowInteractive: false }),
+        body: JSON.stringify({ environment: globalEnvironment, api: 'bap', method: 'GET', path: '/environments', allowInteractive: false, softFail: true }),
       });
       setPlatformState((current) => ({
         ...current,
@@ -726,14 +726,17 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
           <h2 style={{ marginBottom: 12 }}>Saved Requests</h2>
           <div id="console-saved" className="card-list">
             {saved.map((entry, index) => (
-              <div key={index} className="saved-item">
-                <div className="saved-item-main" onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}>
+              <div key={index} className="saved-item" onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}>
+                <div className="saved-item-main">
                   <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
                   <span className="saved-item-name">{entry.path}</span>
                   <CopyButton value={`${entry.method} ${entry.path}`} label="Copy" title="Copy saved request" toast={toast} stopPropagation />
                   <span className="history-api">{entry.api}</span>
                 </div>
-                <button className="pin-btn pinned" onClick={() => setSaved((current) => current.filter((_, itemIndex) => itemIndex !== index))}>✖</button>
+                <button className="pin-btn pinned" onClick={(event) => {
+                  event.stopPropagation();
+                  setSaved((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                }}>✖</button>
               </div>
             ))}
           </div>
@@ -1215,6 +1218,20 @@ function DataverseTab(props: {
     return map;
   }, [dataverse.entities]);
 
+  useEffect(() => {
+    setQueryForm({
+      entitySetName: '',
+      top: '10',
+      selectCsv: '',
+      filter: '',
+      orderByCsv: '',
+      expandCsv: '',
+      rawPath: '',
+      includeCount: false,
+    });
+    setCreatedRecordId(null);
+  }, [environment]);
+
   const filteredAttributes = dataverse.currentEntityDetail
     ? (dataverse.currentEntityDetail.attributes || []).filter((attribute: any) => {
         if (!dataverse.attrFilter) return true;
@@ -1224,9 +1241,10 @@ function DataverseTab(props: {
     : [];
 
   useEffect(() => {
+    if (!dataverse.currentEntityDetail) return;
     setQueryForm((current) => ({
       ...current,
-      entitySetName: dataverse.currentEntityDetail?.entitySetName || '',
+      entitySetName: dataverse.currentEntityDetail.entitySetName || '',
       selectCsv: (dataverse.selectedColumns.length
         ? dataverse.selectedColumns
         : getDefaultSelectedColumns(dataverse.currentEntityDetail, 0)).join(','),
@@ -1235,21 +1253,39 @@ function DataverseTab(props: {
     setCreatedRecordId(null);
   }, [dataverse.currentEntityDetail, dataverse.selectedColumns]);
 
-  async function runQuery(event: FormEvent<HTMLFormElement>, previewOnly = false) {
+  function readQueryForm(event: FormEvent<HTMLFormElement> | ReactMouseEvent<HTMLButtonElement>) {
+    const target = event.currentTarget;
+    const form = target instanceof HTMLFormElement ? target : target.form;
+    if (!form) return queryForm;
+    const data = new FormData(form);
+    return {
+      entitySetName: String(data.get('entitySetName') || ''),
+      top: String(data.get('top') || ''),
+      selectCsv: String(data.get('selectCsv') || ''),
+      filter: String(data.get('filter') || ''),
+      orderByCsv: String(data.get('orderByCsv') || ''),
+      expandCsv: String(data.get('expandCsv') || ''),
+      rawPath: String(data.get('rawPath') || ''),
+      includeCount: data.get('includeCount') === 'on',
+    };
+  }
+
+  async function runQuery(event: FormEvent<HTMLFormElement> | ReactMouseEvent<HTMLButtonElement>, previewOnly = false) {
     event.preventDefault();
+    const submitted = readQueryForm(event);
     try {
       const payload = await api<any>(previewOnly ? '/api/dv/query/preview' : '/api/dv/query/execute', {
         method: 'POST',
         body: JSON.stringify({
           environmentAlias: environment,
-          entitySetName: queryForm.entitySetName,
-          top: queryForm.top,
-          selectCsv: queryForm.selectCsv,
-          filter: queryForm.filter,
-          orderByCsv: queryForm.orderByCsv,
-          expandCsv: queryForm.expandCsv,
-          rawPath: queryForm.rawPath,
-          includeCount: queryForm.includeCount,
+          entitySetName: submitted.entitySetName,
+          top: submitted.top,
+          selectCsv: submitted.selectCsv,
+          filter: submitted.filter,
+          orderByCsv: submitted.orderByCsv,
+          expandCsv: submitted.expandCsv,
+          rawPath: submitted.rawPath,
+          includeCount: submitted.includeCount,
         }),
       });
       if (previewOnly) {
@@ -1480,7 +1516,7 @@ function DataverseTab(props: {
               </div>
               <div className="check-row"><input type="checkbox" name="includeCount" id="query-count" checked={queryForm.includeCount} onChange={(event) => setQueryForm((current) => ({ ...current, includeCount: event.target.checked }))} /><label htmlFor="query-count">Include count</label></div>
               <div className="btn-group">
-                <button className="btn btn-secondary" id="query-preview-btn" type="button" onClick={(event) => void runQuery(event as any, true)}>Preview Path</button>
+                <button className="btn btn-secondary" id="query-preview-btn" type="button" onClick={(event) => void runQuery(event, true)}>Preview Path</button>
                 <button className="btn btn-primary" id="query-run-btn" type="submit">Run Query</button>
               </div>
             </form>
@@ -1498,10 +1534,10 @@ function DataverseTab(props: {
           </div>
         </div>
 
-        <div style={{ display: dataverse.dvSubTab === 'dv-fetchxml' ? undefined : 'none' }}>
+        <div id="dv-subpanel-dv-fetchxml" className={`dv-subpanel ${dataverse.dvSubTab === 'dv-fetchxml' ? 'active' : ''}`} style={{ display: dataverse.dvSubTab === 'dv-fetchxml' ? undefined : 'none' }}>
           <FetchXmlTab dataverse={dataverse} environment={environment} environmentUrl={environmentUrl} toast={toast} />
         </div>
-        <div style={{ display: dataverse.dvSubTab === 'dv-relationships' ? undefined : 'none' }}>
+        <div id="dv-subpanel-dv-relationships" className={`dv-subpanel ${dataverse.dvSubTab === 'dv-relationships' ? 'active' : ''}`} style={{ display: dataverse.dvSubTab === 'dv-relationships' ? undefined : 'none' }}>
           <RelationshipsTab dataverse={dataverse} environment={environment} loadEntityDetail={loadEntityDetail} toast={toast} />
         </div>
       </div>

@@ -64,7 +64,7 @@ export async function loadActionDetail(environment: string, flow: FlowItem, run:
 async function executeRequest<T>(environment: string, apiKind: string, path: string, allowInteractive = true) {
   const result = await api<ApiEnvelope<ApiExecuteResponse<T>>>('/api/request/execute', {
     method: 'POST',
-    body: JSON.stringify({ environment, api: apiKind, method: 'GET', path, allowInteractive }),
+    body: JSON.stringify({ environment, api: apiKind, method: 'GET', path, allowInteractive, softFail: !allowInteractive }),
   });
   return result.data;
 }

@@ -5,8 +5,9 @@ import { getConfigDir } from './config.js';
 import { createDiagnostic, fail } from './diagnostics.js';
 import type { FetchXmlMetadataCatalog } from './fetchxml-language-service.js';
 import { sendJson } from './ui-http.js';
+import type { AuthSessionStore } from './ui-auth-sessions.js';
 import type { UiJobStore } from './ui-jobs.js';
-import { handleAccountCreate, handleAccountDelete, handleAccountLogin, handleAccountLoginJob, handleAccountTokenStatus, handleAccountUpdate, handleJobDelete, handleJobGet } from './ui-route-accounts.js';
+import { handleAccountCreate, handleAccountDelete, handleAccountLogin, handleAccountLoginJob, handleAccountTokenStatus, handleAccountUpdate, handleAuthSessionCancel, handleAuthSessionCreate, handleAuthSessionEvents, handleAuthSessionGet, handleJobDelete, handleJobGet } from './ui-route-accounts.js';
 import { handleUiAssetRoute, loadUiState } from './ui-route-assets.js';
 import { handleDataverseQueryExecute, handleDataverseQueryPreview, handleDataverseRecordCreate, handleEntityDetail, handleEntityList, handleFetchXmlExecute, handleFetchXmlIntellisense, handleFetchXmlPreview } from './ui-route-dataverse.js';
 import { handleEnvironmentCreate, handleEnvironmentDelete, handleEnvironmentDiscover, handlePing, handleWhoAmICheck } from './ui-route-environments.js';
@@ -19,6 +20,7 @@ export interface UiRequestContext {
   host: string;
   port: number;
   jobs: UiJobStore;
+  authSessions: AuthSessionStore;
   fetchXmlCatalog: FetchXmlMetadataCatalog;
   sendVendorModule: (response: ServerResponse, specifier: string) => Promise<void>;
   instanceId: string;
@@ -50,6 +52,8 @@ export async function handleUiRequest(
     }
     if (url.pathname === '/api/state') return void sendJson(response, 200, await loadUiState(context));
     if (url.pathname === '/api/accounts/token-status') return handleAccountTokenStatus(url, response, context);
+    if (/^\/api\/auth\/sessions\/[^/]+\/events$/.test(url.pathname)) return handleAuthSessionEvents(url, response, context);
+    if (/^\/api\/auth\/sessions\/[^/]+$/.test(url.pathname)) return handleAuthSessionGet(url, response, context);
     if (url.pathname === '/api/dv/entities') return handleEntityList(url, response, context);
     if (/^\/api\/dv\/entities\/[^/]+$/.test(url.pathname)) return handleEntityDetail(url, response, context);
     if (url.pathname.startsWith('/api/jobs/')) return handleJobGet(url, response, context);
@@ -58,6 +62,8 @@ export async function handleUiRequest(
   if (method === 'POST') {
     if (url.pathname === '/api/accounts') return handleAccountCreate(request, response, context);
     if (url.pathname === '/api/accounts/login') return handleAccountLogin(request, response, context);
+    if (url.pathname === '/api/auth/sessions') return handleAuthSessionCreate(request, response, context);
+    if (/^\/api\/auth\/sessions\/[^/]+\/cancel$/.test(url.pathname)) return handleAuthSessionCancel(url, response, context);
     if (url.pathname === '/api/jobs/account-login') return handleAccountLoginJob(request, response, context);
     if (url.pathname === '/api/environments/discover') return handleEnvironmentDiscover(request, response, context);
     if (url.pathname === '/api/environments') return handleEnvironmentCreate(request, response, context);

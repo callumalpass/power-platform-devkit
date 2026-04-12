@@ -24,11 +24,21 @@ type HealthEntry = { status: string; summary: string; message?: string; detail?:
 type TokenEntry = { authenticated: boolean; expiresAt?: number | string } | undefined;
 
 type LoginTarget = {
+  id?: string;
   api?: string;
   resource?: string;
   label?: string;
-  url?: string;
   status?: string;
+  action?: { kind: 'browser-url'; url: string } | { kind: 'device-code'; verificationUri: string; userCode: string; message: string };
+  error?: string;
+};
+
+type AuthSession = {
+  id: string;
+  accountName: string;
+  status: 'pending' | 'waiting_for_user' | 'acquiring_token' | 'completed' | 'failed' | 'cancelled';
+  targets: LoginTarget[];
+  result?: { success?: boolean; diagnostics?: Array<{ message?: string; code?: string; detail?: string }> };
 };
 
 // ---------------------------------------------------------------------------
@@ -40,7 +50,8 @@ const HEALTH_APIS = ['dv', 'flow', 'graph', 'bap', 'powerapps'] as const;
 const API_SCOPE_OPTIONS = [
   { key: 'dv', label: 'Dataverse' },
   { key: 'flow', label: 'Flow' },
-  { key: 'powerapps', label: 'Power Apps & BAP' },
+  { key: 'powerapps', label: 'Power Apps' },
+  { key: 'bap', label: 'Platform Admin' },
   { key: 'graph', label: 'Graph' },
 ] as const;
 
@@ -80,63 +91,59 @@ function healthHint(entry: HealthEntry): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Shared login-job polling
+// Shared auth-session flow
 // ---------------------------------------------------------------------------
 
-function useLoginJob(toast: ToastFn, refreshState: (silent?: boolean) => Promise<void>) {
-  const [activeLoginJobId, setActiveLoginJobId] = useState<string | null>(null);
+function useAuthSession(toast: ToastFn, refreshState: (silent?: boolean) => Promise<void>) {
+  const [activeSession, setActiveSession] = useState<AuthSession | null>(null);
   const [loginTargets, setLoginTargets] = useState<LoginTarget[]>([]);
-  const [deviceCode, setDeviceCode] = useState<any>(null);
 
-  async function waitForLoginJob(jobId: string) {
-    let parseFailures = 0;
-    while (true) {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
-        headers: { 'content-type': 'application/json' },
-      });
-      const text = await response.text();
-      let payload: any;
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        parseFailures++;
-        if (parseFailures > 3) { toast('Login response could not be parsed', true); return; }
-        continue;
-      }
-      parseFailures = 0;
-      if (payload.data?.deviceCode) setDeviceCode(payload.data.deviceCode);
-      if (payload.data?.metadata?.loginTargets) setLoginTargets(payload.data.metadata.loginTargets);
-      if (payload.data?.status === 'completed' || payload.data?.status === 'failed') {
-        if (payload.data.status === 'failed') toast('Login failed', true);
-        return;
-      }
+  function handleSessionUpdate(session: AuthSession) {
+    setActiveSession(session);
+    setLoginTargets(session.targets || []);
+    if (session.status === 'completed') {
+      refreshState(true);
+      toast('Authentication complete');
+    } else if (session.status === 'failed') {
+      const message = session.result?.diagnostics?.[0]?.message || 'Authentication failed';
+      toast(message, true);
     }
   }
 
-  function handleLoginStarted(jobId: string, targets: LoginTarget[]) {
-    setActiveLoginJobId(jobId);
-    setLoginTargets(targets);
-    waitForLoginJob(jobId).then(() => {
-      setActiveLoginJobId(null);
-      setLoginTargets([]);
-      setDeviceCode(null);
-      refreshState(true);
-      toast('Authentication complete');
+  function handleLoginStarted(session: AuthSession) {
+    setActiveSession(session);
+    setLoginTargets(session.targets || []);
+    const events = new EventSource(`/api/auth/sessions/${encodeURIComponent(session.id)}/events`);
+    events.addEventListener('session', (event) => {
+      const next = JSON.parse((event as MessageEvent).data) as AuthSession;
+      handleSessionUpdate(next);
+      if (next.status === 'completed' || next.status === 'failed' || next.status === 'cancelled') {
+        events.close();
+      }
     });
+    events.onerror = () => {
+      events.close();
+      void fetch(`/api/auth/sessions/${encodeURIComponent(session.id)}`)
+        .then((response) => response.json())
+        .then((payload) => payload.data ? handleSessionUpdate(payload.data) : undefined)
+        .catch(() => toast('Authentication status disconnected', true));
+    };
   }
 
   async function handleCancelLogin() {
-    if (!activeLoginJobId) return;
+    if (!activeSession) return;
     try {
-      await api(`/api/jobs/${encodeURIComponent(activeLoginJobId)}/cancel`, { method: 'POST' });
+      await api(`/api/auth/sessions/${encodeURIComponent(activeSession.id)}/cancel`, { method: 'POST' });
     } catch { /* ignore */ }
-    setActiveLoginJobId(null);
-    setLoginTargets([]);
-    setDeviceCode(null);
+    setActiveSession(null);
   }
 
-  return { activeLoginJobId, loginTargets, deviceCode, handleLoginStarted, handleCancelLogin };
+  function clearCompletedLogin() {
+    setActiveSession(null);
+    setLoginTargets([]);
+  }
+
+  return { activeSession, loginTargets, handleLoginStarted, handleCancelLogin, clearCompletedLogin };
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +157,7 @@ function AccountCard(props: {
   selectedApis: Record<string, boolean>;
   globalEnvironment: string;
   onToggle: () => void;
-  onLoginStarted: (jobId: string, targets: LoginTarget[]) => void;
+  onLoginStarted: (session: AuthSession) => void;
   refreshState: (silent?: boolean) => Promise<void>;
   toast: ToastFn;
 }) {
@@ -161,16 +168,19 @@ function AccountCard(props: {
 
   async function handleLogin() {
     try {
-      const started = await api<any>('/api/jobs/account-login', {
+      const started = await api<any>('/api/auth/sessions', {
         method: 'POST',
         body: JSON.stringify({
           name: account.name,
-          kind: 'user',
+          kind: account.kind === 'device-code' ? 'device-code' : 'user',
+          loginHint: account.loginHint || account.accountUsername,
+          tenantId: account.tenantId,
+          clientId: account.clientId,
           environmentAlias: globalEnvironment || undefined,
-          excludeApis: ['dv', 'flow', 'powerapps', 'graph'].filter((name) => !selectedApis[name]),
+          excludeApis: ['dv', 'flow', 'powerapps', 'bap', 'graph'].filter((name) => !selectedApis[name]),
         }),
       });
-      onLoginStarted(started.data.id, started.data.metadata?.loginTargets || []);
+      onLoginStarted(started.data);
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
     }
@@ -255,7 +265,7 @@ function AddAccountForm(props: {
   selectedApis: Record<string, boolean>;
   setSelectedApis: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   globalEnvironment: string;
-  onLoginStarted: (jobId: string, targets: LoginTarget[]) => void;
+  onLoginStarted: (session: AuthSession) => void;
   refreshState: (silent?: boolean) => Promise<void>;
   toast: ToastFn;
 }) {
@@ -267,11 +277,10 @@ function AddAccountForm(props: {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const connectAfterSave = submitter?.value === 'connect';
     const payload: any = formDataObject(form);
     payload.kind = accountKind;
-    if (accountKind === 'user' || accountKind === 'device-code') {
-      payload.excludeApis = ['dv', 'flow', 'powerapps', 'graph'].filter((name) => !selectedApis[name]);
-    }
     try {
       const response = await api<any>('/api/accounts', {
         method: 'POST',
@@ -279,10 +288,18 @@ function AddAccountForm(props: {
       });
       toast('Account saved');
       await refreshState(true);
-      if (response.data?.loginJobId) {
-        onLoginStarted(response.data.loginJobId, response.data.loginTargets || []);
+      if (connectAfterSave && (accountKind === 'user' || accountKind === 'device-code')) {
+        const session = await api<any>('/api/auth/sessions', {
+          method: 'POST',
+          body: JSON.stringify({
+            ...payload,
+            excludeApis: ['dv', 'flow', 'powerapps', 'bap', 'graph'].filter((name) => !selectedApis[name]),
+            environmentAlias: globalEnvironment || undefined,
+          }),
+        });
+        onLoginStarted(session.data);
       }
-      form.reset();
+      if (connectAfterSave || accountKind !== 'user') form.reset();
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
     }
@@ -371,7 +388,8 @@ function AddAccountForm(props: {
       ) : null}
 
       <div className="btn-group" style={{ marginTop: 12 }}>
-        <button type="submit" className="btn btn-primary">Save & Login</button>
+        <button type="submit" className="btn btn-secondary" name="intent" value="save">Save account</button>
+        {isInteractive ? <button type="submit" className="btn btn-primary" name="intent" value="connect">Save and connect</button> : null}
       </div>
     </form>
   );
@@ -382,51 +400,64 @@ function AddAccountForm(props: {
 // ---------------------------------------------------------------------------
 
 function LoginProgress(props: {
+  session: AuthSession | null;
   loginTargets: LoginTarget[];
-  deviceCode: any;
   onCancel: () => void;
+  onDismiss: () => void;
   toast: ToastFn;
 }) {
-  const { loginTargets, deviceCode, onCancel, toast } = props;
+  const { session, loginTargets, onCancel, onDismiss, toast } = props;
 
   const completedCount = loginTargets.filter((t) => t.status === 'completed').length;
   const total = loginTargets.length;
-  const currentTarget = loginTargets.find((t) => t.status === 'running' && t.url);
+  const currentTarget = loginTargets.find((t) => t.status === 'waiting_for_user' || t.status === 'acquiring_token');
   const currentIndex = currentTarget ? loginTargets.indexOf(currentTarget) + 1 : completedCount + 1;
+  const currentDeviceCode = currentTarget?.action?.kind === 'device-code' ? currentTarget.action : null;
+  const terminal = session?.status === 'completed' || session?.status === 'failed' || session?.status === 'cancelled';
 
   return (
     <div className="login-progress-panel">
       <div className="login-progress-header">
         <div className="login-progress-title">
-          {completedCount === total && total > 0
+          {session?.status === 'failed'
+            ? 'Authentication needs attention'
+            : completedCount === total && total > 0
             ? 'Authentication complete'
             : currentTarget
-              ? `Signing in to ${currentTarget.label || currentTarget.api || 'service'}... (${currentIndex} of ${total})`
+              ? currentTarget.status === 'waiting_for_user'
+                ? `Sign in to ${currentTarget.label || currentTarget.api || 'service'} (${currentIndex} of ${total})`
+                : `Connecting to ${currentTarget.label || currentTarget.api || 'service'} (${currentIndex} of ${total})`
               : 'Waiting for sign-in links...'}
         </div>
         <div className="login-progress-actions">
           <button type="button" className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => {
-            const links = loginTargets.filter((t) => t.url).map((t) => `${t.label || t.api || t.resource}: ${t.url}`);
+            const links = loginTargets
+              .filter((t) => t.action?.kind === 'browser-url')
+              .map((t) => `${t.label || t.api || t.resource}: ${t.action?.kind === 'browser-url' ? t.action.url : ''}`);
             void copyTextToClipboard(links.join('\n'))
               .then(() => toast('Copied login URLs'))
               .catch((error) => toast(`Copy failed: ${error instanceof Error ? error.message : String(error)}`, true));
           }}>Copy URLs</button>
-          <button type="button" className="btn btn-danger" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={onCancel}>Cancel</button>
+          {terminal ? (
+            <button type="button" className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={onDismiss}>Dismiss</button>
+          ) : (
+            <button type="button" className="btn btn-danger" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={onCancel}>Cancel</button>
+          )}
         </div>
       </div>
 
-      {deviceCode ? (
+      {currentDeviceCode ? (
         <div className="device-code-card">
           <div className="device-code-instruction">Go to the following URL and enter the code to sign in:</div>
           <div className="device-code-url-row">
-            <a href={deviceCode.verificationUri} target="_blank" rel="noreferrer" className="device-code-url">{deviceCode.verificationUri}</a>
-            <button type="button" className="btn btn-ghost device-code-open-btn" onClick={() => window.open(deviceCode.verificationUri, '_blank', 'noreferrer')}>Open</button>
-            <CopyButton value={deviceCode.verificationUri} label="Copy URL" title="Copy verification URL" toast={toast} />
+            <a href={currentDeviceCode.verificationUri} target="_blank" rel="noreferrer" className="device-code-url">{currentDeviceCode.verificationUri}</a>
+            <button type="button" className="btn btn-ghost device-code-open-btn" onClick={() => window.open(currentDeviceCode.verificationUri, '_blank', 'noreferrer')}>Open</button>
+            <CopyButton value={currentDeviceCode.verificationUri} label="Copy URL" title="Copy verification URL" toast={toast} />
           </div>
           <div className="device-code-box">
             <span className="device-code-label">Your code</span>
-            <span className="device-code-value">{deviceCode.userCode}</span>
-            <CopyButton value={deviceCode.userCode} label="Copy" title="Copy device code" toast={toast} className="btn btn-ghost" />
+            <span className="device-code-value">{currentDeviceCode.userCode}</span>
+            <CopyButton value={currentDeviceCode.userCode} label="Copy" title="Copy device code" toast={toast} className="btn btn-ghost" />
           </div>
         </div>
       ) : null}
@@ -434,22 +465,26 @@ function LoginProgress(props: {
       <div className="login-progress-steps">
         {loginTargets.map((target, index) => {
           const isDone = target.status === 'completed';
-          const isActive = target.status === 'running' && !!target.url;
-          const isPending = !isDone && !isActive;
-          const dotClass = isDone ? 'ok' : isActive ? 'pending' : 'muted';
+          const isFailed = target.status === 'failed';
+          const isActive = target.status === 'waiting_for_user' || target.status === 'acquiring_token';
+          const isPending = !isDone && !isActive && !isFailed;
+          const dotClass = isDone ? 'ok' : isFailed ? 'error' : isActive ? 'pending' : 'muted';
+          const browserAction = target.action?.kind === 'browser-url' ? target.action : null;
           return (
             <div key={`${target.resource || target.api || index}`} className={`login-progress-step ${isActive ? 'active' : ''}`}>
               <div className="login-progress-step-head">
                 <span className={`health-dot ${dotClass}`}></span>
                 <strong>{target.label || target.api || target.resource}</strong>
-                <span className={`login-progress-step-badge ${isDone ? 'done' : isActive ? 'active' : 'pending'}`}>
-                  {isDone ? 'done' : isActive ? 'action required' : 'pending'}
+                <span className={`login-progress-step-badge ${isDone ? 'done' : isFailed ? 'failed' : isActive ? 'active' : 'pending'}`}>
+                  {isDone ? 'connected' : isFailed ? 'failed' : isActive ? (target.status === 'waiting_for_user' ? 'action required' : 'connecting') : 'pending'}
                 </span>
               </div>
-              {isActive && target.url ? (
-                <a href={target.url} target="_blank" rel="noreferrer" className="login-progress-step-link btn btn-primary" style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-block', marginTop: 6 }}>
+              {isActive && browserAction ? (
+                <a href={browserAction.url} target="_blank" rel="noreferrer" className="login-progress-step-link btn btn-primary" style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-block', marginTop: 6 }}>
                   Open sign-in page
                 </a>
+              ) : isFailed ? (
+                <span style={{ fontSize: '0.6875rem', color: 'var(--danger)' }}>{target.error || 'Authentication failed.'}</span>
               ) : isPending ? (
                 <span style={{ fontSize: '0.6875rem', color: 'var(--muted)' }}>Waiting...</span>
               ) : null}
@@ -714,7 +749,7 @@ function OnboardingFlow(props: {
   const { shellData, globalEnvironment, selectedApis, setSelectedApis, refreshState, toast } = props;
   const accounts = shellData?.accounts || [];
   const environments = shellData?.environments || [];
-  const login = useLoginJob(toast, refreshState);
+  const login = useAuthSession(toast, refreshState);
 
   const hasAccounts = accounts.length > 0;
   const hasEnvironments = environments.length > 0;
@@ -741,8 +776,8 @@ function OnboardingFlow(props: {
           <>
             <h2>Connect your first account</h2>
             <p className="desc">Add a Microsoft account to start working with Power Platform. You'll sign in through your browser.</p>
-            {(login.activeLoginJobId || login.loginTargets.length > 0) ? (
-              <LoginProgress loginTargets={login.loginTargets} deviceCode={login.deviceCode} onCancel={login.handleCancelLogin} toast={toast} />
+            {(login.activeSession || login.loginTargets.length > 0) ? (
+              <LoginProgress session={login.activeSession} loginTargets={login.loginTargets} onCancel={login.handleCancelLogin} onDismiss={login.clearCompletedLogin} toast={toast} />
             ) : (
               <AddAccountForm
                 accounts={accounts}
@@ -880,7 +915,7 @@ function AccountsPanel(props: {
   selectedApis: Record<string, boolean>;
   setSelectedApis: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   globalEnvironment: string;
-  login: ReturnType<typeof useLoginJob>;
+  login: ReturnType<typeof useAuthSession>;
   refreshState: (silent?: boolean) => Promise<void>;
   toast: ToastFn;
 }) {
@@ -918,9 +953,9 @@ function AccountsPanel(props: {
         </div>
       )}
 
-      {(login.activeLoginJobId || login.loginTargets.length > 0) ? (
+      {(login.activeSession || login.loginTargets.length > 0) ? (
         <div style={{ marginTop: 14 }}>
-          <LoginProgress loginTargets={login.loginTargets} deviceCode={login.deviceCode} onCancel={login.handleCancelLogin} toast={toast} />
+          <LoginProgress session={login.activeSession} loginTargets={login.loginTargets} onCancel={login.handleCancelLogin} onDismiss={login.clearCompletedLogin} toast={toast} />
         </div>
       ) : null}
 
@@ -1013,7 +1048,7 @@ function MyAccessPanel(props: { environment: string; toast: ToastFn }) {
   async function dvGet(path: string) {
     const result = await api<any>('/api/request/execute', {
       method: 'POST',
-      body: JSON.stringify({ environment, api: 'dv', method: 'GET', path, headers: { Prefer: 'odata.include-annotations="*"' } }),
+      body: JSON.stringify({ environment, api: 'dv', method: 'GET', path, headers: { Prefer: 'odata.include-annotations="*"' }, softFail: true }),
     });
     return result.data?.response;
   }
@@ -1021,9 +1056,19 @@ function MyAccessPanel(props: { environment: string; toast: ToastFn }) {
   async function graphGet(path: string) {
     const result = await api<any>('/api/request/execute', {
       method: 'POST',
-      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path }),
+      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, softFail: true }),
     });
     return result.data?.response;
+  }
+
+  async function graphGetOptional(path: string) {
+    const response = await fetch('/api/request/execute', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, softFail: true }),
+    });
+    const result = await response.json();
+    return result.success === false ? null : result.data?.response;
   }
 
   async function loadAccess() {
@@ -1063,8 +1108,8 @@ function MyAccessPanel(props: { environment: string; toast: ToastFn }) {
       try {
         const [me, managerResult, licensesResult] = await Promise.all([
           graphGet('/me?$select=displayName,jobTitle,department,officeLocation,mail'),
-          graphGet('/me/manager?$select=displayName').catch(() => null),
-          graphGet('/me/licenseDetails').catch(() => null),
+          graphGetOptional('/me/manager?$select=displayName'),
+          graphGetOptional('/me/licenseDetails'),
         ]);
         graph = {
           displayName: me?.displayName,
@@ -1250,10 +1295,11 @@ export function SetupTab(props: SetupTabProps) {
     dv: true,
     flow: true,
     powerapps: true,
+    bap: true,
     graph: false,
   });
 
-  const login = useLoginJob(toast, refreshState);
+  const login = useAuthSession(toast, refreshState);
   const accounts = shellData?.accounts || [];
   const environments = shellData?.environments || [];
 
@@ -1294,7 +1340,7 @@ export function SetupTab(props: SetupTabProps) {
           const response = await fetch('/api/checks/ping', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ environment: environment.alias, api: apiName }),
+            body: JSON.stringify({ environment: environment.alias, api: apiName, softFail: true }),
           });
           const payload = await response.json();
           const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);

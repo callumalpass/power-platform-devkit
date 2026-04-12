@@ -46,6 +46,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "clean:test": "node -e \"require('node:fs').rmSync('.tmp-test',{recursive:true,force:true})\"",
     "test": "pnpm run clean:test && tsc -p tsconfig.test.json && node --test .tmp-test/test/**/*.test.js",
+    "test:e2e:ui": "playwright test -c playwright.ui.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -76,6 +77,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/node": "^22.13.10",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

@@ -4,6 +4,34 @@ import { executeApiRequest } from './api.js';
 import type { ConfigStoreOptions } from '../config.js';
 
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ATTRIBUTE_METADATA_SELECT = [
+  'LogicalName',
+  'AttributeOf',
+  'SchemaName',
+  'DisplayName',
+  'Description',
+  'AttributeType',
+  'AttributeTypeName',
+  'RequiredLevel',
+  'IsPrimaryId',
+  'IsPrimaryName',
+  'IsValidForRead',
+  'IsValidForCreate',
+  'IsValidForUpdate',
+  'IsValidForAdvancedFind',
+].join(',');
+
+const DERIVED_ATTRIBUTE_METADATA_SPECS = [
+  { metadataType: 'StringAttributeMetadata', select: 'LogicalName,MaxLength', fields: ['maxLength'] as const },
+  { metadataType: 'MemoAttributeMetadata', select: 'LogicalName,MaxLength', fields: ['maxLength'] as const },
+  { metadataType: 'IntegerAttributeMetadata', select: 'LogicalName,MinValue,MaxValue', fields: ['minValue', 'maxValue'] as const },
+  { metadataType: 'BigIntAttributeMetadata', select: 'LogicalName,MinValue,MaxValue', fields: ['minValue', 'maxValue'] as const },
+  { metadataType: 'DecimalAttributeMetadata', select: 'LogicalName,MinValue,MaxValue,Precision', fields: ['minValue', 'maxValue', 'precision'] as const },
+  { metadataType: 'DoubleAttributeMetadata', select: 'LogicalName,MinValue,MaxValue,Precision', fields: ['minValue', 'maxValue', 'precision'] as const },
+  { metadataType: 'MoneyAttributeMetadata', select: 'LogicalName,MinValue,MaxValue,Precision', fields: ['minValue', 'maxValue', 'precision'] as const },
+];
+
+type AttributeConstraintField = 'maxLength' | 'minValue' | 'maxValue' | 'precision';
 
 export interface DataverseEntitySummary {
   logicalName: string;
@@ -40,6 +68,13 @@ export interface DataverseAttributeSummary {
   isValidForAdvancedFind?: boolean;
   isValidForSort?: boolean;
   optionValues?: Array<{ value: number; label?: string }>;
+}
+
+export interface DataverseAttributeMetadataRequestSpec {
+  metadataType: string;
+  path: string;
+  select: string;
+  fields: readonly AttributeConstraintField[];
 }
 
 export interface DataverseEntityDetail extends DataverseEntitySummary {
@@ -131,6 +166,19 @@ export interface FetchXmlSpec {
   rawXml?: string;
 }
 
+export function buildDataverseGenericAttributeSelect(): string {
+  return ATTRIBUTE_METADATA_SELECT;
+}
+
+export function buildDataverseDerivedAttributeMetadataSpecs(logicalName: string): DataverseAttributeMetadataRequestSpec[] {
+  return DERIVED_ATTRIBUTE_METADATA_SPECS.map((spec) => ({
+    metadataType: spec.metadataType,
+    path: `/EntityDefinitions(LogicalName='${encodeODataLiteral(logicalName)}')/Attributes/Microsoft.Dynamics.CRM.${spec.metadataType}`,
+    select: spec.select,
+    fields: spec.fields,
+  }));
+}
+
 export async function listDataverseEntities(
   input: { environmentAlias: string; accountName?: string; search?: string; top?: number },
   configOptions: ConfigStoreOptions = {},
@@ -181,10 +229,11 @@ export async function getDataverseEntityDetail(
   configOptions: ConfigStoreOptions = {},
   loginOptions: PublicClientLoginOptions = {},
 ): Promise<OperationResult<DataverseEntityDetail>> {
-  const [expandedResult, lookupTargetsResult, optionValuesResult] = await Promise.all([
+  const [expandedResult, lookupTargetsResult, optionValuesResult, constraintsResult] = await Promise.all([
     getDataverseEntityWithExpandedAttributes(input, configOptions, loginOptions),
     getDataverseLookupTargets(input, configOptions, loginOptions),
     getDataverseOptionValues(input, configOptions, loginOptions),
+    getDataverseAttributeConstraints(input, configOptions, loginOptions),
   ]);
   let result = expandedResult;
   let attributes: unknown[] = [];
@@ -211,6 +260,7 @@ export async function getDataverseEntityDetail(
   }
   const lookupTargets = lookupTargetsResult.success && lookupTargetsResult.data ? lookupTargetsResult.data : new Map<string, string[]>();
   const optionValues = optionValuesResult.success && optionValuesResult.data ? optionValuesResult.data : new Map<string, Array<{ value: number; label?: string }>>();
+  const constraints = constraintsResult.success && constraintsResult.data ? constraintsResult.data : new Map<string, Partial<DataverseAttributeSummary>>();
   const detail: DataverseEntityDetail = {
     ...mapEntitySummary(raw),
     description: labelText(raw.Description),
@@ -223,12 +273,14 @@ export async function getDataverseEntityDetail(
       .map(mapAttributeSummary)
       .map((attribute) => mergeLookupTargets(attribute, lookupTargets))
       .map((attribute) => mergeOptionValues(attribute, optionValues))
+      .map((attribute) => mergeAttributeConstraints(attribute, constraints))
       .sort((a, b) => a.logicalName.localeCompare(b.logicalName)),
   };
   return ok(detail, [
     ...detailDiagnostics,
     ...normalizeMetadataDiagnostics(lookupTargetsResult.diagnostics, 'Lookup targets'),
     ...normalizeMetadataDiagnostics(optionValuesResult.diagnostics, 'Choice options'),
+    ...normalizeMetadataDiagnostics(constraintsResult.diagnostics, 'Attribute constraints'),
   ]);
 }
 
@@ -260,7 +312,7 @@ async function getDataverseEntityWithExpandedAttributes(
         'ObjectTypeCode',
         'IsActivity',
       ].join(','),
-      '$expand': 'Attributes($select=LogicalName,AttributeOf,SchemaName,DisplayName,Description,AttributeType,AttributeTypeName,RequiredLevel,MaxLength,MaxValue,MinValue,Precision,IsPrimaryId,IsPrimaryName,IsValidForRead,IsValidForCreate,IsValidForUpdate,IsValidForAdvancedFind)',
+      '$expand': `Attributes($select=${ATTRIBUTE_METADATA_SELECT})`,
     },
   }, configOptions, loginOptions);
 }
@@ -311,26 +363,7 @@ async function getDataverseAttributes(
     responseType: 'json',
     readIntent: true,
     query: {
-      '$select': [
-        'LogicalName',
-        'AttributeOf',
-        'SchemaName',
-        'DisplayName',
-        'Description',
-        'AttributeType',
-        'AttributeTypeName',
-        'RequiredLevel',
-        'MaxLength',
-        'MaxValue',
-        'MinValue',
-        'Precision',
-        'IsPrimaryId',
-        'IsPrimaryName',
-        'IsValidForRead',
-        'IsValidForCreate',
-        'IsValidForUpdate',
-        'IsValidForAdvancedFind',
-      ].join(','),
+      '$select': ATTRIBUTE_METADATA_SELECT,
     },
   }, configOptions, loginOptions);
   return result.success && result.data ? ok(readArray(result.data.response), result.diagnostics) : fail(...result.diagnostics);
@@ -634,6 +667,49 @@ async function getDataverseOptionValues(
   return ok(optionValues, diagnostics);
 }
 
+async function getDataverseAttributeConstraints(
+  input: { environmentAlias: string; logicalName: string; accountName?: string },
+  configOptions: ConfigStoreOptions,
+  loginOptions: PublicClientLoginOptions = {},
+): Promise<OperationResult<Map<string, Partial<DataverseAttributeSummary>>>> {
+  const specs = buildDataverseDerivedAttributeMetadataSpecs(input.logicalName);
+  const results = await Promise.all(specs.map((spec) => executeApiRequest({
+    environmentAlias: input.environmentAlias,
+    accountName: input.accountName,
+    api: 'dv',
+    path: spec.path,
+    method: 'GET',
+    responseType: 'json',
+    readIntent: true,
+    query: {
+      '$select': spec.select,
+    },
+  }, configOptions, loginOptions)));
+  const constraints = new Map<string, Partial<DataverseAttributeSummary>>();
+  const diagnostics = [];
+  for (const [index, result] of results.entries()) {
+    const spec = specs[index];
+    if (!result.success || !result.data) {
+      diagnostics.push(...result.diagnostics);
+      continue;
+    }
+    for (const value of readArray(result.data.response)) {
+      const record = readObject(value);
+      const logicalName = readString(record?.LogicalName);
+      if (!logicalName) continue;
+      const patch = constraints.get(logicalName) ?? {};
+      for (const field of spec.fields) {
+        const odataName = field === 'maxLength' ? 'MaxLength' : field === 'minValue' ? 'MinValue' : field === 'maxValue' ? 'MaxValue' : 'Precision';
+        const fieldValue = record?.[odataName];
+        if (typeof fieldValue === 'number') patch[field] = fieldValue;
+      }
+      if (Object.keys(patch).length) constraints.set(logicalName, patch);
+    }
+    diagnostics.push(...result.diagnostics);
+  }
+  return ok(constraints, diagnostics);
+}
+
 function mapAttributeSummary(value: unknown): DataverseAttributeSummary {
   const record = readObject(value) ?? {};
   const optionValues = readArray(record.OptionSet?.Options).map((option) => {
@@ -699,6 +775,14 @@ function mergeOptionValues(
 ): DataverseAttributeSummary {
   const values = optionValues.get(attribute.logicalName);
   return values?.length ? { ...attribute, optionValues: values } : attribute;
+}
+
+function mergeAttributeConstraints(
+  attribute: DataverseAttributeSummary,
+  constraints: Map<string, Partial<DataverseAttributeSummary>>,
+): DataverseAttributeSummary {
+  const patch = constraints.get(attribute.logicalName);
+  return patch ? { ...attribute, ...patch } : attribute;
 }
 
 function normalizeMetadataDiagnostics(diagnostics: ReturnType<typeof fail>['diagnostics'], label: string) {

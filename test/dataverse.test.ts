@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDataverseODataPath, buildFetchXml } from '../src/services/dataverse.js';
+import { buildDataverseDerivedAttributeMetadataSpecs, buildDataverseGenericAttributeSelect, buildDataverseODataPath, buildFetchXml } from '../src/services/dataverse.js';
 
 test('buildDataverseODataPath builds encoded OData query paths', () => {
   const path = buildDataverseODataPath({
@@ -67,4 +67,30 @@ test('buildFetchXml emits attributes, filters, ordering, and linked entities', (
 test('buildFetchXml returns raw XML unchanged when provided', () => {
   const rawXml = '<fetch><entity name="account" /></fetch>';
   assert.equal(buildFetchXml({ environmentAlias: 'dev', entity: 'account', rawXml }), rawXml);
+});
+
+test('generic Dataverse attribute metadata select excludes derived-only fields', () => {
+  const select = buildDataverseGenericAttributeSelect();
+
+  assert.match(select, /LogicalName/);
+  assert.match(select, /AttributeTypeName/);
+  assert.doesNotMatch(select, /MaxLength/);
+  assert.doesNotMatch(select, /MinValue/);
+  assert.doesNotMatch(select, /MaxValue/);
+  assert.doesNotMatch(select, /Precision/);
+});
+
+test('derived Dataverse attribute metadata requests own constraint fields', () => {
+  const specs = buildDataverseDerivedAttributeMetadataSpecs('account');
+  const byType = new Map(specs.map((spec) => [spec.metadataType, spec]));
+
+  assert.equal(byType.get('StringAttributeMetadata')?.select, 'LogicalName,MaxLength');
+  assert.equal(byType.get('IntegerAttributeMetadata')?.select, 'LogicalName,MinValue,MaxValue');
+  assert.equal(byType.get('DecimalAttributeMetadata')?.select, 'LogicalName,MinValue,MaxValue,Precision');
+  assert.match(byType.get('StringAttributeMetadata')?.path ?? '', /Attributes\/Microsoft\.Dynamics\.CRM\.StringAttributeMetadata$/);
+
+  for (const spec of specs) {
+    assert.match(spec.select, /^LogicalName,/);
+    assert.doesNotMatch(spec.path, /Microsoft\.Dynamics\.CRM\.AttributeMetadata$/);
+  }
 });

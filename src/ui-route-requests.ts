@@ -9,6 +9,7 @@ export async function handleRequestExecute(request: IncomingMessage, response: S
   if (!body.success || !body.data) return void sendJson(response, 400, body);
   const input = readApiRequestInput(body.data, context.allowInteractiveAuth);
   if (!input.success || !input.data) return void sendJson(response, 400, input);
+  const softFail = body.data.softFail === true;
   const result = await executeApiRequest({
     environmentAlias: input.data.environment,
     accountName: input.data.account,
@@ -21,5 +22,5 @@ export async function handleRequestExecute(request: IncomingMessage, response: S
     responseType: 'json',
     readIntent: input.data.readIntent,
   }, context.configOptions, { allowInteractive: input.data.allowInteractive });
-  sendJson(response, result.success ? 200 : 400, result);
+  sendJson(response, result.success || softFail ? 200 : 400, result);
 }

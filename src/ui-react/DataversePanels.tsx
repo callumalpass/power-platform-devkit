@@ -238,9 +238,10 @@ export function FetchXmlTab(props: {
   }
 
   function buildPreviewPayload(): FetchXmlPayload {
+    const activeEntityName = entityName || entityDetail?.logicalName || '';
     return {
       environmentAlias: environment,
-      entity: entityName,
+      entity: activeEntityName,
       entitySetName: entityDetail?.entitySetName,
       attributes: selectedAttrs,
       distinct,
@@ -266,7 +267,15 @@ export function FetchXmlTab(props: {
     };
   }
 
+  const activeEntityName = entityName || entityDetail?.logicalName || '';
+  const canBuildFetchXml = Boolean(activeEntityName);
+  const canRunFetchXml = Boolean(rawXml.trim() || activeEntityName);
+
   async function preview() {
+    if (!canBuildFetchXml) {
+      toast('Select an entity before building FetchXML.', true);
+      return;
+    }
     try {
       setRawXml(await previewFetchXml(buildPreviewPayload()));
       toast('XML generated');
@@ -276,10 +285,14 @@ export function FetchXmlTab(props: {
   }
 
   async function execute() {
+    if (!canRunFetchXml) {
+      toast('Select an entity or enter FetchXML before running.', true);
+      return;
+    }
     try {
       const payload = await executeFetchXml({
           environmentAlias: environment,
-          entity: entityName || entityDetail?.logicalName || 'unknown',
+          entity: activeEntityName || 'unknown',
           entitySetName: entityDetail?.entitySetName,
           rawXml: rawXml.trim() || undefined,
           ...(rawXml.trim() ? {} : buildPreviewPayload()),
@@ -441,8 +454,8 @@ export function FetchXmlTab(props: {
           </div>
         </div>
         <div className="btn-group">
-          <button className="btn btn-secondary" type="button" onClick={() => void preview()}>Build from fields</button>
-          <button className="btn btn-primary" type="button" onClick={() => void execute()}>Run FetchXML</button>
+          <button className="btn btn-secondary" type="button" disabled={!canBuildFetchXml} onClick={() => void preview()}>Build from fields</button>
+          <button className="btn btn-primary" type="button" disabled={!canRunFetchXml} onClick={() => void execute()}>Run FetchXML</button>
         </div>
       </div>
       <div className="panel">

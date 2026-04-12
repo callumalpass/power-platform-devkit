@@ -10,20 +10,16 @@ import { normalizeOrigin } from './request.js';
 import { checkAccountTokenStatus, loginAccount, removeAccountByName } from './services/accounts.js';
 import { listConfiguredEnvironments } from './services/environments.js';
 
+type UiLoginTargetState = LoginTarget & {
+  status: 'pending' | 'running' | 'completed';
+  url?: string;
+};
+
 export async function handleAccountCreate(request: IncomingMessage, response: ServerResponse, context: UiRequestContext): Promise<void> {
   const body = await readJsonBody(request);
   if (!body.success || !body.data) return void sendJson(response, 400, body);
   const input = readLoginInput(body.data);
   if (!input.success || !input.data) return void sendJson(response, 400, input);
-
-  if (input.data.kind === 'user' || input.data.kind === 'device-code') {
-    const job = await createAccountLoginJob(input.data, body.data, context);
-    if (!job.success || !job.data) return void sendJson(response, 400, job);
-    return void sendJson(response, 202, ok({
-      loginJobId: job.data.id,
-      loginTargets: job.data.metadata?.loginTargets ?? [],
-    }));
-  }
 
   const account = readAccountUpdateInput(input.data.name, body.data);
   if (!account.success || !account.data) return void sendJson(response, 400, account);
@@ -54,6 +50,47 @@ export async function handleAccountLoginJob(request: IncomingMessage, response: 
   sendJson(response, 202, ok(job.data));
 }
 
+export async function handleAuthSessionCreate(request: IncomingMessage, response: ServerResponse, context: UiRequestContext): Promise<void> {
+  const body = await readJsonBody(request);
+  if (!body.success || !body.data) return void sendJson(response, 400, body);
+  const input = readLoginInput(body.data);
+  if (!input.success || !input.data) return void sendJson(response, 400, input);
+  const excludeApis = Array.isArray(body.data.excludeApis) ? body.data.excludeApis.filter((v: unknown): v is string => typeof v === 'string') : undefined;
+  const session = await context.authSessions.createSession({
+    account: input.data,
+    preferredFlow: body.data.preferredFlow === 'device-code' ? 'device-code' : 'interactive',
+    forcePrompt: Boolean(body.data.forcePrompt),
+    environmentAlias: optionalString(body.data.environmentAlias),
+    excludeApis,
+    allowInteractiveAuth: context.allowInteractiveAuth,
+    configOptions: context.configOptions,
+  });
+  sendJson(response, 202, ok(session));
+}
+
+export function handleAuthSessionGet(url: URL, response: ServerResponse, context: UiRequestContext): void {
+  const id = decodeURIComponent(url.pathname.slice('/api/auth/sessions/'.length));
+  const session = context.authSessions.getSession(id);
+  if (!session) return void sendJson(response, 404, fail(createDiagnostic('error', 'AUTH_SESSION_NOT_FOUND', `Auth session ${id} was not found.`, { source: 'pp/ui' })));
+  sendJson(response, 200, ok(session));
+}
+
+export function handleAuthSessionCancel(url: URL, response: ServerResponse, context: UiRequestContext): void {
+  const id = decodeURIComponent(url.pathname.slice('/api/auth/sessions/'.length, -'/cancel'.length));
+  const session = context.authSessions.cancelSession(id);
+  if (!session) return void sendJson(response, 404, fail(createDiagnostic('error', 'AUTH_SESSION_NOT_FOUND', `Auth session ${id} was not found.`, { source: 'pp/ui' })));
+  sendJson(response, 200, ok(session));
+}
+
+export function handleAuthSessionEvents(url: URL, response: ServerResponse, context: UiRequestContext): void {
+  const prefix = '/api/auth/sessions/';
+  const id = decodeURIComponent(url.pathname.slice(prefix.length, -'/events'.length));
+  if (!context.authSessions.getSession(id)) {
+    return void sendJson(response, 404, fail(createDiagnostic('error', 'AUTH_SESSION_NOT_FOUND', `Auth session ${id} was not found.`, { source: 'pp/ui' })));
+  }
+  context.authSessions.streamSession(id, response);
+}
+
 async function createAccountLoginJob(
   input: LoginAccountInput,
   bodyData: Record<string, unknown>,
@@ -63,17 +100,30 @@ async function createAccountLoginJob(
   if (!environments.success || !environments.data) return fail(...environments.diagnostics);
   const excludeApis = Array.isArray(bodyData.excludeApis) ? bodyData.excludeApis.filter((v: unknown): v is string => typeof v === 'string') : undefined;
   const loginTargets = buildLoginTargets(input.name, environments.data, optionalString(bodyData.environmentAlias), excludeApis);
+  const loginTargetStates: UiLoginTargetState[] = loginTargets.map((target) => ({ ...target, status: 'pending' }));
   const job = context.jobs.createJob('account-login', (update) =>
     loginAccount(input, {
       preferredFlow: bodyData.preferredFlow === 'device-code' ? 'device-code' : 'interactive',
       forcePrompt: Boolean(bodyData.forcePrompt),
       allowInteractive: context.allowInteractiveAuth,
+      openInteractiveBrowser: false,
+      terminalPrompts: false,
       loginTargets,
-      onLoginTargetUpdate: async (progress) => update({ activeLoginTarget: { ...progress.target, status: progress.status, url: progress.url } }),
+      onLoginTargetUpdate: async (progress) => {
+        loginTargetStates[progress.index] = {
+          ...progress.target,
+          status: progress.status,
+          url: progress.url ?? loginTargetStates[progress.index]?.url,
+        };
+        update({
+          activeLoginTarget: loginTargetStates[progress.index],
+          loginTargets: loginTargetStates,
+        });
+      },
       onDeviceCode: async (info) => update({ deviceCode: { verificationUri: info.verificationUri, userCode: info.userCode, message: info.message } }),
     }, context.configOptions),
   );
-  job.metadata = { ...(job.metadata ?? {}), loginTargets: loginTargets.map((target) => ({ ...target, status: 'pending' })) };
+  job.metadata = { ...(job.metadata ?? {}), loginTargets: loginTargetStates };
   return ok(job);
 }
 

@@ -38,6 +38,8 @@ export interface PublicClientLoginOptions {
   forcePrompt?: boolean;
   preferredFlow?: 'interactive' | 'device-code';
   allowInteractive?: boolean;
+  openInteractiveBrowser?: boolean;
+  terminalPrompts?: boolean;
   onInteractiveUrl?: (url: string) => void | Promise<void>;
   onDeviceCode?: (info: { verificationUri: string; userCode: string; message: string }) => void | Promise<void>;
   loginTargets?: LoginTarget[];
@@ -393,7 +395,9 @@ async function acquireAndPersistPublicClientToken(
       result = await app.acquireTokenByDeviceCode({
         scopes,
         deviceCodeCallback: async (response) => {
-          process.stderr.write(`${response.message}\n`);
+          if (loginOptions.terminalPrompts !== false) {
+            process.stderr.write(`${response.message}\n`);
+          }
           await loginOptions.onDeviceCode?.({
             verificationUri: response.verificationUri,
             userCode: response.userCode,
@@ -416,7 +420,9 @@ async function acquireAndPersistPublicClientToken(
         loginHint: account.loginHint,
         openBrowser: async (url) => {
           await loginOptions.onInteractiveUrl?.(url);
-          await openBrowser(url);
+          if (loginOptions.openInteractiveBrowser !== false) {
+            await openBrowser(url);
+          }
         },
       });
     }

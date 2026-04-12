@@ -51,5 +51,5 @@ export async function handlePing(request: IncomingMessage, response: ServerRespo
     api: readPingApi(body.data.api),
     allowInteractive: false,
   }, context.configOptions);
-  sendJson(response, 200, result);
+  sendJson(response, result.success || body.data.softFail === true ? 200 : 400, result);
 }

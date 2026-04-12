@@ -267,7 +267,7 @@ export function AutomateTab(props: {
               const state = String(prop(flow, 'properties.state') || '');
               const cls = state === 'Started' ? 'ok' : state === 'Stopped' ? 'error' : 'pending';
               return (
-                <div key={flowIdentifier(flow)} className={`entity-item ${flowIdentifier(currentFlow) === flowIdentifier(flow) ? 'active' : ''}`} onClick={() => void selectFlow(flow)}>
+                <div key={flowIdentifier(flow)} className={`entity-item ${flowIdentifier(currentFlow) === flowIdentifier(flow) ? 'active' : ''}`} data-flow={flowIdentifier(flow)} onClick={() => void selectFlow(flow)}>
                   <div className="entity-item-name"><span className={`health-dot ${cls}`} style={{ marginRight: 6 }}></span>{prop(flow, 'properties.displayName') || flow.name || 'Unnamed'}</div>
                   <div className="entity-item-logical">{prop(flow, 'properties.definitionSummary.triggers.0.type') || '-'} · {formatDateShort(prop(flow, 'properties.lastModifiedTime'))}</div>
                   {state ? <div className="entity-item-badges"><span className="entity-item-flag">{state.toLowerCase()}</span></div> : null}
@@ -400,7 +400,7 @@ export function AutomateTab(props: {
                     const expanded = currentRun?.name === run.name;
                     return (
                       <div key={run.name} className={`run-card ${expanded ? 'active' : ''}`}>
-                        <div className={`run-item status-${cls} ${expanded ? 'active' : ''}`} onClick={() => void selectRun(run)}>
+                        <div className={`run-item status-${cls} ${expanded ? 'active' : ''}`} data-flow-run={run.name || ''} onClick={() => void selectRun(run)}>
                           <div className="run-main">
                             <span className={`health-dot ${cls}`}></span>
                             <div className="run-text">
@@ -456,7 +456,7 @@ export function AutomateTab(props: {
                                 const actionStatus = prop(action, 'properties.status') || 'Unknown';
                                 const actionCls = actionStatus === 'Succeeded' ? 'ok' : actionStatus === 'Failed' ? 'error' : 'pending';
                                 return (
-                                  <div key={action.name} className={`action-item ${currentAction?.name === action.name ? 'active' : ''}`} onClick={(event) => { event.stopPropagation(); void selectAction(action); }}>
+                                  <div key={action.name} className={`action-item ${currentAction?.name === action.name ? 'active' : ''}`} data-flow-action={action.name || ''} onClick={(event) => { event.stopPropagation(); void selectAction(action); }}>
                                     <span className={`health-dot ${actionCls}`}></span>
                                     <span className="action-item-name" title={action.name}>{action.name || 'Unknown'}</span>
                                     <div className="action-item-meta">

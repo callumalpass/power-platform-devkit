@@ -71,9 +71,9 @@ export function renderHtml(): string {
     .header-meta { display: flex; gap: 12px; align-items: center; font-size: 0.75rem; color: var(--muted); flex-shrink: 0; }
 
     /* Tabs */
-    .tabs { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; }
-    .tabs-inner { max-width: 1400px; margin: 0 auto; display: flex; gap: 0; }
-    .tab { padding: 10px 18px; font-size: 0.8125rem; font-weight: 500; color: var(--muted); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; transition: color 150ms; white-space: nowrap; }
+    .tabs { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; overflow-x: auto; }
+    .tabs-inner { max-width: 1400px; min-width: max-content; margin: 0 auto; display: flex; gap: 0; }
+    .tab { padding: 10px 18px; font-size: 0.8125rem; font-weight: 500; color: var(--muted); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; transition: color 150ms; white-space: nowrap; flex: 0 0 auto; }
     .tab:hover { color: var(--ink); }
     .tab.active { color: var(--ink); border-bottom-color: var(--accent); }
     .tab-sep { width: 1px; background: var(--border); margin: 8px 2px; flex-shrink: 0; }
@@ -356,6 +356,7 @@ export function renderHtml(): string {
     .login-progress-step-badge { font-size: 0.6875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
     .login-progress-step-badge.done { color: var(--ok); }
     .login-progress-step-badge.active { color: var(--accent); }
+    .login-progress-step-badge.failed { color: var(--danger); }
     .login-progress-step-badge.pending { color: var(--muted); }
     .login-progress-step-link { text-decoration: none; }
 
@@ -661,8 +662,8 @@ export function renderHtml(): string {
     /* Saved requests */
     .saved-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: background 80ms; gap: 10px; }
     .saved-item:hover { background: var(--bg); }
-    .saved-item-main { display: flex; align-items: center; gap: 10px; min-width: 0; overflow: hidden; }
-    .saved-item-name { font-size: 0.75rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .saved-item-main { display: flex; align-items: center; gap: 10px; min-width: 0; overflow: hidden; flex: 1; }
+    .saved-item-name { font-size: 0.75rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
     .pin-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 0.875rem; padding: 2px 4px; line-height: 1; }
     .pin-btn:hover { color: var(--accent); }
     .pin-btn.pinned { color: var(--accent); }
