@@ -4,7 +4,9 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AuthSessionStore } from '../src/ui-auth-sessions.js';
+import { CanvasSessionStore } from '../src/ui-canvas-sessions.js';
 import { handleUiRequest, type UiRequestContext } from '../src/ui-routes.js';
+import { ok } from '../src/diagnostics.js';
 
 function createContext(overrides: Partial<UiRequestContext> = {}): UiRequestContext {
   return {
@@ -18,6 +20,7 @@ function createContext(overrides: Partial<UiRequestContext> = {}): UiRequestCont
       cancelJob() { return undefined; },
     } as unknown as UiRequestContext['jobs'],
     authSessions: new AuthSessionStore(),
+    canvasSessions: new CanvasSessionStore(),
     fetchXmlCatalog: {
       analyze: async () => ({ diagnostics: [], completions: [], context: { from: 0, to: 0 } }),
     } as unknown as UiRequestContext['fetchXmlCatalog'],
@@ -80,6 +83,40 @@ test('handleUiRequest exposes UI status metadata', async () => {
   assert.match(response.body, /127\.0\.0\.1:4733/);
 });
 
+test('CanvasSessionStore keeps the UI session id stable after service start returns a server session id', async () => {
+  const store = new CanvasSessionStore(
+    async () => ok({
+      appId: 'app-1',
+      environmentId: 'env-1',
+      account: 'user@example.com',
+      sessionId: 'server-session-1',
+      startRequestId: 'request-1',
+      cluster: {},
+      authoringBaseUrl: 'https://authoring.example.test',
+      webAuthoringVersion: 'v1',
+      sessionState: 'state-1',
+      startPath: '/api/authoringsession/start',
+      startStatus: 200,
+      session: { sessionState: 'state-1', clientConfig: { webAuthoringVersion: 'v1' } },
+    }),
+    async () => undefined,
+  );
+
+  const created = await store.createSession({
+    environmentAlias: 'dev',
+    appId: 'app-1',
+    allowInteractive: false,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const session = store.getSession(created.id);
+  assert.equal(session?.id, created.id);
+  assert.equal(session?.status, 'active');
+  assert.equal(session?.result?.sessionId, 'server-session-1');
+  assert.equal(store.getSession('server-session-1'), undefined);
+});
+
 test('handleUiRequest saves non-interactive accounts with POST /api/accounts', async () => {
   const configDir = await mkdtemp(join(tmpdir(), 'pp-ui-routes-'));
   const response = createResponse();
@@ -116,6 +153,36 @@ test('handleUiRequest saves interactive accounts without starting login', async 
   const config = JSON.parse(await readFile(join(configDir, 'config.json'), 'utf8'));
   assert.equal(config.accounts.work.kind, 'user');
   assert.equal(config.accounts.work.loginHint, 'admin@example.com');
+});
+
+test('handleUiRequest exposes browser profile status and reset routes per account', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-ui-routes-'));
+  const createResponseResult = createResponse();
+  const createRequest = createJsonRequest('POST', '/api/accounts', {
+    name: 'work@example.com',
+    kind: 'user',
+    loginHint: 'work@example.com',
+  });
+  const context = createContext({ configOptions: { configDir } });
+
+  await handleUiRequest(createRequest as any, createResponseResult as any, context);
+  assert.equal(createResponseResult.statusCode, 201);
+
+  const statusResponse = createResponse();
+  await handleUiRequest({ method: 'GET', url: '/api/accounts/work%40example.com/browser-profile' } as any, statusResponse as any, context);
+  assert.equal(statusResponse.statusCode, 200);
+  const statusPayload = JSON.parse(statusResponse.body);
+  assert.equal(statusPayload.data.configured, false);
+  assert.equal(statusPayload.data.exists, false);
+
+  const resetResponse = createResponse();
+  await handleUiRequest({ method: 'DELETE', url: '/api/accounts/work%40example.com/browser-profile' } as any, resetResponse as any, context);
+  assert.equal(resetResponse.statusCode, 200);
+  const resetPayload = JSON.parse(resetResponse.body);
+  assert.equal(resetPayload.data.configured, false);
+
+  const config = JSON.parse(await readFile(join(configDir, 'config.json'), 'utf8'));
+  assert.equal(config.accounts['work@example.com'].kind, 'user');
 });
 
 test('handleUiRequest validates Dataverse create route before execution', async () => {
