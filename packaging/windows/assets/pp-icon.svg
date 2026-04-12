@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">pp icon</title>
+  <desc id="desc">Power Platform CLI monogram.</desc>
+
+  <!-- teal layer revealed through cutouts -->
+  <rect width="256" height="256" rx="52" fill="#3ed4aa"/>
+
+  <!-- mask: white = dark visible, black = teal shows through -->
+  <mask id="pp">
+    <rect width="256" height="256" fill="white"/>
+
+    <!-- first p: stem + bowl + counter -->
+    <rect x="64" y="52" width="18" height="156" rx="9" fill="black"/>
+    <circle cx="100" cy="88" r="36" fill="black"/>
+    <circle cx="100" cy="88" r="18" fill="white"/>
+
+    <!-- second p: same shape, offset 64px right -->
+    <rect x="128" y="52" width="18" height="156" rx="9" fill="black"/>
+    <circle cx="164" cy="88" r="36" fill="black"/>
+    <circle cx="164" cy="88" r="18" fill="white"/>
+  </mask>
+
+  <!-- dark layer with pp punched through -->
+  <rect width="256" height="256" rx="52" fill="#182830" mask="url(#pp)"/>
+</svg>

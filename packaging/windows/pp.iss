@@ -22,7 +22,8 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\pp
 DefaultGroupName=pp
 DisableProgramGroupPage=yes
-UninstallDisplayIcon={app}\{#MyAppExeName}
+SetupIconFile=assets\pp-icon.ico
+UninstallDisplayIcon={app}\pp-icon.ico
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ChangesEnvironment=yes
@@ -40,10 +41,11 @@ Name: "desktopicon"; Description: "Create a desktop shortcut for PP UI"; GroupDe
 Source: "..\..\release\win32-x64\pp.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\release\win32-x64\pp-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\release\win32-x64\pp-ui.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "assets\pp-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\PP UI"; Filename: "{app}\{#MyUiExeName}"
-Name: "{autodesktop}\PP UI"; Filename: "{app}\{#MyUiExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\PP UI"; Filename: "{app}\{#MyUiExeName}"; IconFilename: "{app}\pp-icon.ico"
+Name: "{autodesktop}\PP UI"; Filename: "{app}\{#MyUiExeName}"; IconFilename: "{app}\pp-icon.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyUiExeName}"; Description: "Launch PP UI"; Flags: nowait postinstall skipifsilent
