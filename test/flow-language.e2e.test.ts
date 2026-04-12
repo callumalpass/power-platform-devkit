@@ -133,6 +133,120 @@ test('analyzeFlow validates structured condition expressions', () => {
   assert.ok(codes.has('FLOW_STRUCTURED_EXPR_OPERATOR_UNKNOWN'));
 });
 
+test('analyzeFlow extracts references from structured condition expressions', () => {
+  const source = JSON.stringify({
+    definition: {
+      parameters: {
+        targetValue: {
+          type: 'String',
+        },
+      },
+      triggers: {
+        manual: {
+          type: 'Request',
+          inputs: {},
+        },
+      },
+      actions: {
+        InitCounter: {
+          type: 'InitializeVariable',
+          inputs: {
+            variables: [
+              {
+                name: 'counter',
+                type: 'integer',
+                value: 0,
+              },
+            ],
+          },
+          runAfter: {},
+        },
+        PrepareValue: {
+          type: 'Compose',
+          inputs: 12,
+          runAfter: {
+            InitCounter: ['Succeeded'],
+          },
+        },
+        CheckValue: {
+          type: 'If',
+          expression: {
+            and: [
+              {
+                equals: [
+                  "@outputs('PrepareValue')",
+                  "@parameters('targetValue')",
+                ],
+              },
+              {
+                greaterOrEquals: [
+                  "@variables('counter')",
+                  0,
+                ],
+              },
+            ],
+          },
+          actions: {},
+          runAfter: {
+            PrepareValue: ['Succeeded'],
+          },
+        },
+      },
+    },
+  }, null, 2);
+
+  const result = analyzeFlow(source, source.indexOf('greaterOrEquals'));
+  assert.ok(result.references.some((item) => item.kind === 'action' && item.name === 'PrepareValue' && item.sourceAction === 'CheckValue' && item.expression === 'structured:and' && item.resolved));
+  assert.ok(result.references.some((item) => item.kind === 'parameter' && item.name === 'targetValue' && item.sourceAction === 'CheckValue' && item.expression === 'structured:and' && item.resolved));
+  assert.ok(result.references.some((item) => item.kind === 'variable' && item.name === 'counter' && item.sourceAction === 'CheckValue' && item.expression === 'structured:and' && item.resolved));
+});
+
+test('analyzeFlow handles broader expression syntax', () => {
+  const source = JSON.stringify({
+    definition: {
+      triggers: {
+        manual: {
+          type: 'Request',
+          inputs: {},
+        },
+      },
+      actions: {
+        InitText: {
+          type: 'InitializeVariable',
+          inputs: {
+            variables: [
+              {
+                name: 'text',
+                type: 'string',
+                value: '',
+              },
+            ],
+          },
+          runAfter: {},
+        },
+        GoodExpression: {
+          type: 'Compose',
+          inputs: "@concat('literal } brace', split(replace(toLower(variables('text')), 'a', 'b'), ','), 1.2e3)",
+          runAfter: {
+            InitText: ['Succeeded'],
+          },
+        },
+        BadExpression: {
+          type: 'Compose',
+          inputs: "@variables('text') trailing",
+          runAfter: {
+            GoodExpression: ['Succeeded'],
+          },
+        },
+      },
+    },
+  }, null, 2);
+
+  const result = analyzeFlow(source, source.indexOf('trailing'));
+  assert.ok(result.references.some((item) => item.kind === 'variable' && item.name === 'text' && item.sourceAction === 'GoodExpression' && item.resolved));
+  assert.ok(result.diagnostics.some((item) => item.code === 'FLOW_EXPR_TRAILING_TOKEN'));
+});
+
 test('analyzeFlow validates variable mutation action targets', () => {
   const source = JSON.stringify({
     definition: {
