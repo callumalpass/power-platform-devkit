@@ -3,11 +3,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
+import esbuild from 'esbuild';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const require = createRequire(import.meta.url);
 const distDir = path.join(repoRoot, 'dist');
+const seaDir = path.join(repoRoot, 'dist', 'sea');
 
 const platform = process.platform;
 const arch = process.arch;
@@ -21,15 +23,31 @@ const entries = [
   { name: 'pp-ui', main: path.join(distDir, 'ui-launcher.cjs') },
 ];
 
+await mkdir(seaDir, { recursive: true });
 await mkdir(outputDir, { recursive: true });
 
+// Re-bundle each entry with all dependencies inlined for SEA.
 for (const entry of entries) {
+  await esbuild.build({
+    entryPoints: [entry.main],
+    bundle: true,
+    platform: 'node',
+    target: 'node22',
+    format: 'cjs',
+    outfile: path.join(seaDir, `${entry.name}.cjs`),
+    // Only keep true Node built-ins external.
+    packages: 'bundle',
+  });
+}
+
+for (const entry of entries) {
+  const bundledMain = path.join(seaDir, `${entry.name}.cjs`);
   const configPath = path.join(outputDir, `${entry.name}.sea-config.json`);
   const blobPath = path.join(outputDir, `${entry.name}.blob`);
   const exePath = path.join(outputDir, `${entry.name}${ext}`);
 
   await writeFile(configPath, JSON.stringify({
-    main: entry.main,
+    main: bundledMain,
     output: blobPath,
     disableExperimentalSEAWarning: true,
   }, null, 2) + '\n', 'utf8');
