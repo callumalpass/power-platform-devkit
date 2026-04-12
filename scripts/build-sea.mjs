@@ -8,7 +8,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const require = createRequire(import.meta.url);
 const distDir = path.join(repoRoot, 'dist');
-const outputDir = path.join(repoRoot, 'release', 'win32-x64');
+
+const platform = process.platform;
+const arch = process.arch;
+const ext = platform === 'win32' ? '.exe' : '';
+const outputDir = path.join(repoRoot, 'release', `${platform}-${arch}`);
 const sentinelFuse = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 
 const entries = [
@@ -17,16 +21,12 @@ const entries = [
   { name: 'pp-ui', main: path.join(distDir, 'ui-launcher.cjs') },
 ];
 
-if (process.platform !== 'win32') {
-  throw new Error('SEA builds are currently supported from a Windows host only. Run this script in Windows CI or on a Windows machine.');
-}
-
 await mkdir(outputDir, { recursive: true });
 
 for (const entry of entries) {
   const configPath = path.join(outputDir, `${entry.name}.sea-config.json`);
   const blobPath = path.join(outputDir, `${entry.name}.blob`);
-  const exePath = path.join(outputDir, `${entry.name}.exe`);
+  const exePath = path.join(outputDir, `${entry.name}${ext}`);
 
   await writeFile(configPath, JSON.stringify({
     main: entry.main,
@@ -36,7 +36,19 @@ for (const entry of entries) {
 
   await run(process.execPath, ['--experimental-sea-config', configPath]);
   await copyFile(process.execPath, exePath);
-  await run(process.execPath, [postjectCliPath(), exePath, 'NODE_SEA_BLOB', blobPath, '--sentinel-fuse', sentinelFuse]);
+
+  const postjectArgs = [
+    postjectCliPath(), exePath, 'NODE_SEA_BLOB', blobPath,
+    '--sentinel-fuse', sentinelFuse,
+  ];
+  if (platform === 'darwin') {
+    postjectArgs.push('--macho-segment-name', 'NODE_SEA');
+  }
+  await run(process.execPath, postjectArgs);
+
+  if (platform === 'darwin') {
+    await run('codesign', ['--sign', '-', '--force', exePath]);
+  }
 }
 
 function postjectCliPath() {

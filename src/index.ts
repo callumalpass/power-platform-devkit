@@ -22,9 +22,27 @@ import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmIC
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 import { analyzeFlowFile, explainFlowFileSymbol } from './services/flow-language.js';
 import { startPpUi } from './ui.js';
+import { VERSION } from './version.js';
+import { getCachedUpdateCheck, formatUpdateNotice, runBackgroundUpdateCheck, runUpdateCommand, shouldShowUpdateNotice } from './update.js';
 
 async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
+  const updateNoticePromise = shouldShowUpdateNotice(command)
+    ? getCachedUpdateCheck()
+    : Promise.resolve(null);
+
+  const exitCode = await runCommand(command, rest);
+
+  const cached = await updateNoticePromise;
+  if (cached?.updateAvailable) {
+    process.stderr.write(`${formatUpdateNotice(cached)}\n`);
+  }
+  runBackgroundUpdateCheck();
+
+  return exitCode;
+}
+
+async function runCommand(command: string | undefined, rest: string[]): Promise<number> {
   switch (command) {
     case 'auth':
       return runAuth(rest);
@@ -62,6 +80,12 @@ async function main(args: string[]): Promise<number> {
       return runUi(rest);
     case 'migrate-config':
       return runMigrateConfig(rest);
+    case 'update':
+      return runUpdateCommand(rest);
+    case 'version':
+    case '--version':
+      process.stdout.write(`pp ${VERSION}\n`);
+      return 0;
     case 'completion':
       return runCompletion(rest);
     case 'help':
@@ -407,10 +431,10 @@ function runCompletion(args: string[]): number {
     return 0;
   }
   if (shell === 'bash') {
-    process.stdout.write('complete -W "auth env request whoami ping token ui dv flow graph bap powerapps mcp migrate-config completion help" pp\n');
+    process.stdout.write('complete -W "auth env request whoami ping token ui dv flow graph bap powerapps mcp migrate-config update version completion help" pp\n');
     return 0;
   }
-  process.stdout.write('#compdef pp\n_arguments "1: :((auth env request whoami ping token ui dv flow graph bap powerapps mcp migrate-config completion help))"\n');
+  process.stdout.write('#compdef pp\n_arguments "1: :((auth env request whoami ping token ui dv flow graph bap powerapps mcp migrate-config update version completion help))"\n');
   return 0;
 }
 
@@ -542,6 +566,8 @@ function printHelp(): void {
       '  powerapps       Shortcut for "request --api powerapps"',
       '  mcp             Start the MCP server',
       '  migrate-config  Migrate legacy config into pp config',
+      '  update          Check for and install updates',
+      '  version         Print the current version',
       '  completion      Print shell completion script',
     ].join('\n') + '\n',
   );

@@ -5,6 +5,7 @@ import type { LoginAccountInput } from './auth.js';
 import { saveAccount, type Account, type ConfigStoreOptions } from './config.js';
 import type { ApiKind } from './request.js';
 import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
+import { VERSION } from './version.js';
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 
@@ -31,7 +32,7 @@ const outputSchema = z.object({
 });
 
 export function createPpMcpServer(options: PpMcpServerOptions = {}): McpServer {
-  const server = new McpServer({ name: 'pp', version: '0.1.0' });
+  const server = new McpServer({ name: 'pp', version: VERSION });
   registerTools(server, options);
   return server;
 }
