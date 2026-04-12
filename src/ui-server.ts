@@ -67,7 +67,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
     const existing = await findExistingUiInstance(statePath, configDir);
     if (existing && (!explicitPort || existing.port === preferredPort)) {
       process.stdout.write(`pp UI already running at ${existing.url}\n`);
-      if (options.openBrowser !== false) openBrowser(existing.url);
+      if (options.openBrowser !== false) await openBrowser(existing.url);
       return {
         url: existing.url,
         reused: true,
@@ -149,7 +149,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
   if (resolvedPort !== preferredPort) {
     process.stdout.write(`Preferred port ${preferredPort} was unavailable; using ${resolvedPort} instead.\n`);
   }
-  if (options.openBrowser !== false) openBrowser(url);
+  if (options.openBrowser !== false) await openBrowser(url);
 
   return {
     url,
@@ -445,8 +445,9 @@ function isLoopbackAddress(address: string | undefined): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }
 
-function openBrowser(url: string): void {
+async function openBrowser(url: string): Promise<void> {
   try {
+    await waitForServer(url);
     if (process.platform === 'darwin') {
       const child = spawn('open', [url], { detached: true, stdio: 'ignore' });
       child.unref();
@@ -461,5 +462,17 @@ function openBrowser(url: string): void {
     child.unref();
   } catch {
     // Best effort only.
+  }
+}
+
+async function waitForServer(url: string, retries = 10, delayMs = 100): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
+      await response.body?.cancel();
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
   }
 }
