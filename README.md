@@ -320,6 +320,18 @@ You can also launch the UI directly with:
 pp-ui
 ```
 
+Light mode screenshots:
+
+[![pp UI light-mode walkthrough](docs/images/pp-ui-light-walkthrough.gif)](docs/videos/pp-ui-light-walkthrough.mp4)
+
+Click the walkthrough for the full MP4.
+
+![pp UI setup status in light mode](docs/images/pp-ui-setup-light.png)
+
+![pp UI API console in light mode](docs/images/pp-ui-console-light.png)
+
+![pp UI Dataverse explorer in light mode](docs/images/pp-ui-dataverse-light.png)
+
 The UI provides:
 
 - **Setup** -- Manage accounts and environments
