@@ -2,6 +2,7 @@ import { createTokenProvider, type PublicClientLoginOptions, type TokenProvider 
 import { ensureEnvironmentAccess, getAccount, getEnvironment, type ConfigStoreOptions, type Environment } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { HttpClient, type HttpResponseType } from './http.js';
+import { applyJqTransform, type JqTransformInput } from './jq-transform.js';
 
 export type ApiKind = 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps' | 'custom';
 
@@ -17,6 +18,7 @@ export interface RequestInput {
   rawBody?: string;
   responseType?: HttpResponseType;
   timeoutMs?: number;
+  jq?: JqTransformInput;
   readIntent?: boolean;
   configOptions?: ConfigStoreOptions;
   loginOptions?: PublicClientLoginOptions;
@@ -74,9 +76,13 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
     timeoutMs: input.timeoutMs,
   });
   if (!response.success || !response.data) return fail(...response.diagnostics);
+  const responseData = input.jq !== undefined
+    ? await applyJqTransform(response.data.data, input.jq)
+    : ok(response.data.data);
+  if (!responseData.success) return fail(...responseData.diagnostics);
   return ok({
     request: request.data,
-    response: response.data.data,
+    response: responseData.data,
     status: response.data.status,
     headers: response.data.headers,
   });

@@ -67,6 +67,7 @@
     "@replit/codemirror-vim": "^6.3.0",
     "codemirror": "^6.0.2",
     "crelt": "^1.0.6",
+    "jq-wasm": "1.1.0-jq-1.8.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "style-mod": "^4.1.3",

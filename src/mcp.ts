@@ -11,6 +11,7 @@ import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfig
 export interface PpMcpServerOptions {
   configDir?: string;
   allowInteractiveAuth?: boolean;
+  toolNameStyle?: 'dotted' | 'underscore';
 }
 
 const outputSchema = z.object({
@@ -44,7 +45,7 @@ export async function startPpMcpServer(options: PpMcpServerOptions = {}): Promis
 
 function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   server.registerTool(
-    'pp.account.list',
+    toolName('pp.account.list', defaults),
     {
       title: 'List Accounts',
       description: 'List configured accounts.',
@@ -55,7 +56,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.account.inspect',
+    toolName('pp.account.inspect', defaults),
     {
       title: 'Inspect Account',
       description: 'Inspect one account.',
@@ -69,7 +70,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.account.save',
+    toolName('pp.account.save', defaults),
     {
       title: 'Save Account',
       description: 'Create or update one account.',
@@ -95,7 +96,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.account.remove',
+    toolName('pp.account.remove', defaults),
     {
       title: 'Remove Account',
       description: 'Remove one account.',
@@ -106,7 +107,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.account.login',
+    toolName('pp.account.login', defaults),
     {
       title: 'Login Account',
       description: 'Create or update one account and run a login flow.',
@@ -135,7 +136,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.environment.list',
+    toolName('pp.environment.list', defaults),
     {
       title: 'List Environments',
       description: 'List configured environments.',
@@ -146,7 +147,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.environment.inspect',
+    toolName('pp.environment.inspect', defaults),
     {
       title: 'Inspect Environment',
       description: 'Inspect one environment.',
@@ -157,7 +158,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.environment.add',
+    toolName('pp.environment.add', defaults),
     {
       title: 'Add Environment',
       description: 'Create or update one environment and auto-discover makerEnvironmentId and tenantId.',
@@ -183,7 +184,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.environment.discover',
+    toolName('pp.environment.discover', defaults),
     {
       title: 'Discover Environments',
       description: 'List environments accessible to one account.',
@@ -205,7 +206,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.environment.remove',
+    toolName('pp.environment.remove', defaults),
     {
       title: 'Remove Environment',
       description: 'Remove one environment.',
@@ -227,20 +228,29 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     rawBody: z.string().optional(),
     responseType: z.enum(['json', 'text', 'void']).optional(),
     timeoutMs: z.number().int().positive().optional(),
+    jq: z.union([
+      z.string(),
+      z.object({
+        expr: z.string(),
+        raw: z.boolean().optional(),
+        maxOutputBytes: z.number().int().positive().optional(),
+        timeoutMs: z.number().int().positive().optional(),
+      }),
+    ]).optional(),
     readIntent: z.boolean().optional(),
     configDir: z.string().optional(),
     allowInteractiveAuth: z.boolean().optional(),
   });
 
   server.registerTool(
-    'pp.request',
+    toolName('pp.request', defaults),
     {
       title: 'Request',
       description: 'Make an authenticated request with resource auto-detection.',
       inputSchema: requestSchema,
       outputSchema,
     },
-    async ({ environment, account, path, method, api, query, headers, body, rawBody, responseType, timeoutMs, readIntent, configDir, allowInteractiveAuth }) =>
+    async ({ environment, account, path, method, api, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, configDir, allowInteractiveAuth }) =>
       toolResult(
         await executeApiRequest({
           environmentAlias: environment,
@@ -254,6 +264,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
           rawBody,
           responseType,
           timeoutMs,
+          jq,
           readIntent,
         }, config(configDir, defaults), { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth }),
       ),
@@ -261,14 +272,14 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
 
   for (const api of ['dv', 'flow', 'graph', 'bap', 'powerapps'] as const) {
     server.registerTool(
-      `pp.${api}_request`,
+      toolName(`pp.${api}_request`, defaults),
       {
         title: `${api.toUpperCase()} Request`,
         description: `Make an authenticated ${api.toUpperCase()} request.`,
         inputSchema: requestSchema.omit({ api: true }),
         outputSchema,
       },
-      async ({ environment, account, path, method, query, headers, body, rawBody, responseType, timeoutMs, readIntent, configDir, allowInteractiveAuth }) =>
+      async ({ environment, account, path, method, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, configDir, allowInteractiveAuth }) =>
         toolResult(
           await executeApiRequest({
             environmentAlias: environment,
@@ -282,6 +293,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
             rawBody,
             responseType,
             timeoutMs,
+            jq,
             readIntent,
           }, config(configDir, defaults), { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth }),
         ),
@@ -289,7 +301,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   }
 
   server.registerTool(
-    'pp.whoami',
+    toolName('pp.whoami', defaults),
     {
       title: 'Who Am I',
       description: 'Run Dataverse WhoAmI against one environment.',
@@ -309,7 +321,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.ping',
+    toolName('pp.ping', defaults),
     {
       title: 'Ping',
       description: 'Run a minimal authenticated health check against Dataverse, Flow, or Graph.',
@@ -332,7 +344,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
-    'pp.token',
+    toolName('pp.token', defaults),
     {
       title: 'Get Token',
       description: 'Resolve an access token for one environment and API.',
@@ -359,6 +371,10 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
 
 function config(configDir: string | undefined, defaults: PpMcpServerOptions): ConfigStoreOptions {
   return configDir ? { configDir } : defaults.configDir ? { configDir: defaults.configDir } : {};
+}
+
+function toolName(name: string, options: PpMcpServerOptions): string {
+  return options.toolNameStyle === 'underscore' ? name.replaceAll('.', '_') : name;
 }
 
 function toolResult(result: { success: boolean; data?: unknown; diagnostics: unknown[] }) {

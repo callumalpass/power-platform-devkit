@@ -28,7 +28,24 @@ The package exposes three binaries:
 
 ### Windows
 
-The repo now includes a Windows packaging path:
+The easiest Windows install path is the packaged release from GitHub Actions.
+
+For a tagged release:
+
+1. Open the repository's GitHub Releases page.
+2. Download `pp-setup.exe` from the latest release.
+3. Run the installer.
+4. Leave **Add pp to PATH** checked if you want to use `pp`, `pp-mcp`, and `pp-ui` from PowerShell.
+5. Launch **PP UI** from the Start menu, or run `pp-ui` from PowerShell.
+
+For an unreleased build from GitHub Actions:
+
+1. Open the latest successful `CI` workflow run.
+2. Download the `pp-windows-<commit>` artifact.
+3. Unzip the artifact.
+4. Run `pp-setup.exe`, or copy the standalone `pp.exe`, `pp-mcp.exe`, and `pp-ui.exe` somewhere on your `PATH`.
+
+The repo includes this Windows packaging path:
 
 - self-contained executables via `pnpm run build:sea`
 - an Inno Setup installer script at `packaging/windows/pp.iss`
@@ -127,6 +144,16 @@ pp flow /flows --env dev
 
 The `--api` flag on `pp request` also accepts `custom` for arbitrary endpoints.
 
+### jq response transforms
+
+Request commands can apply a jq expression to JSON responses before printing the result:
+
+```sh
+pp dv /accounts --env dev --query '$select=name,accountid' --query '$top=50' --jq '.value | map({name, accountid})'
+```
+
+This runs jq in-process through WebAssembly; it does not shell out to a local `jq` binary. Prefer API-native filters such as `$select`, `$filter`, and `$top` first, then use `--jq` to trim or reshape the JSON that is returned.
+
 ## MCP server
 
 The MCP server exposes Power Platform operations as tools for AI assistants (e.g., Claude Desktop). It uses stdio transport.
@@ -147,19 +174,56 @@ Options:
 
 - `--config-dir DIR` -- Override config directory
 - `--allow-interactive-auth` -- Enable browser-based auth prompts (disabled by default in MCP mode)
+- `--tool-name-style dotted|underscore` -- Expose default dotted tool names (`pp.account.list`) or Copilot-compatible underscore names (`pp_account_list`)
 
 ### Tool names
 
-Tools are namespaced under `pp.`:
+By default, tools are namespaced under `pp.`:
 
 - `pp.account.list`, `pp.account.inspect`, `pp.account.login`, `pp.account.remove`
 - `pp.environment.list`, `pp.environment.inspect`, `pp.environment.add`, `pp.environment.discover`, `pp.environment.remove`
-- `pp.request`, `pp.dv_request`
+- `pp.request`, `pp.dv_request`, `pp.flow_request`, `pp.graph_request`, `pp.bap_request`, `pp.powerapps_request`
 - `pp.whoami`, `pp.ping`, `pp.token`
 
-### Claude Desktop configuration
+When started with `--tool-name-style underscore`, the same tools are exposed with `.` replaced by `_`, for example `pp_account_list` and `pp_environment_list`.
 
-Add to your Claude Desktop MCP config:
+The `pp.request`, `pp.dv_request`, `pp.flow_request`, `pp.graph_request`, `pp.bap_request`, and `pp.powerapps_request` tools also accept `jq` to transform JSON responses before the MCP result is returned:
+
+```json
+{
+  "environment": "dev",
+  "path": "/accounts",
+  "query": {
+    "$select": "name,accountid",
+    "$top": "50"
+  },
+  "jq": ".value | map({name, accountid})"
+}
+```
+
+For advanced limits, pass an object:
+
+```json
+{
+  "jq": {
+    "expr": ".value[] | {name, accountid}",
+    "maxOutputBytes": 50000,
+    "timeoutMs": 2000
+  }
+}
+```
+
+Use `raw: true` when the jq expression intentionally returns text instead of JSON.
+
+### Claude Code
+
+Configure Claude Code with:
+
+```sh
+claude mcp add --scope user pp -- pp-mcp
+```
+
+Or add this to a Claude MCP JSON config:
 
 ```json
 {
@@ -170,6 +234,69 @@ Add to your Claude Desktop MCP config:
   }
 }
 ```
+
+Verify with:
+
+```sh
+claude mcp get pp
+```
+
+Claude Code exposes the tools as `mcp__pp__pp_account_list`, `mcp__pp__pp_environment_list`, and so on.
+
+### Codex CLI
+
+Configure Codex with:
+
+```sh
+codex mcp add pp -- pp-mcp
+```
+
+Verify with:
+
+```sh
+codex mcp get pp
+```
+
+Codex can then use the default dotted MCP tools such as `pp.account.list`.
+
+### GitHub Copilot CLI
+
+Copilot CLI can use MCP servers configured in `~/.copilot/mcp-config.json`. Use underscore tool names for Copilot compatibility:
+
+```json
+{
+  "mcpServers": {
+    "pp": {
+      "type": "local",
+      "command": "pp-mcp",
+      "args": ["--tool-name-style", "underscore"],
+      "env": {},
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+You can also add the server from Copilot interactive mode with `/mcp add`; choose `STDIO` or `Local`, set the command to `pp-mcp --tool-name-style underscore`, and include all tools.
+
+In Copilot prompts, refer to underscore tool names such as `pp_account_list`.
+
+### GitHub Copilot in VS Code
+
+For a repo-local VS Code configuration, create `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "pp": {
+      "command": "pp-mcp",
+      "args": ["--tool-name-style", "underscore"]
+    }
+  }
+}
+```
+
+Use **MCP: List Servers** from the VS Code command palette to start and verify the server.
 
 ## Web UI
 

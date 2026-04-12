@@ -245,7 +245,7 @@ async function runRequest(args: string[]): Promise<number> {
   const path = positionalApi ? positional[1] : positional[0];
   const environmentAlias = readFlag(args, '--environment');
   if (!path || !environmentAlias) {
-    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--read]'), args);
+    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read]'), args);
   }
   const body = await readBody(args);
   if (!body.success) return printFailure(body, args);
@@ -261,6 +261,7 @@ async function runRequest(args: string[]): Promise<number> {
     rawBody: body.data?.rawBody,
     responseType: (readFlag(args, '--response-type') as 'json' | 'text' | 'void' | undefined) ?? 'json',
     timeoutMs: readFlag(args, '--timeout-ms') ? Number(readFlag(args, '--timeout-ms')) : undefined,
+    jq: readFlag(args, '--jq'),
     readIntent: hasFlag(args, '--read'),
   }, readConfigOptions(args), { allowInteractive: !hasFlag(args, '--no-interactive-auth') });
   if (!result.success) return printFailure(result, args);
@@ -656,7 +657,7 @@ function printRequestHelp(): void {
       'Send an authenticated request using an explicit environment and optional account override.',
       '',
       'Usage:',
-      '  pp request [dv|flow|graph|bap|powerapps|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--read] [--no-interactive-auth]',
+      '  pp request [dv|flow|graph|bap|powerapps|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-interactive-auth]',
     ].join('\n') + '\n',
   );
 }
@@ -669,7 +670,7 @@ function printRequestAliasHelp(api: Exclude<ApiKind, 'custom'>): void {
       `Shortcut for "pp request --api ${api}".`,
       '',
       'Usage:',
-      `  pp ${api} <path|url> --env ALIAS [--account ACCOUNT] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--read] [--no-interactive-auth]`,
+      `  pp ${api} <path|url> --env ALIAS [--account ACCOUNT] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-interactive-auth]`,
     ].join('\n') + '\n',
   );
 }

@@ -62,6 +62,9 @@ importers:
       crelt:
         specifier: ^1.0.6
         version: 1.0.6
+      jq-wasm:
+        specifier: 1.1.0-jq-1.8.1
+        version: 1.1.0-jq-1.8.1
       react:
         specifier: ^19.2.5
         version: 19.2.5
@@ -912,6 +915,9 @@ packages:
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
     engines: {node: '>=10'}
+
+  jq-wasm@1.1.0-jq-1.8.1:
+    resolution: {integrity: sha512-lWfu34lpDFIygOYcL5TzxhZIApDR9iR5XywcVoyUAZ6jlQrj8HKHOKeCcHgUm2dE9RVdbP3eqNAKGLuj+k4seQ==}
 
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
@@ -1970,6 +1976,8 @@ snapshots:
   jose@6.2.2: {}
 
   joycon@3.1.1: {}
+
+  jq-wasm@1.1.0-jq-1.8.1: {}
 
   json-schema-traverse@1.0.0: {}
 
