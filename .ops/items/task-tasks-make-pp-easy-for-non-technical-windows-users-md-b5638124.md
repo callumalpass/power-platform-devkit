@@ -179,7 +179,7 @@ The highest implementation risk is not Windows itself; it is ensuring the UI
 path no longer assumes a package-style filesystem layout at runtime. That should
 be addressed before committing heavily to installer polish.
 
-## Handoff
+## Hand off
 
 If a later session picks this up, start by auditing:
 

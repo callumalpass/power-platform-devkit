@@ -379,7 +379,7 @@ export function App() {
 
       <header className="header">
         <div className="header-inner">
-          <span className="logo"><svg width="24" height="24" viewBox="0 0 256 256" aria-label="pp"><rect width="256" height="256" rx="52" fill="#3ed4aa"/><mask id="pp-logo"><rect width="256" height="256" fill="white"/><rect x="64" y="52" width="18" height="156" rx="9" fill="black"/><circle cx="100" cy="88" r="36" fill="black"/><circle cx="100" cy="88" r="18" fill="white"/><rect x="128" y="52" width="18" height="156" rx="9" fill="black"/><circle cx="164" cy="88" r="36" fill="black"/><circle cx="164" cy="88" r="18" fill="white"/></mask><rect width="256" height="256" rx="52" fill="#182830" mask="url(#pp-logo)"/></svg></span>
+          <span className="logo"><svg width="24" height="24" viewBox="46 43 172 174" aria-label="pp"><mask id="pp-m"><rect x="46" y="43" width="172" height="174" fill="white"/><circle cx="100" cy="88" r="18" fill="black"/><circle cx="164" cy="88" r="18" fill="black"/></mask><g fill="currentColor" mask="url(#pp-m)"><rect x="64" y="52" width="18" height="156" rx="9"/><circle cx="100" cy="88" r="36"/><rect x="128" y="52" width="18" height="156" rx="9"/><circle cx="164" cy="88" r="36"/></g></svg></span>
           <div className="header-env">
             <label>ENV</label>
             <select id="global-environment" style={{ flex: 1 }} value={globalEnvironment} onChange={(event) => setGlobalEnvironment(event.target.value)}>
