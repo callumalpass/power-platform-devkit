@@ -18,6 +18,7 @@ import {
 } from './automate-data.js';
 import type { FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowItem, FlowRun, ToastFn } from './ui-types.js';
 import { CopyButton } from './CopyButton.js';
+import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 
 type AutomateSubTab = 'definition' | 'runs' | 'outline';
 
@@ -47,6 +48,7 @@ export function AutomateTab(props: {
   toast: ToastFn;
 }) {
   const { active, environment, openConsole, toast } = props;
+  const detail = useRecordDetail();
   const [flows, setFlows] = useState<FlowItem[]>([]);
   const [flowSource, setFlowSource] = useState<'flow' | 'dv'>('flow');
   const [loadedEnvironment, setLoadedEnvironment] = useState('');
@@ -247,7 +249,7 @@ export function AutomateTab(props: {
                 <div>
                   <h2>{prop(currentFlow, 'properties.displayName') || currentFlow.name}</h2>
                   <p className="desc copy-inline" style={{ marginBottom: 0 }}>
-                    <span className="copy-inline-value">{prop(currentFlow, 'properties.description') || flowIdentifier(currentFlow)}</span>
+                    <span className="record-link" onClick={() => detail.open('workflow', 'workflows', flowIdentifier(currentFlow))}>{prop(currentFlow, 'properties.description') || flowIdentifier(currentFlow)}</span>
                     <CopyButton value={flowIdentifier(currentFlow)} label="copy id" title="Copy flow ID" toast={toast} />
                   </p>
                 </div>
@@ -464,6 +466,9 @@ export function AutomateTab(props: {
           </>
         ) : null}
       </div>
+      {detail.target && environment && (
+        <RecordDetailModal initial={detail.target} environment={environment} onClose={detail.close} toast={toast} />
+      )}
     </div>
   );
 }

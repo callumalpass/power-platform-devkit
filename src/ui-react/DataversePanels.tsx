@@ -795,7 +795,7 @@ export function RelationshipsTab(props: {
   function showNodeTooltip(node: RelationshipsNode, event: ReactPointerEvent<SVGElement>) {
     const position = tooltipPosition(event);
     const detail = graph.cache[node.id];
-    const lookupCount = detail?.attributes?.filter((attribute) => attribute.targets?.length).length || 0;
+    const metadataLookupCount = detail?.attributes?.filter((attribute) => attribute.targets?.length).length || 0;
     const outEdges = graph.edges.filter((edge) => edge.source === node.id);
     const inEdges = graph.edges.filter((edge) => edge.target === node.id);
     setTooltip({
@@ -803,7 +803,7 @@ export function RelationshipsTab(props: {
       title: node.label,
       detail: [
         node.logicalName,
-        `${node.attrCount} attrs · ${lookupCount} lookups`,
+        `${node.attrCount} attrs · ${metadataLookupCount} metadata lookups · ${outEdges.length} shown`,
         node.entitySetName,
         outEdges.length ? `References: ${outEdges.map((edge) => edge.label).join(', ')}` : '',
         inEdges.length ? `Referenced by: ${inEdges.map((edge) => `${edge.source}.${edge.label}`).join(', ')}` : '',
@@ -940,7 +940,7 @@ export function RelationshipsTab(props: {
           <button className="btn btn-primary" type="button" style={{ padding: '5px 14px', fontSize: '0.75rem' }} onClick={() => void loadGraph()}>{loading ? 'Loading…' : 'Load Graph'}</button>
           <span style={{ fontSize: '0.6875rem', color: 'var(--muted)', marginLeft: 'auto' }}>{graph.nodes.length ? `${graph.nodes.length} entities, ${graph.edges.length} relationships` : ''}</span>
         </div>
-        <div className="rel-canvas-container">
+        <div className="rel-canvas-container" onPointerLeave={() => { if (!drag) setTooltip(null); }}>
           <svg
             ref={svgRef}
             className="rel-svg"
@@ -950,7 +950,6 @@ export function RelationshipsTab(props: {
             onPointerMove={moveGraphPointer}
             onPointerUp={endGraphPointer}
             onPointerCancel={endGraphPointer}
-            onPointerLeave={() => { if (!drag) setTooltip(null); }}
             onWheel={zoomGraph}
           >
             {graph.edges.map((edge) => {
@@ -997,7 +996,6 @@ export function RelationshipsTab(props: {
                   transform={`translate(${x},${y})`}
                   onPointerDown={(event) => startNodeDrag(node, event)}
                   onPointerEnter={(event) => showNodeTooltip(node, event)}
-                  onPointerMove={(event) => { if (!drag) showNodeTooltip(node, event); }}
                   onClick={(event) => showNodeTooltip(node, event as unknown as ReactPointerEvent<SVGElement>)}
                 >
                   <rect width="160" height="44" rx="10"></rect>
@@ -1116,13 +1114,14 @@ async function loadRelationshipsRecursive(
   nodes: RelationshipsNode[],
   edges: RelationshipsEdge[],
 ) {
-  if (cache[entityName]) return;
-  let detail: DataverseEntityDetail;
-  try {
-    detail = await getEntityDetail(environment, entityName);
-    cache[entityName] = detail;
-  } catch {
-    return;
+  let detail = cache[entityName];
+  if (!detail) {
+    try {
+      detail = await getEntityDetail(environment, entityName);
+      cache[entityName] = detail;
+    } catch {
+      return;
+    }
   }
   if (!nodes.find((node) => node.id === entityName)) {
     nodes.push({
@@ -1199,7 +1198,12 @@ async function expandRelationshipsNode(
     const cache = { ...graph.cache };
     const nodes = [...graph.nodes.map((node) => ({ ...node }))];
     const edges = [...graph.edges];
+    const initialNodeCount = nodes.length;
+    const initialEdgeCount = edges.length;
     await loadRelationshipsRecursive(entityName, 1, environment, hideSystem, cache, nodes, edges);
+    if (nodes.length === initialNodeCount && edges.length === initialEdgeCount) {
+      toast('No additional relationships found for this node.');
+    }
     layoutNodes(nodes, edges);
     setGraph({ nodes, edges, cache });
   } catch (error) {

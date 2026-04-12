@@ -4,6 +4,7 @@ export function renderHtml(): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2IiByb2xlPSJpbWciIGFyaWEtbGFiZWxsZWRieT0idGl0bGUgZGVzYyI+CiAgPHRpdGxlIGlkPSJ0aXRsZSI+cHAgaWNvbjwvdGl0bGU+CiAgPGRlc2MgaWQ9ImRlc2MiPlBvd2VyIFBsYXRmb3JtIENMSSBtb25vZ3JhbS48L2Rlc2M+CgogIDwhLS0gdGVhbCBsYXllciByZXZlYWxlZCB0aHJvdWdoIGN1dG91dHMgLS0+CiAgPHJlY3Qgd2lkdGg9IjI1NiIgaGVpZ2h0PSIyNTYiIHJ4PSI1MiIgZmlsbD0iIzNlZDRhYSIvPgoKICA8IS0tIG1hc2s6IHdoaXRlID0gZGFyayB2aXNpYmxlLCBibGFjayA9IHRlYWwgc2hvd3MgdGhyb3VnaCAtLT4KICA8bWFzayBpZD0icHAiPgogICAgPHJlY3Qgd2lkdGg9IjI1NiIgaGVpZ2h0PSIyNTYiIGZpbGw9IndoaXRlIi8+CgogICAgPCEtLSBmaXJzdCBwOiBzdGVtICsgYm93bCArIGNvdW50ZXIgLS0+CiAgICA8cmVjdCB4PSI2NCIgeT0iNTIiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxNTYiIHJ4PSI5IiBmaWxsPSJibGFjayIvPgogICAgPGNpcmNsZSBjeD0iMTAwIiBjeT0iODgiIHI9IjM2IiBmaWxsPSJibGFjayIvPgogICAgPGNpcmNsZSBjeD0iMTAwIiBjeT0iODgiIHI9IjE4IiBmaWxsPSJ3aGl0ZSIvPgoKICAgIDwhLS0gc2Vjb25kIHA6IHNhbWUgc2hhcGUsIG9mZnNldCA2NHB4IHJpZ2h0IC0tPgogICAgPHJlY3QgeD0iMTI4IiB5PSI1MiIgd2lkdGg9IjE4IiBoZWlnaHQ9IjE1NiIgcng9IjkiIGZpbGw9ImJsYWNrIi8+CiAgICA8Y2lyY2xlIGN4PSIxNjQiIGN5PSI4OCIgcj0iMzYiIGZpbGw9ImJsYWNrIi8+CiAgICA8Y2lyY2xlIGN4PSIxNjQiIGN5PSI4OCIgcj0iMTgiIGZpbGw9IndoaXRlIi8+CiAgPC9tYXNrPgoKICA8IS0tIGRhcmsgbGF5ZXIgd2l0aCBwcCBwdW5jaGVkIHRocm91Z2ggLS0+CiAgPHJlY3Qgd2lkdGg9IjI1NiIgaGVpZ2h0PSIyNTYiIHJ4PSI1MiIgZmlsbD0iIzE4MjgzMCIgbWFzaz0idXJsKCNwcCkiLz4KPC9zdmc+Cg==">
   <title>pp</title>
   <style>
     :root {
@@ -388,6 +389,10 @@ export function renderHtml(): string {
     .empty-state p { font-size: 0.875rem; margin-bottom: 4px; }
     .empty-state-hint { font-size: 0.8125rem; color: var(--muted); }
 
+    /* My Access panel */
+    .access-team-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; }
+    .access-team-roles { display: flex; gap: 4px; flex-wrap: wrap; }
+
     /* Theme toggle */
     .theme-toggle { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 0.875rem; line-height: 1; color: var(--muted); }
     .theme-toggle:hover { background: var(--bg); color: var(--ink); }
@@ -599,6 +604,7 @@ export function renderHtml(): string {
     .rt-cell-long:hover .rt-cell-copy { opacity: 1; }
     .rt-cell-copy:hover { color: var(--accent); border-color: var(--accent); }
     .rt-table tr:hover td { background: var(--bg); }
+    .rt-row-clickable { cursor: pointer; }
     .rt-footer { padding: 6px 10px; font-size: 0.6875rem; color: var(--muted); border-top: 1px solid var(--border); background: var(--surface); text-align: right; }
 
     /* Record detail modal */
@@ -692,7 +698,7 @@ export function renderHtml(): string {
   <div class="toast-container" id="toasts"></div>
   <header class="header">
     <div class="header-inner">
-      <span class="logo">pp</span>
+      <span class="logo"><svg width="24" height="24" viewBox="0 0 256 256" aria-label="pp"><rect width="256" height="256" rx="52" fill="#3ed4aa"/><mask id="pp-logo"><rect width="256" height="256" fill="white"/><rect x="64" y="52" width="18" height="156" rx="9" fill="black"/><circle cx="100" cy="88" r="36" fill="black"/><circle cx="100" cy="88" r="18" fill="white"/><rect x="128" y="52" width="18" height="156" rx="9" fill="black"/><circle cx="164" cy="88" r="36" fill="black"/><circle cx="164" cy="88" r="18" fill="white"/></mask><rect width="256" height="256" rx="52" fill="#182830" mask="url(#pp-logo)"/></svg></span>
       <div class="header-env">
         <label>ENV</label>
         <select id="global-environment" style="flex:1"></select>

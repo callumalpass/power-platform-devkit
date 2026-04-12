@@ -17,6 +17,7 @@ import { AutomateTab } from './AutomateTab.js';
 import { SetupTab } from './SetupTab.js';
 import { ResultView } from './ResultView.js';
 import { CopyButton } from './CopyButton.js';
+import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 
 type TabName = 'setup' | 'console' | 'dataverse' | 'automate' | 'apps' | 'platform';
 type DataverseSubTab = 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
@@ -378,7 +379,7 @@ export function App() {
 
       <header className="header">
         <div className="header-inner">
-          <span className="logo">pp</span>
+          <span className="logo"><svg width="24" height="24" viewBox="0 0 256 256" aria-label="pp"><rect width="256" height="256" rx="52" fill="#3ed4aa"/><mask id="pp-logo"><rect width="256" height="256" fill="white"/><rect x="64" y="52" width="18" height="156" rx="9" fill="black"/><circle cx="100" cy="88" r="36" fill="black"/><circle cx="100" cy="88" r="18" fill="white"/><rect x="128" y="52" width="18" height="156" rx="9" fill="black"/><circle cx="164" cy="88" r="36" fill="black"/><circle cx="164" cy="88" r="18" fill="white"/></mask><rect width="256" height="256" rx="52" fill="#182830" mask="url(#pp-logo)"/></svg></span>
           <div className="header-env">
             <label>ENV</label>
             <select id="global-environment" style={{ flex: 1 }} value={globalEnvironment} onChange={(event) => setGlobalEnvironment(event.target.value)}>
@@ -1057,7 +1058,8 @@ function orderByDefault(detail: any) {
 }
 
 function AppsTab(props: { state: any; setState: React.Dispatch<React.SetStateAction<any>>; environment: string; reload: () => Promise<void>; openConsole: (path: string) => void; toast: (message: string, isError?: boolean) => void }) {
-  const { state, setState, reload, openConsole, toast } = props;
+  const { state, setState, environment, reload, openConsole, toast } = props;
+  const detail = useRecordDetail();
   const filtered = state.filter
     ? state.items.filter((item: any) => {
         const name = prop(item, 'properties.displayName') || item.name || '';
@@ -1114,7 +1116,11 @@ function AppsTab(props: { state: any; setState: React.Dispatch<React.SetStateAct
                   <div key={String(label)} className="metric">
                     <div className="metric-label">{label}</div>
                     <div className="metric-value copy-inline">
-                      <span className="copy-inline-value">{String(value)}</span>
+                      {label === 'App ID' ? (
+                        <span className="record-link" onClick={() => detail.open('canvasapp', 'canvasapps', String(value))}>{String(value).slice(0, 8)}...</span>
+                      ) : (
+                        <span className="copy-inline-value">{String(value)}</span>
+                      )}
                       <CopyButton value={value} label="copy" title={`Copy ${String(label)}`} toast={toast} />
                     </div>
                   </div>
@@ -1137,6 +1143,9 @@ function AppsTab(props: { state: any; setState: React.Dispatch<React.SetStateAct
           )}
         </div>
       </div>
+      {detail.target && environment && (
+        <RecordDetailModal initial={detail.target} environment={environment} onClose={detail.close} toast={toast} />
+      )}
     </>
   );
 }
