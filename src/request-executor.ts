@@ -285,8 +285,13 @@ function normalizePowerAppsPath(path: string, makerEnvironmentId: string): strin
 }
 
 function canvasAuthoringDiscoveryBaseUrl(makerEnvironmentId: string): string {
-  const compactEnvironmentId = makerEnvironmentId.replaceAll('-', '').slice(0, 30);
-  return `https://${compactEnvironmentId}.ce.environment.api.powerplatform.com`;
+  const isDefault = makerEnvironmentId.startsWith('Default-');
+  const guidPart = isDefault ? makerEnvironmentId.slice('Default-'.length) : makerEnvironmentId;
+  const hex = guidPart.replaceAll('-', '');
+  const prefix = hex.slice(0, hex.length - 2);
+  const suffix = hex.slice(hex.length - 2);
+  const encoded = isDefault ? `default${prefix}.${suffix}` : `${prefix}.${suffix}`;
+  return `https://${encoded}.environment.api.powerplatform.com`;
 }
 
 function normalizeCanvasAuthoringPath(path: string): string {
