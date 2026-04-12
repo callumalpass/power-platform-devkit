@@ -261,6 +261,7 @@ async function runDataverseRecordQuery(
     api: 'dv',
     path,
     method: 'GET',
+    headers: { Prefer: 'odata.include-annotations="*"' },
     responseType: 'json',
     readIntent: true,
   }, configOptions, loginOptions);
@@ -371,6 +372,7 @@ export async function executeFetchXml(
     api: 'dv',
     path,
     method: 'GET',
+    headers: { Prefer: 'odata.include-annotations="*"' },
     responseType: 'json',
     readIntent: true,
   }, configOptions, loginOptions);

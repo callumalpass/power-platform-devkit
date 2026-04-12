@@ -14,8 +14,9 @@ import {
   getSelectableAttributes,
   highlightJson,
   prop,
-  renderResultTable,
 } from './utils.js';
+import { ResultView } from './ResultView.js';
+import { CopyButton } from './CopyButton.js';
 import {
   analyzeFetchXml,
   executeFetchXml,
@@ -146,6 +147,13 @@ export function FetchXmlTab(props: {
   toast: ToastFn;
 }) {
   const { dataverse, environment, toast } = props;
+  const entityMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entity of dataverse.entities) {
+      if (entity.logicalName && entity.entitySetName) map.set(entity.logicalName, entity.entitySetName);
+    }
+    return map;
+  }, [dataverse.entities]);
   const [entityName, setEntityName] = useState('');
   const [entityDetail, setEntityDetail] = useState<DataverseEntityDetail | null>(null);
   const [selectedAttrs, setSelectedAttrs] = useState<string[]>([]);
@@ -158,7 +166,7 @@ export function FetchXmlTab(props: {
   const [rawXml, setRawXml] = useState('');
   const [diagnostics, setDiagnostics] = useState<DiagnosticItem[]>([]);
   const [result, setResult] = useState<DataverseRecordPage | null>(null);
-  const [resultView, setResultView] = useState<'table' | 'json'>('table');
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [vimMode, setVimMode] = useState('normal');
 
@@ -437,16 +445,8 @@ export function FetchXmlTab(props: {
         </div>
       </div>
       <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <h2>FetchXML Result</h2>
-          <div className="result-toggle">
-            <button className={`result-toggle-btn ${resultView === 'table' ? 'active' : ''}`} type="button" onClick={() => setResultView('table')}>Table</button>
-            <button className={`result-toggle-btn ${resultView === 'json' ? 'active' : ''}`} type="button" onClick={() => setResultView('json')}>JSON</button>
-          </div>
-        </div>
-        {result && resultView === 'table' && result.records?.length
-          ? <div dangerouslySetInnerHTML={{ __html: renderResultTable(result.records, result.logicalName) }}></div>
-          : <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(result || 'Run FetchXML to see the response.') }}></pre>}
+        <h2>FetchXML Result</h2>
+        <ResultView result={result} entityLogicalName={result?.logicalName} entitySetName={result?.entitySetName} primaryIdAttribute={entityDetail?.primaryIdAttribute} environment={environment} entityMap={entityMap} placeholder="Run FetchXML to see the response." toast={toast} />
       </div>
     </div>
   );
@@ -1052,11 +1052,21 @@ export function RelationshipsTab(props: {
               </div>
             </div>
             <div className="metrics">
-              <div className="metric"><div className="metric-label">Entity Set</div><div className="metric-value">{selectedNode.entitySetName || '-'}</div></div>
-              <div className="metric"><div className="metric-label">Attributes</div><div className="metric-value">{String(selectedNode.attrCount)}</div></div>
-              <div className="metric"><div className="metric-label">Custom</div><div className="metric-value">{selectedNode.isCustom ? 'Yes' : 'No'}</div></div>
-              <div className="metric"><div className="metric-label">Outgoing</div><div className="metric-value">{String(graph.edges.filter((edge) => edge.source === selectedNode.id).length)}</div></div>
-              <div className="metric"><div className="metric-label">Incoming</div><div className="metric-value">{String(graph.edges.filter((edge) => edge.target === selectedNode.id).length)}</div></div>
+              {[
+                ['Entity Set', selectedNode.entitySetName || '-'],
+                ['Attributes', String(selectedNode.attrCount)],
+                ['Custom', selectedNode.isCustom ? 'Yes' : 'No'],
+                ['Outgoing', String(graph.edges.filter((edge) => edge.source === selectedNode.id).length)],
+                ['Incoming', String(graph.edges.filter((edge) => edge.target === selectedNode.id).length)],
+              ].map(([label, value]) => (
+                <div className="metric" key={label}>
+                  <div className="metric-label">{label}</div>
+                  <div className="metric-value copy-inline">
+                    <span className="copy-inline-value">{value}</span>
+                    <CopyButton value={value} label="copy" title={`Copy ${label}`} toast={toast} />
+                  </div>
+                </div>
+              ))}
             </div>
             <div className="panel" style={{ padding: 0, marginTop: 12, border: 'none' }}>
               <h3 style={{ marginBottom: 8 }}>Lookups</h3>
@@ -1073,12 +1083,22 @@ export function RelationshipsTab(props: {
               </div>
             </div>
             {selectedDetail ? (
-              <pre className="viewer" style={{ marginTop: 12 }} dangerouslySetInnerHTML={{ __html: highlightJson({
-                description: selectedDetail.description,
-                primaryIdAttribute: selectedDetail.primaryIdAttribute,
-                primaryNameAttribute: selectedDetail.primaryNameAttribute,
-                ownershipType: selectedDetail.ownershipType,
-              }) }}></pre>
+              <div style={{ marginTop: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+                  <CopyButton value={{
+                    description: selectedDetail.description,
+                    primaryIdAttribute: selectedDetail.primaryIdAttribute,
+                    primaryNameAttribute: selectedDetail.primaryNameAttribute,
+                    ownershipType: selectedDetail.ownershipType,
+                  }} label="Copy JSON" title="Copy relationship detail JSON" toast={toast} />
+                </div>
+                <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson({
+                  description: selectedDetail.description,
+                  primaryIdAttribute: selectedDetail.primaryIdAttribute,
+                  primaryNameAttribute: selectedDetail.primaryNameAttribute,
+                  ownershipType: selectedDetail.ownershipType,
+                }) }}></pre>
+              </div>
             ) : null}
           </>
         )}

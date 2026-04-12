@@ -81,8 +81,6 @@ export type DataverseState = {
   dvSubTab: 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
   queryPreview: string;
   queryResult: DataverseRecordPage | null;
-  queryResultView: 'table' | 'json';
-  recordPreviewView: 'table' | 'json';
 };
 
 export type FlowStatus = 'Succeeded' | 'Failed' | 'Running' | 'Skipped' | 'Started' | 'Stopped' | 'Unknown' | string;
@@ -116,9 +114,22 @@ export type FlowRun = {
   name?: string;
   properties?: {
     status?: FlowStatus;
+    code?: string;
     startTime?: string;
     endTime?: string;
-    trigger?: { name?: string };
+    error?: unknown;
+    correlation?: { clientTrackingId?: string };
+    trigger?: {
+      name?: string;
+      status?: FlowStatus;
+      code?: string;
+      startTime?: string;
+      endTime?: string;
+      inputs?: unknown;
+      outputs?: unknown;
+      inputsLink?: { uri?: string };
+      outputsLink?: { uri?: string };
+    };
   };
 };
 
@@ -135,6 +146,16 @@ export type FlowAction = {
     outputs?: unknown;
     inputsLink?: { uri?: string };
     outputsLink?: { uri?: string };
+    trackedProperties?: unknown;
+    retryHistory?: Array<{
+      startTime?: string;
+      endTime?: string;
+      code?: string;
+      error?: unknown;
+    }>;
+    repetitionCount?: number;
+    canResubmit?: boolean;
+    correlation?: { actionTrackingId?: string };
   };
 };
 
@@ -142,6 +163,18 @@ export type FlowAnalysisOutlineItem = {
   name?: string;
   kind?: string;
   detail?: string;
+  /** e.g. "OpenApiConnection", "ApiConnection", "Http" */
+  type?: string;
+  /** Connector or operation identifier, e.g. "shared_sharepointonline" */
+  connector?: string;
+  /** Inputs summary — key fields from the action's inputs config */
+  inputs?: Record<string, unknown>;
+  /** Expression text for conditions, filters, etc. */
+  expression?: string;
+  /** Variable name for Initialize/Set variable actions */
+  variable?: string;
+  /** Run-after configuration keys */
+  runAfter?: string[];
   children?: FlowAnalysisOutlineItem[];
 };
 

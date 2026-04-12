@@ -62,6 +62,14 @@ export interface FlowOutlineItem {
   detail?: string;
   from: number;
   to: number;
+  /** Action type, e.g. "OpenApiConnection", "Http", "InitializeVariable" */
+  type?: string;
+  /** Connector identifier, e.g. "shared_sharepointonline" */
+  connector?: string;
+  /** Key input values (host, method, uri, etc.) */
+  inputs?: Record<string, unknown>;
+  /** Run-after dependency names */
+  runAfter?: string[];
   children?: FlowOutlineItem[];
 }
 
@@ -720,14 +728,95 @@ function buildOutline(model: FlowDocumentModel): FlowOutlineItem[] {
 }
 
 function actionOutline(action: FlowActionNode): FlowOutlineItem {
-  return {
+  const item: FlowOutlineItem = {
     kind: action.children.length ? 'scope' : 'action',
     name: action.name,
     detail: action.type,
+    type: action.type,
     from: action.from,
     to: action.to,
     children: action.children.length ? action.children.map(actionOutline) : undefined,
   };
+  if (action.runAfter.length) item.runAfter = action.runAfter;
+  // extract connector and key inputs
+  const inputsNode = objectPropertyValue(action.node, 'inputs');
+  if (inputsNode?.type === 'object') {
+    const inputs: Record<string, unknown> = {};
+    const hostNode = objectPropertyValue(inputsNode, 'host');
+    if (hostNode?.type === 'object') {
+      const connId = readStringProperty(hostNode, 'connectionName')
+        || readStringProperty(hostNode, 'apiId')
+        || readStringProperty(hostNode, 'operationId');
+      if (connId) item.connector = connId;
+      const opId = readStringProperty(hostNode, 'operationId');
+      if (opId) inputs.operationId = opId;
+    }
+    for (const key of ['method', 'uri', 'path', 'body', 'queries', 'headers'] as const) {
+      const v = objectPropertyValue(inputsNode, key);
+      if (v) inputs[key] = v.type === 'string' ? v.value : v.type === 'object' || v.type === 'array' ? v.value : undefined;
+    }
+    // variables
+    const varArray = objectPropertyValue(inputsNode, 'variables');
+    if (varArray?.type === 'array' && varArray.items.length) {
+      const first = varArray.items[0];
+      if (first?.type === 'object') {
+        const varName = readStringProperty(first, 'name');
+        if (varName) inputs.variable = varName;
+      }
+    }
+    if (Object.keys(inputs).length) item.inputs = inputs;
+  }
+  // expression for conditions
+  const expressionNode = objectPropertyValue(action.node, 'expression');
+  if (expressionNode) {
+    if (expressionNode.type === 'string') item.inputs = { ...item.inputs, expression: expressionNode.value };
+    else if (expressionNode.type === 'object' || expressionNode.type === 'array') item.inputs = { ...item.inputs, expression: expressionNode.value };
+  }
+  // foreach collection expression
+  const foreachNode = objectPropertyValue(action.node, 'foreach');
+  if (foreachNode?.type === 'string') item.inputs = { ...item.inputs, foreach: foreachNode.value };
+  // description
+  const descNode = objectPropertyValue(action.node, 'description');
+  if (descNode?.type === 'string') item.inputs = { ...item.inputs, description: descNode.value };
+  // metadata (flowName, designer annotations, etc.)
+  const metaNode = objectPropertyValue(action.node, 'metadata');
+  if (metaNode?.type === 'object') {
+    const opId = readStringProperty(metaNode, 'operationMetadataId');
+    if (opId) item.inputs = { ...item.inputs, operationMetadataId: opId };
+    const flowName = readStringProperty(metaNode, 'flowSystemMetadata');
+    if (flowName) item.inputs = { ...item.inputs, flowSystemMetadata: flowName };
+  }
+  // retry / concurrency from runtimeConfiguration
+  const rtNode = objectPropertyValue(action.node, 'runtimeConfiguration');
+  if (rtNode?.type === 'object') {
+    const retryNode = objectPropertyValue(rtNode, 'staticResult');
+    const policyNode = objectPropertyValue(rtNode, 'retryPolicy');
+    if (policyNode?.type === 'object') {
+      const policyType = readStringProperty(policyNode, 'type');
+      if (policyType) item.inputs = { ...item.inputs, retryPolicy: policyType };
+    }
+    const concNode = objectPropertyValue(rtNode, 'concurrency');
+    if (concNode?.type === 'object') {
+      const reps = objectPropertyValue(concNode, 'repetitions');
+      if (reps?.type === 'number') item.inputs = { ...item.inputs, concurrency: reps.value };
+    }
+    if (retryNode?.type === 'object') {
+      const staticName = readStringProperty(retryNode, 'name');
+      if (staticName) item.inputs = { ...item.inputs, staticResult: staticName };
+    }
+  }
+  // operationOptions (e.g. "DisableAsyncPattern")
+  const optsNode = objectPropertyValue(action.node, 'operationOptions');
+  if (optsNode?.type === 'string') item.inputs = { ...item.inputs, operationOptions: optsNode.value };
+  // limit (for Until loops)
+  const limitNode = objectPropertyValue(action.node, 'limit');
+  if (limitNode?.type === 'object') {
+    const count = objectPropertyValue(limitNode, 'count');
+    const timeout = readStringProperty(limitNode, 'timeout');
+    if (count?.type === 'number') item.inputs = { ...item.inputs, limitCount: count.value };
+    if (timeout) item.inputs = { ...item.inputs, limitTimeout: timeout };
+  }
+  return item;
 }
 
 function buildCompletions(context: FlowCursorContext, model: FlowDocumentModel, source: string, cursor: number): FlowCompletionItem[] {

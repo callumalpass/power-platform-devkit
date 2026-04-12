@@ -1,30 +1,28 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   api,
   esc,
-  formDataObject,
   formatBytes,
   formatDate,
   formatDateShort,
-  formatTimeRemaining,
   getDefaultSelectedColumns,
   getSelectableAttributes,
   highlightJson,
   optionList,
   prop,
-  renderResultTable,
   summarizeError,
 } from './utils.js';
 import { FetchXmlTab, RelationshipsTab } from './DataversePanels.js';
 import { AutomateTab } from './AutomateTab.js';
+import { SetupTab } from './SetupTab.js';
+import { ResultView } from './ResultView.js';
+import { CopyButton } from './CopyButton.js';
 
 type TabName = 'setup' | 'console' | 'dataverse' | 'automate' | 'apps' | 'platform';
 type DataverseSubTab = 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
 type ExplorerSubTab = 'metadata' | 'records';
 
 type ToastItem = { id: number; message: string; isError: boolean };
-
-const HEALTH_APIS = ['dv', 'flow', 'graph', 'bap', 'powerapps'] as const;
 
 const APIS = [
   {
@@ -128,8 +126,6 @@ export function App() {
     dvSubTab: 'dv-explorer' as DataverseSubTab,
     queryPreview: 'Preview a Dataverse path here.',
     queryResult: null as any,
-    queryResultView: 'table' as 'table' | 'json',
-    recordPreviewView: 'table' as 'table' | 'json',
   });
 
   const [appsState, setAppsState] = useState({
@@ -513,554 +509,6 @@ function FragmentTab(props: { index: number; tabName: TabName; activeTab: TabNam
   );
 }
 
-function SetupTab(props: { shellData: any; globalEnvironment: string; refreshState: (silent?: boolean) => Promise<void>; toast: (message: string, isError?: boolean) => void }) {
-  const { shellData, globalEnvironment, refreshState, toast } = props;
-  const [accountKind, setAccountKind] = useState('user');
-  const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
-  const [tokenStatus, setTokenStatus] = useState<Record<string, any>>({});
-  const [health, setHealth] = useState<Record<string, Record<string, any>>>({});
-  const [discoveries, setDiscoveries] = useState<any[]>([]);
-  const [loginTargets, setLoginTargets] = useState<any[]>([]);
-  const [deviceCode, setDeviceCode] = useState<any>(null);
-  const [activeLoginJobId, setActiveLoginJobId] = useState<string | null>(null);
-  const [selectedApis, setSelectedApis] = useState<Record<string, boolean>>({
-    dv: true,
-    flow: true,
-    powerapps: true,
-    graph: false,
-  });
-  const [environmentDraft, setEnvironmentDraft] = useState({
-    alias: '',
-    account: '',
-    url: '',
-    displayName: '',
-    accessMode: '',
-  });
-
-  const accountFormRef = useRef<HTMLFormElement | null>(null);
-  const environmentFormRef = useRef<HTMLFormElement | null>(null);
-
-  useEffect(() => {
-    if (!shellData) return;
-    const accounts = shellData.accounts || [];
-    const environments = shellData.environments || [];
-    if (!environmentDraft.account && accounts[0]?.name) {
-      setEnvironmentDraft((current) => ({ ...current, account: accounts[0].name }));
-    }
-    void checkTokenStatuses(accounts);
-    void checkHealth(environments);
-  }, [shellData]);
-
-  async function checkTokenStatuses(accounts: any[]) {
-    await Promise.all(accounts.map(async (account) => {
-      try {
-        const response = await fetch(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, {
-          headers: { 'content-type': 'application/json' },
-        });
-        const data = await response.json();
-        setTokenStatus((current) => ({
-          ...current,
-          [account.name]: data.success && data.data ? data.data : { authenticated: false },
-        }));
-      } catch {
-        setTokenStatus((current) => ({ ...current, [account.name]: { authenticated: false } }));
-      }
-    }));
-  }
-
-  async function checkHealth(environments: any[]) {
-    for (const environment of environments) {
-      for (const apiName of HEALTH_APIS) {
-        setHealth((current) => ({
-          ...current,
-          [environment.alias]: {
-            ...(current[environment.alias] || {}),
-            [apiName]: { status: 'pending', summary: 'Checking…' },
-          },
-        }));
-        try {
-          const response = await fetch('/api/checks/ping', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ environment: environment.alias, api: apiName }),
-          });
-          const payload = await response.json();
-          const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);
-          setHealth((current) => ({
-            ...current,
-            [environment.alias]: { ...(current[environment.alias] || {}), [apiName]: value },
-          }));
-        } catch {
-          setHealth((current) => ({
-            ...current,
-            [environment.alias]: {
-              ...(current[environment.alias] || {}),
-              [apiName]: { status: 'error', summary: 'Request failed', detail: 'The health check request did not complete.' },
-            },
-          }));
-        }
-      }
-    }
-  }
-
-  async function waitForLoginJob(jobId: string) {
-    let parseFailures = 0;
-    while (true) {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
-        headers: { 'content-type': 'application/json' },
-      });
-      const text = await response.text();
-      let payload: any;
-      try {
-        payload = JSON.parse(text);
-      } catch (error) {
-        parseFailures += 1;
-        const snippet = text.length > 240 ? `${text.slice(0, 240)}…` : text;
-        if (parseFailures >= 2) {
-          throw new Error(`Invalid JSON while polling login job (${response.status}): ${(error as Error).message}${snippet ? `. Response starts with: ${snippet}` : ''}`);
-        }
-        continue;
-      }
-      parseFailures = 0;
-      const job = payload.data;
-      if (job?.metadata?.loginTargets && Array.isArray(job.metadata.loginTargets)) {
-        setLoginTargets(job.metadata.loginTargets);
-      }
-      if (job?.metadata?.deviceCode && typeof job.metadata.deviceCode === 'object') {
-        setDeviceCode(job.metadata.deviceCode);
-      }
-      if (!job || job.status === 'pending') continue;
-      if (job.status === 'cancelled') throw new Error('Login cancelled.');
-      if (job.result?.success === false) throw new Error(summarizeError(job.result));
-      return job.result;
-    }
-  }
-
-  async function handleAddAccount(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const interactive = accountKind === 'user' || accountKind === 'device-code';
-    try {
-      const started = await api<any>('/api/jobs/account-login', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...formDataObject(form),
-          environmentAlias: globalEnvironment || undefined,
-          excludeApis: ['dv', 'flow', 'powerapps', 'graph'].filter((name) => !selectedApis[name]),
-        }),
-      });
-      setActiveLoginJobId(started.data.id);
-      setLoginTargets(started.data.metadata?.loginTargets || []);
-      const result = await waitForLoginJob(started.data.id);
-      form.reset();
-      setAccountKind('user');
-      if (result?.data?.expiresAt) toast('Account saved and authenticated');
-      else toast('Account saved but login may not have completed', true);
-      await refreshState(true);
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), true);
-    } finally {
-      setActiveLoginJobId(null);
-      setLoginTargets([]);
-      setDeviceCode(null);
-    }
-  }
-
-  async function handleCancelLogin() {
-    if (!activeLoginJobId) return;
-    await fetch(`/api/jobs/${encodeURIComponent(activeLoginJobId)}`, {
-      method: 'DELETE',
-      headers: { 'content-type': 'application/json' },
-    });
-    setActiveLoginJobId(null);
-    setLoginTargets([]);
-    setDeviceCode(null);
-    toast('Pending login cancelled', true);
-  }
-
-  async function handleEnvironmentSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    try {
-      await api('/api/environments', {
-        method: 'POST',
-        body: JSON.stringify(environmentDraft),
-      });
-      setEnvironmentDraft({ alias: '', account: shellData?.accounts?.[0]?.name || '', url: '', displayName: '', accessMode: '' });
-      setDiscoveries([]);
-      toast('Environment added');
-      await refreshState(true);
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), true);
-    }
-  }
-
-  async function handleDiscover(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    try {
-      const payload = await api<any>('/api/environments/discover', {
-        method: 'POST',
-        body: JSON.stringify(formDataObject(form)),
-      });
-      setDiscoveries(payload.data || []);
-      toast(`${(payload.data || []).length} environment${(payload.data || []).length === 1 ? '' : 's'} found`);
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), true);
-    }
-  }
-
-  const accounts = shellData?.accounts || [];
-  const environments = shellData?.environments || [];
-
-  return (
-    <>
-      <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2>Accounts</h2>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-ghost" id="refresh-state" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void refreshState(false)}>Refresh</button>
-          </div>
-        </div>
-        <div className="card-list" id="accounts-list">
-          {accounts.length ? accounts.map((account: any) => {
-            const interactive = account.kind === 'user' || account.kind === 'device-code';
-            const token = tokenStatus[account.name];
-            const tokenClass = token === undefined ? 'pending' : token?.authenticated ? 'ok' : 'error';
-            const expiry = token?.authenticated ? formatTimeRemaining(token.expiresAt) : null;
-            return (
-              <div key={account.name} className={`account-card ${expandedAccount === account.name ? 'expanded' : ''}`} data-account-card={account.name}>
-                <div className="account-card-head" data-toggle-account={account.name} onClick={(event) => {
-                  if ((event.target as HTMLElement).closest('button')) return;
-                  setExpandedAccount((current) => current === account.name ? null : account.name);
-                }}>
-                  <div className="account-card-identity">
-                    <span id={`token-dot-${account.name}`}><span className={`health-dot ${tokenClass}`}></span></span>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span className="account-card-name">{account.name}</span>
-                        <span className="badge">{account.kind}</span>
-                      </div>
-                      {account.accountUsername || account.loginHint ? (
-                        <div className="account-card-email">{account.accountUsername || account.loginHint}</div>
-                      ) : null}
-                      <div id={`token-expiry-${account.name}`}>{expiry ? <span className={`token-expiry ${expiry.cls || ''}`}>{expiry.text}</span> : null}</div>
-                    </div>
-                  </div>
-                  <div className="account-card-actions">
-                    {interactive ? (
-                      <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={async () => {
-                        try {
-                          const started = await api<any>('/api/jobs/account-login', {
-                            method: 'POST',
-                            body: JSON.stringify({
-                              name: account.name,
-                              kind: 'user',
-                              environmentAlias: globalEnvironment || undefined,
-                              excludeApis: ['dv', 'flow', 'powerapps', 'graph'].filter((name) => !selectedApis[name]),
-                            }),
-                          });
-                          setActiveLoginJobId(started.data.id);
-                          setLoginTargets(started.data.metadata?.loginTargets || []);
-                          await waitForLoginJob(started.data.id);
-                          await refreshState(true);
-                          toast(`${account.name} authenticated`);
-                        } catch (error) {
-                          toast(error instanceof Error ? error.message : String(error), true);
-                        } finally {
-                          setActiveLoginJobId(null);
-                          setLoginTargets([]);
-                          setDeviceCode(null);
-                        }
-                      }}>Login</button>
-                    ) : null}
-                    <button className="btn btn-danger" type="button" onClick={async () => {
-                      if (!confirm(`Remove account "${account.name}"?`)) return;
-                      try {
-                        await api(`/api/accounts/${encodeURIComponent(account.name)}`, { method: 'DELETE' });
-                        toast('Account removed');
-                        await refreshState(true);
-                      } catch (error) {
-                        toast(error instanceof Error ? error.message : String(error), true);
-                      }
-                    }}>Remove</button>
-                  </div>
-                </div>
-                <div className="account-card-body">
-                  <form data-edit-account={account.name} onSubmit={async (event) => {
-                    event.preventDefault();
-                    try {
-                      await api(`/api/accounts/${encodeURIComponent(account.name)}`, {
-                        method: 'PUT',
-                        body: JSON.stringify(formDataObject(event.currentTarget)),
-                      });
-                      toast('Account updated');
-                      await refreshState(true);
-                    } catch (error) {
-                      toast(error instanceof Error ? error.message : String(error), true);
-                    }
-                  }}>
-                    <input type="hidden" name="name" defaultValue={account.name} />
-                    <input type="hidden" name="kind" defaultValue={account.kind} />
-                    <div className="form-row">
-                      <div className="field"><span className="field-label">Description</span><input name="description" defaultValue={account.description || ''} placeholder="Optional" /></div>
-                      <div className="field"><span className="field-label">Login Hint</span><input name="loginHint" defaultValue={account.loginHint || ''} placeholder="user@example.com" /></div>
-                    </div>
-                    <div className="form-row">
-                      <div className="field"><span className="field-label">Tenant ID</span><input name="tenantId" defaultValue={account.tenantId || ''} /></div>
-                      <div className="field"><span className="field-label">Client ID</span><input name="clientId" defaultValue={account.clientId || ''} /></div>
-                    </div>
-                    <div className="btn-group"><button type="submit" className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '5px 12px' }}>Save Changes</button></div>
-                  </form>
-                </div>
-              </div>
-            );
-          }) : <div className="empty">No accounts configured.</div>}
-        </div>
-
-        {(activeLoginJobId || loginTargets.length || deviceCode) ? (
-          <div id="login-link-panel" className="login-link-panel" style={{ marginTop: 14 }}>
-            <div className="login-link-head">
-              <span className="field-label">Authentication Links</span>
-              <button type="button" className="btn btn-ghost" id="login-link-copy" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => {
-                const links = loginTargets.filter((target) => target.url).map((target) => `${target.label || target.api || target.resource}: ${target.url}`);
-                void navigator.clipboard.writeText(links.join('\n')).then(() => toast('Copied login URLs'));
-              }}>Copy URLs</button>
-            </div>
-            <div id="login-link-status" className="login-link-status">
-              {loginTargets.find((target) => target.status === 'running')
-                ? 'Follow the current link, then continue through the remaining API logins below.'
-                : loginTargets.filter((target) => target.url).length
-                  ? 'Authentication links captured for this login session.'
-                  : 'Waiting for the identity provider to return sign-in links…'}
-            </div>
-            {deviceCode ? (
-              <div id="device-code-panel">
-                <div className="device-code-card">
-                  <div className="device-code-instruction">Go to the following URL and enter the code to sign in:</div>
-                  <div className="device-code-url-row">
-                    <a href={deviceCode.verificationUri} target="_blank" rel="noreferrer" className="device-code-url">{deviceCode.verificationUri}</a>
-                    <button type="button" className="btn btn-ghost device-code-open-btn" onClick={() => window.open(deviceCode.verificationUri, '_blank', 'noreferrer')}>Open</button>
-                  </div>
-                  <div className="device-code-box">
-                    <span className="device-code-label">Your code</span>
-                    <span className="device-code-value" id="device-code-value">{deviceCode.userCode}</span>
-                    <button type="button" className="btn btn-ghost" id="device-code-copy" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void navigator.clipboard.writeText(deviceCode.userCode).then(() => toast('Code copied'))}>Copy</button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            <div id="login-link-targets" style={{ display: 'grid', gap: 8 }}>
-              {loginTargets.map((target, index) => {
-                const tone = target.status === 'completed' ? 'ok' : target.status === 'running' ? 'pending' : 'error';
-                const statusLabel = target.status === 'completed' ? 'completed' : target.status === 'running' ? (target.url ? 'action required' : 'waiting') : 'pending';
-                return (
-                  <div key={`${target.resource || target.api || index}`} className={`login-target ${target.status === 'running' && target.url ? 'active' : ''}`}>
-                    <div className="login-target-head">
-                      <div className="login-target-head-left">
-                        <span className={`health-dot ${tone}`}></span>
-                        <strong>{target.label || target.api || target.resource}</strong>
-                      </div>
-                      <span className={`login-target-status ${target.status === 'completed' ? 'completed' : target.status === 'running' ? 'running' : 'pending'}`}>{statusLabel}</span>
-                    </div>
-                    {target.url ? <a href={target.url} target="_blank" rel="noreferrer" className="login-target-url">{target.url}</a> : <span style={{ fontSize: '0.6875rem', color: 'var(--muted)' }}>Waiting…</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        <details className="setup-add-section" id="add-account-section">
-          <summary className="setup-add-trigger">+ Add account</summary>
-          <div className="setup-add-body">
-            <form id="account-form" ref={accountFormRef} onSubmit={handleAddAccount}>
-              <div className="form-row">
-                <div className="field"><span className="field-label">Name</span><input name="name" required placeholder="my-work-account" /></div>
-                <div className="field"><span className="field-label">Kind</span>
-                  <select name="kind" id="account-kind" value={accountKind} onChange={(event) => setAccountKind(event.target.value)}>
-                    <option value="user">user</option>
-                    <option value="device-code">device-code</option>
-                    <option value="client-secret">client-secret</option>
-                    <option value="environment-token">environment-token</option>
-                    <option value="static-token">static-token</option>
-                  </select>
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="field"><span className="field-label">Description</span><input name="description" placeholder="Optional" /></div>
-                {(accountKind === 'user' || accountKind === 'device-code') ? (
-                  <div className="field"><span className="field-label">Preferred Flow</span><select name="preferredFlow"><option value="interactive">interactive</option><option value="device-code">device-code</option></select></div>
-                ) : <div className="field"></div>}
-              </div>
-              {(accountKind === 'user' || accountKind === 'device-code' || accountKind === 'client-secret') ? (
-                <div className="form-row">
-                  <div className="field"><span className="field-label">Tenant ID</span><input name="tenantId" placeholder="defaults to common" /></div>
-                  <div className="field"><span className="field-label">Client ID</span><input name="clientId" placeholder="defaults to built-in app" /></div>
-                </div>
-              ) : null}
-              {(accountKind === 'user' || accountKind === 'device-code') ? (
-                <>
-                  <div className="form-row">
-                    <div className="field"><span className="field-label">Login Hint</span><input name="loginHint" placeholder="user@example.com" /></div>
-                    <div className="field"><span className="field-label">Prompt</span><select name="prompt"><option value="">default</option><option value="select_account">select_account</option><option value="login">login</option><option value="consent">consent</option><option value="none">none</option></select></div>
-                  </div>
-                  <div className="check-row"><input type="checkbox" name="forcePrompt" id="forcePrompt" /><label htmlFor="forcePrompt">Force prompt on next login</label></div>
-                  {accountKind === 'user' ? <div className="check-row"><input type="checkbox" name="fallbackToDeviceCode" id="fallbackToDeviceCode" /><label htmlFor="fallbackToDeviceCode">Allow fallback to device code</label></div> : null}
-                </>
-              ) : null}
-              {accountKind === 'client-secret' ? <div className="field"><span className="field-label">Client Secret Env Var</span><input name="clientSecretEnv" placeholder="MY_CLIENT_SECRET" /></div> : null}
-              {accountKind === 'environment-token' ? <div className="field"><span className="field-label">Token Env Var</span><input name="environmentVariable" placeholder="MY_TOKEN_VAR" /></div> : null}
-              {accountKind === 'static-token' ? <div className="field"><span className="field-label">Static Token</span><textarea name="token" placeholder="Paste token"></textarea></div> : null}
-              {(accountKind === 'user' || accountKind === 'device-code') ? (
-                <div className="field">
-                  <span className="field-label">API Scopes to Authenticate</span>
-                  <div className="api-scope-checks" id="api-scope-checks">
-                    {(['dv', 'flow', 'powerapps', 'graph'] as const).map((scope) => (
-                      <label key={scope} className="api-scope-check">
-                        <input
-                          type="checkbox"
-                          value={scope}
-                          checked={selectedApis[scope]}
-                          onChange={(event) => setSelectedApis((current) => ({ ...current, [scope]: event.target.checked }))}
-                        />
-                        {scope === 'powerapps' ? 'Power Apps & BAP' : scope === 'dv' ? 'Dataverse' : scope === 'flow' ? 'Flow' : 'Graph'}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              <div className="btn-group">
-                <button type="submit" className="btn btn-primary" id="account-submit">Save & Login</button>
-                <button type="button" className={`btn btn-danger ${activeLoginJobId ? '' : 'hidden'}`} id="account-cancel" onClick={() => void handleCancelLogin()}>Cancel Pending Login</button>
-              </div>
-            </form>
-          </div>
-        </details>
-      </div>
-
-      <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2>Environments</h2>
-          <button className="btn btn-ghost" id="recheck-health" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => {
-            void checkHealth(environments);
-            void checkTokenStatuses(accounts);
-            toast('Health checks started');
-          }}>Re-check health</button>
-        </div>
-        <div className="card-list" id="environments-list">
-          {environments.length ? environments.map((environment: any) => {
-            const envHealth = health[environment.alias] || {};
-            const accountInfo = tokenStatus[environment.account];
-            const accountClass = accountInfo === undefined ? 'pending' : accountInfo?.authenticated ? 'ok' : 'error';
-            const accountExpiry = accountInfo?.authenticated ? formatTimeRemaining(accountInfo.expiresAt) : null;
-            return (
-              <div key={environment.alias} className="env-card">
-                <div className="env-card-head">
-                  <div>
-                    <div className="env-card-title">{environment.alias}{environment.displayName && environment.displayName !== environment.alias ? <span style={{ color: 'var(--muted)', fontWeight: 400 }}> {environment.displayName}</span> : null}</div>
-                    <div className="env-card-url">{environment.url || ''}</div>
-                    <div className="env-card-account"><span className={`health-dot ${accountClass}`}></span> {environment.account}{accountExpiry ? <span className={`token-expiry ${accountExpiry.cls || ''}`}> {accountExpiry.text}</span> : null}</div>
-                  </div>
-                  <button className="btn btn-danger" type="button" onClick={async () => {
-                    if (!confirm(`Remove environment "${environment.alias}"?`)) return;
-                    try {
-                      await api(`/api/environments/${encodeURIComponent(environment.alias)}`, { method: 'DELETE' });
-                      toast('Environment removed');
-                      await refreshState(true);
-                    } catch (error) {
-                      toast(error instanceof Error ? error.message : String(error), true);
-                    }
-                  }}>Remove</button>
-                </div>
-                <div className="health-row" id={`health-${environment.alias}`}>
-                  {HEALTH_APIS.map((apiName) => {
-                    const state = envHealth[apiName];
-                    const cls = !state || state.status === 'pending' ? 'pending' : state.status === 'ok' ? 'ok' : 'error';
-                    return (
-                      <button key={apiName} className="health-item health-item-btn" type="button" title={`${apiName}: ${state?.summary || 'Checking…'}`}>
-                        <span className={`health-dot ${cls}`}></span>{apiName}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          }) : <div className="empty">No environments configured.</div>}
-        </div>
-        <details className="setup-add-section">
-          <summary className="setup-add-trigger">+ Add environment</summary>
-          <div className="setup-add-body">
-            <form id="discover-form" style={{ marginBottom: 16 }} onSubmit={handleDiscover}>
-              <div className="form-row">
-                <div className="field"><span className="field-label">Account</span><select name="account" id="discover-account">{optionList(accounts.map((account: any) => account.name), 'select account').map((option) => <option key={`${option.value}-${option.label}`} value={option.value}>{option.label}</option>)}</select></div>
-                <div className="field" style={{ alignSelf: 'end' }}><button type="submit" className="btn btn-secondary" id="discover-submit">Discover</button></div>
-              </div>
-            </form>
-            <div className="card-list" id="discovered-list" style={{ marginBottom: 16 }}>
-              {discoveries.length ? discoveries.map((item, index) => (
-                <div key={index} className="card-item">
-                  <div className="card-item-info"><div className="card-item-title">{item.displayName || item.makerEnvironmentId || 'environment'}</div><div className="card-item-sub">{item.environmentApiUrl || item.environmentUrl || ''}</div></div>
-                  <button className="btn btn-ghost" type="button" onClick={() => {
-                    setEnvironmentDraft({
-                      alias: item.displayName ? item.displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : item.makerEnvironmentId || '',
-                      account: item.accountName || '',
-                      url: item.environmentApiUrl || item.environmentUrl || '',
-                      displayName: item.displayName || '',
-                      accessMode: '',
-                    });
-                  }}>Use</button>
-                </div>
-              )) : null}
-            </div>
-            <form id="environment-form" ref={environmentFormRef} onSubmit={handleEnvironmentSubmit}>
-              <div className="form-row">
-                <div className="field"><span className="field-label">Alias</span><input name="alias" required placeholder="dev, prod" value={environmentDraft.alias} onChange={(event) => setEnvironmentDraft((current) => ({ ...current, alias: event.target.value }))} /></div>
-                <div className="field"><span className="field-label">Account</span><select name="account" id="environment-account" value={environmentDraft.account} onChange={(event) => setEnvironmentDraft((current) => ({ ...current, account: event.target.value }))}>{accounts.map((account: any) => <option key={account.name} value={account.name}>{account.name}</option>)}</select></div>
-              </div>
-              <div className="form-row">
-                <div className="field"><span className="field-label">URL</span><input name="url" required placeholder="https://org.crm.dynamics.com" value={environmentDraft.url} onChange={(event) => setEnvironmentDraft((current) => ({ ...current, url: event.target.value }))} /></div>
-                <div className="field"><span className="field-label">Display Name</span><input name="displayName" placeholder="Optional" value={environmentDraft.displayName} onChange={(event) => setEnvironmentDraft((current) => ({ ...current, displayName: event.target.value }))} /></div>
-              </div>
-              <div className="field"><span className="field-label">Access</span><select name="accessMode" value={environmentDraft.accessMode} onChange={(event) => setEnvironmentDraft((current) => ({ ...current, accessMode: event.target.value }))}><option value="">read-write (default)</option><option value="read-write">read-write</option><option value="read-only">read-only</option></select></div>
-              <div className="btn-group"><button type="submit" className="btn btn-primary" id="env-submit">Discover & Save</button></div>
-            </form>
-          </div>
-        </details>
-      </div>
-
-      <details className="setup-add-section" style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--surface)', padding: 0 }}>
-        <summary className="setup-add-trigger" style={{ padding: '16px 20px' }}>MCP Server</summary>
-        <div style={{ padding: '0 20px 20px' }}>
-          <p className="desc">The MCP server uses stdio transport. Launch it from your MCP client.</p>
-          {shellData?.mcp ? (
-            <div id="mcp-content">
-              <div style={{ marginBottom: 12 }}><span className="field-label">Launch Command</span></div>
-              <div className="mcp-cmd-wrap"><div className="mcp-cmd" id="mcp-cmd">{shellData.mcp.launchCommand}</div><button className="mcp-copy" id="mcp-copy-btn" onClick={() => void navigator.clipboard.writeText(shellData.mcp.launchCommand).then(() => toast('Copied to clipboard'))}>Copy</button></div>
-              <div style={{ marginBottom: 8 }}><span className="field-label">Available Tools ({shellData.mcp.tools.length})</span></div>
-              <div className="tool-grid">{shellData.mcp.tools.map((tool: string) => <code key={tool}>{tool}</code>)}</div>
-            </div>
-          ) : null}
-        </div>
-      </details>
-    </>
-  );
-}
-
-function summarizeHealthFailure(payload: any) {
-  const diagnostic = Array.isArray(payload?.diagnostics) ? payload.diagnostics[0] : null;
-  const message = diagnostic?.message || 'Health check failed';
-  const detail = diagnostic?.detail || '';
-  const summary = /Interactive authentication is disabled/i.test(message)
-    ? 'Needs login for this API'
-    : /returned 401/i.test(message) || /returned 403/i.test(message)
-      ? 'Permission or consent required'
-      : /returned 404/i.test(message)
-        ? 'API endpoint unavailable'
-        : message;
-  return { status: 'error', summary, message, detail, code: diagnostic?.code || '' };
-}
-
 function ConsoleTab(props: { active: boolean; environment: string; seed: any; clearSeed: () => void; toast: (message: string, isError?: boolean) => void }) {
   const { active, environment, seed, clearSeed, toast } = props;
   const [apiKey, setApiKey] = useState('dv');
@@ -1190,6 +638,7 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
             {METHODS.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
           <input type="text" id="console-path" placeholder="/WhoAmI" value={path} onChange={(event) => setPath(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void sendRequest(); } }} />
+          <CopyButton value={`${method} ${path}`} label="Copy" title="Copy request line" toast={toast} />
           <button className="btn btn-primary" id="console-send" onClick={() => void sendRequest()}>Send</button>
         </div>
         <div className="console-scope-hint" id="console-scope-hint">
@@ -1246,6 +695,9 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
         {response.headers ? (
           <details style={{ marginBottom: 8 }} open>
             <summary style={{ cursor: 'pointer', fontSize: '0.75rem', color: 'var(--muted)' }}>Response Headers</summary>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+              <CopyButton value={response.headers} label="Copy headers" title="Copy response headers" toast={toast} />
+            </div>
             <pre className="viewer" id="console-response-headers-body" style={{ minHeight: 40, marginTop: 6 }}>{response.headers}</pre>
           </details>
         ) : null}
@@ -1253,7 +705,7 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
           <div className="response-meta">
             <span id="console-response-size" className="response-size">{response.size}</span>
           </div>
-          <button className="btn btn-ghost" id="console-copy-response" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void navigator.clipboard.writeText(response.body).then(() => toast('Response copied'))}>Copy</button>
+          <CopyButton value={response.body} label="Copy response" title="Copy response body" toast={toast} className="btn btn-ghost" />
         </div>
         <pre className="viewer" id="console-response-body" dangerouslySetInnerHTML={{ __html: highlightJson(response.body) }}></pre>
       </div>
@@ -1266,6 +718,7 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
                 <div className="saved-item-main" onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}>
                   <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
                   <span className="saved-item-name">{entry.path}</span>
+                  <CopyButton value={`${entry.method} ${entry.path}`} label="Copy" title="Copy saved request" toast={toast} stopPropagation />
                   <span className="history-api">{entry.api}</span>
                 </div>
                 <button className="pin-btn pinned" onClick={() => setSaved((current) => current.filter((_, itemIndex) => itemIndex !== index))}>✖</button>
@@ -1329,6 +782,14 @@ function DataverseTab(props: {
   const filteredEntities = dataverse.entityFilter
     ? dataverse.entities.filter((item: any) => item.logicalName.includes(dataverse.entityFilter.toLowerCase()) || (item.displayName || '').toLowerCase().includes(dataverse.entityFilter.toLowerCase()) || (item.entitySetName || '').toLowerCase().includes(dataverse.entityFilter.toLowerCase()))
     : dataverse.entities;
+
+  const entityMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entity of dataverse.entities) {
+      if (entity.logicalName && entity.entitySetName) map.set(entity.logicalName, entity.entitySetName);
+    }
+    return map;
+  }, [dataverse.entities]);
 
   const filteredAttributes = dataverse.currentEntityDetail
     ? (dataverse.currentEntityDetail.attributes || []).filter((attribute: any) => {
@@ -1445,7 +906,13 @@ function DataverseTab(props: {
                       ['Custom', dataverse.currentEntityDetail.isCustomEntity],
                       ['Change Tracking', dataverse.currentEntityDetail.changeTrackingEnabled],
                     ].map(([label, value]) => (
-                      <div key={String(label)} className="metric"><div className="metric-label">{label}</div><div className="metric-value">{String(value ?? '-')}</div></div>
+                      <div key={String(label)} className="metric">
+                        <div className="metric-label">{label}</div>
+                        <div className="metric-value copy-inline">
+                          <span className="copy-inline-value">{String(value ?? '-')}</span>
+                          <CopyButton value={value ?? ''} label="copy" title={`Copy ${String(label)}`} toast={toast} />
+                        </div>
+                      </div>
                     ))}
                   </div>
                   <div className="btn-group" style={{ marginBottom: 12 }}>
@@ -1497,15 +964,11 @@ function DataverseTab(props: {
                     <h2>Record Preview</h2>
                     <button className="btn btn-secondary" id="entity-refresh-records" type="button" onClick={() => void loadRecordPreview()}>Refresh</button>
                   </div>
-                  <div id="record-preview-path" style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--muted)', marginBottom: 8 }}>{dataverse.recordPreview?.path || ''}</div>
-                  <div className="result-toggle" id="record-preview-toggle" style={{ marginTop: 8 }}>
-                    <button className={`result-toggle-btn ${dataverse.recordPreviewView === 'table' ? 'active' : ''}`} data-view="table" onClick={() => setDataverse((current: any) => ({ ...current, recordPreviewView: 'table' }))}>Table</button>
-                    <button className={`result-toggle-btn ${dataverse.recordPreviewView === 'json' ? 'active' : ''}`} data-view="json" onClick={() => setDataverse((current: any) => ({ ...current, recordPreviewView: 'json' }))}>JSON</button>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--muted)', marginBottom: 8 }} className="copy-inline">
+                    <span className="copy-inline-value">{dataverse.recordPreview?.path || ''}</span>
+                    {dataverse.recordPreview?.path ? <CopyButton value={dataverse.recordPreview.path} label="copy" title="Copy record preview path" toast={toast} /> : null}
                   </div>
-                  {dataverse.recordPreview && dataverse.recordPreviewView === 'table' && dataverse.recordPreview.records?.length ? (
-                    <div id="record-preview-table" dangerouslySetInnerHTML={{ __html: renderResultTable(dataverse.recordPreview.records, dataverse.recordPreview.logicalName) }}></div>
-                  ) : null}
-                  <pre className="viewer" id="record-preview-json" style={{ display: dataverse.recordPreview && dataverse.recordPreviewView === 'table' && dataverse.recordPreview.records?.length ? 'none' : '' }} dangerouslySetInnerHTML={{ __html: highlightJson(dataverse.recordPreview?.records || 'Select an entity to preview records.') }}></pre>
+                  <ResultView result={dataverse.recordPreview} entityLogicalName={dataverse.currentEntityDetail?.logicalName} entitySetName={dataverse.currentEntityDetail?.entitySetName} primaryIdAttribute={dataverse.currentEntityDetail?.primaryIdAttribute} environment={environment} entityMap={entityMap} placeholder="Select an entity to preview records." toast={toast} />
                 </div>
               </div>
             )}
@@ -1564,21 +1027,15 @@ function DataverseTab(props: {
             </form>
           </div>
           <div className="panel">
-            <h2>Generated Path</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <h2>Generated Path</h2>
+              <CopyButton value={dataverse.queryPreview} label="Copy path" title="Copy generated Dataverse path" toast={toast} />
+            </div>
             <pre className="viewer" id="query-preview">{dataverse.queryPreview}</pre>
           </div>
           <div className="panel">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <h2>Query Result</h2>
-              <div className="result-toggle" id="query-result-toggle">
-                <button className={`result-toggle-btn ${dataverse.queryResultView === 'table' ? 'active' : ''}`} data-view="table" onClick={() => setDataverse((current: any) => ({ ...current, queryResultView: 'table' }))}>Table</button>
-                <button className={`result-toggle-btn ${dataverse.queryResultView === 'json' ? 'active' : ''}`} data-view="json" onClick={() => setDataverse((current: any) => ({ ...current, queryResultView: 'json' }))}>JSON</button>
-              </div>
-            </div>
-            {dataverse.queryResult && dataverse.queryResultView === 'table' && dataverse.queryResult.records?.length ? (
-              <div id="query-result-table" dangerouslySetInnerHTML={{ __html: renderResultTable(dataverse.queryResult.records, dataverse.queryResult.logicalName) }}></div>
-            ) : <div id="query-result-table"></div>}
-            <pre className="viewer" id="query-result" style={{ display: dataverse.queryResult && dataverse.queryResultView === 'table' && dataverse.queryResult.records?.length ? 'none' : '' }} dangerouslySetInnerHTML={{ __html: highlightJson(dataverse.queryResult || 'Run a query to see the response.') }}></pre>
+            <h2>Query Result</h2>
+            <ResultView result={dataverse.queryResult} entityLogicalName={dataverse.queryResult?.logicalName} entitySetName={dataverse.queryResult?.entitySetName} primaryIdAttribute={dataverse.currentEntityDetail?.primaryIdAttribute} environment={environment} entityMap={entityMap} placeholder="Run a query to see the response." toast={toast} />
           </div>
         </div>
 
@@ -1653,14 +1110,25 @@ function AppsTab(props: { state: any; setState: React.Dispatch<React.SetStateAct
                   ['Modified', formatDate(prop(state.current, 'properties.lastModifiedTime'))],
                   ['Published', formatDate(prop(state.current, 'properties.lastPublishTime'))],
                   ['App ID', state.current.name],
-                ].map(([label, value]) => <div key={String(label)} className="metric"><div className="metric-label">{label}</div><div className="metric-value">{String(value)}</div></div>)}
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="metric">
+                    <div className="metric-label">{label}</div>
+                    <div className="metric-value copy-inline">
+                      <span className="copy-inline-value">{String(value)}</span>
+                      <CopyButton value={value} label="copy" title={`Copy ${String(label)}`} toast={toast} />
+                    </div>
+                  </div>
+                ))}
               </div>
               <div id="app-connections">
                 {Object.entries(prop(state.current, 'properties.connectionReferences') || {}).map(([key, value]: [string, any]) => (
                   <div key={key} className="card-item" style={{ padding: '8px 10px' }}>
                     <div className="card-item-info">
                       <div className="card-item-title">{value.displayName || key}</div>
-                      <div className="card-item-sub">{value.id || ''}</div>
+                      <div className="card-item-sub copy-inline">
+                        <span className="copy-inline-value">{value.id || ''}</span>
+                        {value.id ? <CopyButton value={value.id} label="copy" title="Copy connection ID" toast={toast} /> : null}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1727,13 +1195,33 @@ function PlatformTab(props: { state: any; setState: React.Dispatch<React.SetStat
                   ['Default', prop(state.current, 'properties.isDefault') ? 'Yes' : 'No'],
                   ['Created', formatDate(prop(state.current, 'properties.createdTime'))],
                   ['Type', prop(state.current, 'properties.environmentType') || state.current.type || '-'],
-                ].map(([label, value]) => <div key={String(label)} className="metric"><div className="metric-label">{label}</div><div className="metric-value">{String(value)}</div></div>)}
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="metric">
+                    <div className="metric-label">{label}</div>
+                    <div className="metric-value copy-inline">
+                      <span className="copy-inline-value">{String(value)}</span>
+                      <CopyButton value={value} label="copy" title={`Copy ${String(label)}`} toast={toast} />
+                    </div>
+                  </div>
+                ))}
               </div>
               <div id="plat-env-linked">
                 {prop(state.current, 'properties.linkedEnvironmentMetadata.instanceUrl') ? (
                   <div className="metrics">
-                    <div className="metric"><div className="metric-label">Instance URL</div><div className="metric-value">{prop(state.current, 'properties.linkedEnvironmentMetadata.instanceUrl')}</div></div>
-                    <div className="metric"><div className="metric-label">Domain</div><div className="metric-value">{prop(state.current, 'properties.linkedEnvironmentMetadata.domainName') || '-'}</div></div>
+                    <div className="metric">
+                      <div className="metric-label">Instance URL</div>
+                      <div className="metric-value copy-inline">
+                        <span className="copy-inline-value">{prop(state.current, 'properties.linkedEnvironmentMetadata.instanceUrl')}</span>
+                        <CopyButton value={prop(state.current, 'properties.linkedEnvironmentMetadata.instanceUrl')} label="copy" title="Copy instance URL" toast={toast} />
+                      </div>
+                    </div>
+                    <div className="metric">
+                      <div className="metric-label">Domain</div>
+                      <div className="metric-value copy-inline">
+                        <span className="copy-inline-value">{prop(state.current, 'properties.linkedEnvironmentMetadata.domainName') || '-'}</span>
+                        <CopyButton value={prop(state.current, 'properties.linkedEnvironmentMetadata.domainName') || ''} label="copy" title="Copy domain" toast={toast} />
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </div>

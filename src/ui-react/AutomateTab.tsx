@@ -17,21 +17,9 @@ import {
   loadRunActions,
 } from './automate-data.js';
 import type { FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowItem, FlowRun, ToastFn } from './ui-types.js';
+import { CopyButton } from './CopyButton.js';
 
-type FlowCanvasNode = {
-  type: 'scope' | 'node';
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  label: string;
-  kind: string;
-  detail?: string;
-  depth: number;
-  colors: { bg: string; border: string; text: string };
-};
-
-type FlowCanvasView = { x: number; y: number; scale: number };
+type AutomateSubTab = 'definition' | 'runs' | 'outline';
 
 const automateEditorTheme = EditorView.theme({
   '&': { fontSize: '13px' },
@@ -42,19 +30,14 @@ const automateEditorTheme = EditorView.theme({
   '.cm-gutters': { backgroundColor: 'var(--bg)', borderRight: '1px solid var(--border)', color: 'var(--muted)' },
 });
 
-const NODE_GAP_Y = 14;
-const NODE_MIN_W = 180;
-const NODE_H = 46;
-const SCOPE_PAD = 12;
-const CONNECTOR_R = 3;
-const KIND_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  trigger: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' },
-  action: { bg: '#f0fdf4', border: '#22c55e', text: '#166534' },
-  scope: { bg: '#fefce8', border: '#eab308', text: '#854d0e' },
-  condition: { bg: '#fef2f2', border: '#ef4444', text: '#991b1b' },
-  foreach: { bg: '#f5f3ff', border: '#8b5cf6', text: '#5b21b6' },
-  switch: { bg: '#fff7ed', border: '#f97316', text: '#9a3412' },
-  default: { bg: '#f9fafb', border: '#9ca3af', text: '#374151' },
+const KIND_DOT: Record<string, string> = {
+  trigger: '#3b82f6',
+  action: '#22c55e',
+  scope: '#eab308',
+  condition: '#ef4444',
+  foreach: '#8b5cf6',
+  switch: '#f97316',
+  default: '#9ca3af',
 };
 
 export function AutomateTab(props: {
@@ -69,6 +52,7 @@ export function AutomateTab(props: {
   const [loadedEnvironment, setLoadedEnvironment] = useState('');
   const [filter, setFilter] = useState('');
   const [currentFlow, setCurrentFlow] = useState<FlowItem | null>(null);
+  const [flowSubTab, setFlowSubTab] = useState<AutomateSubTab>('definition');
   const [flowDocument, setFlowDocument] = useState('');
   const [analysis, setAnalysis] = useState<FlowAnalysis | null>(null);
   const [runs, setRuns] = useState<FlowRun[]>([]);
@@ -81,7 +65,9 @@ export function AutomateTab(props: {
   const [currentAction, setCurrentAction] = useState<FlowAction | null>(null);
   const [actionDetail, setActionDetail] = useState<FlowAction | null>(null);
   const [loadingFlows, setLoadingFlows] = useState(false);
+  const [loadingActions, setLoadingActions] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const selectedRunRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!active || !environment) return;
@@ -114,25 +100,29 @@ export function AutomateTab(props: {
 
   const filteredRuns = useMemo(() => {
     return runs
-      .filter((run) => {
-        const status = prop(run, 'properties.status') || '';
-        const trigger = prop(run, 'properties.trigger.name') || '';
+      .map((run, index) => ({ run, index }))
+      .filter(({ run }) => {
+        const status = String(prop(run, 'properties.status') || '');
+        const trigger = String(prop(run, 'properties.trigger.name') || '');
         const haystack = [run.name || '', status, trigger].join(' ').toLowerCase();
         return (!runStatusFilter || status === runStatusFilter) && (!runFilter || haystack.includes(runFilter.toLowerCase()));
       })
-      .sort((a, b) => statusRank(prop(a, 'properties.status')) - statusRank(prop(b, 'properties.status')));
+      .sort((a, b) => compareRunsByRecency(a.run, b.run) || a.index - b.index)
+      .map(({ run }) => run);
   }, [runFilter, runStatusFilter, runs]);
 
   const filteredActions = useMemo(() => {
     return actions
-      .filter((action) => {
-        const status = prop(action, 'properties.status') || '';
-        const type = prop(action, 'properties.type') || '';
-        const code = prop(action, 'properties.code') || '';
+      .map((action, index) => ({ action, index }))
+      .filter(({ action }) => {
+        const status = String(prop(action, 'properties.status') || '');
+        const type = String(prop(action, 'properties.type') || '');
+        const code = String(prop(action, 'properties.code') || '');
         const haystack = [action.name || '', status, type, code].join(' ').toLowerCase();
         return (!actionStatusFilter || status === actionStatusFilter) && (!actionFilter || haystack.includes(actionFilter.toLowerCase()));
       })
-      .sort((a, b) => statusRank(prop(a, 'properties.status')) - statusRank(prop(b, 'properties.status')));
+      .sort((a, b) => compareActionsByExecutionOrder(a.action, b.action) || a.index - b.index)
+      .map(({ action }) => action);
   }, [actionFilter, actionStatusFilter, actions]);
 
   async function loadFlows(force: boolean) {
@@ -151,8 +141,10 @@ export function AutomateTab(props: {
       setActions([]);
       setCurrentAction(null);
       setActionDetail(null);
+      setLoadingActions(false);
       setFlowDocument('');
       setAnalysis(null);
+      setFlowSubTab('definition');
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
       setFlows([]);
@@ -167,6 +159,8 @@ export function AutomateTab(props: {
     setCurrentRun(null);
     setCurrentAction(null);
     setActionDetail(null);
+    setLoadingActions(false);
+    selectedRunRef.current = undefined;
     setActions([]);
     setRuns([]);
     const [document, loadedRuns] = await Promise.all([
@@ -178,13 +172,28 @@ export function AutomateTab(props: {
   }
 
   async function selectRun(run: FlowRun) {
+    if (currentRun?.name === run.name) {
+      setCurrentRun(null);
+      setCurrentAction(null);
+      setActionDetail(null);
+      setActions([]);
+      setLoadingActions(false);
+      selectedRunRef.current = undefined;
+      return;
+    }
     setCurrentRun(run);
     setCurrentAction(null);
     setActionDetail(null);
+    setActions([]);
+    setLoadingActions(true);
+    selectedRunRef.current = run.name;
     try {
-      setActions(currentFlow ? await loadRunActions(environment, currentFlow, run) : []);
+      const loadedActions = currentFlow ? await loadRunActions(environment, currentFlow, run) : [];
+      if (selectedRunRef.current === run.name) setActions(loadedActions);
     } catch {
-      setActions([]);
+      if (selectedRunRef.current === run.name) setActions([]);
+    } finally {
+      if (selectedRunRef.current === run.name) setLoadingActions(false);
     }
   }
 
@@ -237,7 +246,10 @@ export function AutomateTab(props: {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <div>
                   <h2>{prop(currentFlow, 'properties.displayName') || currentFlow.name}</h2>
-                  <p className="desc" style={{ marginBottom: 0 }}>{prop(currentFlow, 'properties.description') || flowIdentifier(currentFlow)}</p>
+                  <p className="desc copy-inline" style={{ marginBottom: 0 }}>
+                    <span className="copy-inline-value">{prop(currentFlow, 'properties.description') || flowIdentifier(currentFlow)}</span>
+                    <CopyButton value={flowIdentifier(currentFlow)} label="copy id" title="Copy flow ID" toast={toast} />
+                  </p>
                 </div>
                 <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem' }} onClick={() => openConsole(currentFlow.source === 'dv'
                   ? { api: 'dv', method: 'GET', path: `/workflows(${flowIdentifier(currentFlow)})` }
@@ -256,93 +268,67 @@ export function AutomateTab(props: {
 
         {currentFlow ? (
           <>
-            <div className="panel">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <h2>Definition</h2>
-                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{analyzing ? 'Analyzing…' : analysis ? 'Analysis updated' : 'Definition not loaded'}</div>
-              </div>
-              <div className="fetchxml-editor-shell">
-                <FlowCodeEditor
-                  value={flowDocument}
-                  onChange={setFlowDocument}
-                  onAnalysis={setAnalysis}
-                  onAnalyzeStart={() => setAnalyzing(true)}
-                  onAnalyzeEnd={() => setAnalyzing(false)}
-                  toast={toast}
-                />
-              </div>
-              <div className="flow-summary-grid" style={{ marginTop: 12 }}>
-                {[
-                  ['Wrapper', analysis?.summary?.wrapperKind || 'unknown'],
-                  ['Triggers', String(analysis?.summary?.triggerCount || 0)],
-                  ['Actions', String(analysis?.summary?.actionCount || 0)],
-                  ['Variables', String(analysis?.summary?.variableCount || 0)],
-                  ['Parameters', String(analysis?.summary?.parameterCount || 0)],
-                  ['Unresolved refs', String((analysis?.references || []).filter((item) => item.resolved === false).length)],
-                ].map(([label, value]) => (
-                  <div key={label} className="metric"><div className="metric-label">{label}</div><div className="metric-value">{value}</div></div>
-                ))}
-              </div>
-              <div className="fetchxml-diagnostics" style={{ marginTop: 12 }}>
-                {analysis?.diagnostics?.length ? analysis.diagnostics.slice(0, 30).map((item, index) => (
-                  <div key={index} className={`fetchxml-diagnostic ${item.level || 'info'}`}>
-                    <div className="fetchxml-diagnostic-code">{item.code || 'INFO'} @ {item.from ?? 0}</div>
-                    <div className="fetchxml-diagnostic-message">{item.message}</div>
-                  </div>
-                )) : <div className="empty">No diagnostics.</div>}
-              </div>
-              <div style={{ marginTop: 12 }}>
-                <h3 style={{ marginBottom: 8 }}>Outline</h3>
-                <FlowOutlineCanvas items={analysis?.outline || []} />
-              </div>
+            <div className="dv-sub-nav">
+              {(['definition', 'runs', 'outline'] as AutomateSubTab[]).map((tabName) => (
+                <button
+                  key={tabName}
+                  className={`sub-tab ${flowSubTab === tabName ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => setFlowSubTab(tabName)}
+                >
+                  {tabName === 'definition' ? 'Definition' : tabName === 'runs' ? 'Runs' : 'Outline'}
+                </button>
+              ))}
             </div>
 
-            <div className="panel">
-              <div className="run-toolbar">
-                <input type="text" placeholder="Filter runs…" value={runFilter} onChange={(event) => setRunFilter(event.target.value)} />
-                <select value={runStatusFilter} onChange={(event) => setRunStatusFilter(event.target.value)}>
-                  <option value="">all statuses</option>
-                  <option value="Succeeded">Succeeded</option>
-                  <option value="Failed">Failed</option>
-                  <option value="Running">Running</option>
-                  <option value="Skipped">Skipped</option>
-                </select>
-              </div>
-              <div className="card-list">
-                {filteredRuns.length ? filteredRuns.map((run) => {
-                  const status = prop(run, 'properties.status') || 'Unknown';
-                  const cls = status === 'Succeeded' ? 'ok' : status === 'Failed' ? 'error' : 'pending';
-                  return (
-                    <div key={run.name} className={`run-item status-${cls} ${currentRun?.name === run.name ? 'active' : ''}`} onClick={() => void selectRun(run)}>
-                      <div className="run-main">
-                        <span className={`health-dot ${cls}`}></span>
-                        <div className="run-text">
-                          <div className="run-status">{status}</div>
-                          <div className="run-sub">
-                            <span className="action-item-type">{prop(run, 'properties.trigger.name') || '-'}</span>
-                            <span className="run-duration">{formatRunDuration(run)}</span>
-                            <span className="action-item-type">{shortId(run.name || '')}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <span className="run-time">{formatDate(prop(run, 'properties.startTime'))}</span>
-                    </div>
-                  );
-                }) : <div className="empty">No recent runs.</div>}
-              </div>
-            </div>
-
-            {currentRun ? (
+            <div className={`dv-subpanel ${flowSubTab === 'definition' ? 'active' : ''}`}>
               <div className="panel">
-                <div className="run-summary-grid">
-                  <SummaryCard label="Status" value={String(prop(currentRun, 'properties.status') || '-')} />
-                  <SummaryCard label="Trigger" value={String(prop(currentRun, 'properties.trigger.name') || '-')} />
-                  <SummaryCard label="Started" value={formatDate(prop(currentRun, 'properties.startTime'))} />
-                  <SummaryCard label="Duration" value={formatRunDuration(currentRun)} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <h2>Definition</h2>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{analyzing ? 'Analyzing…' : analysis ? 'Analysis updated' : 'Definition not loaded'}</div>
                 </div>
-                <div className="action-toolbar">
-                  <input type="text" placeholder="Filter actions by name, type, or code…" value={actionFilter} onChange={(event) => setActionFilter(event.target.value)} />
-                  <select value={actionStatusFilter} onChange={(event) => setActionStatusFilter(event.target.value)}>
+                <div className="fetchxml-editor-shell">
+                  <FlowCodeEditor
+                    value={flowDocument}
+                    onChange={setFlowDocument}
+                    onAnalysis={setAnalysis}
+                    onAnalyzeStart={() => setAnalyzing(true)}
+                    onAnalyzeEnd={() => setAnalyzing(false)}
+                    toast={toast}
+                  />
+                </div>
+                <div className="flow-summary-grid" style={{ marginTop: 12 }}>
+                  {[
+                    ['Wrapper', analysis?.summary?.wrapperKind || 'unknown'],
+                    ['Triggers', String(analysis?.summary?.triggerCount || 0)],
+                    ['Actions', String(analysis?.summary?.actionCount || 0)],
+                    ['Variables', String(analysis?.summary?.variableCount || 0)],
+                    ['Parameters', String(analysis?.summary?.parameterCount || 0)],
+                    ['Unresolved refs', String((analysis?.references || []).filter((item) => item.resolved === false).length)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="metric"><div className="metric-label">{label}</div><div className="metric-value">{value}</div></div>
+                  ))}
+                </div>
+                <div className="fetchxml-diagnostics" style={{ marginTop: 12 }}>
+                  {analysis?.diagnostics?.length ? analysis.diagnostics.slice(0, 30).map((item, index) => (
+                    <div key={index} className={`fetchxml-diagnostic ${item.level || 'info'}`}>
+                      <div className="fetchxml-diagnostic-code">{item.code || 'INFO'} @ {item.from ?? 0}</div>
+                      <div className="fetchxml-diagnostic-message">{item.message}</div>
+                    </div>
+                  )) : <div className="empty">No diagnostics.</div>}
+                </div>
+              </div>
+            </div>
+
+            <div className={`dv-subpanel ${flowSubTab === 'runs' ? 'active' : ''}`}>
+              <div className="panel">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <h2>Runs</h2>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Newest first</div>
+                </div>
+                <div className="run-toolbar">
+                  <input type="text" placeholder="Filter runs…" value={runFilter} onChange={(event) => setRunFilter(event.target.value)} />
+                  <select value={runStatusFilter} onChange={(event) => setRunStatusFilter(event.target.value)}>
                     <option value="">all statuses</option>
                     <option value="Succeeded">Succeeded</option>
                     <option value="Failed">Failed</option>
@@ -350,45 +336,131 @@ export function AutomateTab(props: {
                     <option value="Skipped">Skipped</option>
                   </select>
                 </div>
-                <div className="run-summary-grid" style={{ marginBottom: 12 }}>
-                  <SummaryCard label="Actions" value={String(actions.length)} />
-                  <SummaryCard label="Failed" value={String(actionCounts.Failed || 0)} />
-                  <SummaryCard label="Running" value={String(actionCounts.Running || 0)} />
-                  <SummaryCard label="Succeeded" value={String(actionCounts.Succeeded || 0)} />
-                </div>
-                <div className="card-list" style={{ marginBottom: 12 }}>
-                  {filteredActions.length ? filteredActions.map((action) => {
-                    const status = prop(action, 'properties.status') || 'Unknown';
+                <div className="card-list">
+                  {filteredRuns.length ? filteredRuns.map((run) => {
+                    const status = prop(run, 'properties.status') || 'Unknown';
                     const cls = status === 'Succeeded' ? 'ok' : status === 'Failed' ? 'error' : 'pending';
+                    const expanded = currentRun?.name === run.name;
                     return (
-                      <div key={action.name} className={`action-item ${currentAction?.name === action.name ? 'active' : ''}`} onClick={() => void selectAction(action)}>
-                        <span className={`health-dot ${cls}`}></span>
-                        <span className="action-item-name" title={action.name}>{action.name || 'Unknown'}</span>
-                        <div className="action-item-meta">
-                          <span className="action-item-type">{status}</span>
-                          {prop(action, 'properties.type') ? <span className="action-item-type">{String(prop(action, 'properties.type'))}</span> : null}
-                          {prop(action, 'properties.code') && prop(action, 'properties.code') !== status ? <span className="action-item-type">{String(prop(action, 'properties.code'))}</span> : null}
-                          <span className="run-duration">{formatRunDuration(action)}</span>
+                      <div key={run.name} className={`run-card ${expanded ? 'active' : ''}`}>
+                        <div className={`run-item status-${cls} ${expanded ? 'active' : ''}`} onClick={() => void selectRun(run)}>
+                          <div className="run-main">
+                            <span className={`health-dot ${cls}`}></span>
+                            <div className="run-text">
+                              <div className="run-status">{status}</div>
+                              <div className="run-sub">
+                                <span className="action-item-type">{prop(run, 'properties.trigger.name') || '-'}</span>
+                                <span className="run-duration">{formatRunDuration(run)}</span>
+                                <span className="action-item-type" title={run.name || ''}>{shortId(run.name || '')}</span>
+                                {run.name ? (
+                                  <CopyButton value={run.name} label="Copy ID" title="Copy full run ID" toast={toast} className="run-id-copy" stopPropagation />
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                          <span className="run-time">{formatDate(prop(run, 'properties.startTime'))}</span>
+                          <span className="action-item-type">{expanded ? 'Collapse' : 'Expand'}</span>
                         </div>
+                        {expanded ? (
+                          <div className="run-expanded" onClick={(event) => event.stopPropagation()}>
+                            <div className="run-summary-grid">
+                              <SummaryCard label="Status" value={String(prop(run, 'properties.status') || '-')} />
+                              <SummaryCard label="Trigger" value={String(prop(run, 'properties.trigger.name') || '-')} />
+                              <SummaryCard label="Started" value={formatDate(prop(run, 'properties.startTime'))} />
+                              <SummaryCard label="Duration" value={formatRunDuration(run)} />
+                              {prop(run, 'properties.code') ? <SummaryCard label="Code" value={String(prop(run, 'properties.code'))} /> : null}
+                              {prop(run, 'properties.correlation.clientTrackingId') ? <SummaryCard label="Tracking ID" value={String(prop(run, 'properties.correlation.clientTrackingId'))} /> : null}
+                              {prop(run, 'properties.trigger.status') ? <SummaryCard label="Trigger status" value={String(prop(run, 'properties.trigger.status'))} /> : null}
+                            </div>
+                            {prop(run, 'properties.error') ? (
+                              <div className="action-io-section" style={{ marginBottom: 8 }}>
+                                <h3>Run Error</h3>
+                                <pre className="viewer" style={{ borderLeft: '3px solid var(--danger)' }} dangerouslySetInnerHTML={{ __html: highlightJson(prop(run, 'properties.error')) }}></pre>
+                              </div>
+                            ) : null}
+                            <div className="action-toolbar">
+                              <input type="text" placeholder="Filter actions by name, type, or code…" value={actionFilter} onChange={(event) => setActionFilter(event.target.value)} />
+                              <select value={actionStatusFilter} onChange={(event) => setActionStatusFilter(event.target.value)}>
+                                <option value="">all statuses</option>
+                                <option value="Succeeded">Succeeded</option>
+                                <option value="Failed">Failed</option>
+                                <option value="Running">Running</option>
+                                <option value="Skipped">Skipped</option>
+                              </select>
+                            </div>
+                            <div className="run-summary-grid" style={{ marginBottom: 12 }}>
+                              <SummaryCard label="Actions" value={loadingActions ? 'Loading…' : String(actions.length)} />
+                              <SummaryCard label="Failed" value={String(actionCounts.Failed || 0)} />
+                              <SummaryCard label="Running" value={String(actionCounts.Running || 0)} />
+                              <SummaryCard label="Succeeded" value={String(actionCounts.Succeeded || 0)} />
+                            </div>
+                            <div className="card-list" style={{ marginBottom: 12 }}>
+                              {loadingActions ? <div className="empty">Loading actions…</div> : filteredActions.length ? filteredActions.map((action, index) => {
+                                const actionStatus = prop(action, 'properties.status') || 'Unknown';
+                                const actionCls = actionStatus === 'Succeeded' ? 'ok' : actionStatus === 'Failed' ? 'error' : 'pending';
+                                return (
+                                  <div key={action.name} className={`action-item ${currentAction?.name === action.name ? 'active' : ''}`} onClick={(event) => { event.stopPropagation(); void selectAction(action); }}>
+                                    <span className={`health-dot ${actionCls}`}></span>
+                                    <span className="action-item-name" title={action.name}>{action.name || 'Unknown'}</span>
+                                    <div className="action-item-meta">
+                                      <span className="action-item-type">Step {index + 1}</span>
+                                      <span className="action-item-type">{actionStatus}</span>
+                                      {prop(action, 'properties.type') ? <span className="action-item-type">{String(prop(action, 'properties.type'))}</span> : null}
+                                      {prop(action, 'properties.code') && prop(action, 'properties.code') !== actionStatus ? <span className="action-item-type">{String(prop(action, 'properties.code'))}</span> : null}
+                                      {prop(action, 'properties.repetitionCount') != null ? <span className="action-item-type">{String(prop(action, 'properties.repetitionCount'))}x</span> : null}
+                                      {prop(action, 'properties.retryHistory') ? <span className="action-item-type">{(prop(action, 'properties.retryHistory') as unknown[]).length} retries</span> : null}
+                                      <span className="run-duration">{formatRunDuration(action)}</span>
+                                    </div>
+                                  </div>
+                                );
+                              }) : <div className="empty">No actions in this run.</div>}
+                            </div>
+                            {currentAction ? (
+                              <div className="run-action-detail">
+                                <h2 style={{ marginBottom: 12 }}>{currentAction.name || 'Action Detail'}</h2>
+                                <div className="metrics" style={{ marginBottom: 12 }}>
+                                  {[
+                                    ['Status', String(prop(currentAction, 'properties.status') || '-')],
+                                    ['Type', String(prop(currentAction, 'properties.type') || '-')],
+                                    ['Code', String(prop(currentAction, 'properties.code') || '-')],
+                                    ['Started', formatDate(prop(currentAction, 'properties.startTime'))],
+                                    ['Duration', formatRunDuration(currentAction)],
+                                    ...(prop(currentAction, 'properties.repetitionCount') != null ? [['Repetitions', String(prop(currentAction, 'properties.repetitionCount'))]] : []),
+                                    ...(prop(currentAction, 'properties.correlation.actionTrackingId') ? [['Tracking ID', String(prop(currentAction, 'properties.correlation.actionTrackingId'))]] : []),
+                                    ...(prop(currentAction, 'properties.canResubmit') === true ? [['Resubmit', 'Yes']] : []),
+                                  ].map(([label, value]) => (
+                                    <div className="metric" key={label}>
+                                      <div className="metric-label">{label}</div>
+                                      <div className="metric-value copy-inline">
+                                        <span className="copy-inline-value">{value}</span>
+                                        <CopyButton value={value} label="copy" title={`Copy ${label}`} toast={toast} />
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                <ActionIo detail={actionDetail} toast={toast} />
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     );
-                  }) : <div className="empty">No actions in this run.</div>}
+                  }) : <div className="empty">No recent runs.</div>}
                 </div>
-                {currentAction ? (
-                  <>
-                    <h2 style={{ marginBottom: 12 }}>{currentAction.name || 'Action Detail'}</h2>
-                    <div className="metrics" style={{ marginBottom: 12 }}>
-                      <div className="metric"><div className="metric-label">Status</div><div className="metric-value">{String(prop(currentAction, 'properties.status') || '-')}</div></div>
-                      <div className="metric"><div className="metric-label">Type</div><div className="metric-value">{String(prop(currentAction, 'properties.type') || '-')}</div></div>
-                      <div className="metric"><div className="metric-label">Code</div><div className="metric-value">{String(prop(currentAction, 'properties.code') || '-')}</div></div>
-                      <div className="metric"><div className="metric-label">Started</div><div className="metric-value">{formatDate(prop(currentAction, 'properties.startTime'))}</div></div>
-                      <div className="metric"><div className="metric-label">Duration</div><div className="metric-value">{formatRunDuration(currentAction)}</div></div>
-                    </div>
-                    <ActionIo detail={actionDetail} toast={toast} />
-                  </>
-                ) : null}
               </div>
-            ) : null}
+            </div>
+
+            <div className={`dv-subpanel ${flowSubTab === 'outline' ? 'active' : ''}`}>
+              <div className="panel">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <h2>Outline</h2>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                    {analysis?.outline?.length ? `${analysis.outline.length} top-level items` : 'No outline yet'}
+                  </div>
+                </div>
+                {flowSubTab === 'outline' ? <FlowOutlineCanvas items={analysis?.outline || []} /> : null}
+              </div>
+            </div>
           </>
         ) : null}
       </div>
@@ -524,237 +596,148 @@ function FlowCodeEditor(props: {
 
 function FlowOutlineCanvas(props: { items: FlowAnalysisOutlineItem[] }) {
   const { items } = props;
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const nodesRef = useRef<FlowCanvasNode[]>([]);
-  const viewRef = useRef<FlowCanvasView>({ x: 0, y: 0, scale: 1 });
-  const panRef = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
-
-  function draw() {
-    drawOutlineCanvas(canvasRef.current, containerRef.current, nodesRef.current, viewRef.current);
-  }
-
-  function fit() {
-    fitCanvas(nodesRef.current, containerRef.current, viewRef.current);
-    draw();
-  }
-
-  useEffect(() => {
-    nodesRef.current = layoutOutlineCanvasNodes(items);
-    fit();
-  }, [items]);
-
-  useEffect(() => {
-    const handler = () => draw();
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-
+  if (!items.length) return <div className="empty">Load a flow definition to see the outline.</div>;
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 8 }}>
-        <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={fit}>Fit</button>
-        <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => { viewRef.current.scale = Math.min(3, viewRef.current.scale * 1.3); draw(); }}>Zoom in</button>
-        <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => { viewRef.current.scale = Math.max(0.2, viewRef.current.scale / 1.3); draw(); }}>Zoom out</button>
-      </div>
-      <div
-        ref={containerRef}
-        className="flow-canvas-container"
-        style={{ height: 500, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)', overflow: 'hidden', cursor: panRef.current ? 'grabbing' : 'grab' }}
-      >
-        <canvas
-          ref={canvasRef}
-          onMouseDown={(event) => { panRef.current = { x: event.clientX, y: event.clientY, vx: viewRef.current.x, vy: viewRef.current.y }; }}
-          onMouseMove={(event) => {
-            const pan = panRef.current;
-            if (!pan) return;
-            viewRef.current.x = pan.vx + (event.clientX - pan.x) / viewRef.current.scale;
-            viewRef.current.y = pan.vy + (event.clientY - pan.y) / viewRef.current.scale;
-            draw();
-          }}
-          onMouseUp={() => { panRef.current = null; }}
-          onMouseLeave={() => { panRef.current = null; }}
-          onWheel={(event) => {
-            event.preventDefault();
-            const factor = event.deltaY > 0 ? 0.9 : 1.1;
-            viewRef.current.scale = Math.max(0.2, Math.min(3, viewRef.current.scale * factor));
-            draw();
-          }}
-        />
-      </div>
+    <div style={{ maxHeight: 500, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)' }}>
+      <OutlineNodeList items={items} depth={0} />
     </div>
   );
 }
 
-function layoutOutlineCanvasNodes(items: FlowAnalysisOutlineItem[]) {
-  const nodes: FlowCanvasNode[] = [];
-  layoutOutlineNodes(items, 0, 0, 0, nodes);
-  return nodes;
+function OutlineNodeList(props: { items: FlowAnalysisOutlineItem[]; depth: number }) {
+  return (
+    <>
+      {props.items.map((item, index) => (
+        <OutlineNode key={index} item={item} depth={props.depth} last={index === props.items.length - 1} />
+      ))}
+    </>
+  );
 }
 
-function layoutOutlineNodes(items: FlowAnalysisOutlineItem[], depth: number, startX: number, startY: number, nodes: FlowCanvasNode[]) {
-  let cursorY = startY;
-  for (const item of items) {
-    const kind = String(item.kind || '').toLowerCase();
-    const hasChildren = Boolean(item.children?.length);
-    const colors = KIND_COLORS[kind] || KIND_COLORS.default;
-    if (hasChildren) {
-      const headerH = NODE_H;
-      const childStartY = cursorY + headerH + NODE_GAP_Y;
-      const childStartX = startX + SCOPE_PAD;
-      const childBottom = layoutOutlineNodes(item.children || [], depth + 1, childStartX, childStartY, nodes);
-      const scopeW = Math.max(NODE_MIN_W + SCOPE_PAD * 2, getSubtreeWidth(item.children || []) + SCOPE_PAD * 2);
-      const scopeH = childBottom - cursorY + SCOPE_PAD;
-      nodes.push({ type: 'scope', x: startX, y: cursorY, w: scopeW, h: scopeH, label: item.name || '', kind: item.kind || kind, detail: item.detail, colors, depth });
-      nodes.push({ type: 'node', x: startX + SCOPE_PAD, y: cursorY + 6, w: NODE_MIN_W, h: NODE_H - 12, label: item.name || '', kind: item.kind || kind, detail: item.detail, colors, depth: depth + 1 });
-      cursorY += scopeH + NODE_GAP_Y;
-    } else {
-      nodes.push({ type: 'node', x: startX, y: cursorY, w: NODE_MIN_W, h: NODE_H, label: item.name || '', kind: item.kind || kind, detail: item.detail, colors, depth });
-      cursorY += NODE_H + NODE_GAP_Y;
+function OutlineNode(props: { item: FlowAnalysisOutlineItem; depth: number; last: boolean }) {
+  const { item, depth, last } = props;
+  const [open, setOpen] = useState(false);
+  const hasChildren = Boolean(item.children?.length);
+  const kind = String(item.kind || '').toLowerCase();
+  const dotColor = KIND_DOT[kind] || KIND_DOT.default;
+  const hasDetail = Boolean(item.detail || item.type || item.connector || item.inputs || item.runAfter?.length);
+  const expandable = hasChildren || hasDetail;
+  const indent = depth * 20 + (depth > 0 ? 18 : 8);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {depth > 0 && (
+        <div style={{
+          position: 'absolute', left: depth * 20 + 3, top: 0, bottom: last ? '50%' : 0,
+          width: 1, background: 'var(--border)',
+        }} />
+      )}
+      {depth > 0 && (
+        <div style={{
+          position: 'absolute', left: depth * 20 + 3, top: '50%',
+          width: 10, height: 1, background: 'var(--border)',
+          transform: 'translateY(-50%)',
+        }} />
+      )}
+      <div
+        onClick={() => expandable && setOpen(!open)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '6px 12px 6px ' + indent + 'px',
+          cursor: expandable ? 'pointer' : 'default', fontSize: '12px', lineHeight: '18px',
+          borderBottom: '1px solid var(--border)',
+          background: open ? 'color-mix(in srgb, var(--ink) 4%, transparent)' : 'transparent',
+          transition: 'background 0.1s',
+        }}
+        onMouseEnter={(event) => { if (expandable) (event.currentTarget as HTMLElement).style.background = 'color-mix(in srgb, var(--ink) 6%, transparent)'; }}
+        onMouseLeave={(event) => { (event.currentTarget as HTMLElement).style.background = open ? 'color-mix(in srgb, var(--ink) 4%, transparent)' : 'transparent'; }}
+      >
+        <span style={{ width: 12, fontSize: '10px', color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', userSelect: 'none' }}>
+          {expandable ? (open ? '\u25BE' : '\u25B8') : ''}
+        </span>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: dotColor }} />
+        <span style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--muted)', letterSpacing: '0.04em', flexShrink: 0, minWidth: 52 }}>
+          {item.kind || 'action'}
+        </span>
+        <span style={{ fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {item.name || 'Unnamed'}
+        </span>
+        {hasChildren && (
+          <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--muted)', background: 'var(--border)', borderRadius: 8, padding: '1px 6px', flexShrink: 0 }}>
+            {item.children!.length}
+          </span>
+        )}
+      </div>
+      {open && hasDetail && (
+        <OutlineDetail item={item} indent={indent + 24} />
+      )}
+      {open && hasChildren && (
+        <OutlineNodeList items={item.children!} depth={depth + 1} />
+      )}
+    </div>
+  );
+}
+
+const INPUT_LABELS: Record<string, string> = {
+  operationId: 'Operation',
+  method: 'Method',
+  uri: 'URI',
+  path: 'Path',
+  body: 'Body',
+  queries: 'Query params',
+  headers: 'Headers',
+  variable: 'Variable',
+  expression: 'Expression',
+  foreach: 'Collection',
+  description: 'Description',
+  retryPolicy: 'Retry policy',
+  concurrency: 'Concurrency',
+  staticResult: 'Static result',
+  operationOptions: 'Options',
+  limitCount: 'Loop limit',
+  limitTimeout: 'Loop timeout',
+  operationMetadataId: 'Metadata ID',
+  flowSystemMetadata: 'System metadata',
+};
+
+function OutlineDetail(props: { item: FlowAnalysisOutlineItem; indent: number }) {
+  const { item, indent } = props;
+  const rows: [string, string][] = [];
+  if (item.type) rows.push(['Type', item.type]);
+  if (item.detail && item.detail !== item.type) rows.push(['Detail', item.detail]);
+  if (item.connector) rows.push(['Connector', item.connector]);
+  if (item.runAfter?.length) rows.push(['Run after', item.runAfter.join(', ')]);
+  if (item.inputs) {
+    for (const [key, value] of Object.entries(item.inputs)) {
+      if (value === undefined || value === null) continue;
+      const display = typeof value === 'string' ? value
+        : typeof value === 'number' ? String(value)
+        : JSON.stringify(value, null, 2);
+      rows.push([INPUT_LABELS[key] || key, display]);
     }
   }
-  return cursorY;
-}
-
-function getSubtreeWidth(items: FlowAnalysisOutlineItem[]) {
-  let maxW = NODE_MIN_W;
-  for (const item of items) {
-    if (item.children?.length) maxW = Math.max(maxW, getSubtreeWidth(item.children) + SCOPE_PAD * 2);
-  }
-  return maxW;
-}
-
-function fitCanvas(nodes: FlowCanvasNode[], container: HTMLDivElement | null, view: FlowCanvasView) {
-  if (!nodes.length) return;
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const node of nodes) {
-    minX = Math.min(minX, node.x);
-    minY = Math.min(minY, node.y);
-    maxX = Math.max(maxX, node.x + node.w);
-    maxY = Math.max(maxY, node.y + node.h);
-  }
-  const cw = container?.clientWidth || 600;
-  const ch = container?.clientHeight || 400;
-  view.scale = Math.min(1.5, Math.min((cw - 40) / (maxX - minX + 60), (ch - 40) / (maxY - minY + 60)));
-  view.x = -(minX + maxX) / 2;
-  view.y = -minY + 10;
-}
-
-function drawOutlineCanvas(canvas: HTMLCanvasElement | null, container: HTMLDivElement | null, nodes: FlowCanvasNode[], view: FlowCanvasView) {
-  if (!canvas || !container) return;
-  const dpr = window.devicePixelRatio || 1;
-  const w = container.clientWidth || 600;
-  const h = container.clientHeight || 500;
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  canvas.style.width = `${w}px`;
-  canvas.style.height = `${h}px`;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  if (!nodes.length) {
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#6b7280';
-    ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Load a flow definition to see the outline', w / 2, h / 2);
-    return;
-  }
-  ctx.save();
-  ctx.translate(w / 2, 20);
-  ctx.scale(view.scale, view.scale);
-  ctx.translate(view.x, view.y);
-  const isDark = document.documentElement.classList.contains('dark');
-  const borderColor = isDark ? '#27272a' : '#e5e7eb';
-  const textColor = isDark ? '#e4e4e7' : '#111111';
-  const mutedColor = isDark ? '#71717a' : '#6b7280';
-
-  for (const node of nodes) {
-    if (node.type !== 'scope') continue;
-    ctx.fillStyle = isDark ? adjustAlpha(node.colors.bg, 0.15) : node.colors.bg;
-    ctx.strokeStyle = node.colors.border;
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, node.x, node.y, node.w, node.h, 10);
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  const regularNodes = nodes.filter((node) => node.type === 'node');
-  for (let index = 0; index < regularNodes.length - 1; index++) {
-    const a = regularNodes[index];
-    const b = regularNodes[index + 1];
-    if (a.depth !== b.depth) continue;
-    const ax = a.x + a.w / 2;
-    const ay = a.y + a.h;
-    const bx = b.x + b.w / 2;
-    const by = b.y;
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(ax, ay + NODE_GAP_Y / 2);
-    if (Math.abs(ax - bx) > 1) ctx.lineTo(bx, ay + NODE_GAP_Y / 2);
-    ctx.lineTo(bx, by);
-    ctx.stroke();
-    ctx.fillStyle = borderColor;
-    ctx.beginPath();
-    ctx.arc(bx, by, CONNECTOR_R, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  for (const node of nodes) {
-    if (node.type !== 'node') continue;
-    ctx.fillStyle = isDark ? adjustAlpha(node.colors.bg, 0.25) : node.colors.bg;
-    ctx.strokeStyle = node.colors.border;
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, node.x, node.y, node.w, node.h, 8);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = node.colors.text;
-    ctx.font = 'bold 9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText((node.kind || '').toUpperCase(), node.x + 10, node.y + 14);
-    ctx.fillStyle = textColor;
-    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.fillText(ellipsize(ctx, node.label || '', node.w - 20), node.x + 10, node.y + 30);
-    if (node.detail) {
-      ctx.fillStyle = mutedColor;
-      ctx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-      ctx.fillText(ellipsize(ctx, node.detail, node.w - 20), node.x + 10, node.y + 42);
-    }
-  }
-  ctx.restore();
-}
-
-function ellipsize(ctx: CanvasRenderingContext2D, value: string, maxWidth: number) {
-  let text = value;
-  if (ctx.measureText(text).width <= maxWidth) return text;
-  while (text.length > 3 && ctx.measureText(`${text}…`).width > maxWidth) text = text.slice(0, -1);
-  return `${text}…`;
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function adjustAlpha(hex: string, alpha: number) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
+  if (!rows.length) return null;
+  return (
+    <div style={{
+      paddingLeft: indent, paddingRight: 12, paddingTop: 4, paddingBottom: 6,
+      fontSize: '11px', lineHeight: '18px',
+      borderBottom: '1px solid var(--border)',
+      background: 'color-mix(in srgb, var(--ink) 2%, transparent)',
+    }}>
+      {rows.map(([label, value]) => {
+        const isBlock = value.includes('\n');
+        return (
+          <div key={label} style={{ display: isBlock ? 'block' : 'flex', gap: 8, marginBottom: isBlock ? 4 : 0 }}>
+            <span style={{ color: 'var(--muted)', flexShrink: 0, minWidth: 80 }}>{label}</span>
+            {isBlock
+              ? <pre style={{ color: 'var(--ink)', margin: '2px 0 0', fontSize: '10px', lineHeight: '15px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{value}</pre>
+              : <span style={{ color: 'var(--ink)', wordBreak: 'break-all' }}>{value}</span>
+            }
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function SummaryCard(props: { label: string; value: string }) {
@@ -794,28 +777,65 @@ function ActionIo(props: { detail: FlowAction | null; toast: ToastFn }) {
 
   return (
     <>
-      {error ? <div className="action-io-section"><h3>Error</h3><pre className="viewer" style={{ borderLeft: '3px solid var(--danger)' }} dangerouslySetInnerHTML={{ __html: highlightJson(error) }}></pre></div> : null}
-      {inlineInputs !== undefined ? <div className="action-io-section"><h3>Inputs</h3><pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(inlineInputs) }}></pre></div> : inputsLink ? (
+      {error ? <div className="action-io-section"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Error</h3><CopyButton value={error} label="copy" title="Copy error" toast={toast} /></div><pre className="viewer" style={{ borderLeft: '3px solid var(--danger)' }} dangerouslySetInnerHTML={{ __html: highlightJson(error) }}></pre></div> : null}
+      {inlineInputs !== undefined ? <div className="action-io-section"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Inputs</h3><CopyButton value={inlineInputs} label="copy" title="Copy inputs" toast={toast} /></div><pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(inlineInputs) }}></pre></div> : inputsLink ? (
         <div className="action-io-section">
-          <h3>Inputs</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Inputs</h3>
+            <CopyButton value={inputsLink} label="copy link" title="Copy inputs link" toast={toast} />
+          </div>
           <button className="btn btn-secondary" type="button" style={{ fontSize: '0.75rem', padding: '5px 12px', marginBottom: 8 }} onClick={() => void fetchRemote('input', inputsLink)}>Fetch inputs</button>
           {remoteInputs !== undefined ? <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(remoteInputs) }}></pre> : null}
         </div>
       ) : null}
-      {inlineOutputs !== undefined ? <div className="action-io-section"><h3>Outputs</h3><pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(inlineOutputs) }}></pre></div> : outputsLink ? (
+      {inlineOutputs !== undefined ? <div className="action-io-section"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Outputs</h3><CopyButton value={inlineOutputs} label="copy" title="Copy outputs" toast={toast} /></div><pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(inlineOutputs) }}></pre></div> : outputsLink ? (
         <div className="action-io-section">
-          <h3>Outputs</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Outputs</h3>
+            <CopyButton value={outputsLink} label="copy link" title="Copy outputs link" toast={toast} />
+          </div>
           <button className="btn btn-secondary" type="button" style={{ fontSize: '0.75rem', padding: '5px 12px', marginBottom: 8 }} onClick={() => void fetchRemote('output', outputsLink)}>Fetch outputs</button>
           {remoteOutputs !== undefined ? <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(remoteOutputs) }}></pre> : null}
         </div>
       ) : null}
       {!error && inlineInputs === undefined && inlineOutputs === undefined && !inputsLink && !outputsLink ? (
         <div className="action-io-section">
-          <h3>Properties</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Properties</h3><CopyButton value={prop(detail, 'properties') || detail} label="copy" title="Copy properties" toast={toast} /></div>
           <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(prop(detail, 'properties') || detail) }}></pre>
         </div>
       ) : null}
+      {prop(detail, 'properties.trackedProperties') ? (
+        <div className="action-io-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Tracked Properties</h3><CopyButton value={prop(detail, 'properties.trackedProperties')} label="copy" title="Copy tracked properties" toast={toast} /></div>
+          <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(prop(detail, 'properties.trackedProperties')) }}></pre>
+        </div>
+      ) : null}
+      <RetryHistory retries={detail?.properties?.retryHistory} />
     </>
+  );
+}
+
+function RetryHistory(props: { retries?: Array<{ startTime?: string; endTime?: string; code?: string; error?: unknown }> }) {
+  const { retries } = props;
+  if (!retries?.length) return null;
+  return (
+    <div className="action-io-section">
+      <h3>Retry History ({retries.length} {retries.length === 1 ? 'retry' : 'retries'})</h3>
+      {retries.map((retry, index) => {
+        const start = retry.startTime ? formatDate(retry.startTime) : '-';
+        const code = retry.code || '-';
+        return (
+          <div key={index} style={{ marginBottom: 8, padding: '6px 8px', background: 'color-mix(in srgb, var(--ink) 3%, transparent)', borderRadius: 'var(--radius-sm)', fontSize: '12px' }}>
+            <div style={{ display: 'flex', gap: 12, marginBottom: retry.error ? 4 : 0 }}>
+              <span style={{ color: 'var(--muted)' }}>Attempt {index + 1}</span>
+              <span>Code: {code}</span>
+              <span style={{ color: 'var(--muted)' }}>{start}</span>
+            </div>
+            {retry.error ? <pre className="viewer" style={{ borderLeft: '3px solid var(--danger)', margin: '4px 0 0', fontSize: '11px' }} dangerouslySetInnerHTML={{ __html: highlightJson(retry.error) }}></pre> : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -844,6 +864,41 @@ function summarizeCounts(items: FlowAction[]) {
     counts[key] = (counts[key] || 0) + 1;
   }
   return counts;
+}
+
+function compareRunsByRecency(a: FlowRun, b: FlowRun) {
+  const aStart = timestampValue(prop(a, 'properties.startTime'));
+  const bStart = timestampValue(prop(b, 'properties.startTime'));
+  return compareNullableDescending(aStart, bStart);
+}
+
+function compareActionsByExecutionOrder(a: FlowAction, b: FlowAction) {
+  const aStart = timestampValue(prop(a, 'properties.startTime'));
+  const bStart = timestampValue(prop(b, 'properties.startTime'));
+  const aEnd = timestampValue(prop(a, 'properties.endTime'));
+  const bEnd = timestampValue(prop(b, 'properties.endTime'));
+  return compareNullableAscending(aStart, bStart)
+    || compareNullableAscending(aEnd, bEnd);
+}
+
+function timestampValue(value: unknown) {
+  if (!value) return null;
+  const time = new Date(String(value)).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function compareNullableAscending(a: number | null, b: number | null) {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a - b;
+}
+
+function compareNullableDescending(a: number | null, b: number | null) {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return b - a;
 }
 
 function statusRank(status: string) {
