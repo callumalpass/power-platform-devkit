@@ -109,10 +109,10 @@ export function runBackgroundUpdateCheck(configDir?: string): void {
 }
 
 export function formatUpdateNotice(result: UpdateCheckResult): string {
-  const kind = getInstallKind();
   const base = `Update available: ${result.current} → ${result.latest}.`;
-  if (kind === 'npm') return `${base} Run "npm install -g pp@latest" to update.`;
-  return `${base} Download from ${result.releaseUrl}`;
+  const kind = getInstallKind();
+  if (kind === 'sea') return `${base} Download from ${result.releaseUrl}`;
+  return `${base} See ${result.releaseUrl}`;
 }
 
 const PASSIVE_EXCLUDED_COMMANDS = new Set(['mcp', 'token', 'completion', 'update', 'version', '--version']);

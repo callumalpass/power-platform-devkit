@@ -66,7 +66,7 @@ test('shouldRunBackgroundUpdateCheck only runs for notice-eligible commands with
   }
 });
 
-test('formatUpdateNotice gives npm users an explicit update command', () => {
+test('formatUpdateNotice points to the GitHub release', () => {
   const notice = formatUpdateNotice({
     current: '0.1.0',
     latest: '0.2.0',
@@ -76,5 +76,5 @@ test('formatUpdateNotice gives npm users an explicit update command', () => {
   });
 
   assert.match(notice, /Update available: 0\.1\.0/);
-  assert.match(notice, /npm install -g pp@latest/);
+  assert.match(notice, /releases\/tag\/v0\.2\.0/);
 });
