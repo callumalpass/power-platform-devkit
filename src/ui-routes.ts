@@ -67,6 +67,11 @@ export async function handleUiRequest(
   }
 
   if (method === 'POST') {
+    if (url.pathname === '/api/ui/shutdown') {
+      sendJson(response, 200, { success: true, diagnostics: [], data: { message: 'Shutting down.' } });
+      setTimeout(() => process.exit(0), 100);
+      return;
+    }
     if (url.pathname === '/api/accounts') return handleAccountCreate(request, response, context);
     if (url.pathname === '/api/accounts/login') return handleAccountLogin(request, response, context);
     if (/^\/api\/accounts\/[^/]+\/browser-profile\/open$/.test(url.pathname)) return handleAccountBrowserProfileOpen(request, response, url, context);

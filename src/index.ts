@@ -24,13 +24,36 @@ import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmIC
 import { invokeCanvasAuthoring, probeAndCleanCanvasSessions, requestCanvasAuthoringSession, rpcCanvasAuthoring, saveCanvasSession, startCanvasAuthoringSession } from './services/canvas-authoring.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 import { analyzeFlowFile, explainFlowFileSymbol } from './services/flow-language.js';
-import { startPpUi } from './ui.js';
+import { startPpUi, stopPpUi } from './ui.js';
 import { VERSION } from './version.js';
-import { getCachedUpdateCheck, formatUpdateNotice, runBackgroundUpdateCheck, runUpdateCommand, shouldShowUpdateNotice } from './update.js';
+import { getCachedUpdateCheck, formatUpdateNotice, runBackgroundUpdateCheck, runUpdateCommand, shouldRunBackgroundUpdateCheck, shouldShowUpdateNotice } from './update.js';
+
+const TOP_LEVEL_COMMANDS = [
+  'auth',
+  'env',
+  'request',
+  'whoami',
+  'ping',
+  'token',
+  'ui',
+  'dv',
+  'flow',
+  'graph',
+  'bap',
+  'powerapps',
+  'canvas-authoring',
+  'mcp',
+  'migrate-config',
+  'update',
+  'version',
+  'completion',
+  'help',
+];
 
 async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
-  const updateNoticePromise = shouldShowUpdateNotice(command)
+  const checkPassiveUpdates = shouldShowUpdateNotice(command);
+  const updateNoticePromise = checkPassiveUpdates
     ? getCachedUpdateCheck()
     : Promise.resolve(null);
 
@@ -40,7 +63,9 @@ async function main(args: string[]): Promise<number> {
   if (cached?.updateAvailable) {
     process.stderr.write(`${formatUpdateNotice(cached)}\n`);
   }
-  runBackgroundUpdateCheck();
+  if (shouldRunBackgroundUpdateCheck(command, cached)) {
+    runBackgroundUpdateCheck();
+  }
 
   return exitCode;
 }
@@ -803,10 +828,11 @@ function runCompletion(args: string[]): number {
     return 0;
   }
   const shell = positionalArgs(args)[0] ?? 'zsh';
+  const words = TOP_LEVEL_COMMANDS.join(' ');
   if (shell === 'powershell') {
     process.stdout.write([
       '@(',
-      "  'auth','env','request','whoami','ping','token','ui','dv','flow','graph','bap','powerapps','canvas-authoring','mcp','migrate-config','completion','help'",
+      `  ${TOP_LEVEL_COMMANDS.map((command) => `'${command}'`).join(',')}`,
       ') | ForEach-Object {',
       "  Register-ArgumentCompleter -CommandName pp -ScriptBlock { param($wordToComplete) $_ | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) } }",
       '}',
@@ -814,10 +840,10 @@ function runCompletion(args: string[]): number {
     return 0;
   }
   if (shell === 'bash') {
-    process.stdout.write('complete -W "auth env request whoami ping token ui dv flow graph bap powerapps canvas-authoring mcp migrate-config update version completion help" pp\n');
+    process.stdout.write(`complete -W "${words}" pp\n`);
     return 0;
   }
-  process.stdout.write('#compdef pp\n_arguments "1: :((auth env request whoami ping token ui dv flow graph bap powerapps canvas-authoring mcp migrate-config update version completion help))"\n');
+  process.stdout.write(`#compdef pp\n_arguments "1: :((${words}))"\n`);
   return 0;
 }
 
@@ -850,6 +876,9 @@ async function runUi(args: string[]): Promise<number> {
     printUiHelp();
     return 0;
   }
+  if (positionalArgs(args)[0] === 'stop') {
+    return runUiStop(args);
+  }
   const portValue = readFlag(args, '--port');
   const port = portValue === undefined ? undefined : Number(portValue);
   if (portValue !== undefined && (!Number.isInteger(port) || Number(port) < 0 || Number(port) > 65535)) {
@@ -881,6 +910,17 @@ async function runUi(args: string[]): Promise<number> {
   process.stdout.write('Press Ctrl+C to stop.\n');
   await new Promise<void>(() => undefined);
   return 0;
+}
+
+async function runUiStop(args: string[]): Promise<number> {
+  const configDir = readFlag(args, '--config-dir');
+  const result = await stopPpUi({ configDir });
+  if (result.stopped) {
+    process.stdout.write(`Stopped pp UI at ${result.url}\n`);
+    return 0;
+  }
+  process.stderr.write('No running pp UI instance found.\n');
+  return 1;
 }
 
 function readLoginInput(args: string[]) {
@@ -950,7 +990,7 @@ function printHelp(): void {
       '  canvas-authoring  Canvas authoring helper commands and request shortcut',
       '  mcp             Start the MCP server',
       '  migrate-config  Migrate legacy config into pp config',
-      '  update          Check for and install updates',
+      '  update          Check GitHub releases for updates',
       '  version         Print the current version',
       '  completion      Print shell completion script',
     ].join('\n') + '\n',
@@ -1354,6 +1394,7 @@ function printUiHelp(): void {
       '',
       'Usage:',
       '  pp ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth] [--lan --pair]',
+      '  pp ui stop [--config-dir DIR]',
       '',
       'Options:',
       '  --lan   Listen on the local network instead of localhost. Requires --pair.',
