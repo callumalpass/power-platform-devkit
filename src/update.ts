@@ -6,6 +6,19 @@ import { VERSION } from './version.js';
 const GITHUB_RELEASES_URL = 'https://api.github.com/repos/callumalpass/power-platform-devkit/releases/latest';
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 3000;
+const UPDATE_HELP = [
+  'pp update',
+  '',
+  'Check GitHub releases for a newer pp version.',
+  '',
+  'Usage:',
+  '  pp update [--check]',
+  '',
+  'Options:',
+  '  --check    Check only and print update instructions when available',
+  '',
+  'pp does not install updates automatically. Follow the printed npm or release download instructions.',
+].join('\n');
 
 export interface UpdateCheckResult {
   current: string;
@@ -110,7 +123,15 @@ export function shouldShowUpdateNotice(command: string | undefined): boolean {
   return !PASSIVE_EXCLUDED_COMMANDS.has(command);
 }
 
+export function shouldRunBackgroundUpdateCheck(command: string | undefined, cached: UpdateCheckResult | null): boolean {
+  return shouldShowUpdateNotice(command) && cached == null;
+}
+
 export async function runUpdateCommand(args: string[]): Promise<number> {
+  if (args.includes('--help') || args.includes('-h')) {
+    process.stdout.write(`${UPDATE_HELP}\n`);
+    return 0;
+  }
   const checkOnly = args.includes('--check');
   process.stderr.write('Checking for updates...\n');
   const result = await checkForUpdate();

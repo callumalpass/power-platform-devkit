@@ -34,6 +34,8 @@ Download `pp-setup.exe` from the latest [GitHub Release](../../releases) and run
 
 For unreleased builds, download the `pp-windows-<commit>` artifact from the latest successful CI workflow run.
 
+The Windows `pp-ui.exe` launcher is built as a GUI executable. Starting it from the Start Menu or Explorer opens the UI without keeping a terminal window open.
+
 ## Quick start
 
 Log in with a browser-based auth flow:
@@ -78,11 +80,15 @@ pp dv /accounts --env dev
 | `pp ping --env ALIAS` | Check API connectivity |
 | `pp token --env ALIAS` | Print a bearer token |
 | `pp ui` | Start or reuse the web UI |
+| `pp ui stop` | Stop the running web UI server |
 | `pp mcp` | Start the MCP server |
 | `pp migrate-config` | Migrate legacy config |
+| `pp update [--check]` | Check GitHub releases for a newer version |
 | `pp completion [zsh\|bash\|powershell]` | Print shell completion script |
 
 All commands accept `--help` for usage details. Most commands accept `--config-dir DIR` to override the config location and `--no-interactive-auth` to disable browser-based auth prompts.
+
+`pp update` checks the latest GitHub Release and prints the appropriate npm or Windows release download instructions. It does not install updates automatically.
 
 ### Auth flows
 
@@ -156,6 +162,8 @@ pp ui
 ```
 
 Starts or reuses a localhost HTTP server and opens a browser. If another `pp ui` instance is already running for the same config directory, the command reuses it instead of starting a duplicate process. If the default port is busy, `pp ui` automatically falls back to another localhost port.
+
+On Windows, launching `pp-ui.exe` from the installer shortcut opens the UI in an app-style Edge window and leaves the local UI server running in the background. The `pp ui` CLI command keeps the terminal-attached behavior so logs and Ctrl+C shutdown remain available.
 
 [![pp UI light-mode walkthrough](docs/images/pp-ui-light-walkthrough.gif)](docs/videos/pp-ui-light-walkthrough.mp4)
 
