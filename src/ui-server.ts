@@ -16,11 +16,13 @@ import { handleUiRequest } from './ui-routes.js';
 
 const DEFAULT_UI_PORT = 4733;
 const UI_STATUS_PATH = '/api/ui/status';
+const UI_SHUTDOWN_PATH = '/api/ui/shutdown';
 
 export interface PpUiOptions {
   configDir?: string;
   port?: number;
   openBrowser?: boolean;
+  openAppWindow?: boolean;
   allowInteractiveAuth?: boolean;
   reuseExisting?: boolean;
   lan?: boolean;
@@ -67,7 +69,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
     const existing = await findExistingUiInstance(statePath, configDir);
     if (existing && (!explicitPort || existing.port === preferredPort)) {
       process.stdout.write(`pp UI already running at ${existing.url}\n`);
-      if (options.openBrowser !== false) await openBrowser(existing.url);
+      if (options.openBrowser !== false) await openBrowser(existing.url, options.openAppWindow);
       return {
         url: existing.url,
         reused: true,
@@ -149,7 +151,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
   if (resolvedPort !== preferredPort) {
     process.stdout.write(`Preferred port ${preferredPort} was unavailable; using ${resolvedPort} instead.\n`);
   }
-  if (options.openBrowser !== false) await openBrowser(url);
+  if (options.openBrowser !== false) await openBrowser(url, options.openAppWindow);
 
   return {
     url,
@@ -165,6 +167,26 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
       await cleanupUiState(statePath, instanceId);
     },
   };
+}
+
+export async function stopPpUi(options: { configDir?: string } = {}): Promise<{ stopped: boolean; url?: string }> {
+  const configOptions = options.configDir ? { configDir: options.configDir } : {};
+  const configDir = getConfigDir(configOptions);
+  const statePath = getUiStatePath(configOptions);
+  const state = await readUiState(statePath);
+  if (!state || state.configDir !== configDir) return { stopped: false };
+
+  try {
+    const response = await fetch(new URL(UI_SHUTDOWN_PATH, state.url), {
+      method: 'POST',
+      signal: AbortSignal.timeout(2000),
+    });
+    if (response.ok) return { stopped: true, url: state.url };
+  } catch {
+    // Server may have already exited before responding.
+    return { stopped: true, url: state.url };
+  }
+  return { stopped: false, url: state.url };
 }
 
 function createUiServer(context: RequestContext): Server {
@@ -445,7 +467,7 @@ function isLoopbackAddress(address: string | undefined): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }
 
-async function openBrowser(url: string): Promise<void> {
+async function openBrowser(url: string, appWindow = false): Promise<void> {
   try {
     await waitForServer(url);
     if (process.platform === 'darwin') {
@@ -454,15 +476,25 @@ async function openBrowser(url: string): Promise<void> {
       return;
     }
     if (process.platform === 'win32') {
-      const child = spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' });
-      child.unref();
+      if (appWindow && await spawnDetached('msedge', [`--app=${url}`])) return;
+      await spawnDetached('cmd', ['/c', 'start', '', url]);
       return;
     }
-    const child = spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
-    child.unref();
+    await spawnDetached('xdg-open', [url]);
   } catch {
     // Best effort only.
   }
+}
+
+async function spawnDetached(command: string, args: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.once('error', () => resolve(false));
+    child.once('spawn', () => {
+      child.unref();
+      resolve(true);
+    });
+  });
 }
 
 async function waitForServer(url: string, retries = 10, delayMs = 100): Promise<void> {

@@ -25,6 +25,7 @@ async function main(args: string[]): Promise<number> {
     configDir: readFlag(args, '--config-dir'),
     port,
     openBrowser: !hasFlag(args, '--no-open'),
+    openAppWindow: process.platform === 'win32',
     allowInteractiveAuth: !hasFlag(args, '--no-interactive-auth'),
     lan: hasFlag(args, '--lan'),
     pair: hasFlag(args, '--pair'),
