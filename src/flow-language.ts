@@ -264,6 +264,7 @@ const ACTION_TYPE_OPTIONS = [
   'Workflow',
   'ServiceProvider',
 ];
+const VARIABLE_REFERENCE_ACTION_TYPES = new Set(['AppendToArrayVariable', 'AppendToStringVariable', 'IncrementVariable', 'DecrementVariable', 'SetVariable']);
 
 const RAW_FUNCTION_SPECS: Record<string, FunctionSpec> = {
   actions: { minArgs: 1, maxArgs: 1, info: 'Reference another action result.' },
@@ -658,6 +659,35 @@ function analyzeReferences(model: FlowDocumentModel, diagnostics: FlowRangeDiagn
         references.push({ kind: 'trigger', name: model.triggers[0]?.name ?? 'trigger', from: node.from, to: node.to, sourceAction: occurrence.actionName, expression: occurrence.expression, resolved: model.triggers.length > 0 });
       }
     });
+  }
+  references.push(...analyzeVariableActionReferences(flattenActions(model.actions), variableMap, diagnostics));
+  return references;
+}
+
+function analyzeVariableActionReferences(
+  actions: FlowActionNode[],
+  variableMap: Map<string, FlowVariableNode>,
+  diagnostics: FlowRangeDiagnostic[],
+): FlowReferenceSummary[] {
+  const references: FlowReferenceSummary[] = [];
+  for (const action of actions) {
+    if (!VARIABLE_REFERENCE_ACTION_TYPES.has(action.type)) continue;
+    const inputsNode = objectPropertyValue(action.node, 'inputs');
+    if (inputsNode?.type !== 'object') continue;
+    const nameNode = objectPropertyValue(inputsNode, 'name');
+    if (nameNode?.type !== 'string') continue;
+    const resolved = variableMap.has(nameNode.value);
+    references.push({
+      kind: 'variable',
+      name: nameNode.value,
+      from: nameNode.from,
+      to: nameNode.to,
+      sourceAction: action.name,
+      resolved,
+    });
+    if (!resolved) {
+      diagnostics.push(rangeDiagnostic('error', 'FLOW_VARIABLE_UNRESOLVED', `${action.name} references missing variable ${nameNode.value}.`, nameNode.from, nameNode.to));
+    }
   }
   return references;
 }

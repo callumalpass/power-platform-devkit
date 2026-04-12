@@ -38,6 +38,11 @@ test('analyzeFlow understands a workflow definition wrapper from a real sample',
   assert.ok(result.summary.variableCount >= 2);
   assert.ok(result.symbols.some((item) => item.kind === 'action' && item.name === 'For_each_record'));
   assert.ok(result.references.some((item) => item.kind === 'action' && item.name === 'Get_Blob_for_this_product'));
+  assert.equal(findOutlineItem(result.outline, "Get_records_that_haven't_been_published_to_Blob_storage_yet")?.connector, 'azuretables');
+  const blobExists = findOutlineItem(result.outline, 'Checks_if__Blob_for_this_record_productId_exists');
+  assert.equal(blobExists?.connector, 'AzureBlob');
+  assert.equal(blobExists?.inputs?.operationId, 'blobExists');
+  assert.equal(blobExists?.inputs?.serviceProviderId, '/serviceProviders/AzureBlob');
 });
 
 test('analyzeFlow extracts definitions from ARM template resources', async () => {
@@ -126,6 +131,33 @@ test('analyzeFlow validates structured condition expressions', () => {
   const codes = new Set(result.diagnostics.map((item) => item.code));
   assert.ok(codes.has('FLOW_STRUCTURED_EXPR_ARGUMENT_INVALID'));
   assert.ok(codes.has('FLOW_STRUCTURED_EXPR_OPERATOR_UNKNOWN'));
+});
+
+test('analyzeFlow validates variable mutation action targets', () => {
+  const source = JSON.stringify({
+    definition: {
+      triggers: {
+        manual: {
+          type: 'Request',
+          inputs: {},
+        },
+      },
+      actions: {
+        SetMissingVariable: {
+          type: 'SetVariable',
+          inputs: {
+            name: 'missingVariable',
+            value: 1,
+          },
+          runAfter: {},
+        },
+      },
+    },
+  }, null, 2);
+
+  const result = analyzeFlow(source, source.indexOf('missingVariable'));
+  assert.ok(result.references.some((item) => item.kind === 'variable' && item.name === 'missingVariable' && item.sourceAction === 'SetMissingVariable' && !item.resolved));
+  assert.ok(result.diagnostics.some((item) => item.code === 'FLOW_VARIABLE_UNRESOLVED'));
 });
 
 test('analyzeFlow emits actionable diagnostics for broken references', async () => {
@@ -255,4 +287,13 @@ async function waitFor(predicate: () => boolean, timeoutMs: number, message: str
     if (Date.now() - start > timeoutMs) throw new Error(message);
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+}
+
+function findOutlineItem(items: ReturnType<typeof analyzeFlow>['outline'], name: string): ReturnType<typeof analyzeFlow>['outline'][number] | undefined {
+  for (const item of items) {
+    if (item.name === name) return item;
+    const child = item.children ? findOutlineItem(item.children, name) : undefined;
+    if (child) return child;
+  }
+  return undefined;
 }
