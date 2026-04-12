@@ -77,9 +77,14 @@ export class HttpClient {
         if (timeoutHandle) clearTimeout(timeoutHandle);
       }
     } catch (error) {
+      let message = error instanceof Error ? error.message : String(error);
+      if (error instanceof Error && error.cause instanceof Error) {
+        message = `${message}: ${error.cause.message}`;
+      }
       return fail(
-        createDiagnostic('error', 'HTTP_UNHANDLED_ERROR', error instanceof Error ? error.message : String(error), {
+        createDiagnostic('error', 'HTTP_UNHANDLED_ERROR', message, {
           source: 'pp/http',
+          detail: `${request.method ?? 'GET'} ${request.path}`,
         }),
       );
     }
