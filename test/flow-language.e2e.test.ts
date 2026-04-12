@@ -48,6 +48,86 @@ test('analyzeFlow extracts definitions from ARM template resources', async () =>
   assert.ok(result.outline.length > 0);
 });
 
+test('analyzeFlow extracts definitions from serialized Dataverse clientdata', () => {
+  const source = JSON.stringify({
+    workflowid: '00000000-0000-0000-0000-000000000001',
+    name: 'Dataverse Row Flow',
+    clientdata: JSON.stringify({
+      properties: {
+        definition: {
+          actions: {
+            ComposeValue: {
+              type: 'Compose',
+              inputs: '@triggerBody()',
+              runAfter: {},
+            },
+            UseValue: {
+              type: 'Compose',
+              inputs: "@outputs('ComposeValue')",
+              runAfter: {
+                ComposeValue: ['Succeeded'],
+              },
+            },
+          },
+          triggers: {
+            manual: {
+              type: 'Request',
+              inputs: {},
+            },
+          },
+        },
+      },
+    }),
+  }, null, 2);
+
+  const result = analyzeFlow(source, source.indexOf('UseValue'));
+  assert.equal(result.summary.wrapperKind, 'clientdata-resource-properties-definition');
+  assert.equal(result.summary.triggerCount, 1);
+  assert.equal(result.summary.actionCount, 2);
+  const useValue = result.symbols.find((item) => item.kind === 'action' && item.name === 'UseValue');
+  assert.ok(useValue && useValue.from <= source.indexOf('UseValue') && useValue.to > source.indexOf('UseValue'));
+  assert.ok(result.references.some((item) => item.kind === 'action' && item.name === 'ComposeValue' && item.resolved));
+});
+
+test('analyzeFlow validates structured condition expressions', () => {
+  const source = JSON.stringify({
+    definition: {
+      triggers: {
+        manual: {
+          type: 'Request',
+          inputs: {},
+        },
+      },
+      actions: {
+        CheckValue: {
+          type: 'If',
+          expression: {
+            and: [
+              {
+                equals: [
+                  "@triggerBody()?['status']",
+                ],
+              },
+              {
+                madeUpOperator: [
+                  true,
+                ],
+              },
+            ],
+          },
+          actions: {},
+          runAfter: {},
+        },
+      },
+    },
+  }, null, 2);
+
+  const result = analyzeFlow(source, source.indexOf('madeUpOperator'));
+  const codes = new Set(result.diagnostics.map((item) => item.code));
+  assert.ok(codes.has('FLOW_STRUCTURED_EXPR_ARGUMENT_INVALID'));
+  assert.ok(codes.has('FLOW_STRUCTURED_EXPR_OPERATOR_UNKNOWN'));
+});
+
 test('analyzeFlow emits actionable diagnostics for broken references', async () => {
   const source = await readFixture('broken-power-automate-wrapper.json');
   const result = analyzeFlow(source, source.indexOf("DoesNotExist"));

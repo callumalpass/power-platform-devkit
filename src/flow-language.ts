@@ -13,6 +13,7 @@ interface JsonBaseNode {
 interface JsonStringNode extends JsonBaseNode {
   type: 'string';
   value: string;
+  valueOffsetMap?: number[];
 }
 
 interface JsonObjectProperty {
@@ -280,6 +281,8 @@ const RAW_FUNCTION_SPECS: Record<string, FunctionSpec> = {
   or: { minArgs: 2, info: 'Logical OR.' },
   not: { minArgs: 1, maxArgs: 1, info: 'Logical NOT.' },
   contains: { minArgs: 2, maxArgs: 2, info: 'Check whether a collection or string contains a value.' },
+  startsWith: { minArgs: 2, maxArgs: 2, info: 'Check whether a string starts with a value.' },
+  endsWith: { minArgs: 2, maxArgs: 2, info: 'Check whether a string ends with a value.' },
   empty: { minArgs: 1, maxArgs: 1, info: 'Check whether a value is empty.' },
   length: { minArgs: 1, maxArgs: 1, info: 'Return the length of a collection or string.' },
   createArray: { minArgs: 0, info: 'Create an array value.' },
@@ -309,6 +312,12 @@ const RAW_FUNCTION_SPECS: Record<string, FunctionSpec> = {
 const FUNCTION_SPECS: Record<string, FunctionSpec> = Object.fromEntries(
   Object.entries(RAW_FUNCTION_SPECS).map(([name, spec]) => [name.toLowerCase(), spec]),
 );
+
+const STRUCTURED_EXPRESSION_SPECS: Record<string, FunctionSpec> = {
+  ...FUNCTION_SPECS,
+  and: { minArgs: 1, info: 'Structured logical AND.' },
+  or: { minArgs: 1, info: 'Structured logical OR.' },
+};
 
 export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
   const parseResult = parseJsonDocument(source);
@@ -388,6 +397,7 @@ function buildFlowModel(root: JsonObjectNode): FlowDocumentModel {
   const parameters = parametersNode?.type === 'object' ? collectParameters(parametersNode) : [];
   const variables = collectVariables(actions);
   const expressions = collectExpressions(definitionNode, actions);
+  validateStructuredExpressions(definitionNode, diagnostics);
 
   return {
     wrapperKind: extracted.wrapperKind,
@@ -553,6 +563,39 @@ function collectExpressions(definitionNode: JsonObjectNode, actions: FlowActionN
     }
   });
   return expressions;
+}
+
+function validateStructuredExpressions(definitionNode: JsonObjectNode, diagnostics: FlowRangeDiagnostic[]): void {
+  walkObjectProperties(definitionNode, (property) => {
+    if (property.key !== 'expression') return;
+    if (property.valueNode.type !== 'object' && property.valueNode.type !== 'array') return;
+    validateStructuredExpressionValue(property.valueNode, diagnostics);
+  });
+}
+
+function validateStructuredExpressionValue(node: JsonNode, diagnostics: FlowRangeDiagnostic[]): void {
+  if (node.type === 'array') {
+    node.items.forEach((item) => validateStructuredExpressionValue(item, diagnostics));
+    return;
+  }
+  if (node.type !== 'object') return;
+  if (node.properties.length !== 1) {
+    diagnostics.push(rangeDiagnostic('warning', 'FLOW_STRUCTURED_EXPR_SHAPE_INVALID', 'Structured expression objects should contain one operator.', node.from, node.to));
+    return;
+  }
+  const [property] = node.properties;
+  if (!property) return;
+  const lowered = property.key.toLowerCase();
+  const spec = STRUCTURED_EXPRESSION_SPECS[lowered];
+  if (!spec) {
+    diagnostics.push(rangeDiagnostic('warning', 'FLOW_STRUCTURED_EXPR_OPERATOR_UNKNOWN', `Unknown structured expression operator ${property.key}.`, property.keyNode.from, property.keyNode.to));
+  } else {
+    const argCount = property.valueNode.type === 'array' ? property.valueNode.items.length : 1;
+    if (argCount < spec.minArgs || (typeof spec.maxArgs === 'number' && argCount > spec.maxArgs)) {
+      diagnostics.push(rangeDiagnostic('warning', 'FLOW_STRUCTURED_EXPR_ARGUMENT_INVALID', `${property.key} expects ${formatArity(spec)} structured argument(s), found ${argCount}.`, property.keyNode.from, property.valueNode.to));
+    }
+  }
+  validateStructuredExpressionValue(property.valueNode, diagnostics);
 }
 
 function buildActionRangeIndex(actions: FlowActionNode[]): Array<{ from: number; to: number; name: string }> {
@@ -742,15 +785,10 @@ function actionOutline(action: FlowActionNode): FlowOutlineItem {
   const inputsNode = objectPropertyValue(action.node, 'inputs');
   if (inputsNode?.type === 'object') {
     const inputs: Record<string, unknown> = {};
-    const hostNode = objectPropertyValue(inputsNode, 'host');
-    if (hostNode?.type === 'object') {
-      const connId = readStringProperty(hostNode, 'connectionName')
-        || readStringProperty(hostNode, 'apiId')
-        || readStringProperty(hostNode, 'operationId');
-      if (connId) item.connector = connId;
-      const opId = readStringProperty(hostNode, 'operationId');
-      if (opId) inputs.operationId = opId;
-    }
+    const connector = readConnectorSummary(inputsNode);
+    if (connector.connector) item.connector = connector.connector;
+    if (connector.operationId) inputs.operationId = connector.operationId;
+    if (connector.serviceProviderId) inputs.serviceProviderId = connector.serviceProviderId;
     for (const key of ['method', 'uri', 'path', 'body', 'queries', 'headers'] as const) {
       const v = objectPropertyValue(inputsNode, key);
       if (v) inputs[key] = v.type === 'string' ? v.value : v.type === 'object' || v.type === 'array' ? v.value : undefined;
@@ -817,6 +855,27 @@ function actionOutline(action: FlowActionNode): FlowOutlineItem {
     if (timeout) item.inputs = { ...item.inputs, limitTimeout: timeout };
   }
   return item;
+}
+
+function readConnectorSummary(inputsNode: JsonObjectNode): { connector?: string; operationId?: string; serviceProviderId?: string } {
+  const serviceProviderNode = objectPropertyValue(inputsNode, 'serviceProviderConfiguration');
+  const connector = readStringFromFirstObjectPath(inputsNode, [
+    ['host', 'connection', 'referenceName'],
+    ['host', 'connection', 'name'],
+    ['host', 'connectionName'],
+    ['host', 'apiId'],
+    ['serviceProviderConfiguration', 'connectionName'],
+    ['serviceProviderConfiguration', 'serviceProviderId'],
+  ]);
+  return {
+    connector,
+    operationId: readStringFromFirstObjectPath(inputsNode, [
+      ['host', 'operationId'],
+      ['operationId'],
+      ['serviceProviderConfiguration', 'operationId'],
+    ]),
+    serviceProviderId: serviceProviderNode?.type === 'object' ? readStringProperty(serviceProviderNode, 'serviceProviderId') : undefined,
+  };
 }
 
 function buildCompletions(context: FlowCursorContext, model: FlowDocumentModel, source: string, cursor: number): FlowCompletionItem[] {
@@ -1014,11 +1073,33 @@ function extractDefinition(root: JsonObjectNode): { wrapperKind: string; definit
   if (directDefinition?.type === 'object' && looksLikeWorkflowDefinition(directDefinition)) {
     return { wrapperKind: 'definition-wrapper', definitionNode: directDefinition };
   }
+  if (directDefinition?.type === 'string') {
+    const parsedDefinition = parseEmbeddedJsonObject(directDefinition);
+    if (parsedDefinition && looksLikeWorkflowDefinition(parsedDefinition)) {
+      return { wrapperKind: 'serialized-definition', definitionNode: parsedDefinition };
+    }
+  }
   const propertiesNode = objectPropertyValue(root, 'properties');
   if (propertiesNode?.type === 'object') {
     const nestedDefinition = objectPropertyValue(propertiesNode, 'definition');
     if (nestedDefinition?.type === 'object' && looksLikeWorkflowDefinition(nestedDefinition)) {
       return { wrapperKind: 'resource-properties-definition', definitionNode: nestedDefinition };
+    }
+    if (nestedDefinition?.type === 'string') {
+      const parsedDefinition = parseEmbeddedJsonObject(nestedDefinition);
+      if (parsedDefinition && looksLikeWorkflowDefinition(parsedDefinition)) {
+        return { wrapperKind: 'resource-properties-serialized-definition', definitionNode: parsedDefinition };
+      }
+    }
+  }
+  const clientDataNode = objectPropertyValue(root, 'clientdata');
+  if (clientDataNode?.type === 'string') {
+    const clientData = parseEmbeddedJsonObject(clientDataNode);
+    if (clientData) {
+      const clientDataDefinition = extractDefinition(clientData);
+      if (clientDataDefinition.definitionNode) {
+        return { wrapperKind: `clientdata-${clientDataDefinition.wrapperKind}`, definitionNode: clientDataDefinition.definitionNode };
+      }
     }
   }
   const resourcesNode = objectPropertyValue(root, 'resources');
@@ -1036,6 +1117,14 @@ function extractDefinition(root: JsonObjectNode): { wrapperKind: string; definit
   return { wrapperKind: 'unknown' };
 }
 
+function parseEmbeddedJsonObject(node: JsonStringNode): JsonObjectNode | undefined {
+  const parsed = parseJsonDocument(node.value);
+  if (!parsed.root) return undefined;
+  if (node.valueOffsetMap) remapJsonNode(parsed.root, node.valueOffsetMap);
+  else shiftJsonNode(parsed.root, node.from + 1);
+  return parsed.root;
+}
+
 function looksLikeWorkflowDefinition(node: JsonObjectNode): boolean {
   return objectPropertyValue(node, 'actions')?.type === 'object' || objectPropertyValue(node, 'triggers')?.type === 'object';
 }
@@ -1047,6 +1136,23 @@ function objectPropertyValue(node: JsonObjectNode, key: string): JsonNode | unde
 function readStringProperty(node: JsonObjectNode, key: string): string | undefined {
   const valueNode = objectPropertyValue(node, key);
   return valueNode?.type === 'string' ? valueNode.value : undefined;
+}
+
+function readStringFromFirstObjectPath(node: JsonObjectNode, paths: string[][]): string | undefined {
+  for (const path of paths) {
+    const value = readStringFromObjectPath(node, path);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function readStringFromObjectPath(node: JsonObjectNode, path: string[]): string | undefined {
+  let current: JsonNode | undefined = node;
+  for (const segment of path) {
+    if (current?.type !== 'object') return undefined;
+    current = objectPropertyValue(current, segment);
+  }
+  return current?.type === 'string' ? current.value : undefined;
 }
 
 function readRunAfterTargets(actionNode: JsonObjectNode): string[] {
@@ -1087,6 +1193,57 @@ function walkJson(node: JsonNode, visit: (node: JsonNode) => void): void {
   if (node.type === 'array') {
     for (const item of node.items) walkJson(item, visit);
   }
+}
+
+function walkObjectProperties(node: JsonNode, visit: (property: JsonObjectProperty) => void): void {
+  if (node.type === 'object') {
+    for (const property of node.properties) {
+      visit(property);
+      walkObjectProperties(property.valueNode, visit);
+    }
+  }
+  if (node.type === 'array') {
+    for (const item of node.items) walkObjectProperties(item, visit);
+  }
+}
+
+function shiftJsonNode(node: JsonNode, offset: number): void {
+  node.from += offset;
+  node.to += offset;
+  if (node.type === 'object') {
+    for (const property of node.properties) {
+      property.from += offset;
+      property.to += offset;
+      shiftJsonNode(property.keyNode, offset);
+      shiftJsonNode(property.valueNode, offset);
+    }
+  }
+  if (node.type === 'array') {
+    for (const item of node.items) shiftJsonNode(item, offset);
+  }
+}
+
+function remapJsonNode(node: JsonNode, offsetMap: number[]): void {
+  node.from = remapJsonBoundary(node.from, offsetMap);
+  node.to = remapJsonBoundary(node.to, offsetMap);
+  if (node.type === 'object') {
+    for (const property of node.properties) {
+      property.from = remapJsonBoundary(property.from, offsetMap);
+      property.to = remapJsonBoundary(property.to, offsetMap);
+      remapJsonNode(property.keyNode, offsetMap);
+      remapJsonNode(property.valueNode, offsetMap);
+    }
+  }
+  if (node.type === 'array') {
+    for (const item of node.items) remapJsonNode(item, offsetMap);
+  }
+}
+
+function remapJsonBoundary(index: number, offsetMap: number[]): number {
+  if (!offsetMap.length) return index;
+  if (index <= 0) return offsetMap[0]!;
+  if (index < offsetMap.length) return offsetMap[index]!;
+  return offsetMap[offsetMap.length - 1]!;
 }
 
 function walkExpression(node: ExpressionNode, visit: (node: ExpressionNode) => void): void {
@@ -1229,25 +1386,35 @@ class JsonParser {
   parseString(path: string[]): JsonStringNode {
     const start = this.index;
     let value = '';
+    const valueOffsetMap: number[] = [];
+    const appendValue = (text: string, rawStart: number, rawEnd: number) => {
+      if (!valueOffsetMap.length) valueOffsetMap.push(rawStart);
+      for (let i = 0; i < text.length; i += 1) {
+        value += text[i]!;
+        valueOffsetMap.push(i === text.length - 1 ? rawEnd : rawStart + i + 1);
+      }
+    };
     this.index += 1;
     while (this.index < this.source.length) {
       const char = this.source[this.index]!;
       if (char === '"') {
         this.index += 1;
-        return { type: 'string', from: start, to: this.index, value, path };
+        if (!valueOffsetMap.length) valueOffsetMap.push(start + 1);
+        return { type: 'string', from: start, to: this.index, value, valueOffsetMap, path };
       }
       if (char === '\\') {
+        const rawStart = this.index;
         const next = this.source[this.index + 1];
-        if (next === '"' || next === '\\' || next === '/') value += next;
-        else if (next === 'b') value += '\b';
-        else if (next === 'f') value += '\f';
-        else if (next === 'n') value += '\n';
-        else if (next === 'r') value += '\r';
-        else if (next === 't') value += '\t';
+        if (next === '"' || next === '\\' || next === '/') appendValue(next, rawStart, rawStart + 2);
+        else if (next === 'b') appendValue('\b', rawStart, rawStart + 2);
+        else if (next === 'f') appendValue('\f', rawStart, rawStart + 2);
+        else if (next === 'n') appendValue('\n', rawStart, rawStart + 2);
+        else if (next === 'r') appendValue('\r', rawStart, rawStart + 2);
+        else if (next === 't') appendValue('\t', rawStart, rawStart + 2);
         else if (next === 'u') {
           const hex = this.source.slice(this.index + 2, this.index + 6);
           if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw new JsonParseFailure('Invalid unicode escape in string.', this.index, this.index + 6, 'FLOW_JSON_STRING_ESCAPE_INVALID');
-          value += String.fromCharCode(Number.parseInt(hex, 16));
+          appendValue(String.fromCharCode(Number.parseInt(hex, 16)), rawStart, rawStart + 6);
           this.index += 4;
         } else {
           throw new JsonParseFailure('Invalid string escape sequence.', this.index, this.index + 2, 'FLOW_JSON_STRING_ESCAPE_INVALID');
@@ -1255,7 +1422,7 @@ class JsonParser {
         this.index += 2;
         continue;
       }
-      value += char;
+      appendValue(char, this.index, this.index + 1);
       this.index += 1;
     }
     throw new JsonParseFailure('Unterminated JSON string.', start, this.source.length, 'FLOW_JSON_STRING_UNTERMINATED');
