@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 import process from 'node:process';
 import type { LoginAccountInput } from './auth.js';
 import { migrateLegacyConfig } from './migrate.js';
@@ -19,7 +21,7 @@ import {
 import { startPpMcpServer } from './mcp.js';
 import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
-import { startCanvasAuthoringSession } from './services/canvas-authoring.js';
+import { invokeCanvasAuthoring, probeAndCleanCanvasSessions, requestCanvasAuthoringSession, rpcCanvasAuthoring, saveCanvasSession, startCanvasAuthoringSession } from './services/canvas-authoring.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 import { analyzeFlowFile, explainFlowFileSymbol } from './services/flow-language.js';
 import { startPpUi } from './ui.js';
@@ -311,6 +313,39 @@ async function runCanvasAuthoring(args: string[]): Promise<number> {
   }
 
   const [subcommand, ...rest] = args;
+  if (subcommand === 'invoke') {
+    if (wantsHelp(rest)) {
+      printCanvasAuthoringInvokeHelp();
+      return 0;
+    }
+    return runCanvasAuthoringInvoke(rest);
+  }
+  if (subcommand === 'rpc') {
+    if (wantsHelp(rest)) {
+      printCanvasAuthoringRpcHelp();
+      return 0;
+    }
+    return runCanvasAuthoringRpc(rest);
+  }
+  if (subcommand === 'yaml') {
+    return runCanvasAuthoringYaml(rest);
+  }
+  if (subcommand === 'controls') {
+    return runCanvasAuthoringNamedEndpoint(rest, 'controls');
+  }
+  if (subcommand === 'apis') {
+    return runCanvasAuthoringNamedEndpoint(rest, 'apis');
+  }
+  if (subcommand === 'datasources') {
+    return runCanvasAuthoringNamedEndpoint(rest, 'datasources');
+  }
+  if (subcommand === 'accessibility') {
+    if (wantsHelp(rest)) {
+      printCanvasAuthoringAccessibilityHelp();
+      return 0;
+    }
+    return runCanvasAuthoringSessionRequest([...rest, '--path', '/api/yaml/accessibility-errors', '--read']);
+  }
   if (subcommand !== 'session') {
     return runApiAlias('canvas-authoring', args);
   }
@@ -320,6 +355,16 @@ async function runCanvasAuthoring(args: string[]): Promise<number> {
   }
 
   const [sessionCommand, ...sessionArgs] = rest;
+  if (sessionCommand === 'request') {
+    if (wantsHelp(sessionArgs)) {
+      printCanvasAuthoringSessionRequestHelp();
+      return 0;
+    }
+    return runCanvasAuthoringSessionRequest(sessionArgs);
+  }
+  if (sessionCommand === 'list') {
+    return runCanvasAuthoringSessionList(sessionArgs);
+  }
   if (sessionCommand !== 'start') {
     printCanvasAuthoringSessionHelp();
     return 1;
@@ -335,6 +380,7 @@ async function runCanvasAuthoring(args: string[]): Promise<number> {
     return printFailure(argumentFailure('CANVAS_AUTHORING_SESSION_START_USAGE', 'Usage: pp canvas-authoring session start --env ALIAS --app APP_ID [--account ACCOUNT] [--cadence Frequent] [--cluster-category prod] [--raw] [--no-interactive-auth]'), sessionArgs);
   }
 
+  const configOptions = readConfigOptions(sessionArgs);
   const result = await startCanvasAuthoringSession({
     environmentAlias,
     accountName: readFlag(sessionArgs, '--account'),
@@ -343,10 +389,284 @@ async function runCanvasAuthoring(args: string[]): Promise<number> {
     clusterCategory: readFlag(sessionArgs, '--cluster-category'),
     raw: hasFlag(sessionArgs, '--raw'),
     allowInteractive: !hasFlag(sessionArgs, '--no-interactive-auth'),
-  }, readConfigOptions(sessionArgs));
-  if (!result.success) return printFailure(result, sessionArgs);
+  }, configOptions);
+  if (!result.success || !result.data) return printFailure(result, sessionArgs);
+  await saveCanvasSession(result.data, environmentAlias, configOptions);
   printResult(result.data, sessionArgs);
   return 0;
+}
+
+async function runCanvasAuthoringSessionList(args: string[]): Promise<number> {
+  const configOptions = readConfigOptions(args);
+  const sessions = await probeAndCleanCanvasSessions(configOptions);
+  printResult(sessions, args);
+  return 0;
+}
+
+async function runCanvasAuthoringInvoke(args: string[]): Promise<number> {
+  const environmentAlias = readFlag(args, '--environment');
+  const appId = readFlag(args, '--app');
+  const className = readFlag(args, '--class') ?? readFlag(args, '--classname');
+  const oid = readFlag(args, '--oid');
+  const methodName = readFlag(args, '--method-name') ?? readFlag(args, '--method');
+  if (!environmentAlias || !appId || !className || !oid || !methodName) {
+    return printFailure(argumentFailure('CANVAS_AUTHORING_INVOKE_USAGE', 'Usage: pp canvas-authoring invoke --env ALIAS --app APP_ID --class CLASS --oid OID --method METHOD [--payload JSON|--payload-file FILE] [--sequence N --confirmation N] [--session-id ID --session-state STATE --authoring-base-url URL --web-authoring-version VERSION] [--account ACCOUNT] [--no-interactive-auth]'), args);
+  }
+
+  const payload = await readJsonPayload(args);
+  if (!payload.success) return printFailure(payload, args);
+
+  const result = await invokeCanvasAuthoring({
+    environmentAlias,
+    accountName: readFlag(args, '--account'),
+    appId,
+    className,
+    oid,
+    methodName,
+    payload: payload.data,
+    sessionId: readFlag(args, '--session-id'),
+    sessionState: readFlag(args, '--session-state'),
+    authoringBaseUrl: readFlag(args, '--authoring-base-url'),
+    webAuthoringVersion: readFlag(args, '--web-authoring-version'),
+    sequence: readFlag(args, '--sequence') ? Number(readFlag(args, '--sequence')) : undefined,
+    confirmation: readFlag(args, '--confirmation') ? Number(readFlag(args, '--confirmation')) : undefined,
+    cadence: readFlag(args, '--cadence'),
+    clusterCategory: readFlag(args, '--cluster-category'),
+    allowInteractive: !hasFlag(args, '--no-interactive-auth'),
+  }, readConfigOptions(args));
+  if (!result.success) return printFailure(result, args);
+  printResult(result.data, args);
+  return 0;
+}
+
+async function runCanvasAuthoringRpc(args: string[]): Promise<number> {
+  const environmentAlias = readFlag(args, '--environment');
+  const appId = readFlag(args, '--app');
+  const className = readFlag(args, '--class') ?? readFlag(args, '--classname');
+  const oid = readFlag(args, '--oid');
+  const methodName = readFlag(args, '--method-name') ?? readFlag(args, '--method');
+  if (!environmentAlias || !appId || !className || !oid || !methodName) {
+    return printFailure(argumentFailure('CANVAS_AUTHORING_RPC_USAGE', 'Usage: pp canvas-authoring rpc --env ALIAS --app APP_ID --class CLASS --oid OID --method METHOD [--payload JSON|--payload-file FILE] [--timeout-ms MS] [--sequence N --confirmation N] [--session-id ID --session-state STATE --authoring-base-url URL --web-authoring-version VERSION] [--account ACCOUNT] [--no-interactive-auth]'), args);
+  }
+
+  const payload = await readJsonPayload(args);
+  if (!payload.success) return printFailure(payload, args);
+
+  const result = await rpcCanvasAuthoring({
+    environmentAlias,
+    accountName: readFlag(args, '--account'),
+    appId,
+    className,
+    oid,
+    methodName,
+    payload: payload.data,
+    sessionId: readFlag(args, '--session-id'),
+    sessionState: readFlag(args, '--session-state'),
+    authoringBaseUrl: readFlag(args, '--authoring-base-url'),
+    webAuthoringVersion: readFlag(args, '--web-authoring-version'),
+    sequence: readFlag(args, '--sequence') ? Number(readFlag(args, '--sequence')) : undefined,
+    confirmation: readFlag(args, '--confirmation') ? Number(readFlag(args, '--confirmation')) : undefined,
+    cadence: readFlag(args, '--cadence'),
+    clusterCategory: readFlag(args, '--cluster-category'),
+    timeoutMs: readFlag(args, '--timeout-ms') ? Number(readFlag(args, '--timeout-ms')) : undefined,
+    allowInteractive: !hasFlag(args, '--no-interactive-auth'),
+  }, readConfigOptions(args));
+  if (!result.success) return printFailure(result, args);
+  printResult(result.data, args);
+  return 0;
+}
+
+async function runCanvasAuthoringSessionRequest(args: string[]): Promise<number> {
+  const environmentAlias = readFlag(args, '--environment');
+  const appId = readFlag(args, '--app');
+  const path = readFlag(args, '--path') ?? positionalArgs(args)[0];
+  if (!environmentAlias || !appId || !path) {
+    return printFailure(argumentFailure('CANVAS_AUTHORING_SESSION_REQUEST_USAGE', 'Usage: pp canvas-authoring session request --env ALIAS --app APP_ID --path PATH [--method METHOD] [--body JSON|--body-file FILE] [--response-type json|text|void] [--read]'), args);
+  }
+  const body = await readBody(args);
+  if (!body.success) return printFailure(body, args);
+  const result = await requestCanvasAuthoringSession({
+    environmentAlias,
+    accountName: readFlag(args, '--account'),
+    appId,
+    path,
+    method: readFlag(args, '--method'),
+    body: body.data?.body,
+    rawBody: body.data?.rawBody,
+    responseType: readFlag(args, '--response-type') as 'json' | 'text' | 'void' | undefined,
+    sessionId: readFlag(args, '--session-id'),
+    sessionState: readFlag(args, '--session-state'),
+    authoringBaseUrl: readFlag(args, '--authoring-base-url'),
+    webAuthoringVersion: readFlag(args, '--web-authoring-version'),
+    cadence: readFlag(args, '--cadence'),
+    clusterCategory: readFlag(args, '--cluster-category'),
+    readIntent: hasFlag(args, '--read'),
+    allowInteractive: !hasFlag(args, '--no-interactive-auth'),
+  }, readConfigOptions(args));
+  if (!result.success) return printFailure(result, args);
+  printResult(result.data, args);
+  return 0;
+}
+
+async function runCanvasAuthoringYaml(args: string[]): Promise<number> {
+  const [command, ...rest] = args;
+  if (!command || isHelpToken(command)) {
+    printCanvasAuthoringYamlHelp();
+    return 0;
+  }
+  if (command === 'fetch') return runCanvasAuthoringYamlFetch(rest);
+  if (command === 'validate') return runCanvasAuthoringYamlValidate(rest);
+  printCanvasAuthoringYamlHelp();
+  return 1;
+}
+
+async function runCanvasAuthoringYamlFetch(args: string[]): Promise<number> {
+  if (wantsHelp(args)) {
+    printCanvasAuthoringYamlFetchHelp();
+    return 0;
+  }
+  const result = await requestKnownCanvasAuthoringEndpoint(args, '/api/yaml/fetch', 'GET', undefined, true);
+  if (!result.success) return printFailure(result, args);
+  const outDir = readFlag(args, '--out');
+  if (outDir) {
+    const writeResult = await writeYamlFetchFiles(result.data?.response, outDir);
+    if (!writeResult.success) return printFailure(writeResult, args);
+    printResult({ ...result.data, written: writeResult.data }, args);
+    return 0;
+  }
+  printResult(result.data, args);
+  return 0;
+}
+
+async function runCanvasAuthoringYamlValidate(args: string[]): Promise<number> {
+  if (wantsHelp(args)) {
+    printCanvasAuthoringYamlValidateHelp();
+    return 0;
+  }
+  const dir = readFlag(args, '--dir');
+  let body: unknown;
+  if (dir) {
+    const files = await readYamlDirectoryFiles(dir);
+    if (!files.success) return printFailure(files, args);
+    body = { files: files.data };
+  } else {
+    const parsed = await readBody(args);
+    if (!parsed.success) return printFailure(parsed, args);
+    body = parsed.data?.body ?? {};
+  }
+  const result = await requestKnownCanvasAuthoringEndpoint(args, '/api/yaml/validate-directory', 'POST', body, false, {
+    keepSignalRAlive: hasFlag(args, '--with-signalr'),
+    signalRTimeoutMs: readOptionalInt(args, '--signalr-timeout-ms'),
+  });
+  if (!result.success) return printFailure(result, args);
+  printResult(result.data, args);
+  return 0;
+}
+
+async function runCanvasAuthoringNamedEndpoint(args: string[], endpoint: 'controls' | 'apis' | 'datasources'): Promise<number> {
+  const [command, ...rest] = args;
+  if (!command || isHelpToken(command)) {
+    printCanvasAuthoringNamedEndpointHelp(endpoint);
+    return 0;
+  }
+  if (command !== 'list' && command !== 'describe') {
+    printCanvasAuthoringNamedEndpointHelp(endpoint);
+    return 1;
+  }
+  const name = readFlag(rest, '--name') ?? positionalArgs(rest)[0];
+  if (command === 'describe' && !name) {
+    return printFailure(argumentFailure('CANVAS_AUTHORING_DESCRIBE_NAME_REQUIRED', `Usage: pp canvas-authoring ${endpoint} describe --env ALIAS --app APP_ID NAME`), rest);
+  }
+  const path = command === 'list'
+    ? `/api/yaml/${endpoint}`
+    : `/api/yaml/${endpoint}/${encodeURIComponent(name ?? '')}`;
+  const result = await requestKnownCanvasAuthoringEndpoint(rest, path, 'GET', undefined, true);
+  if (!result.success) return printFailure(result, rest);
+  printResult(result.data, rest);
+  return 0;
+}
+
+async function requestKnownCanvasAuthoringEndpoint(
+  args: string[],
+  path: string,
+  method: string,
+  body: unknown,
+  readIntent: boolean,
+  options: { keepSignalRAlive?: boolean; signalRTimeoutMs?: number } = {},
+) {
+  const environmentAlias = readFlag(args, '--environment');
+  const appId = readFlag(args, '--app');
+  if (!environmentAlias || !appId) {
+    return argumentFailure('CANVAS_AUTHORING_ENDPOINT_USAGE', 'Usage requires --env ALIAS --app APP_ID.');
+  }
+  return requestCanvasAuthoringSession({
+    environmentAlias,
+    accountName: readFlag(args, '--account'),
+    appId,
+    path,
+    method,
+    body,
+    sessionId: readFlag(args, '--session-id'),
+    sessionState: readFlag(args, '--session-state'),
+    authoringBaseUrl: readFlag(args, '--authoring-base-url'),
+    webAuthoringVersion: readFlag(args, '--web-authoring-version'),
+    cadence: readFlag(args, '--cadence'),
+    clusterCategory: readFlag(args, '--cluster-category'),
+    readIntent,
+    keepSignalRAlive: options.keepSignalRAlive,
+    signalRTimeoutMs: options.signalRTimeoutMs,
+    allowInteractive: !hasFlag(args, '--no-interactive-auth'),
+  }, readConfigOptions(args));
+}
+
+async function readYamlDirectoryFiles(root: string) {
+  const files: Array<{ path: string; content: string }> = [];
+  async function visit(dir: string): Promise<void> {
+    for (const entry of await readdir(dir)) {
+      const fullPath = join(dir, entry);
+      const info = await stat(fullPath);
+      if (info.isDirectory()) {
+        await visit(fullPath);
+      } else if (/\.pa\.ya?ml$/i.test(entry)) {
+        files.push({
+          path: relative(root, fullPath).replace(/\\/g, '/'),
+          content: await readFile(fullPath, 'utf8'),
+        });
+      }
+    }
+  }
+  try {
+    await visit(root);
+    return { success: true as const, data: files, diagnostics: [] };
+  } catch (error) {
+    return argumentFailure('CANVAS_AUTHORING_YAML_DIR_READ_FAILED', `Failed to read YAML directory: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function writeYamlFetchFiles(response: unknown, outDir: string) {
+  const files = readFilesArray(response);
+  if (!files) return argumentFailure('CANVAS_AUTHORING_YAML_FETCH_SHAPE', 'YAML fetch response did not contain a files array.');
+  const written: string[] = [];
+  try {
+    for (const file of files) {
+      const path = String(file.path ?? '');
+      const content = typeof file.content === 'string' ? file.content : undefined;
+      if (!path || content === undefined || path.startsWith('/') || path.split('/').includes('..')) continue;
+      const target = join(outDir, path);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, content, 'utf8');
+      written.push(target);
+    }
+    return { success: true as const, data: written, diagnostics: [] };
+  } catch (error) {
+    return argumentFailure('CANVAS_AUTHORING_YAML_WRITE_FAILED', `Failed to write YAML files: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function readFilesArray(value: unknown): Array<Record<string, unknown>> | undefined {
+  const response = value && typeof value === 'object' ? value as Record<string, unknown> : undefined;
+  const files = Array.isArray(response?.files) ? response.files : undefined;
+  return files?.filter((file): file is Record<string, unknown> => Boolean(file && typeof file === 'object'));
 }
 
 async function runFlow(args: string[]): Promise<number> {
@@ -403,6 +723,21 @@ async function runFlow(args: string[]): Promise<number> {
 
   printFlowHelp();
   return 1;
+}
+
+async function readJsonPayload(args: string[]) {
+  const inline = readFlag(args, '--payload');
+  const file = readFlag(args, '--payload-file');
+  if (inline !== undefined && file !== undefined) {
+    return argumentFailure('PAYLOAD_FLAGS_CONFLICT', 'Use either --payload or --payload-file, not both.');
+  }
+  try {
+    if (inline !== undefined) return { success: true as const, data: JSON.parse(inline), diagnostics: [] };
+    if (file !== undefined) return { success: true as const, data: JSON.parse(await readFile(file, 'utf8')), diagnostics: [] };
+    return { success: true as const, data: {}, diagnostics: [] };
+  } catch (error) {
+    return argumentFailure('PAYLOAD_PARSE_FAILED', `Failed to parse payload JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 async function runWhoAmI(args: string[]): Promise<number> {
@@ -757,11 +1092,190 @@ function printCanvasAuthoringHelp(): void {
       '',
       'Canvas authoring helper commands plus a request shortcut fallback.',
       '',
+      'Use this surface for the internal Power Apps Studio canvas authoring service. Most',
+      'work starts with a session, which gives pp the authoring host, version, session id,',
+      'and opaque session state required by the YAML and document-server APIs.',
+      '',
       'Session commands:',
       '  pp canvas-authoring session start --env ALIAS --app APP_ID [--account ACCOUNT] [--cadence Frequent] [--cluster-category prod] [--raw] [--no-interactive-auth]',
+      '  pp canvas-authoring session list [--config-dir DIR]',
+      '  pp canvas-authoring session request --env ALIAS --app APP_ID --path /api/yaml/fetch [--read]',
+      '  pp canvas-authoring invoke --env ALIAS --app APP_ID --class CLASS --oid OID --method METHOD [--payload JSON|--payload-file FILE] [--account ACCOUNT] [--no-interactive-auth]',
+      '  pp canvas-authoring rpc --env ALIAS --app APP_ID --class CLASS --oid OID --method METHOD [--payload JSON|--payload-file FILE] [--account ACCOUNT] [--no-interactive-auth]',
+      '',
+      'Lightweight REST helpers:',
+      '  pp canvas-authoring yaml fetch --env ALIAS --app APP_ID [--out DIR]',
+      '  pp canvas-authoring yaml validate --env ALIAS --app APP_ID --dir DIR',
+      '  pp canvas-authoring controls list|describe --env ALIAS --app APP_ID [NAME]',
+      '  pp canvas-authoring apis list|describe --env ALIAS --app APP_ID [NAME]',
+      '  pp canvas-authoring datasources list|describe --env ALIAS --app APP_ID [NAME]',
+      '  pp canvas-authoring accessibility --env ALIAS --app APP_ID',
+      '',
+      'REST helper notes:',
+      '  These helpers call the session-backed /api/yaml/... endpoints used by the MCP server.',
+      '  yaml fetch reads the current live authoring document as .pa.yaml files.',
+      '  yaml validate sends local .pa.yaml files to validate-directory; in an active coauthoring',
+      '  session, valid YAML can also update the dirty draft visible in Maker/Studio.',
+      '  Validation diagnostics are returned in response.diagnostics.',
+      '',
+      'Transport choices:',
+      '  invoke  POSTs to /<version>/api/v2/invoke. Use it for fire-and-forget or mutation calls where HTTP 200 is enough.',
+      '  rpc     Uses the authoring SignalR channel and waits for the matching method result. Use it for query-style calls such as document/2/geterrorsasync.',
       '',
       'Request shortcut:',
       '  pp canvas-authoring <path|url> --env ALIAS [same flags as pp request --api canvas-authoring]',
+      '',
+      'Common raw endpoints:',
+      '  /gateway/cluster',
+      '  https://authoring.<geo>-il<cluster>.gateway.prod.island.powerapps.com/<version>/api/yaml/fetch',
+      '  https://authoring.<geo>-il<cluster>.gateway.prod.island.powerapps.com/<version>/api/yaml/validate-directory',
+      '',
+      'Examples:',
+      '  pp canvas-authoring /gateway/cluster --env dev --read',
+      '  pp canvas-authoring session start --env dev --app <app-id>',
+      '  pp canvas-authoring yaml fetch --env dev --app <app-id> --out ./canvas-src',
+      '  pp canvas-authoring rpc --env dev --app <app-id> --class document --oid 2 --method geterrorsasync',
+      '',
+      'These APIs are internal and stateful. Object ids such as document/2 come from the live',
+      'authoring session, and some methods can mutate the open draft app.',
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringInvokeHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring invoke',
+      '',
+      'Invoke a low-level canvas document-server RPC method through /api/v2/invoke.',
+      '',
+      'Usage:',
+      '  pp canvas-authoring invoke --env ALIAS --app APP_ID --class CLASS --oid OID --method METHOD [--payload JSON|--payload-file FILE] [--sequence N --confirmation N] [--session-id ID --session-state STATE --authoring-base-url URL --web-authoring-version VERSION] [--account ACCOUNT] [--no-interactive-auth]',
+      '',
+      'Examples:',
+      '  pp canvas-authoring invoke --env dev --app <app-id> --class documentservicev2 --oid 1 --method keepalive',
+      '  pp canvas-authoring invoke --env dev --app <app-id> --class document --oid 2 --method setsaveappcontext --payload \'{"saveAppContext":{...}}\'',
+      '',
+      'This is an internal stateful RPC surface. Methods can mutate the open app document.',
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringRpcHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring rpc',
+      '',
+      'Invoke a low-level canvas document-server RPC method over the authoring SignalR channel.',
+      '',
+      'Usage:',
+      '  pp canvas-authoring rpc --env ALIAS --app APP_ID --class CLASS --oid OID --method METHOD [--payload JSON|--payload-file FILE] [--timeout-ms MS] [--sequence N --confirmation N] [--session-id ID --session-state STATE --authoring-base-url URL --web-authoring-version VERSION] [--account ACCOUNT] [--no-interactive-auth]',
+      '',
+      'Examples:',
+      '  pp canvas-authoring rpc --env dev --app <app-id> --class document --oid 2 --method geterrorsasync',
+      '  pp canvas-authoring rpc --env dev --app <app-id> --class document --oid 2 --method getappcheckerperformanceresponsesasync',
+      '',
+      'This is experimental and uses the internal authoring SignalR protocol.',
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringSessionRequestHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring session request',
+      '',
+      'Send a request to the versioned authoring host with session headers.',
+      '',
+      'Usage:',
+      '  pp canvas-authoring session request --env ALIAS --app APP_ID --path PATH [--method METHOD] [--body JSON|--body-file FILE] [--response-type json|text|void] [--read]',
+      '',
+      'Examples:',
+      '  pp canvas-authoring session request --env dev --app <app-id> --path /api/yaml/fetch --read',
+      '  pp canvas-authoring session request --env dev --app <app-id> --path /api/yaml/validate-directory --method POST --body-file payload.json',
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringYamlHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring yaml',
+      '',
+      'Thin helpers for the MCP-style YAML REST endpoints.',
+      '',
+      'These endpoints operate against a live authoring session. fetch reads the current',
+      'session document. validate sends files to validate-directory; when the YAML is valid',
+      'and the session is active, the service can update the dirty draft in Maker/Studio.',
+      '',
+      'Usage:',
+      '  pp canvas-authoring yaml fetch --env ALIAS --app APP_ID [--out DIR]',
+      '  pp canvas-authoring yaml validate --env ALIAS --app APP_ID --dir DIR',
+      '  pp canvas-authoring yaml validate --env ALIAS --app APP_ID --body-file payload.json',
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringYamlFetchHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring yaml fetch',
+      '',
+      'Fetch source-control YAML files from the live authoring session.',
+      '',
+      'Usage:',
+      '  pp canvas-authoring yaml fetch --env ALIAS --app APP_ID [--out DIR]',
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringYamlValidateHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring yaml validate',
+      '',
+      'Validate a set of .pa.yaml files through /api/yaml/validate-directory.',
+      '',
+      'This is session-backed. In an active coauthoring session, valid YAML can also update',
+      'the live dirty draft visible in Maker/Studio. Invalid YAML returns diagnostics and',
+      'should not cleanly apply.',
+      '',
+      'Usage:',
+      '  pp canvas-authoring yaml validate --env ALIAS --app APP_ID --dir DIR [--with-signalr]',
+      '  pp canvas-authoring yaml validate --env ALIAS --app APP_ID --body-file payload.json [--with-signalr]',
+      '',
+      'Options:',
+      '  --with-signalr       Also hold a SignalR diagnostics hub connection and send keepalive before validate.',
+      '  --signalr-timeout-ms Timeout for the SignalR connection/RPC when --with-signalr is used.',
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringNamedEndpointHelp(endpoint: 'controls' | 'apis' | 'datasources'): void {
+  process.stdout.write(
+    [
+      `pp canvas-authoring ${endpoint}`,
+      '',
+      `Thin helpers for /api/yaml/${endpoint}.`,
+      '',
+      'Usage:',
+      `  pp canvas-authoring ${endpoint} list --env ALIAS --app APP_ID`,
+      `  pp canvas-authoring ${endpoint} describe --env ALIAS --app APP_ID NAME`,
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringAccessibilityHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring accessibility',
+      '',
+      'Fetch /api/yaml/accessibility-errors for authoring hosts that support it.',
+      '',
+      'Usage:',
+      '  pp canvas-authoring accessibility --env ALIAS --app APP_ID',
+      '',
+      'This endpoint is version-gated by Microsoft; older authoring hosts may return 404.',
     ].join('\n') + '\n',
   );
 }
@@ -775,6 +1289,8 @@ function printCanvasAuthoringSessionHelp(): void {
       '',
       'Usage:',
       '  pp canvas-authoring session start --env ALIAS --app APP_ID [--account ACCOUNT] [--cadence Frequent] [--cluster-category prod] [--raw] [--no-interactive-auth]',
+      '  pp canvas-authoring session list [--config-dir DIR]',
+      '  pp canvas-authoring session request --env ALIAS --app APP_ID --path PATH [--method METHOD] [--body JSON|--body-file FILE] [--read]',
     ].join('\n') + '\n',
   );
 }
@@ -868,6 +1384,13 @@ function wantsHelp(args: string[]): boolean {
 
 function isHelpToken(value: string | undefined): boolean {
   return value === '--help' || value === 'help';
+}
+
+function readOptionalInt(args: string[], name: string): number | undefined {
+  const value = readFlag(args, name);
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 void main(process.argv.slice(2)).then((code) => {

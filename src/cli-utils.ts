@@ -16,6 +16,7 @@ const BOOLEAN_FLAGS = new Set([
   '--pair',
   '--read',
   '--raw',
+  '--with-signalr',
 ]);
 
 export function readFlag(args: string[], name: string): string | undefined {
