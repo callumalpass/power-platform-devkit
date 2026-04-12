@@ -374,9 +374,15 @@ export function renderHtml(): string {
     .setup-layout { display: flex; flex-direction: column; gap: 0; }
 
     /* Status panel */
-    .status-issues { display: grid; gap: 6px; margin-bottom: 20px; }
-    .status-issue { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--warn-soft); font-size: 0.8125rem; }
+    .status-issues { margin-bottom: 20px; border-radius: var(--radius-sm); background: var(--warn-soft); overflow: hidden; }
+    .status-issues-toggle { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: none; background: none; font: inherit; font-size: 0.8125rem; font-weight: 600; cursor: pointer; color: inherit; text-align: left; }
+    .status-issues-caret { display: inline-block; transition: transform 0.15s ease; font-size: 0.75rem; }
+    .status-issues-caret.expanded { transform: rotate(90deg); }
+    .status-issues-detail { padding: 0 12px 10px; display: grid; gap: 4px; }
+    .status-issue { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 0.8125rem; }
     .status-issue-hint { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
+    .status-issue-group { margin-top: 4px; }
+    .status-issue-group-title { font-size: 0.75rem; font-weight: 600; color: var(--muted); padding: 2px 0; }
     .status-ok-banner { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--ok-soft); font-size: 0.8125rem; font-weight: 500; margin-bottom: 20px; }
     .status-section { margin-top: 16px; }
     .status-section h3 { font-size: 0.8125rem; font-weight: 600; margin-bottom: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }

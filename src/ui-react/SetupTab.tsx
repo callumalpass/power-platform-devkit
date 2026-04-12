@@ -933,29 +933,33 @@ function StatusPanel(props: {
 }) {
   const { accounts, environments, tokenStatus, health, refreshState, recheckHealth, toast } = props;
 
+  const [issuesExpanded, setIssuesExpanded] = useState(false);
+
   // Gather issues that need attention
-  const issues: Array<{ type: string; message: string; action?: string }> = [];
+  const accountIssues: Array<{ message: string; action?: string }> = [];
+  const envIssueGroups: Array<{ alias: string; errors: string[] }> = [];
   for (const account of accounts) {
     const token = tokenStatus[account.name];
     if (token && !token.authenticated) {
-      issues.push({ type: 'account', message: `Account "${account.name}" is not authenticated`, action: 'Go to Accounts to re-login' });
+      accountIssues.push({ message: `Account "${account.name}" is not authenticated`, action: 'Go to Accounts to re-login' });
     }
     if (token?.authenticated) {
       const expiry = formatTimeRemaining(token.expiresAt);
       if (expiry?.cls === 'expired') {
-        issues.push({ type: 'account', message: `Token for "${account.name}" has expired`, action: 'Go to Accounts to re-login' });
+        accountIssues.push({ message: `Token for "${account.name}" has expired`, action: 'Go to Accounts to re-login' });
       }
     }
   }
   for (const env of environments) {
     const envHealth = health[env.alias] || {};
+    const errors: string[] = [];
     for (const apiName of HEALTH_APIS) {
       const state = envHealth[apiName];
-      if (state?.status === 'error') {
-        issues.push({ type: 'environment', message: `${env.alias}: ${apiName} - ${state.summary}` });
-      }
+      if (state?.status === 'error') errors.push(`${apiName}: ${state.summary}`);
     }
+    if (errors.length > 0) envIssueGroups.push({ alias: env.alias, errors });
   }
+  const totalIssues = accountIssues.length + envIssueGroups.reduce((n, g) => n + g.errors.length, 0);
 
   return (
     <div className="panel">
@@ -967,15 +971,39 @@ function StatusPanel(props: {
         </div>
       </div>
 
-      {issues.length > 0 ? (
+      {totalIssues > 0 ? (
         <div className="status-issues">
-          {issues.map((issue, i) => (
-            <div key={i} className="status-issue">
-              <span className="health-dot error"></span>
-              <span>{issue.message}</span>
-              {issue.action ? <span className="status-issue-hint">{issue.action}</span> : null}
+          <button
+            className="status-issues-toggle"
+            type="button"
+            onClick={() => setIssuesExpanded((v) => !v)}
+          >
+            <span className="health-dot error"></span>
+            <span>{totalIssues} {totalIssues === 1 ? 'issue' : 'issues'} found</span>
+            <span className={`status-issues-caret ${issuesExpanded ? 'expanded' : ''}`}>&#9656;</span>
+          </button>
+          {issuesExpanded ? (
+            <div className="status-issues-detail">
+              {accountIssues.map((issue, i) => (
+                <div key={`a-${i}`} className="status-issue">
+                  <span className="health-dot error"></span>
+                  <span>{issue.message}</span>
+                  {issue.action ? <span className="status-issue-hint">{issue.action}</span> : null}
+                </div>
+              ))}
+              {envIssueGroups.map((group) => (
+                <div key={group.alias} className="status-issue-group">
+                  <div className="status-issue-group-title">{group.alias}</div>
+                  {group.errors.map((err, i) => (
+                    <div key={i} className="status-issue">
+                      <span className="health-dot error"></span>
+                      <span>{err}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
-          ))}
+          ) : null}
         </div>
       ) : (
         <div className="status-ok-banner">

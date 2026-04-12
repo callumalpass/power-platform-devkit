@@ -412,6 +412,17 @@ export function App() {
           >
             {theme === 'dark' ? '☀' : '☽'}
           </button>
+          <button
+            className="theme-toggle"
+            id="shutdown-btn"
+            title="Stop pp UI server"
+            onClick={async () => {
+              if (!confirm('Stop the pp UI server?')) return;
+              try { await api('/api/ui/shutdown', { method: 'POST' }); } catch { /* server exits */ }
+            }}
+          >
+            {'⏻'}
+          </button>
         </div>
       </header>
 
