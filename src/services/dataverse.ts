@@ -3,6 +3,8 @@ import { createDiagnostic, fail, ok, type OperationResult } from '../diagnostics
 import { executeApiRequest } from './api.js';
 import type { ConfigStoreOptions } from '../config.js';
 
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface DataverseEntitySummary {
   logicalName: string;
   schemaName?: string;
@@ -28,6 +30,7 @@ export interface DataverseAttributeSummary {
   maxLength?: number;
   maxValue?: number;
   minValue?: number;
+  precision?: number;
   targets?: string[];
   isPrimaryId?: boolean;
   isPrimaryName?: boolean;
@@ -71,6 +74,25 @@ export interface DataverseQuerySpec {
   includeCount?: boolean;
   search?: string;
   rawPath?: string;
+}
+
+export interface DataverseCreateRecordInput {
+  environmentAlias: string;
+  accountName?: string;
+  entitySetName: string;
+  logicalName?: string;
+  primaryIdAttribute?: string;
+  body: Record<string, unknown>;
+}
+
+export interface DataverseCreateRecordResult {
+  entitySetName: string;
+  logicalName?: string;
+  path: string;
+  id?: string;
+  record?: Record<string, unknown>;
+  headers: Record<string, string>;
+  status: number;
 }
 
 export interface FetchXmlConditionSpec {
@@ -159,41 +181,36 @@ export async function getDataverseEntityDetail(
   configOptions: ConfigStoreOptions = {},
   loginOptions: PublicClientLoginOptions = {},
 ): Promise<OperationResult<DataverseEntityDetail>> {
-  const [result, lookupTargetsResult] = await Promise.all([
-    executeApiRequest({
-      environmentAlias: input.environmentAlias,
-      accountName: input.accountName,
-      api: 'dv',
-      path: `/EntityDefinitions(LogicalName='${encodeODataLiteral(input.logicalName)}')`,
-      method: 'GET',
-      responseType: 'json',
-      readIntent: true,
-      query: {
-        '$select': [
-          'LogicalName',
-          'SchemaName',
-          'EntitySetName',
-          'DisplayName',
-          'DisplayCollectionName',
-          'Description',
-          'PrimaryIdAttribute',
-          'PrimaryNameAttribute',
-          'OwnershipType',
-          'MetadataId',
-          'ObjectTypeCode',
-          'IsActivity',
-        ].join(','),
-        '$expand': 'Attributes($select=LogicalName,AttributeOf,SchemaName,DisplayName,Description,AttributeType,AttributeTypeName,RequiredLevel,IsPrimaryId,IsPrimaryName,IsValidForRead,IsValidForCreate,IsValidForUpdate,IsValidForAdvancedFind)',
-      },
-    }, configOptions, loginOptions),
+  const [expandedResult, lookupTargetsResult, optionValuesResult] = await Promise.all([
+    getDataverseEntityWithExpandedAttributes(input, configOptions, loginOptions),
     getDataverseLookupTargets(input, configOptions, loginOptions),
+    getDataverseOptionValues(input, configOptions, loginOptions),
   ]);
+  let result = expandedResult;
+  let attributes: unknown[] = [];
+  let detailDiagnostics = [...expandedResult.diagnostics];
+  if (expandedResult.success && expandedResult.data) {
+    attributes = readArray(readObject(expandedResult.data.response)?.Attributes);
+  } else {
+    const [baseResult, attributesResult] = await Promise.all([
+      getDataverseEntityBase(input, configOptions, loginOptions),
+      getDataverseAttributes(input, configOptions, loginOptions),
+    ]);
+    result = baseResult;
+    attributes = attributesResult.success && attributesResult.data ? attributesResult.data : [];
+    detailDiagnostics = [
+      ...baseResult.diagnostics,
+      ...normalizeMetadataDiagnostics(expandedResult.diagnostics, 'Expanded attributes'),
+      ...normalizeMetadataDiagnostics(attributesResult.diagnostics, 'Attributes'),
+    ];
+  }
   if (!result.success || !result.data) return fail(...result.diagnostics);
   const raw = readObject(result.data.response);
   if (!raw) {
     return fail(createDiagnostic('error', 'DV_ENTITY_NOT_FOUND', `No Dataverse entity metadata was returned for ${input.logicalName}.`, { source: 'pp/services/dataverse' }));
   }
   const lookupTargets = lookupTargetsResult.success && lookupTargetsResult.data ? lookupTargetsResult.data : new Map<string, string[]>();
+  const optionValues = optionValuesResult.success && optionValuesResult.data ? optionValuesResult.data : new Map<string, Array<{ value: number; label?: string }>>();
   const detail: DataverseEntityDetail = {
     ...mapEntitySummary(raw),
     description: labelText(raw.Description),
@@ -202,15 +219,159 @@ export async function getDataverseEntityDetail(
     isCustomEntity: readBoolean(raw.IsCustomEntity),
     isIntersect: readBoolean(raw.IsIntersect),
     changeTrackingEnabled: readBoolean(raw.ChangeTrackingEnabled),
-    attributes: readArray(raw.Attributes)
+    attributes: attributes
       .map(mapAttributeSummary)
       .map((attribute) => mergeLookupTargets(attribute, lookupTargets))
+      .map((attribute) => mergeOptionValues(attribute, optionValues))
       .sort((a, b) => a.logicalName.localeCompare(b.logicalName)),
   };
   return ok(detail, [
-    ...result.diagnostics,
-    ...normalizeLookupDiagnostics(lookupTargetsResult.diagnostics),
+    ...detailDiagnostics,
+    ...normalizeMetadataDiagnostics(lookupTargetsResult.diagnostics, 'Lookup targets'),
+    ...normalizeMetadataDiagnostics(optionValuesResult.diagnostics, 'Choice options'),
   ]);
+}
+
+async function getDataverseEntityWithExpandedAttributes(
+  input: { environmentAlias: string; logicalName: string; accountName?: string },
+  configOptions: ConfigStoreOptions,
+  loginOptions: PublicClientLoginOptions = {},
+) {
+  return executeApiRequest({
+    environmentAlias: input.environmentAlias,
+    accountName: input.accountName,
+    api: 'dv',
+    path: `/EntityDefinitions(LogicalName='${encodeODataLiteral(input.logicalName)}')`,
+    method: 'GET',
+    responseType: 'json',
+    readIntent: true,
+    query: {
+      '$select': [
+        'LogicalName',
+        'SchemaName',
+        'EntitySetName',
+        'DisplayName',
+        'DisplayCollectionName',
+        'Description',
+        'PrimaryIdAttribute',
+        'PrimaryNameAttribute',
+        'OwnershipType',
+        'MetadataId',
+        'ObjectTypeCode',
+        'IsActivity',
+      ].join(','),
+      '$expand': 'Attributes($select=LogicalName,AttributeOf,SchemaName,DisplayName,Description,AttributeType,AttributeTypeName,RequiredLevel,MaxLength,MaxValue,MinValue,Precision,IsPrimaryId,IsPrimaryName,IsValidForRead,IsValidForCreate,IsValidForUpdate,IsValidForAdvancedFind)',
+    },
+  }, configOptions, loginOptions);
+}
+
+async function getDataverseEntityBase(
+  input: { environmentAlias: string; logicalName: string; accountName?: string },
+  configOptions: ConfigStoreOptions,
+  loginOptions: PublicClientLoginOptions = {},
+) {
+  return executeApiRequest({
+    environmentAlias: input.environmentAlias,
+    accountName: input.accountName,
+    api: 'dv',
+    path: `/EntityDefinitions(LogicalName='${encodeODataLiteral(input.logicalName)}')`,
+    method: 'GET',
+    responseType: 'json',
+    readIntent: true,
+    query: {
+      '$select': [
+        'LogicalName',
+        'SchemaName',
+        'EntitySetName',
+        'DisplayName',
+        'DisplayCollectionName',
+        'Description',
+        'PrimaryIdAttribute',
+        'PrimaryNameAttribute',
+        'OwnershipType',
+        'MetadataId',
+        'ObjectTypeCode',
+        'IsActivity',
+      ].join(','),
+    },
+  }, configOptions, loginOptions);
+}
+
+async function getDataverseAttributes(
+  input: { environmentAlias: string; logicalName: string; accountName?: string },
+  configOptions: ConfigStoreOptions,
+  loginOptions: PublicClientLoginOptions = {},
+): Promise<OperationResult<unknown[]>> {
+  const result = await executeApiRequest({
+    environmentAlias: input.environmentAlias,
+    accountName: input.accountName,
+    api: 'dv',
+    path: `/EntityDefinitions(LogicalName='${encodeODataLiteral(input.logicalName)}')/Attributes`,
+    method: 'GET',
+    responseType: 'json',
+    readIntent: true,
+    query: {
+      '$select': [
+        'LogicalName',
+        'AttributeOf',
+        'SchemaName',
+        'DisplayName',
+        'Description',
+        'AttributeType',
+        'AttributeTypeName',
+        'RequiredLevel',
+        'MaxLength',
+        'MaxValue',
+        'MinValue',
+        'Precision',
+        'IsPrimaryId',
+        'IsPrimaryName',
+        'IsValidForRead',
+        'IsValidForCreate',
+        'IsValidForUpdate',
+        'IsValidForAdvancedFind',
+      ].join(','),
+    },
+  }, configOptions, loginOptions);
+  return result.success && result.data ? ok(readArray(result.data.response), result.diagnostics) : fail(...result.diagnostics);
+}
+
+export async function createDataverseRecord(
+  input: DataverseCreateRecordInput,
+  configOptions: ConfigStoreOptions = {},
+  loginOptions: PublicClientLoginOptions = {},
+): Promise<OperationResult<DataverseCreateRecordResult>> {
+  if (!input.entitySetName.trim()) {
+    return fail(createDiagnostic('error', 'DV_ENTITY_SET_REQUIRED', 'entitySetName is required.', { source: 'pp/services/dataverse' }));
+  }
+  const body = input.body && typeof input.body === 'object' && !Array.isArray(input.body) ? input.body : undefined;
+  if (!body || !Object.keys(body).length) {
+    return fail(createDiagnostic('error', 'DV_RECORD_BODY_REQUIRED', 'Record body must contain at least one field.', { source: 'pp/services/dataverse' }));
+  }
+  const path = normalizeDvPath(input.entitySetName);
+  const result = await executeApiRequest({
+    environmentAlias: input.environmentAlias,
+    accountName: input.accountName,
+    api: 'dv',
+    path,
+    method: 'POST',
+    headers: {
+      Prefer: 'return=representation, odata.include-annotations="*"',
+    },
+    body,
+    responseType: 'json',
+  }, configOptions, loginOptions);
+  if (!result.success || !result.data) return fail(...result.diagnostics);
+  const record = isRecord(result.data.response) ? result.data.response : undefined;
+  return ok({
+    entitySetName: input.entitySetName,
+    logicalName: input.logicalName,
+    path,
+    id: readCreatedRecordId(record, result.data.headers, input.primaryIdAttribute),
+    record,
+    headers: result.data.headers,
+    status: result.data.status,
+  }, result.diagnostics);
 }
 
 export async function listDataverseRecords(
@@ -433,6 +594,46 @@ async function getDataverseLookupTargets(
   return ok(lookupTargets, result.diagnostics);
 }
 
+async function getDataverseOptionValues(
+  input: { environmentAlias: string; logicalName: string; accountName?: string },
+  configOptions: ConfigStoreOptions,
+  loginOptions: PublicClientLoginOptions = {},
+): Promise<OperationResult<Map<string, Array<{ value: number; label?: string }>>>> {
+  const metadataTypes = [
+    'PicklistAttributeMetadata',
+    'MultiSelectPicklistAttributeMetadata',
+    'StateAttributeMetadata',
+    'StatusAttributeMetadata',
+  ];
+  const results = await Promise.all(metadataTypes.map((metadataType) => executeApiRequest({
+    environmentAlias: input.environmentAlias,
+    accountName: input.accountName,
+    api: 'dv',
+    path: `/EntityDefinitions(LogicalName='${encodeODataLiteral(input.logicalName)}')/Attributes/Microsoft.Dynamics.CRM.${metadataType}`,
+    method: 'GET',
+    responseType: 'json',
+    readIntent: true,
+    query: {
+      '$select': 'LogicalName',
+      '$expand': 'OptionSet($select=Options)',
+    },
+  }, configOptions, loginOptions)));
+  const optionValues = new Map<string, Array<{ value: number; label?: string }>>();
+  const diagnostics = [];
+  for (const result of results) {
+    if (!result.success || !result.data) {
+      diagnostics.push(...result.diagnostics);
+      continue;
+    }
+    for (const value of readArray(result.data.response)) {
+      const attribute = mapAttributeSummary(value);
+      if (attribute.optionValues?.length) optionValues.set(attribute.logicalName, attribute.optionValues);
+    }
+    diagnostics.push(...result.diagnostics);
+  }
+  return ok(optionValues, diagnostics);
+}
+
 function mapAttributeSummary(value: unknown): DataverseAttributeSummary {
   const record = readObject(value) ?? {};
   const optionValues = readArray(record.OptionSet?.Options).map((option) => {
@@ -452,6 +653,7 @@ function mapAttributeSummary(value: unknown): DataverseAttributeSummary {
     maxLength: typeof record.MaxLength === 'number' ? record.MaxLength : undefined,
     maxValue: typeof record.MaxValue === 'number' ? record.MaxValue : undefined,
     minValue: typeof record.MinValue === 'number' ? record.MinValue : undefined,
+    precision: typeof record.Precision === 'number' ? record.Precision : undefined,
     targets: readArray(record.Targets).filter((item): item is string => typeof item === 'string'),
     isPrimaryId: readBoolean(record.IsPrimaryId),
     isPrimaryName: readBoolean(record.IsPrimaryName),
@@ -464,6 +666,24 @@ function mapAttributeSummary(value: unknown): DataverseAttributeSummary {
   };
 }
 
+function readCreatedRecordId(record: Record<string, unknown> | undefined, headers: Record<string, string>, primaryIdAttribute?: string): string | undefined {
+  if (record && primaryIdAttribute && typeof record[primaryIdAttribute] === 'string') return record[primaryIdAttribute];
+  if (record) {
+    const idEntry = Object.entries(record).find(([key, value]) => key.endsWith('id') && typeof value === 'string' && GUID_RE.test(value));
+    if (idEntry && typeof idEntry[1] === 'string') return idEntry[1];
+    const odataId = readString(record['@odata.id']);
+    const parsed = odataId ? parseEntityId(odataId) : undefined;
+    if (parsed) return parsed;
+  }
+  const entityId = headers['odata-entityid'] ?? headers['OData-EntityId'];
+  return entityId ? parseEntityId(entityId) : undefined;
+}
+
+function parseEntityId(value: string): string | undefined {
+  const match = /\(([0-9a-f-]{36})\)/i.exec(value);
+  return match?.[1];
+}
+
 function mergeLookupTargets(
   attribute: DataverseAttributeSummary,
   lookupTargets: Map<string, string[]>,
@@ -473,10 +693,18 @@ function mergeLookupTargets(
   return targets?.length ? { ...attribute, targets } : attribute;
 }
 
-function normalizeLookupDiagnostics(diagnostics: ReturnType<typeof fail>['diagnostics']) {
+function mergeOptionValues(
+  attribute: DataverseAttributeSummary,
+  optionValues: Map<string, Array<{ value: number; label?: string }>>,
+): DataverseAttributeSummary {
+  const values = optionValues.get(attribute.logicalName);
+  return values?.length ? { ...attribute, optionValues: values } : attribute;
+}
+
+function normalizeMetadataDiagnostics(diagnostics: ReturnType<typeof fail>['diagnostics'], label: string) {
   return diagnostics.map((diagnostic) => {
     if (diagnostic.level !== 'error') return diagnostic;
-    return createDiagnostic('warning', diagnostic.code, `Lookup targets are unavailable: ${diagnostic.message}`, {
+    return createDiagnostic('warning', diagnostic.code, `${label} are unavailable: ${diagnostic.message}`, {
       source: diagnostic.source,
       hint: diagnostic.hint,
       detail: diagnostic.detail,

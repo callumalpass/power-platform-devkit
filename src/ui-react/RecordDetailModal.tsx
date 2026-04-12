@@ -8,11 +8,8 @@ import type { ToastFn } from './ui-types.js';
 // ---------------------------------------------------------------------------
 
 export type RecordDetailTarget = {
-  /** Display label for the entity (e.g. "account", "role") */
   entity: string;
-  /** OData entity set name (e.g. "accounts", "roles") */
   entitySetName: string;
-  /** Record GUID */
   id: string;
 };
 
@@ -43,8 +40,19 @@ export function columnLabel(column: string): string {
   return match ? match[1] : column;
 }
 
+/** Keys that should never be editable */
+function isReadOnlyKey(key: string): boolean {
+  return key.includes('@') || key.endsWith('id') || key.startsWith('_') || key === 'versionnumber' || key === 'createdon' || key === 'modifiedon';
+}
+
+function inputTypeForValue(value: unknown): 'text' | 'number' | 'checkbox' {
+  if (typeof value === 'boolean') return 'checkbox';
+  if (typeof value === 'number') return 'number';
+  return 'text';
+}
+
 // ---------------------------------------------------------------------------
-// Hook — simplifies usage from any component
+// Hook
 // ---------------------------------------------------------------------------
 
 export function useRecordDetail() {
@@ -63,46 +71,54 @@ export function useRecordDetail() {
 export function RecordDetailModal(props: {
   initial: RecordDetailTarget;
   environment: string;
+  /** Base Dataverse URL (e.g. https://org.crm.dynamics.com) for building deep links */
+  environmentUrl?: string;
   entityMap?: Map<string, string>;
   onClose: () => void;
   toast?: ToastFn;
 }) {
-  const { initial, environment, entityMap, onClose, toast } = props;
+  const { initial, environment, environmentUrl, entityMap, onClose, toast } = props;
   const [stack, setStack] = useState<RecordDetailTarget[]>([initial]);
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [edits, setEdits] = useState<Record<string, unknown>>({});
+  const [saving, setSaving] = useState(false);
   const backdropRef = useRef<HTMLDivElement | null>(null);
 
   const current = stack[stack.length - 1];
 
-  // Reset stack when a new initial target is provided from outside
   useEffect(() => {
     setStack([initial]);
   }, [initial.entity, initial.entitySetName, initial.id]);
 
-  useEffect(() => {
-    let cancelled = false;
+  function fetchRecord(target: RecordDetailTarget) {
     setLoading(true);
     setError(null);
     setRecord(null);
+    setEditing(false);
+    setEdits({});
     api<any>('/api/request/execute', {
       method: 'POST',
       body: JSON.stringify({
         environment,
         api: 'dv',
         method: 'GET',
-        path: `/${current.entitySetName}(${current.id})`,
+        path: `/${target.entitySetName}(${target.id})`,
         headers: { Prefer: 'odata.include-annotations="*"' },
       }),
     }).then((payload) => {
-      if (!cancelled) setRecord(payload.data?.response || payload.data);
+      setRecord(payload.data?.response || payload.data);
     }).catch((err) => {
-      if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err));
     }).finally(() => {
-      if (!cancelled) setLoading(false);
+      setLoading(false);
     });
-    return () => { cancelled = true; };
+  }
+
+  useEffect(() => {
+    fetchRecord(current);
   }, [environment, current.entitySetName, current.id]);
 
   function navigateToLookup(targetEntity: string, id: string) {
@@ -115,10 +131,55 @@ export function RecordDetailModal(props: {
     if (stack.length > 1) setStack((prev) => prev.slice(0, -1));
   }
 
+  function startEditing() {
+    setEditing(true);
+    setEdits({});
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setEdits({});
+  }
+
+  function updateEdit(key: string, value: unknown) {
+    setEdits((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function saveEdits() {
+    if (!Object.keys(edits).length) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await api<any>('/api/request/execute', {
+        method: 'POST',
+        body: JSON.stringify({
+          environment,
+          api: 'dv',
+          method: 'PATCH',
+          path: `/${current.entitySetName}(${current.id})`,
+          body: edits,
+        }),
+      });
+      toast?.('Record updated');
+      setEditing(false);
+      setEdits({});
+      fetchRecord(current);
+    } catch (err) {
+      toast?.(err instanceof Error ? err.message : String(err), true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const dynamicsUrl = environmentUrl
+    ? `${environmentUrl.replace(/\/+$/, '')}/main.aspx?etn=${encodeURIComponent(current.entity)}&id=${encodeURIComponent(current.id)}&pagetype=entityrecord`
+    : null;
+
   const fields = useMemo(() => {
     if (!record) return [];
     return Object.entries(record).filter(([key]) => !key.includes('@'));
   }, [record]);
+
+  const editedCount = Object.keys(edits).length;
 
   return (
     <div className="rt-modal-backdrop" ref={backdropRef} onClick={(e) => { if (e.target === backdropRef.current) onClose(); }}>
@@ -134,7 +195,19 @@ export function RecordDetailModal(props: {
             <span className="rt-modal-id">{current.id}</span>
           </div>
           <div className="rt-modal-actions">
+            {dynamicsUrl && <CopyButton value={dynamicsUrl} label="Copy URL" title="Copy Dynamics 365 record URL" toast={toast} />}
             <CopyButton value={record ? JSON.stringify(record, null, 2) : current.id} label="Copy JSON" title="Copy full record as JSON" toast={toast} />
+            {!loading && !error && !editing && (
+              <button className="btn btn-ghost" type="button" onClick={startEditing} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Edit</button>
+            )}
+            {editing && (
+              <>
+                <button className="btn btn-ghost" type="button" onClick={cancelEditing} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Cancel</button>
+                <button className="btn btn-primary" type="button" onClick={() => void saveEdits()} disabled={saving || !editedCount} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                  {saving ? 'Saving...' : `Save${editedCount ? ` (${editedCount})` : ''}`}
+                </button>
+              </>
+            )}
             <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Close</button>
           </div>
         </div>
@@ -150,20 +223,47 @@ export function RecordDetailModal(props: {
                   const { display, isNull, isGuid } = formatCellValue(val);
                   const lookup = record ? getLookupInfo(record, key) : null;
                   const isClickableLookup = !!(isGuid && lookup?.targetEntity && entityMap?.has(lookup.targetEntity));
+                  const readOnly = isReadOnlyKey(key);
+                  const isEdited = key in edits;
+                  const inputType = inputTypeForValue(val);
+
                   return (
-                    <tr key={key}>
+                    <tr key={key} className={isEdited ? 'rt-detail-edited' : ''}>
                       <td className="rt-detail-key">{columnLabel(key)}</td>
                       <td className={`rt-detail-value ${isNull ? 'rt-cell-null' : ''} ${isGuid ? 'rt-cell-guid' : ''}`}>
-                        <span className="copy-inline">
-                          {isClickableLookup ? (
-                            <span className="record-link" onClick={() => navigateToLookup(lookup!.targetEntity!, display)}>
-                              {lookup!.formattedValue || `${display.slice(0, 8)}...`}
-                            </span>
+                        {editing && !readOnly ? (
+                          inputType === 'checkbox' ? (
+                            <label className="rt-edit-check">
+                              <input
+                                type="checkbox"
+                                checked={isEdited ? edits[key] as boolean : val as boolean}
+                                onChange={(e) => updateEdit(key, e.target.checked)}
+                              />
+                              {isEdited ? String(edits[key]) : display}
+                            </label>
                           ) : (
-                            <span className="copy-inline-value">{lookup?.formattedValue ? `${lookup.formattedValue} (${display.slice(0, 8)}...)` : display}</span>
-                          )}
-                          {!isNull && <CopyButton value={display} label="copy" title={`Copy ${key}`} toast={toast} stopPropagation />}
-                        </span>
+                            <input
+                              className="rt-edit-input"
+                              type={inputType}
+                              defaultValue={isNull ? '' : display}
+                              onChange={(e) => {
+                                const newVal = inputType === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : (e.target.value || null);
+                                updateEdit(key, newVal);
+                              }}
+                            />
+                          )
+                        ) : (
+                          <span className="copy-inline">
+                            {isClickableLookup ? (
+                              <span className="record-link" onClick={() => navigateToLookup(lookup!.targetEntity!, display)}>
+                                {lookup!.formattedValue || `${display.slice(0, 8)}...`}
+                              </span>
+                            ) : (
+                              <span className="copy-inline-value">{lookup?.formattedValue ? `${lookup.formattedValue} (${display.slice(0, 8)}...)` : display}</span>
+                            )}
+                            {!isNull && <CopyButton value={display} label="copy" title={`Copy ${key}`} toast={toast} stopPropagation />}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

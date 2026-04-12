@@ -6,7 +6,7 @@ import { searchKeymap } from '@codemirror/search';
 import { EditorState, Prec } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers, type ViewUpdate } from '@codemirror/view';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatDate, formatDateShort, highlightJson, prop } from './utils.js';
+import { api, formatDate, formatDateShort, highlightJson, prop } from './utils.js';
 import {
   analyzeFlowDocument,
   flowIdentifier,
@@ -173,6 +173,48 @@ export function AutomateTab(props: {
     setRuns(loadedRuns);
   }
 
+  async function flowAction(action: 'run' | 'start' | 'stop') {
+    if (!currentFlow || currentFlow.source !== 'flow') return;
+    const flowApiId = currentFlow.name;
+    if (!flowApiId) return;
+    const labels = { run: 'Running', start: 'Turning on', stop: 'Turning off' };
+    toast(labels[action] + '...');
+    try {
+      const paths: Record<string, string> = {
+        run: `/flows/${flowApiId}/triggers/manual/run`,
+        start: `/flows/${flowApiId}/start`,
+        stop: `/flows/${flowApiId}/stop`,
+      };
+      await api<any>('/api/request/execute', {
+        method: 'POST',
+        body: JSON.stringify({ environment, api: 'flow', method: 'POST', path: paths[action] }),
+      });
+      const messages = { run: 'Flow triggered', start: 'Flow turned on', stop: 'Flow turned off' };
+      toast(messages[action]);
+      // For state changes, poll until the API reflects the new state
+      if (action === 'start' || action === 'stop') {
+        const expectedState = action === 'start' ? 'Started' : 'Stopped';
+        for (let attempt = 0; attempt < 10; attempt++) {
+          await new Promise((r) => setTimeout(r, 800));
+          const refreshed = await loadFlowList(environment);
+          const updated = refreshed.flows.find((f: FlowItem) => f.name === flowApiId);
+          if (updated && String(prop(updated, 'properties.state')) === expectedState) {
+            setFlows(refreshed.flows);
+            setCurrentFlow(updated);
+            return;
+          }
+        }
+      }
+      // Fallback / run action: just refresh once
+      const refreshed = await loadFlowList(environment);
+      setFlows(refreshed.flows);
+      const updated = refreshed.flows.find((f: FlowItem) => f.name === flowApiId);
+      if (updated) setCurrentFlow(updated);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), true);
+    }
+  }
+
   async function selectRun(run: FlowRun) {
     if (currentRun?.name === run.name) {
       setCurrentRun(null);
@@ -253,11 +295,24 @@ export function AutomateTab(props: {
                     <CopyButton value={flowIdentifier(currentFlow)} label="copy id" title="Copy flow ID" toast={toast} />
                   </p>
                 </div>
-                <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem' }} onClick={() => openConsole(currentFlow.source === 'dv'
-                  ? { api: 'dv', method: 'GET', path: `/workflows(${flowIdentifier(currentFlow)})` }
-                  : { api: 'flow', method: 'GET', path: `/flows/${flowIdentifier(currentFlow)}` })}>Open in Console</button>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  {currentFlow.source === 'flow' ? (
+                    String(prop(currentFlow, 'properties.state')) === 'Started' ? (
+                      <>
+                        <button className="btn btn-primary" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void flowAction('run')}>Run Now</button>
+                        <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void flowAction('stop')}>Turn Off</button>
+                      </>
+                    ) : (
+                      <button className="btn btn-primary" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void flowAction('start')}>Turn On</button>
+                    )
+                  ) : null}
+                  <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem' }} onClick={() => openConsole(currentFlow.source === 'dv'
+                    ? { api: 'dv', method: 'GET', path: `/workflows(${flowIdentifier(currentFlow)})` }
+                    : { api: 'flow', method: 'GET', path: `/flows/${flowIdentifier(currentFlow)}` })}>Open in Console</button>
+                </div>
               </div>
               <div className="metrics">
+                <div className="metric"><div className="metric-label">State</div><div className="metric-value"><span className={`health-dot ${String(prop(currentFlow, 'properties.state')) === 'Started' ? 'ok' : 'error'}`} style={{ marginRight: 4 }}></span>{String(prop(currentFlow, 'properties.state') || '-')}</div></div>
                 <div className="metric"><div className="metric-label">Created</div><div className="metric-value">{formatDate(prop(currentFlow, 'properties.createdTime'))}</div></div>
                 <div className="metric"><div className="metric-label">Modified</div><div className="metric-value">{formatDate(prop(currentFlow, 'properties.lastModifiedTime'))}</div></div>
                 <div className="metric"><div className="metric-label">Trigger</div><div className="metric-value">{prop(currentFlow, 'properties.definitionSummary.triggers.0.type') || '-'}</div></div>

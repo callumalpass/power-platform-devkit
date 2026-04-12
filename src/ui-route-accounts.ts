@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { URL } from 'node:url';
-import { DEFAULT_LOGIN_RESOURCE, type LoginTarget } from './auth.js';
+import { DEFAULT_LOGIN_RESOURCE, summarizeAccount, type LoginAccountInput, type LoginTarget } from './auth.js';
 import { saveAccount } from './config.js';
 import { createDiagnostic, fail, ok } from './diagnostics.js';
 import { readJsonBody, sendJson } from './ui-http.js';
@@ -9,6 +9,27 @@ import type { UiRequestContext } from './ui-routes.js';
 import { normalizeOrigin } from './request.js';
 import { checkAccountTokenStatus, loginAccount, removeAccountByName } from './services/accounts.js';
 import { listConfiguredEnvironments } from './services/environments.js';
+
+export async function handleAccountCreate(request: IncomingMessage, response: ServerResponse, context: UiRequestContext): Promise<void> {
+  const body = await readJsonBody(request);
+  if (!body.success || !body.data) return void sendJson(response, 400, body);
+  const input = readLoginInput(body.data);
+  if (!input.success || !input.data) return void sendJson(response, 400, input);
+
+  if (input.data.kind === 'user' || input.data.kind === 'device-code') {
+    const job = await createAccountLoginJob(input.data, body.data, context);
+    if (!job.success || !job.data) return void sendJson(response, 400, job);
+    return void sendJson(response, 202, ok({
+      loginJobId: job.data.id,
+      loginTargets: job.data.metadata?.loginTargets ?? [],
+    }));
+  }
+
+  const account = readAccountUpdateInput(input.data.name, body.data);
+  if (!account.success || !account.data) return void sendJson(response, 400, account);
+  const result = await saveAccount(account.data, context.configOptions);
+  sendJson(response, result.success && result.data ? 201 : 400, result.success && result.data ? ok({ account: summarizeAccount(result.data) }, result.diagnostics) : result);
+}
 
 export async function handleAccountLogin(request: IncomingMessage, response: ServerResponse, context: UiRequestContext): Promise<void> {
   const body = await readJsonBody(request);
@@ -26,15 +47,24 @@ export async function handleAccountLogin(request: IncomingMessage, response: Ser
 export async function handleAccountLoginJob(request: IncomingMessage, response: ServerResponse, context: UiRequestContext): Promise<void> {
   const body = await readJsonBody(request);
   if (!body.success || !body.data) return void sendJson(response, 400, body);
-  const bodyData = body.data;
-  const input = readLoginInput(bodyData);
+  const input = readLoginInput(body.data);
   if (!input.success || !input.data) return void sendJson(response, 400, input);
+  const job = await createAccountLoginJob(input.data, body.data, context);
+  if (!job.success || !job.data) return void sendJson(response, 400, job);
+  sendJson(response, 202, ok(job.data));
+}
+
+async function createAccountLoginJob(
+  input: LoginAccountInput,
+  bodyData: Record<string, unknown>,
+  context: UiRequestContext,
+) {
   const environments = await listConfiguredEnvironments(context.configOptions);
-  if (!environments.success || !environments.data) return void sendJson(response, 400, fail(...environments.diagnostics));
+  if (!environments.success || !environments.data) return fail(...environments.diagnostics);
   const excludeApis = Array.isArray(bodyData.excludeApis) ? bodyData.excludeApis.filter((v: unknown): v is string => typeof v === 'string') : undefined;
-  const loginTargets = buildLoginTargets(input.data.name, environments.data, optionalString(bodyData.environmentAlias), excludeApis);
+  const loginTargets = buildLoginTargets(input.name, environments.data, optionalString(bodyData.environmentAlias), excludeApis);
   const job = context.jobs.createJob('account-login', (update) =>
-    loginAccount(input.data!, {
+    loginAccount(input, {
       preferredFlow: bodyData.preferredFlow === 'device-code' ? 'device-code' : 'interactive',
       forcePrompt: Boolean(bodyData.forcePrompt),
       allowInteractive: context.allowInteractiveAuth,
@@ -44,7 +74,7 @@ export async function handleAccountLoginJob(request: IncomingMessage, response: 
     }, context.configOptions),
   );
   job.metadata = { ...(job.metadata ?? {}), loginTargets: loginTargets.map((target) => ({ ...target, status: 'pending' })) };
-  sendJson(response, 202, ok(job));
+  return ok(job);
 }
 
 export async function handleJobGet(url: URL, response: ServerResponse, context: UiRequestContext): Promise<void> {

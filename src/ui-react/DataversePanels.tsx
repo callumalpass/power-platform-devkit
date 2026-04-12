@@ -144,9 +144,10 @@ function orderByDefault(detail: DataverseEntityDetail | null) {
 export function FetchXmlTab(props: {
   dataverse: DataverseState;
   environment: string;
+  environmentUrl?: string;
   toast: ToastFn;
 }) {
-  const { dataverse, environment, toast } = props;
+  const { dataverse, environment, environmentUrl, toast } = props;
   const entityMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const entity of dataverse.entities) {
@@ -446,7 +447,7 @@ export function FetchXmlTab(props: {
       </div>
       <div className="panel">
         <h2>FetchXML Result</h2>
-        <ResultView result={result} entityLogicalName={result?.logicalName} entitySetName={result?.entitySetName} primaryIdAttribute={entityDetail?.primaryIdAttribute} environment={environment} entityMap={entityMap} placeholder="Run FetchXML to see the response." toast={toast} />
+        <ResultView result={result} entityLogicalName={result?.logicalName} entitySetName={result?.entitySetName} primaryIdAttribute={entityDetail?.primaryIdAttribute} environment={environment} environmentUrl={environmentUrl} entityMap={entityMap} placeholder="Run FetchXML to see the response." toast={toast} />
       </div>
     </div>
   );

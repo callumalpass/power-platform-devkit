@@ -10,6 +10,7 @@ import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 type ToastFn = (message: string, isError?: boolean) => void;
 
 type SetupTabProps = {
+  active: boolean;
   shellData: any;
   globalEnvironment: string;
   refreshState: (silent?: boolean) => Promise<void>;
@@ -1241,7 +1242,7 @@ function MyAccessPanel(props: { environment: string; toast: ToastFn }) {
 // ---------------------------------------------------------------------------
 
 export function SetupTab(props: SetupTabProps) {
-  const { shellData, globalEnvironment, refreshState, toast } = props;
+  const { active, shellData, globalEnvironment, refreshState, toast } = props;
   const [setupSubTab, setSetupSubTab] = useState<SetupSubTab>('status');
   const [tokenStatus, setTokenStatus] = useState<Record<string, any>>({});
   const [health, setHealth] = useState<Record<string, Record<string, HealthEntry>>>({});
@@ -1257,10 +1258,10 @@ export function SetupTab(props: SetupTabProps) {
   const environments = shellData?.environments || [];
 
   useEffect(() => {
-    if (!shellData) return;
+    if (!active || !shellData) return;
     void checkTokenStatuses(accounts);
     void checkHealth(environments);
-  }, [shellData]);
+  }, [active, shellData]);
 
   async function checkTokenStatuses(accountList: any[]) {
     await Promise.all(accountList.map(async (account) => {

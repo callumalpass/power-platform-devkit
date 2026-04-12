@@ -35,12 +35,18 @@ export type DataverseAttribute = {
   displayName?: string;
   attributeType?: string;
   attributeTypeName?: string;
+  requiredLevel?: string;
+  maxLength?: number;
+  maxValue?: number;
+  minValue?: number;
+  precision?: number;
   isPrimaryId?: boolean;
   isPrimaryName?: boolean;
   isValidForRead?: boolean;
   isValidForCreate?: boolean;
   isValidForUpdate?: boolean;
   targets?: string[];
+  optionValues?: Array<{ value: number; label?: string }>;
 };
 
 export type DataverseEntitySummary = {
@@ -73,6 +79,7 @@ export type DataverseState = {
   entities: DataverseEntitySummary[];
   currentEntity: DataverseEntitySummary | null;
   currentEntityDetail: DataverseEntityDetail | null;
+  currentEntityDiagnostics?: DiagnosticItem[];
   selectedColumns: string[];
   recordPreview: DataverseRecordPage | null;
   entityFilter: string;

@@ -16,7 +16,9 @@ export type ResultViewProps = {
   entitySetName?: string;
   primaryIdAttribute?: string;
   environment?: string;
+  environmentUrl?: string;
   entityMap?: Map<string, string>;
+  highlightedRecordId?: string;
   placeholder?: string;
   toast?: ToastFn;
 };
@@ -119,10 +121,11 @@ function ResultTable(props: {
   records: any[];
   primaryIdColumn?: string;
   totalCount?: number;
+  highlightedRecordId?: string;
   onRecordClick?: (entity: string, id: string) => void;
   toast?: ToastFn;
 }) {
-  const { records, primaryIdColumn, totalCount, onRecordClick, toast } = props;
+  const { records, primaryIdColumn, totalCount, highlightedRecordId, onRecordClick, toast } = props;
   const [sort, setSort] = useState<SortState>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
@@ -191,8 +194,9 @@ function ResultTable(props: {
             {sortedRecords.map((row, i) => {
               const rowId = primaryIdColumn ? row[primaryIdColumn] : undefined;
               const rowClickable = !!(rowId && typeof rowId === 'string' && onRecordClick);
+              const highlighted = typeof rowId === 'string' && highlightedRecordId === rowId;
               return (
-              <tr key={i} className={rowClickable ? 'rt-row-clickable' : ''} onClick={rowClickable ? () => onRecordClick!('__self__', rowId as string) : undefined}>
+              <tr key={i} className={`${rowClickable ? 'rt-row-clickable' : ''} ${highlighted ? 'rt-row-highlight' : ''}`.trim()} onClick={rowClickable ? () => onRecordClick!('__self__', rowId as string) : undefined}>
                 {columns.map((col) => {
                   const lookup = getLookupInfo(row, col);
                   return (
@@ -225,7 +229,7 @@ function ResultTable(props: {
 // ---------------------------------------------------------------------------
 
 export function ResultView(props: ResultViewProps) {
-  const { result, entityLogicalName, entitySetName, primaryIdAttribute, environment, entityMap, placeholder, toast } = props;
+  const { result, entityLogicalName, entitySetName, primaryIdAttribute, environment, environmentUrl, entityMap, highlightedRecordId, placeholder, toast } = props;
   const [view, setView] = useState<'table' | 'json'>('table');
   const [detailTarget, setDetailTarget] = useState<RecordDetailTarget | null>(null);
 
@@ -263,6 +267,7 @@ export function ResultView(props: ResultViewProps) {
           records={records}
           primaryIdColumn={primaryIdAttribute}
           totalCount={totalCount}
+          highlightedRecordId={highlightedRecordId}
           onRecordClick={environment ? handleRecordClick : undefined}
           toast={toast}
         />
@@ -274,6 +279,7 @@ export function ResultView(props: ResultViewProps) {
         <RecordDetailModal
           initial={detailTarget}
           environment={environment}
+          environmentUrl={environmentUrl}
           entityMap={entityMap}
           onClose={() => setDetailTarget(null)}
           toast={toast}

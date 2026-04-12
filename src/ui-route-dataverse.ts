@@ -2,9 +2,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { URL } from 'node:url';
 import { createDiagnostic, fail, ok } from './diagnostics.js';
 import { readJsonBody, sendJson } from './ui-http.js';
-import { optionalBoolean, optionalInteger, optionalString, readDataverseQuerySpec, readFetchXmlLanguageRequest, readFetchXmlSpec } from './ui-request-parsing.js';
+import { optionalBoolean, optionalInteger, optionalString, readDataverseCreateRecordInput, readDataverseQuerySpec, readFetchXmlLanguageRequest, readFetchXmlSpec } from './ui-request-parsing.js';
 import type { UiRequestContext } from './ui-routes.js';
-import { buildDataverseODataPath, buildFetchXml, executeFetchXml, getDataverseEntityDetail, listDataverseEntities, listDataverseRecords } from './services/dataverse.js';
+import { buildDataverseODataPath, buildFetchXml, createDataverseRecord, executeFetchXml, getDataverseEntityDetail, listDataverseEntities, listDataverseRecords } from './services/dataverse.js';
 
 export async function handleEntityList(url: URL, response: ServerResponse, context: UiRequestContext): Promise<void> {
   const environmentAlias = optionalString(url.searchParams.get('environment'));
@@ -42,6 +42,15 @@ export async function handleDataverseQueryExecute(request: IncomingMessage, resp
   const spec = readDataverseQuerySpec(body.data);
   if (!spec.success || !spec.data) return void sendJson(response, 400, spec);
   const result = await listDataverseRecords(spec.data, context.configOptions);
+  sendJson(response, result.success ? 200 : 400, result);
+}
+
+export async function handleDataverseRecordCreate(request: IncomingMessage, response: ServerResponse, context: UiRequestContext): Promise<void> {
+  const body = await readJsonBody(request);
+  if (!body.success || !body.data) return void sendJson(response, 400, body);
+  const input = readDataverseCreateRecordInput(body.data);
+  if (!input.success || !input.data) return void sendJson(response, 400, input);
+  const result = await createDataverseRecord(input.data, context.configOptions, { allowInteractive: context.allowInteractiveAuth });
   sendJson(response, result.success ? 200 : 400, result);
 }
 

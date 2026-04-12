@@ -4,7 +4,7 @@ import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.
 import type { FetchXmlLanguageRequest } from './fetchxml-language-service.js';
 import type { FlowLanguageRequest } from './flow-language-service.js';
 import type { ApiKind } from './request.js';
-import type { DataverseQuerySpec, FetchXmlSpec } from './services/dataverse.js';
+import type { DataverseCreateRecordInput, DataverseQuerySpec, FetchXmlSpec } from './services/dataverse.js';
 
 export interface UiEnvironmentInput {
   alias: string;
@@ -146,6 +146,32 @@ export function readDataverseQuerySpec(value: unknown): OperationResult<Datavers
     includeCount: value.includeCount === true,
     search: optionalString(value.search),
     rawPath,
+  });
+}
+
+export function readDataverseCreateRecordInput(value: unknown): OperationResult<DataverseCreateRecordInput> {
+  if (!isRecord(value)) {
+    return fail(createDiagnostic('error', 'INVALID_DV_CREATE_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
+  }
+  const environmentAlias = optionalString(value.environmentAlias ?? value.environment);
+  const entitySetName = optionalString(value.entitySetName);
+  const body = isRecord(value.body) ? value.body : undefined;
+  if (!environmentAlias) {
+    return fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environmentAlias is required.', { source: 'pp/ui' }));
+  }
+  if (!entitySetName) {
+    return fail(createDiagnostic('error', 'DV_ENTITY_SET_REQUIRED', 'entitySetName is required.', { source: 'pp/ui' }));
+  }
+  if (!body || !Object.keys(body).length) {
+    return fail(createDiagnostic('error', 'DV_RECORD_BODY_REQUIRED', 'body must contain at least one field.', { source: 'pp/ui' }));
+  }
+  return ok({
+    environmentAlias,
+    accountName: optionalString(value.accountName ?? value.account),
+    entitySetName,
+    logicalName: optionalString(value.logicalName),
+    primaryIdAttribute: optionalString(value.primaryIdAttribute),
+    body,
   });
 }
 
