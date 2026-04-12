@@ -1,3 +1,5 @@
+<p><svg width="48" height="48" viewBox="46 43 172 174" aria-label="pp"><mask id="pp-m"><rect x="46" y="43" width="172" height="174" fill="white"/><circle cx="100" cy="88" r="18" fill="black"/><circle cx="164" cy="88" r="18" fill="black"/></mask><g fill="black" mask="url(#pp-m)"><rect x="64" y="52" width="18" height="156" rx="9"/><circle cx="100" cy="88" r="36"/><rect x="128" y="52" width="18" height="156" rx="9"/><circle cx="164" cy="88" r="36"/></g></svg></p>
+
 # pp
 
 CLI and library for working with Microsoft Power Platform.
@@ -111,13 +113,31 @@ pp canvas-authoring /gateway/cluster --env dev --read
 
 # Power Apps canvas authoring session start
 pp canvas-authoring session start --env dev --app <app-id>
+
+# Fetch and validate Canvas YAML through a live authoring session
+pp canvas-authoring yaml fetch --env dev --app <app-id> --out ./canvas-src
+pp canvas-authoring yaml validate --env dev --app <app-id> --dir ./canvas-src
+
+# List and describe available Canvas controls
+pp canvas-authoring controls list --env dev --app <app-id>
+pp canvas-authoring controls describe --env dev --app <app-id> Label
+
+# Low-level Canvas document-server RPC
+pp canvas-authoring invoke --env dev --app <app-id> --class documentservicev2 --oid 1 --method keepalive
+
+# SignalR-backed Canvas document RPC, useful for query-style methods
+pp canvas-authoring rpc --env dev --app <app-id> --class document --oid 2 --method geterrorsasync
 ```
 
 The `--api` flag on `pp request` also accepts `custom` for arbitrary endpoints.
 
-`canvas-authoring` targets the Power Apps canvas authoring service used by Studio and the Microsoft canvas authoring MCP server. Relative paths are rooted at the environment cluster-discovery host (`https://<environment>.ce.environment.api.powerplatform.com`), so `/gateway/cluster` is the first low-level probe. Fully qualified authoring gateway URLs are preserved and authenticated with the canvas authoring resource. The `session start` helper wraps the known cluster discovery and authoring session start flow, and redacts session secrets from output unless `--raw` is provided.
+`canvas-authoring` targets the Power Apps canvas authoring service used by Studio and the Microsoft canvas authoring MCP server. Relative paths are rooted at the environment cluster-discovery host (`https://<environment>.ce.environment.api.powerplatform.com`), so `/gateway/cluster` is the first low-level probe. Fully qualified authoring gateway URLs are preserved and authenticated with the canvas authoring resource. The `session start` helper wraps the known cluster discovery and authoring session start flow, and redacts session secrets from output unless `--raw` is provided. `session request` sends a versioned request with the active session headers; the `yaml`, `controls`, `apis`, `datasources`, and `accessibility` commands are thin wrappers around those MCP-style REST endpoints. `invoke` posts directly to `/api/v2/invoke`; `rpc` uses the authoring SignalR channel and waits for the matching document-server response.
+
+`pp canvas-authoring yaml validate` is not a purely offline linter. It calls the live session-backed `validate-directory` endpoint; valid YAML can update the dirty draft visible in Maker/Studio, while invalid YAML returns diagnostics.
 
 Canvas authoring is a first-party Microsoft resource that rejects pp's normal public client during interactive auth. For user and device-code accounts that do not already specify `--client-id`, pp uses the Power Apps Studio public client for `canvas-authoring` requests only, defaults that login to device code because the Studio client does not allow pp's localhost browser callback, and keeps that token in a separate cache entry so other APIs continue to use the normal pp client.
+
+See [Canvas Authoring API notes](docs/canvas-authoring-api.md) for the observed MCP-backed YAML endpoints, session headers, and adjacent Studio APIs.
 
 ### jq response transforms
 
