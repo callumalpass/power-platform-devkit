@@ -15,6 +15,7 @@ const BOOLEAN_FLAGS = new Set([
   '--no-interactive-auth',
   '--pair',
   '--read',
+  '--raw',
 ]);
 
 export function readFlag(args: string[], name: string): string | undefined {

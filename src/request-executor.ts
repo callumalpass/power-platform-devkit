@@ -1,10 +1,18 @@
-import { createTokenProvider, type PublicClientLoginOptions, type TokenProvider } from './auth.js';
-import { ensureEnvironmentAccess, getAccount, getEnvironment, type ConfigStoreOptions, type Environment } from './config.js';
+import {
+  CANVAS_AUTHORING_PUBLIC_CLIENT_ID,
+  createTokenProvider,
+  DEFAULT_PUBLIC_CLIENT_ID,
+  type PublicClientLoginOptions,
+  type TokenProvider,
+} from './auth.js';
+import { ensureEnvironmentAccess, getAccount, getEnvironment, type Account, type ConfigStoreOptions, type Environment } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { HttpClient, type HttpResponseType } from './http.js';
 import { applyJqTransform, type JqTransformInput } from './jq-transform.js';
 
-export type ApiKind = 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps' | 'custom';
+export type ApiKind = 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps' | 'canvas-authoring' | 'custom';
+
+export const CANVAS_AUTHORING_AUTH_RESOURCE = 'c6c4e5e1-0bc0-4d7d-b69b-954a907287e4/.default';
 
 export interface RequestInput {
   environmentAlias: string;
@@ -44,19 +52,22 @@ export function resourceForApi(environment: Environment, api: Exclude<ApiKind, '
     case 'bap':
     case 'powerapps':
       return 'https://service.powerapps.com';
+    case 'canvas-authoring':
+      return CANVAS_AUTHORING_AUTH_RESOURCE;
   }
 }
 
 export async function executeRequest(input: RequestInput): Promise<OperationResult<{ request: PreparedRequest; response: unknown; status: number; headers: Record<string, string> }>> {
   const method = (input.method ?? 'GET').toUpperCase();
   const configOptions = input.configOptions ?? {};
+  const api = detectApi(input.path, input.api);
   const access = await ensureEnvironmentAccess(input.environmentAlias, method, Boolean(input.readIntent), configOptions);
   if (!access.success) return fail(...access.diagnostics);
 
-  const runtime = await resolveRuntime(input.environmentAlias, input.accountName, configOptions, input.loginOptions);
+  const runtime = await resolveRuntime(input.environmentAlias, input.accountName, api, configOptions, input.loginOptions);
   if (!runtime.success || !runtime.data) return fail(...runtime.diagnostics);
 
-  const request = buildRequest(runtime.data.environment, runtime.data.accountName, input.path, input.api);
+  const request = buildRequest(runtime.data.environment, runtime.data.accountName, input.path, api);
   if (!request.success || !request.data) return fail(...request.diagnostics);
 
   const client = new HttpClient({
@@ -91,6 +102,7 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
 async function resolveRuntime(
   environmentAlias: string,
   accountName: string | undefined,
+  api: ApiKind,
   configOptions: ConfigStoreOptions,
   loginOptions?: PublicClientLoginOptions,
 ): Promise<OperationResult<{ environment: Environment; tokenProvider: TokenProvider; accountName: string }>> {
@@ -115,9 +127,24 @@ async function resolveRuntime(
       ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${resolvedAccountName} was not found.`, { source: 'pp/request' }))
       : fail(...account.diagnostics);
   }
-  const tokenProvider = createTokenProvider(account.data, configOptions, loginOptions);
+  const effectiveAccount = accountForApi(account.data, api);
+  const effectiveLoginOptions = effectiveAccount === account.data
+    ? loginOptions
+    : { ...loginOptions, preferredFlow: loginOptions?.preferredFlow ?? 'device-code', persistAccount: false };
+  const tokenProvider = createTokenProvider(effectiveAccount, configOptions, effectiveLoginOptions);
   if (!tokenProvider.success || !tokenProvider.data) return fail(...tokenProvider.diagnostics);
   return ok({ environment: environment.data, tokenProvider: tokenProvider.data, accountName: resolvedAccountName });
+}
+
+export function accountForApi(account: Account, api: ApiKind): Account {
+  if (api !== 'canvas-authoring') return account;
+  if (account.kind !== 'user' && account.kind !== 'device-code') return account;
+  if (account.clientId && account.clientId !== DEFAULT_PUBLIC_CLIENT_ID) return account;
+  return {
+    ...account,
+    clientId: CANVAS_AUTHORING_PUBLIC_CLIENT_ID,
+    tokenCacheKey: `${account.tokenCacheKey ?? account.name}-canvas-authoring`,
+  };
 }
 
 export function buildRequest(environment: Environment, accountName: string, originalPath: string, apiOverride?: ApiKind): OperationResult<PreparedRequest> {
@@ -186,6 +213,20 @@ export function buildRequest(environment: Environment, accountName: string, orig
       accountName,
     });
   }
+  if (api === 'canvas-authoring') {
+    if (isUrl) {
+      const url = new URL(originalPath);
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: CANVAS_AUTHORING_AUTH_RESOURCE, environment, accountName });
+    }
+    return ok({
+      api,
+      baseUrl: canvasAuthoringDiscoveryBaseUrl(environment.makerEnvironmentId),
+      path: normalizeCanvasAuthoringPath(originalPath),
+      authResource: CANVAS_AUTHORING_AUTH_RESOURCE,
+      environment,
+      accountName,
+    });
+  }
   if (isUrl) {
     const url = new URL(originalPath);
     return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://graph.microsoft.com', environment, accountName });
@@ -200,11 +241,12 @@ export function buildRequest(environment: Environment, accountName: string, orig
   });
 }
 
-function detectApi(path: string, apiOverride?: ApiKind): ApiKind {
+export function detectApi(path: string, apiOverride?: ApiKind): ApiKind {
   if (apiOverride) return apiOverride;
   const value = isAbsoluteUrl(path) ? new URL(path).toString() : path;
   if (/graph\.microsoft\.com/i.test(value) || /^\/?(v1\.0|beta)\//i.test(value)) return 'graph';
   if (/api\.powerapps\.com/i.test(value) || /Microsoft\.PowerApps/i.test(value)) return 'powerapps';
+  if (/environment\.api\.powerplatform\.com/i.test(value) || /authoring\..*\.powerapps\.com/i.test(value)) return 'canvas-authoring';
   if (/api\.bap\.microsoft\.com/i.test(value) || /Microsoft\.BusinessAppPlatform/i.test(value)) return 'bap';
   if (/api\.flow\.microsoft\.com/i.test(value) || /Microsoft\.ProcessSimple/i.test(value)) return 'flow';
   if (/\/api\/data\//i.test(value)) return 'dv';
@@ -240,6 +282,16 @@ function normalizePowerAppsPath(path: string, makerEnvironmentId: string): strin
   const withEnvironment = trimmed.replaceAll('{environment}', encodeURIComponent(makerEnvironmentId));
   if (withEnvironment.startsWith('/providers/Microsoft.PowerApps/')) return withEnvironment;
   return `/providers/Microsoft.PowerApps${withEnvironment}`;
+}
+
+function canvasAuthoringDiscoveryBaseUrl(makerEnvironmentId: string): string {
+  const compactEnvironmentId = makerEnvironmentId.replaceAll('-', '').slice(0, 30);
+  return `https://${compactEnvironmentId}.ce.environment.api.powerplatform.com`;
+}
+
+function normalizeCanvasAuthoringPath(path: string): string {
+  const trimmed = path.startsWith('/') ? path : `/${path}`;
+  return trimmed === '/' ? '/gateway/cluster' : trimmed;
 }
 
 function defaultHeadersForApi(api: ApiKind): Record<string, string> {

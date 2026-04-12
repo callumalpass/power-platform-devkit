@@ -267,11 +267,11 @@ export function readAccessMode(value: unknown): EnvironmentAccessMode | undefine
 }
 
 export function readPingApi(value: unknown): Exclude<ApiKind, 'custom'> {
-  return value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' ? value : 'dv';
+  return value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' ? value : 'dv';
 }
 
 export function readGenericApi(value: unknown): ApiKind {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' ? value : 'dv';
+  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' ? value : 'dv';
 }
 
 export function optionalString(value: unknown): string | undefined {

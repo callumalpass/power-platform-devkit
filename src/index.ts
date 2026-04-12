@@ -19,6 +19,7 @@ import {
 import { startPpMcpServer } from './mcp.js';
 import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
+import { startCanvasAuthoringSession } from './services/canvas-authoring.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 import { analyzeFlowFile, explainFlowFileSymbol } from './services/flow-language.js';
 import { startPpUi } from './ui.js';
@@ -66,6 +67,8 @@ async function runCommand(command: string | undefined, rest: string[]): Promise<
       return runApiAlias('bap', rest);
     case 'powerapps':
       return runApiAlias('powerapps', rest);
+    case 'canvas-authoring':
+      return runCanvasAuthoring(rest);
     case 'mcp':
       if (isHelpToken(rest[0])) {
         printMcpHelp();
@@ -269,7 +272,7 @@ async function runRequest(args: string[]): Promise<number> {
   const path = positionalApi ? positional[1] : positional[0];
   const environmentAlias = readFlag(args, '--environment');
   if (!path || !environmentAlias) {
-    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read]'), args);
+    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|canvas-authoring|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read]'), args);
   }
   const body = await readBody(args);
   if (!body.success) return printFailure(body, args);
@@ -299,6 +302,51 @@ async function runApiAlias(api: Exclude<ApiKind, 'custom'>, args: string[]): Pro
     return 0;
   }
   return runRequest([...args, '--api', api]);
+}
+
+async function runCanvasAuthoring(args: string[]): Promise<number> {
+  if (args.length === 0 || isHelpToken(args[0])) {
+    printCanvasAuthoringHelp();
+    return 0;
+  }
+
+  const [subcommand, ...rest] = args;
+  if (subcommand !== 'session') {
+    return runApiAlias('canvas-authoring', args);
+  }
+  if (rest.length === 0 || isHelpToken(rest[0])) {
+    printCanvasAuthoringSessionHelp();
+    return 0;
+  }
+
+  const [sessionCommand, ...sessionArgs] = rest;
+  if (sessionCommand !== 'start') {
+    printCanvasAuthoringSessionHelp();
+    return 1;
+  }
+  if (wantsHelp(sessionArgs)) {
+    printCanvasAuthoringSessionStartHelp();
+    return 0;
+  }
+
+  const environmentAlias = readFlag(sessionArgs, '--environment');
+  const appId = readFlag(sessionArgs, '--app') ?? positionalArgs(sessionArgs)[0];
+  if (!environmentAlias || !appId) {
+    return printFailure(argumentFailure('CANVAS_AUTHORING_SESSION_START_USAGE', 'Usage: pp canvas-authoring session start --env ALIAS --app APP_ID [--account ACCOUNT] [--cadence Frequent] [--cluster-category prod] [--raw] [--no-interactive-auth]'), sessionArgs);
+  }
+
+  const result = await startCanvasAuthoringSession({
+    environmentAlias,
+    accountName: readFlag(sessionArgs, '--account'),
+    appId,
+    cadence: readFlag(sessionArgs, '--cadence'),
+    clusterCategory: readFlag(sessionArgs, '--cluster-category'),
+    raw: hasFlag(sessionArgs, '--raw'),
+    allowInteractive: !hasFlag(sessionArgs, '--no-interactive-auth'),
+  }, readConfigOptions(sessionArgs));
+  if (!result.success) return printFailure(result, sessionArgs);
+  printResult(result.data, sessionArgs);
+  return 0;
 }
 
 async function runFlow(args: string[]): Promise<number> {
@@ -381,7 +429,7 @@ async function runPing(args: string[]): Promise<number> {
   }
   const environmentAlias = readFlag(args, '--environment');
   const api = (readFlag(args, '--api') as Exclude<ApiKind, 'custom'> | undefined) ?? 'dv';
-  if (!environmentAlias) return printFailure(argumentFailure('PING_USAGE', 'Usage: pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps] [--no-interactive-auth]'), args);
+  if (!environmentAlias) return printFailure(argumentFailure('PING_USAGE', 'Usage: pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring] [--no-interactive-auth]'), args);
   const result = await runConnectivityPing({
     environmentAlias,
     accountName: readFlag(args, '--account'),
@@ -401,7 +449,7 @@ async function runEnvironmentToken(args: string[]): Promise<number> {
   }
   const environmentAlias = readFlag(args, '--environment');
   const api = (readFlag(args, '--api') as Exclude<ApiKind, 'custom'> | undefined) ?? 'dv';
-  if (!environmentAlias) return printFailure(argumentFailure('TOKEN_USAGE', 'Usage: pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps] [--device-code] [--no-interactive-auth]'), args);
+  if (!environmentAlias) return printFailure(argumentFailure('TOKEN_USAGE', 'Usage: pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring] [--device-code] [--no-interactive-auth]'), args);
   const result = await getEnvironmentToken({
     environmentAlias,
     accountName: readFlag(args, '--account'),
@@ -423,7 +471,7 @@ function runCompletion(args: string[]): number {
   if (shell === 'powershell') {
     process.stdout.write([
       '@(',
-      "  'auth','env','request','whoami','ping','token','ui','dv','flow','graph','bap','powerapps','mcp','migrate-config','completion','help'",
+      "  'auth','env','request','whoami','ping','token','ui','dv','flow','graph','bap','powerapps','canvas-authoring','mcp','migrate-config','completion','help'",
       ') | ForEach-Object {',
       "  Register-ArgumentCompleter -CommandName pp -ScriptBlock { param($wordToComplete) $_ | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) } }",
       '}',
@@ -431,10 +479,10 @@ function runCompletion(args: string[]): number {
     return 0;
   }
   if (shell === 'bash') {
-    process.stdout.write('complete -W "auth env request whoami ping token ui dv flow graph bap powerapps mcp migrate-config update version completion help" pp\n');
+    process.stdout.write('complete -W "auth env request whoami ping token ui dv flow graph bap powerapps canvas-authoring mcp migrate-config update version completion help" pp\n');
     return 0;
   }
-  process.stdout.write('#compdef pp\n_arguments "1: :((auth env request whoami ping token ui dv flow graph bap powerapps mcp migrate-config update version completion help))"\n');
+  process.stdout.write('#compdef pp\n_arguments "1: :((auth env request whoami ping token ui dv flow graph bap powerapps canvas-authoring mcp migrate-config update version completion help))"\n');
   return 0;
 }
 
@@ -564,6 +612,7 @@ function printHelp(): void {
       '  graph           Shortcut for "request --api graph"',
       '  bap             Shortcut for "request --api bap"',
       '  powerapps       Shortcut for "request --api powerapps"',
+      '  canvas-authoring  Canvas authoring helper commands and request shortcut',
       '  mcp             Start the MCP server',
       '  migrate-config  Migrate legacy config into pp config',
       '  update          Check for and install updates',
@@ -683,7 +732,7 @@ function printRequestHelp(): void {
       'Send an authenticated request using an explicit environment and optional account override.',
       '',
       'Usage:',
-      '  pp request [dv|flow|graph|bap|powerapps|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-interactive-auth]',
+      '  pp request [dv|flow|graph|bap|powerapps|canvas-authoring|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-interactive-auth]',
     ].join('\n') + '\n',
   );
 }
@@ -697,6 +746,50 @@ function printRequestAliasHelp(api: Exclude<ApiKind, 'custom'>): void {
       '',
       'Usage:',
       `  pp ${api} <path|url> --env ALIAS [--account ACCOUNT] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-interactive-auth]`,
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring',
+      '',
+      'Canvas authoring helper commands plus a request shortcut fallback.',
+      '',
+      'Session commands:',
+      '  pp canvas-authoring session start --env ALIAS --app APP_ID [--account ACCOUNT] [--cadence Frequent] [--cluster-category prod] [--raw] [--no-interactive-auth]',
+      '',
+      'Request shortcut:',
+      '  pp canvas-authoring <path|url> --env ALIAS [same flags as pp request --api canvas-authoring]',
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringSessionHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring session',
+      '',
+      'Manage canvas authoring sessions.',
+      '',
+      'Usage:',
+      '  pp canvas-authoring session start --env ALIAS --app APP_ID [--account ACCOUNT] [--cadence Frequent] [--cluster-category prod] [--raw] [--no-interactive-auth]',
+    ].join('\n') + '\n',
+  );
+}
+
+function printCanvasAuthoringSessionStartHelp(): void {
+  process.stdout.write(
+    [
+      'pp canvas-authoring session start',
+      '',
+      'Discover the canvas authoring cluster and start an authoring session.',
+      '',
+      'Usage:',
+      '  pp canvas-authoring session start --env ALIAS --app APP_ID [--account ACCOUNT] [--cadence Frequent] [--cluster-category prod] [--raw] [--no-interactive-auth]',
+      '',
+      'By default, sessionState and accessToken are redacted from the output. Pass --raw to print the service response unchanged.',
     ].join('\n') + '\n',
   );
 }
@@ -725,11 +818,11 @@ function printWhoAmIHelp(): void {
 }
 
 function printPingHelp(): void {
-  process.stdout.write(['pp ping', '', 'Check basic API connectivity.', '', 'Usage:', '  pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps] [--no-interactive-auth]'].join('\n') + '\n');
+  process.stdout.write(['pp ping', '', 'Check basic API connectivity.', '', 'Usage:', '  pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring] [--no-interactive-auth]'].join('\n') + '\n');
 }
 
 function printEnvironmentTokenHelp(): void {
-  process.stdout.write(['pp token', '', 'Print a token for an environment.', '', 'Usage:', '  pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps] [--device-code] [--no-interactive-auth]'].join('\n') + '\n');
+  process.stdout.write(['pp token', '', 'Print a token for an environment.', '', 'Usage:', '  pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring] [--device-code] [--no-interactive-auth]'].join('\n') + '\n');
 }
 
 function printMcpHelp(): void {
@@ -762,7 +855,7 @@ function printMigrateConfigHelp(): void {
 }
 
 function isApiKind(value: string): value is ApiKind {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'custom';
+  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' || value === 'custom';
 }
 
 function isFlowLanguageSubcommand(value: string | undefined): value is 'validate' | 'inspect' | 'symbols' | 'explain' {

@@ -21,13 +21,14 @@ import {
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 
 export const DEFAULT_PUBLIC_CLIENT_ID = '51f81489-12ee-4a9e-aaae-a2591f45987d';
+export const CANVAS_AUTHORING_PUBLIC_CLIENT_ID = '4e291c71-d680-4d0e-9640-0a3358e31177';
 export const DEFAULT_USER_TENANT = 'common';
 export const DEFAULT_LOGIN_RESOURCE = 'https://graph.microsoft.com';
 
 export interface LoginTarget {
   resource: string;
   label?: string;
-  api?: 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps';
+  api?: 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps' | 'canvas-authoring';
 }
 
 export interface TokenProvider {
@@ -50,6 +51,7 @@ export interface PublicClientLoginOptions {
     status: 'running' | 'completed';
     url?: string;
   }) => void | Promise<void>;
+  persistAccount?: boolean;
 }
 
 export interface LoginAccountInput {
@@ -437,7 +439,9 @@ async function acquireAndPersistPublicClientToken(
     localAccountId: accountInfo?.localAccountId ?? account.localAccountId,
     tokenCacheKey: resolveTokenCacheKey(account),
   };
-  await saveAccount(nextAccount, options);
+  if (loginOptions.persistAccount !== false) {
+    await saveAccount(nextAccount, options);
+  }
   return { accessToken, account: nextAccount };
 }
 
@@ -511,6 +515,7 @@ async function resolveStoredAccount(app: PublicClientApplication, account: UserA
 function resolveScopes(account: Account, resource: string): string[] {
   if (account.scopes?.length) return account.scopes;
   const normalized = normalizeResource(resource);
+  if (normalized.endsWith('/.default')) return [normalized];
   if (account.kind === 'user' || account.kind === 'device-code') {
     if (normalized === 'https://graph.microsoft.com') return [`${normalized}/.default`];
     return [`${normalized}/user_impersonation`];

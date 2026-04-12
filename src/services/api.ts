@@ -1,7 +1,7 @@
-import { AuthService, type PublicClientLoginOptions } from '../auth.js';
-import { getEnvironment, type ConfigStoreOptions } from '../config.js';
+import { createTokenProvider, type PublicClientLoginOptions } from '../auth.js';
+import { getAccount, getEnvironment, type ConfigStoreOptions } from '../config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from '../diagnostics.js';
-import { executeRequest, resourceForApi, type ApiKind, type RequestInput } from '../request.js';
+import { accountForApi, executeRequest, resourceForApi, type ApiKind, type RequestInput } from '../request.js';
 
 export async function executeApiRequest(
   input: RequestInput,
@@ -33,11 +33,29 @@ export async function getEnvironmentToken(
       : fail(...environment.diagnostics);
   }
 
-  const auth = new AuthService(configOptions);
-  return auth.getToken(input.accountName ?? environment.data.account, resourceForApi(environment.data, api), {
-    preferredFlow: input.preferredFlow,
+  const accountName = input.accountName ?? environment.data.account;
+  const account = await getAccount(accountName, configOptions);
+  if (!account.success || !account.data) {
+    return account.success
+      ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${accountName} was not found.`, { source: 'pp/services/api' }))
+      : fail(...account.diagnostics);
+  }
+
+  const effectiveAccount = accountForApi(account.data, api);
+  const tokenProvider = createTokenProvider(effectiveAccount, configOptions, {
+    preferredFlow: input.preferredFlow ?? (effectiveAccount === account.data ? undefined : 'device-code'),
     allowInteractive: input.allowInteractive,
+    persistAccount: effectiveAccount === account.data ? undefined : false,
   });
+  if (!tokenProvider.success || !tokenProvider.data) return fail(...tokenProvider.diagnostics);
+  try {
+    return ok(await tokenProvider.data.getAccessToken(resourceForApi(environment.data, api)));
+  } catch (error) {
+    return fail(createDiagnostic('error', 'TOKEN_ACQUISITION_FAILED', `Failed to acquire a token for ${accountName}.`, {
+      source: 'pp/services/api',
+      detail: error instanceof Error ? error.message : String(error),
+    }));
+  }
 }
 
 export async function runWhoAmICheck(
@@ -85,7 +103,9 @@ export async function runConnectivityPing(
           ? await executeApiRequest({ ...common, path: '/environments', method: 'GET', query: { '$top': '1', 'api-version': '2020-10-01' } }, configOptions, { allowInteractive: input.allowInteractive })
           : api === 'powerapps'
             ? await executeApiRequest({ ...common, path: '/apps', method: 'GET', query: { '$top': '1', 'api-version': '2016-11-01' } }, configOptions, { allowInteractive: input.allowInteractive })
-            : await executeApiRequest({ ...common, path: '/organization', method: 'GET', query: { '$top': '1' } }, configOptions, { allowInteractive: input.allowInteractive });
+            : api === 'canvas-authoring'
+              ? await executeApiRequest({ ...common, path: '/gateway/cluster', method: 'GET' }, configOptions, { allowInteractive: input.allowInteractive })
+              : await executeApiRequest({ ...common, path: '/organization', method: 'GET', query: { '$top': '1' } }, configOptions, { allowInteractive: input.allowInteractive });
 
   return result.success && result.data
     ? ok({

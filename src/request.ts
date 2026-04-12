@@ -1,5 +1,6 @@
 export {
   buildRequest,
+  accountForApi,
   executeRequest,
   normalizeOrigin,
   resourceForApi,
