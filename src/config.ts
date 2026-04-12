@@ -56,13 +56,25 @@ const environmentSchema = z.object({
   access: z.object({ mode: z.enum(['read-write', 'read-only']).default('read-write') }).optional(),
 });
 
+const browserProfileSchema = z.object({
+  account: z.string(),
+  kind: z.literal('playwright-chromium').default('playwright-chromium'),
+  userDataDir: z.string(),
+  createdAt: z.string().optional(),
+  lastOpenedAt: z.string().optional(),
+  lastVerifiedAt: z.string().optional(),
+  lastVerificationUrl: z.string().optional(),
+});
+
 const globalConfigSchema = z.object({
   accounts: z.record(z.string(), accountSchema).default({}),
   environments: z.record(z.string(), environmentSchema).default({}),
+  browserProfiles: z.record(z.string(), browserProfileSchema).default({}),
 });
 
 export type Account = z.infer<typeof accountSchema>;
 export type Environment = z.infer<typeof environmentSchema>;
+export type BrowserProfile = z.infer<typeof browserProfileSchema>;
 export type GlobalConfig = z.infer<typeof globalConfigSchema>;
 
 export interface ConfigStoreOptions {
@@ -101,6 +113,14 @@ export function getMsalCacheDir(options: ConfigStoreOptions = {}): string {
 
 export function getUiStatePath(options: ConfigStoreOptions = {}): string {
   return join(getConfigDir(options), 'ui-state.json');
+}
+
+export function getCanvasSessionsPath(options: ConfigStoreOptions = {}): string {
+  return join(getConfigDir(options), 'canvas-sessions.json');
+}
+
+export function getBrowserProfilesRoot(options: ConfigStoreOptions = {}): string {
+  return join(getConfigDir(options), 'browser-profiles');
 }
 
 export async function loadConfig(options: ConfigStoreOptions = {}): Promise<OperationResult<GlobalConfig>> {
@@ -175,6 +195,7 @@ export async function removeAccount(name: string, options: ConfigStoreOptions = 
       delete loaded.data.environments[alias];
     }
   }
+  delete loaded.data.browserProfiles[name];
   const written = await writeConfig(loaded.data, options);
   return written.success ? ok(existed, written.diagnostics) : fail(...written.diagnostics);
 }

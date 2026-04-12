@@ -36,7 +36,7 @@ test('loadConfig returns an empty config when no config file exists', async () =
   const configDir = await tempConfigDir();
   const result = await loadConfig({ configDir });
   assert.equal(result.success, true);
-  assert.deepEqual(result.data, { accounts: {}, environments: {} });
+  assert.deepEqual(result.data, { accounts: {}, environments: {}, browserProfiles: {} });
 });
 
 test('saveAccount and saveEnvironment persist normalized config JSON', async () => {
