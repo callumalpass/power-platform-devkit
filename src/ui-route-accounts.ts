@@ -8,6 +8,7 @@ import { optionalString, readAccountUpdateInput, readLoginInput } from './ui-req
 import type { UiRequestContext } from './ui-routes.js';
 import { normalizeOrigin } from './request.js';
 import { checkAccountTokenStatus, loginAccount, removeAccountByName } from './services/accounts.js';
+import { getBrowserProfileStatus, openBrowserProfile, resetBrowserProfile, verifyBrowserProfile } from './services/browser-profiles.js';
 import { listConfiguredEnvironments } from './services/environments.js';
 
 type UiLoginTargetState = LoginTarget & {
@@ -147,6 +148,38 @@ export async function handleAccountDelete(url: URL, response: ServerResponse, co
   sendJson(response, result.success ? 200 : 400, result);
 }
 
+export async function handleAccountBrowserProfileGet(url: URL, response: ServerResponse, context: UiRequestContext): Promise<void> {
+  const name = accountNameFromBrowserProfilePath(url, '/browser-profile');
+  if (!name) return void sendJson(response, 400, fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', 'account path segment is required.', { source: 'pp/ui' })));
+  const result = await getBrowserProfileStatus(name, context.configOptions);
+  sendJson(response, result.success ? 200 : 400, result);
+}
+
+export async function handleAccountBrowserProfileOpen(request: IncomingMessage, response: ServerResponse, url: URL, context: UiRequestContext): Promise<void> {
+  const name = accountNameFromBrowserProfilePath(url, '/browser-profile/open');
+  if (!name) return void sendJson(response, 400, fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', 'account path segment is required.', { source: 'pp/ui' })));
+  const body = await readJsonBody(request);
+  if (!body.success || !body.data) return void sendJson(response, 400, body);
+  const result = await openBrowserProfile(name, { url: optionalString(body.data.url) }, context.configOptions);
+  sendJson(response, result.success ? 200 : 400, result);
+}
+
+export async function handleAccountBrowserProfileVerify(request: IncomingMessage, response: ServerResponse, url: URL, context: UiRequestContext): Promise<void> {
+  const name = accountNameFromBrowserProfilePath(url, '/browser-profile/verify');
+  if (!name) return void sendJson(response, 400, fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', 'account path segment is required.', { source: 'pp/ui' })));
+  const body = await readJsonBody(request);
+  if (!body.success || !body.data) return void sendJson(response, 400, body);
+  const result = await verifyBrowserProfile(name, { url: optionalString(body.data.url), headless: body.data.headless === true }, context.configOptions);
+  sendJson(response, result.success ? 200 : 400, result);
+}
+
+export async function handleAccountBrowserProfileReset(url: URL, response: ServerResponse, context: UiRequestContext): Promise<void> {
+  const name = accountNameFromBrowserProfilePath(url, '/browser-profile');
+  if (!name) return void sendJson(response, 400, fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', 'account path segment is required.', { source: 'pp/ui' })));
+  const result = await resetBrowserProfile(name, context.configOptions);
+  sendJson(response, result.success ? 200 : 400, result);
+}
+
 export async function handleAccountUpdate(request: IncomingMessage, response: ServerResponse, url: URL, context: UiRequestContext): Promise<void> {
   const name = decodeURIComponent(url.pathname.slice('/api/accounts/'.length));
   const body = await readJsonBody(request);
@@ -189,4 +222,10 @@ function dedupeLoginTargets(targets: LoginTarget[]): LoginTarget[] {
     seen.add(target.resource);
     return true;
   });
+}
+
+function accountNameFromBrowserProfilePath(url: URL, suffix: string): string {
+  const prefix = '/api/accounts/';
+  if (!url.pathname.startsWith(prefix) || !url.pathname.endsWith(suffix)) return '';
+  return decodeURIComponent(url.pathname.slice(prefix.length, -suffix.length));
 }

@@ -10,6 +10,7 @@ import { FetchXmlMetadataCatalog } from './fetchxml-language-service.js';
 import { getConfigDir, getUiStatePath } from './config.js';
 import { sendJson } from './ui-http.js';
 import { AuthSessionStore } from './ui-auth-sessions.js';
+import { CanvasSessionStore } from './ui-canvas-sessions.js';
 import { UiJobStore } from './ui-jobs.js';
 import { handleUiRequest } from './ui-routes.js';
 
@@ -78,6 +79,8 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
 
   const jobs = new UiJobStore();
   const authSessions = new AuthSessionStore();
+  const canvasSessions = new CanvasSessionStore();
+  void canvasSessions.loadPersistedSessions(configOptions);
   const fetchXmlCatalog = new FetchXmlMetadataCatalog();
   const instanceId = randomUUID();
   const pairing = options.pair ? createPairingState() : undefined;
@@ -90,6 +93,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
       port: initialPort,
       jobs,
       authSessions,
+      canvasSessions,
       fetchXmlCatalog,
       instanceId,
       serverUrl: '',
@@ -190,6 +194,7 @@ interface RequestContext {
   port: number;
   jobs: UiJobStore;
   authSessions: AuthSessionStore;
+  canvasSessions: CanvasSessionStore;
   fetchXmlCatalog: FetchXmlMetadataCatalog;
   sendVendorModule: (response: ServerResponse, specifier: string) => Promise<void>;
   instanceId: string;

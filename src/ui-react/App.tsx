@@ -19,7 +19,7 @@ import { ResultView } from './ResultView.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 
-type TabName = 'setup' | 'console' | 'dataverse' | 'automate' | 'apps' | 'platform';
+type TabName = 'setup' | 'console' | 'dataverse' | 'automate' | 'apps' | 'canvas' | 'platform';
 type DataverseSubTab = 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
 type ExplorerSubTab = 'metadata' | 'records';
 
@@ -94,7 +94,7 @@ function useToasts() {
 
 function currentTabFromHash(): TabName {
   const hash = window.location.hash.slice(1);
-  if (hash === 'setup' || hash === 'console' || hash === 'dataverse' || hash === 'automate' || hash === 'apps' || hash === 'platform') {
+  if (hash === 'setup' || hash === 'console' || hash === 'dataverse' || hash === 'automate' || hash === 'apps' || hash === 'canvas' || hash === 'platform') {
     return hash;
   }
   return 'dataverse';
@@ -135,6 +135,11 @@ export function App() {
     items: [] as any[],
     current: null as any,
     filter: '',
+  });
+
+  const [canvasState, setCanvasState] = useState({
+    sessions: [] as any[],
+    sessionStarting: false,
   });
 
   const [platformState, setPlatformState] = useState({
@@ -370,11 +375,12 @@ export function App() {
     return `${accountCount} accounts · ${environmentCount} envs`;
   }, [shellData]);
 
-  const environmentUrl = useMemo(() => {
-    if (!globalEnvironment || !shellData?.environments) return '';
-    const env = shellData.environments.find((e: any) => e.alias === globalEnvironment);
-    return env?.url || '';
+  const currentEnvData = useMemo(() => {
+    if (!globalEnvironment || !shellData?.environments) return undefined;
+    return shellData.environments.find((e: any) => e.alias === globalEnvironment);
   }, [globalEnvironment, shellData]);
+
+  const environmentUrl = currentEnvData?.url || '';
 
   return (
     <>
@@ -411,7 +417,7 @@ export function App() {
 
       <nav className="tabs">
         <div className="tabs-inner">
-          {(['setup', 'console', 'dataverse', 'automate', 'apps', 'platform'] as TabName[]).map((tabName, index) => (
+          {(['setup', 'console', 'dataverse', 'automate', 'apps', 'canvas', 'platform'] as TabName[]).map((tabName, index) => (
             <FragmentTab
               key={tabName}
               index={index}
@@ -480,6 +486,19 @@ export function App() {
           />
         </div>
 
+        <div className={`tab-panel ${activeTab === 'canvas' ? 'active' : ''}`} id="panel-canvas">
+          <CanvasTab
+            state={canvasState}
+            setState={setCanvasState}
+            environment={globalEnvironment}
+            environmentId={currentEnvData?.makerEnvironmentId}
+            apps={appsState.items}
+            appsLoaded={appsState.loadedEnvironment === globalEnvironment}
+            loadApps={loadApps}
+            toast={pushToast}
+          />
+        </div>
+
         <div className={`tab-panel ${activeTab === 'platform' ? 'active' : ''}`} id="panel-platform">
           <PlatformTab
             state={platformState}
@@ -508,6 +527,7 @@ function FragmentTab(props: { index: number; tabName: TabName; activeTab: TabNam
     dataverse: 'Dataverse',
     automate: 'Automate',
     apps: 'Apps',
+    canvas: 'Canvas',
     platform: 'Platform',
   };
   const needsSep = index === 2;
@@ -1640,6 +1660,296 @@ function AppsTab(props: { state: any; setState: React.Dispatch<React.SetStateAct
       {detail.target && environment && (
         <RecordDetailModal initial={detail.target} environment={environment} onClose={detail.close} toast={toast} />
       )}
+    </>
+  );
+}
+
+type CanvasSessionEntry = { id: string; status: string; appId: string; environmentAlias: string; result?: any; error?: string; createdAt: string; deviceCode?: { verificationUri: string; userCode: string; message: string } };
+
+function CanvasTab(props: {
+  state: any;
+  setState: React.Dispatch<React.SetStateAction<any>>;
+  environment: string;
+  environmentId?: string;
+  apps: any[];
+  appsLoaded: boolean;
+  loadApps: () => Promise<void>;
+  toast: (message: string, isError?: boolean) => void;
+}) {
+  const { state, setState, environment, environmentId, apps, appsLoaded, loadApps, toast } = props;
+  const [selectedApp, setSelectedApp] = useState<any>(null);
+  const [filter, setFilter] = useState('');
+  const [explorerResult, setExplorerResult] = useState<any>(null);
+  const [explorerLoading, setExplorerLoading] = useState(false);
+  const [explorerEndpoint, setExplorerEndpoint] = useState('controls');
+
+  useEffect(() => {
+    if (!environment || appsLoaded) return;
+    void loadApps();
+  }, [environment, appsLoaded]);
+
+  useEffect(() => { setSelectedApp(null); }, [environment]);
+
+  const canvasApps = useMemo(() => {
+    return apps.filter((item: any) => {
+      const appType = prop(item, 'properties.appType');
+      if (appType && appType !== 'CanvasClassicApp' && appType !== 'AppComponentLibrary') return false;
+      if (environmentId) {
+        const appEnvId = prop(item, 'properties.environment.name');
+        if (appEnvId && appEnvId !== environmentId) return false;
+      }
+      return true;
+    });
+  }, [apps, environmentId]);
+
+  const filtered = filter
+    ? canvasApps.filter((item: any) => {
+        const name = prop(item, 'properties.displayName') || item.name || '';
+        return String(name).toLowerCase().includes(filter.toLowerCase());
+      })
+    : canvasApps;
+
+  function sessionForApp(appId: string): CanvasSessionEntry | undefined {
+    return (state.sessions as CanvasSessionEntry[]).find((s) => s.appId === appId && (s.status === 'active' || s.status === 'unknown'));
+  }
+
+  const currentSession = selectedApp ? sessionForApp(selectedApp.name) : undefined;
+  const activeSession = currentSession?.status === 'active' ? currentSession : undefined;
+
+  async function probeSession(id: string) {
+    try {
+      const payload = await api<any>(`/api/canvas/sessions/${encodeURIComponent(id)}/probe`, { method: 'POST' });
+      const session = payload.data as CanvasSessionEntry;
+      setState((c: any) => ({
+        ...c,
+        sessions: c.sessions.map((s: any) => s.id === id ? session : s),
+      }));
+      if (session.status === 'active') toast('Session is alive');
+      else toast('Session has expired', true);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  async function endSession(id: string) {
+    try {
+      await api<any>(`/api/canvas/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setState((c: any) => ({
+        ...c,
+        sessions: c.sessions.filter((s: any) => s.id !== id),
+      }));
+      setExplorerResult(null);
+      toast('Session ended');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  async function startSession() {
+    if (!environment || !selectedApp) return;
+    setState((c: any) => ({ ...c, sessionStarting: true }));
+    try {
+      const payload = await api<any>('/api/canvas/sessions', {
+        method: 'POST',
+        body: JSON.stringify({ environment, appId: selectedApp.name }),
+      });
+      const session = payload.data as CanvasSessionEntry;
+      setState((c: any) => ({
+        ...c,
+        sessions: [session, ...c.sessions],
+        sessionStarting: false,
+      }));
+      toast('Canvas session starting…');
+      void pollSession(session.id);
+    } catch (error) {
+      setState((c: any) => ({ ...c, sessionStarting: false }));
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  async function pollSession(id: string) {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        const payload = await api<any>(`/api/canvas/sessions/${encodeURIComponent(id)}`);
+        const session = payload.data as CanvasSessionEntry;
+        setState((c: any) => ({
+          ...c,
+          sessions: c.sessions.map((s: any) => s.id === id ? session : s),
+        }));
+        if (session.status === 'active') { toast('Canvas session active'); return; }
+        if (session.status === 'failed') { toast(session.error || 'Session failed to start.', true); return; }
+      } catch { /* retry */ }
+    }
+    toast('Session start timed out.', true);
+  }
+
+  async function callEndpoint(endpoint: string) {
+    if (!activeSession) return;
+    setExplorerLoading(true);
+    setExplorerEndpoint(endpoint);
+    try {
+      const version = activeSession.result?.session?.clientConfig?.webAuthoringVersion;
+      const pathPrefix = version ? `/${version}` : '';
+      const payload = await api<any>('/api/canvas/request', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: activeSession.id,
+          method: 'GET',
+          path: `${pathPrefix}/api/yaml/${endpoint}`,
+        }),
+      });
+      setExplorerResult(payload.data?.response ?? payload.data);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+      setExplorerResult(null);
+    } finally {
+      setExplorerLoading(false);
+    }
+  }
+
+  const endpoints = [
+    { key: 'controls', label: 'Controls' },
+    { key: 'apis', label: 'APIs' },
+    { key: 'datasources', label: 'Data Sources' },
+    { key: 'fetch', label: 'Sync (YAML)' },
+    { key: 'accessibility-errors', label: 'Accessibility' },
+  ];
+
+  const pendingSession = selectedApp
+    ? (state.sessions as CanvasSessionEntry[]).find((s) => s.appId === selectedApp.name && (s.status === 'starting' || s.status === 'waiting_for_auth'))
+    : undefined;
+
+  return (
+    <>
+      <div className="inventory-sidebar">
+        <div className="panel">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <h2>Canvas Apps</h2>
+            <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void loadApps().then(() => toast('Apps refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}>Refresh</button>
+          </div>
+          <input type="text" className="entity-filter" placeholder="Filter canvas apps…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <div className="entity-count">{canvasApps.length ? `${canvasApps.length} canvas apps` : ''}</div>
+          <div className="entity-list">
+            {canvasApps.length ? filtered.map((item: any) => {
+              const session = sessionForApp(item.name);
+              return (
+                <div key={item.name} className={`entity-item ${selectedApp?.name === item.name ? 'active' : ''}`} onClick={() => { setSelectedApp(item); setExplorerResult(null); }}>
+                  <div className="entity-item-name">
+                    {session ? <span className={`health-dot ${session.status === 'active' ? 'ok' : 'pending'}`} style={{ marginRight: 6 }}></span> : null}
+                    {prop(item, 'properties.displayName') || item.name || 'Unnamed'}
+                  </div>
+                  <div className="entity-item-logical">{item.name}</div>
+                  {prop(item, 'properties.appType') ? <div className="entity-item-badges"><span className="entity-item-flag">{String(prop(item, 'properties.appType')).replace(/([a-z])([A-Z])/g, '$1 $2')}</span></div> : null}
+                </div>
+              );
+            }) : <div className="entity-loading">{appsLoaded ? 'No canvas apps found.' : 'Select an environment to load apps.'}</div>}
+          </div>
+        </div>
+      </div>
+      <div className="detail-area">
+        <div className="panel">
+          {!selectedApp ? (
+            <>
+              <h2>Canvas Authoring</h2>
+              <p className="desc">Select a canvas app to start an authoring session, then explore its controls, data sources, APIs, and YAML source.</p>
+              <div className="empty">No app selected.</div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <h2>{prop(selectedApp, 'properties.displayName') || selectedApp.name}</h2>
+                  <p className="desc" style={{ marginBottom: 0 }}>{prop(selectedApp, 'properties.description') || selectedApp.name}</p>
+                </div>
+                {activeSession ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span className="entity-item-flag" style={{ color: 'var(--ok)', borderColor: 'var(--ok)' }}>Session Active</span>
+                    <button className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '4px 10px', color: 'var(--danger)' }} onClick={() => void endSession(activeSession.id)}>End</button>
+                  </div>
+                ) : currentSession?.status === 'unknown' ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <button className="btn" onClick={() => void probeSession(currentSession.id)}>Check Session</button>
+                    <button className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '4px 10px', color: 'var(--danger)' }} onClick={() => void endSession(currentSession.id)}>End</button>
+                  </div>
+                ) : (
+                  <button
+                    className="btn"
+                    disabled={state.sessionStarting || !!pendingSession}
+                    onClick={() => void startSession()}
+                  >
+                    {state.sessionStarting || pendingSession ? 'Starting…' : 'Start Session'}
+                  </button>
+                )}
+              </div>
+
+              {pendingSession?.deviceCode && (
+                <div style={{ padding: '12px 16px', marginBottom: 12, borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent-soft)' }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Authentication required</div>
+                  <div style={{ marginBottom: 8, fontSize: '0.8125rem' }}>
+                    Canvas authoring uses a separate identity. Open the link below and enter the code to sign in.
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <a href={pendingSession.deviceCode.verificationUri} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
+                      {pendingSession.deviceCode.verificationUri}
+                    </a>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.1em' }}>
+                      {pendingSession.deviceCode.userCode}
+                    </span>
+                    <CopyButton value={pendingSession.deviceCode.userCode} label="copy code" title="Copy device code" toast={toast} />
+                  </div>
+                </div>
+              )}
+
+              <div className="metrics">
+                {[
+                  ['App Type', prop(selectedApp, 'properties.appType') || '-'],
+                  ['Created', formatDate(prop(selectedApp, 'properties.createdTime'))],
+                  ['Modified', formatDate(prop(selectedApp, 'properties.lastModifiedTime'))],
+                  ['Published', formatDate(prop(selectedApp, 'properties.lastPublishTime'))],
+                  ['App ID', selectedApp.name],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="metric">
+                    <div className="metric-label">{label}</div>
+                    <div className="metric-value copy-inline">
+                      <span className="copy-inline-value">{String(value)}</span>
+                      <CopyButton value={value} label="copy" title={`Copy ${String(label)}`} toast={toast} />
+                    </div>
+                  </div>
+                ))}
+                {currentSession?.result?.cluster && (
+                  <div className="metric">
+                    <div className="metric-label">Cluster</div>
+                    <div className="metric-value">{currentSession.result.cluster.geoName}-il{currentSession.result.cluster.clusterNumber}</div>
+                  </div>
+                )}
+              </div>
+
+              {activeSession && (
+                <>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                    {endpoints.map((ep) => (
+                      <button
+                        key={ep.key}
+                        className={`btn ${explorerEndpoint === ep.key ? '' : 'btn-ghost'}`}
+                        style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                        disabled={explorerLoading}
+                        onClick={() => void callEndpoint(ep.key)}
+                      >
+                        {ep.label}
+                      </button>
+                    ))}
+                  </div>
+                  {explorerLoading && <div className="entity-loading">Loading…</div>}
+                  {!explorerLoading && explorerResult && (
+                    <ResultView result={explorerResult} />
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </>
   );
 }

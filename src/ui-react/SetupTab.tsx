@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { api, formDataObject, formatTimeRemaining, optionList } from './utils.js';
+import { api, formDataObject, formatDate, formatTimeRemaining, optionList } from './utils.js';
 import { CopyButton, copyTextToClipboard } from './CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 
@@ -22,6 +22,23 @@ type SetupSubTab = 'status' | 'accounts' | 'environments' | 'access' | 'mcp';
 type HealthEntry = { status: string; summary: string; message?: string; detail?: string; code?: string };
 
 type TokenEntry = { authenticated: boolean; expiresAt?: number | string } | undefined;
+
+type BrowserProfileStatus = {
+  account: string;
+  configured: boolean;
+  exists: boolean;
+  open: boolean;
+  profile?: {
+    userDataDir?: string;
+    lastOpenedAt?: string;
+    lastVerifiedAt?: string;
+    lastVerificationUrl?: string;
+  };
+  authenticated?: boolean;
+  finalUrl?: string;
+};
+
+type BrowserProfileResult = { data: BrowserProfileStatus };
 
 type LoginTarget = {
   id?: string;
@@ -165,6 +182,72 @@ function AccountCard(props: {
   const interactive = account.kind === 'user' || account.kind === 'device-code';
   const tokenClass = token === undefined ? 'pending' : token?.authenticated ? 'ok' : 'error';
   const expiry = token?.authenticated ? formatTimeRemaining(token.expiresAt) : null;
+  const [browserProfile, setBrowserProfile] = useState<BrowserProfileStatus | null>(null);
+  const [browserProfileBusy, setBrowserProfileBusy] = useState(false);
+
+  useEffect(() => {
+    if (!expanded || !interactive) return;
+    void loadBrowserProfileStatus();
+  }, [expanded, interactive, account.name]);
+
+  async function loadBrowserProfileStatus() {
+    try {
+      const result = await api<BrowserProfileResult>(`/api/accounts/${encodeURIComponent(account.name)}/browser-profile`);
+      setBrowserProfile(result.data);
+    } catch {
+      setBrowserProfile(null);
+    }
+  }
+
+  async function handleBrowserProfileOpen() {
+    setBrowserProfileBusy(true);
+    try {
+      const result = await api<BrowserProfileResult>(`/api/accounts/${encodeURIComponent(account.name)}/browser-profile/open`, {
+        method: 'POST',
+        body: JSON.stringify({ url: 'https://make.powerapps.com' }),
+      });
+      setBrowserProfile(result.data);
+      toast('Browser profile opened');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setBrowserProfileBusy(false);
+    }
+  }
+
+  async function handleBrowserProfileVerify() {
+    setBrowserProfileBusy(true);
+    try {
+      const result = await api<BrowserProfileResult>(`/api/accounts/${encodeURIComponent(account.name)}/browser-profile/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ url: 'https://make.powerapps.com' }),
+      });
+      setBrowserProfile(result.data);
+      if (result.data.authenticated) {
+        toast('Browser profile is signed in');
+      } else {
+        toast('Sign in in the opened browser, then verify again', true);
+      }
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setBrowserProfileBusy(false);
+    }
+  }
+
+  async function handleBrowserProfileReset() {
+    if (!confirm(`Reset browser profile for "${account.name}"? This removes the saved browser data for this account.`)) return;
+    setBrowserProfileBusy(true);
+    try {
+      const result = await api<BrowserProfileResult>(`/api/accounts/${encodeURIComponent(account.name)}/browser-profile`, { method: 'DELETE' });
+      setBrowserProfile(result.data);
+      toast('Browser profile reset');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setBrowserProfileBusy(false);
+    }
+  }
 
   async function handleLogin() {
     try {
@@ -251,6 +334,39 @@ function AccountCard(props: {
           </div>
           <div className="btn-group"><button type="submit" className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '5px 12px' }}>Save Changes</button></div>
         </form>
+        {interactive ? (
+          <div className="browser-profile-section">
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div>
+                <h3>Browser Profile</h3>
+                <p className="desc" style={{ marginBottom: 8 }}>A persistent Chromium profile for Maker, Studio, and Playwright scripts that need browser auth.</p>
+              </div>
+              <div className="btn-group">
+                <button className="btn btn-secondary" type="button" disabled={browserProfileBusy} onClick={handleBrowserProfileOpen}>Open Maker</button>
+                <button className="btn btn-ghost" type="button" disabled={browserProfileBusy} onClick={handleBrowserProfileVerify}>Verify</button>
+                <button className="btn btn-ghost" type="button" disabled={browserProfileBusy || !browserProfile?.configured} onClick={handleBrowserProfileReset}>Reset</button>
+              </div>
+            </div>
+            <div className="account-card-props" style={{ marginTop: 8, marginBottom: 0 }}>
+              <div className="account-card-prop">
+                <div className="account-card-prop-label">Status</div>
+                <div className="account-card-prop-value">{browserProfile?.open ? 'Open' : browserProfile?.exists ? 'Ready' : 'Not created'}</div>
+              </div>
+              <div className="account-card-prop">
+                <div className="account-card-prop-label">Last Opened</div>
+                <div className="account-card-prop-value">{formatDate(browserProfile?.profile?.lastOpenedAt)}</div>
+              </div>
+              <div className="account-card-prop">
+                <div className="account-card-prop-label">Last Verified</div>
+                <div className="account-card-prop-value">{formatDate(browserProfile?.profile?.lastVerifiedAt)}</div>
+              </div>
+              <div className="account-card-prop">
+                <div className="account-card-prop-label">Profile Path</div>
+                <div className="account-card-prop-value">{browserProfile?.profile?.userDataDir || '-'}</div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

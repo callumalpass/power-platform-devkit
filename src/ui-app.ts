@@ -695,6 +695,9 @@ export function renderHtml(): string {
     .account-edit-form .form-row { gap: 10px; }
     .account-edit-form input, .account-edit-form textarea { padding: 6px 8px; font-size: 0.75rem; }
     .account-edit-form .field-label { font-size: 0.625rem; }
+    .browser-profile-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .browser-profile-section h3 { font-size: 0.8125rem; font-weight: 600; margin-bottom: 2px; }
+    .browser-profile-section .btn { font-size: 0.75rem; padding: 5px 12px; }
 
     .hidden { display: none !important; }
 
