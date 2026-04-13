@@ -271,7 +271,7 @@ export function readPingApi(value: unknown): Exclude<ApiKind, 'custom'> {
 }
 
 export function readGenericApi(value: unknown): ApiKind {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' ? value : 'dv';
+  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' || value === 'custom' ? value : 'dv';
 }
 
 export function optionalString(value: unknown): string | undefined {

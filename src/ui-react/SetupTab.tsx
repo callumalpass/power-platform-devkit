@@ -17,11 +17,24 @@ type SetupTabProps = {
   toast: ToastFn;
 };
 
-type SetupSubTab = 'status' | 'accounts' | 'environments' | 'access' | 'mcp';
+type SetupSubTab = 'status' | 'accounts' | 'environments' | 'access' | 'advanced' | 'mcp';
 
 type HealthEntry = { status: string; summary: string; message?: string; detail?: string; code?: string };
 
 type TokenEntry = { authenticated: boolean; expiresAt?: number | string } | undefined;
+
+type TemporaryTokenSummary = {
+  id: string;
+  name: string;
+  audience?: string;
+  subject?: string;
+  tenantId?: string;
+  scopes?: string[];
+  roles?: string[];
+  expiresAt?: number;
+  match: { kind: 'origin'; origin: string } | { kind: 'api'; api: string } | { kind: 'audience'; audience: string };
+  createdAt: string;
+};
 
 type BrowserProfileStatus = {
   account: string;
@@ -77,6 +90,7 @@ const SETUP_SUB_TAB_LABELS: Record<SetupSubTab, string> = {
   accounts: 'Accounts',
   environments: 'Environments',
   access: 'My Access',
+  advanced: 'Advanced',
   mcp: 'MCP',
 };
 
@@ -851,6 +865,152 @@ function McpInfo(props: { shellData: any; toast: ToastFn }) {
 }
 
 // ---------------------------------------------------------------------------
+// TemporaryAccessTokensPanel
+// ---------------------------------------------------------------------------
+
+function TemporaryAccessTokensPanel(props: { toast: ToastFn }) {
+  const { toast } = props;
+  const [tokens, setTokens] = useState<TemporaryTokenSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [matchKind, setMatchKind] = useState('');
+
+  useEffect(() => {
+    void loadTokens();
+  }, []);
+
+  async function loadTokens() {
+    try {
+      const payload = await api<any>('/api/temp-tokens');
+      setTokens(payload.data || []);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formDataObject(form);
+    setLoading(true);
+    try {
+      await api('/api/temp-tokens', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: values.name,
+          token: values.token,
+          matchKind: values.matchKind,
+          origin: values.origin,
+          api: values.api,
+          audience: values.audience,
+        }),
+      });
+      form.reset();
+      setMatchKind('');
+      await loadTokens();
+      toast('Temporary access token added');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function removeToken(token: TemporaryTokenSummary) {
+    try {
+      await api(`/api/temp-tokens/${encodeURIComponent(token.id)}`, { method: 'DELETE' });
+      setTokens((current) => current.filter((item) => item.id !== token.id));
+      toast('Temporary access token forgotten');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  return (
+    <div className="panel">
+      <h2>Temporary Access Tokens</h2>
+      <p className="desc">Use a short-lived bearer token for an API that <code>pp</code> cannot authenticate to directly. Tokens stay only in this running UI process, are never written to config, and are used only when a CLI request explicitly opts in with <code>--via-ui</code>.</p>
+      <p className="desc" style={{ color: 'var(--danger)' }}>Treat pasted tokens like passwords. Use tokens only from accounts you control, and forget them when the request is complete.</p>
+
+      <form onSubmit={submit} className="setup-add-form">
+        <div className="form-row">
+          <div className="field"><span className="field-label">Name</span><input name="name" placeholder="sharepoint" /></div>
+          <div className="field">
+            <span className="field-label">Match</span>
+            <select name="matchKind" value={matchKind} onChange={(event) => setMatchKind(event.target.value)}>
+              <option value="">Infer from token audience</option>
+              <option value="origin">URL origin</option>
+              <option value="api">pp API</option>
+              <option value="audience">Token audience</option>
+            </select>
+          </div>
+        </div>
+        {matchKind === 'origin' ? (
+          <div className="field"><span className="field-label">Origin</span><input name="origin" placeholder="https://contoso.sharepoint.com" /></div>
+        ) : null}
+        {matchKind === 'api' ? (
+          <div className="field">
+            <span className="field-label">API</span>
+            <select name="api">
+              <option value="graph">Graph</option>
+              <option value="dv">Dataverse</option>
+              <option value="flow">Flow</option>
+              <option value="powerapps">Power Apps</option>
+              <option value="bap">Platform Admin</option>
+              <option value="canvas-authoring">Canvas Authoring</option>
+            </select>
+          </div>
+        ) : null}
+        {matchKind === 'audience' ? (
+          <div className="field"><span className="field-label">Audience</span><input name="audience" placeholder="https://graph.microsoft.com" /></div>
+        ) : null}
+        <div className="field">
+          <span className="field-label">Bearer Token</span>
+          <textarea name="token" required placeholder="Bearer eyJ..." autoComplete="off" spellCheck={false} style={{ minHeight: 96, fontFamily: 'var(--mono)' }}></textarea>
+        </div>
+        <button className="btn btn-primary" type="submit" disabled={loading}>{loading ? 'Adding...' : 'Add temporary access token'}</button>
+      </form>
+
+      <div style={{ marginTop: 18 }}>
+        {tokens.length ? tokens.map((token) => {
+          const expiry = token.expiresAt ? formatTimeRemaining(token.expiresAt) : null;
+          const cli = `pp request --via-ui --temp-token ${shellQuote(token.name)} custom <url> --env ALIAS`;
+          return (
+            <div className="card-item" key={token.id}>
+              <div className="card-item-info">
+                <div className="card-item-title">
+                  {token.name}
+                  {expiry ? <span className={`token-expiry ${expiry.cls || ''}`}> {expiry.text}</span> : null}
+                </div>
+                <div className="card-item-sub">{describeTemporaryTokenMatch(token.match)}</div>
+                {token.audience ? <div className="card-item-sub">aud {token.audience}</div> : null}
+                {token.subject ? <div className="card-item-sub">subject {token.subject}</div> : null}
+                {token.scopes?.length ? <div className="card-item-sub">scopes {token.scopes.join(' ')}</div> : null}
+                {token.roles?.length ? <div className="card-item-sub">roles {token.roles.join(' ')}</div> : null}
+                <div className="card-item-sub copy-inline">
+                  <span className="copy-inline-value">{cli}</span>
+                  <CopyButton value={cli} label="copy CLI" title="Copy CLI command" toast={toast} />
+                </div>
+              </div>
+              <button className="btn btn-ghost" type="button" style={{ color: 'var(--danger)' }} onClick={() => void removeToken(token)}>Forget</button>
+            </div>
+          );
+        }) : <div className="empty">No temporary access tokens.</div>}
+      </div>
+    </div>
+  );
+}
+
+function describeTemporaryTokenMatch(match: TemporaryTokenSummary['match']): string {
+  if (match.kind === 'origin') return `origin ${match.origin}`;
+  if (match.kind === 'api') return `api ${match.api}`;
+  return `audience ${match.audience}`;
+}
+
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9._:@/-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+// ---------------------------------------------------------------------------
 // Onboarding  (first-run guided flow)
 // ---------------------------------------------------------------------------
 
@@ -1530,7 +1690,7 @@ export function SetupTab(props: SetupTabProps) {
   return (
     <div className="setup-layout">
       <div className="dv-sub-nav">
-        {(['status', 'accounts', 'environments', 'access', 'mcp'] as SetupSubTab[]).map((tabName) => (
+        {(['status', 'accounts', 'environments', 'access', 'advanced', 'mcp'] as SetupSubTab[]).map((tabName) => (
           <button
             key={tabName}
             className={`sub-tab ${setupSubTab === tabName ? 'active' : ''}`}
@@ -1581,6 +1741,10 @@ export function SetupTab(props: SetupTabProps) {
 
       <div className={`dv-subpanel ${setupSubTab === 'access' ? 'active' : ''}`}>
         <MyAccessPanel environment={globalEnvironment} toast={toast} />
+      </div>
+
+      <div className={`dv-subpanel ${setupSubTab === 'advanced' ? 'active' : ''}`}>
+        <TemporaryAccessTokensPanel toast={toast} />
       </div>
 
       <div className={`dv-subpanel ${setupSubTab === 'mcp' ? 'active' : ''}`}>

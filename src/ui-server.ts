@@ -1,5 +1,5 @@
 import { createServer, type Server, type ServerResponse } from 'node:http';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -13,6 +13,9 @@ import { AuthSessionStore } from './ui-auth-sessions.js';
 import { CanvasSessionStore } from './ui-canvas-sessions.js';
 import { UiJobStore } from './ui-jobs.js';
 import { handleUiRequest } from './ui-routes.js';
+import { TemporaryTokenStore } from './temporary-tokens.js';
+import type { RequestInput } from './request.js';
+import type { OperationResult } from './diagnostics.js';
 
 const DEFAULT_UI_PORT = 4733;
 const UI_STATUS_PATH = '/api/ui/status';
@@ -45,6 +48,7 @@ interface UiInstanceState {
   port: number;
   configDir: string;
   startedAt: string;
+  cliSecret: string;
 }
 
 interface ExistingUiInstance {
@@ -82,9 +86,11 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
   const jobs = new UiJobStore();
   const authSessions = new AuthSessionStore();
   const canvasSessions = new CanvasSessionStore();
+  const temporaryTokens = new TemporaryTokenStore();
   void canvasSessions.loadPersistedSessions(configOptions);
   const fetchXmlCatalog = new FetchXmlMetadataCatalog();
   const instanceId = randomUUID();
+  const cliSecret = randomBytes(32).toString('base64url');
   const pairing = options.pair ? createPairingState() : undefined;
   const initialPort = explicitPort ? preferredPort : DEFAULT_UI_PORT;
   const server = await listenWithFallback(
@@ -96,8 +102,10 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
       jobs,
       authSessions,
       canvasSessions,
+      temporaryTokens,
       fetchXmlCatalog,
       instanceId,
+      cliSecret,
       serverUrl: '',
       pairing,
       sendVendorModule: async (response, specifier) => {
@@ -120,6 +128,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
   if (context) {
     context.port = resolvedPort;
     context.serverUrl = url;
+    context.cliSecret = cliSecret;
   }
 
   const state: UiInstanceState = {
@@ -131,6 +140,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
     port: resolvedPort,
     configDir,
     startedAt: new Date().toISOString(),
+    cliSecret,
   };
 
   await persistUiState(statePath, state);
@@ -217,14 +227,75 @@ interface RequestContext {
   jobs: UiJobStore;
   authSessions: AuthSessionStore;
   canvasSessions: CanvasSessionStore;
+  temporaryTokens: TemporaryTokenStore;
   fetchXmlCatalog: FetchXmlMetadataCatalog;
   sendVendorModule: (response: ServerResponse, specifier: string) => Promise<void>;
   instanceId: string;
+  cliSecret: string;
   serverUrl: string;
   pairing?: PairingState;
 }
 
+export interface UiCliRequestOptions extends Omit<RequestInput, 'configOptions' | 'loginOptions'> {
+  configDir?: string;
+  temporaryToken?: string;
+  allowInteractive?: boolean;
+}
+
+export async function executeRequestViaRunningUi(
+  options: UiCliRequestOptions,
+): Promise<OperationResult<{ request: unknown; response: unknown; status: number; headers: Record<string, string>; temporaryToken?: unknown }>> {
+  const configOptions = options.configDir ? { configDir: options.configDir } : {};
+  const state = await readUiState(getUiStatePath(configOptions));
+  if (!state?.url || !state.cliSecret) {
+    return fail(createDiagnostic('error', 'UI_NOT_RUNNING', 'No running pp UI instance with CLI routing support was found.', {
+      source: 'pp/ui-cli',
+      hint: 'Start pp ui, paste a temporary token, then retry with --via-ui.',
+    }));
+  }
+  try {
+    const signal = options.timeoutMs ? AbortSignal.timeout(options.timeoutMs + 2000) : undefined;
+    const response = await fetch(new URL('/api/cli/request', state.url), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${state.cliSecret}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        environment: options.environmentAlias,
+        account: options.accountName,
+        api: options.api,
+        method: options.method,
+        path: options.path,
+        query: options.query,
+        headers: options.headers,
+        body: options.body,
+        rawBody: options.rawBody,
+        responseType: options.responseType,
+        timeoutMs: options.timeoutMs,
+        jq: options.jq,
+        readIntent: options.readIntent,
+        allowInteractive: options.allowInteractive,
+        temporaryToken: options.temporaryToken,
+      }),
+      ...(signal ? { signal } : {}),
+    });
+    const payload = await response.json() as OperationResult<{ request: unknown; response: unknown; status: number; headers: Record<string, string>; temporaryToken?: unknown }>;
+    return payload;
+  } catch (error) {
+    return fail(createDiagnostic('error', 'UI_CLI_REQUEST_FAILED', `Failed to route request through pp UI: ${error instanceof Error ? error.message : String(error)}`, {
+      source: 'pp/ui-cli',
+    }));
+  }
+}
+
 async function handleRequest(request: Parameters<typeof handleUiRequest>[0], response: ServerResponse, context: RequestContext): Promise<void> {
+  const url = new URL(request.url ?? '/', context.serverUrl || `http://${context.host}:${context.port}`);
+  if (request.method === 'POST' && url.pathname === '/api/cli/request') {
+    await handleUiRequest(request, response, context);
+    return;
+  }
   if (await handlePairingRequest(request, response, context)) return;
   await handleUiRequest(request, response, context);
 }
@@ -398,7 +469,8 @@ function isAddressInUseError(error: unknown): boolean {
 
 async function persistUiState(statePath: string, state: UiInstanceState): Promise<void> {
   await mkdir(path.dirname(statePath), { recursive: true });
-  await writeFile(statePath, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  await writeFile(statePath, JSON.stringify(state, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+  await chmod(statePath, 0o600);
 }
 
 async function cleanupUiState(statePath: string, instanceId: string): Promise<void> {

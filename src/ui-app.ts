@@ -143,7 +143,7 @@ export function renderHtml(): string {
     tr.attr-row.selected { background: var(--accent-soft); }
 
     /* Buttons */
-    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 0.8125rem; font-weight: 500; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; transition: background 120ms; white-space: nowrap; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 0.8125rem; font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: background 120ms; white-space: nowrap; background: var(--surface); color: var(--ink); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: var(--accent); color: white; }
     .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }

@@ -30,6 +30,7 @@ export interface RequestInput {
   readIntent?: boolean;
   configOptions?: ConfigStoreOptions;
   loginOptions?: PublicClientLoginOptions;
+  tokenProviderOverride?: TokenProvider;
 }
 
 export interface PreparedRequest {
@@ -64,7 +65,7 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
   const access = await ensureEnvironmentAccess(input.environmentAlias, method, Boolean(input.readIntent), configOptions);
   if (!access.success) return fail(...access.diagnostics);
 
-  const runtime = await resolveRuntime(input.environmentAlias, input.accountName, api, configOptions, input.loginOptions);
+  const runtime = await resolveRuntime(input.environmentAlias, input.accountName, api, configOptions, input.loginOptions, input.tokenProviderOverride);
   if (!runtime.success || !runtime.data) return fail(...runtime.diagnostics);
 
   const request = buildRequest(runtime.data.environment, runtime.data.accountName, input.path, api);
@@ -105,6 +106,7 @@ async function resolveRuntime(
   api: ApiKind,
   configOptions: ConfigStoreOptions,
   loginOptions?: PublicClientLoginOptions,
+  tokenProviderOverride?: TokenProvider,
 ): Promise<OperationResult<{ environment: Environment; tokenProvider: TokenProvider; accountName: string }>> {
   const environment = await getEnvironment(environmentAlias, configOptions);
   if (!environment.success || !environment.data) {
@@ -126,6 +128,9 @@ async function resolveRuntime(
     return account.success
       ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${resolvedAccountName} was not found.`, { source: 'pp/request' }))
       : fail(...account.diagnostics);
+  }
+  if (tokenProviderOverride) {
+    return ok({ environment: environment.data, tokenProvider: tokenProviderOverride, accountName: resolvedAccountName });
   }
   const effectiveAccount = accountForApi(account.data, api);
   const effectiveLoginOptions = effectiveAccount === account.data

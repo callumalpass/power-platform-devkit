@@ -1677,6 +1677,75 @@ function AppsTab(props: { state: any; setState: React.Dispatch<React.SetStateAct
 
 type CanvasSessionEntry = { id: string; status: string; appId: string; environmentAlias: string; result?: any; error?: string; createdAt: string; deviceCode?: { verificationUri: string; userCode: string; message: string } };
 
+function CanvasResultView(props: { result: any; endpoint: string; toast: (message: string, isError?: boolean) => void }) {
+  const { result, endpoint, toast } = props;
+  const [view, setView] = useState<'table' | 'json'>('table');
+
+  // Extract the main array from known canvas response shapes
+  const items: any[] | null = useMemo(() => {
+    if (!result || typeof result !== 'object') return null;
+    if (Array.isArray(result.controls)) return result.controls;
+    if (Array.isArray(result.apis)) return result.apis;
+    if (Array.isArray(result.dataSources)) return result.dataSources;
+    if (Array.isArray(result.files)) return result.files;
+    if (Array.isArray(result.errors)) return result.errors;
+    if (Array.isArray(result.value)) return result.value;
+    return null;
+  }, [result]);
+
+  const columns: string[] = useMemo(() => {
+    if (!items || items.length === 0) return [];
+    const cols = new Set<string>();
+    for (const item of items.slice(0, 50)) {
+      if (item && typeof item === 'object') {
+        for (const key of Object.keys(item)) {
+          if (typeof item[key] !== 'object' || item[key] === null) cols.add(key);
+        }
+      }
+    }
+    return Array.from(cols);
+  }, [items]);
+
+  const hasTable = items !== null && items.length > 0 && columns.length > 0;
+  const count = result?.count ?? items?.length;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {hasTable && (
+            <div className="result-toggle">
+              <button className={`result-toggle-btn ${view === 'table' ? 'active' : ''}`} type="button" onClick={() => setView('table')}>Table</button>
+              <button className={`result-toggle-btn ${view === 'json' ? 'active' : ''}`} type="button" onClick={() => setView('json')}>JSON</button>
+            </div>
+          )}
+          {count !== undefined && <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{count} items</span>}
+        </div>
+        <CopyButton value={result} label="Copy JSON" title="Copy result JSON" toast={toast} />
+      </div>
+
+      {view === 'table' && hasTable ? (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="result-table">
+            <thead>
+              <tr>{columns.map((col) => <th key={col}>{col}</th>)}</tr>
+            </thead>
+            <tbody>
+              {items!.map((item: any, i: number) => (
+                <tr key={i}>
+                  {columns.map((col) => <td key={col}>{item?.[col] === undefined || item[col] === null ? '' : String(item[col])}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(result || 'No data.') }} />
+      )}
+    </div>
+  );
+}
+
 function CanvasTab(props: {
   state: any;
   setState: React.Dispatch<React.SetStateAction<any>>;
@@ -1693,6 +1762,8 @@ function CanvasTab(props: {
   const [explorerResult, setExplorerResult] = useState<any>(null);
   const [explorerLoading, setExplorerLoading] = useState(false);
   const [explorerEndpoint, setExplorerEndpoint] = useState('controls');
+  const [yamlDir, setYamlDir] = useState('./canvas-src');
+  const [yamlBusy, setYamlBusy] = useState(false);
 
   useEffect(() => {
     if (!environment || appsLoaded) return;
@@ -1823,9 +1894,45 @@ function CanvasTab(props: {
     { key: 'controls', label: 'Controls' },
     { key: 'apis', label: 'APIs' },
     { key: 'datasources', label: 'Data Sources' },
-    { key: 'fetch', label: 'Sync (YAML)' },
     { key: 'accessibility-errors', label: 'Accessibility' },
   ];
+
+  async function fetchYaml() {
+    if (!activeSession || !yamlDir.trim()) return;
+    setYamlBusy(true);
+    try {
+      const payload = await api<any>('/api/canvas/yaml/fetch', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: activeSession.id, outDir: yamlDir.trim() }),
+      });
+      const files = payload.data?.files as string[] | undefined;
+      toast(`Saved ${files?.length ?? 0} YAML files to ${yamlDir.trim()}`);
+      setExplorerResult(payload.data);
+      setExplorerEndpoint('yaml-fetch');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setYamlBusy(false);
+    }
+  }
+
+  async function validateYaml() {
+    if (!activeSession || !yamlDir.trim()) return;
+    setYamlBusy(true);
+    try {
+      const payload = await api<any>('/api/canvas/yaml/validate', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: activeSession.id, dir: yamlDir.trim() }),
+      });
+      setExplorerResult(payload.data?.response ?? payload.data);
+      setExplorerEndpoint('yaml-validate');
+      toast('Validation complete');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setYamlBusy(false);
+    }
+  }
 
   const pendingSession = selectedApp
     ? (state.sessions as CanvasSessionEntry[]).find((s) => s.appId === selectedApp.name && (s.status === 'starting' || s.status === 'waiting_for_auth'))
@@ -1851,7 +1958,10 @@ function CanvasTab(props: {
                     {prop(item, 'properties.displayName') || item.name || 'Unnamed'}
                   </div>
                   <div className="entity-item-logical">{item.name}</div>
-                  {prop(item, 'properties.appType') ? <div className="entity-item-badges"><span className="entity-item-flag">{String(prop(item, 'properties.appType')).replace(/([a-z])([A-Z])/g, '$1 $2')}</span></div> : null}
+                  <div className="entity-item-badges">
+                    {prop(item, 'properties.appType') ? <span className="entity-item-flag">{String(prop(item, 'properties.appType')).replace(/([a-z])([A-Z])/g, '$1 $2')}</span> : null}
+                    {session?.result?.session?.isCoauthoringEnabled === false ? <span className="entity-item-flag" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>No coauthoring</span> : null}
+                  </div>
                 </div>
               );
             }) : <div className="entity-loading">{appsLoaded ? 'No canvas apps found.' : 'Select an environment to load apps.'}</div>}
@@ -1934,7 +2044,22 @@ function CanvasTab(props: {
                     <div className="metric-value">{currentSession.result.cluster.geoName}-il{currentSession.result.cluster.clusterNumber}</div>
                   </div>
                 )}
+                {currentSession?.result?.session && (
+                  <div className="metric">
+                    <div className="metric-label">Coauthoring</div>
+                    <div className="metric-value">
+                      <span className={`health-dot ${currentSession.result.session.isCoauthoringEnabled ? 'ok' : 'error'}`}></span>
+                      {currentSession.result.session.isCoauthoringEnabled ? 'Enabled' : 'Not enabled'}
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {currentSession?.result?.session && !currentSession.result.session.isCoauthoringEnabled && (
+                <div style={{ padding: '10px 14px', marginBottom: 12, borderRadius: 6, background: 'var(--warn-soft)', fontSize: '0.8125rem' }}>
+                  <strong>Coauthoring is not enabled for this app.</strong> YAML fetch and validate require coauthoring. Enable it in Power Apps Studio under Settings &gt; Upcoming features &gt; Experimental &gt; "Allow other users to co-author alongside me".
+                </div>
+              )}
 
               {activeSession && (
                 <>
@@ -1951,9 +2076,36 @@ function CanvasTab(props: {
                       </button>
                     ))}
                   </div>
+
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      value={yamlDir}
+                      onChange={(e) => setYamlDir(e.target.value)}
+                      placeholder="YAML directory path"
+                      style={{ flex: 1, minWidth: 160, padding: '5px 8px', fontSize: '0.8125rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)', color: 'inherit' }}
+                    />
+                    <button
+                      className={`btn ${explorerEndpoint === 'yaml-fetch' ? '' : 'btn-ghost'}`}
+                      style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                      disabled={yamlBusy || !yamlDir.trim()}
+                      onClick={() => void fetchYaml()}
+                    >
+                      {yamlBusy && explorerEndpoint === 'yaml-fetch' ? 'Fetching…' : 'Fetch YAML'}
+                    </button>
+                    <button
+                      className={`btn ${explorerEndpoint === 'yaml-validate' ? '' : 'btn-ghost'}`}
+                      style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                      disabled={yamlBusy || !yamlDir.trim()}
+                      onClick={() => void validateYaml()}
+                    >
+                      {yamlBusy && explorerEndpoint === 'yaml-validate' ? 'Validating…' : 'Validate YAML'}
+                    </button>
+                  </div>
+
                   {explorerLoading && <div className="entity-loading">Loading…</div>}
                   {!explorerLoading && explorerResult && (
-                    <ResultView result={explorerResult} />
+                    <CanvasResultView result={explorerResult} endpoint={explorerEndpoint} toast={toast} />
                   )}
                 </>
               )}

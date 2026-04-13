@@ -1,1 +1,1 @@
-export { startPpUi, stopPpUi, type PpUiOptions } from './ui-server.js';
+export { executeRequestViaRunningUi, startPpUi, stopPpUi, type PpUiOptions } from './ui-server.js';

@@ -7,6 +7,7 @@ import { AuthSessionStore } from '../src/ui-auth-sessions.js';
 import { CanvasSessionStore } from '../src/ui-canvas-sessions.js';
 import { handleUiRequest, type UiRequestContext } from '../src/ui-routes.js';
 import { ok } from '../src/diagnostics.js';
+import { TemporaryTokenStore } from '../src/temporary-tokens.js';
 
 function createContext(overrides: Partial<UiRequestContext> = {}): UiRequestContext {
   return {
@@ -24,8 +25,10 @@ function createContext(overrides: Partial<UiRequestContext> = {}): UiRequestCont
     fetchXmlCatalog: {
       analyze: async () => ({ diagnostics: [], completions: [], context: { from: 0, to: 0 } }),
     } as unknown as UiRequestContext['fetchXmlCatalog'],
+    temporaryTokens: new TemporaryTokenStore(),
     sendVendorModule: async () => { throw new Error('not used'); },
     instanceId: 'test-instance',
+    cliSecret: 'test-secret',
     serverUrl: 'http://127.0.0.1:4733',
     ...overrides,
   };

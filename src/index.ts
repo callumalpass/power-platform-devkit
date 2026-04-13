@@ -24,7 +24,7 @@ import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmIC
 import { invokeCanvasAuthoring, probeAndCleanCanvasSessions, requestCanvasAuthoringSession, rpcCanvasAuthoring, saveCanvasSession, startCanvasAuthoringSession } from './services/canvas-authoring.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 import { analyzeFlowFile, explainFlowFileSymbol } from './services/flow-language.js';
-import { startPpUi, stopPpUi } from './ui.js';
+import { executeRequestViaRunningUi, startPpUi, stopPpUi } from './ui.js';
 import { VERSION } from './version.js';
 import { getCachedUpdateCheck, formatUpdateNotice, runBackgroundUpdateCheck, runUpdateCommand, shouldRunBackgroundUpdateCheck, shouldShowUpdateNotice } from './update.js';
 
@@ -303,7 +303,7 @@ async function runRequest(args: string[]): Promise<number> {
   }
   const body = await readBody(args);
   if (!body.success) return printFailure(body, args);
-  const result = await executeApiRequest({
+  const requestInput = {
     environmentAlias,
     accountName: readFlag(args, '--account'),
     path,
@@ -317,7 +317,15 @@ async function runRequest(args: string[]): Promise<number> {
     timeoutMs: readFlag(args, '--timeout-ms') ? Number(readFlag(args, '--timeout-ms')) : undefined,
     jq: readFlag(args, '--jq'),
     readIntent: hasFlag(args, '--read'),
-  }, readConfigOptions(args), { allowInteractive: !hasFlag(args, '--no-interactive-auth') });
+  };
+  const result = hasFlag(args, '--via-ui')
+    ? await executeRequestViaRunningUi({
+      ...requestInput,
+      configDir: readFlag(args, '--config-dir'),
+      temporaryToken: readFlag(args, '--temp-token') ?? readFlag(args, '--temporary-token'),
+      allowInteractive: !hasFlag(args, '--no-interactive-auth'),
+    })
+    : await executeApiRequest(requestInput, readConfigOptions(args), { allowInteractive: !hasFlag(args, '--no-interactive-auth') });
   if (!result.success) return printFailure(result, args);
   printResult(result.data, args);
   return 0;
@@ -1107,7 +1115,7 @@ function printRequestHelp(): void {
       'Send an authenticated request using an explicit environment and optional account override.',
       '',
       'Usage:',
-      '  pp request [dv|flow|graph|bap|powerapps|canvas-authoring|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-interactive-auth]',
+      '  pp request [dv|flow|graph|bap|powerapps|canvas-authoring|custom] <path|url> --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--via-ui] [--temp-token NAME] [--no-interactive-auth]',
     ].join('\n') + '\n',
   );
 }
@@ -1120,7 +1128,7 @@ function printRequestAliasHelp(api: Exclude<ApiKind, 'custom'>): void {
       `Shortcut for "pp request --api ${api}".`,
       '',
       'Usage:',
-      `  pp ${api} <path|url> --env ALIAS [--account ACCOUNT] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-interactive-auth]`,
+      `  pp ${api} <path|url> --env ALIAS [--account ACCOUNT] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--via-ui] [--temp-token NAME] [--no-interactive-auth]`,
     ].join('\n') + '\n',
   );
 }

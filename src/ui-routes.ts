@@ -12,9 +12,11 @@ import { handleAccountBrowserProfileGet, handleAccountBrowserProfileOpen, handle
 import { handleUiAssetRoute, loadUiState } from './ui-route-assets.js';
 import { handleDataverseQueryExecute, handleDataverseQueryPreview, handleDataverseRecordCreate, handleEntityDetail, handleEntityList, handleFetchXmlExecute, handleFetchXmlIntellisense, handleFetchXmlPreview } from './ui-route-dataverse.js';
 import { handleEnvironmentCreate, handleEnvironmentDelete, handleEnvironmentDiscover, handlePing, handleWhoAmICheck } from './ui-route-environments.js';
-import { handleCanvasRequest, handleCanvasSessionCreate, handleCanvasSessionDelete, handleCanvasSessionEvents, handleCanvasSessionGet, handleCanvasSessionList, handleCanvasSessionProbe } from './ui-route-canvas.js';
+import { handleCanvasRequest, handleCanvasSessionCreate, handleCanvasSessionDelete, handleCanvasSessionEvents, handleCanvasSessionGet, handleCanvasSessionList, handleCanvasSessionProbe, handleCanvasYamlFetch, handleCanvasYamlValidate } from './ui-route-canvas.js';
 import { handleFlowLanguageAnalyze } from './ui-route-flow-language.js';
-import { handleRequestExecute } from './ui-route-requests.js';
+import { handleCliRequestExecute, handleRequestExecute } from './ui-route-requests.js';
+import { handleTemporaryTokenCreate, handleTemporaryTokenDelete, handleTemporaryTokenList } from './ui-route-temp-tokens.js';
+import type { TemporaryTokenStore } from './temporary-tokens.js';
 
 export interface UiRequestContext {
   configOptions: { configDir?: string };
@@ -24,9 +26,11 @@ export interface UiRequestContext {
   jobs: UiJobStore;
   authSessions: AuthSessionStore;
   canvasSessions: CanvasSessionStore;
+  temporaryTokens: TemporaryTokenStore;
   fetchXmlCatalog: FetchXmlMetadataCatalog;
   sendVendorModule: (response: ServerResponse, specifier: string) => Promise<void>;
   instanceId: string;
+  cliSecret: string;
   serverUrl: string;
 }
 
@@ -58,6 +62,7 @@ export async function handleUiRequest(
     if (/^\/api\/accounts\/[^/]+\/browser-profile$/.test(url.pathname)) return handleAccountBrowserProfileGet(url, response, context);
     if (/^\/api\/auth\/sessions\/[^/]+\/events$/.test(url.pathname)) return handleAuthSessionEvents(url, response, context);
     if (/^\/api\/auth\/sessions\/[^/]+$/.test(url.pathname)) return handleAuthSessionGet(url, response, context);
+    if (url.pathname === '/api/temp-tokens') return handleTemporaryTokenList(response, context);
     if (url.pathname === '/api/canvas/sessions') return handleCanvasSessionList(url, response, context);
     if (/^\/api\/canvas\/sessions\/[^/]+\/events$/.test(url.pathname)) return handleCanvasSessionEvents(url, response, context);
     if (/^\/api\/canvas\/sessions\/[^/]+$/.test(url.pathname)) return handleCanvasSessionGet(url, response, context);
@@ -92,8 +97,12 @@ export async function handleUiRequest(
     if (url.pathname === '/api/canvas/sessions') return handleCanvasSessionCreate(request, response, context);
     if (/^\/api\/canvas\/sessions\/[^/]+\/probe$/.test(url.pathname)) return handleCanvasSessionProbe(url, response, context);
     if (url.pathname === '/api/canvas/request') return handleCanvasRequest(request, response, context);
+    if (url.pathname === '/api/canvas/yaml/fetch') return handleCanvasYamlFetch(request, response, context);
+    if (url.pathname === '/api/canvas/yaml/validate') return handleCanvasYamlValidate(request, response, context);
     if (url.pathname === '/api/flow/language/analyze') return handleFlowLanguageAnalyze(request, response);
     if (url.pathname === '/api/request/execute') return handleRequestExecute(request, response, context);
+    if (url.pathname === '/api/temp-tokens') return handleTemporaryTokenCreate(request, response, context);
+    if (url.pathname === '/api/cli/request') return handleCliRequestExecute(request, response, context);
   }
 
   if (method === 'PUT' && /^\/api\/accounts\/[^/]+$/.test(url.pathname)) {
@@ -102,6 +111,7 @@ export async function handleUiRequest(
 
   if (method === 'DELETE') {
     if (url.pathname.startsWith('/api/jobs/')) return handleJobDelete(url, response, context);
+    if (url.pathname.startsWith('/api/temp-tokens/')) return handleTemporaryTokenDelete(url, response, context);
     if (/^\/api\/accounts\/[^/]+\/browser-profile$/.test(url.pathname)) return handleAccountBrowserProfileReset(url, response, context);
     if (/^\/api\/accounts\/[^/]+$/.test(url.pathname)) return handleAccountDelete(url, response, context);
     if (url.pathname.startsWith('/api/environments/')) return handleEnvironmentDelete(url, response, context);
