@@ -17,7 +17,7 @@ type SetupTabProps = {
   toast: ToastFn;
 };
 
-type SetupSubTab = 'status' | 'accounts' | 'environments' | 'access' | 'advanced' | 'mcp';
+type SetupSubTab = 'status' | 'accounts' | 'environments' | 'sharepoint' | 'access' | 'advanced' | 'mcp';
 
 type HealthEntry = { status: string; summary: string; message?: string; detail?: string; code?: string };
 
@@ -89,6 +89,7 @@ const SETUP_SUB_TAB_LABELS: Record<SetupSubTab, string> = {
   status: 'Status',
   accounts: 'Accounts',
   environments: 'Environments',
+  sharepoint: 'SharePoint',
   access: 'My Access',
   advanced: 'Advanced',
   mcp: 'MCP',
@@ -956,6 +957,7 @@ function TemporaryAccessTokensPanel(props: { toast: ToastFn }) {
               <option value="flow">Flow</option>
               <option value="powerapps">Power Apps</option>
               <option value="bap">Platform Admin</option>
+              <option value="sharepoint">SharePoint REST</option>
               <option value="canvas-authoring">Canvas Authoring</option>
             </select>
           </div>
@@ -998,6 +1000,143 @@ function TemporaryAccessTokensPanel(props: { toast: ToastFn }) {
       </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// SharePointPanel
+// ---------------------------------------------------------------------------
+
+function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
+  const { accounts, toast } = props;
+  const [account, setAccount] = useState(accounts[0]?.name || '');
+  const [siteUrl, setSiteUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!account && accounts[0]?.name) setAccount(accounts[0].name);
+  }, [accounts, account]);
+
+  const requestUrl = normalizeSharePointWebUrl(siteUrl);
+  const cli = account && requestUrl
+    ? `pp sp ${shellQuote(requestUrl)} --account ${shellQuote(account)}`
+    : '';
+
+  async function checkAccess() {
+    if (!account) {
+      toast('Choose an account first.', true);
+      return;
+    }
+    if (!requestUrl) {
+      toast('Enter a SharePoint URL first.', true);
+      return;
+    }
+    setLoading(true);
+    setResult(null);
+    try {
+      const response = await fetch('/api/request/execute', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          account,
+          api: 'sharepoint',
+          method: 'GET',
+          path: requestUrl,
+          softFail: true,
+        }),
+      });
+      const payload = await response.json();
+      setResult(payload);
+      toast(payload.success === false ? 'SharePoint check failed' : 'SharePoint is reachable', payload.success === false);
+    } catch (error) {
+      setResult({ success: false, diagnostics: [{ message: error instanceof Error ? error.message : String(error) }] });
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const web = result?.data?.response;
+  const diagnostic = Array.isArray(result?.diagnostics) ? result.diagnostics[0] : null;
+
+  return (
+    <div className="panel">
+      <h2>SharePoint</h2>
+      <p className="desc">Check whether an account can acquire a SharePoint REST token for a site. SharePoint requests are account-scoped, so no Power Platform environment is required.</p>
+
+      <div className="setup-add-form">
+        <div className="form-row">
+          <div className="field">
+            <span className="field-label">Account</span>
+            <select value={account} onChange={(event) => setAccount(event.target.value)}>
+              {optionList(accounts.map((a: any) => a.name), 'select account').map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <span className="field-label">SharePoint URL</span>
+            <input value={siteUrl} onChange={(event) => setSiteUrl(event.target.value)} placeholder="https://contoso.sharepoint.com/sites/site" />
+          </div>
+        </div>
+        <div className="field">
+          <span className="field-label">Request</span>
+          <input value={requestUrl || ''} readOnly placeholder="https://contoso.sharepoint.com/sites/site/_api/web" />
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" type="button" disabled={loading || !account || !requestUrl} onClick={() => void checkAccess()}>
+            {loading ? 'Checking...' : 'Check SharePoint access'}
+          </button>
+          {cli ? <CopyButton value={cli} label="copy CLI" title="Copy CLI command" toast={toast} /> : null}
+        </div>
+      </div>
+
+      {cli ? (
+        <div className="card-item" style={{ marginTop: 16 }}>
+          <div className="card-item-info">
+            <div className="card-item-title">CLI</div>
+            <div className="card-item-sub copy-inline">
+              <span className="copy-inline-value">{cli}</span>
+              <CopyButton value={cli} label="copy" title="Copy CLI command" toast={toast} />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {result ? (
+        <div className="card-item" style={{ marginTop: 16 }}>
+          <div className="card-item-info">
+            <div className="card-item-title">
+              {result.success === false ? 'Access check failed' : 'Access check succeeded'}
+            </div>
+            {result.success === false ? (
+              <div className="card-item-sub">{diagnostic?.message || 'SharePoint request failed.'}</div>
+            ) : (
+              <>
+                <div className="card-item-sub">Status {result.data?.status ?? '-'}</div>
+                {web?.Title ? <div className="card-item-sub">Site {web.Title}</div> : null}
+                {web?.Url ? <div className="card-item-sub">{web.Url}</div> : null}
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function normalizeSharePointWebUrl(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    const url = new URL(trimmed);
+    if (!/\.sharepoint\.com$/i.test(url.hostname)) return undefined;
+    if (url.pathname.includes('/_api/')) return `${url.origin}${url.pathname}${url.search}`;
+    const path = url.pathname.replace(/\/$/, '');
+    return `${url.origin}${path}/_api/web`;
+  } catch {
+    return undefined;
+  }
 }
 
 function describeTemporaryTokenMatch(match: TemporaryTokenSummary['match']): string {
@@ -1690,7 +1829,7 @@ export function SetupTab(props: SetupTabProps) {
   return (
     <div className="setup-layout">
       <div className="dv-sub-nav">
-        {(['status', 'accounts', 'environments', 'access', 'advanced', 'mcp'] as SetupSubTab[]).map((tabName) => (
+        {(['status', 'accounts', 'environments', 'sharepoint', 'access', 'advanced', 'mcp'] as SetupSubTab[]).map((tabName) => (
           <button
             key={tabName}
             className={`sub-tab ${setupSubTab === tabName ? 'active' : ''}`}
@@ -1741,6 +1880,10 @@ export function SetupTab(props: SetupTabProps) {
 
       <div className={`dv-subpanel ${setupSubTab === 'access' ? 'active' : ''}`}>
         <MyAccessPanel environment={globalEnvironment} toast={toast} />
+      </div>
+
+      <div className={`dv-subpanel ${setupSubTab === 'sharepoint' ? 'active' : ''}`}>
+        <SharePointPanel accounts={accounts} toast={toast} />
       </div>
 
       <div className={`dv-subpanel ${setupSubTab === 'advanced' ? 'active' : ''}`}>
