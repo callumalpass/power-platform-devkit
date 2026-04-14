@@ -4,7 +4,7 @@
 
 CLI and library for working with Microsoft Power Platform.
 
-`pp` provides authenticated access to Dataverse, Power Automate, Microsoft Graph, BAP, and Power Apps APIs. It includes an MCP server for AI assistant integration and a localhost web UI for managing accounts, environments, and querying Dataverse.
+`pp` provides authenticated access to Dataverse, Power Automate, Microsoft Graph, SharePoint REST, BAP, and Power Apps APIs. It includes an MCP server for AI assistant integration and a localhost web UI for managing accounts, environments, and querying Dataverse.
 
 ## Install
 
@@ -102,7 +102,7 @@ The `pp auth login` command supports multiple authentication methods:
 
 ### API shortcuts
 
-The commands `pp dv`, `pp flow`, `pp graph`, `pp bap`, and `pp powerapps` are shortcuts for `pp request --api <type>`. They accept the same flags as `pp request`. `pp canvas-authoring` provides canvas authoring helpers and falls back to the same request shortcut when the first argument is not a helper command.
+The commands `pp dv`, `pp flow`, `pp graph`, `pp sharepoint`/`pp sp`, `pp bap`, and `pp powerapps` are shortcuts for `pp request --api <type>`. They accept the same flags as `pp request`. `pp canvas-authoring` provides canvas authoring helpers and falls back to the same request shortcut when the first argument is not a helper command.
 
 ```sh
 # Dataverse query
@@ -110,6 +110,11 @@ pp dv /accounts --env dev --query '$top=5'
 
 # Graph request
 pp graph /me --env dev
+pp graph /me --account work
+
+# SharePoint REST request
+pp sp https://contoso.sharepoint.com/sites/site/_api/web --account work
+pp sharepoint https://contoso.sharepoint.com/sites/site/_api/web/lists --env dev
 
 # Power Automate flows
 pp flow /flows --env dev
@@ -135,7 +140,11 @@ pp canvas-authoring invoke --env dev --app <app-id> --class documentservicev2 --
 pp canvas-authoring rpc --env dev --app <app-id> --class document --oid 2 --method geterrorsasync
 ```
 
+Dataverse, Flow, BAP, Power Apps, Canvas Authoring, and custom requests are environment-scoped and require `--env`. Graph and SharePoint are account-scoped and can use `--account` directly; passing `--env` for those APIs is a shorthand for "use this environment's configured account".
+
 The `--api` flag on `pp request` also accepts `custom` for arbitrary endpoints.
+
+SharePoint REST requests require a full SharePoint URL. The token audience is the URL origin, for example `https://contoso.sharepoint.com` for `https://contoso.sharepoint.com/sites/site/_api/web`.
 
 `canvas-authoring` targets the Power Apps canvas authoring service used by Studio and the Microsoft canvas authoring MCP server. Relative paths are rooted at the environment cluster-discovery host (`https://<encoded-environment-id>.environment.api.powerplatform.com`), so `/gateway/cluster` is the first low-level probe. Fully qualified authoring gateway URLs are preserved and authenticated with the canvas authoring resource. The `session start` helper wraps the known cluster discovery and authoring session start flow, and redacts session secrets from output unless `--raw` is provided. `session request` sends a versioned request with the active session headers; the `yaml`, `controls`, `apis`, `datasources`, and `accessibility` commands are thin wrappers around those MCP-style REST endpoints. `invoke` posts directly to `/api/v2/invoke`; `rpc` uses the authoring SignalR channel and waits for the matching document-server response.
 
@@ -220,7 +229,7 @@ By default, tools are namespaced under `pp.`:
 
 - `pp.account.list`, `pp.account.inspect`, `pp.account.login`, `pp.account.remove`
 - `pp.environment.list`, `pp.environment.inspect`, `pp.environment.add`, `pp.environment.discover`, `pp.environment.remove`
-- `pp.request`, `pp.dv_request`, `pp.flow_request`, `pp.graph_request`, `pp.bap_request`, `pp.powerapps_request`
+- `pp.request`, `pp.dv_request`, `pp.flow_request`, `pp.graph_request`, `pp.sharepoint_request`, `pp.bap_request`, `pp.powerapps_request`
 - `pp.whoami`, `pp.ping`, `pp.token`
 
 When started with `--tool-name-style underscore`, dots are replaced by underscores (e.g. `pp_account_list`).

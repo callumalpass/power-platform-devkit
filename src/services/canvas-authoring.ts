@@ -157,8 +157,8 @@ export async function startCanvasAuthoringSession(
   let resolvedAuthoringBaseUrl = authoringBaseUrl.data;
 
   const appId = normalizeCanvasAppId(input.appId);
-  const environmentId = clusterResult.data.request.environment.makerEnvironmentId;
-  const tenantId = clusterResult.data.request.environment.tenantId;
+  const environmentId = clusterResult.data.request.environment!.makerEnvironmentId;
+  const tenantId = clusterResult.data.request.environment!.tenantId;
   let startPath = buildCanvasAuthoringSessionStartUrl(resolvedAuthoringBaseUrl, environmentId, input.cadence);
   const sessionId = randomUUID();
   const startRequestId = randomUUID();
@@ -530,8 +530,8 @@ async function resolveCanvasAuthoringSession(
     readIntent: true,
   }, configOptions, { allowInteractive: input.allowInteractive });
   if (!environmentResult.success || !environmentResult.data) return fail(...environmentResult.diagnostics);
-  environmentId ??= environmentResult.data.request.environment.makerEnvironmentId;
-  tenantId ??= environmentResult.data.request.environment.tenantId;
+  environmentId ??= environmentResult.data.request.environment!.makerEnvironmentId;
+  tenantId ??= environmentResult.data.request.environment!.tenantId;
   account ??= environmentResult.data.request.accountName;
 
   return ok({

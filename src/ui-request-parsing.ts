@@ -15,7 +15,7 @@ export interface UiEnvironmentInput {
 }
 
 export interface UiApiRequestInput {
-  environment: string;
+  environment?: string;
   account?: string;
   api: ApiKind;
   method: string;
@@ -100,8 +100,10 @@ export function readApiRequestInput(
   const environment = optionalString(value.environment);
   const path = optionalString(value.path);
   const method = optionalString(value.method) ?? 'GET';
-  if (!environment) {
-    return fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environment is required.', { source: 'pp/ui' }));
+  const api = readGenericApi(value.api);
+  const account = optionalString(value.account);
+  if (!environment && !(account && isAccountScopedApiName(api))) {
+    return fail(createDiagnostic('error', 'REQUEST_SCOPE_REQUIRED', 'environment is required unless an account-scoped API is used with account.', { source: 'pp/ui' }));
   }
   if (!path) {
     return fail(createDiagnostic('error', 'PATH_REQUIRED', 'path is required.', { source: 'pp/ui' }));
@@ -109,8 +111,8 @@ export function readApiRequestInput(
   const reqMethod = method.toUpperCase();
   return ok({
     environment,
-    account: optionalString(value.account),
-    api: readGenericApi(value.api),
+    account,
+    api,
     method: reqMethod,
     path,
     query: isRecord(value.query) ? value.query as Record<string, string> : undefined,
@@ -266,12 +268,16 @@ export function readAccessMode(value: unknown): EnvironmentAccessMode | undefine
   return value === 'read-only' || value === 'read-write' ? value : undefined;
 }
 
-export function readPingApi(value: unknown): Exclude<ApiKind, 'custom'> {
+export function readPingApi(value: unknown): Exclude<ApiKind, 'custom' | 'sharepoint'> {
   return value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' ? value : 'dv';
 }
 
 export function readGenericApi(value: unknown): ApiKind {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' || value === 'custom' ? value : 'dv';
+  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' || value === 'sharepoint' || value === 'custom' ? value : 'dv';
+}
+
+function isAccountScopedApiName(api: ApiKind): boolean {
+  return api === 'graph' || api === 'sharepoint';
 }
 
 export function optionalString(value: unknown): string | undefined {

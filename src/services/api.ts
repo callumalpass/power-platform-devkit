@@ -19,7 +19,7 @@ export async function getEnvironmentToken(
   input: {
     environmentAlias: string;
     accountName?: string;
-    api?: Exclude<ApiKind, 'custom'>;
+    api?: Exclude<ApiKind, 'custom' | 'sharepoint'>;
     preferredFlow?: 'interactive' | 'device-code';
     allowInteractive?: boolean;
   },
@@ -81,11 +81,11 @@ export async function runConnectivityPing(
   input: {
     environmentAlias: string;
     accountName?: string;
-    api?: Exclude<ApiKind, 'custom'>;
+    api?: Exclude<ApiKind, 'custom' | 'sharepoint'>;
     allowInteractive?: boolean;
   },
   configOptions: ConfigStoreOptions = {},
-): Promise<OperationResult<{ ok: true; api: Exclude<ApiKind, 'custom'>; environment: string; account: string; status: number; request: unknown }>> {
+): Promise<OperationResult<{ ok: true; api: Exclude<ApiKind, 'custom' | 'sharepoint'>; environment: string; account: string; status: number; request: unknown }>> {
   const api = input.api ?? 'dv';
   const common = {
     environmentAlias: input.environmentAlias,

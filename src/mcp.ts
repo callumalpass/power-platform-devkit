@@ -218,11 +218,11 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   const requestSchema = z.object({
-    environment: z.string(),
+    environment: z.string().optional(),
     account: z.string().optional(),
     path: z.string(),
     method: z.string().optional(),
-    api: z.enum(['dv', 'flow', 'graph', 'bap', 'powerapps', 'custom']).optional(),
+    api: z.enum(['dv', 'flow', 'graph', 'bap', 'powerapps', 'sharepoint', 'custom']).optional(),
     query: z.record(z.string(), z.string()).optional(),
     headers: z.record(z.string(), z.string()).optional(),
     body: z.unknown().optional(),
@@ -271,7 +271,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       ),
   );
 
-  for (const api of ['dv', 'flow', 'graph', 'bap', 'powerapps'] as const) {
+  for (const api of ['dv', 'flow', 'graph', 'bap', 'powerapps', 'sharepoint'] as const) {
     server.registerTool(
       toolName(`pp.${api}_request`, defaults),
       {

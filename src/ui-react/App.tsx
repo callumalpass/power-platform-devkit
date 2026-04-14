@@ -67,6 +67,15 @@ const APIS = [
       { label: 'Groups (top 10)', method: 'GET', path: '/groups?$top=10', description: 'Directory groups' },
     ],
   },
+  {
+    key: 'sharepoint', label: 'SharePoint REST', scope: 'account',
+    defaultPath: 'https://contoso.sharepoint.com/sites/site/_api/web',
+    presets: [
+      { label: 'Web', method: 'GET', path: 'https://contoso.sharepoint.com/sites/site/_api/web', description: 'Current site web' },
+      { label: 'Current User', method: 'GET', path: 'https://contoso.sharepoint.com/sites/site/_api/web/currentuser', description: 'Current SharePoint user' },
+      { label: 'Lists', method: 'GET', path: 'https://contoso.sharepoint.com/sites/site/_api/web/lists', description: 'Site lists' },
+    ],
+  },
 ] as const;
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];

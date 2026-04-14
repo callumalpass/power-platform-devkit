@@ -47,7 +47,7 @@ function readTemporaryTokenMatch(value: Record<string, unknown>) {
   }
   if (matchKind === 'api') {
     const api = readApi(value.api);
-    if (!api || api === 'custom') return fail(createDiagnostic('error', 'TEMP_TOKEN_API_INVALID', 'api must be dv, flow, graph, bap, powerapps, or canvas-authoring.', { source: 'pp/ui' }));
+    if (!api || api === 'custom') return fail(createDiagnostic('error', 'TEMP_TOKEN_API_INVALID', 'api must be dv, flow, graph, bap, powerapps, sharepoint, or canvas-authoring.', { source: 'pp/ui' }));
     return ok({ kind: 'api' as const, api });
   }
   if (matchKind === 'audience') {
@@ -59,7 +59,7 @@ function readTemporaryTokenMatch(value: Record<string, unknown>) {
 }
 
 function readApi(value: unknown): ApiKind | undefined {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' || value === 'custom'
+  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'sharepoint' || value === 'canvas-authoring' || value === 'custom'
     ? value
     : undefined;
 }

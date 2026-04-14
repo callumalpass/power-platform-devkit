@@ -3,6 +3,7 @@ export {
   accountForApi,
   detectApi,
   executeRequest,
+  isAccountScopedApi,
   normalizeOrigin,
   resourceForApi,
   type ApiKind,

@@ -39,19 +39,23 @@ export async function handleCliRequestExecute(request: IncomingMessage, response
 
   const api = input.data.api;
   const temporaryTokenName = optionalString(body.data.temporaryToken);
-  const environment = await getEnvironment(input.data.environment, context.configOptions);
-  if (!environment.success) return void sendJson(response, 400, environment);
-  if (!environment.data) {
-    return void sendJson(response, 404, fail(createDiagnostic('error', 'ENVIRONMENT_NOT_FOUND', `Environment ${input.data.environment} was not found.`, { source: 'pp/ui' })));
+  let temporaryToken: Awaited<ReturnType<typeof context.temporaryTokens.resolve>> | undefined;
+  if (input.data.environment) {
+    const environment = await getEnvironment(input.data.environment, context.configOptions);
+    if (!environment.success) return void sendJson(response, 400, environment);
+    if (!environment.data) {
+      return void sendJson(response, 404, fail(createDiagnostic('error', 'ENVIRONMENT_NOT_FOUND', `Environment ${input.data.environment} was not found.`, { source: 'pp/ui' })));
+    }
+    temporaryToken = await context.temporaryTokens.resolve({
+      idOrName: temporaryTokenName,
+      environment: environment.data,
+      api,
+      path: input.data.path,
+    });
+    if (!temporaryToken.success) return void sendJson(response, 400, temporaryToken);
+  } else if (temporaryTokenName) {
+    return void sendJson(response, 400, fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'Temporary token routing currently requires environment context.', { source: 'pp/ui' })));
   }
-
-  const temporaryToken = await context.temporaryTokens.resolve({
-    idOrName: temporaryTokenName,
-    environment: environment.data,
-    api,
-    path: input.data.path,
-  });
-  if (!temporaryToken.success) return void sendJson(response, 400, temporaryToken);
 
   const result = await executeApiRequest({
     environmentAlias: input.data.environment,
@@ -67,10 +71,10 @@ export async function handleCliRequestExecute(request: IncomingMessage, response
     timeoutMs: readNumber(body.data.timeoutMs),
     jq: optionalString(body.data.jq),
     readIntent: body.data.readIntent === undefined ? input.data.readIntent : Boolean(body.data.readIntent),
-    tokenProviderOverride: temporaryToken.data?.provider,
+    tokenProviderOverride: temporaryToken?.data?.provider,
   }, context.configOptions, { allowInteractive: input.data.allowInteractive });
 
-  if (result.success && result.data && temporaryToken.data) {
+  if (result.success && result.data && temporaryToken?.data) {
     return void sendJson(response, 200, {
       ...result,
       data: {

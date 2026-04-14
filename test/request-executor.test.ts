@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { accountForApi, buildRequest, normalizeOrigin, resourceForApi, type ApiKind } from '../src/request-executor.js';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { accountForApi, buildRequest, executeRequest, normalizeOrigin, resourceForApi, type ApiKind } from '../src/request-executor.js';
 import type { Account, Environment } from '../src/config.js';
+import { saveAccount } from '../src/config.js';
 
 const environment: Environment = {
   alias: 'dev',
@@ -51,12 +55,25 @@ test('buildRequest preserves fully-qualified URLs for detected APIs', () => {
   assert.equal(canvasAuthoring.data?.baseUrl, 'https://authoring.seau-il102.gateway.prod.island.powerapps.com');
   assert.equal(canvasAuthoring.data?.path, '/v3/api/yaml/fetch');
   assert.equal(canvasAuthoring.data?.authResource, 'c6c4e5e1-0bc0-4d7d-b69b-954a907287e4/.default');
+
+  const sharepoint = buildRequest(undefined, 'admin', 'https://contoso.sharepoint.com/sites/foo/_api/web');
+  assert.equal(sharepoint.success, true);
+  assert.equal(sharepoint.data?.api, 'sharepoint');
+  assert.equal(sharepoint.data?.baseUrl, 'https://contoso.sharepoint.com');
+  assert.equal(sharepoint.data?.path, '/sites/foo/_api/web');
+  assert.equal(sharepoint.data?.authResource, 'https://contoso.sharepoint.com');
 });
 
 test('buildRequest requires absolute URLs for custom API requests', () => {
   const result = buildRequest(environment, 'admin', '/relative', 'custom');
   assert.equal(result.success, false);
   assert.equal(result.diagnostics[0]?.code, 'CUSTOM_REQUEST_URL_REQUIRED');
+});
+
+test('buildRequest requires absolute URLs for SharePoint requests', () => {
+  const result = buildRequest(undefined, 'admin', '/_api/web', 'sharepoint');
+  assert.equal(result.success, false);
+  assert.equal(result.diagnostics[0]?.code, 'SHAREPOINT_REQUEST_URL_REQUIRED');
 });
 
 test('resourceForApi and normalizeOrigin select expected auth resources', () => {
@@ -84,4 +101,52 @@ test('accountForApi swaps the saved pp default client for canvas authoring only'
   assert.notEqual(canvasAccount, account);
   assert.equal(canvasAccount.clientId, '4e291c71-d680-4d0e-9640-0a3358e31177');
   assert.equal(canvasAccount.tokenCacheKey, 'admin-canvas-authoring');
+});
+
+test('executeRequest allows account-scoped Graph and SharePoint without an environment', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-account-scoped-'));
+  await saveAccount({ name: 'work', kind: 'static-token', token: 'test-token' }, { configDir });
+  const calls: Array<{ url: string; authorization: string | null }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    calls.push({ url: String(input), authorization: headers.get('authorization') });
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const graph = await executeRequest({
+      accountName: 'work',
+      api: 'graph',
+      path: '/me',
+      configOptions: { configDir },
+    });
+    assert.equal(graph.success, true);
+    assert.equal(graph.data?.request.environment, undefined);
+    assert.equal(calls.at(-1)?.url, 'https://graph.microsoft.com/v1.0/me');
+    assert.equal(calls.at(-1)?.authorization, 'Bearer test-token');
+
+    const sharepoint = await executeRequest({
+      accountName: 'work',
+      api: 'sharepoint',
+      path: 'https://contoso.sharepoint.com/sites/foo/_api/web',
+      configOptions: { configDir },
+    });
+    assert.equal(sharepoint.success, true);
+    assert.equal(sharepoint.data?.request.environment, undefined);
+    assert.equal(calls.at(-1)?.url, 'https://contoso.sharepoint.com/sites/foo/_api/web');
+    assert.equal(calls.at(-1)?.authorization, 'Bearer test-token');
+    assert.equal(sharepoint.data?.request.authResource, 'https://contoso.sharepoint.com');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('executeRequest still requires an environment for environment-scoped APIs', async () => {
+  const result = await executeRequest({
+    accountName: 'work',
+    api: 'dv',
+    path: '/WhoAmI',
+  });
+  assert.equal(result.success, false);
+  assert.equal(result.diagnostics[0]?.code, 'ENVIRONMENT_REQUIRED');
 });

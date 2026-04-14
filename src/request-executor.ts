@@ -10,12 +10,12 @@ import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.
 import { HttpClient, type HttpResponseType } from './http.js';
 import { applyJqTransform, type JqTransformInput } from './jq-transform.js';
 
-export type ApiKind = 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps' | 'canvas-authoring' | 'custom';
+export type ApiKind = 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps' | 'canvas-authoring' | 'sharepoint' | 'custom';
 
 export const CANVAS_AUTHORING_AUTH_RESOURCE = 'c6c4e5e1-0bc0-4d7d-b69b-954a907287e4/.default';
 
 export interface RequestInput {
-  environmentAlias: string;
+  environmentAlias?: string;
   accountName?: string;
   path: string;
   method?: string;
@@ -38,11 +38,14 @@ export interface PreparedRequest {
   baseUrl?: string;
   path: string;
   authResource: string;
-  environment: Environment;
+  environment?: Environment;
   accountName: string;
 }
 
-export function resourceForApi(environment: Environment, api: Exclude<ApiKind, 'custom'>): string {
+type EnvironmentScopedApi = 'dv' | 'flow' | 'bap' | 'powerapps' | 'canvas-authoring' | 'custom';
+type AccountScopedApi = 'graph' | 'sharepoint';
+
+export function resourceForApi(environment: Environment, api: Exclude<ApiKind, 'custom' | 'sharepoint'>): string {
   switch (api) {
     case 'dv':
       return normalizeOrigin(environment.url);
@@ -62,9 +65,10 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
   const method = (input.method ?? 'GET').toUpperCase();
   const configOptions = input.configOptions ?? {};
   const api = detectApi(input.path, input.api);
-  const access = await ensureEnvironmentAccess(input.environmentAlias, method, Boolean(input.readIntent), configOptions);
-  if (!access.success) return fail(...access.diagnostics);
-
+  if (isEnvironmentScopedApi(api) && input.environmentAlias) {
+    const access = await ensureEnvironmentAccess(input.environmentAlias, method, Boolean(input.readIntent), configOptions);
+    if (!access.success) return fail(...access.diagnostics);
+  }
   const runtime = await resolveRuntime(input.environmentAlias, input.accountName, api, configOptions, input.loginOptions, input.tokenProviderOverride);
   if (!runtime.success || !runtime.data) return fail(...runtime.diagnostics);
 
@@ -101,25 +105,38 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
 }
 
 async function resolveRuntime(
-  environmentAlias: string,
+  environmentAlias: string | undefined,
   accountName: string | undefined,
   api: ApiKind,
   configOptions: ConfigStoreOptions,
   loginOptions?: PublicClientLoginOptions,
   tokenProviderOverride?: TokenProvider,
-): Promise<OperationResult<{ environment: Environment; tokenProvider: TokenProvider; accountName: string }>> {
-  const environment = await getEnvironment(environmentAlias, configOptions);
-  if (!environment.success || !environment.data) {
-    return environment.success
-      ? fail(createDiagnostic('error', 'ENVIRONMENT_NOT_FOUND', `Environment ${environmentAlias} was not found.`, { source: 'pp/request' }))
-      : fail(...environment.diagnostics);
+): Promise<OperationResult<{ environment?: Environment; tokenProvider: TokenProvider; accountName: string }>> {
+  const isAccountScoped = isAccountScopedApi(api);
+  let environment: Environment | undefined;
+
+  if (environmentAlias) {
+    const environmentResult = await getEnvironment(environmentAlias, configOptions);
+    if (!environmentResult.success || !environmentResult.data) {
+      return environmentResult.success
+        ? fail(createDiagnostic('error', 'ENVIRONMENT_NOT_FOUND', `Environment ${environmentAlias} was not found.`, { source: 'pp/request' }))
+        : fail(...environmentResult.diagnostics);
+    }
+    environment = environmentResult.data;
+  } else if (!isAccountScoped) {
+    return fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', `API ${api} requires --env ALIAS.`, {
+      source: 'pp/request',
+      hint: 'Graph and SharePoint may use --account without --env; environment-scoped Power Platform APIs require --env.',
+    }));
   }
 
-  const resolvedAccountName = accountName ?? environment.data.account;
+  const resolvedAccountName = accountName ?? environment?.account;
   if (!resolvedAccountName) {
-    return fail(createDiagnostic('error', 'ENVIRONMENT_ACCOUNT_REQUIRED', `Environment ${environmentAlias} does not define an account and none was provided.`, {
+    return fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', environmentAlias
+      ? `Environment ${environmentAlias} does not define an account and none was provided.`
+      : `API ${api} requires --account ACCOUNT when --env is not provided.`, {
       source: 'pp/request',
-      hint: 'Pass --account ACCOUNT or update the environment to include an account.',
+      hint: environmentAlias ? 'Pass --account ACCOUNT or update the environment to include an account.' : 'Pass --account ACCOUNT.',
     }));
   }
 
@@ -130,7 +147,7 @@ async function resolveRuntime(
       : fail(...account.diagnostics);
   }
   if (tokenProviderOverride) {
-    return ok({ environment: environment.data, tokenProvider: tokenProviderOverride, accountName: resolvedAccountName });
+    return ok({ environment, tokenProvider: tokenProviderOverride, accountName: resolvedAccountName });
   }
   const effectiveAccount = accountForApi(account.data, api);
   const effectiveLoginOptions = effectiveAccount === account.data
@@ -138,7 +155,7 @@ async function resolveRuntime(
     : { ...loginOptions, preferredFlow: loginOptions?.preferredFlow ?? 'device-code', persistAccount: false };
   const tokenProvider = createTokenProvider(effectiveAccount, configOptions, effectiveLoginOptions);
   if (!tokenProvider.success || !tokenProvider.data) return fail(...tokenProvider.diagnostics);
-  return ok({ environment: environment.data, tokenProvider: tokenProvider.data, accountName: resolvedAccountName });
+  return ok({ environment, tokenProvider: tokenProvider.data, accountName: resolvedAccountName });
 }
 
 export function accountForApi(account: Account, api: ApiKind): Account {
@@ -152,7 +169,7 @@ export function accountForApi(account: Account, api: ApiKind): Account {
   };
 }
 
-export function buildRequest(environment: Environment, accountName: string, originalPath: string, apiOverride?: ApiKind): OperationResult<PreparedRequest> {
+export function buildRequest(environment: Environment | undefined, accountName: string, originalPath: string, apiOverride?: ApiKind): OperationResult<PreparedRequest> {
   const api = detectApi(originalPath, apiOverride);
   const isUrl = isAbsoluteUrl(originalPath);
   if (api === 'custom') {
@@ -163,74 +180,94 @@ export function buildRequest(environment: Environment, accountName: string, orig
     return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: url.origin, environment, accountName });
   }
   if (api === 'dv') {
+    const required = requireEnvironment(environment, api);
+    if (!required.success || !required.data) return fail(...required.diagnostics);
     if (isUrl) {
       const url = new URL(originalPath);
-      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: url.origin, environment, accountName });
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: url.origin, environment: required.data, accountName });
     }
     return ok({
       api,
-      baseUrl: environment.url,
+      baseUrl: required.data.url,
       path: normalizeDataversePath(originalPath),
-      authResource: normalizeOrigin(environment.url),
-      environment,
+      authResource: normalizeOrigin(required.data.url),
+      environment: required.data,
       accountName,
     });
   }
   if (api === 'flow') {
+    const required = requireEnvironment(environment, api);
+    if (!required.success || !required.data) return fail(...required.diagnostics);
     if (isUrl) {
       const url = new URL(originalPath);
-      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.flow.microsoft.com', environment, accountName });
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.flow.microsoft.com', environment: required.data, accountName });
     }
     return ok({
       api,
       baseUrl: 'https://api.flow.microsoft.com',
-      path: normalizeFlowPath(originalPath, environment.makerEnvironmentId),
+      path: normalizeFlowPath(originalPath, required.data.makerEnvironmentId),
       authResource: 'https://service.flow.microsoft.com',
-      environment,
+      environment: required.data,
       accountName,
     });
   }
   if (api === 'bap') {
+    const required = requireEnvironment(environment, api);
+    if (!required.success || !required.data) return fail(...required.diagnostics);
     if (isUrl) {
       const url = new URL(originalPath);
-      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.powerapps.com', environment, accountName });
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.powerapps.com', environment: required.data, accountName });
     }
     return ok({
       api,
       baseUrl: 'https://api.bap.microsoft.com',
       path: normalizeBapPath(originalPath),
       authResource: 'https://service.powerapps.com',
-      environment,
+      environment: required.data,
       accountName,
     });
   }
   if (api === 'powerapps') {
+    const required = requireEnvironment(environment, api);
+    if (!required.success || !required.data) return fail(...required.diagnostics);
     if (isUrl) {
       const url = new URL(originalPath);
-      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.powerapps.com', environment, accountName });
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: 'https://service.powerapps.com', environment: required.data, accountName });
     }
     return ok({
       api,
       baseUrl: 'https://api.powerapps.com',
-      path: normalizePowerAppsPath(originalPath, environment.makerEnvironmentId),
+      path: normalizePowerAppsPath(originalPath, required.data.makerEnvironmentId),
       authResource: 'https://service.powerapps.com',
-      environment,
+      environment: required.data,
       accountName,
     });
   }
   if (api === 'canvas-authoring') {
+    const required = requireEnvironment(environment, api);
+    if (!required.success || !required.data) return fail(...required.diagnostics);
     if (isUrl) {
       const url = new URL(originalPath);
-      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: CANVAS_AUTHORING_AUTH_RESOURCE, environment, accountName });
+      return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: CANVAS_AUTHORING_AUTH_RESOURCE, environment: required.data, accountName });
     }
     return ok({
       api,
-      baseUrl: canvasAuthoringDiscoveryBaseUrl(environment.makerEnvironmentId),
+      baseUrl: canvasAuthoringDiscoveryBaseUrl(required.data.makerEnvironmentId),
       path: normalizeCanvasAuthoringPath(originalPath),
       authResource: CANVAS_AUTHORING_AUTH_RESOURCE,
-      environment,
+      environment: required.data,
       accountName,
     });
+  }
+  if (api === 'sharepoint') {
+    if (!isUrl) {
+      return fail(createDiagnostic('error', 'SHAREPOINT_REQUEST_URL_REQUIRED', 'SharePoint requests require an absolute SharePoint REST URL.', {
+        source: 'pp/request',
+        hint: 'Use a URL like https://contoso.sharepoint.com/sites/site/_api/web.',
+      }));
+    }
+    const url = new URL(originalPath);
+    return ok({ api, baseUrl: url.origin, path: `${url.pathname}${url.search}`, authResource: url.origin, environment, accountName });
   }
   if (isUrl) {
     const url = new URL(originalPath);
@@ -250,6 +287,7 @@ export function detectApi(path: string, apiOverride?: ApiKind): ApiKind {
   if (apiOverride) return apiOverride;
   const value = isAbsoluteUrl(path) ? new URL(path).toString() : path;
   if (/graph\.microsoft\.com/i.test(value) || /^\/?(v1\.0|beta)\//i.test(value)) return 'graph';
+  if (/https:\/\/[^/]+\.sharepoint\.com(?:\/|$)/i.test(value) || /https:\/\/[^/]+-my\.sharepoint\.com(?:\/|$)/i.test(value)) return 'sharepoint';
   if (/api\.powerapps\.com/i.test(value) || /Microsoft\.PowerApps/i.test(value)) return 'powerapps';
   if (/environment\.api\.powerplatform\.com/i.test(value) || /authoring\..*\.powerapps\.com/i.test(value)) return 'canvas-authoring';
   if (/api\.bap\.microsoft\.com/i.test(value) || /Microsoft\.BusinessAppPlatform/i.test(value)) return 'bap';
@@ -324,6 +362,20 @@ function defaultQueryForApi(api: ApiKind): Record<string, string> | undefined {
 
 export function normalizeOrigin(url: string): string {
   return new URL(url).origin;
+}
+
+export function isAccountScopedApi(api: ApiKind): api is AccountScopedApi {
+  return api === 'graph' || api === 'sharepoint';
+}
+
+export function isEnvironmentScopedApi(api: ApiKind): api is EnvironmentScopedApi {
+  return !isAccountScopedApi(api);
+}
+
+function requireEnvironment(environment: Environment | undefined, api: ApiKind): OperationResult<Environment> {
+  return environment
+    ? ok(environment)
+    : fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', `API ${api} requires --env ALIAS.`, { source: 'pp/request' }));
 }
 
 function isAbsoluteUrl(value: string): boolean {
