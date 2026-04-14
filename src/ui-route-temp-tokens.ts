@@ -3,7 +3,7 @@ import { URL } from 'node:url';
 import { createDiagnostic, fail, ok } from './diagnostics.js';
 import { readJsonBody, sendJson } from './ui-http.js';
 import type { UiRequestContext } from './ui-routes.js';
-import type { ApiKind } from './request.js';
+import { isApiKind, type ApiKind } from './request.js';
 
 export function handleTemporaryTokenList(response: ServerResponse, context: UiRequestContext): void {
   sendJson(response, 200, ok(context.temporaryTokens.list()));
@@ -59,9 +59,7 @@ function readTemporaryTokenMatch(value: Record<string, unknown>) {
 }
 
 function readApi(value: unknown): ApiKind | undefined {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'sharepoint' || value === 'canvas-authoring' || value === 'custom'
-    ? value
-    : undefined;
+  return typeof value === 'string' && isApiKind(value) ? value : undefined;
 }
 
 function optionalString(value: unknown): string | undefined {

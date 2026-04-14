@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import type { LoginAccountInput } from './auth.js';
 import { saveAccount, type Account, type ConfigStoreOptions } from './config.js';
-import type { ApiKind } from './request.js';
+import { API_KINDS, ENVIRONMENT_TOKEN_API_KINDS, REQUEST_ALIAS_API_KINDS, type ApiKind } from './request.js';
 import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { VERSION } from './version.js';
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
@@ -222,7 +222,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     account: z.string().optional(),
     path: z.string(),
     method: z.string().optional(),
-    api: z.enum(['dv', 'flow', 'graph', 'bap', 'powerapps', 'sharepoint', 'custom']).optional(),
+    api: z.enum(API_KINDS).optional(),
     query: z.record(z.string(), z.string()).optional(),
     headers: z.record(z.string(), z.string()).optional(),
     body: z.unknown().optional(),
@@ -271,7 +271,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       ),
   );
 
-  for (const api of ['dv', 'flow', 'graph', 'bap', 'powerapps', 'sharepoint'] as const) {
+  for (const api of REQUEST_ALIAS_API_KINDS) {
     server.registerTool(
       toolName(`pp.${api}_request`, defaults),
       {
@@ -329,7 +329,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: z.object({
         environment: z.string(),
         account: z.string().optional(),
-        api: z.enum(['dv', 'flow', 'graph', 'bap', 'powerapps']).optional(),
+        api: z.enum(ENVIRONMENT_TOKEN_API_KINDS).optional(),
         configDir: z.string().optional(),
         allowInteractiveAuth: z.boolean().optional(),
       }),
@@ -352,7 +352,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: z.object({
         environment: z.string(),
         account: z.string().optional(),
-        api: z.enum(['dv', 'flow', 'graph', 'bap', 'powerapps']).optional(),
+        api: z.enum(ENVIRONMENT_TOKEN_API_KINDS).optional(),
         configDir: z.string().optional(),
         allowInteractiveAuth: z.boolean().optional(),
         preferredFlow: z.enum(['interactive', 'device-code']).optional(),

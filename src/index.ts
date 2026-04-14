@@ -5,7 +5,7 @@ import { dirname, join, relative } from 'node:path';
 import process from 'node:process';
 import type { LoginAccountInput } from './auth.js';
 import { migrateLegacyConfig } from './migrate.js';
-import { isAccountScopedApi, type ApiKind } from './request.js';
+import { detectApi, isAccountScopedApi, isApiKind, isEnvironmentTokenApi, type ApiKind, type EnvironmentTokenApi } from './request.js';
 import {
   argumentFailure,
   hasFlag,
@@ -301,9 +301,14 @@ async function runRequest(args: string[]): Promise<number> {
 
   const positional = positionalArgs(args);
   const positionalApi = positional[0] && isApiKind(positional[0]) ? positional[0] : undefined;
-  const api = positionalApi ?? (readFlag(args, '--api') as ApiKind | undefined);
-  const effectiveApi = api ?? (pathLooksSharePoint(positionalApi ? positional[1] : positional[0]) ? 'sharepoint' : undefined);
+  const apiFlag = readFlag(args, '--api');
+  if (apiFlag && !isApiKind(apiFlag)) {
+    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring|sharepoint|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read]'), args);
+  }
+  const validatedApiFlag: ApiKind | undefined = apiFlag && isApiKind(apiFlag) ? apiFlag : undefined;
+  const api = positionalApi ?? validatedApiFlag;
   const path = positionalApi ? positional[1] : positional[0];
+  const effectiveApi = api ?? (path ? detectApi(path) : undefined);
   const environmentAlias = readFlag(args, '--environment');
   const accountName = readFlag(args, '--account');
   if (!path || (!environmentAlias && !(effectiveApi && isAccountScopedApi(effectiveApi) && accountName))) {
@@ -808,7 +813,7 @@ async function runPing(args: string[]): Promise<number> {
   if (apiFlag && !isEnvironmentTokenApi(apiFlag)) {
     return printFailure(argumentFailure('PING_USAGE', 'Usage: pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring] [--no-interactive-auth]'), args);
   }
-  const api: Exclude<ApiKind, 'custom' | 'sharepoint'> = apiFlag && isEnvironmentTokenApi(apiFlag) ? apiFlag : 'dv';
+  const api: EnvironmentTokenApi = apiFlag && isEnvironmentTokenApi(apiFlag) ? apiFlag : 'dv';
   if (!environmentAlias) return printFailure(argumentFailure('PING_USAGE', 'Usage: pp ping --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring] [--no-interactive-auth]'), args);
   const result = await runConnectivityPing({
     environmentAlias,
@@ -832,7 +837,7 @@ async function runEnvironmentToken(args: string[]): Promise<number> {
   if (apiFlag && !isEnvironmentTokenApi(apiFlag)) {
     return printFailure(argumentFailure('TOKEN_USAGE', 'Usage: pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring] [--device-code] [--no-interactive-auth]'), args);
   }
-  const api: Exclude<ApiKind, 'custom' | 'sharepoint'> = apiFlag && isEnvironmentTokenApi(apiFlag) ? apiFlag : 'dv';
+  const api: EnvironmentTokenApi = apiFlag && isEnvironmentTokenApi(apiFlag) ? apiFlag : 'dv';
   if (!environmentAlias) return printFailure(argumentFailure('TOKEN_USAGE', 'Usage: pp token --env ALIAS [--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring] [--device-code] [--no-interactive-auth]'), args);
   const result = await getEnvironmentToken({
     environmentAlias,
@@ -1435,18 +1440,6 @@ function printCompletionHelp(): void {
 
 function printMigrateConfigHelp(): void {
   process.stdout.write(['pp migrate-config', '', 'Migrate legacy config into the current account/environment layout.', '', 'Usage:', '  pp migrate-config [--source-config PATH] [--source-dir DIR] [--config-dir DIR] [--apply]'].join('\n') + '\n');
-}
-
-function isApiKind(value: string): value is ApiKind {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' || value === 'sharepoint' || value === 'custom';
-}
-
-function pathLooksSharePoint(value: string | undefined): boolean {
-  return Boolean(value && /^https:\/\/[^/]+(?:-my)?\.sharepoint\.com(?:\/|$)/i.test(value));
-}
-
-function isEnvironmentTokenApi(value: string): value is Exclude<ApiKind, 'custom' | 'sharepoint'> {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring';
 }
 
 function isFlowLanguageSubcommand(value: string | undefined): value is 'validate' | 'inspect' | 'symbols' | 'explain' {

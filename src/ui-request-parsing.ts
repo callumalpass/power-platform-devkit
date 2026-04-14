@@ -3,7 +3,7 @@ import type { EnvironmentAccessMode, Account } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import type { FetchXmlLanguageRequest } from './fetchxml-language-service.js';
 import type { FlowLanguageRequest } from './flow-language-service.js';
-import type { ApiKind } from './request.js';
+import { isAccountScopedApi, isApiKind, isEnvironmentTokenApi, type ApiKind, type EnvironmentTokenApi } from './request.js';
 import type { DataverseCreateRecordInput, DataverseQuerySpec, FetchXmlSpec } from './services/dataverse.js';
 
 export interface UiEnvironmentInput {
@@ -102,7 +102,7 @@ export function readApiRequestInput(
   const method = optionalString(value.method) ?? 'GET';
   const api = readGenericApi(value.api);
   const account = optionalString(value.account);
-  if (!environment && !(account && isAccountScopedApiName(api))) {
+  if (!environment && !(account && isAccountScopedApi(api))) {
     return fail(createDiagnostic('error', 'REQUEST_SCOPE_REQUIRED', 'environment is required unless an account-scoped API is used with account.', { source: 'pp/ui' }));
   }
   if (!path) {
@@ -268,16 +268,12 @@ export function readAccessMode(value: unknown): EnvironmentAccessMode | undefine
   return value === 'read-only' || value === 'read-write' ? value : undefined;
 }
 
-export function readPingApi(value: unknown): Exclude<ApiKind, 'custom' | 'sharepoint'> {
-  return value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' ? value : 'dv';
+export function readPingApi(value: unknown): EnvironmentTokenApi {
+  return typeof value === 'string' && isEnvironmentTokenApi(value) ? value : 'dv';
 }
 
 export function readGenericApi(value: unknown): ApiKind {
-  return value === 'dv' || value === 'flow' || value === 'graph' || value === 'bap' || value === 'powerapps' || value === 'canvas-authoring' || value === 'sharepoint' || value === 'custom' ? value : 'dv';
-}
-
-function isAccountScopedApiName(api: ApiKind): boolean {
-  return api === 'graph' || api === 'sharepoint';
+  return typeof value === 'string' && isApiKind(value) ? value : 'dv';
 }
 
 export function optionalString(value: unknown): string | undefined {

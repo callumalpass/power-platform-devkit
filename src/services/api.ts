@@ -1,7 +1,7 @@
 import { createTokenProvider, type PublicClientLoginOptions } from '../auth.js';
 import { getAccount, getEnvironment, type ConfigStoreOptions } from '../config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from '../diagnostics.js';
-import { accountForApi, executeRequest, resourceForApi, type ApiKind, type RequestInput } from '../request.js';
+import { accountForApi, executeRequest, resourceForApi, type EnvironmentTokenApi, type RequestInput } from '../request.js';
 
 export async function executeApiRequest(
   input: RequestInput,
@@ -19,7 +19,7 @@ export async function getEnvironmentToken(
   input: {
     environmentAlias: string;
     accountName?: string;
-    api?: Exclude<ApiKind, 'custom' | 'sharepoint'>;
+    api?: EnvironmentTokenApi;
     preferredFlow?: 'interactive' | 'device-code';
     allowInteractive?: boolean;
   },
@@ -81,11 +81,11 @@ export async function runConnectivityPing(
   input: {
     environmentAlias: string;
     accountName?: string;
-    api?: Exclude<ApiKind, 'custom' | 'sharepoint'>;
+    api?: EnvironmentTokenApi;
     allowInteractive?: boolean;
   },
   configOptions: ConfigStoreOptions = {},
-): Promise<OperationResult<{ ok: true; api: Exclude<ApiKind, 'custom' | 'sharepoint'>; environment: string; account: string; status: number; request: unknown }>> {
+): Promise<OperationResult<{ ok: true; api: EnvironmentTokenApi; environment: string; account: string; status: number; request: unknown }>> {
   const api = input.api ?? 'dv';
   const common = {
     environmentAlias: input.environmentAlias,
