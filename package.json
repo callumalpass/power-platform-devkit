@@ -1,6 +1,6 @@
 {
   "name": "pp",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "CLI, MCP server, and browser UI for working with Microsoft Power Platform.",
   "type": "module",
   "license": "UNLICENSED",
