@@ -361,7 +361,7 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
           endTime: '2026-01-03T00:00:02Z',
         },
       },
-      '/apioperations?%24top=25&%24search=release': {
+      '/operations?api-version=2016-11-01&$top=250': {
         value: [{
           name: 'CreateRelease',
           id: '/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices/apiOperations/CreateRelease',
@@ -402,7 +402,11 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
   const releaseSearchRequest = page.waitForRequest((request) => {
     try {
       const body = JSON.parse(request.postData() || '{}');
-      return body.api === 'flow' && body.path === '/apioperations?%24top=25&%24search=release';
+      const requestBody = JSON.parse(body.body || '{}');
+      return body.api === 'flow'
+        && body.method === 'POST'
+        && body.path === '/operations?api-version=2016-11-01&$top=250'
+        && requestBody.searchText === 'release';
     } catch {
       return false;
     }
@@ -428,7 +432,7 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
   expect(flowPaths).toEqual(expect.arrayContaining([
     '/flows',
     '/flows/flow-probe',
-    '/apioperations?%24top=25&%24search=release',
+    '/operations?api-version=2016-11-01&$top=250',
     '/flows/flow-probe/runs?$top=20',
     '/flows/flow-probe/runs/run-probe/actions',
     '/flows/flow-probe/runs/run-probe/actions/Compose',

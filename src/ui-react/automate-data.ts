@@ -103,9 +103,19 @@ export async function saveFlowDefinition(environment: string, flow: FlowItem, so
 }
 
 export async function loadFlowApiOperations(environment: string, search: string): Promise<FlowApiOperation[]> {
-  const params = new URLSearchParams({ $top: '25' });
-  if (search.trim()) params.set('$search', search.trim());
-  const result = await executeRequest<{ value?: unknown[] }>(environment, 'flow', `/apioperations?${params.toString()}`, true);
+  const result = await executeRequest<{ value?: unknown[] }>(
+    environment,
+    'flow',
+    '/operations?api-version=2016-11-01&$top=250',
+    true,
+    'POST',
+    {
+      searchText: search.trim(),
+      visibleHideKeys: [],
+      allTagsToInclude: ['Action', 'Important'],
+      anyTagsToExclude: ['Deprecated', 'Agentic', 'Trigger'],
+    },
+  );
   return (result.response?.value || []).map(normalizeFlowApiOperation);
 }
 
@@ -257,18 +267,34 @@ function normalizeDataverseFlow(value: unknown): FlowItem {
 function normalizeFlowApiOperation(value: unknown): FlowApiOperation {
   const operation = value as Record<string, unknown>;
   const properties = isRecord(operation.properties) ? operation.properties : {};
-  const api = isRecord(properties.api) ? properties.api : {};
+  const api = firstRecord(
+    properties.api,
+    properties.apiDefinition,
+    operation.api,
+    operation.apiDefinition,
+    prop(operation, 'operation.api'),
+  );
+  const name = firstString(operation.name, properties.name, operation.operationId, properties.operationId, prop(operation, 'apiOperation.name')) || '';
+  const apiName = firstString(api.apiName, api.name, properties.apiName, operation.apiName);
+  const apiDisplayName = firstString(api.displayName, api.apiDisplayName, properties.apiDisplayName, operation.apiDisplayName);
   return {
-    name: String(operation.name || ''),
-    id: typeof operation.id === 'string' ? operation.id : undefined,
-    summary: typeof properties.summary === 'string' ? properties.summary : undefined,
-    description: typeof properties.description === 'string' ? properties.description : undefined,
-    operationType: typeof properties.operationType === 'string' ? properties.operationType : undefined,
-    apiId: typeof api.id === 'string' ? api.id : undefined,
-    apiName: typeof api.apiName === 'string' ? api.apiName : undefined,
-    apiDisplayName: typeof api.displayName === 'string' ? api.displayName : undefined,
-    iconUri: typeof api.iconUri === 'string' ? api.iconUri : undefined,
+    name,
+    id: firstString(operation.id, properties.id),
+    summary: firstString(properties.summary, operation.summary, properties.displayName, operation.displayName, name),
+    description: firstString(properties.description, operation.description),
+    operationType: firstString(properties.operationType, operation.operationType, properties.type, operation.type),
+    apiId: firstString(api.id, properties.apiId, operation.apiId),
+    apiName,
+    apiDisplayName,
+    iconUri: firstString(api.iconUri, api.iconUriValue, properties.iconUri, operation.iconUri),
   };
+}
+
+function firstRecord(...values: unknown[]): Record<string, unknown> {
+  for (const value of values) {
+    if (isRecord(value)) return value;
+  }
+  return {};
 }
 
 function normalizeFlowApiOperationSchema(apiName: string, apiId: string | undefined, operationId: string, rawApi: unknown): FlowApiOperationSchema | null {

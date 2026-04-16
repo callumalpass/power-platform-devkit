@@ -46,9 +46,11 @@ type FlowProblem = {
 type FlowActionEditTarget = {
   item: FlowAnalysisOutlineItem;
   name: string;
-  action: Record<string, unknown>;
+  value: Record<string, unknown>;
   from: number;
   to: number;
+  replaceMode: 'property' | 'value';
+  canRename: boolean;
 };
 
 const KIND_DOT: Record<string, string> = {
@@ -310,29 +312,25 @@ export function AutomateTab(props: {
     window.setTimeout(() => flowEditorRef.current?.revealRange(from, to), 0);
   }
 
-  function selectOutlineRange(from?: number) {
-    if (from === undefined) return;
-    syncOutlineToEditorOffset(from);
-  }
-
-  function syncOutlineToEditorOffset(offset: number) {
-    const path = findOutlinePathAtOffset(analysis?.outline || [], offset);
-    const activeKey = path[path.length - 1] || '';
-    setFlowOutlineActiveKey((current) => current === activeKey ? current : activeKey);
-    setFlowOutlineActivePath((current) => arraysEqual(current, path) ? current : path);
+  function selectOutlineItem(item: FlowAnalysisOutlineItem) {
+    const key = outlineKey(item);
+    const path = buildOutlinePathTo(analysis?.outline || [], key);
+    setFlowOutlineActiveKey(key);
+    setFlowOutlineActivePath(path);
+    jumpToEditorRange(item.from, item.to);
   }
 
   function openActionEditor(item: FlowAnalysisOutlineItem) {
     try {
-      setEditingAction(readActionEditTarget(flowDocument, item));
+      setEditingAction(readOutlineEditTarget(flowDocument, item));
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
     }
   }
 
-  function applyActionEdit(target: FlowActionEditTarget, actionName: string, action: Record<string, unknown>) {
+  function applyActionEdit(target: FlowActionEditTarget, actionName: string, value: Record<string, unknown>) {
     try {
-      updateFlowDocument(replaceActionInFlowDocument(flowDocument, target, actionName, action));
+      updateFlowDocument(replaceOutlineItemInFlowDocument(flowDocument, target, actionName, value));
       setEditingAction(null);
       toast(`Updated ${actionName}`);
     } catch (error) {
@@ -554,21 +552,16 @@ export function AutomateTab(props: {
                         diagnostics={analysis?.diagnostics || []}
                         validation={flowValidation}
                         analysis={analysis}
-                        onActiveOffsetChange={syncOutlineToEditorOffset}
                         toast={toast}
                       />
                     </div>
                     <aside className="flow-outline-rail">
-                      <div className="flow-rail-header">
-                        <h3>Outline</h3>
-                        <span>{analysis?.summary?.actionCount || 0} actions</span>
-                      </div>
                       <FlowOutlineCanvas
                         items={analysis?.outline || []}
                         problems={flowProblems}
                         activeKey={flowOutlineActiveKey}
                         activePath={flowOutlineActivePath}
-                        onJump={jumpToEditorRange}
+                        onSelect={selectOutlineItem}
                         onEditAction={openActionEditor}
                       />
                     </aside>
@@ -734,7 +727,7 @@ export function AutomateTab(props: {
                     problems={flowProblems}
                     activeKey={flowOutlineActiveKey}
                     activePath={flowOutlineActivePath}
-                    onJump={selectOutlineRange}
+                    onSelect={selectOutlineItem}
                     onEditAction={openActionEditor}
                   />
                 ) : null}
@@ -778,22 +771,19 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
   diagnostics: DiagnosticItem[];
   validation: FlowValidationResult | null;
   analysis: FlowAnalysis | null;
-  onActiveOffsetChange: (offset: number) => void;
   toast: ToastFn;
 }>((props, ref) => {
-  const { value, onChange, diagnostics, validation, analysis, onActiveOffsetChange, toast } = props;
+  const { value, onChange, diagnostics, validation, analysis, toast } = props;
   const mountRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
-  const onActiveOffsetChangeRef = useRef(onActiveOffsetChange);
   const diagnosticsRef = useRef(diagnostics);
   const validationRef = useRef(validation);
   const analysisRef = useRef(analysis);
 
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-  useEffect(() => { onActiveOffsetChangeRef.current = onActiveOffsetChange; }, [onActiveOffsetChange]);
   useEffect(() => { diagnosticsRef.current = diagnostics; }, [diagnostics]);
   useEffect(() => { validationRef.current = validation; }, [validation]);
   useEffect(() => { analysisRef.current = analysis; }, [analysis]);
@@ -910,32 +900,11 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       valueRef.current = next;
       onChangeRef.current(next);
     });
-    let activeFrame: number | null = null;
-    const emitActiveOffset = (preferCursor = false) => {
-      activeFrame = null;
-      const position = preferCursor ? editor.getPosition() : editor.getVisibleRanges()[0]?.getStartPosition() || editor.getPosition();
-      if (!position) return;
-      const visible = editor.getVisibleRanges()[0];
-      const lineNumber = !preferCursor && visible
-        ? Math.max(1, Math.floor((visible.startLineNumber + visible.endLineNumber) / 2))
-        : position.lineNumber;
-      onActiveOffsetChangeRef.current(model.getOffsetAt({ lineNumber, column: 1 }));
-    };
-    const scheduleActiveOffset = (preferCursor = false) => {
-      if (activeFrame !== null) window.cancelAnimationFrame(activeFrame);
-      activeFrame = window.requestAnimationFrame(() => emitActiveOffset(preferCursor));
-    };
-    const scrollSubscription = editor.onDidScrollChange(() => scheduleActiveOffset(false));
-    const cursorSubscription = editor.onDidChangeCursorPosition(() => scheduleActiveOffset(true));
-    scheduleActiveOffset(false);
 
     updateFlowEditorMarkers(model, diagnosticsRef.current, validationRef.current);
     return () => {
-      if (activeFrame !== null) window.cancelAnimationFrame(activeFrame);
       themeObserver.disconnect();
       contentSubscription.dispose();
-      scrollSubscription.dispose();
-      cursorSubscription.dispose();
       completionProvider.dispose();
       hoverProvider.dispose();
       editor.dispose();
@@ -1263,17 +1232,20 @@ function findOutlineAtOffset(items: FlowAnalysisOutlineItem[], offset: number): 
   return null;
 }
 
-function findOutlinePathAtOffset(items: FlowAnalysisOutlineItem[], offset: number): string[] {
+function outlineKey(item: FlowAnalysisOutlineItem): string {
+  return `${item.kind || 'item'}:${item.name || ''}:${item.from ?? ''}:${item.to ?? ''}`;
+}
+
+function buildOutlinePathTo(items: FlowAnalysisOutlineItem[], targetKey: string): string[] {
   for (const item of items) {
-    if ((item.from ?? -1) <= offset && offset <= (item.to ?? -1)) {
-      return [outlineKey(item), ...findOutlinePathAtOffset(item.children || [], offset)];
+    const key = outlineKey(item);
+    if (key === targetKey) return [key];
+    if (item.children?.length) {
+      const sub = buildOutlinePathTo(item.children, targetKey);
+      if (sub.length) return [key, ...sub];
     }
   }
   return [];
-}
-
-function outlineKey(item: FlowAnalysisOutlineItem): string {
-  return `${item.kind || 'item'}:${item.name || ''}:${item.from ?? ''}:${item.to ?? ''}`;
 }
 
 function arraysEqual(left: string[], right: string[]) {
@@ -1556,6 +1528,8 @@ function AddFlowActionModal(props: {
   );
 }
 
+type EditActionTab = 'fields' | 'json';
+
 function EditFlowActionModal(props: {
   environment: string;
   target: FlowActionEditTarget;
@@ -1564,11 +1538,12 @@ function EditFlowActionModal(props: {
   toast: ToastFn;
 }) {
   const [actionName, setActionName] = useState(props.target.name);
-  const [draft, setDraft] = useState<Record<string, unknown>>(props.target.action);
-  const [rawText, setRawText] = useState(() => JSON.stringify(props.target.action, null, 2));
+  const [draft, setDraft] = useState<Record<string, unknown>>(props.target.value);
+  const [rawText, setRawText] = useState(() => JSON.stringify(props.target.value, null, 2));
+  const [tab, setTab] = useState<EditActionTab>(() => isActionLikeOutlineItem(props.target.item) ? 'fields' : 'json');
   const [schema, setSchema] = useState<FlowApiOperationSchema | null>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
-  const operationRef = useMemo(() => readActionOperation(props.target.action), [props.target.action]);
+  const operationRef = useMemo(() => readActionOperation(props.target.value), [props.target.value]);
   const rawError = useMemo(() => {
     try {
       JSON.parse(rawText);
@@ -1580,8 +1555,9 @@ function EditFlowActionModal(props: {
 
   useEffect(() => {
     setActionName(props.target.name);
-    setDraft(props.target.action);
-    setRawText(JSON.stringify(props.target.action, null, 2));
+    setDraft(props.target.value);
+    setRawText(JSON.stringify(props.target.value, null, 2));
+    setTab(isActionLikeOutlineItem(props.target.item) ? 'fields' : 'json');
   }, [props.target]);
 
   useEffect(() => {
@@ -1601,10 +1577,14 @@ function EditFlowActionModal(props: {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === 'Escape') props.onClose();
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault();
+        tryApply();
+      }
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [props.onClose]);
+  });
 
   function updateDraft(path: string[], value: unknown) {
     const next = setPathValue(draft, path, value);
@@ -1612,80 +1592,117 @@ function EditFlowActionModal(props: {
     setRawText(JSON.stringify(next, null, 2));
   }
 
-  function applyRaw() {
-    const parsed = JSON.parse(rawText) as unknown;
-    if (!isObject(parsed)) throw new Error('Action JSON must be an object.');
-    props.onApply(props.target, sanitizeActionName(actionName), parsed);
+  function switchTab(next: EditActionTab) {
+    if (next === 'fields' && tab === 'json' && !rawError) {
+      try {
+        const parsed = JSON.parse(rawText) as unknown;
+        if (isObject(parsed)) setDraft(parsed);
+      } catch { /* keep current draft */ }
+    }
+    if (next === 'json' && tab === 'fields') {
+      setRawText(JSON.stringify(draft, null, 2));
+    }
+    setTab(next);
+  }
+
+  function tryApply() {
+    try {
+      const source = tab === 'json' ? rawText : JSON.stringify(draft, null, 2);
+      const parsed = JSON.parse(source) as unknown;
+      if (!isObject(parsed)) throw new Error('Edited JSON must be an object.');
+      const nextName = props.target.canRename ? formatOutlineEditName(props.target.item, actionName) : actionName.trim();
+      if (!nextName) throw new Error('Name is required.');
+      props.onApply(props.target, nextName, parsed);
+    } catch (error) {
+      props.toast(error instanceof Error ? error.message : String(error), true);
+    }
   }
 
   const type = String(draft.type || props.target.item.type || '');
+  const actionLike = isActionLikeOutlineItem(props.target.item);
   const connectorFields = schema?.fields || [];
   const existingParameterFields = existingConnectorParameterFields(draft, connectorFields);
+  const hasConnectorSchema = actionLike && Boolean(operationRef.operationId);
+  const schemaLabel = schemaLoading
+    ? 'Loading schema…'
+    : schema
+      ? `${schema.apiDisplayName || schema.apiName || 'Connector'} · ${schema.summary || schema.operationId}`
+      : hasConnectorSchema
+        ? 'No schema found'
+        : null;
 
   return (
     <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
       <div className="rt-modal flow-action-edit-modal">
         <div className="rt-modal-header">
-          <div>
-            <h2>Edit Action</h2>
-            <p className="desc" style={{ marginBottom: 0 }}>{type || 'Action'}{operationRef.operationId ? ` · ${operationRef.operationId}` : ''}</p>
+          <div className="flow-action-edit-header-info">
+            <h2>Edit {outlineTitle(props.target.item)}</h2>
+            <div className="flow-action-edit-badges">
+              {type ? <span className="flow-action-edit-badge">{type}</span> : null}
+              {operationRef.operationId ? <span className="flow-action-edit-badge">{operationRef.operationId}</span> : null}
+            </div>
           </div>
           <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
         </div>
         <div className="rt-modal-body flow-action-edit-body">
           <div className="flow-action-edit-section flow-action-edit-grid">
             <label>
-              <span>Action name</span>
-              <input type="text" value={actionName} onChange={(event) => setActionName(sanitizeActionName(event.target.value))} />
+              <span>Name</span>
+              <input type="text" value={actionName} disabled={!props.target.canRename} onChange={(event) => setActionName(formatOutlineEditName(props.target.item, event.target.value))} />
             </label>
-            <label>
-              <span>Type</span>
-              <input type="text" value={type} onChange={(event) => updateDraft(['type'], event.target.value)} />
-            </label>
+            {actionLike || type ? (
+              <label>
+                <span>Type</span>
+                <input type="text" value={type} onChange={(event) => updateDraft(['type'], event.target.value)} />
+              </label>
+            ) : null}
           </div>
 
-          {operationRef.operationId ? (
-            <div className="flow-action-edit-section">
-              <h3>Connector schema</h3>
-              <div className="flow-action-edit-note">
-                {schemaLoading ? 'Loading operation schema...' : schema ? `${schema.apiDisplayName || schema.apiName || 'Connector'} · ${schema.summary || schema.operationId}` : 'No operation schema was found; use common fields or raw JSON.'}
-              </div>
-              {schema?.description ? <p className="desc" style={{ marginBottom: 0 }}>{schema.description}</p> : null}
-              {connectorFields.length ? (
-                <div className="flow-action-field-list">
-                  {[...connectorFields, ...existingParameterFields].map((field) => (
-                    <SchemaFieldEditor
-                      key={`${field.location || 'parameter'}:${field.name}`}
-                      field={field}
-                      value={readPathValue(draft, connectorFieldPath(field))}
-                      onChange={(value) => updateDraft(connectorFieldPath(field), value)}
-                    />
-                  ))}
+          <div className="flow-action-edit-tabs">
+            <button type="button" className={`flow-action-edit-tab ${tab === 'fields' ? 'active' : ''}`} onClick={() => switchTab('fields')}>Fields</button>
+            <button type="button" className={`flow-action-edit-tab ${tab === 'json' ? 'active' : ''}`} onClick={() => switchTab('json')}>JSON</button>
+            {schemaLabel ? <span className="flow-action-edit-schema-label">{schemaLabel}</span> : null}
+          </div>
+
+          {tab === 'fields' ? (
+            <>
+              {hasConnectorSchema && connectorFields.length ? (
+                <div className="flow-action-edit-section">
+                  <h3>Connector parameters</h3>
+                  {schema?.description ? <p className="desc" style={{ marginBottom: 0 }}>{schema.description}</p> : null}
+                  <div className="flow-action-field-list">
+                    {[...connectorFields, ...existingParameterFields].map((field) => (
+                      <SchemaFieldEditor
+                        key={`${field.location || 'parameter'}:${field.name}`}
+                        field={field}
+                        value={readPathValue(draft, connectorFieldPath(field))}
+                        onChange={(value) => updateDraft(connectorFieldPath(field), value)}
+                      />
+                    ))}
+                  </div>
                 </div>
               ) : null}
+
+              {actionLike ? (
+                <div className="flow-action-edit-section">
+                <h3>Common fields</h3>
+                <CommonActionFields action={draft} onChange={updateDraft} />
+                </div>
+              ) : null}
+              {!actionLike && !hasConnectorSchema ? (
+                <div className="empty">Use the JSON tab to edit this workflow section.</div>
+              ) : null}
+            </>
+          ) : (
+            <div className="flow-action-edit-section">
+              <textarea className="flow-action-json-editor" value={rawText} onChange={(event) => setRawText(event.target.value)} spellCheck={false} />
+              {rawError ? <div className="flow-action-edit-error">{rawError}</div> : null}
             </div>
-          ) : null}
-
-          <div className="flow-action-edit-section">
-            <h3>Common fields</h3>
-            <CommonActionFields action={draft} onChange={updateDraft} />
-          </div>
-
-          <div className="flow-action-edit-section">
-            <h3>Raw action JSON</h3>
-            <textarea className="flow-action-json-editor" value={rawText} onChange={(event) => setRawText(event.target.value)} spellCheck={false} />
-            {rawError ? <div className="flow-action-edit-error">{rawError}</div> : null}
-          </div>
+          )}
         </div>
         <div className="rt-modal-header add-action-footer">
-          <div className="desc" style={{ marginBottom: 0 }}>Changes update the editor only. Use Check & Save when ready.</div>
-          <button className="btn btn-primary" type="button" disabled={!actionName.trim() || Boolean(rawError)} onClick={() => {
-            try {
-              applyRaw();
-            } catch (error) {
-              props.toast(error instanceof Error ? error.message : String(error), true);
-            }
-          }}>Apply Changes</button>
+          <span className="desc" style={{ marginBottom: 0 }}>Updates the editor only — use Check & Save when ready.</span>
+          <button className="btn btn-primary" type="button" disabled={!actionName.trim() || (tab === 'json' && Boolean(rawError))} onClick={tryApply}>Apply Changes</button>
         </div>
       </div>
     </div>
@@ -1784,23 +1801,49 @@ function addActionToFlowDocument(source: string, actionName: string, action: Rec
   return JSON.stringify(root, null, 2);
 }
 
-function readActionEditTarget(source: string, item: FlowAnalysisOutlineItem): FlowActionEditTarget {
+function readOutlineEditTarget(source: string, item: FlowAnalysisOutlineItem): FlowActionEditTarget {
   if (item.from === undefined || item.to === undefined || !item.name) throw new Error('Outline item does not have a source range.');
+  const direct = tryParseObjectSlice(source, item.from, item.to);
+  if (direct) {
+    return { item, name: item.name, value: direct, from: item.from, to: item.to, replaceMode: 'value', canRename: false };
+  }
   const colon = source.indexOf(':', item.from);
   if (colon < 0 || colon > item.to) throw new Error(`Could not locate ${item.name} in the editor.`);
-  const valueStart = source.indexOf('{', colon);
-  if (valueStart < 0 || valueStart > item.to) throw new Error(`${item.name} is not a JSON object action.`);
-  const parsed = JSON.parse(source.slice(valueStart, item.to)) as unknown;
-  if (!isObject(parsed)) throw new Error(`${item.name} is not a JSON object action.`);
-  return { item, name: item.name, action: parsed, from: item.from, to: item.to };
+  const valueStart = firstNonWhitespaceOffset(source, colon + 1);
+  if (valueStart < 0 || valueStart > item.to) throw new Error(`${item.name} does not have an editable JSON value.`);
+  const parsed = tryParseObjectSlice(source, valueStart, item.to);
+  if (!parsed) throw new Error(`${item.name} is not an editable JSON object.`);
+  return { item, name: item.name, value: parsed, from: item.from, to: item.to, replaceMode: 'property', canRename: canRenameOutlineItem(item) };
 }
 
-function replaceActionInFlowDocument(source: string, target: FlowActionEditTarget, actionName: string, action: Record<string, unknown>): string {
-  const name = sanitizeActionName(actionName);
+function replaceOutlineItemInFlowDocument(source: string, target: FlowActionEditTarget, itemName: string, value: Record<string, unknown>): string {
   const lineStart = source.lastIndexOf('\n', target.from - 1) + 1;
   const indent = source.slice(lineStart, target.from).match(/^\s*/)?.[0] || '';
-  const body = JSON.stringify(action, null, 2).replace(/\n/g, `\n${indent}`);
-  return `${source.slice(0, target.from)}"${escapeJsonString(name)}": ${body}${source.slice(target.to)}`;
+  const body = JSON.stringify(value, null, 2).replace(/\n/g, `\n${indent}`);
+  if (target.replaceMode === 'value') {
+    return `${source.slice(0, target.from)}${body}${source.slice(target.to)}`;
+  }
+  return `${source.slice(0, target.from)}"${escapeJsonString(itemName)}": ${body}${source.slice(target.to)}`;
+}
+
+function tryParseObjectSlice(source: string, from: number, to: number): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(source.slice(from, to)) as unknown;
+    return isObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function firstNonWhitespaceOffset(source: string, from: number) {
+  for (let index = from; index < source.length; index += 1) {
+    if (!/\s/.test(source[index] || '')) return index;
+  }
+  return -1;
+}
+
+function canRenameOutlineItem(item: FlowAnalysisOutlineItem) {
+  return !['workflow', 'actions', 'parameters', 'triggers', 'variables'].includes(String(item.name || item.kind || ''));
 }
 
 function escapeJsonString(value: string) {
@@ -1952,6 +1995,19 @@ function sanitizeActionName(value: string): string {
   return value.trim().replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'Action';
 }
 
+function formatOutlineEditName(item: FlowAnalysisOutlineItem, value: string): string {
+  if (shouldSanitizeOutlineName(item)) return sanitizeActionName(value);
+  return value;
+}
+
+function shouldSanitizeOutlineName(item: FlowAnalysisOutlineItem) {
+  return ['action', 'scope', 'condition', 'foreach', 'switch', 'trigger'].includes(String(item.kind || ''));
+}
+
+function isActionLikeOutlineItem(item: FlowAnalysisOutlineItem) {
+  return ['action', 'scope', 'condition', 'foreach', 'switch', 'trigger'].includes(String(item.kind || ''));
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
@@ -2005,27 +2061,25 @@ function FlowOutlineCanvas(props: {
   problems?: FlowProblem[];
   activeKey?: string;
   activePath?: string[];
-  onJump: (from?: number, to?: number) => void;
+  onSelect?: (item: FlowAnalysisOutlineItem) => void;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
 }) {
   const { items } = props;
   const [query, setQuery] = useState('');
   const filteredItems = useMemo(() => filterOutlineItems(items, query), [items, query]);
-  const visibleCount = useMemo(() => countOutlineItems(filteredItems), [filteredItems]);
   if (!items.length) return <div className="empty">Load a flow definition to see the outline.</div>;
   return (
     <>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
         <input
           type="search"
-          placeholder="Filter outline..."
+          placeholder="Filter..."
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          style={{ minWidth: 0, flex: 1, padding: '6px 8px', fontSize: '0.75rem' }}
+          style={{ width: '100%', padding: '4px 8px', fontSize: '0.75rem', boxSizing: 'border-box' }}
         />
-        <span style={{ color: 'var(--muted)', fontSize: '0.6875rem', whiteSpace: 'nowrap' }}>{visibleCount} items</span>
       </div>
-      <div className="flow-outline-scroll">
+      <div className="flow-outline-scroll" style={{ padding: '4px 0' }}>
         {filteredItems.length ? (
           <OutlineNodeList
             items={filteredItems}
@@ -2033,11 +2087,11 @@ function FlowOutlineCanvas(props: {
             problems={props.problems || []}
             activeKey={props.activeKey || ''}
             activePath={props.activePath || []}
-            onJump={props.onJump}
+            onSelect={props.onSelect}
             onEditAction={props.onEditAction}
           />
         ) : (
-          <div className="empty">No outline items match this filter.</div>
+          <div className="empty">No matches.</div>
         )}
       </div>
     </>
@@ -2050,21 +2104,20 @@ function OutlineNodeList(props: {
   problems: FlowProblem[];
   activeKey: string;
   activePath: string[];
-  onJump: (from?: number, to?: number) => void;
+  onSelect?: (item: FlowAnalysisOutlineItem) => void;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
 }) {
   return (
     <>
-      {props.items.map((item, index) => (
+      {props.items.map((item) => (
         <OutlineNode
           key={outlineKey(item)}
           item={item}
           depth={props.depth}
-          last={index === props.items.length - 1}
           problems={props.problems}
           activeKey={props.activeKey}
           activePath={props.activePath}
-          onJump={props.onJump}
+          onSelect={props.onSelect}
           onEditAction={props.onEditAction}
         />
       ))}
@@ -2075,14 +2128,13 @@ function OutlineNodeList(props: {
 function OutlineNode(props: {
   item: FlowAnalysisOutlineItem;
   depth: number;
-  last: boolean;
   problems: FlowProblem[];
   activeKey: string;
   activePath: string[];
-  onJump: (from?: number, to?: number) => void;
+  onSelect?: (item: FlowAnalysisOutlineItem) => void;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
 }) {
-  const { item, depth, last, problems, activeKey, activePath, onJump, onEditAction } = props;
+  const { item, depth, problems, activeKey, activePath, onSelect, onEditAction } = props;
   const rowRef = useRef<HTMLDivElement | null>(null);
   const itemKey = outlineKey(item);
   const active = activeKey === itemKey;
@@ -2093,13 +2145,11 @@ function OutlineNode(props: {
   const dotColor = KIND_DOT[kind] || KIND_DOT.default;
   const problemSummary = summarizeOutlineProblems(item, problems);
   const hasProblem = problemSummary.error || problemSummary.warning || problemSummary.info;
-  const hasDetail = Boolean(item.detail || item.type || item.connector || item.inputs || item.runAfter?.length || item.dependency);
-  const expandable = hasChildren || hasDetail;
   const open = manuallyOpen || inActivePath;
-  const indent = depth * 20 + (depth > 0 ? 18 : 8);
+  const indent = depth * 16 + 8;
   const title = outlineTitle(item);
-  const meta = outlineMeta(item);
-  const editable = Boolean(onEditAction && item.name && item.type && (item.kind === 'action' || item.kind === 'scope'));
+  const typeHint = item.type && item.type !== title ? item.type : '';
+  const editable = Boolean(onEditAction && item.name && item.from !== undefined && item.to !== undefined && item.kind !== 'branch');
 
   useEffect(() => {
     if (!active) return;
@@ -2107,26 +2157,13 @@ function OutlineNode(props: {
   }, [active]);
 
   return (
-    <div style={{ position: 'relative' }}>
-      {depth > 0 && (
-        <div style={{
-          position: 'absolute', left: depth * 20 + 3, top: 0, bottom: last ? '50%' : 0,
-          width: 1, background: 'var(--border)',
-        }} />
-      )}
-      {depth > 0 && (
-        <div style={{
-          position: 'absolute', left: depth * 20 + 3, top: '50%',
-          width: 10, height: 1, background: 'var(--border)',
-          transform: 'translateY(-50%)',
-        }} />
-      )}
+    <>
       <div
         ref={rowRef}
         className={`flow-outline-row ${active ? 'active' : ''}`}
         onClick={() => {
-          onJump(item.from, item.to);
-          if (expandable) setManuallyOpen(!open);
+          onSelect?.(item);
+          if (hasChildren) setManuallyOpen(!open);
         }}
         onDoubleClick={(event) => {
           if (!editable) return;
@@ -2135,53 +2172,34 @@ function OutlineNode(props: {
           onEditAction?.(item);
         }}
         style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '6px 12px 6px ' + indent + 'px',
-          cursor: 'pointer', fontSize: '12px', lineHeight: '18px',
-          borderBottom: '1px solid var(--border)',
-          transition: 'background 0.1s',
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: `3px 10px 3px ${indent}px`,
+          cursor: 'pointer', fontSize: '12px', lineHeight: '20px',
         }}
       >
-        <span style={{ width: 12, fontSize: '10px', color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', userSelect: 'none' }}>
-          {expandable ? (open ? '\u25BE' : '\u25B8') : ''}
+        <span style={{ width: 14, fontSize: '10px', color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', userSelect: 'none', textAlign: 'center' }}>
+          {hasChildren ? (open ? '\u25BE' : '\u25B8') : ''}
         </span>
-        <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: dotColor }} />
-        <span style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--muted)', letterSpacing: '0.04em', flexShrink: 0, minWidth: 52 }}>
-          {item.kind || 'action'}
+        <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: dotColor }} />
+        <span style={{ fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+          {title}
         </span>
-        <span style={{ minWidth: 0, flex: 1, display: 'grid', gap: 1 }}>
-          <span style={{ fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {title}
-          </span>
-          {meta ? (
-            <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px' }}>
-              {meta}
-            </span>
-          ) : null}
-        </span>
-        {item.dependency ? (
-          <span title={item.runAfter?.length ? item.runAfter.join(', ') : item.dependency} style={{ fontSize: '10px', color: 'var(--muted)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '1px 6px', flexShrink: 0 }}>
-            {shorten(item.dependency, 24)}
+        {typeHint ? (
+          <span style={{ fontSize: '10px', color: 'var(--muted)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }}>
+            {typeHint}
           </span>
         ) : null}
         {hasProblem ? (
-          <span title={outlineProblemTitle(problemSummary)} style={{ fontSize: '10px', color: problemSummary.error ? 'var(--danger)' : problemSummary.warning ? '#d97706' : 'var(--accent)', background: 'var(--surface)', border: '1px solid currentColor', borderRadius: 8, padding: '1px 6px', flexShrink: 0 }}>
-            {problemSummary.error ? `${problemSummary.error} error` : problemSummary.warning ? `${problemSummary.warning} warn` : `${problemSummary.info} info`}
-          </span>
+          <span title={outlineProblemTitle(problemSummary)} style={{
+            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+            background: problemSummary.error ? 'var(--danger)' : problemSummary.warning ? '#d97706' : 'var(--accent)',
+          }} />
         ) : null}
-        {hasChildren && (
-          <span style={{ fontSize: '10px', color: 'var(--muted)', background: 'var(--border)', borderRadius: 8, padding: '1px 6px', flexShrink: 0 }}>
-            {item.children!.length}
-          </span>
-        )}
       </div>
-      {open && hasDetail && (
-        <OutlineDetail item={item} indent={indent + 24} />
-      )}
       {open && hasChildren && (
-        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onJump={onJump} onEditAction={onEditAction} />
+        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} onEditAction={onEditAction} />
       )}
-    </div>
+    </>
   );
 }
 

@@ -176,6 +176,9 @@ interface FlowExpressionOccurrence {
 interface FlowDocumentModel {
   wrapperKind: string;
   definitionNode?: JsonObjectNode;
+  actionsProperty?: JsonObjectProperty;
+  triggersProperty?: JsonObjectProperty;
+  parametersProperty?: JsonObjectProperty;
   actions: FlowActionNode[];
   triggers: FlowActionNode[];
   variables: FlowVariableNode[];
@@ -276,9 +279,12 @@ function buildFlowModel(root: JsonObjectNode): FlowDocumentModel {
   }
 
   const definitionNode = extracted.definitionNode;
-  const triggersNode = objectPropertyValue(definitionNode, 'triggers');
-  const actionsNode = objectPropertyValue(definitionNode, 'actions');
-  const parametersNode = objectPropertyValue(definitionNode, 'parameters');
+  const triggersProperty = objectProperty(definitionNode, 'triggers');
+  const actionsProperty = objectProperty(definitionNode, 'actions');
+  const parametersProperty = objectProperty(definitionNode, 'parameters');
+  const triggersNode = triggersProperty?.valueNode;
+  const actionsNode = actionsProperty?.valueNode;
+  const parametersNode = parametersProperty?.valueNode;
   const actions = actionsNode?.type === 'object' ? collectActions(actionsNode, diagnostics, 'workflow', 'workflow', undefined) : [];
   const triggers = triggersNode?.type === 'object' ? collectTriggerNodes(triggersNode, diagnostics) : [];
   const parameters = parametersNode?.type === 'object' ? collectParameters(parametersNode) : [];
@@ -287,6 +293,9 @@ function buildFlowModel(root: JsonObjectNode): FlowDocumentModel {
   return {
     wrapperKind: extracted.wrapperKind,
     definitionNode,
+    actionsProperty,
+    triggersProperty,
+    parametersProperty,
     actions,
     triggers,
     variables,
@@ -425,7 +434,7 @@ function collectVariables(actions: FlowActionNode[]): FlowVariableNode[] {
           variables.set(nameNode.value, {
             name: nameNode.value,
             type: typeNode?.type === 'string' ? typeNode.value : undefined,
-            from: nameNode.from,
+            from: item.from,
             to: item.to,
             declaredBy: action.name,
           });
@@ -452,8 +461,8 @@ function buildOutline(model: FlowDocumentModel): FlowOutlineItem[] {
       kind: 'parameter',
       name: 'parameters',
       detail: `${model.parameters.length}`,
-      from: model.parameters[0]!.from,
-      to: model.parameters[model.parameters.length - 1]!.to,
+      from: model.parametersProperty?.from ?? model.parameters[0]!.from,
+      to: model.parametersProperty?.to ?? model.parameters[model.parameters.length - 1]!.to,
       children: model.parameters.map((item) => ({ kind: 'parameter', name: item.name, detail: item.type, from: item.from, to: item.to })),
     });
   }
@@ -462,8 +471,8 @@ function buildOutline(model: FlowDocumentModel): FlowOutlineItem[] {
       kind: 'trigger',
       name: 'triggers',
       detail: `${model.triggers.length}`,
-      from: model.triggers[0]!.from,
-      to: model.triggers[model.triggers.length - 1]!.to,
+      from: model.triggersProperty?.from ?? model.triggers[0]!.from,
+      to: model.triggersProperty?.to ?? model.triggers[model.triggers.length - 1]!.to,
       children: model.triggers.map((item) => ({ kind: 'trigger', name: item.name, detail: item.type, from: item.from, to: item.to })),
     });
   }
@@ -472,8 +481,8 @@ function buildOutline(model: FlowDocumentModel): FlowOutlineItem[] {
       kind: 'action',
       name: 'actions',
       detail: `${model.actions.length}`,
-      from: model.actions[0]!.from,
-      to: model.actions[model.actions.length - 1]!.to,
+      from: model.actionsProperty?.from ?? model.actions[0]!.from,
+      to: model.actionsProperty?.to ?? model.actions[model.actions.length - 1]!.to,
       children: model.actions.map(actionOutline),
     });
   }
@@ -930,7 +939,11 @@ function looksLikeWorkflowDefinition(node: JsonObjectNode): boolean {
 }
 
 function objectPropertyValue(node: JsonObjectNode, key: string): JsonNode | undefined {
-  return node.properties.find((property) => property.key === key)?.valueNode;
+  return objectProperty(node, key)?.valueNode;
+}
+
+function objectProperty(node: JsonObjectNode, key: string): JsonObjectProperty | undefined {
+  return node.properties.find((property) => property.key === key);
 }
 
 function readStringProperty(node: JsonObjectNode, key: string): string | undefined {
