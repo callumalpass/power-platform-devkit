@@ -97,6 +97,18 @@ export type FlowDefinitionSummary = {
   actions?: Array<{ name?: string; type?: string }>;
 };
 
+export type FlowApiOperation = {
+  name: string;
+  id?: string;
+  summary?: string;
+  description?: string;
+  operationType?: string;
+  apiId?: string;
+  apiName?: string;
+  apiDisplayName?: string;
+  iconUri?: string;
+};
+
 export type FlowItem = {
   id?: string;
   name?: string;

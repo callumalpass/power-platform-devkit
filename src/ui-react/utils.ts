@@ -1,5 +1,17 @@
 export type JsonMap = Record<string, any>;
 
+export class ApiRequestError extends Error {
+  data: any;
+  status: number;
+
+  constructor(message: string, data: any, status: number) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.data = data;
+    this.status = status;
+  }
+}
+
 export async function api<T = any>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'content-type': 'application/json' },
@@ -16,7 +28,7 @@ export async function api<T = any>(path: string, options?: RequestInit): Promise
     );
   }
   if (!response.ok || data.success === false) {
-    throw new Error(summarizeError(data));
+    throw new ApiRequestError(summarizeError(data), data, response.status);
   }
   return data as T;
 }

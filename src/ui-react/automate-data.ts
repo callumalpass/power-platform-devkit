@@ -1,5 +1,5 @@
-import { api, prop } from './utils.js';
-import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowItem, FlowRun } from './ui-types.js';
+import { ApiRequestError, api, prop } from './utils.js';
+import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowItem, FlowRun } from './ui-types.js';
 
 const DATAVERSE_FLOW_FALLBACK_PATH = "/workflows?$filter=category eq 5&$select=name,workflowid,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200";
 
@@ -69,15 +69,22 @@ export async function analyzeFlowDocument(source: string, cursor = source.length
 
 export async function checkFlowDefinition(environment: string, flow: FlowItem, source: string, kind: FlowValidationKind): Promise<FlowValidationResult> {
   const suffix = kind === 'errors' ? 'checkFlowErrors' : 'checkFlowWarnings';
-  const result = await executeRequest<unknown>(
-    environment,
-    'flow',
-    `/flows/${flowIdentifier(flow)}/${suffix}`,
-    true,
-    'POST',
-    buildFlowServicePayload(source),
-  );
-  return normalizeFlowValidationResult(kind, result.response);
+  try {
+    const result = await executeRequest<unknown>(
+      environment,
+      'flow',
+      `/flows/${flowIdentifier(flow)}/${suffix}`,
+      true,
+      'POST',
+      buildFlowServicePayload(source),
+    );
+    return normalizeFlowValidationResult(kind, result.response);
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      return normalizeFlowValidationResult(kind, error.data);
+    }
+    throw error;
+  }
 }
 
 export async function saveFlowDefinition(environment: string, flow: FlowItem, source: string): Promise<FlowItem> {
@@ -93,6 +100,13 @@ export async function saveFlowDefinition(environment: string, flow: FlowItem, so
     },
   );
   return normalizeFlowApiItem(result.response || flow);
+}
+
+export async function loadFlowApiOperations(environment: string, search: string): Promise<FlowApiOperation[]> {
+  const params = new URLSearchParams({ $top: '25' });
+  if (search.trim()) params.set('$search', search.trim());
+  const result = await executeRequest<{ value?: unknown[] }>(environment, 'flow', `/apioperations?${params.toString()}`, true);
+  return (result.response?.value || []).map(normalizeFlowApiOperation);
 }
 
 export function formatFlowDocument(source: string) {
@@ -233,6 +247,23 @@ function normalizeDataverseFlow(value: unknown): FlowItem {
   };
 }
 
+function normalizeFlowApiOperation(value: unknown): FlowApiOperation {
+  const operation = value as Record<string, unknown>;
+  const properties = isRecord(operation.properties) ? operation.properties : {};
+  const api = isRecord(properties.api) ? properties.api : {};
+  return {
+    name: String(operation.name || ''),
+    id: typeof operation.id === 'string' ? operation.id : undefined,
+    summary: typeof properties.summary === 'string' ? properties.summary : undefined,
+    description: typeof properties.description === 'string' ? properties.description : undefined,
+    operationType: typeof properties.operationType === 'string' ? properties.operationType : undefined,
+    apiId: typeof api.id === 'string' ? api.id : undefined,
+    apiName: typeof api.apiName === 'string' ? api.apiName : undefined,
+    apiDisplayName: typeof api.displayName === 'string' ? api.displayName : undefined,
+    iconUri: typeof api.iconUri === 'string' ? api.iconUri : undefined,
+  };
+}
+
 function parseJsonMaybe(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'string') return null;
   try {
@@ -264,26 +295,50 @@ function collectValidationItems(kind: FlowValidationKind, raw: unknown): FlowVal
     }
 
     const record = value as Record<string, unknown>;
-    const message = firstString(record.message, record.errorMessage, record.localizedMessage, record.description, record.title);
+    const detail = parseServiceErrorDetail(record.detail);
+    const message = detail?.message || firstString(record.message, record.errorMessage, record.localizedMessage, record.description, record.title);
     const code = firstString(record.code, record.ruleId, record.errorCode, record.name);
     if (message) {
       items.push({
         level: kind === 'errors' ? 'error' : 'warning',
-        code,
+        code: detail?.code || code,
         message,
-        path: firstString(record.path, record.jsonPath, record.location, record.target),
+        path: detail?.path || firstString(record.path, record.jsonPath, record.location, record.target),
         actionName: firstString(record.actionName, record.operationName, record.nodeName, record.target),
         operationMetadataId: firstString(record.operationMetadataId, record.anchor, record.nodeId),
         raw: record,
       });
     }
 
-    for (const key of ['errors', 'warnings', 'value', 'details', 'innerErrors', 'issues'] as const) {
+    for (const key of ['diagnostics', 'errors', 'warnings', 'value', 'details', 'innerErrors', 'issues'] as const) {
       if (record[key] !== undefined) visit(record[key]);
     }
   };
   visit(raw);
   return items;
+}
+
+function parseServiceErrorDetail(value: unknown): { code?: string; message?: string; path?: string } | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    const path = extractQuotedPath(value);
+    return { message: value, path };
+  }
+  const error = prop(parsed, 'error') || parsed;
+  const message = firstString(prop(error, 'message'), prop(error, 'ExceptionMessage'), prop(parsed, 'message'));
+  return {
+    code: firstString(prop(error, 'code'), prop(error, 'ErrorCode'), prop(parsed, 'code')),
+    message,
+    path: message ? extractQuotedPath(message) : undefined,
+  };
+}
+
+function extractQuotedPath(value: string) {
+  const match = value.match(/Path '([^']+)'/);
+  return match?.[1];
 }
 
 function firstString(...values: unknown[]) {

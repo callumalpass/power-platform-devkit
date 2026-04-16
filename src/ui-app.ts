@@ -181,9 +181,9 @@ export function renderHtml(): string {
     textarea { font-family: var(--mono); font-size: 0.8125rem; line-height: 1.5; resize: vertical; }
     textarea.xml-editor { min-height: 320px; }
     .fetchxml-editor-shell { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
-    .fetchxml-editor-toolbar { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: 0.6875rem; color: var(--muted); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 78%, var(--bg)); }
+    .fetchxml-editor-toolbar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 12px; font-size: 0.6875rem; color: var(--muted); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 78%, var(--bg)); }
     .fetchxml-editor-toolbar-left,
-    .fetchxml-editor-toolbar-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .fetchxml-editor-toolbar-right { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
     .fetchxml-vim-mode { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 0.6875rem; }
     .fetchxml-vim-mode.insert { border-color: var(--ok); color: var(--ok); }
     .fetchxml-vim-mode.normal { border-color: var(--accent); color: var(--accent); }
@@ -228,11 +228,37 @@ export function renderHtml(): string {
     .flow-rail-header h3 { margin: 0; color: var(--ink); font-size: 0.75rem; }
     .flow-outline-rail .empty { margin: 10px; }
     .flow-outline-rail > div:last-child { border: 0 !important; border-radius: 0 !important; flex: 1; max-height: none !important; }
+    .flow-editor-shell-fullscreen { position: fixed; inset: 12px; z-index: 70; display: flex; flex-direction: column; box-shadow: 0 20px 80px rgba(0,0,0,0.35); }
+    .flow-editor-shell-fullscreen .flow-editor-layout { flex: 1; min-height: 0; }
+    .flow-editor-shell-fullscreen .fetchxml-editor-mount,
+    .flow-editor-shell-fullscreen .fetchxml-editor-mount .monaco-editor { min-height: 0; height: 100%; }
     .flow-diff-modal { width: min(1180px, 94vw); height: min(820px, 88vh); max-height: 88vh; }
     .flow-diff-editor { flex: 1; min-height: 0; }
+    .add-action-modal { width: min(920px, 94vw); max-height: 88vh; }
+    .add-action-body { padding: 14px; display: grid; gap: 14px; }
+    .add-action-section { display: grid; gap: 8px; }
+    .add-action-section h3 { margin: 0; font-size: 0.8125rem; }
+    .add-action-template-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .add-action-search { display: flex; gap: 8px; }
+    .add-action-search input { flex: 1; min-width: 0; }
+    .add-action-results { display: grid; gap: 6px; max-height: 260px; overflow: auto; }
+    .add-action-operation { display: grid; gap: 2px; width: 100%; text-align: left; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--ink); padding: 8px 10px; cursor: pointer; }
+    .add-action-operation:hover,
+    .add-action-operation.active { border-color: var(--accent); background: var(--accent-soft); }
+    .add-action-operation-title { font-weight: 600; font-size: 0.8125rem; }
+    .add-action-operation-meta { color: var(--muted); font-family: var(--mono); font-size: 0.6875rem; }
+    .add-action-operation-desc { color: var(--muted); font-size: 0.75rem; line-height: 1.35; }
+    .add-action-form { grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr); align-items: end; }
+    .add-action-form label { display: grid; gap: 4px; font-size: 0.75rem; color: var(--muted); }
+    .add-action-note { grid-column: 1 / -1; color: var(--muted); font-size: 0.75rem; line-height: 1.4; }
+    .add-action-footer { align-items: center; }
     @media (max-width: 1100px) {
       .flow-editor-layout { grid-template-columns: 1fr; }
       .flow-outline-rail { border-left: 0; border-top: 1px solid var(--border); max-height: 320px; }
+    }
+    @media (max-width: 720px) {
+      .add-action-form { grid-template-columns: 1fr; }
+      .add-action-search { flex-direction: column; }
     }
     .fetchxml-diagnostics { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
     .fetchxml-diagnostic { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; background: var(--bg); }

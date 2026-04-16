@@ -6,6 +6,7 @@ import {
   checkFlowDefinition,
   flowIdentifier,
   formatFlowDocument,
+  loadFlowApiOperations,
   loadActionDetail,
   loadFlowDefinitionDocument,
   loadFlowList,
@@ -16,7 +17,7 @@ import {
   type FlowValidationKind,
   type FlowValidationResult,
 } from './automate-data.js';
-import type { DiagnosticItem, FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowItem, FlowRun, ToastFn } from './ui-types.js';
+import type { DiagnosticItem, FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowApiOperation, FlowItem, FlowRun, ToastFn } from './ui-types.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 
@@ -71,6 +72,8 @@ export function AutomateTab(props: {
   const [flowValidation, setFlowValidation] = useState<FlowValidationResult | null>(null);
   const [flowOperation, setFlowOperation] = useState<FlowOperation>(null);
   const [showFlowDiff, setShowFlowDiff] = useState(false);
+  const [flowFullscreen, setFlowFullscreen] = useState(false);
+  const [showAddAction, setShowAddAction] = useState(false);
   const [runs, setRuns] = useState<FlowRun[]>([]);
   const [runFilter, setRunFilter] = useState('');
   const [runStatusFilter, setRunStatusFilter] = useState('');
@@ -147,6 +150,15 @@ export function AutomateTab(props: {
   const flowBusy = flowOperation !== null;
   const flowProblems = useMemo(() => buildFlowProblems(analysis?.diagnostics || [], flowValidation), [analysis?.diagnostics, flowValidation]);
   const hasBlockingServiceErrors = Boolean(flowValidation?.kind === 'errors' && flowValidation.items.some((item) => item.level === 'error'));
+
+  useEffect(() => {
+    if (!flowFullscreen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFlowFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [flowFullscreen]);
 
   async function loadFlows(force: boolean) {
     if (!environment) return;
@@ -228,6 +240,18 @@ export function AutomateTab(props: {
   function updateFlowDocument(next: string) {
     setFlowDocument(next);
     if (flowValidation) setFlowValidation(null);
+  }
+
+  function addActionToDocument(actionName: string, action: Record<string, unknown>) {
+    try {
+      const next = addActionToFlowDocument(flowDocument, actionName, action);
+      setFlowDocument(next);
+      setFlowValidation(null);
+      setShowAddAction(false);
+      toast(`Added ${actionName}`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
   }
 
   async function runFlowValidation(kind: FlowValidationKind) {
@@ -460,12 +484,14 @@ export function AutomateTab(props: {
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{flowOperation ? 'Working…' : analyzing ? 'Analyzing…' : analysis ? 'Analysis updated' : 'Definition not loaded'}</div>
                 </div>
-                <div className="fetchxml-editor-shell">
+                <div className={`fetchxml-editor-shell ${flowFullscreen ? 'flow-editor-shell-fullscreen' : ''}`}>
                   <div className="fetchxml-editor-toolbar">
                     <div className="fetchxml-editor-toolbar-left">
                       <button className="btn btn-ghost" type="button" disabled={flowBusy} onClick={() => void reloadFlowDefinition()}>{flowOperation === 'reload' ? 'Reloading…' : 'Reload'}</button>
                       <button className="btn btn-ghost" type="button" disabled={!flowDocument.trim()} onClick={formatFlowJson}>Format JSON</button>
+                      <button className="btn btn-ghost" type="button" disabled={!flowDocument.trim()} onClick={() => setShowAddAction(true)}>Add Action</button>
                       <button className="btn btn-ghost" type="button" disabled={!isFlowDirty} onClick={() => setShowFlowDiff(true)}>View Changes</button>
+                      <button className="btn btn-ghost" type="button" onClick={() => setFlowFullscreen((value) => !value)}>{flowFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
                     </div>
                     <div className="fetchxml-editor-toolbar-right">
                       <button className="btn btn-ghost" type="button" disabled={!isFlowEditable || flowBusy} onClick={() => void runFlowValidation('errors')}>{flowOperation === 'check-errors' ? 'Checking…' : 'Check Errors'}</button>
@@ -662,6 +688,16 @@ export function AutomateTab(props: {
       )}
       {showFlowDiff ? (
         <FlowDiffModal original={loadedFlowDocument} modified={flowDocument} onClose={() => setShowFlowDiff(false)} />
+      ) : null}
+      {showAddAction && currentFlow ? (
+        <AddFlowActionModal
+          environment={environment}
+          source={flowDocument}
+          analysis={analysis}
+          onClose={() => setShowAddAction(false)}
+          onAdd={addActionToDocument}
+          toast={toast}
+        />
       ) : null}
     </div>
   );
@@ -1214,6 +1250,247 @@ function FlowProblemsPanel(props: { problems: FlowProblem[]; validation: FlowVal
       </details> : null}
     </div>
   );
+}
+
+const BUILT_IN_ACTION_TEMPLATES = [
+  { key: 'compose', label: 'Compose', name: 'Compose', action: () => ({ type: 'Compose', inputs: '' }) },
+  { key: 'http', label: 'HTTP', name: 'HTTP', action: () => ({ type: 'Http', inputs: { method: 'GET', uri: '' } }) },
+  { key: 'scope', label: 'Scope', name: 'Scope', action: () => ({ type: 'Scope', actions: {} }) },
+  { key: 'condition', label: 'Condition', name: 'Condition', action: () => ({ type: 'If', expression: { equals: ['', ''] }, actions: {}, else: { actions: {} } }) },
+] as const;
+
+type BuiltInActionTemplate = typeof BUILT_IN_ACTION_TEMPLATES[number];
+
+function AddFlowActionModal(props: {
+  environment: string;
+  source: string;
+  analysis: FlowAnalysis | null;
+  onClose: () => void;
+  onAdd: (actionName: string, action: Record<string, unknown>) => void;
+  toast: ToastFn;
+}) {
+  const [search, setSearch] = useState('');
+  const [operations, setOperations] = useState<FlowApiOperation[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedOperation, setSelectedOperation] = useState<FlowApiOperation | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<BuiltInActionTemplate | null>(BUILT_IN_ACTION_TEMPLATES[0]);
+  const [actionName, setActionName] = useState('Compose');
+  const [runAfter, setRunAfter] = useState('');
+  const topLevelActions = useMemo(() => topLevelActionNames(props.analysis), [props.analysis]);
+
+  useEffect(() => {
+    if (!runAfter && topLevelActions.length) setRunAfter(topLevelActions[topLevelActions.length - 1] || '');
+  }, [runAfter, topLevelActions]);
+
+  async function searchOperations() {
+    setLoading(true);
+    try {
+      const result = await loadFlowApiOperations(props.environment, search);
+      setOperations(result);
+      if (!result.length) props.toast('No operations returned');
+    } catch (error) {
+      props.toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function selectOperation(operation: FlowApiOperation) {
+    setSelectedOperation(operation);
+    setSelectedTemplate(null);
+    setActionName(uniqueActionName(props.source, sanitizeActionName(operation.summary || operation.name || 'Action')));
+  }
+
+  function selectTemplate(template: BuiltInActionTemplate) {
+    setSelectedTemplate(template);
+    setSelectedOperation(null);
+    setActionName(uniqueActionName(props.source, template.name));
+  }
+
+  function addAction() {
+    const runAfterValue = buildRunAfter(runAfter);
+    if (selectedOperation) {
+      props.onAdd(actionName, buildApiOperationAction(props.source, selectedOperation, runAfterValue));
+      return;
+    }
+    if (selectedTemplate) {
+      props.onAdd(actionName, { ...selectedTemplate.action(), runAfter: runAfterValue });
+    }
+  }
+
+  return (
+    <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
+      <div className="rt-modal add-action-modal">
+        <div className="rt-modal-header">
+          <div>
+            <h2>Add Action</h2>
+            <p className="desc" style={{ marginBottom: 0 }}>Insert an action into the current workflow definition.</p>
+          </div>
+          <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
+        </div>
+        <div className="rt-modal-body add-action-body">
+          <div className="add-action-section">
+            <h3>Built-in</h3>
+            <div className="add-action-template-row">
+              {BUILT_IN_ACTION_TEMPLATES.map((template) => (
+                <button
+                  key={template.key}
+                  type="button"
+                  className={`btn ${selectedTemplate?.key === template.key ? '' : 'btn-ghost'}`}
+                  onClick={() => selectTemplate(template)}
+                >
+                  {template.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="add-action-section">
+            <h3>Connector Operations</h3>
+            <div className="add-action-search">
+              <input
+                type="text"
+                value={search}
+                placeholder="Search apioperations..."
+                onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') void searchOperations(); }}
+              />
+              <button className="btn btn-ghost" type="button" disabled={loading} onClick={() => void searchOperations()}>{loading ? 'Searching...' : 'Search'}</button>
+            </div>
+            <div className="add-action-results">
+              {operations.length ? operations.map((operation) => (
+                <button
+                  key={`${operation.apiId || operation.apiName}:${operation.name}`}
+                  type="button"
+                  className={`add-action-operation ${selectedOperation?.name === operation.name && selectedOperation?.apiId === operation.apiId ? 'active' : ''}`}
+                  onClick={() => selectOperation(operation)}
+                >
+                  <span className="add-action-operation-title">{operation.summary || operation.name}</span>
+                  <span className="add-action-operation-meta">{operation.apiDisplayName || operation.apiName || 'Connector'} · {operation.name}</span>
+                  {operation.description ? <span className="add-action-operation-desc">{operation.description}</span> : null}
+                </button>
+              )) : <div className="empty">{loading ? 'Searching operations...' : 'Search Flow apioperations to insert a connector action.'}</div>}
+            </div>
+          </div>
+          <div className="add-action-section add-action-form">
+            <label>
+              <span>Action name</span>
+              <input type="text" value={actionName} onChange={(event) => setActionName(sanitizeActionName(event.target.value))} />
+            </label>
+            <label>
+              <span>Run after</span>
+              <select value={runAfter} onChange={(event) => setRunAfter(event.target.value)}>
+                <option value="">none</option>
+                {topLevelActions.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+            {selectedOperation ? (
+              <div className="add-action-note">
+                Connector action will use the matching connection reference when one exists, otherwise it inserts a placeholder reference for {selectedOperation.apiDisplayName || selectedOperation.apiName || 'the connector'}.
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="rt-modal-header add-action-footer">
+          <div className="desc" style={{ marginBottom: 0 }}>{selectedOperation ? selectedOperation.name : selectedTemplate?.label || 'No action selected'}</div>
+          <button className="btn btn-primary" type="button" disabled={!actionName.trim() || (!selectedOperation && !selectedTemplate)} onClick={addAction}>Insert Action</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function addActionToFlowDocument(source: string, actionName: string, action: Record<string, unknown>): string {
+  const root = JSON.parse(source) as unknown;
+  if (!isObject(root)) throw new Error('Flow definition JSON must be an object.');
+  const definition = findMutableWorkflowDefinition(root);
+  if (!definition) throw new Error('Could not find workflow definition actions.');
+  const actions = isObject(definition.actions) ? definition.actions : {};
+  definition.actions = actions;
+  if (Object.prototype.hasOwnProperty.call(actions, actionName)) {
+    throw new Error(`${actionName} already exists.`);
+  }
+  actions[actionName] = action;
+  return JSON.stringify(root, null, 2);
+}
+
+function findMutableWorkflowDefinition(root: Record<string, unknown>): Record<string, unknown> | null {
+  if (isObject(root.actions) || isObject(root.triggers)) return root;
+  if (isObject(root.definition) && (isObject(root.definition.actions) || isObject(root.definition.triggers))) return root.definition;
+  if (isObject(root.properties) && isObject(root.properties.definition)) return root.properties.definition;
+  return null;
+}
+
+function buildApiOperationAction(source: string, operation: FlowApiOperation, runAfter: Record<string, string[]>): Record<string, unknown> {
+  const connectionReferenceName = findConnectionReferenceName(source, operation) || (operation.apiName ? `shared_${operation.apiName}` : 'shared_connector');
+  const host: Record<string, unknown> = {
+    connectionReferenceName,
+    operationId: operation.name,
+  };
+  if (operation.apiId) host.apiId = operation.apiId;
+  return {
+    type: operation.operationType || 'OpenApiConnection',
+    inputs: {
+      host,
+      parameters: {},
+    },
+    runAfter,
+  };
+}
+
+function findConnectionReferenceName(source: string, operation: FlowApiOperation): string | undefined {
+  try {
+    const root = JSON.parse(source) as unknown;
+    if (!isObject(root)) return undefined;
+    const properties = isObject(root.properties) ? root.properties : root;
+    const refs = isObject(properties.connectionReferences) ? properties.connectionReferences : isObject(root.connectionReferences) ? root.connectionReferences : undefined;
+    if (!refs) return undefined;
+    for (const [key, value] of Object.entries(refs)) {
+      if (!isObject(value)) continue;
+      const apiId = String(prop(value, 'api.id') || prop(value, 'apiId') || '');
+      const apiName = String(prop(value, 'api.name') || prop(value, 'apiName') || '');
+      if (operation.apiId && apiId && apiId.toLowerCase() === operation.apiId.toLowerCase()) return key;
+      if (operation.apiName && apiName && apiName.toLowerCase().includes(operation.apiName.toLowerCase())) return key;
+      if (operation.apiName && key.toLowerCase().includes(operation.apiName.toLowerCase())) return key;
+    }
+  } catch {}
+  return undefined;
+}
+
+function buildRunAfter(actionName: string): Record<string, string[]> {
+  return actionName ? { [actionName]: ['Succeeded'] } : {};
+}
+
+function topLevelActionNames(analysis: FlowAnalysis | null): string[] {
+  const workflow = analysis?.outline?.find((item) => item.kind === 'workflow') || analysis?.outline?.[0];
+  const actions = workflow?.children?.find((item) => item.name === 'actions' || item.kind === 'action');
+  return (actions?.children || []).map((item) => item.name).filter((name): name is string => Boolean(name));
+}
+
+function uniqueActionName(source: string, preferred: string): string {
+  const base = sanitizeActionName(preferred || 'Action') || 'Action';
+  const existing = new Set<string>();
+  try {
+    const root = JSON.parse(source) as unknown;
+    if (isObject(root)) {
+      const definition = findMutableWorkflowDefinition(root);
+      const actions = definition && isObject(definition.actions) ? definition.actions : {};
+      for (const key of Object.keys(actions)) existing.add(key);
+    }
+  } catch {}
+  if (!existing.has(base)) return base;
+  for (let index = 2; index < 1000; index++) {
+    const next = `${base}_${index}`;
+    if (!existing.has(next)) return next;
+  }
+  return `${base}_${Date.now()}`;
+}
+
+function sanitizeActionName(value: string): string {
+  return value.trim().replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'Action';
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function FlowDiffModal(props: { original: string; modified: string; onClose: () => void }) {

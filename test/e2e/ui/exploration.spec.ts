@@ -361,6 +361,22 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
           endTime: '2026-01-03T00:00:02Z',
         },
       },
+      '/apioperations?%24top=25&%24search=release': {
+        value: [{
+          name: 'CreateRelease',
+          id: '/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices/apiOperations/CreateRelease',
+          properties: {
+            summary: 'Create a new release',
+            description: 'Create a release from a definition.',
+            operationType: 'OpenApiConnection',
+            api: {
+              id: '/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices',
+              apiName: 'visualstudioteamservices',
+              displayName: 'Azure DevOps',
+            },
+          },
+        }],
+      },
     };
     if (body.path in responseForPath) {
       await route.fulfill({
@@ -382,6 +398,12 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
   await expect(page.locator('[data-flow="flow-probe"]')).toContainText('Flow Probe');
   await page.locator('[data-flow="flow-probe"]').click();
   await expect(page.locator('#panel-automate')).toContainText('Flow Probe');
+  await page.getByRole('button', { name: 'Add Action' }).click();
+  await page.getByPlaceholder('Search apioperations...').fill('release');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('button', { name: /Create a new release/ }).click();
+  await page.getByRole('button', { name: 'Insert Action' }).click();
+  await expect(page.locator('.flow-rail-header')).toContainText('2 actions');
 
   await page.getByRole('button', { name: 'Runs' }).click();
   await expect(page.locator('[data-flow-run="run-probe"]')).toContainText('Succeeded');
@@ -398,6 +420,7 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
   expect(flowPaths).toEqual(expect.arrayContaining([
     '/flows',
     '/flows/flow-probe',
+    '/apioperations?%24top=25&%24search=release',
     '/flows/flow-probe/runs?$top=20',
     '/flows/flow-probe/runs/run-probe/actions',
     '/flows/flow-probe/runs/run-probe/actions/Compose',
