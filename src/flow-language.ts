@@ -58,7 +58,7 @@ export interface FlowCompletionItem {
 }
 
 export interface FlowOutlineItem {
-  kind: 'workflow' | 'trigger' | 'action' | 'scope' | 'branch' | 'parameter' | 'variable';
+  kind: 'workflow' | 'trigger' | 'action' | 'scope' | 'condition' | 'foreach' | 'switch' | 'branch' | 'parameter' | 'variable';
   name: string;
   detail?: string;
   from: number;
@@ -71,6 +71,8 @@ export interface FlowOutlineItem {
   inputs?: Record<string, unknown>;
   /** Run-after dependency names */
   runAfter?: string[];
+  /** Human-readable control-flow/dependency hint, e.g. "after Compose" or "parallel" */
+  dependency?: string;
   children?: FlowOutlineItem[];
 }
 
@@ -496,16 +498,22 @@ function buildOutline(model: FlowDocumentModel): FlowOutlineItem[] {
 }
 
 function actionOutline(action: FlowActionNode): FlowOutlineItem {
+  const children = outlineChildrenForAction(action);
   const item: FlowOutlineItem = {
-    kind: action.children.length ? 'scope' : 'action',
+    kind: actionKind(action),
     name: action.name,
     detail: action.type,
     type: action.type,
     from: action.from,
     to: action.to,
-    children: action.children.length ? action.children.map(actionOutline) : undefined,
+    children: children.length ? children : undefined,
   };
-  if (action.runAfter.length) item.runAfter = action.runAfter;
+  if (action.runAfter.length) {
+    item.runAfter = action.runAfter;
+    item.dependency = `after ${action.runAfter.join(', ')}`;
+  } else {
+    item.dependency = action.siblingIndex === 0 ? 'start' : 'parallel';
+  }
   // extract connector and key inputs
   const inputsNode = objectPropertyValue(action.node, 'inputs');
   if (inputsNode?.type === 'object') {
@@ -580,6 +588,52 @@ function actionOutline(action: FlowActionNode): FlowOutlineItem {
     if (timeout) item.inputs = { ...item.inputs, limitTimeout: timeout };
   }
   return item;
+}
+
+function actionKind(action: FlowActionNode): FlowOutlineItem['kind'] {
+  const normalized = action.type.toLowerCase();
+  if (normalized === 'if' || normalized === 'condition') return 'condition';
+  if (normalized.includes('foreach')) return 'foreach';
+  if (normalized === 'switch') return 'switch';
+  if (action.children.length) return 'scope';
+  return 'action';
+}
+
+function outlineChildrenForAction(action: FlowActionNode): FlowOutlineItem[] {
+  if (!action.children.length) return [];
+  const needsBranchGroups = actionKind(action) !== 'scope';
+  if (!needsBranchGroups) return action.children.map(actionOutline);
+
+  const groups = new Map<string, FlowActionNode[]>();
+  for (const child of action.children) {
+    const key = `${child.containerKind}:${child.containerId}`;
+    const group = groups.get(key);
+    if (group) group.push(child);
+    else groups.set(key, [child]);
+  }
+
+  return [...groups.entries()].map(([key, children]) => {
+    const first = children[0]!;
+    const last = children[children.length - 1]!;
+    return {
+      kind: 'branch' as const,
+      name: branchLabel(first.containerKind, first.containerId),
+      detail: `${children.length}`,
+      from: first.from,
+      to: last.to,
+      children: children.map(actionOutline),
+    };
+  });
+}
+
+function branchLabel(kind: FlowActionNode['containerKind'], containerId: string) {
+  if (kind === 'if-true') return 'If: true';
+  if (kind === 'if-false') return 'If: false';
+  if (kind === 'switch-default') return 'Switch: default';
+  if (kind === 'switch-case') return `Switch: case ${containerId.split(':case:')[1] || ''}`.trim();
+  if (kind === 'foreach') return 'Foreach: loop body';
+  if (kind === 'until') return 'Until: loop body';
+  return 'Branch';
 }
 
 function readConnectorSummary(inputsNode: JsonObjectNode): { connector?: string; operationId?: string; serviceProviderId?: string } {

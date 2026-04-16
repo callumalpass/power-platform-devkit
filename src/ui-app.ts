@@ -221,13 +221,19 @@ export function renderHtml(): string {
     .fetchxml-editor-mount .monaco-editor .inputarea.ime-input { background: var(--surface); }
     .fetchxml-editor-mount .monaco-editor { min-height: 420px; }
     .fetchxml-editor-mount .monaco-editor .margin { background: var(--bg); }
-    .flow-editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 30%); min-height: 420px; }
-    .flow-editor-main { min-width: 0; }
-    .flow-outline-rail { border-left: 1px solid var(--border); background: var(--bg); min-width: 0; display: flex; flex-direction: column; }
+    .flow-editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 30%); align-items: stretch; min-height: 420px; }
+    .flow-editor-main { min-width: 0; min-height: 0; display: flex; }
+    .flow-editor-main .fetchxml-editor-mount { flex: 1; height: 100%; min-height: 420px; }
+    .flow-editor-main .fetchxml-editor-mount .monaco-editor { height: 100%; min-height: 420px; }
+    .flow-outline-rail { border-left: 1px solid var(--border); background: var(--bg); min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     .flow-rail-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.6875rem; }
     .flow-rail-header h3 { margin: 0; color: var(--ink); font-size: 0.75rem; }
     .flow-outline-rail .empty { margin: 10px; }
-    .flow-outline-rail > div:last-child { border: 0 !important; border-radius: 0 !important; flex: 1; max-height: none !important; }
+    .flow-outline-scroll { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); max-height: 500px; }
+    .flow-outline-rail .flow-outline-scroll { border: 0; border-radius: 0; flex: 1; max-height: none; }
+    .flow-outline-row { background: transparent; }
+    .flow-outline-row:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+    .flow-outline-row.active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
     .flow-editor-shell-fullscreen { position: fixed; inset: 12px; z-index: 70; display: flex; flex-direction: column; box-shadow: 0 20px 80px rgba(0,0,0,0.35); }
     .flow-editor-shell-fullscreen .flow-editor-layout { flex: 1; min-height: 0; }
     .flow-editor-shell-fullscreen .fetchxml-editor-mount,
@@ -238,20 +244,49 @@ export function renderHtml(): string {
     .add-action-body { padding: 14px; display: grid; gap: 14px; }
     .add-action-section { display: grid; gap: 8px; }
     .add-action-section h3 { margin: 0; font-size: 0.8125rem; }
-    .add-action-template-row { display: flex; gap: 8px; flex-wrap: wrap; }
-    .add-action-search { display: flex; gap: 8px; }
+    .add-action-template-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+    .add-action-template { display: flex; flex-direction: column; gap: 2px; text-align: left; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--ink); padding: 10px 12px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+    .add-action-template:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .add-action-template.active { border-color: var(--accent); background: var(--accent-soft); }
+    .add-action-template-label { font-weight: 600; font-size: 0.8125rem; }
+    .add-action-template-desc { color: var(--muted); font-size: 0.6875rem; line-height: 1.3; }
+    .add-action-search { display: flex; gap: 8px; align-items: center; }
     .add-action-search input { flex: 1; min-width: 0; }
-    .add-action-results { display: grid; gap: 6px; max-height: 260px; overflow: auto; }
-    .add-action-operation { display: grid; gap: 2px; width: 100%; text-align: left; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--ink); padding: 8px 10px; cursor: pointer; }
+    .add-action-searching { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+    .add-action-results { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+    .add-action-operation { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; width: 100%; text-align: left; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--ink); padding: 8px 10px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
     .add-action-operation:hover,
     .add-action-operation.active { border-color: var(--accent); background: var(--accent-soft); }
+    .add-action-operation-icon { width: 28px; height: 28px; border-radius: 4px; object-fit: contain; flex-shrink: 0; }
+    .add-action-operation-icon-placeholder { display: block; background: var(--border); border-radius: 4px; }
+    .add-action-operation-text { display: grid; gap: 2px; min-width: 0; }
     .add-action-operation-title { font-weight: 600; font-size: 0.8125rem; }
-    .add-action-operation-meta { color: var(--muted); font-family: var(--mono); font-size: 0.6875rem; }
-    .add-action-operation-desc { color: var(--muted); font-size: 0.75rem; line-height: 1.35; }
+    .add-action-operation-meta { color: var(--muted); font-family: var(--mono); font-size: 0.6875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .add-action-operation-desc { color: var(--muted); font-size: 0.75rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .add-action-form { grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr); align-items: end; }
     .add-action-form label { display: grid; gap: 4px; font-size: 0.75rem; color: var(--muted); }
     .add-action-note { grid-column: 1 / -1; color: var(--muted); font-size: 0.75rem; line-height: 1.4; }
     .add-action-footer { align-items: center; }
+    .add-action-footer-summary { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .add-action-footer-icon { width: 20px; height: 20px; border-radius: 3px; object-fit: contain; flex-shrink: 0; }
+    .flow-action-edit-modal { width: min(980px, 94vw); max-height: 90vh; }
+    .flow-action-edit-body { padding: 14px; display: grid; gap: 14px; overflow: auto; }
+    .flow-action-edit-section { display: grid; gap: 8px; }
+    .flow-action-edit-section h3 { margin: 0; font-size: 0.8125rem; }
+    .flow-action-edit-grid { grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr); }
+    .flow-action-edit-grid label,
+    .flow-action-value-editor { display: grid; gap: 4px; font-size: 0.75rem; color: var(--muted); }
+    .flow-action-field-list { display: grid; gap: 8px; }
+    .flow-action-schema-field { display: grid; grid-template-columns: minmax(180px, 0.9fr) minmax(220px, 1.1fr); gap: 10px; align-items: start; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--bg); }
+    .flow-action-field-label { color: var(--ink); font-weight: 600; font-size: 0.8125rem; }
+    .flow-action-field-meta { color: var(--muted); font-family: var(--mono); font-size: 0.6875rem; }
+    .flow-action-field-desc,
+    .flow-action-edit-note { color: var(--muted); font-size: 0.75rem; line-height: 1.4; }
+    .flow-action-schema-field textarea,
+    .flow-action-value-editor textarea,
+    .flow-action-json-editor { min-height: 86px; font-family: var(--mono); font-size: 0.75rem; }
+    .flow-action-json-editor { min-height: 220px; }
+    .flow-action-edit-error { color: var(--danger); font-size: 0.75rem; }
     @media (max-width: 1100px) {
       .flow-editor-layout { grid-template-columns: 1fr; }
       .flow-outline-rail { border-left: 0; border-top: 1px solid var(--border); max-height: 320px; }
@@ -259,6 +294,8 @@ export function renderHtml(): string {
     @media (max-width: 720px) {
       .add-action-form { grid-template-columns: 1fr; }
       .add-action-search { flex-direction: column; }
+      .flow-action-edit-grid,
+      .flow-action-schema-field { grid-template-columns: 1fr; }
     }
     .fetchxml-diagnostics { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
     .fetchxml-diagnostic { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; background: var(--bg); }

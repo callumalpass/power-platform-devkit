@@ -1,5 +1,5 @@
 import { ApiRequestError, api, prop } from './utils.js';
-import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowItem, FlowRun } from './ui-types.js';
+import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowItem, FlowRun } from './ui-types.js';
 
 const DATAVERSE_FLOW_FALLBACK_PATH = "/workflows?$filter=category eq 5&$select=name,workflowid,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200";
 
@@ -107,6 +107,13 @@ export async function loadFlowApiOperations(environment: string, search: string)
   if (search.trim()) params.set('$search', search.trim());
   const result = await executeRequest<{ value?: unknown[] }>(environment, 'flow', `/apioperations?${params.toString()}`, true);
   return (result.response?.value || []).map(normalizeFlowApiOperation);
+}
+
+export async function loadFlowApiOperationSchema(environment: string, apiId: string | undefined, operationId: string): Promise<FlowApiOperationSchema | null> {
+  const apiName = apiNameFromId(apiId);
+  if (!apiName || !operationId) return null;
+  const result = await executeRequest<Record<string, unknown>>(environment, 'flow', `/apis/${encodeURIComponent(apiName)}`, true);
+  return normalizeFlowApiOperationSchema(apiName, apiId, operationId, result.response);
 }
 
 export function formatFlowDocument(source: string) {
@@ -262,6 +269,55 @@ function normalizeFlowApiOperation(value: unknown): FlowApiOperation {
     apiDisplayName: typeof api.displayName === 'string' ? api.displayName : undefined,
     iconUri: typeof api.iconUri === 'string' ? api.iconUri : undefined,
   };
+}
+
+function normalizeFlowApiOperationSchema(apiName: string, apiId: string | undefined, operationId: string, rawApi: unknown): FlowApiOperationSchema | null {
+  const api = rawApi as Record<string, unknown>;
+  const properties = isRecord(api.properties) ? api.properties : {};
+  const swagger = isRecord(properties.swagger) ? properties.swagger : {};
+  const paths = isRecord(swagger.paths) ? swagger.paths : {};
+  for (const [, pathValue] of Object.entries(paths)) {
+    if (!isRecord(pathValue)) continue;
+    for (const [, methodValue] of Object.entries(pathValue)) {
+      if (!isRecord(methodValue)) continue;
+      if (methodValue.operationId !== operationId) continue;
+      const parameters = Array.isArray(methodValue.parameters) ? methodValue.parameters : [];
+      return {
+        apiId,
+        apiName,
+        apiDisplayName: typeof properties.displayName === 'string' ? properties.displayName : undefined,
+        operationId,
+        summary: typeof methodValue.summary === 'string' ? methodValue.summary : undefined,
+        description: typeof methodValue.description === 'string' ? methodValue.description : undefined,
+        fields: parameters.map(normalizeSwaggerParameter).filter((field): field is FlowApiOperationSchemaField => Boolean(field)),
+        raw: methodValue,
+      };
+    }
+  }
+  return null;
+}
+
+function normalizeSwaggerParameter(value: unknown): FlowApiOperationSchemaField | null {
+  if (!isRecord(value)) return null;
+  const schema = isRecord(value.schema) ? value.schema : undefined;
+  const enumValues = Array.isArray(value.enum) ? value.enum : Array.isArray(schema?.enum) ? schema.enum : undefined;
+  return {
+    name: String(value.name || ''),
+    location: typeof value.in === 'string' ? value.in : undefined,
+    required: Boolean(value.required),
+    type: typeof value.type === 'string' ? value.type : typeof schema?.type === 'string' ? schema.type : undefined,
+    title: typeof value.title === 'string' ? value.title : typeof schema?.title === 'string' ? schema.title : undefined,
+    description: typeof value.description === 'string' ? value.description : typeof schema?.description === 'string' ? schema.description : undefined,
+    enum: enumValues?.map(String),
+    schema,
+  };
+}
+
+function apiNameFromId(apiId: string | undefined): string | undefined {
+  if (!apiId) return undefined;
+  const parts = apiId.split('/').filter(Boolean);
+  const index = parts.findIndex((part) => part.toLowerCase() === 'apis');
+  return index >= 0 ? parts[index + 1] : parts[parts.length - 1];
 }
 
 function parseJsonMaybe(value: unknown): Record<string, unknown> | null {

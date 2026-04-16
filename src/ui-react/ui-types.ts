@@ -109,6 +109,28 @@ export type FlowApiOperation = {
   iconUri?: string;
 };
 
+export type FlowApiOperationSchemaField = {
+  name: string;
+  location?: string;
+  required?: boolean;
+  type?: string;
+  title?: string;
+  description?: string;
+  enum?: string[];
+  schema?: unknown;
+};
+
+export type FlowApiOperationSchema = {
+  apiId?: string;
+  apiName?: string;
+  apiDisplayName?: string;
+  operationId: string;
+  summary?: string;
+  description?: string;
+  fields: FlowApiOperationSchemaField[];
+  raw?: unknown;
+};
+
 export type FlowItem = {
   id?: string;
   name?: string;
@@ -194,6 +216,8 @@ export type FlowAnalysisOutlineItem = {
   variable?: string;
   /** Run-after configuration keys */
   runAfter?: string[];
+  /** Human-readable control-flow/dependency hint, e.g. "after Compose" or "parallel" */
+  dependency?: string;
   from?: number;
   to?: number;
   children?: FlowAnalysisOutlineItem[];

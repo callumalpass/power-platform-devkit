@@ -1,11 +1,12 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { api, formatDate, formatDateShort, highlightJson, prop } from './utils.js';
 import {
   analyzeFlowDocument,
   checkFlowDefinition,
   flowIdentifier,
   formatFlowDocument,
+  loadFlowApiOperationSchema,
   loadFlowApiOperations,
   loadActionDetail,
   loadFlowDefinitionDocument,
@@ -17,7 +18,7 @@ import {
   type FlowValidationKind,
   type FlowValidationResult,
 } from './automate-data.js';
-import type { DiagnosticItem, FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowApiOperation, FlowItem, FlowRun, ToastFn } from './ui-types.js';
+import type { DiagnosticItem, FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowItem, FlowRun, ToastFn } from './ui-types.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 
@@ -42,6 +43,14 @@ type FlowProblem = {
   validationItem?: FlowValidationItem;
 };
 
+type FlowActionEditTarget = {
+  item: FlowAnalysisOutlineItem;
+  name: string;
+  action: Record<string, unknown>;
+  from: number;
+  to: number;
+};
+
 const KIND_DOT: Record<string, string> = {
   trigger: '#3b82f6',
   action: '#22c55e',
@@ -49,6 +58,7 @@ const KIND_DOT: Record<string, string> = {
   condition: '#ef4444',
   foreach: '#8b5cf6',
   switch: '#f97316',
+  branch: '#14b8a6',
   default: '#9ca3af',
 };
 
@@ -73,7 +83,10 @@ export function AutomateTab(props: {
   const [flowOperation, setFlowOperation] = useState<FlowOperation>(null);
   const [showFlowDiff, setShowFlowDiff] = useState(false);
   const [flowFullscreen, setFlowFullscreen] = useState(false);
+  const [flowOutlineActiveKey, setFlowOutlineActiveKey] = useState('');
+  const [flowOutlineActivePath, setFlowOutlineActivePath] = useState<string[]>([]);
   const [showAddAction, setShowAddAction] = useState(false);
+  const [editingAction, setEditingAction] = useState<FlowActionEditTarget | null>(null);
   const [runs, setRuns] = useState<FlowRun[]>([]);
   const [runFilter, setRunFilter] = useState('');
   const [runStatusFilter, setRunStatusFilter] = useState('');
@@ -297,6 +310,36 @@ export function AutomateTab(props: {
     window.setTimeout(() => flowEditorRef.current?.revealRange(from, to), 0);
   }
 
+  function selectOutlineRange(from?: number) {
+    if (from === undefined) return;
+    syncOutlineToEditorOffset(from);
+  }
+
+  function syncOutlineToEditorOffset(offset: number) {
+    const path = findOutlinePathAtOffset(analysis?.outline || [], offset);
+    const activeKey = path[path.length - 1] || '';
+    setFlowOutlineActiveKey((current) => current === activeKey ? current : activeKey);
+    setFlowOutlineActivePath((current) => arraysEqual(current, path) ? current : path);
+  }
+
+  function openActionEditor(item: FlowAnalysisOutlineItem) {
+    try {
+      setEditingAction(readActionEditTarget(flowDocument, item));
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  function applyActionEdit(target: FlowActionEditTarget, actionName: string, action: Record<string, unknown>) {
+    try {
+      updateFlowDocument(replaceActionInFlowDocument(flowDocument, target, actionName, action));
+      setEditingAction(null);
+      toast(`Updated ${actionName}`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
   function jumpToProblem(problem: FlowProblem) {
     setFlowSubTab('definition');
     window.setTimeout(() => {
@@ -511,6 +554,7 @@ export function AutomateTab(props: {
                         diagnostics={analysis?.diagnostics || []}
                         validation={flowValidation}
                         analysis={analysis}
+                        onActiveOffsetChange={syncOutlineToEditorOffset}
                         toast={toast}
                       />
                     </div>
@@ -519,7 +563,14 @@ export function AutomateTab(props: {
                         <h3>Outline</h3>
                         <span>{analysis?.summary?.actionCount || 0} actions</span>
                       </div>
-                      <FlowOutlineCanvas items={analysis?.outline || []} onJump={jumpToEditorRange} />
+                      <FlowOutlineCanvas
+                        items={analysis?.outline || []}
+                        problems={flowProblems}
+                        activeKey={flowOutlineActiveKey}
+                        activePath={flowOutlineActivePath}
+                        onJump={jumpToEditorRange}
+                        onEditAction={openActionEditor}
+                      />
                     </aside>
                   </div>
                 </div>
@@ -677,7 +728,16 @@ export function AutomateTab(props: {
                     {analysis?.outline?.length ? `${analysis.outline.length} top-level items` : 'No outline yet'}
                   </div>
                 </div>
-                {flowSubTab === 'outline' ? <FlowOutlineCanvas items={analysis?.outline || []} onJump={jumpToEditorRange} /> : null}
+                {flowSubTab === 'outline' ? (
+                  <FlowOutlineCanvas
+                    items={analysis?.outline || []}
+                    problems={flowProblems}
+                    activeKey={flowOutlineActiveKey}
+                    activePath={flowOutlineActivePath}
+                    onJump={selectOutlineRange}
+                    onEditAction={openActionEditor}
+                  />
+                ) : null}
               </div>
             </div>
           </>
@@ -699,6 +759,15 @@ export function AutomateTab(props: {
           toast={toast}
         />
       ) : null}
+      {editingAction ? (
+        <EditFlowActionModal
+          environment={environment}
+          target={editingAction}
+          onApply={applyActionEdit}
+          onClose={() => setEditingAction(null)}
+          toast={toast}
+        />
+      ) : null}
     </div>
   );
 }
@@ -709,19 +778,22 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
   diagnostics: DiagnosticItem[];
   validation: FlowValidationResult | null;
   analysis: FlowAnalysis | null;
+  onActiveOffsetChange: (offset: number) => void;
   toast: ToastFn;
 }>((props, ref) => {
-  const { value, onChange, diagnostics, validation, analysis, toast } = props;
+  const { value, onChange, diagnostics, validation, analysis, onActiveOffsetChange, toast } = props;
   const mountRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
+  const onActiveOffsetChangeRef = useRef(onActiveOffsetChange);
   const diagnosticsRef = useRef(diagnostics);
   const validationRef = useRef(validation);
   const analysisRef = useRef(analysis);
 
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => { onActiveOffsetChangeRef.current = onActiveOffsetChange; }, [onActiveOffsetChange]);
   useEffect(() => { diagnosticsRef.current = diagnostics; }, [diagnostics]);
   useEffect(() => { validationRef.current = validation; }, [validation]);
   useEffect(() => { analysisRef.current = analysis; }, [analysis]);
@@ -752,11 +824,13 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       const editor = editorRef.current;
       const model = modelRef.current;
       if (!editor || !model) return;
-      const start = model.getPositionAt(Math.max(0, from ?? 0));
-      const end = model.getPositionAt(Math.max(from ?? 0, to ?? from ?? 0));
+      const startOffset = Math.max(0, from ?? 0);
+      const endOffset = Math.max(startOffset + 1, Math.min(to ?? startOffset + 1, model.getValueLength()));
+      const start = model.getPositionAt(startOffset);
+      const end = model.getPositionAt(endOffset);
       const range = new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
       editor.setSelection(range);
-      editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
+      editor.revealPositionNearTop(start, monaco.editor.ScrollType.Smooth);
       editor.focus();
     },
     revealText: (needle) => {
@@ -769,7 +843,7 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       const end = model.getPositionAt(index + needle.length);
       const range = new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
       editor.setSelection(range);
-      editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
+      editor.revealPositionNearTop(start, monaco.editor.ScrollType.Smooth);
       editor.focus();
     },
   }), []);
@@ -836,11 +910,32 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       valueRef.current = next;
       onChangeRef.current(next);
     });
+    let activeFrame: number | null = null;
+    const emitActiveOffset = (preferCursor = false) => {
+      activeFrame = null;
+      const position = preferCursor ? editor.getPosition() : editor.getVisibleRanges()[0]?.getStartPosition() || editor.getPosition();
+      if (!position) return;
+      const visible = editor.getVisibleRanges()[0];
+      const lineNumber = !preferCursor && visible
+        ? Math.max(1, Math.floor((visible.startLineNumber + visible.endLineNumber) / 2))
+        : position.lineNumber;
+      onActiveOffsetChangeRef.current(model.getOffsetAt({ lineNumber, column: 1 }));
+    };
+    const scheduleActiveOffset = (preferCursor = false) => {
+      if (activeFrame !== null) window.cancelAnimationFrame(activeFrame);
+      activeFrame = window.requestAnimationFrame(() => emitActiveOffset(preferCursor));
+    };
+    const scrollSubscription = editor.onDidScrollChange(() => scheduleActiveOffset(false));
+    const cursorSubscription = editor.onDidChangeCursorPosition(() => scheduleActiveOffset(true));
+    scheduleActiveOffset(false);
 
     updateFlowEditorMarkers(model, diagnosticsRef.current, validationRef.current);
     return () => {
+      if (activeFrame !== null) window.cancelAnimationFrame(activeFrame);
       themeObserver.disconnect();
       contentSubscription.dispose();
+      scrollSubscription.dispose();
+      cursorSubscription.dispose();
       completionProvider.dispose();
       hoverProvider.dispose();
       editor.dispose();
@@ -870,11 +965,16 @@ function applyMonacoAppTheme() {
     base: isDark ? 'vs-dark' : 'vs',
     inherit: true,
     rules: [
-      { token: 'string.key.json', foreground: stripHash(accent) },
-      { token: 'string.value.json', foreground: stripHash(isDark ? '#a7f3d0' : '#047857') },
+      { token: 'string.key.json', foreground: stripHash(isDark ? '#93c5fd' : '#1d4ed8'), fontStyle: 'bold' },
+      { token: 'string.value.json', foreground: stripHash(isDark ? '#86efac' : '#047857') },
       { token: 'number.json', foreground: stripHash(isDark ? '#fbbf24' : '#b45309') },
-      { token: 'keyword.json', foreground: stripHash(isDark ? '#c4b5fd' : '#7c3aed') },
-      { token: 'delimiter.bracket.json', foreground: stripHash(muted) },
+      { token: 'keyword.json', foreground: stripHash(isDark ? '#c4b5fd' : '#7c3aed'), fontStyle: 'bold' },
+      { token: 'delimiter.bracket.json', foreground: stripHash(isDark ? '#cbd5e1' : '#475569') },
+      { token: 'delimiter.array.json', foreground: stripHash(isDark ? '#f9a8d4' : '#be185d') },
+      { token: 'delimiter.colon.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b') },
+      { token: 'delimiter.comma.json', foreground: stripHash(isDark ? '#64748b' : '#94a3b8') },
+      { token: 'comment.line.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b'), fontStyle: 'italic' },
+      { token: 'comment.block.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b'), fontStyle: 'italic' },
     ],
     colors: {
       'editor.background': surface,
@@ -1141,6 +1241,7 @@ function flowHoverAtOffset(analysis: FlowAnalysis | null, offset: number): strin
     `**${escapeMarkdown(item.name || 'Workflow')}**`,
     item.type ? `Type: \`${escapeMarkdown(item.type)}\`` : item.detail ? `Detail: \`${escapeMarkdown(item.detail)}\`` : '',
     item.connector ? `Connector: \`${escapeMarkdown(item.connector)}\`` : '',
+    item.dependency ? `Dependency: \`${escapeMarkdown(item.dependency)}\`` : '',
     item.runAfter?.length ? `Runs after: ${item.runAfter.map((value) => `\`${escapeMarkdown(value)}\``).join(', ')}` : '',
   ].filter(Boolean);
   if (item.inputs) {
@@ -1160,6 +1261,23 @@ function findOutlineAtOffset(items: FlowAnalysisOutlineItem[], offset: number): 
     }
   }
   return null;
+}
+
+function findOutlinePathAtOffset(items: FlowAnalysisOutlineItem[], offset: number): string[] {
+  for (const item of items) {
+    if ((item.from ?? -1) <= offset && offset <= (item.to ?? -1)) {
+      return [outlineKey(item), ...findOutlinePathAtOffset(item.children || [], offset)];
+    }
+  }
+  return [];
+}
+
+function outlineKey(item: FlowAnalysisOutlineItem): string {
+  return `${item.kind || 'item'}:${item.name || ''}:${item.from ?? ''}:${item.to ?? ''}`;
+}
+
+function arraysEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function escapeMarkdown(value: string) {
@@ -1253,10 +1371,10 @@ function FlowProblemsPanel(props: { problems: FlowProblem[]; validation: FlowVal
 }
 
 const BUILT_IN_ACTION_TEMPLATES = [
-  { key: 'compose', label: 'Compose', name: 'Compose', action: () => ({ type: 'Compose', inputs: '' }) },
-  { key: 'http', label: 'HTTP', name: 'HTTP', action: () => ({ type: 'Http', inputs: { method: 'GET', uri: '' } }) },
-  { key: 'scope', label: 'Scope', name: 'Scope', action: () => ({ type: 'Scope', actions: {} }) },
-  { key: 'condition', label: 'Condition', name: 'Condition', action: () => ({ type: 'If', expression: { equals: ['', ''] }, actions: {}, else: { actions: {} } }) },
+  { key: 'compose', label: 'Compose', desc: 'Transform or pass through a value', name: 'Compose', action: () => ({ type: 'Compose', inputs: '' }) },
+  { key: 'http', label: 'HTTP', desc: 'Call any REST endpoint', name: 'HTTP', action: () => ({ type: 'Http', inputs: { method: 'GET', uri: '' } }) },
+  { key: 'scope', label: 'Scope', desc: 'Group related actions', name: 'Scope', action: () => ({ type: 'Scope', actions: {} }) },
+  { key: 'condition', label: 'Condition', desc: 'Branch with if / else', name: 'Condition', action: () => ({ type: 'If', expression: { equals: ['', ''] }, actions: {}, else: { actions: {} } }) },
 ] as const;
 
 type BuiltInActionTemplate = typeof BUILT_IN_ACTION_TEMPLATES[number];
@@ -1273,26 +1391,52 @@ function AddFlowActionModal(props: {
   const [operations, setOperations] = useState<FlowApiOperation[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedOperation, setSelectedOperation] = useState<FlowApiOperation | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<BuiltInActionTemplate | null>(BUILT_IN_ACTION_TEMPLATES[0]);
-  const [actionName, setActionName] = useState('Compose');
+  const [selectedTemplate, setSelectedTemplate] = useState<BuiltInActionTemplate | null>(null);
+  const [actionName, setActionName] = useState('');
   const [runAfter, setRunAfter] = useState('');
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const topLevelActions = useMemo(() => topLevelActionNames(props.analysis), [props.analysis]);
+  const propsRef = useRef(props);
+  propsRef.current = props;
+
+  const doSearch = useCallback(async (query: string) => {
+    setLoading(true);
+    try {
+      const result = await loadFlowApiOperations(propsRef.current.environment, query);
+      setOperations(result);
+    } catch (error) {
+      propsRef.current.toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!runAfter && topLevelActions.length) setRunAfter(topLevelActions[topLevelActions.length - 1] || '');
   }, [runAfter, topLevelActions]);
 
-  async function searchOperations() {
-    setLoading(true);
-    try {
-      const result = await loadFlowApiOperations(props.environment, search);
-      setOperations(result);
-      if (!result.length) props.toast('No operations returned');
-    } catch (error) {
-      props.toast(error instanceof Error ? error.message : String(error), true);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    searchRef.current?.focus();
+    void doSearch('');
+  }, [doSearch]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') props.onClose();
     }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [props.onClose]);
+
+  useEffect(() => {
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, []);
+
+  function onSearchChange(value: string) {
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => void doSearch(value), 350);
   }
 
   function selectOperation(operation: FlowApiOperation) {
@@ -1318,14 +1462,13 @@ function AddFlowActionModal(props: {
     }
   }
 
+  const hasSelection = Boolean(selectedOperation || selectedTemplate);
+
   return (
     <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
       <div className="rt-modal add-action-modal">
         <div className="rt-modal-header">
-          <div>
-            <h2>Add Action</h2>
-            <p className="desc" style={{ marginBottom: 0 }}>Insert an action into the current workflow definition.</p>
-          </div>
+          <h2>Add Action</h2>
           <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
         </div>
         <div className="rt-modal-body add-action-body">
@@ -1336,10 +1479,11 @@ function AddFlowActionModal(props: {
                 <button
                   key={template.key}
                   type="button"
-                  className={`btn ${selectedTemplate?.key === template.key ? '' : 'btn-ghost'}`}
+                  className={`add-action-template ${selectedTemplate?.key === template.key ? 'active' : ''}`}
                   onClick={() => selectTemplate(template)}
                 >
-                  {template.label}
+                  <span className="add-action-template-label">{template.label}</span>
+                  <span className="add-action-template-desc">{template.desc}</span>
                 </button>
               ))}
             </div>
@@ -1348,13 +1492,14 @@ function AddFlowActionModal(props: {
             <h3>Connector Operations</h3>
             <div className="add-action-search">
               <input
+                ref={searchRef}
                 type="text"
                 value={search}
-                placeholder="Search apioperations..."
-                onChange={(event) => setSearch(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Enter') void searchOperations(); }}
+                placeholder="Search connectors and actions…"
+                onChange={(event) => onSearchChange(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') void doSearch(search); }}
               />
-              <button className="btn btn-ghost" type="button" disabled={loading} onClick={() => void searchOperations()}>{loading ? 'Searching...' : 'Search'}</button>
+              {loading ? <span className="add-action-searching">Searching…</span> : null}
             </div>
             <div className="add-action-results">
               {operations.length ? operations.map((operation) => (
@@ -1364,39 +1509,265 @@ function AddFlowActionModal(props: {
                   className={`add-action-operation ${selectedOperation?.name === operation.name && selectedOperation?.apiId === operation.apiId ? 'active' : ''}`}
                   onClick={() => selectOperation(operation)}
                 >
-                  <span className="add-action-operation-title">{operation.summary || operation.name}</span>
-                  <span className="add-action-operation-meta">{operation.apiDisplayName || operation.apiName || 'Connector'} · {operation.name}</span>
-                  {operation.description ? <span className="add-action-operation-desc">{operation.description}</span> : null}
+                  {operation.iconUri ? <img className="add-action-operation-icon" src={operation.iconUri} alt="" /> : <span className="add-action-operation-icon add-action-operation-icon-placeholder" />}
+                  <span className="add-action-operation-text">
+                    <span className="add-action-operation-title">{operation.summary || operation.name}</span>
+                    <span className="add-action-operation-meta">{operation.apiDisplayName || operation.apiName || 'Connector'} · {operation.name}</span>
+                    {operation.description ? <span className="add-action-operation-desc">{operation.description}</span> : null}
+                  </span>
                 </button>
-              )) : <div className="empty">{loading ? 'Searching operations...' : 'Search Flow apioperations to insert a connector action.'}</div>}
+              )) : <div className="empty">{loading ? 'Loading operations…' : 'No operations found.'}</div>}
             </div>
           </div>
-          <div className="add-action-section add-action-form">
+          {hasSelection ? (
+            <div className="add-action-section add-action-form">
+              <label>
+                <span>Action name</span>
+                <input type="text" value={actionName} onChange={(event) => setActionName(sanitizeActionName(event.target.value))} />
+              </label>
+              <label>
+                <span>Run after</span>
+                <select value={runAfter} onChange={(event) => setRunAfter(event.target.value)}>
+                  <option value="">none</option>
+                  {topLevelActions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </label>
+              {selectedOperation ? (
+                <div className="add-action-note">
+                  Will use the matching connection reference when one exists, otherwise inserts a placeholder for {selectedOperation.apiDisplayName || selectedOperation.apiName || 'the connector'}.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="rt-modal-header add-action-footer">
+          <div className="add-action-footer-summary">
+            {selectedOperation?.iconUri ? <img className="add-action-footer-icon" src={selectedOperation.iconUri} alt="" /> : null}
+            <span className="desc" style={{ marginBottom: 0 }}>
+              {selectedOperation
+                ? `${selectedOperation.summary || selectedOperation.name} · ${selectedOperation.apiDisplayName || selectedOperation.apiName || 'Connector'}`
+                : selectedTemplate?.label || 'Select an action above'}
+            </span>
+          </div>
+          <button className="btn btn-primary" type="button" disabled={!actionName.trim() || !hasSelection} onClick={addAction}>Insert Action</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditFlowActionModal(props: {
+  environment: string;
+  target: FlowActionEditTarget;
+  onApply: (target: FlowActionEditTarget, actionName: string, action: Record<string, unknown>) => void;
+  onClose: () => void;
+  toast: ToastFn;
+}) {
+  const [actionName, setActionName] = useState(props.target.name);
+  const [draft, setDraft] = useState<Record<string, unknown>>(props.target.action);
+  const [rawText, setRawText] = useState(() => JSON.stringify(props.target.action, null, 2));
+  const [schema, setSchema] = useState<FlowApiOperationSchema | null>(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const operationRef = useMemo(() => readActionOperation(props.target.action), [props.target.action]);
+  const rawError = useMemo(() => {
+    try {
+      JSON.parse(rawText);
+      return '';
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }, [rawText]);
+
+  useEffect(() => {
+    setActionName(props.target.name);
+    setDraft(props.target.action);
+    setRawText(JSON.stringify(props.target.action, null, 2));
+  }, [props.target]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!operationRef.apiId || !operationRef.operationId) {
+      setSchema(null);
+      return;
+    }
+    setSchemaLoading(true);
+    void loadFlowApiOperationSchema(props.environment, operationRef.apiId, operationRef.operationId)
+      .then((result) => { if (!cancelled) setSchema(result); })
+      .catch((error) => props.toast(error instanceof Error ? error.message : String(error), true))
+      .finally(() => { if (!cancelled) setSchemaLoading(false); });
+    return () => { cancelled = true; };
+  }, [operationRef.apiId, operationRef.operationId, props.environment, props.toast]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') props.onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [props.onClose]);
+
+  function updateDraft(path: string[], value: unknown) {
+    const next = setPathValue(draft, path, value);
+    setDraft(next);
+    setRawText(JSON.stringify(next, null, 2));
+  }
+
+  function applyRaw() {
+    const parsed = JSON.parse(rawText) as unknown;
+    if (!isObject(parsed)) throw new Error('Action JSON must be an object.');
+    props.onApply(props.target, sanitizeActionName(actionName), parsed);
+  }
+
+  const type = String(draft.type || props.target.item.type || '');
+  const connectorFields = schema?.fields || [];
+  const existingParameterFields = existingConnectorParameterFields(draft, connectorFields);
+
+  return (
+    <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
+      <div className="rt-modal flow-action-edit-modal">
+        <div className="rt-modal-header">
+          <div>
+            <h2>Edit Action</h2>
+            <p className="desc" style={{ marginBottom: 0 }}>{type || 'Action'}{operationRef.operationId ? ` · ${operationRef.operationId}` : ''}</p>
+          </div>
+          <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
+        </div>
+        <div className="rt-modal-body flow-action-edit-body">
+          <div className="flow-action-edit-section flow-action-edit-grid">
             <label>
               <span>Action name</span>
               <input type="text" value={actionName} onChange={(event) => setActionName(sanitizeActionName(event.target.value))} />
             </label>
             <label>
-              <span>Run after</span>
-              <select value={runAfter} onChange={(event) => setRunAfter(event.target.value)}>
-                <option value="">none</option>
-                {topLevelActions.map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
+              <span>Type</span>
+              <input type="text" value={type} onChange={(event) => updateDraft(['type'], event.target.value)} />
             </label>
-            {selectedOperation ? (
-              <div className="add-action-note">
-                Connector action will use the matching connection reference when one exists, otherwise it inserts a placeholder reference for {selectedOperation.apiDisplayName || selectedOperation.apiName || 'the connector'}.
+          </div>
+
+          {operationRef.operationId ? (
+            <div className="flow-action-edit-section">
+              <h3>Connector schema</h3>
+              <div className="flow-action-edit-note">
+                {schemaLoading ? 'Loading operation schema...' : schema ? `${schema.apiDisplayName || schema.apiName || 'Connector'} · ${schema.summary || schema.operationId}` : 'No operation schema was found; use common fields or raw JSON.'}
               </div>
-            ) : null}
+              {schema?.description ? <p className="desc" style={{ marginBottom: 0 }}>{schema.description}</p> : null}
+              {connectorFields.length ? (
+                <div className="flow-action-field-list">
+                  {[...connectorFields, ...existingParameterFields].map((field) => (
+                    <SchemaFieldEditor
+                      key={`${field.location || 'parameter'}:${field.name}`}
+                      field={field}
+                      value={readPathValue(draft, connectorFieldPath(field))}
+                      onChange={(value) => updateDraft(connectorFieldPath(field), value)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="flow-action-edit-section">
+            <h3>Common fields</h3>
+            <CommonActionFields action={draft} onChange={updateDraft} />
+          </div>
+
+          <div className="flow-action-edit-section">
+            <h3>Raw action JSON</h3>
+            <textarea className="flow-action-json-editor" value={rawText} onChange={(event) => setRawText(event.target.value)} spellCheck={false} />
+            {rawError ? <div className="flow-action-edit-error">{rawError}</div> : null}
           </div>
         </div>
         <div className="rt-modal-header add-action-footer">
-          <div className="desc" style={{ marginBottom: 0 }}>{selectedOperation ? selectedOperation.name : selectedTemplate?.label || 'No action selected'}</div>
-          <button className="btn btn-primary" type="button" disabled={!actionName.trim() || (!selectedOperation && !selectedTemplate)} onClick={addAction}>Insert Action</button>
+          <div className="desc" style={{ marginBottom: 0 }}>Changes update the editor only. Use Check & Save when ready.</div>
+          <button className="btn btn-primary" type="button" disabled={!actionName.trim() || Boolean(rawError)} onClick={() => {
+            try {
+              applyRaw();
+            } catch (error) {
+              props.toast(error instanceof Error ? error.message : String(error), true);
+            }
+          }}>Apply Changes</button>
         </div>
       </div>
     </div>
   );
+}
+
+function CommonActionFields(props: { action: Record<string, unknown>; onChange: (path: string[], value: unknown) => void }) {
+  const type = String(props.action.type || '').toLowerCase();
+  const fields: Array<{ label: string; path: string[]; kind?: 'text' | 'json' | 'select'; options?: string[] }> = [];
+  if (type === 'http') {
+    fields.push(
+      { label: 'Method', path: ['inputs', 'method'], kind: 'select', options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+      { label: 'URI', path: ['inputs', 'uri'] },
+      { label: 'Headers', path: ['inputs', 'headers'], kind: 'json' },
+      { label: 'Body', path: ['inputs', 'body'], kind: 'json' },
+    );
+  } else if (type === 'compose') {
+    fields.push({ label: 'Inputs', path: ['inputs'], kind: 'json' });
+  } else if (type === 'if' || type === 'condition') {
+    fields.push({ label: 'Expression', path: ['expression'], kind: 'json' });
+  } else if (type === 'foreach') {
+    fields.push({ label: 'Collection', path: ['foreach'] });
+  } else if (type === 'until') {
+    fields.push({ label: 'Expression', path: ['expression'], kind: 'json' }, { label: 'Limit', path: ['limit'], kind: 'json' });
+  } else if (type.includes('variable')) {
+    fields.push({ label: 'Inputs', path: ['inputs'], kind: 'json' });
+  }
+  fields.push({ label: 'Run after', path: ['runAfter'], kind: 'json' });
+  return (
+    <div className="flow-action-field-list">
+      {fields.map((field) => (
+        <ActionValueEditor
+          key={field.path.join('.')}
+          label={field.label}
+          value={readPathValue(props.action, field.path)}
+          kind={field.kind}
+          options={field.options}
+          onChange={(value) => props.onChange(field.path, value)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SchemaFieldEditor(props: { field: FlowApiOperationSchemaField; value: unknown; onChange: (value: unknown) => void }) {
+  const { field } = props;
+  const type = field.type || schemaTypeLabel(field.schema) || 'value';
+  return (
+    <div className="flow-action-schema-field">
+      <div>
+        <div className="flow-action-field-label">{field.title || field.name}{field.required ? ' *' : ''}</div>
+        <div className="flow-action-field-meta">{field.location || 'parameter'} · {type}</div>
+        {field.description ? <div className="flow-action-field-desc">{field.description}</div> : null}
+      </div>
+      <ActionValueEditor value={props.value} kind={field.enum?.length ? 'select' : shouldEditAsJson(field) ? 'json' : 'text'} options={field.enum} onChange={props.onChange} />
+    </div>
+  );
+}
+
+function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text' | 'json' | 'select'; options?: string[]; onChange: (value: unknown) => void }) {
+  const kind = props.kind || (isObject(props.value) || Array.isArray(props.value) ? 'json' : 'text');
+  const valueText = valueToEditText(props.value, kind);
+  const content = kind === 'select' ? (
+    <select value={String(props.value ?? '')} onChange={(event) => props.onChange(event.target.value)}>
+      <option value="">not set</option>
+      {(props.options || []).map((item) => <option key={item} value={item}>{item}</option>)}
+    </select>
+  ) : kind === 'json' ? (
+    <textarea
+      value={valueText}
+      onChange={(event) => props.onChange(parseEditableJson(event.target.value))}
+      spellCheck={false}
+    />
+  ) : (
+    <input type="text" value={valueText} onChange={(event) => props.onChange(event.target.value)} />
+  );
+  return props.label ? (
+    <label className="flow-action-value-editor">
+      <span>{props.label}</span>
+      {content}
+    </label>
+  ) : content;
 }
 
 function addActionToFlowDocument(source: string, actionName: string, action: Record<string, unknown>): string {
@@ -1411,6 +1782,98 @@ function addActionToFlowDocument(source: string, actionName: string, action: Rec
   }
   actions[actionName] = action;
   return JSON.stringify(root, null, 2);
+}
+
+function readActionEditTarget(source: string, item: FlowAnalysisOutlineItem): FlowActionEditTarget {
+  if (item.from === undefined || item.to === undefined || !item.name) throw new Error('Outline item does not have a source range.');
+  const colon = source.indexOf(':', item.from);
+  if (colon < 0 || colon > item.to) throw new Error(`Could not locate ${item.name} in the editor.`);
+  const valueStart = source.indexOf('{', colon);
+  if (valueStart < 0 || valueStart > item.to) throw new Error(`${item.name} is not a JSON object action.`);
+  const parsed = JSON.parse(source.slice(valueStart, item.to)) as unknown;
+  if (!isObject(parsed)) throw new Error(`${item.name} is not a JSON object action.`);
+  return { item, name: item.name, action: parsed, from: item.from, to: item.to };
+}
+
+function replaceActionInFlowDocument(source: string, target: FlowActionEditTarget, actionName: string, action: Record<string, unknown>): string {
+  const name = sanitizeActionName(actionName);
+  const lineStart = source.lastIndexOf('\n', target.from - 1) + 1;
+  const indent = source.slice(lineStart, target.from).match(/^\s*/)?.[0] || '';
+  const body = JSON.stringify(action, null, 2).replace(/\n/g, `\n${indent}`);
+  return `${source.slice(0, target.from)}"${escapeJsonString(name)}": ${body}${source.slice(target.to)}`;
+}
+
+function escapeJsonString(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function readActionOperation(action: Record<string, unknown>): { apiId?: string; operationId?: string } {
+  const host = prop(action, 'inputs.host');
+  return {
+    apiId: typeof prop(host, 'apiId') === 'string' ? String(prop(host, 'apiId')) : undefined,
+    operationId: typeof prop(host, 'operationId') === 'string' ? String(prop(host, 'operationId')) : typeof prop(action, 'inputs.operationId') === 'string' ? String(prop(action, 'inputs.operationId')) : undefined,
+  };
+}
+
+function connectorFieldPath(field: FlowApiOperationSchemaField): string[] {
+  if (field.location === 'header') return ['inputs', 'headers', field.name];
+  if (field.location === 'query') return ['inputs', 'queries', field.name];
+  if (field.location === 'body') return ['inputs', 'parameters', field.name || 'body'];
+  if (field.location === 'path') return ['inputs', 'parameters', field.name];
+  return ['inputs', 'parameters', field.name];
+}
+
+function existingConnectorParameterFields(action: Record<string, unknown>, fields: FlowApiOperationSchemaField[]): FlowApiOperationSchemaField[] {
+  const known = new Set(fields.map((field) => `${field.location || 'parameter'}:${field.name}`));
+  const parameters = prop(action, 'inputs.parameters');
+  if (!isObject(parameters)) return [];
+  return Object.keys(parameters)
+    .filter((name) => !known.has(`parameter:${name}`) && !known.has(`path:${name}`) && !known.has(`body:${name}`))
+    .map((name) => ({ name, location: 'parameter', type: typeof parameters[name] }));
+}
+
+function readPathValue(source: unknown, path: string[]): unknown {
+  let current = source;
+  for (const segment of path) {
+    if (!isObject(current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+function setPathValue(source: Record<string, unknown>, path: string[], value: unknown): Record<string, unknown> {
+  const clone = structuredClone(source) as Record<string, unknown>;
+  let current: Record<string, unknown> = clone;
+  for (const segment of path.slice(0, -1)) {
+    if (!isObject(current[segment])) current[segment] = {};
+    current = current[segment] as Record<string, unknown>;
+  }
+  current[path[path.length - 1]!] = value;
+  return clone;
+}
+
+function parseEditableJson(value: string): unknown {
+  if (!value.trim()) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function valueToEditText(value: unknown, kind: 'text' | 'json' | 'select') {
+  if (value === undefined || value === null) return '';
+  if (kind === 'json') return typeof value === 'string' ? JSON.stringify(value) : JSON.stringify(value, null, 2);
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+function shouldEditAsJson(field: FlowApiOperationSchemaField) {
+  const type = field.type || schemaTypeLabel(field.schema);
+  return type === 'object' || type === 'array';
+}
+
+function schemaTypeLabel(schema: unknown) {
+  return isObject(schema) && typeof schema.type === 'string' ? schema.type : undefined;
 }
 
 function findMutableWorkflowDefinition(root: Record<string, unknown>): Record<string, unknown> | null {
@@ -1535,35 +1998,113 @@ function FlowDiffModal(props: { original: string; modified: string; onClose: () 
   );
 }
 
-function FlowOutlineCanvas(props: { items: FlowAnalysisOutlineItem[]; onJump: (from?: number, to?: number) => void }) {
+type OutlineProblemSummary = { error: number; warning: number; info: number };
+
+function FlowOutlineCanvas(props: {
+  items: FlowAnalysisOutlineItem[];
+  problems?: FlowProblem[];
+  activeKey?: string;
+  activePath?: string[];
+  onJump: (from?: number, to?: number) => void;
+  onEditAction?: (item: FlowAnalysisOutlineItem) => void;
+}) {
   const { items } = props;
+  const [query, setQuery] = useState('');
+  const filteredItems = useMemo(() => filterOutlineItems(items, query), [items, query]);
+  const visibleCount = useMemo(() => countOutlineItems(filteredItems), [filteredItems]);
   if (!items.length) return <div className="empty">Load a flow definition to see the outline.</div>;
   return (
-    <div style={{ maxHeight: 500, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)' }}>
-      <OutlineNodeList items={items} depth={0} onJump={props.onJump} />
-    </div>
+    <>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+        <input
+          type="search"
+          placeholder="Filter outline..."
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          style={{ minWidth: 0, flex: 1, padding: '6px 8px', fontSize: '0.75rem' }}
+        />
+        <span style={{ color: 'var(--muted)', fontSize: '0.6875rem', whiteSpace: 'nowrap' }}>{visibleCount} items</span>
+      </div>
+      <div className="flow-outline-scroll">
+        {filteredItems.length ? (
+          <OutlineNodeList
+            items={filteredItems}
+            depth={0}
+            problems={props.problems || []}
+            activeKey={props.activeKey || ''}
+            activePath={props.activePath || []}
+            onJump={props.onJump}
+            onEditAction={props.onEditAction}
+          />
+        ) : (
+          <div className="empty">No outline items match this filter.</div>
+        )}
+      </div>
+    </>
   );
 }
 
-function OutlineNodeList(props: { items: FlowAnalysisOutlineItem[]; depth: number; onJump: (from?: number, to?: number) => void }) {
+function OutlineNodeList(props: {
+  items: FlowAnalysisOutlineItem[];
+  depth: number;
+  problems: FlowProblem[];
+  activeKey: string;
+  activePath: string[];
+  onJump: (from?: number, to?: number) => void;
+  onEditAction?: (item: FlowAnalysisOutlineItem) => void;
+}) {
   return (
     <>
       {props.items.map((item, index) => (
-        <OutlineNode key={index} item={item} depth={props.depth} last={index === props.items.length - 1} onJump={props.onJump} />
+        <OutlineNode
+          key={outlineKey(item)}
+          item={item}
+          depth={props.depth}
+          last={index === props.items.length - 1}
+          problems={props.problems}
+          activeKey={props.activeKey}
+          activePath={props.activePath}
+          onJump={props.onJump}
+          onEditAction={props.onEditAction}
+        />
       ))}
     </>
   );
 }
 
-function OutlineNode(props: { item: FlowAnalysisOutlineItem; depth: number; last: boolean; onJump: (from?: number, to?: number) => void }) {
-  const { item, depth, last, onJump } = props;
-  const [open, setOpen] = useState(false);
+function OutlineNode(props: {
+  item: FlowAnalysisOutlineItem;
+  depth: number;
+  last: boolean;
+  problems: FlowProblem[];
+  activeKey: string;
+  activePath: string[];
+  onJump: (from?: number, to?: number) => void;
+  onEditAction?: (item: FlowAnalysisOutlineItem) => void;
+}) {
+  const { item, depth, last, problems, activeKey, activePath, onJump, onEditAction } = props;
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const itemKey = outlineKey(item);
+  const active = activeKey === itemKey;
+  const inActivePath = activePath.includes(itemKey);
+  const [manuallyOpen, setManuallyOpen] = useState(depth < 2);
   const hasChildren = Boolean(item.children?.length);
   const kind = String(item.kind || '').toLowerCase();
   const dotColor = KIND_DOT[kind] || KIND_DOT.default;
-  const hasDetail = Boolean(item.detail || item.type || item.connector || item.inputs || item.runAfter?.length);
+  const problemSummary = summarizeOutlineProblems(item, problems);
+  const hasProblem = problemSummary.error || problemSummary.warning || problemSummary.info;
+  const hasDetail = Boolean(item.detail || item.type || item.connector || item.inputs || item.runAfter?.length || item.dependency);
   const expandable = hasChildren || hasDetail;
+  const open = manuallyOpen || inActivePath;
   const indent = depth * 20 + (depth > 0 ? 18 : 8);
+  const title = outlineTitle(item);
+  const meta = outlineMeta(item);
+  const editable = Boolean(onEditAction && item.name && item.type && (item.kind === 'action' || item.kind === 'scope'));
+
+  useEffect(() => {
+    if (!active) return;
+    rowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
 
   return (
     <div style={{ position: 'relative' }}>
@@ -1581,20 +2122,25 @@ function OutlineNode(props: { item: FlowAnalysisOutlineItem; depth: number; last
         }} />
       )}
       <div
+        ref={rowRef}
+        className={`flow-outline-row ${active ? 'active' : ''}`}
         onClick={() => {
           onJump(item.from, item.to);
-          if (expandable) setOpen(!open);
+          if (expandable) setManuallyOpen(!open);
+        }}
+        onDoubleClick={(event) => {
+          if (!editable) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onEditAction?.(item);
         }}
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '6px 12px 6px ' + indent + 'px',
           cursor: 'pointer', fontSize: '12px', lineHeight: '18px',
           borderBottom: '1px solid var(--border)',
-          background: open ? 'color-mix(in srgb, var(--ink) 4%, transparent)' : 'transparent',
           transition: 'background 0.1s',
         }}
-        onMouseEnter={(event) => { if (expandable) (event.currentTarget as HTMLElement).style.background = 'color-mix(in srgb, var(--ink) 6%, transparent)'; }}
-        onMouseLeave={(event) => { (event.currentTarget as HTMLElement).style.background = open ? 'color-mix(in srgb, var(--ink) 4%, transparent)' : 'transparent'; }}
       >
         <span style={{ width: 12, fontSize: '10px', color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', userSelect: 'none' }}>
           {expandable ? (open ? '\u25BE' : '\u25B8') : ''}
@@ -1603,11 +2149,28 @@ function OutlineNode(props: { item: FlowAnalysisOutlineItem; depth: number; last
         <span style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', color: 'var(--muted)', letterSpacing: '0.04em', flexShrink: 0, minWidth: 52 }}>
           {item.kind || 'action'}
         </span>
-        <span style={{ fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {item.name || 'Unnamed'}
+        <span style={{ minWidth: 0, flex: 1, display: 'grid', gap: 1 }}>
+          <span style={{ fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {title}
+          </span>
+          {meta ? (
+            <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '10px' }}>
+              {meta}
+            </span>
+          ) : null}
         </span>
+        {item.dependency ? (
+          <span title={item.runAfter?.length ? item.runAfter.join(', ') : item.dependency} style={{ fontSize: '10px', color: 'var(--muted)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '1px 6px', flexShrink: 0 }}>
+            {shorten(item.dependency, 24)}
+          </span>
+        ) : null}
+        {hasProblem ? (
+          <span title={outlineProblemTitle(problemSummary)} style={{ fontSize: '10px', color: problemSummary.error ? 'var(--danger)' : problemSummary.warning ? '#d97706' : 'var(--accent)', background: 'var(--surface)', border: '1px solid currentColor', borderRadius: 8, padding: '1px 6px', flexShrink: 0 }}>
+            {problemSummary.error ? `${problemSummary.error} error` : problemSummary.warning ? `${problemSummary.warning} warn` : `${problemSummary.info} info`}
+          </span>
+        ) : null}
         {hasChildren && (
-          <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--muted)', background: 'var(--border)', borderRadius: 8, padding: '1px 6px', flexShrink: 0 }}>
+          <span style={{ fontSize: '10px', color: 'var(--muted)', background: 'var(--border)', borderRadius: 8, padding: '1px 6px', flexShrink: 0 }}>
             {item.children!.length}
           </span>
         )}
@@ -1616,10 +2179,93 @@ function OutlineNode(props: { item: FlowAnalysisOutlineItem; depth: number; last
         <OutlineDetail item={item} indent={indent + 24} />
       )}
       {open && hasChildren && (
-        <OutlineNodeList items={item.children!} depth={depth + 1} onJump={onJump} />
+        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onJump={onJump} onEditAction={onEditAction} />
       )}
     </div>
   );
+}
+
+function filterOutlineItems(items: FlowAnalysisOutlineItem[], query: string): FlowAnalysisOutlineItem[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return items;
+  return items.flatMap((item) => {
+    const children = filterOutlineItems(item.children || [], query);
+    if (outlineSearchText(item).includes(needle) || children.length) return [{ ...item, children }];
+    return [];
+  });
+}
+
+function countOutlineItems(items: FlowAnalysisOutlineItem[]): number {
+  return items.reduce((count, item) => count + 1 + countOutlineItems(item.children || []), 0);
+}
+
+function outlineSearchText(item: FlowAnalysisOutlineItem) {
+  return [
+    item.kind,
+    item.name,
+    item.detail,
+    item.type,
+    item.connector,
+    item.dependency,
+    ...(item.runAfter || []),
+    ...Object.entries(item.inputs || {}).flatMap(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)]),
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function outlineTitle(item: FlowAnalysisOutlineItem) {
+  if (item.kind === 'workflow') return 'Workflow';
+  if (item.kind === 'parameter' && item.children?.length) return 'Parameters';
+  if (item.kind === 'trigger' && item.children?.length && item.name === 'triggers') return 'Triggers';
+  if (item.kind === 'action' && item.children?.length && item.name === 'actions') return 'Actions';
+  if (item.kind === 'variable' && item.children?.length) return 'Variables';
+  return item.name || 'Unnamed';
+}
+
+function outlineMeta(item: FlowAnalysisOutlineItem) {
+  const operation = item.inputs?.operationId;
+  const expression = item.inputs?.expression;
+  const parts = [
+    item.type || (item.detail && !item.children?.length ? item.detail : undefined),
+    item.connector,
+    typeof operation === 'string' ? operation : undefined,
+    typeof expression === 'string' ? shorten(expression, 80) : undefined,
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function summarizeOutlineProblems(item: FlowAnalysisOutlineItem, problems: FlowProblem[]): OutlineProblemSummary {
+  const summary: OutlineProblemSummary = { error: 0, warning: 0, info: 0 };
+  for (const problem of problems) {
+    if (!problemMatchesOutlineItem(problem, item)) continue;
+    summary[problem.level] += 1;
+  }
+  return summary;
+}
+
+function problemMatchesOutlineItem(problem: FlowProblem, item: FlowAnalysisOutlineItem) {
+  const from = item.from ?? -1;
+  const to = item.to ?? -1;
+  if (problem.from !== undefined && from <= problem.from && problem.from <= to) return true;
+  if (problem.actionName && item.name && problem.actionName === item.name) return true;
+  if (problem.path && item.name && pathMentionsName(problem.path, item.name)) return true;
+  return false;
+}
+
+function pathMentionsName(path: string, name: string) {
+  const normalizedName = name.toLowerCase();
+  return path
+    .split(/[.[\]'"]+/)
+    .filter(Boolean)
+    .some((part) => part.toLowerCase() === normalizedName);
+}
+
+function outlineProblemTitle(summary: OutlineProblemSummary) {
+  const parts = [
+    summary.error ? `${summary.error} error${summary.error === 1 ? '' : 's'}` : '',
+    summary.warning ? `${summary.warning} warning${summary.warning === 1 ? '' : 's'}` : '',
+    summary.info ? `${summary.info} info` : '',
+  ].filter(Boolean);
+  return parts.join(', ');
 }
 
 const INPUT_LABELS: Record<string, string> = {
@@ -1650,6 +2296,7 @@ function OutlineDetail(props: { item: FlowAnalysisOutlineItem; indent: number })
   if (item.type) rows.push(['Type', item.type]);
   if (item.detail && item.detail !== item.type) rows.push(['Detail', item.detail]);
   if (item.connector) rows.push(['Connector', item.connector]);
+  if (item.dependency) rows.push(['Dependency', item.dependency]);
   if (item.runAfter?.length) rows.push(['Run after', item.runAfter.join(', ')]);
   if (item.inputs) {
     for (const [key, value] of Object.entries(item.inputs)) {

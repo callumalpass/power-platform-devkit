@@ -399,8 +399,16 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
   await page.locator('[data-flow="flow-probe"]').click();
   await expect(page.locator('#panel-automate')).toContainText('Flow Probe');
   await page.getByRole('button', { name: 'Add Action' }).click();
-  await page.getByPlaceholder('Search apioperations...').fill('release');
-  await page.getByRole('button', { name: 'Search' }).click();
+  const releaseSearchRequest = page.waitForRequest((request) => {
+    try {
+      const body = JSON.parse(request.postData() || '{}');
+      return body.api === 'flow' && body.path === '/apioperations?%24top=25&%24search=release';
+    } catch {
+      return false;
+    }
+  });
+  await page.getByPlaceholder('Search connectors and actions…').fill('release');
+  await releaseSearchRequest;
   await page.getByRole('button', { name: /Create a new release/ }).click();
   await page.getByRole('button', { name: 'Insert Action' }).click();
   await expect(page.locator('.flow-rail-header')).toContainText('2 actions');
