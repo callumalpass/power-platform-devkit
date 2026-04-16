@@ -221,6 +221,19 @@ export function renderHtml(): string {
     .fetchxml-editor-mount .monaco-editor .inputarea.ime-input { background: var(--surface); }
     .fetchxml-editor-mount .monaco-editor { min-height: 420px; }
     .fetchxml-editor-mount .monaco-editor .margin { background: var(--bg); }
+    .flow-editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 30%); min-height: 420px; }
+    .flow-editor-main { min-width: 0; }
+    .flow-outline-rail { border-left: 1px solid var(--border); background: var(--bg); min-width: 0; display: flex; flex-direction: column; }
+    .flow-rail-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.6875rem; }
+    .flow-rail-header h3 { margin: 0; color: var(--ink); font-size: 0.75rem; }
+    .flow-outline-rail .empty { margin: 10px; }
+    .flow-outline-rail > div:last-child { border: 0 !important; border-radius: 0 !important; flex: 1; max-height: none !important; }
+    .flow-diff-modal { width: min(1180px, 94vw); height: min(820px, 88vh); max-height: 88vh; }
+    .flow-diff-editor { flex: 1; min-height: 0; }
+    @media (max-width: 1100px) {
+      .flow-editor-layout { grid-template-columns: 1fr; }
+      .flow-outline-rail { border-left: 0; border-top: 1px solid var(--border); max-height: 320px; }
+    }
     .fetchxml-diagnostics { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
     .fetchxml-diagnostic { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; background: var(--bg); }
     .fetchxml-diagnostic.warning { border-left-color: #d97706; }
