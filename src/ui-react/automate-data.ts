@@ -9,6 +9,27 @@ export type FlowListResult = {
   usedFallback: boolean;
 };
 
+export type FlowValidationKind = 'errors' | 'warnings';
+
+export type FlowValidationItem = {
+  level: 'error' | 'warning' | 'info';
+  code?: string;
+  message: string;
+  path?: string;
+  actionName?: string;
+  operationMetadataId?: string;
+  from?: number;
+  to?: number;
+  raw: unknown;
+};
+
+export type FlowValidationResult = {
+  kind: FlowValidationKind;
+  items: FlowValidationItem[];
+  raw: unknown;
+  checkedAt: string;
+};
+
 export async function loadFlowList(environment: string): Promise<FlowListResult> {
   try {
     const result = await executeRequest<{ value?: unknown[] }>(environment, 'flow', '/flows', false);
@@ -46,6 +67,68 @@ export async function analyzeFlowDocument(source: string, cursor = source.length
   return payload.data;
 }
 
+export async function checkFlowDefinition(environment: string, flow: FlowItem, source: string, kind: FlowValidationKind): Promise<FlowValidationResult> {
+  const suffix = kind === 'errors' ? 'checkFlowErrors' : 'checkFlowWarnings';
+  const result = await executeRequest<unknown>(
+    environment,
+    'flow',
+    `/flows/${flowIdentifier(flow)}/${suffix}`,
+    true,
+    'POST',
+    buildFlowServicePayload(source),
+  );
+  return normalizeFlowValidationResult(kind, result.response);
+}
+
+export async function saveFlowDefinition(environment: string, flow: FlowItem, source: string): Promise<FlowItem> {
+  const result = await executeRequest<unknown>(
+    environment,
+    'flow',
+    `/flows/${flowIdentifier(flow)}?$expand=properties.connectionreferences.apidefinition,properties.definitionsummary.operations.apioperation,operationDefinition,plan,properties.throttleData,properties.estimatedsuspensiondata,properties.powerFlowType`,
+    true,
+    'PATCH',
+    {
+      ...buildFlowServicePayload(source),
+      telemetryMetadata: { modifiedSources: 'pp-ui' },
+    },
+  );
+  return normalizeFlowApiItem(result.response || flow);
+}
+
+export function formatFlowDocument(source: string) {
+  return JSON.stringify(JSON.parse(source), null, 2);
+}
+
+export function buildFlowServicePayload(source: string): Record<string, unknown> {
+  const parsed = JSON.parse(source) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Flow definition JSON must be an object.');
+  }
+
+  const root = parsed as Record<string, unknown>;
+  const properties = isRecord(root.properties) ? root.properties : root;
+  const definition = properties.definition || root.definition || parsed;
+  if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
+    throw new Error('Flow definition JSON must contain a workflow definition object.');
+  }
+
+  const serviceProperties: Record<string, unknown> = {
+    definition,
+    connectionReferences: properties.connectionReferences || root.connectionReferences || {},
+    displayName: properties.displayName || root.name || root.displayName || 'Flow',
+  };
+
+  for (const key of ['templateName', 'solutionId', 'workflowEntityId', 'plan'] as const) {
+    const value = properties[key] ?? root[key];
+    if (value !== undefined) serviceProperties[key] = value;
+  }
+
+  const environmentName = prop(properties, 'environment.name') || prop(root, 'environment.name');
+  if (environmentName) serviceProperties.environment = { name: environmentName };
+
+  return { properties: serviceProperties };
+}
+
 export async function loadFlowRuns(environment: string, flow: FlowItem): Promise<FlowRun[]> {
   const result = await executeRequest<{ value?: FlowRun[] }>(environment, 'flow', `/flows/${flowIdentifier(flow)}/runs?$top=20`);
   return result.response?.value || [];
@@ -61,10 +144,25 @@ export async function loadActionDetail(environment: string, flow: FlowItem, run:
   return result.response || action;
 }
 
-async function executeRequest<T>(environment: string, apiKind: string, path: string, allowInteractive = true) {
+async function executeRequest<T>(
+  environment: string,
+  apiKind: string,
+  path: string,
+  allowInteractive = true,
+  method = 'GET',
+  body?: unknown,
+) {
   const result = await api<ApiEnvelope<ApiExecuteResponse<T>>>('/api/request/execute', {
     method: 'POST',
-    body: JSON.stringify({ environment, api: apiKind, method: 'GET', path, allowInteractive, softFail: !allowInteractive }),
+    body: JSON.stringify({
+      environment,
+      api: apiKind,
+      method,
+      path,
+      allowInteractive,
+      softFail: !allowInteractive,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }),
   });
   return result.data;
 }
@@ -142,4 +240,59 @@ function parseJsonMaybe(value: unknown): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function normalizeFlowValidationResult(kind: FlowValidationKind, raw: unknown): FlowValidationResult {
+  return {
+    kind,
+    items: collectValidationItems(kind, raw).slice(0, 100),
+    raw,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+function collectValidationItems(kind: FlowValidationKind, raw: unknown): FlowValidationItem[] {
+  const items: FlowValidationItem[] = [];
+  const seen = new Set<unknown>();
+  const visit = (value: unknown) => {
+    if (value == null || seen.has(value)) return;
+    if (typeof value !== 'object') return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+
+    const record = value as Record<string, unknown>;
+    const message = firstString(record.message, record.errorMessage, record.localizedMessage, record.description, record.title);
+    const code = firstString(record.code, record.ruleId, record.errorCode, record.name);
+    if (message) {
+      items.push({
+        level: kind === 'errors' ? 'error' : 'warning',
+        code,
+        message,
+        path: firstString(record.path, record.jsonPath, record.location, record.target),
+        actionName: firstString(record.actionName, record.operationName, record.nodeName, record.target),
+        operationMetadataId: firstString(record.operationMetadataId, record.anchor, record.nodeId),
+        raw: record,
+      });
+    }
+
+    for (const key of ['errors', 'warnings', 'value', 'details', 'innerErrors', 'issues'] as const) {
+      if (record[key] !== undefined) visit(record[key]);
+    }
+  };
+  visit(raw);
+  return items;
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

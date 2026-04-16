@@ -37,7 +37,7 @@ test('analyzeFlow understands a workflow definition wrapper from a real sample',
   assert.ok(result.summary.actionCount > 5);
   assert.ok(result.summary.variableCount >= 2);
   assert.ok(result.symbols.some((item) => item.kind === 'action' && item.name === 'For_each_record'));
-  assert.ok(result.references.some((item) => item.kind === 'action' && item.name === 'Get_Blob_for_this_product'));
+  assert.equal(result.knowledge.level, 'structural');
   assert.equal(findOutlineItem(result.outline, "Get_records_that_haven't_been_published_to_Blob_storage_yet")?.connector, 'azuretables');
   const blobExists = findOutlineItem(result.outline, 'Checks_if__Blob_for_this_record_productId_exists');
   assert.equal(blobExists?.connector, 'AzureBlob');
@@ -91,10 +91,10 @@ test('analyzeFlow extracts definitions from serialized Dataverse clientdata', ()
   assert.equal(result.summary.actionCount, 2);
   const useValue = result.symbols.find((item) => item.kind === 'action' && item.name === 'UseValue');
   assert.ok(useValue && useValue.from <= source.indexOf('UseValue') && useValue.to > source.indexOf('UseValue'));
-  assert.ok(result.references.some((item) => item.kind === 'action' && item.name === 'ComposeValue' && item.resolved));
+  assert.ok(result.symbols.some((item) => item.kind === 'action' && item.name === 'ComposeValue'));
 });
 
-test('analyzeFlow validates structured condition expressions', () => {
+test('analyzeFlow does not approximate structured expression validation offline', () => {
   const source = JSON.stringify({
     definition: {
       triggers: {
@@ -129,11 +129,11 @@ test('analyzeFlow validates structured condition expressions', () => {
 
   const result = analyzeFlow(source, source.indexOf('madeUpOperator'));
   const codes = new Set(result.diagnostics.map((item) => item.code));
-  assert.ok(codes.has('FLOW_STRUCTURED_EXPR_ARGUMENT_INVALID'));
-  assert.ok(codes.has('FLOW_STRUCTURED_EXPR_OPERATOR_UNKNOWN'));
+  assert.equal(codes.has('FLOW_STRUCTURED_EXPR_ARGUMENT_INVALID'), false);
+  assert.equal(codes.has('FLOW_STRUCTURED_EXPR_OPERATOR_UNKNOWN'), false);
 });
 
-test('analyzeFlow extracts references from structured condition expressions', () => {
+test('analyzeFlow keeps structured condition expressions out of offline reference analysis', () => {
   const source = JSON.stringify({
     definition: {
       parameters: {
@@ -196,12 +196,12 @@ test('analyzeFlow extracts references from structured condition expressions', ()
   }, null, 2);
 
   const result = analyzeFlow(source, source.indexOf('greaterOrEquals'));
-  assert.ok(result.references.some((item) => item.kind === 'action' && item.name === 'PrepareValue' && item.sourceAction === 'CheckValue' && item.expression === 'structured:and' && item.resolved));
-  assert.ok(result.references.some((item) => item.kind === 'parameter' && item.name === 'targetValue' && item.sourceAction === 'CheckValue' && item.expression === 'structured:and' && item.resolved));
-  assert.ok(result.references.some((item) => item.kind === 'variable' && item.name === 'counter' && item.sourceAction === 'CheckValue' && item.expression === 'structured:and' && item.resolved));
+  assert.equal(result.references.length, 0);
+  assert.ok(result.symbols.some((item) => item.kind === 'parameter' && item.name === 'targetValue'));
+  assert.ok(result.symbols.some((item) => item.kind === 'variable' && item.name === 'counter'));
 });
 
-test('analyzeFlow handles broader expression syntax', () => {
+test('analyzeFlow does not approximate expression syntax offline', () => {
   const source = JSON.stringify({
     definition: {
       triggers: {
@@ -243,11 +243,11 @@ test('analyzeFlow handles broader expression syntax', () => {
   }, null, 2);
 
   const result = analyzeFlow(source, source.indexOf('trailing'));
-  assert.ok(result.references.some((item) => item.kind === 'variable' && item.name === 'text' && item.sourceAction === 'GoodExpression' && item.resolved));
-  assert.ok(result.diagnostics.some((item) => item.code === 'FLOW_EXPR_TRAILING_TOKEN'));
+  assert.equal(result.references.length, 0);
+  assert.equal(result.diagnostics.some((item) => item.code === 'FLOW_EXPR_TRAILING_TOKEN'), false);
 });
 
-test('analyzeFlow validates variable mutation action targets', () => {
+test('analyzeFlow does not approximate variable mutation target resolution offline', () => {
   const source = JSON.stringify({
     definition: {
       triggers: {
@@ -270,37 +270,27 @@ test('analyzeFlow validates variable mutation action targets', () => {
   }, null, 2);
 
   const result = analyzeFlow(source, source.indexOf('missingVariable'));
-  assert.ok(result.references.some((item) => item.kind === 'variable' && item.name === 'missingVariable' && item.sourceAction === 'SetMissingVariable' && !item.resolved));
-  assert.ok(result.diagnostics.some((item) => item.code === 'FLOW_VARIABLE_UNRESOLVED'));
+  assert.equal(result.references.length, 0);
+  assert.equal(result.diagnostics.some((item) => item.code === 'FLOW_VARIABLE_UNRESOLVED'), false);
 });
 
-test('analyzeFlow emits actionable diagnostics for broken references', async () => {
+test('analyzeFlow leaves reference validation to canonical Power Automate checks', async () => {
   const source = await readFixture('broken-power-automate-wrapper.json');
   const result = analyzeFlow(source, source.indexOf("DoesNotExist"));
   const codes = new Set(result.diagnostics.map((item) => item.code));
-  assert.ok(codes.has('FLOW_REFERENCE_UNRESOLVED'));
-  assert.ok(codes.has('FLOW_RUN_AFTER_TARGET_MISSING'));
+  assert.equal(codes.has('FLOW_REFERENCE_UNRESOLVED'), false);
+  assert.equal(codes.has('FLOW_RUN_AFTER_TARGET_MISSING'), false);
 });
 
-test('pp flow validate returns a failing exit code for broken files', async () => {
+test('pp flow help only documents the Flow API request shortcut', async () => {
   const cliEntry = path.resolve(process.cwd(), '.tmp-test/src/index.js');
-  try {
-    await execFileAsync('node', [cliEntry, 'flow', 'validate', fixturePath('broken-power-automate-wrapper.json')], { cwd: process.cwd() });
-    assert.fail('expected validation command to fail');
-  } catch (error) {
-    const failure = error as { stdout?: string; code?: number };
-    assert.equal(failure.code, 1);
-    assert.match(failure.stdout ?? '', /FLOW_REFERENCE_UNRESOLVED/);
-    assert.match(failure.stdout ?? '', /FLOW_RUN_AFTER_TARGET_MISSING/);
-  }
-});
-
-test('pp flow inspect returns structured summary data for valid files', async () => {
-  const cliEntry = path.resolve(process.cwd(), '.tmp-test/src/index.js');
-  const { stdout } = await execFileAsync('node', [cliEntry, 'flow', 'inspect', fixturePath('ratings-workflow.json')], { cwd: process.cwd() });
-  assert.match(stdout, /"outline"/);
-  assert.match(stdout, /"summary"/);
-  assert.match(stdout, /"actionCount"/);
+  const { stdout } = await execFileAsync('node', [cliEntry, 'flow', '--help'], { cwd: process.cwd() });
+  assert.match(stdout, /Power Automate request shortcut/);
+  assert.match(stdout, /pp flow <path> --env ALIAS/);
+  assert.doesNotMatch(stdout, /pp flow validate/);
+  assert.doesNotMatch(stdout, /pp flow inspect/);
+  assert.doesNotMatch(stdout, /pp flow symbols/);
+  assert.doesNotMatch(stdout, /pp flow explain/);
 });
 
 test('pp ui serves flow language analysis over HTTP', async () => {
@@ -334,7 +324,7 @@ test('pp ui serves flow language analysis over HTTP', async () => {
   assert.equal(response.status, 200, stderr || stdout);
   assert.equal(payload.success, true);
   assert.equal(payload.data?.summary?.wrapperKind, 'resource-properties-definition');
-  assert.ok(payload.data?.diagnostics?.some((item) => item.code === 'FLOW_REFERENCE_UNRESOLVED'));
+  assert.equal(payload.data?.diagnostics?.some((item) => item.code === 'FLOW_REFERENCE_UNRESOLVED'), false);
 });
 
 test('pp ui reuses an existing running instance for the same config', async () => {

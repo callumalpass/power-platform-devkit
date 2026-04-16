@@ -169,8 +169,6 @@ interface FlowExpressionOccurrence {
   to: number;
   hostString?: JsonStringNode;
   actionName?: string;
-  root?: ExpressionNode;
-  origin?: 'string' | 'structured';
 }
 
 interface FlowDocumentModel {
@@ -180,67 +178,7 @@ interface FlowDocumentModel {
   triggers: FlowActionNode[];
   variables: FlowVariableNode[];
   parameters: FlowParameterNode[];
-  expressions: FlowExpressionOccurrence[];
   diagnostics: FlowRangeDiagnostic[];
-}
-
-interface ExpressionToken {
-  type: 'identifier' | 'string' | 'number' | 'boolean' | 'null' | 'paren-open' | 'paren-close' | 'comma' | 'dot' | 'bracket-open' | 'bracket-close' | 'question' | 'eof';
-  value: string;
-  from: number;
-  to: number;
-}
-
-interface ExpressionNodeBase {
-  kind: 'call' | 'identifier' | 'string' | 'number' | 'boolean' | 'null' | 'member' | 'index';
-  from: number;
-  to: number;
-}
-
-interface ExpressionCallNode extends ExpressionNodeBase {
-  kind: 'call';
-  name: string;
-  args: ExpressionNode[];
-}
-
-interface ExpressionIdentifierNode extends ExpressionNodeBase {
-  kind: 'identifier';
-  name: string;
-}
-
-interface ExpressionLiteralNode extends ExpressionNodeBase {
-  kind: 'string' | 'number' | 'boolean' | 'null';
-  value: string | number | boolean | null;
-}
-
-interface ExpressionMemberNode extends ExpressionNodeBase {
-  kind: 'member';
-  object: ExpressionNode;
-  property: string;
-}
-
-interface ExpressionIndexNode extends ExpressionNodeBase {
-  kind: 'index';
-  object: ExpressionNode;
-  index: ExpressionNode;
-}
-
-type ExpressionNode =
-  | ExpressionCallNode
-  | ExpressionIdentifierNode
-  | ExpressionLiteralNode
-  | ExpressionMemberNode
-  | ExpressionIndexNode;
-
-interface ExpressionParseResult {
-  root?: ExpressionNode;
-  diagnostics: FlowRangeDiagnostic[];
-}
-
-interface FunctionSpec {
-  minArgs: number;
-  maxArgs?: number;
-  info: string;
 }
 
 const FLOW_ROOT_PROPERTIES = ['$schema', 'contentVersion', 'parameters', 'triggers', 'actions', 'outputs', 'description', 'staticResults'];
@@ -266,96 +204,6 @@ const ACTION_TYPE_OPTIONS = [
   'Workflow',
   'ServiceProvider',
 ];
-const VARIABLE_REFERENCE_ACTION_TYPES = new Set(['AppendToArrayVariable', 'AppendToStringVariable', 'IncrementVariable', 'DecrementVariable', 'SetVariable']);
-
-const RAW_FUNCTION_SPECS: Record<string, FunctionSpec> = {
-  actions: { minArgs: 1, maxArgs: 1, info: 'Reference another action result.' },
-  body: { minArgs: 1, maxArgs: 1, info: 'Reference the body of another action.' },
-  outputs: { minArgs: 1, maxArgs: 1, info: 'Reference another action outputs.' },
-  variables: { minArgs: 1, maxArgs: 1, info: 'Reference a workflow variable.' },
-  parameters: { minArgs: 1, maxArgs: 1, info: 'Reference a workflow parameter.' },
-  items: { minArgs: 1, maxArgs: 1, info: 'Reference a foreach loop item by loop name.' },
-  item: { minArgs: 0, maxArgs: 0, info: 'Reference the current foreach item.' },
-  trigger: { minArgs: 0, maxArgs: 0, info: 'Reference trigger metadata.' },
-  triggerBody: { minArgs: 0, maxArgs: 0, info: 'Reference the trigger body.' },
-  triggerOutputs: { minArgs: 0, maxArgs: 0, info: 'Reference trigger outputs.' },
-  equals: { minArgs: 2, info: 'Compare two values.' },
-  notEquals: { minArgs: 2, maxArgs: 2, info: 'Compare whether two values differ.' },
-  and: { minArgs: 2, info: 'Logical AND.' },
-  or: { minArgs: 2, info: 'Logical OR.' },
-  not: { minArgs: 1, maxArgs: 1, info: 'Logical NOT.' },
-  contains: { minArgs: 2, maxArgs: 2, info: 'Check whether a collection or string contains a value.' },
-  startsWith: { minArgs: 2, maxArgs: 2, info: 'Check whether a string starts with a value.' },
-  endsWith: { minArgs: 2, maxArgs: 2, info: 'Check whether a string ends with a value.' },
-  empty: { minArgs: 1, maxArgs: 1, info: 'Check whether a value is empty.' },
-  length: { minArgs: 1, maxArgs: 1, info: 'Return the length of a collection or string.' },
-  first: { minArgs: 1, maxArgs: 1, info: 'Return the first item in a collection.' },
-  last: { minArgs: 1, maxArgs: 1, info: 'Return the last item in a collection.' },
-  skip: { minArgs: 2, maxArgs: 2, info: 'Skip items in a collection.' },
-  take: { minArgs: 2, maxArgs: 2, info: 'Take items from a collection.' },
-  join: { minArgs: 2, maxArgs: 2, info: 'Join collection items into a string.' },
-  split: { minArgs: 2, maxArgs: 2, info: 'Split a string.' },
-  replace: { minArgs: 3, maxArgs: 3, info: 'Replace text in a string.' },
-  substring: { minArgs: 2, maxArgs: 3, info: 'Return part of a string.' },
-  toLower: { minArgs: 1, maxArgs: 1, info: 'Lowercase a string.' },
-  toUpper: { minArgs: 1, maxArgs: 1, info: 'Uppercase a string.' },
-  trim: { minArgs: 1, maxArgs: 1, info: 'Trim a string.' },
-  createArray: { minArgs: 0, info: 'Create an array value.' },
-  union: { minArgs: 2, info: 'Return the union of collections.' },
-  intersection: { minArgs: 2, info: 'Return the intersection of collections.' },
-  if: { minArgs: 3, maxArgs: 3, info: 'Return one of two values based on a condition.' },
-  add: { minArgs: 2, maxArgs: 2, info: 'Add numbers.' },
-  sub: { minArgs: 2, maxArgs: 2, info: 'Subtract numbers.' },
-  mul: { minArgs: 2, maxArgs: 2, info: 'Multiply numbers.' },
-  div: { minArgs: 2, maxArgs: 2, info: 'Divide numbers.' },
-  min: { minArgs: 1, info: 'Return the minimum value.' },
-  max: { minArgs: 1, info: 'Return the maximum value.' },
-  rand: { minArgs: 2, maxArgs: 2, info: 'Return a random integer.' },
-  addDays: { minArgs: 2, maxArgs: 2, info: 'Add days to a timestamp.' },
-  addHours: { minArgs: 2, maxArgs: 2, info: 'Add hours to a timestamp.' },
-  addMinutes: { minArgs: 2, maxArgs: 2, info: 'Add minutes to a timestamp.' },
-  addSeconds: { minArgs: 2, maxArgs: 2, info: 'Add seconds to a timestamp.' },
-  ticks: { minArgs: 1, maxArgs: 1, info: 'Return timestamp ticks.' },
-  mod: { minArgs: 2, maxArgs: 2, info: 'Modulo.' },
-  less: { minArgs: 2, maxArgs: 2, info: 'Less-than comparison.' },
-  lessOrEquals: { minArgs: 2, maxArgs: 2, info: 'Less-than-or-equal comparison.' },
-  greater: { minArgs: 2, maxArgs: 2, info: 'Greater-than comparison.' },
-  greaterOrEquals: { minArgs: 2, maxArgs: 2, info: 'Greater-than-or-equal comparison.' },
-  json: { minArgs: 1, maxArgs: 1, info: 'Parse JSON from a string.' },
-  string: { minArgs: 1, maxArgs: 1, info: 'Convert a value to string.' },
-  int: { minArgs: 1, maxArgs: 1, info: 'Convert a value to integer.' },
-  float: { minArgs: 1, maxArgs: 1, info: 'Convert a value to float.' },
-  bool: { minArgs: 1, maxArgs: 1, info: 'Convert a value to boolean.' },
-  encodeURIComponent: { minArgs: 1, maxArgs: 1, info: 'Encode a URI component.' },
-  decodeURIComponent: { minArgs: 1, maxArgs: 1, info: 'Decode a URI component.' },
-  uriComponent: { minArgs: 1, maxArgs: 1, info: 'Encode a URI component.' },
-  decodeUriComponent: { minArgs: 1, maxArgs: 1, info: 'Decode a URI component.' },
-  base64: { minArgs: 1, maxArgs: 1, info: 'Base64-encode a value.' },
-  base64ToBinary: { minArgs: 1, maxArgs: 1, info: 'Decode base64 to binary.' },
-  base64ToString: { minArgs: 1, maxArgs: 1, info: 'Decode base64 text.' },
-  dataUri: { minArgs: 1, maxArgs: 1, info: 'Convert a value to a data URI.' },
-  dataUriToBinary: { minArgs: 1, maxArgs: 1, info: 'Decode data URI to binary.' },
-  dataUriToString: { minArgs: 1, maxArgs: 1, info: 'Decode data URI to string.' },
-  guid: { minArgs: 0, maxArgs: 1, info: 'Create a GUID.' },
-  utcNow: { minArgs: 0, maxArgs: 0, info: 'Current UTC timestamp.' },
-  formatDateTime: { minArgs: 1, maxArgs: 2, info: 'Format a timestamp using an optional format string.' },
-  convertToUtc: { minArgs: 2, maxArgs: 2, info: 'Convert a time to UTC.' },
-  convertFromUtc: { minArgs: 2, maxArgs: 2, info: 'Convert UTC to a timezone.' },
-  dayOfWeek: { minArgs: 1, maxArgs: 1, info: 'Get weekday number.' },
-  startOfDay: { minArgs: 1, maxArgs: 1, info: 'Start of day.' },
-  coalesce: { minArgs: 2, info: 'Return first non-null argument.' },
-  concat: { minArgs: 2, info: 'Concatenate values.' },
-};
-
-const FUNCTION_SPECS: Record<string, FunctionSpec> = Object.fromEntries(
-  Object.entries(RAW_FUNCTION_SPECS).map(([name, spec]) => [name.toLowerCase(), spec]),
-);
-
-const STRUCTURED_EXPRESSION_SPECS: Record<string, FunctionSpec> = {
-  ...FUNCTION_SPECS,
-  and: { minArgs: 1, info: 'Structured logical AND.' },
-  or: { minArgs: 1, info: 'Structured logical OR.' },
-};
 
 export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
   const parseResult = parseJsonDocument(source);
@@ -377,7 +225,7 @@ export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
   const context = readCursorContext(parseResult.root, source, cursor, model) ?? fallbackContext;
   const diagnostics = [...parseResult.diagnostics, ...model.diagnostics];
   const symbols = buildSymbols(model);
-  const references = analyzeReferences(model, diagnostics);
+  const references: FlowReferenceSummary[] = [];
   const completions = buildCompletions(context, model, source, cursor);
 
   return {
@@ -387,7 +235,7 @@ export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
     outline: buildOutline(model),
     symbols,
     references,
-    knowledge: { level: 'built-in', sources: ['workflow-graph', 'expression-engine', 'built-in-function-pack'] },
+    knowledge: { level: 'structural', sources: ['strict-json-parser', 'workflow-definition-shape'] },
     summary: {
       wrapperKind: model.wrapperKind,
       triggerCount: model.triggers.length,
@@ -421,7 +269,6 @@ function buildFlowModel(root: JsonObjectNode): FlowDocumentModel {
       triggers: [],
       variables: [],
       parameters: [],
-      expressions: [],
       diagnostics,
     };
   }
@@ -434,12 +281,6 @@ function buildFlowModel(root: JsonObjectNode): FlowDocumentModel {
   const triggers = triggersNode?.type === 'object' ? collectTriggerNodes(triggersNode, diagnostics) : [];
   const parameters = parametersNode?.type === 'object' ? collectParameters(parametersNode) : [];
   const variables = collectVariables(actions);
-  const actionRanges = buildActionRangeIndex(actions);
-  const expressions = [
-    ...collectExpressions(definitionNode, actionRanges),
-    ...collectStructuredExpressions(definitionNode, actionRanges, diagnostics),
-  ];
-  validateStructuredExpressions(definitionNode, diagnostics);
 
   return {
     wrapperKind: extracted.wrapperKind,
@@ -448,7 +289,6 @@ function buildFlowModel(root: JsonObjectNode): FlowDocumentModel {
     triggers,
     variables,
     parameters,
-    expressions,
     diagnostics,
   };
 }
@@ -592,283 +432,6 @@ function collectVariables(actions: FlowActionNode[]): FlowVariableNode[] {
     }
   }
   return [...variables.values()];
-}
-
-function collectExpressions(definitionNode: JsonObjectNode, actionRanges: Array<{ from: number; to: number; name: string }>): FlowExpressionOccurrence[] {
-  const expressions: FlowExpressionOccurrence[] = [];
-  walkJson(definitionNode, (node) => {
-    if (node.type !== 'string') return;
-    if (isStringInsideStructuredExpression(node)) return;
-    for (const occurrence of extractExpressionsFromString(node)) {
-      occurrence.actionName = findNearestActionName(actionRanges, occurrence.from);
-      occurrence.origin = 'string';
-      expressions.push(occurrence);
-    }
-  });
-  return expressions;
-}
-
-function collectStructuredExpressions(
-  definitionNode: JsonObjectNode,
-  actionRanges: Array<{ from: number; to: number; name: string }>,
-  diagnostics: FlowRangeDiagnostic[],
-): FlowExpressionOccurrence[] {
-  const expressions: FlowExpressionOccurrence[] = [];
-  walkObjectProperties(definitionNode, (property) => {
-    if (property.key !== 'expression') return;
-    if (property.valueNode.type !== 'object' && property.valueNode.type !== 'array') return;
-    for (const node of structuredExpressionRoots(property.valueNode)) {
-      const root = expressionNodeFromStructuredJson(node, diagnostics);
-      if (!root) continue;
-      expressions.push({
-        expression: `structured:${root.kind === 'call' ? root.name : property.key}`,
-        from: root.from,
-        to: root.to,
-        actionName: findNearestActionName(actionRanges, root.from),
-        root,
-        origin: 'structured',
-      });
-    }
-  });
-  return expressions;
-}
-
-function structuredExpressionRoots(node: JsonNode): JsonNode[] {
-  if (node.type !== 'array') return [node];
-  return node.items.filter((item) => item.type === 'object');
-}
-
-function expressionNodeFromStructuredJson(node: JsonNode, diagnostics: FlowRangeDiagnostic[]): ExpressionNode | undefined {
-  if (node.type === 'string') return expressionNodeFromStructuredString(node, diagnostics);
-  if (node.type === 'number') return { kind: 'number', value: node.value, from: node.from, to: node.to };
-  if (node.type === 'boolean') return { kind: 'boolean', value: node.value, from: node.from, to: node.to };
-  if (node.type === 'null') return { kind: 'null', value: null, from: node.from, to: node.to };
-  if (node.type === 'array') {
-    return {
-      kind: 'call',
-      name: 'createArray',
-      args: node.items.map((item) => expressionNodeFromStructuredJson(item, diagnostics)).filter((item): item is ExpressionNode => Boolean(item)),
-      from: node.from,
-      to: node.to,
-    };
-  }
-  if (node.type !== 'object') return undefined;
-  const [property] = node.properties;
-  if (!property || node.properties.length !== 1) return undefined;
-  const value = property.valueNode;
-  const args = value.type === 'array'
-    ? value.items.map((item) => expressionNodeFromStructuredJson(item, diagnostics)).filter((item): item is ExpressionNode => Boolean(item))
-    : [expressionNodeFromStructuredJson(value, diagnostics)].filter((item): item is ExpressionNode => Boolean(item));
-  return { kind: 'call', name: property.key, args, from: property.keyNode.from, to: value.to };
-}
-
-function expressionNodeFromStructuredString(node: JsonStringNode, diagnostics: FlowRangeDiagnostic[]): ExpressionNode {
-  const occurrences = extractExpressionsFromString(node);
-  if (!occurrences.length) return { kind: 'string', value: node.value, from: node.from, to: node.to };
-  const parsed = occurrences.map((occurrence) => {
-    const result = parseExpression(occurrence.expression, occurrence.from);
-    diagnostics.push(...result.diagnostics);
-    return result.root;
-  }).filter((item): item is ExpressionNode => Boolean(item));
-  if (parsed.length === 1) return parsed[0]!;
-  return { kind: 'call', name: 'concat', args: parsed, from: occurrences[0]!.from, to: occurrences[occurrences.length - 1]!.to };
-}
-
-function isStringInsideStructuredExpression(node: JsonStringNode): boolean {
-  const expressionIndex = node.path.lastIndexOf('expression');
-  return expressionIndex >= 0 && expressionIndex < node.path.length - 1;
-}
-
-function validateStructuredExpressions(definitionNode: JsonObjectNode, diagnostics: FlowRangeDiagnostic[]): void {
-  walkObjectProperties(definitionNode, (property) => {
-    if (property.key !== 'expression') return;
-    if (property.valueNode.type !== 'object' && property.valueNode.type !== 'array') return;
-    validateStructuredExpressionValue(property.valueNode, diagnostics);
-  });
-}
-
-function validateStructuredExpressionValue(node: JsonNode, diagnostics: FlowRangeDiagnostic[]): void {
-  if (node.type === 'array') {
-    node.items.forEach((item) => validateStructuredExpressionValue(item, diagnostics));
-    return;
-  }
-  if (node.type !== 'object') return;
-  if (node.properties.length !== 1) {
-    diagnostics.push(rangeDiagnostic('warning', 'FLOW_STRUCTURED_EXPR_SHAPE_INVALID', 'Structured expression objects should contain one operator.', node.from, node.to));
-    return;
-  }
-  const [property] = node.properties;
-  if (!property) return;
-  const lowered = property.key.toLowerCase();
-  const spec = STRUCTURED_EXPRESSION_SPECS[lowered];
-  if (!spec) {
-    diagnostics.push(rangeDiagnostic('warning', 'FLOW_STRUCTURED_EXPR_OPERATOR_UNKNOWN', `Unknown structured expression operator ${property.key}.`, property.keyNode.from, property.keyNode.to));
-  } else {
-    const argCount = property.valueNode.type === 'array' ? property.valueNode.items.length : 1;
-    if (argCount < spec.minArgs || (typeof spec.maxArgs === 'number' && argCount > spec.maxArgs)) {
-      diagnostics.push(rangeDiagnostic('warning', 'FLOW_STRUCTURED_EXPR_ARGUMENT_INVALID', `${property.key} expects ${formatArity(spec)} structured argument(s), found ${argCount}.`, property.keyNode.from, property.valueNode.to));
-    }
-  }
-  validateStructuredExpressionValue(property.valueNode, diagnostics);
-}
-
-function buildActionRangeIndex(actions: FlowActionNode[]): Array<{ from: number; to: number; name: string }> {
-  return flattenActions(actions).map((item) => ({ from: item.from, to: item.to, name: item.name }));
-}
-
-function findNearestActionName(actions: Array<{ from: number; to: number; name: string }>, pos: number): string | undefined {
-  const match = actions.find((item) => pos >= item.from && pos <= item.to);
-  return match?.name;
-}
-
-function analyzeReferences(model: FlowDocumentModel, diagnostics: FlowRangeDiagnostic[]): FlowReferenceSummary[] {
-  const actionMap = new Map(flattenActions(model.actions).map((item) => [item.name, item] as const));
-  const variableMap = new Map(model.variables.map((item) => [item.name, item] as const));
-  const parameterMap = new Map(model.parameters.map((item) => [item.name, item] as const));
-  const references: FlowReferenceSummary[] = [];
-  for (const occurrence of model.expressions) {
-    const root = occurrence.root ?? parseExpressionOccurrence(occurrence, diagnostics);
-    if (!root) continue;
-    references.push(...analyzeExpressionReferences(root, occurrence, model, actionMap, variableMap, parameterMap, diagnostics));
-  }
-  references.push(...analyzeVariableActionReferences(flattenActions(model.actions), variableMap, diagnostics));
-  return references;
-}
-
-function parseExpressionOccurrence(occurrence: FlowExpressionOccurrence, diagnostics: FlowRangeDiagnostic[]): ExpressionNode | undefined {
-  const parsed = parseExpression(occurrence.expression, occurrence.from);
-  diagnostics.push(...parsed.diagnostics);
-  return parsed.root;
-}
-
-function analyzeExpressionReferences(
-  root: ExpressionNode,
-  occurrence: FlowExpressionOccurrence,
-  model: FlowDocumentModel,
-  actionMap: Map<string, FlowActionNode>,
-  variableMap: Map<string, FlowVariableNode>,
-  parameterMap: Map<string, FlowParameterNode>,
-  diagnostics: FlowRangeDiagnostic[],
-): FlowReferenceSummary[] {
-  const references: FlowReferenceSummary[] = [];
-  walkExpression(root, (node) => {
-    if (node.kind !== 'call') return;
-    const lowered = node.name.toLowerCase();
-    const first = node.args[0];
-    const stringArg = first?.kind === 'string' ? String(first.value) : undefined;
-    const pushReference = (kind: FlowReferenceSummary['kind'], name: string | undefined, resolved: boolean) => {
-      if (!name) return;
-      references.push({ kind, name, from: node.from, to: node.to, sourceAction: occurrence.actionName, expression: occurrence.expression, resolved });
-    };
-    if (FUNCTION_SPECS[lowered]) {
-      validateFunctionCall(node, diagnostics);
-    } else {
-      diagnostics.push(rangeDiagnostic('warning', 'FLOW_EXPR_FUNCTION_UNKNOWN', `Unknown function ${node.name}.`, node.from, node.to));
-    }
-    if (lowered === 'actions' || lowered === 'body' || lowered === 'outputs') {
-      const target = stringArg ?? '';
-      const resolved = actionMap.has(target);
-      pushReference('action', target, resolved);
-      if (!resolved) diagnostics.push(rangeDiagnostic('error', 'FLOW_REFERENCE_UNRESOLVED', `Expression references missing action ${target}.`, node.from, node.to));
-      else validateActionReferenceAvailability(occurrence.actionName, target, actionMap, diagnostics, node.from, node.to);
-    }
-    if (lowered === 'variables') {
-      const target = stringArg ?? '';
-      const resolved = variableMap.has(target);
-      pushReference('variable', target, resolved);
-      if (!resolved) diagnostics.push(rangeDiagnostic('error', 'FLOW_VARIABLE_UNRESOLVED', `Expression references missing variable ${target}.`, node.from, node.to));
-    }
-    if (lowered === 'parameters') {
-      const target = stringArg ?? '';
-      const resolved = parameterMap.has(target);
-      pushReference('parameter', target, resolved);
-      if (!resolved) diagnostics.push(rangeDiagnostic('warning', 'FLOW_PARAMETER_UNRESOLVED', `Expression references missing parameter ${target}.`, node.from, node.to));
-    }
-    if (lowered === 'items') {
-      const target = stringArg ?? '';
-      const resolved = Boolean(target);
-      pushReference('loop', target, resolved);
-    }
-    if (lowered === 'trigger' || lowered === 'triggerbody' || lowered === 'triggeroutputs') {
-      references.push({ kind: 'trigger', name: model.triggers[0]?.name ?? 'trigger', from: node.from, to: node.to, sourceAction: occurrence.actionName, expression: occurrence.expression, resolved: model.triggers.length > 0 });
-    }
-  });
-  return references;
-}
-
-function analyzeVariableActionReferences(
-  actions: FlowActionNode[],
-  variableMap: Map<string, FlowVariableNode>,
-  diagnostics: FlowRangeDiagnostic[],
-): FlowReferenceSummary[] {
-  const references: FlowReferenceSummary[] = [];
-  for (const action of actions) {
-    if (!VARIABLE_REFERENCE_ACTION_TYPES.has(action.type)) continue;
-    const inputsNode = objectPropertyValue(action.node, 'inputs');
-    if (inputsNode?.type !== 'object') continue;
-    const nameNode = objectPropertyValue(inputsNode, 'name');
-    if (nameNode?.type !== 'string') continue;
-    const resolved = variableMap.has(nameNode.value);
-    references.push({
-      kind: 'variable',
-      name: nameNode.value,
-      from: nameNode.from,
-      to: nameNode.to,
-      sourceAction: action.name,
-      resolved,
-    });
-    if (!resolved) {
-      diagnostics.push(rangeDiagnostic('error', 'FLOW_VARIABLE_UNRESOLVED', `${action.name} references missing variable ${nameNode.value}.`, nameNode.from, nameNode.to));
-    }
-  }
-  return references;
-}
-
-function validateActionReferenceAvailability(
-  sourceActionName: string | undefined,
-  targetActionName: string,
-  actionMap: Map<string, FlowActionNode>,
-  diagnostics: FlowRangeDiagnostic[],
-  from: number,
-  to: number,
-): void {
-  if (!sourceActionName) return;
-  const source = actionMap.get(sourceActionName);
-  const target = actionMap.get(targetActionName);
-  if (!source || !target) return;
-  if (source.containerId === target.containerId && target.siblingIndex > source.siblingIndex) {
-    diagnostics.push(rangeDiagnostic('warning', 'FLOW_REFERENCE_FUTURE_ACTION', `Expression references ${targetActionName} before it appears in the same scope.`, from, to));
-  }
-  if (!shareScopeLineage(source, target, actionMap)) {
-    diagnostics.push(rangeDiagnostic('info', 'FLOW_REFERENCE_SCOPE_AMBIGUOUS', `Expression references ${targetActionName} from a different scope.`, from, to));
-  }
-}
-
-function shareScopeLineage(source: FlowActionNode, target: FlowActionNode, actionMap: Map<string, FlowActionNode>): boolean {
-  if (source.containerId === target.containerId) return true;
-  const sourceLineage = new Set(actionLineage(source, actionMap));
-  for (const item of actionLineage(target, actionMap)) {
-    if (sourceLineage.has(item)) return true;
-  }
-  return false;
-}
-
-function actionLineage(action: FlowActionNode, actionMap: Map<string, FlowActionNode>): string[] {
-  const lineage = [action.containerId, action.name];
-  let parent = action.parentAction;
-  while (parent) {
-    lineage.push(parent);
-    parent = actionMap.get(parent)?.parentAction;
-  }
-  return lineage;
-}
-
-function validateFunctionCall(node: ExpressionCallNode, diagnostics: FlowRangeDiagnostic[]): void {
-  const spec = FUNCTION_SPECS[node.name.toLowerCase()];
-  if (!spec) return;
-  if (node.args.length < spec.minArgs || (typeof spec.maxArgs === 'number' && node.args.length > spec.maxArgs)) {
-    diagnostics.push(rangeDiagnostic('warning', 'FLOW_EXPR_ARGUMENT_INVALID', `${node.name} expects ${formatArity(spec)} argument(s), found ${node.args.length}.`, node.from, node.to));
-  }
 }
 
 function buildSymbols(model: FlowDocumentModel): FlowSymbolSummary[] {
@@ -1088,15 +651,7 @@ function completeExpression(
           : actions.map((item) => ({ label: item.name, type: 'action' as const }));
     return filterCompletionPrefix(items.map((item) => ({ ...item, apply: item.label })), prefix);
   }
-  const identPrefix = before.match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0] ?? '';
-  const functionItems = Object.entries(FUNCTION_SPECS).map(([label, spec]) => ({
-    label,
-    type: 'function' as const,
-    detail: formatArity(spec),
-    info: spec.info,
-    apply: `${label}()`,
-  }));
-  return filterCompletionPrefix(functionItems, identPrefix);
+  return [];
 }
 
 function filterCompletionPrefix<T extends FlowCompletionItem>(items: T[], prefix: string): T[] {
@@ -1115,6 +670,7 @@ function scoreCompletion(item: FlowCompletionItem, prefix: string): number {
 
 function readCursorContext(root: JsonObjectNode, source: string, cursor: number, model: FlowDocumentModel): FlowCursorContext | undefined {
   const context = locateJsonContext(root, cursor);
+  const actionRanges = buildActionRangeIndex(model.actions);
   if (context?.kind === 'string-value') {
     const expression = findExpressionAtCursor(context.node, cursor);
     if (expression) {
@@ -1124,7 +680,7 @@ function readCursorContext(root: JsonObjectNode, source: string, cursor: number,
         from: expression.from,
         to: expression.to,
         path: context.node.path,
-        nearestAction: findNearestActionName(buildActionRangeIndex(model.actions), cursor),
+        nearestAction: findNearestActionName(actionRanges, cursor),
       };
     }
     return {
@@ -1134,7 +690,7 @@ function readCursorContext(root: JsonObjectNode, source: string, cursor: number,
       to: context.node.to,
       path: context.node.path,
       propertyName: context.propertyName,
-      nearestAction: findNearestActionName(buildActionRangeIndex(model.actions), cursor),
+      nearestAction: findNearestActionName(actionRanges, cursor),
     };
   }
   if (context?.kind === 'property-key') {
@@ -1144,11 +700,20 @@ function readCursorContext(root: JsonObjectNode, source: string, cursor: number,
       from: context.property.keyNode.from,
       to: context.property.keyNode.to,
       path: context.path,
-      nearestAction: findNearestActionName(buildActionRangeIndex(model.actions), cursor),
+      nearestAction: findNearestActionName(actionRanges, cursor),
       propertyName: context.property.key,
     };
   }
   return readFallbackContext(source, cursor);
+}
+
+function buildActionRangeIndex(actions: FlowActionNode[]): Array<{ from: number; to: number; name: string }> {
+  return flattenActions(actions).map((item) => ({ from: item.from, to: item.to, name: item.name }));
+}
+
+function findNearestActionName(actions: Array<{ from: number; to: number; name: string }>, pos: number): string | undefined {
+  const match = actions.find((item) => pos >= item.from && pos <= item.to);
+  return match?.name;
 }
 
 function readFallbackContext(source: string, cursor: number): FlowCursorContext {
@@ -1202,7 +767,7 @@ function extractExpressionsFromString(node: JsonStringNode): FlowExpressionOccur
   const raw = node.value;
   if (!raw.includes('@')) return results;
   if (raw.startsWith('@') && !raw.startsWith('@{')) {
-    results.push({ expression: raw.slice(1), from: node.from + 2, to: node.to - 1, hostString: node, origin: 'string' });
+    results.push({ expression: raw.slice(1), from: node.from + 2, to: node.to - 1, hostString: node });
     return results;
   }
   let index = 0;
@@ -1215,7 +780,6 @@ function extractExpressionsFromString(node: JsonStringNode): FlowExpressionOccur
       from: node.from + 1 + start + 2,
       to: node.from + 1 + end,
       hostString: node,
-      origin: 'string',
     });
     index = end + 1;
   }
@@ -1344,14 +908,10 @@ function readRunAfterTargets(actionNode: JsonObjectNode): string[] {
 }
 
 function validateRunAfterTargets(actions: FlowActionNode[], diagnostics: FlowRangeDiagnostic[]): void {
-  const seen = new Set(actions.map((item) => item.name));
   for (const action of actions) {
     const runAfterNode = objectPropertyValue(action.node, 'runAfter');
     if (runAfterNode?.type === 'object') {
       for (const property of runAfterNode.properties) {
-        if (!seen.has(property.key)) {
-          diagnostics.push(rangeDiagnostic('error', 'FLOW_RUN_AFTER_TARGET_MISSING', `${action.name} depends on missing action ${property.key}.`, property.keyNode.from, property.keyNode.to));
-        }
         const statuses = property.valueNode.type === 'array' ? property.valueNode.items.filter((item): item is JsonStringNode => item.type === 'string').map((item) => item.value) : [];
         for (const status of statuses) {
           if (!RUN_AFTER_STATUSES.includes(status)) {
@@ -1426,20 +986,6 @@ function remapJsonBoundary(index: number, offsetMap: number[]): number {
   if (index <= 0) return offsetMap[0]!;
   if (index < offsetMap.length) return offsetMap[index]!;
   return offsetMap[offsetMap.length - 1]!;
-}
-
-function walkExpression(node: ExpressionNode, visit: (node: ExpressionNode) => void): void {
-  visit(node);
-  if (node.kind === 'call') node.args.forEach((item) => walkExpression(item, visit));
-  if (node.kind === 'member') walkExpression(node.object, visit);
-  if (node.kind === 'index') {
-    walkExpression(node.object, visit);
-    walkExpression(node.index, visit);
-  }
-}
-
-function formatArity(spec: FunctionSpec): string {
-  return typeof spec.maxArgs === 'number' && spec.maxArgs === spec.minArgs ? `${spec.minArgs}` : `${spec.minArgs}+`;
 }
 
 function rangeDiagnostic(level: Diagnostic['level'], code: string, message: string, from: number, to: number, extra: Partial<FlowRangeDiagnostic> = {}): FlowRangeDiagnostic {
@@ -1622,203 +1168,5 @@ class JsonParser {
     const start = this.index;
     this.index += keyword.length;
     return { type: keyword === 'null' ? 'null' : 'boolean', from: start, to: this.index, value, path };
-  }
-}
-
-function parseExpression(source: string, offset = 0): ExpressionParseResult {
-  const tokenizer = new ExpressionTokenizer(source, offset);
-  const parser = new ExpressionParser(tokenizer.tokens);
-  return parser.parse();
-}
-
-class ExpressionTokenizer {
-  readonly tokens: ExpressionToken[] = [];
-  private readonly source: string;
-  private readonly offset: number;
-  private index = 0;
-
-  constructor(source: string, offset: number) {
-    this.source = source;
-    this.offset = offset;
-    this.tokenize();
-  }
-
-  private tokenize(): void {
-    while (this.index < this.source.length) {
-      const char = this.source[this.index]!;
-      if (/\s/.test(char)) {
-        this.index += 1;
-        continue;
-      }
-      const from = this.offset + this.index;
-      if (/[A-Za-z_]/.test(char)) {
-        const match = this.source.slice(this.index).match(/^[A-Za-z_][A-Za-z0-9_]*/)!;
-        const value = match[0];
-        this.index += value.length;
-        if (value === 'true' || value === 'false') this.tokens.push({ type: 'boolean', value, from, to: from + value.length });
-        else if (value === 'null') this.tokens.push({ type: 'null', value, from, to: from + value.length });
-        else this.tokens.push({ type: 'identifier', value, from, to: from + value.length });
-        continue;
-      }
-      if (char === '\'') {
-        const token = this.readString();
-        this.tokens.push(token);
-        continue;
-      }
-      if (char === '-' || /\d/.test(char)) {
-        const match = this.source.slice(this.index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/)!;
-        const value = match[0];
-        this.index += value.length;
-        this.tokens.push({ type: 'number', value, from, to: from + value.length });
-        continue;
-      }
-      if (char === '(') this.tokens.push({ type: 'paren-open', value: char, from, to: from + 1 });
-      else if (char === ')') this.tokens.push({ type: 'paren-close', value: char, from, to: from + 1 });
-      else if (char === ',') this.tokens.push({ type: 'comma', value: char, from, to: from + 1 });
-      else if (char === '.') this.tokens.push({ type: 'dot', value: char, from, to: from + 1 });
-      else if (char === '[') this.tokens.push({ type: 'bracket-open', value: char, from, to: from + 1 });
-      else if (char === ']') this.tokens.push({ type: 'bracket-close', value: char, from, to: from + 1 });
-      else if (char === '?') this.tokens.push({ type: 'question', value: char, from, to: from + 1 });
-      this.index += 1;
-    }
-    this.tokens.push({ type: 'eof', value: '', from: this.offset + this.source.length, to: this.offset + this.source.length });
-  }
-
-  private readString(): ExpressionToken {
-    const start = this.index;
-    this.index += 1;
-    let value = '';
-    while (this.index < this.source.length) {
-      const char = this.source[this.index]!;
-      if (char === '\'') {
-        if (this.source[this.index + 1] === '\'') {
-          value += '\'';
-          this.index += 2;
-          continue;
-        }
-        this.index += 1;
-        return { type: 'string', value, from: this.offset + start, to: this.offset + this.index };
-      }
-      value += char;
-      this.index += 1;
-    }
-    return { type: 'string', value, from: this.offset + start, to: this.offset + this.index };
-  }
-}
-
-class ExpressionParser {
-  private readonly tokens: ExpressionToken[];
-  private index = 0;
-
-  constructor(tokens: ExpressionToken[]) {
-    this.tokens = tokens;
-  }
-
-  parse(): ExpressionParseResult {
-    const diagnostics: FlowRangeDiagnostic[] = [];
-    try {
-      const root = this.parseExpression();
-      const tail = this.peek();
-      if (tail.type !== 'eof') {
-        diagnostics.push(rangeDiagnostic('error', 'FLOW_EXPR_TRAILING_TOKEN', `Unexpected token ${tail.value || tail.type} after expression.`, tail.from, tail.to));
-      }
-      return { root, diagnostics };
-    } catch (error) {
-      const failure = error as JsonParseFailure;
-      diagnostics.push(rangeDiagnostic('error', failure.code ?? 'FLOW_EXPR_SYNTAX_INVALID', failure.message, failure.from, failure.to));
-      return { diagnostics };
-    }
-  }
-
-  private parseExpression(): ExpressionNode {
-    return this.parseMember();
-  }
-
-  private parseMember(): ExpressionNode {
-    let node = this.parsePrimary();
-    while (true) {
-      const token = this.peek();
-      if (token.type === 'question') {
-        this.advance();
-        continue;
-      }
-      if (token.type === 'dot') {
-        this.advance();
-        const property = this.expect('identifier');
-        node = { kind: 'member', object: node, property: property.value, from: node.from, to: property.to };
-        continue;
-      }
-      if (token.type === 'bracket-open') {
-        const from = node.from;
-        this.advance();
-        const index = this.parseExpression();
-        this.expect('bracket-close');
-        node = { kind: 'index', object: node, index, from, to: index.to };
-        continue;
-      }
-      break;
-    }
-    return node;
-  }
-
-  private parsePrimary(): ExpressionNode {
-    const token = this.peek();
-    if (token.type === 'identifier') {
-      this.advance();
-      if (this.peek().type === 'paren-open') {
-        this.advance();
-        const args: ExpressionNode[] = [];
-        if (this.peek().type !== 'paren-close') {
-          while (true) {
-            args.push(this.parseExpression());
-            if (this.peek().type === 'comma') {
-              this.advance();
-              continue;
-            }
-            break;
-          }
-        }
-        const close = this.expect('paren-close');
-        return { kind: 'call', name: token.value, args, from: token.from, to: close.to };
-      }
-      return { kind: 'identifier', name: token.value, from: token.from, to: token.to };
-    }
-    if (token.type === 'string') {
-      this.advance();
-      return { kind: 'string', value: token.value, from: token.from, to: token.to };
-    }
-    if (token.type === 'number') {
-      this.advance();
-      return { kind: 'number', value: Number(token.value), from: token.from, to: token.to };
-    }
-    if (token.type === 'boolean') {
-      this.advance();
-      return { kind: 'boolean', value: token.value === 'true', from: token.from, to: token.to };
-    }
-    if (token.type === 'null') {
-      this.advance();
-      return { kind: 'null', value: null, from: token.from, to: token.to };
-    }
-    if (token.type === 'paren-open') {
-      this.advance();
-      const expression = this.parseExpression();
-      this.expect('paren-close');
-      return expression;
-    }
-    throw new JsonParseFailure('Invalid expression syntax.', token.from, token.to, 'FLOW_EXPR_SYNTAX_INVALID');
-  }
-
-  private expect(type: ExpressionToken['type']): ExpressionToken {
-    const token = this.peek();
-    if (token.type !== type) throw new JsonParseFailure(`Expected ${type} in expression.`, token.from, token.to, 'FLOW_EXPR_SYNTAX_INVALID');
-    return this.advance();
-  }
-
-  private peek(): ExpressionToken {
-    return this.tokens[this.index]!;
-  }
-
-  private advance(): ExpressionToken {
-    return this.tokens[this.index++]!;
   }
 }

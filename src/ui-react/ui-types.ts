@@ -182,6 +182,8 @@ export type FlowAnalysisOutlineItem = {
   variable?: string;
   /** Run-after configuration keys */
   runAfter?: string[];
+  from?: number;
+  to?: number;
   children?: FlowAnalysisOutlineItem[];
 };
 

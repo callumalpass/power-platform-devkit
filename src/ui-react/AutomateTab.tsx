@@ -1,35 +1,33 @@
-import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, startCompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { bracketMatching } from '@codemirror/language';
-import { linter } from '@codemirror/lint';
-import { searchKeymap } from '@codemirror/search';
-import { EditorState, Prec } from '@codemirror/state';
-import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers, type ViewUpdate } from '@codemirror/view';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { api, formatDate, formatDateShort, highlightJson, prop } from './utils.js';
 import {
   analyzeFlowDocument,
+  checkFlowDefinition,
   flowIdentifier,
+  formatFlowDocument,
   loadActionDetail,
   loadFlowDefinitionDocument,
   loadFlowList,
   loadFlowRuns,
   loadRunActions,
+  saveFlowDefinition,
+  type FlowValidationItem,
+  type FlowValidationKind,
+  type FlowValidationResult,
 } from './automate-data.js';
-import type { FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowItem, FlowRun, ToastFn } from './ui-types.js';
+import type { DiagnosticItem, FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowItem, FlowRun, ToastFn } from './ui-types.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 
 type AutomateSubTab = 'definition' | 'runs' | 'outline';
+type FlowOperation = 'reload' | 'check-errors' | 'check-warnings' | 'save' | null;
 
-const automateEditorTheme = EditorView.theme({
-  '&': { fontSize: '13px' },
-  '.cm-content': { caretColor: 'var(--ink)' },
-  '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--ink)' },
-  '&.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(37,99,235,0.18)' },
-  '.cm-activeLine': { backgroundColor: 'rgba(37,99,235,0.06)' },
-  '.cm-gutters': { backgroundColor: 'var(--bg)', borderRight: '1px solid var(--border)', color: 'var(--muted)' },
-});
+type FlowEditorHandle = {
+  format: () => string | null;
+  revealRange: (from?: number, to?: number) => void;
+  revealText: (needle?: string) => void;
+};
 
 const KIND_DOT: Record<string, string> = {
   trigger: '#3b82f6',
@@ -56,7 +54,10 @@ export function AutomateTab(props: {
   const [currentFlow, setCurrentFlow] = useState<FlowItem | null>(null);
   const [flowSubTab, setFlowSubTab] = useState<AutomateSubTab>('definition');
   const [flowDocument, setFlowDocument] = useState('');
+  const [loadedFlowDocument, setLoadedFlowDocument] = useState('');
   const [analysis, setAnalysis] = useState<FlowAnalysis | null>(null);
+  const [flowValidation, setFlowValidation] = useState<FlowValidationResult | null>(null);
+  const [flowOperation, setFlowOperation] = useState<FlowOperation>(null);
   const [runs, setRuns] = useState<FlowRun[]>([]);
   const [runFilter, setRunFilter] = useState('');
   const [runStatusFilter, setRunStatusFilter] = useState('');
@@ -70,6 +71,7 @@ export function AutomateTab(props: {
   const [loadingActions, setLoadingActions] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const selectedRunRef = useRef<string | undefined>(undefined);
+  const flowEditorRef = useRef<FlowEditorHandle | null>(null);
 
   useEffect(() => {
     if (!active || !environment) return;
@@ -127,6 +129,10 @@ export function AutomateTab(props: {
       .map(({ action }) => action);
   }, [actionFilter, actionStatusFilter, actions]);
 
+  const isFlowEditable = currentFlow?.source === 'flow';
+  const isFlowDirty = Boolean(currentFlow && flowDocument !== loadedFlowDocument);
+  const flowBusy = flowOperation !== null;
+
   async function loadFlows(force: boolean) {
     if (!environment) return;
     if (!force && environment === loadedEnvironment && flows.length) return;
@@ -145,7 +151,9 @@ export function AutomateTab(props: {
       setActionDetail(null);
       setLoadingActions(false);
       setFlowDocument('');
+      setLoadedFlowDocument('');
       setAnalysis(null);
+      setFlowValidation(null);
       setFlowSubTab('definition');
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
@@ -170,7 +178,78 @@ export function AutomateTab(props: {
       loadFlowRuns(environment, flow).catch(() => []),
     ]);
     setFlowDocument(document);
+    setLoadedFlowDocument(document);
+    setFlowValidation(null);
     setRuns(loadedRuns);
+  }
+
+  async function reloadFlowDefinition() {
+    if (!currentFlow) return;
+    setFlowOperation('reload');
+    try {
+      const document = await loadFlowDefinitionDocument(environment, currentFlow);
+      setFlowDocument(document);
+      setLoadedFlowDocument(document);
+      setFlowValidation(null);
+      toast('Flow definition reloaded');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setFlowOperation(null);
+    }
+  }
+
+  function formatFlowJson() {
+    try {
+      const formatted = flowEditorRef.current?.format() || formatFlowDocument(flowDocument);
+      setFlowDocument(formatted);
+      toast('Flow definition formatted');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  async function runFlowValidation(kind: FlowValidationKind) {
+    if (!currentFlow || currentFlow.source !== 'flow') return;
+    setFlowOperation(kind === 'errors' ? 'check-errors' : 'check-warnings');
+    try {
+      const result = await checkFlowDefinition(environment, currentFlow, flowDocument, kind);
+      setFlowValidation(result);
+      toast(result.items.length ? `${result.items.length} ${kind} returned` : `No ${kind} returned`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setFlowOperation(null);
+    }
+  }
+
+  async function saveDefinition() {
+    if (!currentFlow || currentFlow.source !== 'flow') return;
+    setFlowOperation('save');
+    try {
+      const updated = await saveFlowDefinition(environment, currentFlow, flowDocument);
+      setLoadedFlowDocument(flowDocument);
+      setCurrentFlow(updated);
+      setFlows((items) => items.map((item) => flowIdentifier(item) === flowIdentifier(currentFlow) ? { ...item, ...updated } : item));
+      toast('Flow definition saved');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setFlowOperation(null);
+    }
+  }
+
+  function jumpToEditorRange(from?: number, to?: number) {
+    setFlowSubTab('definition');
+    window.setTimeout(() => flowEditorRef.current?.revealRange(from, to), 0);
+  }
+
+  function jumpToValidationItem(item: FlowValidationItem) {
+    setFlowSubTab('definition');
+    window.setTimeout(() => {
+      if (item.from !== undefined || item.to !== undefined) flowEditorRef.current?.revealRange(item.from, item.to);
+      else flowEditorRef.current?.revealText(item.operationMetadataId || item.actionName || item.path || item.code);
+    }, 0);
   }
 
   async function flowAction(action: 'run' | 'start' | 'stop') {
@@ -340,17 +419,31 @@ export function AutomateTab(props: {
 
             <div className={`dv-subpanel ${flowSubTab === 'definition' ? 'active' : ''}`}>
               <div className="panel">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <h2>Definition</h2>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{analyzing ? 'Analyzing…' : analysis ? 'Analysis updated' : 'Definition not loaded'}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <h2>Definition</h2>
+                    {isFlowDirty ? <span className="entity-item-flag" style={{ color: '#d97706', borderColor: '#d97706' }}>unsaved</span> : null}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{flowOperation ? 'Working…' : analyzing ? 'Analyzing…' : analysis ? 'Analysis updated' : 'Definition not loaded'}</div>
                 </div>
                 <div className="fetchxml-editor-shell">
+                  <div className="fetchxml-editor-toolbar">
+                    <div className="fetchxml-editor-toolbar-left">
+                      <button className="btn btn-ghost" type="button" disabled={flowBusy} onClick={() => void reloadFlowDefinition()}>{flowOperation === 'reload' ? 'Reloading…' : 'Reload'}</button>
+                      <button className="btn btn-ghost" type="button" disabled={!flowDocument.trim()} onClick={formatFlowJson}>Format JSON</button>
+                    </div>
+                    <div className="fetchxml-editor-toolbar-right">
+                      <button className="btn btn-ghost" type="button" disabled={!isFlowEditable || flowBusy} onClick={() => void runFlowValidation('errors')}>{flowOperation === 'check-errors' ? 'Checking…' : 'Check Errors'}</button>
+                      <button className="btn btn-ghost" type="button" disabled={!isFlowEditable || flowBusy} onClick={() => void runFlowValidation('warnings')}>{flowOperation === 'check-warnings' ? 'Checking…' : 'Check Warnings'}</button>
+                      <button className="btn btn-primary" type="button" disabled={!isFlowEditable || flowBusy || !isFlowDirty} onClick={() => void saveDefinition()}>{flowOperation === 'save' ? 'Saving…' : 'Save'}</button>
+                    </div>
+                  </div>
                   <FlowCodeEditor
+                    ref={flowEditorRef}
                     value={flowDocument}
                     onChange={setFlowDocument}
-                    onAnalysis={setAnalysis}
-                    onAnalyzeStart={() => setAnalyzing(true)}
-                    onAnalyzeEnd={() => setAnalyzing(false)}
+                    diagnostics={analysis?.diagnostics || []}
+                    validation={flowValidation}
                     toast={toast}
                   />
                 </div>
@@ -361,7 +454,7 @@ export function AutomateTab(props: {
                     ['Actions', String(analysis?.summary?.actionCount || 0)],
                     ['Variables', String(analysis?.summary?.variableCount || 0)],
                     ['Parameters', String(analysis?.summary?.parameterCount || 0)],
-                    ['Unresolved refs', String((analysis?.references || []).filter((item) => item.resolved === false).length)],
+                    ['Service check', flowValidation ? `${flowValidation.items.length} ${flowValidation.kind}` : 'not run'],
                   ].map(([label, value]) => (
                     <div key={label} className="metric"><div className="metric-label">{label}</div><div className="metric-value">{value}</div></div>
                   ))}
@@ -374,6 +467,7 @@ export function AutomateTab(props: {
                     </div>
                   )) : <div className="empty">No diagnostics.</div>}
                 </div>
+                <FlowValidationPanel result={flowValidation} onJump={jumpToValidationItem} toast={toast} />
               </div>
             </div>
 
@@ -515,7 +609,7 @@ export function AutomateTab(props: {
                     {analysis?.outline?.length ? `${analysis.outline.length} top-level items` : 'No outline yet'}
                   </div>
                 </div>
-                {flowSubTab === 'outline' ? <FlowOutlineCanvas items={analysis?.outline || []} /> : null}
+                {flowSubTab === 'outline' ? <FlowOutlineCanvas items={analysis?.outline || []} onJump={jumpToEditorRange} /> : null}
               </div>
             </div>
           </>
@@ -528,154 +622,298 @@ export function AutomateTab(props: {
   );
 }
 
-function FlowCodeEditor(props: {
+const FlowCodeEditor = forwardRef<FlowEditorHandle, {
   value: string;
   onChange: (value: string) => void;
-  onAnalysis: (analysis: FlowAnalysis) => void;
-  onAnalyzeStart: () => void;
-  onAnalyzeEnd: () => void;
+  diagnostics: DiagnosticItem[];
+  validation: FlowValidationResult | null;
   toast: ToastFn;
-}) {
-  const { value, onChange, onAnalysis, onAnalyzeStart, onAnalyzeEnd, toast } = props;
+}>((props, ref) => {
+  const { value, onChange, diagnostics, validation } = props;
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef<EditorView | null>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const modelRef = useRef<monaco.editor.ITextModel | null>(null);
   const valueRef = useRef(value);
-  const requestRef = useRef(new Map<string, Promise<FlowAnalysis>>());
   const onChangeRef = useRef(onChange);
-  const onAnalysisRef = useRef(onAnalysis);
-  const onAnalyzeStartRef = useRef(onAnalyzeStart);
-  const onAnalyzeEndRef = useRef(onAnalyzeEnd);
+  const diagnosticsRef = useRef(diagnostics);
+  const validationRef = useRef(validation);
 
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-  useEffect(() => { onAnalysisRef.current = onAnalysis; }, [onAnalysis]);
-  useEffect(() => { onAnalyzeStartRef.current = onAnalyzeStart; }, [onAnalyzeStart]);
-  useEffect(() => { onAnalyzeEndRef.current = onAnalyzeEnd; }, [onAnalyzeEnd]);
+  useEffect(() => { diagnosticsRef.current = diagnostics; }, [diagnostics]);
+  useEffect(() => { validationRef.current = validation; }, [validation]);
 
   useEffect(() => {
     valueRef.current = value;
-    const view = viewRef.current;
-    if (!view) return;
-    const current = view.state.doc.toString();
-    if (current !== value) view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
+    const model = modelRef.current;
+    if (!model) return;
+    if (model.getValue() !== value) model.setValue(value);
   }, [value]);
+
+  useEffect(() => {
+    updateFlowEditorMarkers(modelRef.current, diagnostics, validation);
+  }, [diagnostics, validation, value]);
+
+  useImperativeHandle(ref, () => ({
+    format: () => {
+      const editor = editorRef.current;
+      const model = modelRef.current;
+      if (!editor || !model) return null;
+      const formatted = formatFlowDocument(model.getValue());
+      editor.pushUndoStop();
+      editor.executeEdits('format-json', [{ range: model.getFullModelRange(), text: formatted }]);
+      editor.pushUndoStop();
+      return formatted;
+    },
+    revealRange: (from, to) => {
+      const editor = editorRef.current;
+      const model = modelRef.current;
+      if (!editor || !model) return;
+      const start = model.getPositionAt(Math.max(0, from ?? 0));
+      const end = model.getPositionAt(Math.max(from ?? 0, to ?? from ?? 0));
+      const range = new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
+      editor.setSelection(range);
+      editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
+      editor.focus();
+    },
+    revealText: (needle) => {
+      const editor = editorRef.current;
+      const model = modelRef.current;
+      if (!editor || !model || !needle) return;
+      const index = model.getValue().indexOf(needle);
+      if (index < 0) return;
+      const start = model.getPositionAt(index);
+      const end = model.getPositionAt(index + needle.length);
+      const range = new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
+      editor.setSelection(range);
+      editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
+      editor.focus();
+    },
+  }), []);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const analyze = (source: string, cursor: number) => {
-      const key = JSON.stringify({ source, cursor });
-      const cached = requestRef.current.get(key);
-      if (cached) return cached;
-      onAnalyzeStartRef.current();
-      const request = analyzeFlowDocument(source, cursor).finally(() => {
-        requestRef.current.delete(key);
-        onAnalyzeEndRef.current();
-      });
-      requestRef.current.set(key, request);
-      return request;
-    };
-    const acceptCompletionIfOpen = (view: EditorView) => completionStatus(view.state) === 'active' ? acceptCompletion(view) : false;
-    const completionSource = async (context: CompletionContext): Promise<CompletionResult | null> => {
-      const analysis = await analyze(context.state.doc.toString(), context.pos);
-      onAnalysisRef.current(analysis);
-      if (!analysis.completions?.length) return null;
-      return {
-        from: analysis.context?.from ?? context.pos,
-        to: analysis.context?.to ?? context.pos,
-        options: analysis.completions.map((item) => ({
-          label: item.label,
-          type: item.type,
-          detail: item.detail,
-          info: item.info,
-          apply: item.apply,
-        })),
-      };
-    };
-    const diagnosticSource = async (view: EditorView) => {
-      const analysis = await analyze(view.state.doc.toString(), view.state.selection.main.head);
-      onAnalysisRef.current(analysis);
-      return (analysis.diagnostics || []).map((item) => ({
-        from: item.from ?? 0,
-        to: item.to ?? item.from ?? 0,
-        severity: item.level === 'error' ? 'error' as const : item.level === 'warning' ? 'warning' as const : 'info' as const,
-        message: item.message,
-        source: item.code,
-      }));
-    };
-    const view = new EditorView({
-      parent: mount,
-      state: EditorState.create({
-        doc: valueRef.current || '',
-        extensions: [
-          lineNumbers(),
-          drawSelection(),
-          highlightActiveLine(),
-          history(),
-          bracketMatching(),
-          closeBrackets(),
-          autocompletion({ override: [completionSource] }),
-          linter(diagnosticSource),
-          EditorView.lineWrapping,
-          Prec.high(keymap.of([
-            { key: 'Tab', run: acceptCompletionIfOpen },
-            { key: 'Ctrl-Space', run: startCompletion },
-            { key: 'Mod-Space', run: startCompletion },
-            indentWithTab,
-            ...closeBracketsKeymap,
-            ...completionKeymap,
-            ...defaultKeymap,
-            ...historyKeymap,
-            ...searchKeymap,
-          ])),
-          EditorView.updateListener.of((update: ViewUpdate) => {
-            if (!update.docChanged && !update.selectionSet) return;
-            if (update.docChanged) {
-              const next = update.state.doc.toString();
-              valueRef.current = next;
-              onChangeRef.current(next);
-            }
-            window.setTimeout(() => {
-              void analyze(update.state.doc.toString(), update.state.selection.main.head)
-                .then(onAnalysisRef.current)
-                .catch((error) => toast(error instanceof Error ? error.message : String(error), true));
-            }, 0);
-          }),
-          automateEditorTheme,
-        ],
-      }),
+    applyMonacoAppTheme();
+    const model = monaco.editor.createModel(valueRef.current || '', 'json');
+    const editor = monaco.editor.create(mount, {
+      model,
+      automaticLayout: true,
+      folding: true,
+      fontFamily: 'var(--mono)',
+      fontSize: 13,
+      glyphMargin: true,
+      lineNumbers: 'on',
+      minimap: { enabled: false },
+      renderWhitespace: 'selection',
+      scrollBeyondLastLine: false,
+      tabSize: 2,
+      insertSpaces: true,
+      wordWrap: 'on',
+      theme: 'pp-app',
     });
-    viewRef.current = view;
+    modelRef.current = model;
+    editorRef.current = editor;
+
+    const themeObserver = new MutationObserver(() => applyMonacoAppTheme());
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+    const contentSubscription = editor.onDidChangeModelContent(() => {
+      const next = model.getValue();
+      valueRef.current = next;
+      onChangeRef.current(next);
+    });
+
+    updateFlowEditorMarkers(model, diagnosticsRef.current, validationRef.current);
     return () => {
-      view.destroy();
-      viewRef.current = null;
+      themeObserver.disconnect();
+      contentSubscription.dispose();
+      editor.dispose();
+      model.dispose();
+      editorRef.current = null;
+      modelRef.current = null;
     };
-  }, [toast]);
+  }, []);
 
   return <div ref={mountRef} className="fetchxml-editor-mount" />;
+});
+
+FlowCodeEditor.displayName = 'FlowCodeEditor';
+
+function applyMonacoAppTheme() {
+  const computed = window.getComputedStyle(document.documentElement);
+  const bg = cssColor(computed, '--bg', '#f9fafb');
+  const surface = cssColor(computed, '--surface', '#ffffff');
+  const ink = cssColor(computed, '--ink', '#111111');
+  const muted = cssColor(computed, '--muted', '#6b7280');
+  const border = cssColor(computed, '--border', '#e5e7eb');
+  const accent = cssColor(computed, '--accent', '#2563eb');
+  const danger = cssColor(computed, '--danger', '#dc2626');
+  const isDark = document.documentElement.classList.contains('dark');
+
+  monaco.editor.defineTheme('pp-app', {
+    base: isDark ? 'vs-dark' : 'vs',
+    inherit: true,
+    rules: [
+      { token: 'string.key.json', foreground: stripHash(accent) },
+      { token: 'string.value.json', foreground: stripHash(isDark ? '#a7f3d0' : '#047857') },
+      { token: 'number.json', foreground: stripHash(isDark ? '#fbbf24' : '#b45309') },
+      { token: 'keyword.json', foreground: stripHash(isDark ? '#c4b5fd' : '#7c3aed') },
+      { token: 'delimiter.bracket.json', foreground: stripHash(muted) },
+    ],
+    colors: {
+      'editor.background': surface,
+      'editor.foreground': ink,
+      'editorLineNumber.foreground': muted,
+      'editorLineNumber.activeForeground': ink,
+      'editorCursor.foreground': ink,
+      'editor.selectionBackground': rgbaHex(accent, isDark ? 0.32 : 0.18),
+      'editor.inactiveSelectionBackground': rgbaHex(accent, isDark ? 0.18 : 0.10),
+      'editor.lineHighlightBackground': isDark ? '#1c1c1f' : '#f3f4f6',
+      'editorLineNumber.dimmedForeground': muted,
+      'editorGutter.background': bg,
+      'editorWidget.background': surface,
+      'editorWidget.foreground': ink,
+      'editorWidget.border': border,
+      'input.background': bg,
+      'input.foreground': ink,
+      'input.border': border,
+      'list.hoverBackground': rgbaHex(accent, isDark ? 0.18 : 0.10),
+      'list.activeSelectionBackground': rgbaHex(accent, isDark ? 0.28 : 0.14),
+      'list.activeSelectionForeground': ink,
+      'list.focusBackground': rgbaHex(accent, isDark ? 0.22 : 0.12),
+      'scrollbarSlider.background': rgbaHex(muted, isDark ? 0.30 : 0.20),
+      'scrollbarSlider.hoverBackground': rgbaHex(muted, isDark ? 0.42 : 0.32),
+      'scrollbarSlider.activeBackground': rgbaHex(muted, isDark ? 0.52 : 0.42),
+      'editorError.foreground': danger,
+      'editorWarning.foreground': isDark ? '#fbbf24' : '#d97706',
+      'editorInfo.foreground': accent,
+    },
+  });
+  monaco.editor.setTheme('pp-app');
 }
 
-function FlowOutlineCanvas(props: { items: FlowAnalysisOutlineItem[] }) {
-  const { items } = props;
-  if (!items.length) return <div className="empty">Load a flow definition to see the outline.</div>;
+function cssColor(computed: CSSStyleDeclaration, name: string, fallback: string) {
+  return computed.getPropertyValue(name).trim() || fallback;
+}
+
+function stripHash(color: string) {
+  return color.startsWith('#') ? color.slice(1) : color;
+}
+
+function rgbaHex(color: string, alpha: number) {
+  if (!color.startsWith('#')) return color;
+  const hex = color.length === 4
+    ? color.slice(1).split('').map((value) => value + value).join('')
+    : color.slice(1);
+  if (hex.length !== 6) return color;
+  const value = Math.round(alpha * 255).toString(16).padStart(2, '0');
+  return `#${hex}${value}`;
+}
+
+function updateFlowEditorMarkers(model: monaco.editor.ITextModel | null, diagnostics: DiagnosticItem[], validation: FlowValidationResult | null) {
+  if (!model) return;
+  const markers: monaco.editor.IMarkerData[] = [];
+  for (const item of diagnostics || []) {
+    markers.push(markerFromOffsets(model, item.from ?? 0, item.to ?? item.from ?? 0, item.message, severityFromLevel(item.level), item.code));
+  }
+  if (validation) for (const item of validation.items) {
+    const offsets = validationOffsets(model, item);
+    markers.push(markerFromOffsets(model, offsets.from, offsets.to, item.message, severityFromLevel(item.level), item.code || validation.kind));
+  }
+  monaco.editor.setModelMarkers(model, 'pp-flow', markers);
+}
+
+function markerFromOffsets(model: monaco.editor.ITextModel, from: number, to: number, message: string, severity: monaco.MarkerSeverity, source?: string): monaco.editor.IMarkerData {
+  const start = model.getPositionAt(Math.max(0, from));
+  const end = model.getPositionAt(Math.max(from, to || from + 1));
+  return {
+    severity,
+    message,
+    source,
+    startLineNumber: start.lineNumber,
+    startColumn: start.column,
+    endLineNumber: end.lineNumber,
+    endColumn: Math.max(end.column, start.column + 1),
+  };
+}
+
+function validationOffsets(model: monaco.editor.ITextModel, item: FlowValidationItem) {
+  if (item.from !== undefined || item.to !== undefined) return { from: item.from ?? 0, to: item.to ?? item.from ?? 1 };
+  const text = model.getValue();
+  const needle = item.operationMetadataId || item.actionName || item.path || item.code;
+  if (needle) {
+    const index = text.indexOf(needle);
+    if (index >= 0) return { from: index, to: index + needle.length };
+  }
+  return { from: 0, to: 1 };
+}
+
+function severityFromLevel(level: string | undefined): monaco.MarkerSeverity {
+  if (level === 'error') return monaco.MarkerSeverity.Error;
+  if (level === 'warning') return monaco.MarkerSeverity.Warning;
+  return monaco.MarkerSeverity.Info;
+}
+
+function FlowValidationPanel(props: { result: FlowValidationResult | null; onJump: (item: FlowValidationItem) => void; toast: ToastFn }) {
+  const { result, onJump, toast } = props;
+  if (!result) return null;
   return (
-    <div style={{ maxHeight: 500, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)' }}>
-      <OutlineNodeList items={items} depth={0} />
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>{result.kind === 'errors' ? 'Flow Error Check' : 'Flow Warning Check'}</h3>
+          <div style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>{formatDate(result.checkedAt)}</div>
+        </div>
+        <CopyButton value={result.raw} label="Copy raw" title="Copy raw validation response" toast={toast} />
+      </div>
+      <div className="fetchxml-diagnostics">
+        {result.items.length ? result.items.map((item, index) => (
+          <button
+            key={index}
+            type="button"
+            className={`fetchxml-diagnostic ${item.level}`}
+            style={{ textAlign: 'left', cursor: 'pointer' }}
+            onClick={() => onJump(item)}
+          >
+            <div className="fetchxml-diagnostic-code">
+              {item.code || result.kind.toUpperCase()}
+              {item.actionName ? ` · ${item.actionName}` : ''}
+              {item.path ? ` · ${item.path}` : ''}
+            </div>
+            <div className="fetchxml-diagnostic-message">{item.message}</div>
+          </button>
+        )) : <div className="empty">The service returned no {result.kind}.</div>}
+      </div>
+      <details style={{ marginTop: 8 }}>
+        <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: '0.75rem' }}>Raw response</summary>
+        <pre className="viewer" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: highlightJson(result.raw) }}></pre>
+      </details>
     </div>
   );
 }
 
-function OutlineNodeList(props: { items: FlowAnalysisOutlineItem[]; depth: number }) {
+function FlowOutlineCanvas(props: { items: FlowAnalysisOutlineItem[]; onJump: (from?: number, to?: number) => void }) {
+  const { items } = props;
+  if (!items.length) return <div className="empty">Load a flow definition to see the outline.</div>;
+  return (
+    <div style={{ maxHeight: 500, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)' }}>
+      <OutlineNodeList items={items} depth={0} onJump={props.onJump} />
+    </div>
+  );
+}
+
+function OutlineNodeList(props: { items: FlowAnalysisOutlineItem[]; depth: number; onJump: (from?: number, to?: number) => void }) {
   return (
     <>
       {props.items.map((item, index) => (
-        <OutlineNode key={index} item={item} depth={props.depth} last={index === props.items.length - 1} />
+        <OutlineNode key={index} item={item} depth={props.depth} last={index === props.items.length - 1} onJump={props.onJump} />
       ))}
     </>
   );
 }
 
-function OutlineNode(props: { item: FlowAnalysisOutlineItem; depth: number; last: boolean }) {
-  const { item, depth, last } = props;
+function OutlineNode(props: { item: FlowAnalysisOutlineItem; depth: number; last: boolean; onJump: (from?: number, to?: number) => void }) {
+  const { item, depth, last, onJump } = props;
   const [open, setOpen] = useState(false);
   const hasChildren = Boolean(item.children?.length);
   const kind = String(item.kind || '').toLowerCase();
@@ -700,11 +938,14 @@ function OutlineNode(props: { item: FlowAnalysisOutlineItem; depth: number; last
         }} />
       )}
       <div
-        onClick={() => expandable && setOpen(!open)}
+        onClick={() => {
+          onJump(item.from, item.to);
+          if (expandable) setOpen(!open);
+        }}
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '6px 12px 6px ' + indent + 'px',
-          cursor: expandable ? 'pointer' : 'default', fontSize: '12px', lineHeight: '18px',
+          cursor: 'pointer', fontSize: '12px', lineHeight: '18px',
           borderBottom: '1px solid var(--border)',
           background: open ? 'color-mix(in srgb, var(--ink) 4%, transparent)' : 'transparent',
           transition: 'background 0.1s',
@@ -732,7 +973,7 @@ function OutlineNode(props: { item: FlowAnalysisOutlineItem; depth: number; last
         <OutlineDetail item={item} indent={indent + 24} />
       )}
       {open && hasChildren && (
-        <OutlineNodeList items={item.children!} depth={depth + 1} />
+        <OutlineNodeList items={item.children!} depth={depth + 1} onJump={onJump} />
       )}
     </div>
   );

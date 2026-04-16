@@ -23,7 +23,6 @@ import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccoun
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import { invokeCanvasAuthoring, probeAndCleanCanvasSessions, requestCanvasAuthoringSession, rpcCanvasAuthoring, saveCanvasSession, startCanvasAuthoringSession } from './services/canvas-authoring.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
-import { analyzeFlowFile, explainFlowFileSymbol } from './services/flow-language.js';
 import { executeRequestViaRunningUi, startPpUi, stopPpUi } from './ui.js';
 import { VERSION } from './version.js';
 import { getCachedUpdateCheck, formatUpdateNotice, runBackgroundUpdateCheck, runUpdateCommand, shouldRunBackgroundUpdateCheck, shouldShowUpdateNotice } from './update.js';
@@ -720,55 +719,7 @@ async function runFlow(args: string[]): Promise<number> {
     printFlowHelp();
     return 0;
   }
-  const [subcommand, ...rest] = args;
-  if (!isFlowLanguageSubcommand(subcommand)) {
-    return runApiAlias('flow', args);
-  }
-  const filePath = positionalArgs(rest)[0];
-  if (!filePath) {
-    return printFailure(argumentFailure('FLOW_FILE_REQUIRED', `Usage: pp flow ${subcommand} <file> ${subcommand === 'explain' ? '--symbol NAME' : ''}`.trim()), args);
-  }
-
-  if (subcommand === 'validate' || subcommand === 'inspect' || subcommand === 'symbols') {
-    const result = await analyzeFlowFile(filePath);
-    if (!result.success || !result.data) return printFailure(result, args);
-    if (subcommand === 'validate') {
-      printResult({
-        success: !result.data.diagnostics.some((item) => item.level === 'error'),
-        summary: result.data.summary,
-        diagnostics: result.data.diagnostics,
-      }, args);
-      return result.data.diagnostics.some((item) => item.level === 'error') ? 1 : 0;
-    }
-    if (subcommand === 'symbols') {
-      printResult({
-        summary: result.data.summary,
-        symbols: result.data.symbols,
-        references: result.data.references,
-      }, args);
-      return 0;
-    }
-    printResult({
-      summary: result.data.summary,
-      outline: result.data.outline,
-      symbols: result.data.symbols,
-      diagnostics: result.data.diagnostics,
-      knowledge: result.data.knowledge,
-    }, args);
-    return 0;
-  }
-
-  if (subcommand === 'explain') {
-    const symbolName = readFlag(rest, '--symbol') ?? readFlag(rest, '--action');
-    if (!symbolName) return printFailure(argumentFailure('FLOW_SYMBOL_REQUIRED', 'Usage: pp flow explain <file> --symbol NAME'), args);
-    const result = await explainFlowFileSymbol(filePath, symbolName);
-    if (!result.success || !result.data) return printFailure(result, args);
-    printResult(result.data, args);
-    return result.data.symbol ? 0 : 1;
-  }
-
-  printFlowHelp();
-  return 1;
+  return runApiAlias('flow', args);
 }
 
 async function readJsonPayload(args: string[]) {
@@ -1386,15 +1337,9 @@ function printFlowHelp(): void {
     [
       'pp flow',
       '',
-      'Power Automate workflow tooling plus a request shortcut fallback.',
+      'Power Automate request shortcut.',
       '',
-      'Language commands:',
-      '  pp flow validate <file>',
-      '  pp flow inspect <file>',
-      '  pp flow symbols <file>',
-      '  pp flow explain <file> --symbol NAME',
-      '',
-      'Request shortcut:',
+      'Usage:',
       '  pp flow <path> --env ALIAS [same flags as pp request --api flow]',
     ].join('\n') + '\n',
   );
@@ -1440,10 +1385,6 @@ function printCompletionHelp(): void {
 
 function printMigrateConfigHelp(): void {
   process.stdout.write(['pp migrate-config', '', 'Migrate legacy config into the current account/environment layout.', '', 'Usage:', '  pp migrate-config [--source-config PATH] [--source-dir DIR] [--config-dir DIR] [--apply]'].join('\n') + '\n');
-}
-
-function isFlowLanguageSubcommand(value: string | undefined): value is 'validate' | 'inspect' | 'symbols' | 'explain' {
-  return value === 'validate' || value === 'inspect' || value === 'symbols' || value === 'explain';
 }
 
 function wantsHelp(args: string[]): boolean {

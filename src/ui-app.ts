@@ -215,6 +215,12 @@ export function renderHtml(): string {
     .fetchxml-editor-mount .cm-diagnostic-info { border-left-color: var(--accent); }
     .fetchxml-editor-mount .cm-lintPoint-warning { border-bottom-color: #d97706; }
     .fetchxml-editor-mount .cm-lintPoint-error { border-bottom-color: var(--danger); }
+    .fetchxml-editor-mount { min-height: 420px; }
+    .fetchxml-editor-mount .monaco-editor,
+    .fetchxml-editor-mount .monaco-editor-background,
+    .fetchxml-editor-mount .monaco-editor .inputarea.ime-input { background: var(--surface); }
+    .fetchxml-editor-mount .monaco-editor { min-height: 420px; }
+    .fetchxml-editor-mount .monaco-editor .margin { background: var(--bg); }
     .fetchxml-diagnostics { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
     .fetchxml-diagnostic { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; background: var(--bg); }
     .fetchxml-diagnostic.warning { border-left-color: #d97706; }
