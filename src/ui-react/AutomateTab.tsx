@@ -3,9 +3,11 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { api, formatDate, formatDateShort, highlightJson, prop } from './utils.js';
 import {
   analyzeFlowDocument,
+  buildFlowDocument,
   checkFlowDefinition,
   flowIdentifier,
   formatFlowDocument,
+  loadFlowDynamicEnum,
   loadFlowApiOperationSchema,
   loadFlowApiOperations,
   loadActionDetail,
@@ -13,12 +15,13 @@ import {
   loadFlowList,
   loadFlowRuns,
   loadRunActions,
+  loadRunDetail,
   saveFlowDefinition,
   type FlowValidationItem,
   type FlowValidationKind,
   type FlowValidationResult,
 } from './automate-data.js';
-import type { DiagnosticItem, FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowItem, FlowRun, ToastFn } from './ui-types.js';
+import type { DiagnosticItem, FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowDynamicValueOption, FlowItem, FlowRun, ToastFn } from './ui-types.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 
@@ -88,13 +91,14 @@ export function AutomateTab(props: {
   const [flowOutlineActiveKey, setFlowOutlineActiveKey] = useState('');
   const [flowOutlineActivePath, setFlowOutlineActivePath] = useState<string[]>([]);
   const [showAddAction, setShowAddAction] = useState(false);
+  const [addActionRunAfter, setAddActionRunAfter] = useState<string | undefined>(undefined);
   const [editingAction, setEditingAction] = useState<FlowActionEditTarget | null>(null);
   const [runs, setRuns] = useState<FlowRun[]>([]);
   const [runFilter, setRunFilter] = useState('');
   const [runStatusFilter, setRunStatusFilter] = useState('');
   const [currentRun, setCurrentRun] = useState<FlowRun | null>(null);
   const [actions, setActions] = useState<FlowAction[]>([]);
-  const [actionFilter, setActionFilter] = useState('');
+  const [runAnalysis, setRunAnalysis] = useState<FlowAnalysis | null>(null);
   const [actionStatusFilter, setActionStatusFilter] = useState('');
   const [currentAction, setCurrentAction] = useState<FlowAction | null>(null);
   const [actionDetail, setActionDetail] = useState<FlowAction | null>(null);
@@ -146,19 +150,12 @@ export function AutomateTab(props: {
       .map(({ run }) => run);
   }, [runFilter, runStatusFilter, runs]);
 
-  const filteredActions = useMemo(() => {
-    return actions
-      .map((action, index) => ({ action, index }))
-      .filter(({ action }) => {
-        const status = String(prop(action, 'properties.status') || '');
-        const type = String(prop(action, 'properties.type') || '');
-        const code = String(prop(action, 'properties.code') || '');
-        const haystack = [action.name || '', status, type, code].join(' ').toLowerCase();
-        return (!actionStatusFilter || status === actionStatusFilter) && (!actionFilter || haystack.includes(actionFilter.toLowerCase()));
-      })
-      .sort((a, b) => compareActionsByExecutionOrder(a.action, b.action) || a.index - b.index)
-      .map(({ action }) => action);
-  }, [actionFilter, actionStatusFilter, actions]);
+  const runActionOutlineItems = useMemo(
+    () => buildRunActionOutlineItems(runAnalysis?.outline || analysis?.outline || [], actions, actionStatusFilter),
+    [runAnalysis?.outline, analysis?.outline, actions, actionStatusFilter],
+  );
+  const runActionActiveKey = currentAction?.name ? findOutlineKeyByName(runActionOutlineItems, currentAction.name) : '';
+  const runActionActivePath = runActionActiveKey ? buildOutlinePathTo(runActionOutlineItems, runActionActiveKey) : [];
 
   const isFlowEditable = currentFlow?.source === 'flow';
   const isFlowDirty = Boolean(currentFlow && flowDocument !== loadedFlowDocument);
@@ -259,7 +256,7 @@ export function AutomateTab(props: {
 
   function addActionToDocument(actionName: string, action: Record<string, unknown>) {
     try {
-      const next = addActionToFlowDocument(flowDocument, actionName, action);
+      const next = addActionToFlowDocument(flowDocument, actionName, action, addActionRunAfter);
       setFlowDocument(next);
       setFlowValidation(null);
       setShowAddAction(false);
@@ -338,6 +335,28 @@ export function AutomateTab(props: {
     }
   }
 
+  function handleAddActionAfter(item: FlowAnalysisOutlineItem) {
+    if (item.name === 'actions' && item.kind === 'action' && item.children?.length) {
+      const last = item.children.filter((c) => isActionLikeOutlineItem(c)).pop();
+      setAddActionRunAfter(last?.name || undefined);
+    } else {
+      setAddActionRunAfter(item.name || undefined);
+    }
+    setShowAddAction(true);
+  }
+
+  function handleReorderAction(actionName: string, targetName: string, position: 'before' | 'after') {
+    try {
+      const siblings = findSiblingActionNames(analysis?.outline || [], actionName);
+      if (!siblings) throw new Error('Could not determine action siblings.');
+      const next = reorderActionInFlowDocument(flowDocument, actionName, targetName, position, siblings);
+      updateFlowDocument(next);
+      toast(`Moved ${actionName}`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
   function jumpToProblem(problem: FlowProblem) {
     setFlowSubTab('definition');
     window.setTimeout(() => {
@@ -399,6 +418,7 @@ export function AutomateTab(props: {
       setCurrentAction(null);
       setActionDetail(null);
       setActions([]);
+      setRunAnalysis(null);
       setLoadingActions(false);
       selectedRunRef.current = undefined;
       return;
@@ -407,13 +427,27 @@ export function AutomateTab(props: {
     setCurrentAction(null);
     setActionDetail(null);
     setActions([]);
+    setRunAnalysis(null);
     setLoadingActions(true);
     selectedRunRef.current = run.name;
     try {
-      const loadedActions = currentFlow ? await loadRunActions(environment, currentFlow, run) : [];
-      if (selectedRunRef.current === run.name) setActions(loadedActions);
+      let loadedActions: FlowAction[] = [];
+      let loadedRunAnalysis: FlowAnalysis | null = null;
+      if (currentFlow) {
+        [loadedActions, loadedRunAnalysis] = await Promise.all([
+          loadRunActions(environment, currentFlow, run).catch(() => []),
+          loadRunDefinitionAnalysis(environment, currentFlow, run).catch(() => null),
+        ]);
+      }
+      if (selectedRunRef.current === run.name) {
+        setActions(loadedActions);
+        setRunAnalysis(loadedRunAnalysis);
+      }
     } catch {
-      if (selectedRunRef.current === run.name) setActions([]);
+      if (selectedRunRef.current === run.name) {
+        setActions([]);
+        setRunAnalysis(null);
+      }
     } finally {
       if (selectedRunRef.current === run.name) setLoadingActions(false);
     }
@@ -426,6 +460,13 @@ export function AutomateTab(props: {
     } catch {
       setActionDetail(action);
     }
+  }
+
+  async function loadRunDefinitionAnalysis(environmentName: string, flow: FlowItem, run: FlowRun): Promise<FlowAnalysis | null> {
+    const detail = await loadRunDetail(environmentName, flow, run);
+    const runFlow = prop(detail, 'properties.flow');
+    if (!runFlow || typeof runFlow !== 'object') return null;
+    return analyzeFlowDocument(buildFlowDocument(runFlow as FlowItem));
   }
 
   const actionCounts = summarizeCounts(actions);
@@ -530,7 +571,7 @@ export function AutomateTab(props: {
                     <div className="fetchxml-editor-toolbar-left">
                       <button className="btn btn-ghost" type="button" disabled={flowBusy} onClick={() => void reloadFlowDefinition()}>{flowOperation === 'reload' ? 'Reloading…' : 'Reload'}</button>
                       <button className="btn btn-ghost" type="button" disabled={!flowDocument.trim()} onClick={formatFlowJson}>Format JSON</button>
-                      <button className="btn btn-ghost" type="button" disabled={!flowDocument.trim()} onClick={() => setShowAddAction(true)}>Add Action</button>
+                      <button className="btn btn-ghost" type="button" disabled={!flowDocument.trim()} onClick={() => { setAddActionRunAfter(undefined); setShowAddAction(true); }}>Add Action</button>
                       <button className="btn btn-ghost" type="button" disabled={!isFlowDirty} onClick={() => setShowFlowDiff(true)}>View Changes</button>
                       <button className="btn btn-ghost" type="button" onClick={() => setFlowFullscreen((value) => !value)}>{flowFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
                     </div>
@@ -563,6 +604,8 @@ export function AutomateTab(props: {
                         activePath={flowOutlineActivePath}
                         onSelect={selectOutlineItem}
                         onEditAction={openActionEditor}
+                        onAddAfter={handleAddActionAfter}
+                        onReorder={handleReorderAction}
                       />
                     </aside>
                   </div>
@@ -642,7 +685,6 @@ export function AutomateTab(props: {
                               </div>
                             ) : null}
                             <div className="action-toolbar">
-                              <input type="text" placeholder="Filter actions by name, type, or code…" value={actionFilter} onChange={(event) => setActionFilter(event.target.value)} />
                               <select value={actionStatusFilter} onChange={(event) => setActionStatusFilter(event.target.value)}>
                                 <option value="">all statuses</option>
                                 <option value="Succeeded">Succeeded</option>
@@ -657,26 +699,20 @@ export function AutomateTab(props: {
                               <SummaryCard label="Running" value={String(actionCounts.Running || 0)} />
                               <SummaryCard label="Succeeded" value={String(actionCounts.Succeeded || 0)} />
                             </div>
-                            <div className="card-list" style={{ marginBottom: 12 }}>
-                              {loadingActions ? <div className="empty">Loading actions…</div> : filteredActions.length ? filteredActions.map((action, index) => {
-                                const actionStatus = prop(action, 'properties.status') || 'Unknown';
-                                const actionCls = actionStatus === 'Succeeded' ? 'ok' : actionStatus === 'Failed' ? 'error' : 'pending';
-                                return (
-                                  <div key={action.name} className={`action-item ${currentAction?.name === action.name ? 'active' : ''}`} data-flow-action={action.name || ''} onClick={(event) => { event.stopPropagation(); void selectAction(action); }}>
-                                    <span className={`health-dot ${actionCls}`}></span>
-                                    <span className="action-item-name" title={action.name}>{action.name || 'Unknown'}</span>
-                                    <div className="action-item-meta">
-                                      <span className="action-item-type">Step {index + 1}</span>
-                                      <span className="action-item-type">{actionStatus}</span>
-                                      {prop(action, 'properties.type') ? <span className="action-item-type">{String(prop(action, 'properties.type'))}</span> : null}
-                                      {prop(action, 'properties.code') && prop(action, 'properties.code') !== actionStatus ? <span className="action-item-type">{String(prop(action, 'properties.code'))}</span> : null}
-                                      {prop(action, 'properties.repetitionCount') != null ? <span className="action-item-type">{String(prop(action, 'properties.repetitionCount'))}x</span> : null}
-                                      {prop(action, 'properties.retryHistory') ? <span className="action-item-type">{(prop(action, 'properties.retryHistory') as unknown[]).length} retries</span> : null}
-                                      <span className="run-duration">{formatRunDuration(action)}</span>
-                                    </div>
-                                  </div>
-                                );
-                              }) : <div className="empty">No actions in this run.</div>}
+                            <div style={{ marginBottom: 12 }}>
+                              {loadingActions ? <div className="empty">Loading actions…</div> : runActionOutlineItems.length ? (
+                                <FlowOutlineCanvas
+                                  items={runActionOutlineItems}
+                                  activeKey={runActionActiveKey}
+                                  activePath={runActionActivePath}
+                                  emptyMessage={actionStatusFilter ? 'No actions match this status.' : 'No actions in this run.'}
+                                  filterPlaceholder="Filter actions..."
+                                  onSelect={(item) => {
+                                    const action = actions.find((candidate) => candidate.name === item.name);
+                                    if (action) void selectAction(action);
+                                  }}
+                                />
+                              ) : <div className="empty">{actionStatusFilter ? 'No actions match this status.' : 'No actions in this run.'}</div>}
                             </div>
                             {currentAction ? (
                               <div className="run-action-detail">
@@ -729,6 +765,8 @@ export function AutomateTab(props: {
                     activePath={flowOutlineActivePath}
                     onSelect={selectOutlineItem}
                     onEditAction={openActionEditor}
+                    onAddAfter={handleAddActionAfter}
+                    onReorder={handleReorderAction}
                   />
                 ) : null}
               </div>
@@ -747,7 +785,8 @@ export function AutomateTab(props: {
           environment={environment}
           source={flowDocument}
           analysis={analysis}
-          onClose={() => setShowAddAction(false)}
+          initialRunAfter={addActionRunAfter}
+          onClose={() => { setShowAddAction(false); setAddActionRunAfter(undefined); }}
           onAdd={addActionToDocument}
           toast={toast}
         />
@@ -755,6 +794,7 @@ export function AutomateTab(props: {
       {editingAction ? (
         <EditFlowActionModal
           environment={environment}
+          source={flowDocument}
           target={editingAction}
           onApply={applyActionEdit}
           onClose={() => setEditingAction(null)}
@@ -1248,6 +1288,15 @@ function buildOutlinePathTo(items: FlowAnalysisOutlineItem[], targetKey: string)
   return [];
 }
 
+function findOutlineKeyByName(items: FlowAnalysisOutlineItem[], name: string): string {
+  for (const item of items) {
+    if (item.name === name) return outlineKey(item);
+    const childKey = findOutlineKeyByName(item.children || [], name);
+    if (childKey) return childKey;
+  }
+  return '';
+}
+
 function arraysEqual(left: string[], right: string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -1355,6 +1404,7 @@ function AddFlowActionModal(props: {
   environment: string;
   source: string;
   analysis: FlowAnalysis | null;
+  initialRunAfter?: string;
   onClose: () => void;
   onAdd: (actionName: string, action: Record<string, unknown>) => void;
   toast: ToastFn;
@@ -1364,8 +1414,11 @@ function AddFlowActionModal(props: {
   const [loading, setLoading] = useState(false);
   const [selectedOperation, setSelectedOperation] = useState<FlowApiOperation | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<BuiltInActionTemplate | null>(null);
+  const [selectedSchema, setSelectedSchema] = useState<FlowApiOperationSchema | null>(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [operationDraft, setOperationDraft] = useState<Record<string, unknown> | null>(null);
   const [actionName, setActionName] = useState('');
-  const [runAfter, setRunAfter] = useState('');
+  const [runAfter, setRunAfter] = useState(props.initialRunAfter || '');
   const searchRef = useRef<HTMLInputElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const topLevelActions = useMemo(() => topLevelActionNames(props.analysis), [props.analysis]);
@@ -1385,8 +1438,9 @@ function AddFlowActionModal(props: {
   }, []);
 
   useEffect(() => {
+    if (props.initialRunAfter !== undefined) return;
     if (!runAfter && topLevelActions.length) setRunAfter(topLevelActions[topLevelActions.length - 1] || '');
-  }, [runAfter, topLevelActions]);
+  }, [runAfter, topLevelActions, props.initialRunAfter]);
 
   useEffect(() => {
     searchRef.current?.focus();
@@ -1414,19 +1468,52 @@ function AddFlowActionModal(props: {
   function selectOperation(operation: FlowApiOperation) {
     setSelectedOperation(operation);
     setSelectedTemplate(null);
+    setSelectedSchema(null);
+    setOperationDraft(buildApiOperationAction(props.source, operation, buildRunAfter(runAfter)));
     setActionName(uniqueActionName(props.source, sanitizeActionName(operation.summary || operation.name || 'Action')));
   }
 
   function selectTemplate(template: BuiltInActionTemplate) {
     setSelectedTemplate(template);
     setSelectedOperation(null);
+    setSelectedSchema(null);
+    setOperationDraft(null);
     setActionName(uniqueActionName(props.source, template.name));
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedOperation) return;
+    const apiRef = selectedOperation.apiId || selectedOperation.apiName;
+    if (!apiRef || !selectedOperation.name) {
+      setSelectedSchema(null);
+      setOperationDraft(buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter)));
+      return;
+    }
+    setSchemaLoading(true);
+    void loadFlowApiOperationSchema(props.environment, apiRef, selectedOperation.name)
+      .then((schema) => {
+        if (cancelled) return;
+        setSelectedSchema(schema);
+        setOperationDraft(buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), schema || undefined));
+      })
+      .catch((error) => props.toast(error instanceof Error ? error.message : String(error), true))
+      .finally(() => { if (!cancelled) setSchemaLoading(false); });
+    return () => { cancelled = true; };
+  }, [props.environment, props.source, props.toast, selectedOperation]);
+
+  const operationDraftRef = useMemo(() => operationDraft ? resolveActionOperation(props.source, operationDraft) : {}, [props.source, operationDraft]);
+  const operationDynamicOptions = useFlowDynamicOptions(props.environment, operationDraft, selectedSchema, operationDraftRef, props.toast);
+
+  function updateOperationDraft(path: string[], value: unknown) {
+    setOperationDraft((current) => current ? setPathValue(current, path, value) : current);
   }
 
   function addAction() {
     const runAfterValue = buildRunAfter(runAfter);
     if (selectedOperation) {
-      props.onAdd(actionName, buildApiOperationAction(props.source, selectedOperation, runAfterValue));
+      const action = operationDraft || buildApiOperationAction(props.source, selectedOperation, runAfterValue, selectedSchema || undefined);
+      props.onAdd(actionName, { ...action, runAfter: runAfterValue });
       return;
     }
     if (selectedTemplate) {
@@ -1434,6 +1521,7 @@ function AddFlowActionModal(props: {
     }
   }
 
+  const visibleSelectedSchemaFields = visibleConnectorSchemaFields(selectedSchema?.fields || []);
   const hasSelection = Boolean(selectedOperation || selectedTemplate);
 
   return (
@@ -1484,7 +1572,7 @@ function AddFlowActionModal(props: {
                   {operation.iconUri ? <img className="add-action-operation-icon" src={operation.iconUri} alt="" /> : <span className="add-action-operation-icon add-action-operation-icon-placeholder" />}
                   <span className="add-action-operation-text">
                     <span className="add-action-operation-title">{operation.summary || operation.name}</span>
-                    <span className="add-action-operation-meta">{operation.apiDisplayName || operation.apiName || 'Connector'} · {operation.name}</span>
+                    <span className="add-action-operation-meta">{operation.apiDisplayName || operation.apiName || 'Connector'} &middot; {operation.name}</span>
                     {operation.description ? <span className="add-action-operation-desc">{operation.description}</span> : null}
                   </span>
                 </button>
@@ -1509,6 +1597,29 @@ function AddFlowActionModal(props: {
                   Will use the matching connection reference when one exists, otherwise inserts a placeholder for {selectedOperation.apiDisplayName || selectedOperation.apiName || 'the connector'}.
                 </div>
               ) : null}
+              {selectedOperation ? (
+                <div className="add-action-note">
+                  {schemaLoading
+                    ? 'Loading operation metadata...'
+                    : selectedSchema
+                      ? `${visibleSelectedSchemaFields.length} parameter${visibleSelectedSchemaFields.length === 1 ? '' : 's'} found${visibleSelectedSchemaFields.some((field) => field.required) ? `, ${visibleSelectedSchemaFields.filter((field) => field.required).length} required` : ''}.`
+                      : 'No detailed operation metadata found.'}
+                </div>
+              ) : null}
+              {selectedOperation && visibleSelectedSchemaFields.length && operationDraft ? (
+                <div className="flow-action-field-list">
+                  {visibleSelectedSchemaFields.slice(0, 16).map((field) => (
+                    <SchemaFieldEditor
+                      key={`${field.location || 'parameter'}:${(field.path || []).join('.')}:${field.name}`}
+                      field={field}
+                      options={operationDynamicOptions[fieldSchemaKey(field)]}
+                      value={readPathValue(operationDraft, connectorFieldPath(field))}
+                      onChange={(value) => updateOperationDraft(connectorFieldPath(field), value)}
+                    />
+                  ))}
+                  {visibleSelectedSchemaFields.length > 16 ? <div className="flow-action-edit-note">Showing the first 16 fields. More fields are available after insertion in Edit Action.</div> : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -1530,8 +1641,24 @@ function AddFlowActionModal(props: {
 
 type EditActionTab = 'fields' | 'json';
 
+const WDL_ACTION_TYPES = [
+  'ApiConnection',
+  'Compose',
+  'Foreach',
+  'Http',
+  'If',
+  'InitializeVariable',
+  'OpenApiConnection',
+  'Response',
+  'Scope',
+  'ServiceProvider',
+  'Switch',
+  'Until',
+] as const;
+
 function EditFlowActionModal(props: {
   environment: string;
+  source: string;
   target: FlowActionEditTarget;
   onApply: (target: FlowActionEditTarget, actionName: string, action: Record<string, unknown>) => void;
   onClose: () => void;
@@ -1543,7 +1670,7 @@ function EditFlowActionModal(props: {
   const [tab, setTab] = useState<EditActionTab>(() => isActionLikeOutlineItem(props.target.item) ? 'fields' : 'json');
   const [schema, setSchema] = useState<FlowApiOperationSchema | null>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
-  const operationRef = useMemo(() => readActionOperation(props.target.value), [props.target.value]);
+  const operationRef = useMemo(() => resolveActionOperation(props.source, props.target.value), [props.source, props.target.value]);
   const rawError = useMemo(() => {
     try {
       JSON.parse(rawText);
@@ -1562,17 +1689,17 @@ function EditFlowActionModal(props: {
 
   useEffect(() => {
     let cancelled = false;
-    if (!operationRef.apiId || !operationRef.operationId) {
+    if (!operationRef.apiRef || !operationRef.operationId) {
       setSchema(null);
       return;
     }
     setSchemaLoading(true);
-    void loadFlowApiOperationSchema(props.environment, operationRef.apiId, operationRef.operationId)
+    void loadFlowApiOperationSchema(props.environment, operationRef.apiRef, operationRef.operationId)
       .then((result) => { if (!cancelled) setSchema(result); })
       .catch((error) => props.toast(error instanceof Error ? error.message : String(error), true))
       .finally(() => { if (!cancelled) setSchemaLoading(false); });
     return () => { cancelled = true; };
-  }, [operationRef.apiId, operationRef.operationId, props.environment, props.toast]);
+  }, [operationRef.apiRef, operationRef.operationId, props.environment, props.toast]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -1618,10 +1745,25 @@ function EditFlowActionModal(props: {
     }
   }
 
+  function formatRawJson() {
+    try {
+      setRawText(JSON.stringify(JSON.parse(rawText), null, 2));
+    } catch (error) {
+      props.toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  function syncJsonFromFields() {
+    setRawText(JSON.stringify(draft, null, 2));
+    setTab('json');
+  }
+
   const type = String(draft.type || props.target.item.type || '');
   const actionLike = isActionLikeOutlineItem(props.target.item);
-  const connectorFields = schema?.fields || [];
+  const connectorFields = visibleConnectorSchemaFields(schema?.fields || []);
   const existingParameterFields = existingConnectorParameterFields(draft, connectorFields);
+  const connectorFieldGroups = groupConnectorFields([...connectorFields, ...existingParameterFields]);
+  const dynamicOptions = useFlowDynamicOptions(props.environment, draft, schema, operationRef, props.toast);
   const hasConnectorSchema = actionLike && Boolean(operationRef.operationId);
   const schemaLabel = schemaLoading
     ? 'Loading schema…'
@@ -1653,7 +1795,10 @@ function EditFlowActionModal(props: {
             {actionLike || type ? (
               <label>
                 <span>Type</span>
-                <input type="text" value={type} onChange={(event) => updateDraft(['type'], event.target.value)} />
+                <input type="text" list="flow-action-type-options" value={type} onChange={(event) => updateDraft(['type'], event.target.value)} />
+                <datalist id="flow-action-type-options">
+                  {WDL_ACTION_TYPES.map((item) => <option key={item} value={item} />)}
+                </datalist>
               </label>
             ) : null}
           </div>
@@ -1666,20 +1811,26 @@ function EditFlowActionModal(props: {
 
           {tab === 'fields' ? (
             <>
-              {hasConnectorSchema && connectorFields.length ? (
+              {hasConnectorSchema && (connectorFields.length || existingParameterFields.length) ? (
                 <div className="flow-action-edit-section">
                   <h3>Connector parameters</h3>
                   {schema?.description ? <p className="desc" style={{ marginBottom: 0 }}>{schema.description}</p> : null}
-                  <div className="flow-action-field-list">
-                    {[...connectorFields, ...existingParameterFields].map((field) => (
-                      <SchemaFieldEditor
-                        key={`${field.location || 'parameter'}:${field.name}`}
-                        field={field}
-                        value={readPathValue(draft, connectorFieldPath(field))}
-                        onChange={(value) => updateDraft(connectorFieldPath(field), value)}
-                      />
-                    ))}
-                  </div>
+                  {connectorFieldGroups.map((group) => (
+                    <div key={group.location} className="flow-action-field-group">
+                      <div className="flow-action-field-group-title">{connectorLocationLabel(group.location)}</div>
+                      <div className="flow-action-field-list">
+                        {group.fields.map((field) => (
+                          <SchemaFieldEditor
+                            key={`${field.location || 'parameter'}:${field.name}`}
+                            field={field}
+                            options={dynamicOptions[fieldSchemaKey(field)]}
+                            value={readPathValue(draft, connectorFieldPath(field))}
+                            onChange={(value) => updateDraft(connectorFieldPath(field), value)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : null}
 
@@ -1695,13 +1846,20 @@ function EditFlowActionModal(props: {
             </>
           ) : (
             <div className="flow-action-edit-section">
+              <div className="flow-action-json-toolbar">
+                <span className="flow-action-edit-note">Edit the exact JSON object that will replace this outline item.</span>
+                <div className="flow-action-json-toolbar-actions">
+                  <button className="btn btn-ghost" type="button" onClick={formatRawJson}>Format</button>
+                  <button className="btn btn-ghost" type="button" onClick={syncJsonFromFields}>Reset from fields</button>
+                </div>
+              </div>
               <textarea className="flow-action-json-editor" value={rawText} onChange={(event) => setRawText(event.target.value)} spellCheck={false} />
               {rawError ? <div className="flow-action-edit-error">{rawError}</div> : null}
             </div>
           )}
         </div>
         <div className="rt-modal-header add-action-footer">
-          <span className="desc" style={{ marginBottom: 0 }}>Updates the editor only — use Check & Save when ready.</span>
+          <span className="desc" style={{ marginBottom: 0 }}>Updates the editor only — use Check & Save when ready. <span className="flow-action-edit-footer-hint">Ctrl+Enter</span></span>
           <button className="btn btn-primary" type="button" disabled={!actionName.trim() || (tab === 'json' && Boolean(rawError))} onClick={tryApply}>Apply Changes</button>
         </div>
       </div>
@@ -1719,18 +1877,63 @@ function CommonActionFields(props: { action: Record<string, unknown>; onChange: 
       { label: 'Headers', path: ['inputs', 'headers'], kind: 'json' },
       { label: 'Body', path: ['inputs', 'body'], kind: 'json' },
     );
+  } else if (type === 'openapiconnection' || type === 'apiconnection') {
+    fields.push(
+      { label: 'Host', path: ['inputs', 'host'], kind: 'json' },
+      { label: 'Parameters', path: ['inputs', 'parameters'], kind: 'json' },
+      { label: 'Headers', path: ['inputs', 'headers'], kind: 'json' },
+      { label: 'Body', path: ['inputs', 'body'], kind: 'json' },
+    );
+  } else if (type === 'serviceprovider') {
+    fields.push(
+      { label: 'Service provider config', path: ['inputs', 'serviceProviderConfiguration'], kind: 'json' },
+      { label: 'Parameters', path: ['inputs', 'parameters'], kind: 'json' },
+    );
   } else if (type === 'compose') {
     fields.push({ label: 'Inputs', path: ['inputs'], kind: 'json' });
+  } else if (type === 'scope') {
+    fields.push({ label: 'Actions', path: ['actions'], kind: 'json' });
   } else if (type === 'if' || type === 'condition') {
-    fields.push({ label: 'Expression', path: ['expression'], kind: 'json' });
+    fields.push(
+      { label: 'Expression', path: ['expression'], kind: 'json' },
+      { label: 'True actions', path: ['actions'], kind: 'json' },
+      { label: 'False branch', path: ['else'], kind: 'json' },
+    );
   } else if (type === 'foreach') {
-    fields.push({ label: 'Collection', path: ['foreach'] });
+    fields.push(
+      { label: 'Collection', path: ['foreach'] },
+      { label: 'Actions', path: ['actions'], kind: 'json' },
+      { label: 'Runtime configuration', path: ['runtimeConfiguration'], kind: 'json' },
+    );
   } else if (type === 'until') {
-    fields.push({ label: 'Expression', path: ['expression'], kind: 'json' }, { label: 'Limit', path: ['limit'], kind: 'json' });
+    fields.push(
+      { label: 'Expression', path: ['expression'], kind: 'json' },
+      { label: 'Actions', path: ['actions'], kind: 'json' },
+      { label: 'Limit', path: ['limit'], kind: 'json' },
+    );
+  } else if (type === 'switch') {
+    fields.push(
+      { label: 'Expression', path: ['expression'], kind: 'json' },
+      { label: 'Cases', path: ['cases'], kind: 'json' },
+      { label: 'Default', path: ['default'], kind: 'json' },
+    );
+  } else if (type === 'response') {
+    fields.push(
+      { label: 'Status code', path: ['inputs', 'statusCode'] },
+      { label: 'Headers', path: ['inputs', 'headers'], kind: 'json' },
+      { label: 'Body', path: ['inputs', 'body'], kind: 'json' },
+    );
+  } else if (type === 'request') {
+    fields.push({ label: 'Inputs', path: ['inputs'], kind: 'json' });
   } else if (type.includes('variable')) {
     fields.push({ label: 'Inputs', path: ['inputs'], kind: 'json' });
   }
-  fields.push({ label: 'Run after', path: ['runAfter'], kind: 'json' });
+  const trailing = [
+    { label: 'Run after', path: ['runAfter'], kind: 'json' as const },
+    { label: 'Operation options', path: ['operationOptions'] },
+    { label: 'Description', path: ['description'] },
+    { label: 'Metadata', path: ['metadata'], kind: 'json' as const },
+  ];
   return (
     <div className="flow-action-field-list">
       {fields.map((field) => (
@@ -1743,32 +1946,139 @@ function CommonActionFields(props: { action: Record<string, unknown>; onChange: 
           onChange={(value) => props.onChange(field.path, value)}
         />
       ))}
+      {fields.length > 0 ? <div className="flow-action-field-divider" /> : null}
+      {trailing.map((field) => (
+        <ActionValueEditor
+          key={field.path.join('.')}
+          label={field.label}
+          value={readPathValue(props.action, field.path)}
+          kind={field.kind}
+          onChange={(value) => props.onChange(field.path, value)}
+        />
+      ))}
     </div>
   );
 }
 
-function SchemaFieldEditor(props: { field: FlowApiOperationSchemaField; value: unknown; onChange: (value: unknown) => void }) {
+type ActionValueOption = string | FlowDynamicValueOption;
+
+function useFlowDynamicOptions(
+  environment: string,
+  action: Record<string, unknown> | null,
+  schema: FlowApiOperationSchema | null,
+  operationRef: FlowActionOperationRef,
+  toast: ToastFn,
+): Record<string, FlowDynamicValueOption[]> {
+  const [options, setOptions] = useState<Record<string, FlowDynamicValueOption[]>>({});
+  const fields = useMemo(() => visibleConnectorSchemaFields(schema?.fields || []).filter((field) => field.dynamicValues), [schema]);
+  const parameters = useMemo(() => readConnectorParameters(action), [action]);
+  const signature = useMemo(() => JSON.stringify({
+    environment,
+    apiName: operationRef.apiName || schema?.apiName,
+    connectionName: operationRef.connectionName,
+    fields: fields.map((field) => [fieldSchemaKey(field), field.dynamicValues]),
+    parameters,
+  }), [environment, fields, operationRef.apiName, operationRef.connectionName, parameters, schema?.apiName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const apiName = operationRef.apiName || schema?.apiName;
+    if (!environment || !apiName || !operationRef.connectionName || !fields.length) {
+      setOptions({});
+      return;
+    }
+    void Promise.all(fields.map(async (field) => {
+      const values = await loadFlowDynamicEnum(environment, apiName, operationRef.connectionName, field.dynamicValues, parameters);
+      return [fieldSchemaKey(field), values] as const;
+    }))
+      .then((entries) => {
+        if (cancelled) return;
+        setOptions(Object.fromEntries(entries.filter(([, values]) => values.length)));
+      })
+      .catch((error) => {
+        if (!cancelled) toast(error instanceof Error ? error.message : String(error), true);
+      });
+    return () => { cancelled = true; };
+  }, [environment, fields, operationRef.apiName, operationRef.connectionName, parameters, schema?.apiName, signature, toast]);
+
+  return options;
+}
+
+function readConnectorParameters(action: Record<string, unknown> | null): Record<string, unknown> {
+  const parameters = prop(action || {}, 'inputs.parameters');
+  return isObject(parameters) ? parameters : {};
+}
+
+function fieldSchemaKey(field: FlowApiOperationSchemaField) {
+  return `${field.location || 'parameter'}:${(field.path || []).join('.')}:${field.name}`;
+}
+
+function SchemaFieldEditor(props: { field: FlowApiOperationSchemaField; value: unknown; options?: FlowDynamicValueOption[]; onChange: (value: unknown) => void }) {
   const { field } = props;
   const type = field.type || schemaTypeLabel(field.schema) || 'value';
+  const dynamicHint = summarizeDynamicMetadata(field);
+  const options = props.options?.length ? props.options : field.enum;
   return (
     <div className="flow-action-schema-field">
       <div>
         <div className="flow-action-field-label">{field.title || field.name}{field.required ? ' *' : ''}</div>
-        <div className="flow-action-field-meta">{field.location || 'parameter'} · {type}</div>
+        <div className="flow-action-field-meta">
+          {field.location || 'parameter'} · {type}
+          {field.visibility ? ` · ${field.visibility}` : ''}
+        </div>
         {field.description ? <div className="flow-action-field-desc">{field.description}</div> : null}
+        {dynamicHint ? <div className="flow-action-field-desc">{dynamicHint}</div> : null}
       </div>
-      <ActionValueEditor value={props.value} kind={field.enum?.length ? 'select' : shouldEditAsJson(field) ? 'json' : 'text'} options={field.enum} onChange={props.onChange} />
+      <ActionValueEditor value={props.value} kind={options?.length ? 'select' : shouldEditAsJson(field) ? 'json' : 'text'} options={options} onChange={props.onChange} />
     </div>
   );
 }
 
-function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text' | 'json' | 'select'; options?: string[]; onChange: (value: unknown) => void }) {
+function groupConnectorFields(fields: FlowApiOperationSchemaField[]): Array<{ location: string; fields: FlowApiOperationSchemaField[] }> {
+  const order = ['path', 'query', 'body', 'header', 'parameter', 'internal'];
+  const groups = new Map<string, FlowApiOperationSchemaField[]>();
+  for (const field of fields) {
+    const location = field.visibility === 'internal' ? 'internal' : field.location || 'parameter';
+    if (!groups.has(location)) groups.set(location, []);
+    groups.get(location)!.push(field);
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => (order.indexOf(left) < 0 ? 99 : order.indexOf(left)) - (order.indexOf(right) < 0 ? 99 : order.indexOf(right)))
+    .map(([location, groupFields]) => ({ location, fields: groupFields }));
+}
+
+function visibleConnectorSchemaFields(fields: FlowApiOperationSchemaField[]) {
+  return fields.filter((field) => field.visibility !== 'internal' && field.name !== 'connectionId');
+}
+
+function connectorLocationLabel(location: string) {
+  const labels: Record<string, string> = {
+    path: 'Path',
+    query: 'Query',
+    body: 'Body',
+    header: 'Headers',
+    parameter: 'Parameters',
+    internal: 'Internal',
+  };
+  return labels[location] || location;
+}
+
+function summarizeDynamicMetadata(field: FlowApiOperationSchemaField) {
+  if (isObject(field.dynamicValues)) {
+    const operationId = prop(field.dynamicValues, 'operationId');
+    return operationId ? `Dynamic values from ${operationId}.` : 'Dynamic values are available.';
+  }
+  if (field.dynamicSchema) return 'Dynamic schema is available.';
+  return '';
+}
+
+function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text' | 'json' | 'select'; options?: ActionValueOption[]; onChange: (value: unknown) => void }) {
   const kind = props.kind || (isObject(props.value) || Array.isArray(props.value) ? 'json' : 'text');
   const valueText = valueToEditText(props.value, kind);
   const content = kind === 'select' ? (
     <select value={String(props.value ?? '')} onChange={(event) => props.onChange(event.target.value)}>
       <option value="">not set</option>
-      {(props.options || []).map((item) => <option key={item} value={item}>{item}</option>)}
+      {(props.options || []).map((item) => <option key={optionValue(item)} value={optionValue(item)}>{optionLabel(item)}</option>)}
     </select>
   ) : kind === 'json' ? (
     <textarea
@@ -1787,7 +2097,7 @@ function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text
   ) : content;
 }
 
-function addActionToFlowDocument(source: string, actionName: string, action: Record<string, unknown>): string {
+function addActionToFlowDocument(source: string, actionName: string, action: Record<string, unknown>, insertAfter?: string): string {
   const root = JSON.parse(source) as unknown;
   if (!isObject(root)) throw new Error('Flow definition JSON must be an object.');
   const definition = findMutableWorkflowDefinition(root);
@@ -1797,7 +2107,16 @@ function addActionToFlowDocument(source: string, actionName: string, action: Rec
   if (Object.prototype.hasOwnProperty.call(actions, actionName)) {
     throw new Error(`${actionName} already exists.`);
   }
-  actions[actionName] = action;
+  if (insertAfter && Object.prototype.hasOwnProperty.call(actions, insertAfter)) {
+    const reordered: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(actions)) {
+      reordered[key] = val;
+      if (key === insertAfter) reordered[actionName] = action;
+    }
+    definition.actions = reordered;
+  } else {
+    actions[actionName] = action;
+  }
   return JSON.stringify(root, null, 2);
 }
 
@@ -1850,15 +2169,89 @@ function escapeJsonString(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-function readActionOperation(action: Record<string, unknown>): { apiId?: string; operationId?: string } {
-  const host = prop(action, 'inputs.host');
+type FlowActionOperationRef = {
+  apiId?: string;
+  apiName?: string;
+  apiRef?: string;
+  connectionName?: string;
+  connectionReferenceName?: string;
+  operationId?: string;
+};
+
+function resolveActionOperation(source: string, action: Record<string, unknown>): FlowActionOperationRef {
+  const operation = readActionOperation(action);
+  const reference = operation.connectionReferenceName ? readConnectionReference(source, operation.connectionReferenceName) : {};
+  const apiRef = operation.apiId || reference.apiId || operation.apiName || reference.apiName;
   return {
-    apiId: typeof prop(host, 'apiId') === 'string' ? String(prop(host, 'apiId')) : undefined,
-    operationId: typeof prop(host, 'operationId') === 'string' ? String(prop(host, 'operationId')) : typeof prop(action, 'inputs.operationId') === 'string' ? String(prop(action, 'inputs.operationId')) : undefined,
+    ...operation,
+    apiId: operation.apiId || reference.apiId,
+    apiName: operation.apiName || reference.apiName,
+    apiRef,
+    connectionName: operation.connectionName || reference.connectionName,
   };
 }
 
+function readActionOperation(action: Record<string, unknown>): FlowActionOperationRef {
+  const host = prop(action, 'inputs.host');
+  const connectionReferenceName = firstNonEmptyString(
+    prop(host, 'connectionReferenceName'),
+    prop(host, 'connection.referenceName'),
+    prop(host, 'connection.name'),
+    prop(host, 'connectionName'),
+  );
+  return {
+    connectionReferenceName,
+    connectionName: firstNonEmptyString(
+      prop(host, 'connectionName'),
+      prop(host, 'connection.name'),
+      connectionNameFromId(prop(host, 'connection.id')),
+    ),
+    apiId: firstNonEmptyString(prop(host, 'apiId'), prop(action, 'inputs.apiId')),
+    apiName: firstNonEmptyString(prop(host, 'apiName'), prop(action, 'inputs.apiName')),
+    operationId: firstNonEmptyString(prop(host, 'operationId'), prop(action, 'inputs.operationId'), prop(action, 'operationId')),
+  };
+}
+
+function readConnectionReference(source: string, name: string): { apiId?: string; apiName?: string; connectionName?: string } {
+  try {
+    const root = JSON.parse(source) as unknown;
+    if (!isObject(root)) return {};
+    const properties = isObject(root.properties) ? root.properties : root;
+    const refs = isObject(properties.connectionReferences) ? properties.connectionReferences : isObject(root.connectionReferences) ? root.connectionReferences : {};
+    const ref = isObject(refs[name]) ? refs[name] : undefined;
+    if (!ref) return {};
+    return {
+      apiId: firstNonEmptyString(prop(ref, 'api.id'), prop(ref, 'apiId')),
+      apiName: firstNonEmptyString(prop(ref, 'api.name'), prop(ref, 'apiName'), prop(ref, 'api.displayName')),
+      connectionName: firstNonEmptyString(
+        prop(ref, 'connectionName'),
+        prop(ref, 'connection.name'),
+        connectionNameFromId(prop(ref, 'connection.id')),
+        connectionNameFromId(prop(ref, 'id')),
+      ),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function connectionNameFromId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const parts = value.split('/').filter(Boolean);
+  const index = parts.findIndex((part) => part.toLowerCase() === 'connections');
+  const candidate = index >= 0 ? parts[index + 1] : undefined;
+  return candidate || undefined;
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return undefined;
+}
+
 function connectorFieldPath(field: FlowApiOperationSchemaField): string[] {
+  if (field.path?.length) return field.path;
   if (field.location === 'header') return ['inputs', 'headers', field.name];
   if (field.location === 'query') return ['inputs', 'queries', field.name];
   if (field.location === 'body') return ['inputs', 'parameters', field.name || 'body'];
@@ -1926,14 +2319,93 @@ function findMutableWorkflowDefinition(root: Record<string, unknown>): Record<st
   return null;
 }
 
-function buildApiOperationAction(source: string, operation: FlowApiOperation, runAfter: Record<string, string[]>): Record<string, unknown> {
+function findActionsContainer(root: unknown, actionName: string): Record<string, unknown> | null {
+  if (!isObject(root)) return null;
+  if (isObject(root.actions)) {
+    const actions = root.actions as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(actions, actionName)) return actions;
+    for (const val of Object.values(actions)) {
+      const found = findActionsContainer(val, actionName);
+      if (found) return found;
+    }
+  }
+  for (const key of ['else', 'definition', 'properties'] as const) {
+    if (isObject(root[key])) {
+      const found = findActionsContainer(root[key], actionName);
+      if (found) return found;
+    }
+  }
+  if (isObject(root.cases)) {
+    for (const val of Object.values(root.cases as Record<string, unknown>)) {
+      const found = findActionsContainer(val, actionName);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function findSiblingActionNames(outline: FlowAnalysisOutlineItem[], actionName: string): string[] | null {
+  for (const item of outline) {
+    if (item.children) {
+      const actionChildren = item.children.filter((c) => isActionLikeOutlineItem(c) && c.name);
+      if (actionChildren.some((c) => c.name === actionName)) {
+        return actionChildren.map((c) => c.name!);
+      }
+      const result = findSiblingActionNames(item.children, actionName);
+      if (result) return result;
+    }
+  }
+  return null;
+}
+
+function reorderActionInFlowDocument(source: string, actionName: string, targetName: string, position: 'before' | 'after', siblingNames: string[]): string {
+  const fromIdx = siblingNames.indexOf(actionName);
+  const targetIdx = siblingNames.indexOf(targetName);
+  if (fromIdx < 0 || targetIdx < 0) throw new Error('Action not found among siblings.');
+  if (fromIdx === targetIdx) return source;
+
+  // Build new order
+  const newOrder = [...siblingNames];
+  newOrder.splice(fromIdx, 1);
+  const insertAt = position === 'before'
+    ? newOrder.indexOf(targetName)
+    : newOrder.indexOf(targetName) + 1;
+  newOrder.splice(insertAt, 0, actionName);
+  if (newOrder.every((name, i) => name === siblingNames[i])) return source;
+
+  const root = JSON.parse(source) as unknown;
+  if (!isObject(root)) throw new Error('Invalid flow definition.');
+  const container = findActionsContainer(root, actionName);
+  if (!container) throw new Error('Could not find actions container.');
+
+  // Rebuild runAfter chain based on new order
+  for (let i = 0; i < newOrder.length; i++) {
+    const name = newOrder[i]!;
+    const action = container[name];
+    if (!isObject(action)) continue;
+    action.runAfter = i === 0 ? {} : { [newOrder[i - 1]!]: ['Succeeded'] };
+  }
+
+  // Reorder JSON keys to match
+  const reordered: Record<string, unknown> = {};
+  for (const name of newOrder) reordered[name] = container[name];
+  for (const key of Object.keys(container)) {
+    if (!newOrder.includes(key)) reordered[key] = container[key];
+  }
+  for (const key of Object.keys(container)) delete container[key];
+  for (const [key, val] of Object.entries(reordered)) container[key] = val;
+
+  return JSON.stringify(root, null, 2);
+}
+
+function buildApiOperationAction(source: string, operation: FlowApiOperation, runAfter: Record<string, string[]>, schema?: FlowApiOperationSchema): Record<string, unknown> {
   const connectionReferenceName = findConnectionReferenceName(source, operation) || (operation.apiName ? `shared_${operation.apiName}` : 'shared_connector');
   const host: Record<string, unknown> = {
     connectionReferenceName,
     operationId: operation.name,
   };
   if (operation.apiId) host.apiId = operation.apiId;
-  return {
+  const action = {
     type: operation.operationType || 'OpenApiConnection',
     inputs: {
       host,
@@ -1941,6 +2413,36 @@ function buildApiOperationAction(source: string, operation: FlowApiOperation, ru
     },
     runAfter,
   };
+  if (schema?.fields.length) {
+    for (const field of schema.fields) {
+      if (!field.required) continue;
+      if (field.visibility === 'internal' || field.name === 'connectionId') continue;
+      const value = defaultValueForSchemaField(field);
+      if (value === undefined) continue;
+      setPathValueInPlace(action, connectorFieldPath(field), value);
+    }
+  }
+  return action;
+}
+
+function defaultValueForSchemaField(field: FlowApiOperationSchemaField): unknown {
+  if (field.defaultValue !== undefined) return field.defaultValue;
+  if (field.enum?.length) return field.enum[0];
+  const type = field.type || schemaTypeLabel(field.schema);
+  if (type === 'boolean') return false;
+  if (type === 'integer' || type === 'number') return 0;
+  if (type === 'array') return [];
+  if (type === 'object') return {};
+  return '';
+}
+
+function setPathValueInPlace(source: Record<string, unknown>, path: string[], value: unknown) {
+  let current: Record<string, unknown> = source;
+  for (const segment of path.slice(0, -1)) {
+    if (!isObject(current[segment])) current[segment] = {};
+    current = current[segment] as Record<string, unknown>;
+  }
+  current[path[path.length - 1]!] = value;
 }
 
 function findConnectionReferenceName(source: string, operation: FlowApiOperation): string | undefined {
@@ -2054,6 +2556,15 @@ function FlowDiffModal(props: { original: string; modified: string; onClose: () 
   );
 }
 
+function optionValue(option: ActionValueOption) {
+  return typeof option === 'string' ? option : option.value;
+}
+
+function optionLabel(option: ActionValueOption) {
+  if (typeof option === 'string') return option;
+  return option.title && option.title !== option.value ? `${option.title} (${option.value})` : option.value;
+}
+
 type OutlineProblemSummary = { error: number; warning: number; info: number };
 
 function FlowOutlineCanvas(props: {
@@ -2061,19 +2572,23 @@ function FlowOutlineCanvas(props: {
   problems?: FlowProblem[];
   activeKey?: string;
   activePath?: string[];
+  emptyMessage?: string;
+  filterPlaceholder?: string;
   onSelect?: (item: FlowAnalysisOutlineItem) => void;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
+  onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
+  onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
   const { items } = props;
   const [query, setQuery] = useState('');
   const filteredItems = useMemo(() => filterOutlineItems(items, query), [items, query]);
-  if (!items.length) return <div className="empty">Load a flow definition to see the outline.</div>;
+  if (!items.length) return <div className="empty">{props.emptyMessage || 'Load a flow definition to see the outline.'}</div>;
   return (
     <>
       <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
         <input
           type="search"
-          placeholder="Filter..."
+          placeholder={props.filterPlaceholder || 'Filter...'}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           style={{ width: '100%', padding: '4px 8px', fontSize: '0.75rem', boxSizing: 'border-box' }}
@@ -2089,6 +2604,8 @@ function FlowOutlineCanvas(props: {
             activePath={props.activePath || []}
             onSelect={props.onSelect}
             onEditAction={props.onEditAction}
+            onAddAfter={props.onAddAfter}
+            onReorder={props.onReorder}
           />
         ) : (
           <div className="empty">No matches.</div>
@@ -2106,6 +2623,8 @@ function OutlineNodeList(props: {
   activePath: string[];
   onSelect?: (item: FlowAnalysisOutlineItem) => void;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
+  onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
+  onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
   return (
     <>
@@ -2119,11 +2638,22 @@ function OutlineNodeList(props: {
           activePath={props.activePath}
           onSelect={props.onSelect}
           onEditAction={props.onEditAction}
+          onAddAfter={props.onAddAfter}
+          onReorder={props.onReorder}
         />
       ))}
     </>
   );
 }
+
+const OUTLINE_ADD_BTN: React.CSSProperties = {
+  padding: '0 4px', fontSize: '11px', lineHeight: '18px', border: 'none',
+  background: 'transparent', color: 'var(--muted)', cursor: 'pointer',
+  borderRadius: 3, fontWeight: 600, flexShrink: 0,
+};
+const OUTLINE_DROP_LINE: React.CSSProperties = {
+  height: 2, background: 'var(--accent)', margin: '0 8px', borderRadius: 1, pointerEvents: 'none',
+};
 
 function OutlineNode(props: {
   item: FlowAnalysisOutlineItem;
@@ -2133,13 +2663,18 @@ function OutlineNode(props: {
   activePath: string[];
   onSelect?: (item: FlowAnalysisOutlineItem) => void;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
+  onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
+  onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
-  const { item, depth, problems, activeKey, activePath, onSelect, onEditAction } = props;
+  const { item, depth, problems, activeKey, activePath, onSelect, onEditAction, onAddAfter, onReorder } = props;
   const rowRef = useRef<HTMLDivElement | null>(null);
   const itemKey = outlineKey(item);
   const active = activeKey === itemKey;
   const inActivePath = activePath.includes(itemKey);
   const [manuallyOpen, setManuallyOpen] = useState(depth < 2);
+  const [hovered, setHovered] = useState(false);
+  const [dragOver, setDragOver] = useState<'before' | 'after' | null>(null);
+  const [dragging, setDragging] = useState(false);
   const hasChildren = Boolean(item.children?.length);
   const kind = String(item.kind || '').toLowerCase();
   const dotColor = KIND_DOT[kind] || KIND_DOT.default;
@@ -2148,8 +2683,18 @@ function OutlineNode(props: {
   const open = manuallyOpen || inActivePath;
   const indent = depth * 16 + 8;
   const title = outlineTitle(item);
-  const typeHint = item.type && item.type !== title ? item.type : '';
+  const typeHint = [item.detail, item.type]
+    .filter((value): value is string => Boolean(value && value !== title))
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .join(' · ');
   const editable = Boolean(onEditAction && item.name && item.from !== undefined && item.to !== undefined && item.kind !== 'branch');
+
+  const isAction = isActionLikeOutlineItem(item);
+  const isActionsContainer = item.kind === 'action' && item.name === 'actions' && hasChildren;
+  const showRowActions = hovered || active;
+  const canAdd = (isAction || isActionsContainer) && Boolean(onAddAfter);
+  const draggable = isAction && !isActionsContainer && Boolean(onReorder) && Boolean(item.name);
+  const isDropTarget = isAction && !isActionsContainer && Boolean(item.name);
 
   useEffect(() => {
     if (!active) return;
@@ -2158,9 +2703,38 @@ function OutlineNode(props: {
 
   return (
     <>
+      {dragOver === 'before' && <div style={OUTLINE_DROP_LINE} />}
       <div
         ref={rowRef}
         className={`flow-outline-row ${active ? 'active' : ''}`}
+        draggable={draggable}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onDragStart={(e) => {
+          if (!draggable) return;
+          e.dataTransfer.setData('application/x-outline-action', item.name || '');
+          e.dataTransfer.effectAllowed = 'move';
+          setDragging(true);
+        }}
+        onDragEnd={() => setDragging(false)}
+        onDragOver={(e) => {
+          if (!isDropTarget || !e.dataTransfer.types.includes('application/x-outline-action')) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          setDragOver(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+        }}
+        onDragLeave={(e) => {
+          if (!rowRef.current?.contains(e.relatedTarget as Node)) setDragOver(null);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const sourceName = e.dataTransfer.getData('application/x-outline-action');
+          if (sourceName && sourceName !== item.name && dragOver && item.name) {
+            onReorder?.(sourceName, item.name, dragOver);
+          }
+          setDragOver(null);
+        }}
         onClick={() => {
           onSelect?.(item);
           if (hasChildren) setManuallyOpen(!open);
@@ -2174,7 +2748,8 @@ function OutlineNode(props: {
         style={{
           display: 'flex', alignItems: 'center', gap: 6,
           padding: `3px 10px 3px ${indent}px`,
-          cursor: 'pointer', fontSize: '12px', lineHeight: '20px',
+          cursor: draggable ? 'grab' : 'pointer', fontSize: '12px', lineHeight: '20px',
+          opacity: dragging ? 0.4 : 1,
         }}
       >
         <span style={{ width: 14, fontSize: '10px', color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', userSelect: 'none', textAlign: 'center' }}>
@@ -2195,9 +2770,14 @@ function OutlineNode(props: {
             background: problemSummary.error ? 'var(--danger)' : problemSummary.warning ? '#d97706' : 'var(--accent)',
           }} />
         ) : null}
+        {showRowActions && canAdd ? (
+          <button type="button" title={isActionsContainer ? 'Add action' : 'Add action after'} style={OUTLINE_ADD_BTN}
+            onClick={(e) => { e.stopPropagation(); onAddAfter?.(item); }}>+</button>
+        ) : null}
       </div>
+      {dragOver === 'after' && <div style={OUTLINE_DROP_LINE} />}
       {open && hasChildren && (
-        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} onEditAction={onEditAction} />
+        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} onEditAction={onEditAction} onAddAfter={onAddAfter} onReorder={onReorder} />
       )}
     </>
   );
@@ -2473,6 +3053,95 @@ function summarizeCounts(items: FlowAction[]) {
     counts[key] = (counts[key] || 0) + 1;
   }
   return counts;
+}
+
+function buildRunActionOutlineItems(outline: FlowAnalysisOutlineItem[], runActions: FlowAction[], statusFilter: string): FlowAnalysisOutlineItem[] {
+  const sortedActions = runActions
+    .map((action, index) => ({ action, index }))
+    .sort((a, b) => compareActionsByExecutionOrder(a.action, b.action) || a.index - b.index)
+    .map(({ action }) => action);
+  const runActionByName = new Map(sortedActions.map((action, index) => [action.name || `Action ${index + 1}`, { action, index }] as const));
+  const matched = new Set<string>();
+  const workflow = outline.find((item) => item.kind === 'workflow') || outline[0];
+  const actionContainer = workflow?.children?.find((item) => item.name === 'actions' && item.children?.length);
+  const sourceItems = actionContainer?.children?.length ? actionContainer.children : [];
+
+  const decorated = sourceItems
+    .map((item) => decorateDefinitionActionForRun(item, runActionByName, matched, statusFilter))
+    .filter((item): item is FlowAnalysisOutlineItem => Boolean(item));
+  const unmatched = sortedActions
+    .filter((action, index) => !matched.has(action.name || `Action ${index + 1}`))
+    .filter((action) => !statusFilter || String(prop(action, 'properties.status') || '') === statusFilter)
+    .map((action, index) => runActionToOutlineItem(action, index));
+
+  if (decorated.length) {
+    if (unmatched.length) {
+      decorated.push({
+        kind: 'branch',
+        name: 'Run-only actions',
+        detail: String(unmatched.length),
+        children: unmatched,
+      });
+    }
+    return decorated;
+  }
+  return unmatched;
+}
+
+function decorateDefinitionActionForRun(
+  item: FlowAnalysisOutlineItem,
+  runActionByName: Map<string, { action: FlowAction; index: number }>,
+  matched: Set<string>,
+  statusFilter: string,
+): FlowAnalysisOutlineItem | null {
+  const runAction = item.name ? runActionByName.get(item.name) : undefined;
+  if (runAction && item.name) matched.add(item.name);
+  const children = (item.children || [])
+    .map((child) => decorateDefinitionActionForRun(child, runActionByName, matched, statusFilter))
+    .filter((child): child is FlowAnalysisOutlineItem => Boolean(child));
+  if (statusFilter && !runAction && !children.length) return null;
+  if (statusFilter && runAction && String(prop(runAction.action, 'properties.status') || '') !== statusFilter && !children.length) return null;
+  if (!isActionLikeOutlineItem(item)) {
+    return children.length ? { ...item, children } : null;
+  }
+  if (!runAction) {
+    return {
+      ...item,
+      detail: item.detail ? `${item.detail} · not run` : 'not run',
+      inputs: { ...(item.inputs || {}), status: 'not run' },
+      children: children.length ? children : item.children ? [] : undefined,
+    };
+  }
+  const runItem = runActionToOutlineItem(runAction.action, runAction.index);
+  return {
+    ...item,
+    kind: runItem.kind,
+    detail: runItem.detail,
+    type: item.type || runItem.type,
+    inputs: { ...(item.inputs || {}), ...(runItem.inputs || {}) },
+    children: children.length ? children : item.children ? [] : undefined,
+  };
+}
+
+function runActionToOutlineItem(action: FlowAction, index = 0): FlowAnalysisOutlineItem {
+  const status = String(prop(action, 'properties.status') || 'Unknown');
+  const type = String(prop(action, 'properties.type') || '');
+  const code = String(prop(action, 'properties.code') || '');
+  const retryHistory = prop(action, 'properties.retryHistory') as unknown[] | undefined;
+  return {
+    kind: status === 'Failed' ? 'condition' : status === 'Running' ? 'foreach' : status === 'Skipped' ? 'branch' : 'action',
+    name: action.name || `Action ${index + 1}`,
+    detail: status,
+    type: type || code || undefined,
+    inputs: {
+      step: index + 1,
+      status,
+      ...(code && code !== status ? { code } : {}),
+      duration: formatRunDuration(action),
+      ...(prop(action, 'properties.repetitionCount') != null ? { repetitions: prop(action, 'properties.repetitionCount') } : {}),
+      ...(retryHistory?.length ? { retries: retryHistory.length } : {}),
+    },
+  };
 }
 
 function compareRunsByRecency(a: FlowRun, b: FlowRun) {

@@ -1,5 +1,5 @@
 import { ApiRequestError, api, prop } from './utils.js';
-import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowItem, FlowRun } from './ui-types.js';
+import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowDynamicValueOption, FlowItem, FlowRun } from './ui-types.js';
 
 const DATAVERSE_FLOW_FALLBACK_PATH = "/workflows?$filter=category eq 5&$select=name,workflowid,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200";
 
@@ -119,11 +119,54 @@ export async function loadFlowApiOperations(environment: string, search: string)
   return (result.response?.value || []).map(normalizeFlowApiOperation);
 }
 
-export async function loadFlowApiOperationSchema(environment: string, apiId: string | undefined, operationId: string): Promise<FlowApiOperationSchema | null> {
-  const apiName = apiNameFromId(apiId);
+export async function loadFlowApiOperationSchema(environment: string, apiRef: string | undefined, operationId: string): Promise<FlowApiOperationSchema | null> {
+  const apiName = apiNameFromId(apiRef);
   if (!apiName || !operationId) return null;
+  try {
+    const detail = await executeRequest<Record<string, unknown>>(
+      environment,
+      'powerautomate',
+      `/apis/${encodeURIComponent(apiName)}/apiOperations/${encodeURIComponent(operationId)}?$expand=properties%2FinputsDefinition,properties%2FresponsesDefinition,properties%2Fconnector`,
+      true,
+    );
+    const detailSchema = normalizeFlowApiOperationSchema(apiName, apiRef, operationId, detail.response);
+    if (detailSchema?.fields.length) return detailSchema;
+  } catch {
+    // The environment-scoped designer API is richer, but not present for every tenant/connector.
+  }
+  try {
+    const detail = await executeRequest<Record<string, unknown>>(environment, 'flow', `/apis/${encodeURIComponent(apiName)}/apiOperations/${encodeURIComponent(operationId)}`, true);
+    const detailSchema = normalizeFlowApiOperationSchema(apiName, apiRef, operationId, detail.response);
+    if (detailSchema?.fields.length) return detailSchema;
+  } catch {
+    // Some environments do not expose the per-operation route. The full connector swagger is the durable fallback.
+  }
   const result = await executeRequest<Record<string, unknown>>(environment, 'flow', `/apis/${encodeURIComponent(apiName)}`, true);
-  return normalizeFlowApiOperationSchema(apiName, apiId, operationId, result.response);
+  return normalizeFlowApiOperationSchema(apiName, apiRef, operationId, result.response);
+}
+
+export async function loadFlowDynamicEnum(
+  environment: string,
+  apiName: string | undefined,
+  connectionName: string | undefined,
+  dynamicValues: unknown,
+  parameters: Record<string, unknown>,
+): Promise<FlowDynamicValueOption[]> {
+  if (!apiName || !connectionName || !isRecord(dynamicValues)) return [];
+  const dynamicInvocationDefinition = normalizeDynamicInvocationDefinition(dynamicValues);
+  if (!dynamicInvocationDefinition.operationId) return [];
+  const result = await executeRequest<unknown>(
+    environment,
+    'powerautomate',
+    `/apis/${encodeURIComponent(apiName)}/connections/${encodeURIComponent(connectionName)}/listEnum`,
+    true,
+    'POST',
+    {
+      parameters: dynamicInvocationParameters(dynamicInvocationDefinition, parameters),
+      dynamicInvocationDefinition,
+    },
+  );
+  return normalizeDynamicEnumOptions(result.response, dynamicInvocationDefinition);
 }
 
 export function formatFlowDocument(source: string) {
@@ -168,6 +211,15 @@ export async function loadFlowRuns(environment: string, flow: FlowItem): Promise
 export async function loadRunActions(environment: string, flow: FlowItem, run: FlowRun): Promise<FlowAction[]> {
   const result = await executeRequest<{ value?: FlowAction[] }>(environment, 'flow', `/flows/${flowIdentifier(flow)}/runs/${run.name}/actions`);
   return result.response?.value || [];
+}
+
+export async function loadRunDetail(environment: string, flow: FlowItem, run: FlowRun): Promise<FlowRun> {
+  const result = await executeRequest<FlowRun>(
+    environment,
+    'flow',
+    `/flows/${flowIdentifier(flow)}/runs/${run.name}?$expand=properties/actions,properties/flow&include=repetitionCount&isMigrationSource=false`,
+  );
+  return result.response || run;
 }
 
 export async function loadActionDetail(environment: string, flow: FlowItem, run: FlowRun, action: FlowAction): Promise<FlowAction> {
@@ -270,8 +322,10 @@ function normalizeFlowApiOperation(value: unknown): FlowApiOperation {
   const api = firstRecord(
     properties.api,
     properties.apiDefinition,
+    properties.operationGroup,
     operation.api,
     operation.apiDefinition,
+    operation.operationGroup,
     prop(operation, 'operation.api'),
   );
   const name = firstString(operation.name, properties.name, operation.operationId, properties.operationId, prop(operation, 'apiOperation.name')) || '';
@@ -287,6 +341,7 @@ function normalizeFlowApiOperation(value: unknown): FlowApiOperation {
     apiName,
     apiDisplayName,
     iconUri: firstString(api.iconUri, api.iconUriValue, properties.iconUri, operation.iconUri),
+    raw: value,
   };
 }
 
@@ -297,10 +352,35 @@ function firstRecord(...values: unknown[]): Record<string, unknown> {
   return {};
 }
 
+function firstRecordOrUndefined(...values: unknown[]): Record<string, unknown> | undefined {
+  for (const value of values) {
+    if (isRecord(value)) return value;
+  }
+  return undefined;
+}
+
 function normalizeFlowApiOperationSchema(apiName: string, apiId: string | undefined, operationId: string, rawApi: unknown): FlowApiOperationSchema | null {
   const api = rawApi as Record<string, unknown>;
   const properties = isRecord(api.properties) ? api.properties : {};
   const swagger = isRecord(properties.swagger) ? properties.swagger : {};
+  const operationDetail = findOperationDetailCandidate(api, operationId);
+  if (operationDetail) {
+    const parameters = operationParameters(operationDetail);
+    const operationFields = normalizeSwaggerParameters(parameters, swagger);
+    const definitionFields = normalizeOperationDefinitionFields(operationDetail, swagger);
+    const fields = mergeSchemaFields([...operationFields, ...definitionFields]);
+    return {
+      apiId,
+      apiName,
+      apiDisplayName: firstString(properties.displayName, prop(operationDetail, 'connector.displayName'), prop(operationDetail, 'api.displayName'), prop(operationDetail, 'apiDefinition.displayName')),
+      operationId,
+      summary: firstString(operationDetail.summary, operationDetail.displayName, prop(operationDetail, 'inputsDefinition.summary'), properties.summary),
+      description: firstString(operationDetail.description, properties.description),
+      fields,
+      raw: operationDetail,
+    };
+  }
+
   const paths = isRecord(swagger.paths) ? swagger.paths : {};
   for (const [, pathValue] of Object.entries(paths)) {
     if (!isRecord(pathValue)) continue;
@@ -315,7 +395,7 @@ function normalizeFlowApiOperationSchema(apiName: string, apiId: string | undefi
         operationId,
         summary: typeof methodValue.summary === 'string' ? methodValue.summary : undefined,
         description: typeof methodValue.description === 'string' ? methodValue.description : undefined,
-        fields: parameters.map(normalizeSwaggerParameter).filter((field): field is FlowApiOperationSchemaField => Boolean(field)),
+        fields: normalizeSwaggerParameters(parameters, swagger),
         raw: methodValue,
       };
     }
@@ -323,20 +403,262 @@ function normalizeFlowApiOperationSchema(apiName: string, apiId: string | undefi
   return null;
 }
 
-function normalizeSwaggerParameter(value: unknown): FlowApiOperationSchemaField | null {
-  if (!isRecord(value)) return null;
-  const schema = isRecord(value.schema) ? value.schema : undefined;
+function findOperationDetailCandidate(api: Record<string, unknown>, operationId: string): Record<string, unknown> | null {
+  const candidates = [
+    prop(api, 'properties.apiOperation'),
+    prop(api, 'properties.operation'),
+    prop(api, 'properties.inputsDefinition'),
+    prop(api, 'properties'),
+    prop(api, 'apiOperation'),
+    api,
+  ];
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+    if (
+      candidate.operationId === operationId ||
+      candidate.name === operationId ||
+      Array.isArray(candidate.parameters) ||
+      Array.isArray(candidate.inputs) ||
+      isRecord(candidate.inputsDefinition) ||
+      isRecord(prop(candidate, 'properties.inputsDefinition'))
+    ) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function operationParameters(operation: Record<string, unknown>): unknown[] {
+  for (const value of [
+    operation.parameters,
+    prop(operation, 'inputs.parameters'),
+    prop(operation, 'inputsDefinition.parameters'),
+    prop(operation, 'properties.inputsDefinition.parameters'),
+    prop(operation, 'properties.parameters'),
+    operation.inputs,
+    prop(operation, 'inputsDefinition.inputs'),
+    prop(operation, 'properties.inputsDefinition.inputs'),
+  ]) {
+    if (Array.isArray(value)) return value;
+    if (isRecord(value)) return Object.entries(value).map(([name, parameter]) => isRecord(parameter) ? { name, ...parameter } : { name, schema: parameter });
+  }
+  return [];
+}
+
+function normalizeOperationDefinitionFields(operation: Record<string, unknown>, swagger: Record<string, unknown>): FlowApiOperationSchemaField[] {
+  const inputsDefinition = firstRecordOrUndefined(
+    prop(operation, 'properties.inputsDefinition'),
+    operation.inputsDefinition,
+    operation,
+  );
+  if (!inputsDefinition) return [];
+  const candidates = [
+    prop(inputsDefinition, 'schema.properties.parameters'),
+    prop(inputsDefinition, 'properties.parameters.properties'),
+    prop(inputsDefinition, 'parameters.properties'),
+    prop(inputsDefinition, 'parameters'),
+    prop(inputsDefinition, 'schema.properties.body.properties'),
+    prop(inputsDefinition, 'properties.body.properties'),
+    prop(inputsDefinition, 'body.properties'),
+    prop(inputsDefinition, 'properties'),
+  ];
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+    const required = requiredSetForDefinition(inputsDefinition, candidate);
+    const fields = Object.entries(candidate)
+      .filter(([, value]) => isRecord(value))
+      .flatMap(([name, value]) => normalizeSchemaPropertyField(name, value as Record<string, unknown>, required, swagger));
+    if (fields.length) return fields;
+  }
+  return [];
+}
+
+function normalizeSchemaPropertyField(
+  name: string,
+  schemaValue: Record<string, unknown>,
+  required: Set<string>,
+  swagger: Record<string, unknown>,
+  path: string[] = ['inputs', 'parameters', name],
+): FlowApiOperationSchemaField[] {
+  const schema = resolveSwaggerSchema(schemaValue, swagger) || schemaValue;
+  const enumValues = Array.isArray(schema.enum) ? schema.enum.map(String) : undefined;
+  const field: FlowApiOperationSchemaField = {
+    name,
+    location: 'parameter',
+    path,
+    required: required.has(name),
+    type: typeof schema.type === 'string' ? schema.type : undefined,
+    title: firstString(schema['x-ms-summary'], schema.title),
+    description: typeof schema.description === 'string' ? schema.description : undefined,
+    enum: enumValues,
+    defaultValue: schema.default,
+    schema,
+    dynamicValues: schema['x-ms-dynamic-values'] || schema['x-ms-dynamic-list'],
+    dynamicSchema: schema['x-ms-dynamic-schema'],
+    visibility: firstString(schema['x-ms-visibility']),
+  };
+  return [field, ...normalizeBodySchemaProperties(field, schema, swagger)];
+}
+
+function requiredSetForDefinition(definition: Record<string, unknown>, candidate: Record<string, unknown>): Set<string> {
+  for (const value of [definition.required, prop(definition, 'schema.required'), prop(definition, 'properties.parameters.required'), prop(definition, 'parameters.required')]) {
+    if (Array.isArray(value)) return new Set(value.map(String));
+  }
+  return new Set(Object.entries(candidate).filter(([, value]) => isRecord(value) && value.required === true).map(([name]) => name));
+}
+
+function mergeSchemaFields(fields: FlowApiOperationSchemaField[]): FlowApiOperationSchemaField[] {
+  const seen = new Set<string>();
+  const result: FlowApiOperationSchemaField[] = [];
+  for (const field of fields) {
+    const key = `${field.location || 'parameter'}:${(field.path || []).join('.')}:${field.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(field);
+  }
+  return result;
+}
+
+function normalizeSwaggerParameters(values: unknown[], swagger: Record<string, unknown>): FlowApiOperationSchemaField[] {
+  return values.flatMap((value) => normalizeSwaggerParameter(value, swagger));
+}
+
+function normalizeSwaggerParameter(value: unknown, swagger: Record<string, unknown>): FlowApiOperationSchemaField[] {
+  if (!isRecord(value)) return [];
+  const schema = resolveSwaggerSchema(isRecord(value.schema) ? value.schema : undefined, swagger);
   const enumValues = Array.isArray(value.enum) ? value.enum : Array.isArray(schema?.enum) ? schema.enum : undefined;
-  return {
+  const name = String(value.name || '');
+  const location = typeof value.in === 'string' ? value.in : undefined;
+  const baseField: FlowApiOperationSchemaField = {
     name: String(value.name || ''),
-    location: typeof value.in === 'string' ? value.in : undefined,
+    location,
+    path: swaggerParameterPath(location, name),
     required: Boolean(value.required),
     type: typeof value.type === 'string' ? value.type : typeof schema?.type === 'string' ? schema.type : undefined,
-    title: typeof value.title === 'string' ? value.title : typeof schema?.title === 'string' ? schema.title : undefined,
+    title: firstString(value['x-ms-summary'], value.title, schema?.['x-ms-summary'], schema?.title),
     description: typeof value.description === 'string' ? value.description : typeof schema?.description === 'string' ? schema.description : undefined,
     enum: enumValues?.map(String),
+    defaultValue: value.default ?? schema?.default,
     schema,
+    dynamicValues: value['x-ms-dynamic-values'] || value['x-ms-dynamic-list'] || schema?.['x-ms-dynamic-values'],
+    dynamicSchema: value['x-ms-dynamic-schema'] || schema?.['x-ms-dynamic-schema'],
+    visibility: firstString(value['x-ms-visibility'], schema?.['x-ms-visibility']),
   };
+  return [baseField, ...normalizeBodySchemaProperties(baseField, schema, swagger)];
+}
+
+function normalizeBodySchemaProperties(parent: FlowApiOperationSchemaField, schema: Record<string, unknown> | undefined, swagger: Record<string, unknown>): FlowApiOperationSchemaField[] {
+  if (parent.location !== 'body' || !schema || !isRecord(schema.properties)) return [];
+  const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
+  return Object.entries(schema.properties).flatMap(([name, value]) => {
+    const childSchema = resolveSwaggerSchema(isRecord(value) ? value : undefined, swagger);
+    const enumValues = Array.isArray(childSchema?.enum) ? childSchema.enum.map(String) : undefined;
+    const child: FlowApiOperationSchemaField = {
+      name,
+      location: 'body',
+      path: [...(parent.path || swaggerParameterPath(parent.location, parent.name)), name],
+      required: required.has(name),
+      type: typeof childSchema?.type === 'string' ? childSchema.type : undefined,
+      title: firstString(childSchema?.['x-ms-summary'], childSchema?.title),
+      description: typeof childSchema?.description === 'string' ? childSchema.description : undefined,
+      enum: enumValues,
+      defaultValue: childSchema?.default,
+      schema: childSchema,
+      dynamicValues: childSchema?.['x-ms-dynamic-values'] || childSchema?.['x-ms-dynamic-list'],
+      dynamicSchema: childSchema?.['x-ms-dynamic-schema'],
+      visibility: firstString(childSchema?.['x-ms-visibility'], parent.visibility),
+    };
+    return [child, ...normalizeBodySchemaProperties(child, childSchema, swagger)];
+  });
+}
+
+function swaggerParameterPath(location: string | undefined, name: string): string[] {
+  if (!name) return ['inputs', 'parameters'];
+  return ['inputs', 'parameters', name];
+}
+
+function resolveSwaggerSchema(schema: Record<string, unknown> | undefined, swagger: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!schema) return undefined;
+  const ref = typeof schema.$ref === 'string' ? schema.$ref : '';
+  if (!ref.startsWith('#/')) return schema;
+  const resolved = readJsonPointer(swagger, ref.slice(2));
+  if (!isRecord(resolved)) return schema;
+  const { $ref, ...rest } = schema;
+  return { ...resolveSwaggerSchema(resolved, swagger), ...rest };
+}
+
+function readJsonPointer(source: unknown, pointer: string): unknown {
+  return pointer.split('/').reduce((current, rawSegment) => {
+    if (!isRecord(current)) return undefined;
+    const segment = rawSegment.replace(/~1/g, '/').replace(/~0/g, '~');
+    return current[segment];
+  }, source);
+}
+
+function normalizeDynamicInvocationDefinition(source: Record<string, unknown>): Record<string, unknown> {
+  const operationId = firstString(source.operationId, source.operation, source.name);
+  const parameters = normalizeDynamicInvocationParameterDefinitions(source.parameters);
+  const result: Record<string, unknown> = {
+    ...(operationId ? { operationId } : {}),
+    parameters,
+  };
+  const itemsPath = firstString(source.itemsPath, source['value-collection'], source.valueCollection, source.collection);
+  const itemValuePath = firstString(source.itemValuePath, source['value-path'], source.valuePath, source.value);
+  const itemTitlePath = firstString(source.itemTitlePath, source['value-title'], source.valueTitle, source.title);
+  if (itemsPath) result.itemsPath = itemsPath;
+  if (itemValuePath) result.itemValuePath = itemValuePath;
+  if (itemTitlePath) result.itemTitlePath = itemTitlePath;
+  return result;
+}
+
+function normalizeDynamicInvocationParameterDefinitions(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, unknown> = {};
+  for (const [name, raw] of Object.entries(value)) {
+    if (typeof raw === 'string') {
+      result[name] = { parameterReference: raw, required: true };
+      continue;
+    }
+    if (!isRecord(raw)) continue;
+    const reference = firstString(raw.parameterReference, raw.parameter, raw.name, raw.value);
+    result[name] = reference ? { ...raw, parameterReference: reference, required: raw.required !== false } : raw;
+  }
+  return result;
+}
+
+function dynamicInvocationParameters(definition: Record<string, unknown>, currentParameters: Record<string, unknown>): Record<string, unknown> {
+  const parameterDefinitions = isRecord(definition.parameters) ? definition.parameters : {};
+  const result: Record<string, unknown> = {};
+  for (const [name, raw] of Object.entries(parameterDefinitions)) {
+    const parameterReference = isRecord(raw) ? firstString(raw.parameterReference, raw.parameter, raw.name) : undefined;
+    const sourceName = parameterReference || name;
+    if (Object.prototype.hasOwnProperty.call(currentParameters, sourceName)) result[name] = currentParameters[sourceName];
+  }
+  return result;
+}
+
+function normalizeDynamicEnumOptions(raw: unknown, definition: Record<string, unknown>): FlowDynamicValueOption[] {
+  const itemsPath = firstString(definition.itemsPath, 'value') || 'value';
+  const valuePath = firstString(definition.itemValuePath, 'value', 'name') || 'value';
+  const titlePath = firstString(definition.itemTitlePath, definition.itemValuePath, 'displayName', 'name') || valuePath;
+  const items = readDynamicPath(raw, itemsPath);
+  const values = Array.isArray(items) ? items : Array.isArray(raw) ? raw : [];
+  return values.flatMap((item) => {
+    if (!isRecord(item)) return item === undefined || item === null ? [] : [{ value: String(item), title: String(item), raw: item }];
+    const value = readDynamicPath(item, valuePath) ?? item.value ?? item.name ?? item.id;
+    if (value === undefined || value === null) return [];
+    const title = readDynamicPath(item, titlePath) ?? item.displayName ?? item.title ?? item.name;
+    return [{ value: String(value), title: title === undefined || title === null ? String(value) : String(title), raw: item }];
+  });
+}
+
+function readDynamicPath(source: unknown, path: string): unknown {
+  if (!path) return undefined;
+  const segments = path.split(/[/.]/).filter(Boolean);
+  return segments.reduce((current, segment) => {
+    if (!isRecord(current)) return undefined;
+    return current[segment];
+  }, source);
 }
 
 function apiNameFromId(apiId: string | undefined): string | undefined {

@@ -10,13 +10,14 @@ import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.
 import { HttpClient, type HttpResponseType } from './http.js';
 import { applyJqTransform, type JqTransformInput } from './jq-transform.js';
 
-export const API_KINDS = ['dv', 'flow', 'graph', 'bap', 'powerapps', 'canvas-authoring', 'sharepoint', 'custom'] as const;
+export const API_KINDS = ['dv', 'flow', 'graph', 'bap', 'powerapps', 'powerautomate', 'canvas-authoring', 'sharepoint', 'custom'] as const;
 export const REQUEST_ALIAS_API_KINDS = ['dv', 'flow', 'graph', 'bap', 'powerapps', 'canvas-authoring', 'sharepoint'] as const;
 export const ENVIRONMENT_TOKEN_API_KINDS = ['dv', 'flow', 'graph', 'bap', 'powerapps', 'canvas-authoring'] as const;
 
 export type ApiKind = typeof API_KINDS[number];
 export type EnvironmentTokenApi = typeof ENVIRONMENT_TOKEN_API_KINDS[number];
 
+export const FLOW_AUTH_RESOURCE = 'https://service.flow.microsoft.com';
 export const CANVAS_AUTHORING_AUTH_RESOURCE = 'c6c4e5e1-0bc0-4d7d-b69b-954a907287e4/.default';
 
 export interface RequestInput {
@@ -47,7 +48,7 @@ export interface PreparedRequest {
   accountName: string;
 }
 
-type EnvironmentScopedApi = 'dv' | 'flow' | 'bap' | 'powerapps' | 'canvas-authoring' | 'custom';
+type EnvironmentScopedApi = 'dv' | 'flow' | 'bap' | 'powerapps' | 'powerautomate' | 'canvas-authoring' | 'custom';
 type AccountScopedApi = 'graph' | 'sharepoint';
 type ApiScope = 'environment' | 'account';
 
@@ -102,22 +103,43 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
     api: 'flow',
     scope: 'environment',
     detect: value => /api\.flow\.microsoft\.com/i.test(value) || /Microsoft\.ProcessSimple/i.test(value),
-    environmentResource: () => 'https://service.flow.microsoft.com',
+    environmentResource: () => FLOW_AUTH_RESOURCE,
     build: context => {
       const environment = requireEnvironment(context.environment, context.api);
       if (!environment.success || !environment.data) return fail(...environment.diagnostics);
-      if (context.url) return ok(urlPreparedRequest(context, 'https://service.flow.microsoft.com', environment.data));
+      if (context.url) return ok(urlPreparedRequest(context, FLOW_AUTH_RESOURCE, environment.data));
       return ok({
         api: context.api,
         baseUrl: 'https://api.flow.microsoft.com',
         path: normalizeFlowPath(context.originalPath, environment.data.makerEnvironmentId),
-        authResource: 'https://service.flow.microsoft.com',
+        authResource: FLOW_AUTH_RESOURCE,
         environment: environment.data,
         accountName: context.accountName,
       });
     },
     defaultHeaders: JSON_HEADERS,
     defaultQuery: { 'api-version': '2016-11-01' },
+  },
+  powerautomate: {
+    api: 'powerautomate',
+    scope: 'environment',
+    detect: value => /environment\.api\.powerplatform\.com\/powerautomate/i.test(value) || /^\/?powerautomate(?:\/|$)/i.test(value),
+    environmentResource: () => FLOW_AUTH_RESOURCE,
+    build: context => {
+      const environment = requireEnvironment(context.environment, context.api);
+      if (!environment.success || !environment.data) return fail(...environment.diagnostics);
+      if (context.url) return ok(urlPreparedRequest(context, FLOW_AUTH_RESOURCE, environment.data));
+      return ok({
+        api: context.api,
+        baseUrl: canvasAuthoringDiscoveryBaseUrl(environment.data.makerEnvironmentId),
+        path: normalizePowerAutomatePath(context.originalPath),
+        authResource: FLOW_AUTH_RESOURCE,
+        environment: environment.data,
+        accountName: context.accountName,
+      });
+    },
+    defaultHeaders: JSON_HEADERS,
+    defaultQuery: { 'api-version': '1' },
   },
   graph: {
     api: 'graph',
@@ -229,7 +251,7 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
   },
 };
 
-const API_DETECTION_ORDER: ApiKind[] = ['graph', 'sharepoint', 'powerapps', 'canvas-authoring', 'bap', 'flow', 'dv'];
+const API_DETECTION_ORDER: ApiKind[] = ['graph', 'sharepoint', 'powerapps', 'powerautomate', 'canvas-authoring', 'bap', 'flow', 'dv'];
 
 export function resourceForApi(environment: Environment, api: EnvironmentTokenApi): string {
   const resource = API_DESCRIPTORS[api].environmentResource;
@@ -398,6 +420,12 @@ function normalizePowerAppsPath(path: string, makerEnvironmentId: string): strin
   return `/providers/Microsoft.PowerApps${withEnvironment}`;
 }
 
+function normalizePowerAutomatePath(path: string): string {
+  const trimmed = path.startsWith('/') ? path : `/${path}`;
+  if (trimmed === '/powerautomate' || trimmed.startsWith('/powerautomate/')) return trimmed;
+  return `/powerautomate${trimmed}`;
+}
+
 function canvasAuthoringDiscoveryBaseUrl(makerEnvironmentId: string): string {
   const isDefault = makerEnvironmentId.startsWith('Default-');
   const guidPart = isDefault ? makerEnvironmentId.slice('Default-'.length) : makerEnvironmentId;
@@ -439,7 +467,7 @@ export function isApiKind(value: string): value is ApiKind {
 }
 
 export function isEnvironmentTokenApi(value: string): value is EnvironmentTokenApi {
-  return isApiKind(value) && Boolean(API_DESCRIPTORS[value].environmentResource);
+  return (ENVIRONMENT_TOKEN_API_KINDS as readonly string[]).includes(value);
 }
 
 function requireEnvironment(environment: Environment | undefined, api: ApiKind): OperationResult<Environment> {

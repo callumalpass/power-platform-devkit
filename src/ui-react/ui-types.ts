@@ -107,17 +107,29 @@ export type FlowApiOperation = {
   apiName?: string;
   apiDisplayName?: string;
   iconUri?: string;
+  raw?: unknown;
 };
 
 export type FlowApiOperationSchemaField = {
   name: string;
   location?: string;
+  path?: string[];
   required?: boolean;
   type?: string;
   title?: string;
   description?: string;
   enum?: string[];
+  defaultValue?: unknown;
   schema?: unknown;
+  dynamicValues?: unknown;
+  dynamicSchema?: unknown;
+  visibility?: string;
+};
+
+export type FlowDynamicValueOption = {
+  value: string;
+  title?: string;
+  raw?: unknown;
 };
 
 export type FlowApiOperationSchema = {
@@ -154,12 +166,14 @@ export type FlowItem = {
 export type FlowRun = {
   name?: string;
   properties?: {
+    actions?: Record<string, unknown>;
     status?: FlowStatus;
     code?: string;
     startTime?: string;
     endTime?: string;
     error?: unknown;
     correlation?: { clientTrackingId?: string };
+    flow?: FlowItem;
     trigger?: {
       name?: string;
       status?: FlowStatus;
