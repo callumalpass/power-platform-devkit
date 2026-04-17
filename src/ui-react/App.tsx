@@ -89,16 +89,32 @@ const METHOD_COLORS: Record<string, string> = {
 
 function useToasts() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const timersRef = useRef<Map<number, number>>(new Map());
+
+  function dismissToast(id: number) {
+    const timer = timersRef.current.get(id);
+    if (timer !== undefined) window.clearTimeout(timer);
+    timersRef.current.delete(id);
+    setToasts((current) => current.filter((item) => item.id !== id));
+  }
 
   function pushToast(message: string, isError = false) {
     const id = Date.now() + Math.floor(Math.random() * 1000);
     setToasts((current) => [...current, { id, message, isError }]);
-    window.setTimeout(() => {
-      setToasts((current) => current.filter((item) => item.id !== id));
+    const timer = window.setTimeout(() => {
+      dismissToast(id);
     }, isError ? 5000 : 2500);
+    timersRef.current.set(id, timer);
   }
 
-  return { toasts, pushToast };
+  useEffect(() => {
+    return () => {
+      for (const timer of timersRef.current.values()) window.clearTimeout(timer);
+      timersRef.current.clear();
+    };
+  }, []);
+
+  return { toasts, pushToast, dismissToast };
 }
 
 function currentTabFromHash(): TabName {
@@ -110,7 +126,7 @@ function currentTabFromHash(): TabName {
 }
 
 export function App() {
-  const { toasts, pushToast } = useToasts();
+  const { toasts, pushToast, dismissToast } = useToasts();
   const [activeTab, setActiveTab] = useState<TabName>(currentTabFromHash());
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('pp-theme');
@@ -408,7 +424,15 @@ export function App() {
       <div className="toast-container" id="toasts">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast ${toast.isError ? 'error' : 'ok'}`}>
-            {toast.message}
+            <span className="toast-message">{toast.message}</span>
+            <button
+              type="button"
+              className="toast-dismiss"
+              aria-label="Dismiss notification"
+              onClick={() => dismissToast(toast.id)}
+            >
+              x
+            </button>
           </div>
         ))}
       </div>
