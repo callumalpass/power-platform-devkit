@@ -302,7 +302,7 @@ async function runRequest(args: string[]): Promise<number> {
   const positionalApi = positional[0] && isApiKind(positional[0]) ? positional[0] : undefined;
   const apiFlag = readFlag(args, '--api');
   if (apiFlag && !isApiKind(apiFlag)) {
-    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring|sharepoint|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read]'), args);
+    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read]'), args);
   }
   const validatedApiFlag: ApiKind | undefined = apiFlag && isApiKind(apiFlag) ? apiFlag : undefined;
   const api = positionalApi ?? validatedApiFlag;
@@ -311,7 +311,7 @@ async function runRequest(args: string[]): Promise<number> {
   const environmentAlias = readFlag(args, '--environment');
   const accountName = readFlag(args, '--account');
   if (!path || (!environmentAlias && !(effectiveApi && isAccountScopedApi(effectiveApi) && accountName))) {
-    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring|sharepoint|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read]'), args);
+    return printFailure(argumentFailure('REQUEST_USAGE', 'Usage: pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read]'), args);
   }
   const body = await readBody(args);
   if (!body.success) return printFailure(body, args);
@@ -1089,7 +1089,7 @@ function printRequestHelp(): void {
       'Send an authenticated request. Environment-scoped APIs require --env; Graph and SharePoint may use --account.',
       '',
       'Usage:',
-      '  pp request [dv|flow|graph|bap|powerapps|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|canvas-authoring|sharepoint|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--via-ui] [--temp-token NAME] [--no-interactive-auth]',
+      '  pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--via-ui] [--temp-token NAME] [--no-interactive-auth]',
     ].join('\n') + '\n',
   );
 }

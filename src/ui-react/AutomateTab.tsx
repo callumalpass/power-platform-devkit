@@ -5,9 +5,11 @@ import {
   analyzeFlowDocument,
   buildFlowDocument,
   checkFlowDefinition,
+  flowValidationFromError,
   flowIdentifier,
   formatFlowDocument,
   loadFlowDynamicEnum,
+  loadFlowDynamicProperties,
   loadFlowApiOperationSchema,
   loadFlowApiOperations,
   loadActionDetail,
@@ -298,15 +300,11 @@ export function AutomateTab(props: {
       setFlows((items) => items.map((item) => flowIdentifier(item) === flowIdentifier(currentFlow) ? { ...item, ...updated } : item));
       toast(skipServiceCheck ? 'Flow definition saved without service check' : 'Flow definition checked and saved');
     } catch (error) {
+      setFlowValidation(flowValidationFromError('errors', error));
       toast(error instanceof Error ? error.message : String(error), true);
     } finally {
       setFlowOperation(null);
     }
-  }
-
-  function jumpToEditorRange(from?: number, to?: number) {
-    setFlowSubTab('definition');
-    window.setTimeout(() => flowEditorRef.current?.revealRange(from, to), 0);
   }
 
   function selectOutlineItem(item: FlowAnalysisOutlineItem) {
@@ -314,7 +312,6 @@ export function AutomateTab(props: {
     const path = buildOutlinePathTo(analysis?.outline || [], key);
     setFlowOutlineActiveKey(key);
     setFlowOutlineActivePath(path);
-    jumpToEditorRange(item.from, item.to);
   }
 
   function openActionEditor(item: FlowAnalysisOutlineItem) {
@@ -1504,6 +1501,7 @@ function AddFlowActionModal(props: {
 
   const operationDraftRef = useMemo(() => operationDraft ? resolveActionOperation(props.source, operationDraft) : {}, [props.source, operationDraft]);
   const operationDynamicOptions = useFlowDynamicOptions(props.environment, operationDraft, selectedSchema, operationDraftRef, props.toast);
+  const operationDynamicSchemaFields = useFlowDynamicSchemaFields(props.environment, operationDraft, selectedSchema, operationDraftRef, props.toast);
 
   function updateOperationDraft(path: string[], value: unknown) {
     setOperationDraft((current) => current ? setPathValue(current, path, value) : current);
@@ -1521,45 +1519,54 @@ function AddFlowActionModal(props: {
     }
   }
 
-  const visibleSelectedSchemaFields = visibleConnectorSchemaFields(selectedSchema?.fields || []);
+  const selectedSchemaFields = expandDynamicSchemaFields(selectedSchema?.fields || [], operationDynamicSchemaFields);
+  const visibleSelectedSchemaFields = visibleConnectorSchemaFields(selectedSchemaFields);
   const hasSelection = Boolean(selectedOperation || selectedTemplate);
 
   return (
     <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
       <div className="rt-modal add-action-modal">
-        <div className="rt-modal-header">
-          <h2>Add Action</h2>
+        <div className="rt-modal-header add-action-header">
+          <div className="add-action-title">
+            <h2>Add Action</h2>
+            <span className="add-action-subtitle">Pick a built-in template or a connector operation, then configure it.</span>
+          </div>
           <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
         </div>
         <div className="rt-modal-body add-action-body">
-          <div className="add-action-section">
-            <h3>Built-in</h3>
-            <div className="add-action-template-row">
-              {BUILT_IN_ACTION_TEMPLATES.map((template) => (
-                <button
-                  key={template.key}
-                  type="button"
-                  className={`add-action-template ${selectedTemplate?.key === template.key ? 'active' : ''}`}
-                  onClick={() => selectTemplate(template)}
-                >
-                  <span className="add-action-template-label">{template.label}</span>
-                  <span className="add-action-template-desc">{template.desc}</span>
-                </button>
-              ))}
+          <div className="add-action-pane add-action-picker">
+            <div className="add-action-picker-section">
+              <div className="add-action-section-label">Built-in</div>
+              <div className="add-action-template-row">
+                {BUILT_IN_ACTION_TEMPLATES.map((template) => (
+                  <button
+                    key={template.key}
+                    type="button"
+                    className={`add-action-template ${selectedTemplate?.key === template.key ? 'active' : ''}`}
+                    onClick={() => selectTemplate(template)}
+                  >
+                    <span className="add-action-template-label">{template.label}</span>
+                    <span className="add-action-template-desc">{template.desc}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="add-action-section">
-            <h3>Connector Operations</h3>
-            <div className="add-action-search">
-              <input
-                ref={searchRef}
-                type="text"
-                value={search}
-                placeholder="Search connectors and actions…"
-                onChange={(event) => onSearchChange(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Enter') void doSearch(search); }}
-              />
-              {loading ? <span className="add-action-searching">Searching…</span> : null}
+            <div className="add-action-picker-section add-action-picker-search-section">
+              <div className="add-action-section-label add-action-section-label-row">
+                <span>Connector operations</span>
+                {loading ? <span className="add-action-searching">Searching…</span> : null}
+              </div>
+              <div className="add-action-search">
+                <span className="add-action-search-icon" aria-hidden="true">⌕</span>
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={search}
+                  placeholder="Search connectors and actions…"
+                  onChange={(event) => onSearchChange(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Enter') void doSearch(search); }}
+                />
+              </div>
             </div>
             <div className="add-action-results">
               {operations.length ? operations.map((operation) => (
@@ -1576,62 +1583,88 @@ function AddFlowActionModal(props: {
                     {operation.description ? <span className="add-action-operation-desc">{operation.description}</span> : null}
                   </span>
                 </button>
-              )) : <div className="empty">{loading ? 'Loading operations…' : 'No operations found.'}</div>}
+              )) : <div className="add-action-results-empty">{loading ? 'Loading operations…' : 'No operations found.'}</div>}
             </div>
           </div>
-          {hasSelection ? (
-            <div className="add-action-section add-action-form">
-              <label>
-                <span>Action name</span>
-                <input type="text" value={actionName} onChange={(event) => setActionName(sanitizeActionName(event.target.value))} />
-              </label>
-              <label>
-                <span>Run after</span>
-                <select value={runAfter} onChange={(event) => setRunAfter(event.target.value)}>
-                  <option value="">none</option>
-                  {topLevelActions.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
-              </label>
-              {selectedOperation ? (
-                <div className="add-action-note">
-                  Will use the matching connection reference when one exists, otherwise inserts a placeholder for {selectedOperation.apiDisplayName || selectedOperation.apiName || 'the connector'}.
+
+          <div className="add-action-pane add-action-config">
+            {!hasSelection ? (
+              <div className="add-action-config-empty">
+                <div className="add-action-config-empty-icon" aria-hidden="true">＋</div>
+                <div className="add-action-config-empty-title">Select an action to configure</div>
+                <div className="add-action-config-empty-desc">Pick a built-in template or search for a connector operation on the left. Its parameters will appear here.</div>
+              </div>
+            ) : (
+              <>
+                <div className="add-action-config-header">
+                  {selectedOperation?.iconUri ? (
+                    <img className="add-action-config-icon" src={selectedOperation.iconUri} alt="" />
+                  ) : (
+                    <span className="add-action-config-icon add-action-config-icon-placeholder" aria-hidden="true">{selectedTemplate?.label?.charAt(0) || '·'}</span>
+                  )}
+                  <div className="add-action-config-header-text">
+                    <div className="add-action-config-title">
+                      {selectedOperation
+                        ? selectedOperation.summary || selectedOperation.name
+                        : selectedTemplate?.label || 'Action'}
+                    </div>
+                    <div className="add-action-config-meta">
+                      {selectedOperation
+                        ? `${selectedOperation.apiDisplayName || selectedOperation.apiName || 'Connector'} · ${selectedOperation.name}`
+                        : selectedTemplate?.desc || ''}
+                    </div>
+                  </div>
                 </div>
-              ) : null}
-              {selectedOperation ? (
-                <div className="add-action-note">
-                  {schemaLoading
-                    ? 'Loading operation metadata...'
-                    : selectedSchema
-                      ? `${visibleSelectedSchemaFields.length} parameter${visibleSelectedSchemaFields.length === 1 ? '' : 's'} found${visibleSelectedSchemaFields.some((field) => field.required) ? `, ${visibleSelectedSchemaFields.filter((field) => field.required).length} required` : ''}.`
-                      : 'No detailed operation metadata found.'}
+
+                <div className="add-action-config-form">
+                  <label>
+                    <span>Action name</span>
+                    <input type="text" value={actionName} onChange={(event) => setActionName(sanitizeActionName(event.target.value))} />
+                  </label>
+                  <label>
+                    <span>Run after</span>
+                    <select value={runAfter} onChange={(event) => setRunAfter(event.target.value)}>
+                      <option value="">none</option>
+                      {topLevelActions.map((name) => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  </label>
                 </div>
-              ) : null}
-              {selectedOperation && visibleSelectedSchemaFields.length && operationDraft ? (
-                <div className="flow-action-field-list">
-                  {visibleSelectedSchemaFields.slice(0, 16).map((field) => (
-                    <SchemaFieldEditor
-                      key={`${field.location || 'parameter'}:${(field.path || []).join('.')}:${field.name}`}
-                      field={field}
-                      options={operationDynamicOptions[fieldSchemaKey(field)]}
-                      value={readPathValue(operationDraft, connectorFieldPath(field))}
-                      onChange={(value) => updateOperationDraft(connectorFieldPath(field), value)}
-                    />
-                  ))}
-                  {visibleSelectedSchemaFields.length > 16 ? <div className="flow-action-edit-note">Showing the first 16 fields. More fields are available after insertion in Edit Action.</div> : null}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+
+                {selectedOperation ? (
+                  <div className="add-action-note">
+                    Will use the matching connection reference when one exists, otherwise inserts a placeholder for {selectedOperation.apiDisplayName || selectedOperation.apiName || 'the connector'}.
+                    {' '}
+                    {schemaLoading
+                      ? 'Loading operation metadata…'
+                      : selectedSchema
+                        ? `${visibleSelectedSchemaFields.length} parameter${visibleSelectedSchemaFields.length === 1 ? '' : 's'} found${visibleSelectedSchemaFields.some((field) => field.required) ? `, ${visibleSelectedSchemaFields.filter((field) => field.required).length} required` : ''}.`
+                        : 'No detailed operation metadata found.'}
+                  </div>
+                ) : null}
+
+                {selectedOperation && visibleSelectedSchemaFields.length && operationDraft ? (
+                  <div className="add-action-config-params">
+                    <div className="add-action-section-label">Parameters</div>
+                    <div className="flow-action-field-list">
+                      {visibleSelectedSchemaFields.slice(0, 16).map((field) => (
+                        <SchemaFieldEditor
+                          key={`${field.location || 'parameter'}:${(field.path || []).join('.')}:${field.name}`}
+                          field={field}
+                          options={operationDynamicOptions[fieldSchemaKey(field)]}
+                          value={readPathValue(operationDraft, connectorFieldPath(field))}
+                          onChange={(value) => updateOperationDraft(connectorFieldPath(field), value)}
+                        />
+                      ))}
+                      {visibleSelectedSchemaFields.length > 16 ? <div className="flow-action-edit-note">Showing the first 16 parameters. More fields are available after insertion via Edit Action.</div> : null}
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
-        <div className="rt-modal-header add-action-footer">
-          <div className="add-action-footer-summary">
-            {selectedOperation?.iconUri ? <img className="add-action-footer-icon" src={selectedOperation.iconUri} alt="" /> : null}
-            <span className="desc" style={{ marginBottom: 0 }}>
-              {selectedOperation
-                ? `${selectedOperation.summary || selectedOperation.name} · ${selectedOperation.apiDisplayName || selectedOperation.apiName || 'Connector'}`
-                : selectedTemplate?.label || 'Select an action above'}
-            </span>
-          </div>
+        <div className="add-action-footer">
+          <span className="add-action-footer-hint">{hasSelection ? 'Inserts the action into the editor only — Check & Save when ready.' : 'Select an action to enable Insert.'}</span>
           <button className="btn btn-primary" type="button" disabled={!actionName.trim() || !hasSelection} onClick={addAction}>Insert Action</button>
         </div>
       </div>
@@ -1760,7 +1793,8 @@ function EditFlowActionModal(props: {
 
   const type = String(draft.type || props.target.item.type || '');
   const actionLike = isActionLikeOutlineItem(props.target.item);
-  const connectorFields = visibleConnectorSchemaFields(schema?.fields || []);
+  const dynamicSchemaFields = useFlowDynamicSchemaFields(props.environment, draft, schema, operationRef, props.toast);
+  const connectorFields = visibleConnectorSchemaFields(expandDynamicSchemaFields(schema?.fields || [], dynamicSchemaFields));
   const existingParameterFields = existingConnectorParameterFields(draft, connectorFields);
   const connectorFieldGroups = groupConnectorFields([...connectorFields, ...existingParameterFields]);
   const dynamicOptions = useFlowDynamicOptions(props.environment, draft, schema, operationRef, props.toast);
@@ -1776,12 +1810,12 @@ function EditFlowActionModal(props: {
   return (
     <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
       <div className="rt-modal flow-action-edit-modal">
-        <div className="rt-modal-header">
+        <div className="rt-modal-header flow-action-edit-header">
           <div className="flow-action-edit-header-info">
-            <h2>Edit {outlineTitle(props.target.item)}</h2>
-            <div className="flow-action-edit-badges">
+            <div className="flow-action-edit-title-row">
+              <h2>Edit {outlineTitle(props.target.item)}</h2>
               {type ? <span className="flow-action-edit-badge">{type}</span> : null}
-              {operationRef.operationId ? <span className="flow-action-edit-badge">{operationRef.operationId}</span> : null}
+              {operationRef.operationId ? <span className="flow-action-edit-badge mono">{operationRef.operationId}</span> : null}
             </div>
           </div>
           <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
@@ -1836,8 +1870,8 @@ function EditFlowActionModal(props: {
 
               {actionLike ? (
                 <div className="flow-action-edit-section">
-                <h3>Common fields</h3>
-                <CommonActionFields action={draft} onChange={updateDraft} />
+                  <h3>Common fields</h3>
+                  <CommonActionFields action={draft} onChange={updateDraft} />
                 </div>
               ) : null}
               {!actionLike && !hasConnectorSchema ? (
@@ -1858,8 +1892,8 @@ function EditFlowActionModal(props: {
             </div>
           )}
         </div>
-        <div className="rt-modal-header add-action-footer">
-          <span className="desc" style={{ marginBottom: 0 }}>Updates the editor only — use Check & Save when ready. <span className="flow-action-edit-footer-hint">Ctrl+Enter</span></span>
+        <div className="flow-action-edit-footer">
+          <span className="flow-action-edit-footer-text">Updates the editor only — use Check & Save when ready. <span className="flow-action-edit-footer-hint">Ctrl+Enter</span></span>
           <button className="btn btn-primary" type="button" disabled={!actionName.trim() || (tab === 'json' && Boolean(rawError))} onClick={tryApply}>Apply Changes</button>
         </div>
       </div>
@@ -1972,23 +2006,24 @@ function useFlowDynamicOptions(
   const [options, setOptions] = useState<Record<string, FlowDynamicValueOption[]>>({});
   const fields = useMemo(() => visibleConnectorSchemaFields(schema?.fields || []).filter((field) => field.dynamicValues), [schema]);
   const parameters = useMemo(() => readConnectorParameters(action), [action]);
+  const dynamicParameters = useMemo(() => pickDynamicParameters(fields.map((field) => field.dynamicValues), parameters), [fields, parameters]);
   const signature = useMemo(() => JSON.stringify({
     environment,
     apiName: operationRef.apiName || schema?.apiName,
     connectionName: operationRef.connectionName,
     fields: fields.map((field) => [fieldSchemaKey(field), field.dynamicValues]),
-    parameters,
-  }), [environment, fields, operationRef.apiName, operationRef.connectionName, parameters, schema?.apiName]);
+    parameters: dynamicParameters,
+  }), [dynamicParameters, environment, fields, operationRef.apiName, operationRef.connectionName, schema?.apiName]);
 
   useEffect(() => {
     let cancelled = false;
     const apiName = operationRef.apiName || schema?.apiName;
-    if (!environment || !apiName || !operationRef.connectionName || !fields.length) {
+    if (!environment || !apiName || !fields.length) {
       setOptions({});
       return;
     }
     void Promise.all(fields.map(async (field) => {
-      const values = await loadFlowDynamicEnum(environment, apiName, operationRef.connectionName, field.dynamicValues, parameters);
+      const values = await loadFlowDynamicEnum(environment, apiName, operationRef.connectionName, field.dynamicValues, dynamicParameters);
       return [fieldSchemaKey(field), values] as const;
     }))
       .then((entries) => {
@@ -1999,14 +2034,87 @@ function useFlowDynamicOptions(
         if (!cancelled) toast(error instanceof Error ? error.message : String(error), true);
       });
     return () => { cancelled = true; };
-  }, [environment, fields, operationRef.apiName, operationRef.connectionName, parameters, schema?.apiName, signature, toast]);
+  }, [environment, fields, operationRef.apiName, operationRef.connectionName, schema?.apiName, signature, toast]);
 
   return options;
+}
+
+function useFlowDynamicSchemaFields(
+  environment: string,
+  action: Record<string, unknown> | null,
+  schema: FlowApiOperationSchema | null,
+  operationRef: FlowActionOperationRef,
+  toast: ToastFn,
+): Record<string, FlowApiOperationSchemaField[]> {
+  const [fieldsByParent, setFieldsByParent] = useState<Record<string, FlowApiOperationSchemaField[]>>({});
+  const fields = useMemo(() => visibleConnectorSchemaFields(schema?.fields || []).filter((field) => field.dynamicSchema), [schema]);
+  const parameters = useMemo(() => readConnectorParameters(action), [action]);
+  const dynamicParameters = useMemo(() => pickDynamicParameters(fields.map((field) => field.dynamicSchema), parameters), [fields, parameters]);
+  const signature = useMemo(() => JSON.stringify({
+    environment,
+    apiName: operationRef.apiName || schema?.apiName,
+    connectionName: operationRef.connectionName,
+    fields: fields.map((field) => [fieldSchemaKey(field), field.dynamicSchema]),
+    parameters: dynamicParameters,
+  }), [dynamicParameters, environment, fields, operationRef.apiName, operationRef.connectionName, schema?.apiName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const apiName = operationRef.apiName || schema?.apiName;
+    if (!environment || !apiName || !fields.length) {
+      setFieldsByParent({});
+      return;
+    }
+    void Promise.all(fields.map(async (field) => {
+      const values = await loadFlowDynamicProperties(environment, apiName, operationRef.connectionName, field, dynamicParameters);
+      return [fieldSchemaKey(field), values] as const;
+    }))
+      .then((entries) => {
+        if (cancelled) return;
+        setFieldsByParent(Object.fromEntries(entries.filter(([, values]) => values.length)));
+      })
+      .catch((error) => {
+        if (!cancelled) toast(error instanceof Error ? error.message : String(error), true);
+      });
+    return () => { cancelled = true; };
+  }, [environment, fields, operationRef.apiName, operationRef.connectionName, schema?.apiName, signature, toast]);
+
+  return fieldsByParent;
+}
+
+function expandDynamicSchemaFields(fields: FlowApiOperationSchemaField[], dynamicFields: Record<string, FlowApiOperationSchemaField[]>): FlowApiOperationSchemaField[] {
+  return fields.flatMap((field) => {
+    const expanded = dynamicFields[fieldSchemaKey(field)] || [];
+    return expanded.length ? expanded : [field];
+  });
 }
 
 function readConnectorParameters(action: Record<string, unknown> | null): Record<string, unknown> {
   const parameters = prop(action || {}, 'inputs.parameters');
   return isObject(parameters) ? parameters : {};
+}
+
+function pickDynamicParameters(metadatas: unknown[], parameters: Record<string, unknown>): Record<string, unknown> {
+  const refs = new Set<string>();
+  for (const metadata of metadatas) {
+    for (const ref of dynamicParameterReferences(metadata)) refs.add(ref);
+  }
+  const result: Record<string, unknown> = {};
+  for (const ref of refs) {
+    if (Object.prototype.hasOwnProperty.call(parameters, ref)) result[ref] = parameters[ref];
+  }
+  return result;
+}
+
+function dynamicParameterReferences(metadata: unknown): string[] {
+  const rawParameters = prop(metadata, 'parameters');
+  if (!isObject(rawParameters)) return [];
+  return Object.entries(rawParameters).flatMap(([name, raw]) => {
+    if (typeof raw === 'string') return raw ? [raw] : [];
+    if (!isObject(raw)) return [];
+    const ref = firstNonEmptyString(raw.parameterReference, raw.parameter, raw.name, raw.value, name);
+    return ref ? [ref] : [];
+  });
 }
 
 function fieldSchemaKey(field: FlowApiOperationSchemaField) {
@@ -2299,7 +2407,7 @@ function parseEditableJson(value: string): unknown {
 
 function valueToEditText(value: unknown, kind: 'text' | 'json' | 'select') {
   if (value === undefined || value === null) return '';
-  if (kind === 'json') return typeof value === 'string' ? JSON.stringify(value) : JSON.stringify(value, null, 2);
+  if (kind === 'json') return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
@@ -2585,16 +2693,15 @@ function FlowOutlineCanvas(props: {
   if (!items.length) return <div className="empty">{props.emptyMessage || 'Load a flow definition to see the outline.'}</div>;
   return (
     <>
-      <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
+      <div className="flow-outline-filter">
         <input
           type="search"
           placeholder={props.filterPlaceholder || 'Filter...'}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          style={{ width: '100%', padding: '4px 8px', fontSize: '0.75rem', boxSizing: 'border-box' }}
         />
       </div>
-      <div className="flow-outline-scroll" style={{ padding: '4px 0' }}>
+      <div className="flow-outline-scroll">
         {filteredItems.length ? (
           <OutlineNodeList
             items={filteredItems}
@@ -2646,14 +2753,7 @@ function OutlineNodeList(props: {
   );
 }
 
-const OUTLINE_ADD_BTN: React.CSSProperties = {
-  padding: '0 4px', fontSize: '11px', lineHeight: '18px', border: 'none',
-  background: 'transparent', color: 'var(--muted)', cursor: 'pointer',
-  borderRadius: 3, fontWeight: 600, flexShrink: 0,
-};
-const OUTLINE_DROP_LINE: React.CSSProperties = {
-  height: 2, background: 'var(--accent)', margin: '0 8px', borderRadius: 1, pointerEvents: 'none',
-};
+// Outline node styles are defined in ui-app.ts (.flow-outline-*)
 
 function OutlineNode(props: {
   item: FlowAnalysisOutlineItem;
@@ -2696,17 +2796,14 @@ function OutlineNode(props: {
   const draggable = isAction && !isActionsContainer && Boolean(onReorder) && Boolean(item.name);
   const isDropTarget = isAction && !isActionsContainer && Boolean(item.name);
 
-  useEffect(() => {
-    if (!active) return;
-    rowRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [active]);
+  const rowClasses = ['flow-outline-row', active && 'active', dragging && 'dragging', draggable && 'draggable'].filter(Boolean).join(' ');
 
   return (
     <>
-      {dragOver === 'before' && <div style={OUTLINE_DROP_LINE} />}
+      {dragOver === 'before' && <div className="flow-outline-drop-line" />}
       <div
         ref={rowRef}
-        className={`flow-outline-row ${active ? 'active' : ''}`}
+        className={rowClasses}
         draggable={draggable}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -2739,43 +2836,41 @@ function OutlineNode(props: {
           onSelect?.(item);
           if (hasChildren) setManuallyOpen(!open);
         }}
-        onDoubleClick={(event) => {
-          if (!editable) return;
-          event.preventDefault();
-          event.stopPropagation();
-          onEditAction?.(item);
-        }}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          padding: `3px 10px 3px ${indent}px`,
-          cursor: draggable ? 'grab' : 'pointer', fontSize: '12px', lineHeight: '20px',
-          opacity: dragging ? 0.4 : 1,
-        }}
+        style={{ paddingLeft: indent }}
       >
-        <span style={{ width: 14, fontSize: '10px', color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', userSelect: 'none', textAlign: 'center' }}>
+        <span className="flow-outline-toggle">
           {hasChildren ? (open ? '\u25BE' : '\u25B8') : ''}
         </span>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: dotColor }} />
-        <span style={{ fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
-          {title}
-        </span>
-        {typeHint ? (
-          <span style={{ fontSize: '10px', color: 'var(--muted)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }}>
-            {typeHint}
-          </span>
-        ) : null}
+        <span className="flow-outline-dot" style={{ background: dotColor }} />
+        {editable ? (
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEditAction?.(item); }}
+            className="flow-outline-title editable"
+          >
+            {title}
+          </a>
+        ) : (
+          <span className="flow-outline-title">{title}</span>
+        )}
+        {typeHint ? <span className="flow-outline-type-hint">{typeHint}</span> : null}
         {hasProblem ? (
-          <span title={outlineProblemTitle(problemSummary)} style={{
-            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-            background: problemSummary.error ? 'var(--danger)' : problemSummary.warning ? '#d97706' : 'var(--accent)',
-          }} />
+          <span
+            className="flow-outline-problem-dot"
+            title={outlineProblemTitle(problemSummary)}
+            style={{ background: problemSummary.error ? 'var(--danger)' : problemSummary.warning ? '#d97706' : 'var(--accent)' }}
+          />
         ) : null}
         {showRowActions && canAdd ? (
-          <button type="button" title={isActionsContainer ? 'Add action' : 'Add action after'} style={OUTLINE_ADD_BTN}
-            onClick={(e) => { e.stopPropagation(); onAddAfter?.(item); }}>+</button>
+          <button
+            type="button"
+            className="flow-outline-add-btn"
+            title={isActionsContainer ? 'Add action' : 'Add action after'}
+            onClick={(e) => { e.stopPropagation(); onAddAfter?.(item); }}
+          >+</button>
         ) : null}
       </div>
-      {dragOver === 'after' && <div style={OUTLINE_DROP_LINE} />}
+      {dragOver === 'after' && <div className="flow-outline-drop-line" />}
       {open && hasChildren && (
         <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} onEditAction={onEditAction} onAddAfter={onAddAfter} onReorder={onReorder} />
       )}
