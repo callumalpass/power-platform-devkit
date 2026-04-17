@@ -1,6 +1,7 @@
 dist
 node_modules
 release
+test-results/
 
 .tmp-test/
 .ops/
