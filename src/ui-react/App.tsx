@@ -8,7 +8,6 @@ import {
   getDefaultSelectedColumns,
   getSelectableAttributes,
   highlightJson,
-  optionList,
   prop,
   summarizeError,
 } from './utils.js';
@@ -18,6 +17,7 @@ import { SetupTab } from './SetupTab.js';
 import { ResultView } from './ResultView.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
+import { EnvironmentPickerModal } from './EnvironmentPickerModal.js';
 
 type TabName = 'setup' | 'console' | 'dataverse' | 'automate' | 'apps' | 'canvas' | 'platform';
 type DataverseSubTab = 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
@@ -120,6 +120,7 @@ export function App() {
   const [shellData, setShellData] = useState<any>(null);
   const [globalEnvironment, setGlobalEnvironment] = useState('');
   const [stateLoading, setStateLoading] = useState(true);
+  const [envPickerOpen, setEnvPickerOpen] = useState(false);
 
   const [consoleSeed, setConsoleSeed] = useState<any | null>(null);
 
@@ -196,6 +197,17 @@ export function App() {
 
   useEffect(() => {
     void refreshState(true);
+  }, []);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setEnvPickerOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
   useEffect(() => {
@@ -406,11 +418,25 @@ export function App() {
           <span className="logo"><svg width="24" height="24" viewBox="46 43 172 174" aria-label="pp"><mask id="pp-m"><rect x="46" y="43" width="172" height="174" fill="white"/><circle cx="100" cy="88" r="18" fill="black"/><circle cx="164" cy="88" r="18" fill="black"/></mask><g fill="currentColor" mask="url(#pp-m)"><rect x="64" y="52" width="18" height="156" rx="9"/><circle cx="100" cy="88" r="36"/><rect x="128" y="52" width="18" height="156" rx="9"/><circle cx="164" cy="88" r="36"/></g></svg></span>
           <div className="header-env">
             <label>ENV</label>
-            <select id="global-environment" style={{ flex: 1 }} value={globalEnvironment} onChange={(event) => setGlobalEnvironment(event.target.value)}>
-              {optionList((shellData?.environments || []).map((item: any) => item.alias), 'Select environment').map((option) => (
-                <option key={`${option.value}-${option.label}`} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <button
+              type="button"
+              id="global-environment"
+              className="env-trigger"
+              onClick={() => setEnvPickerOpen(true)}
+              title="Switch active environment (Ctrl+K)"
+            >
+              <span className="env-trigger-text">
+                {globalEnvironment ? (
+                  <>
+                    <span className="env-trigger-alias">{globalEnvironment}</span>
+                    {currentEnvData?.account ? <span className="env-trigger-account">{currentEnvData.account}</span> : null}
+                  </>
+                ) : (
+                  <span className="env-trigger-placeholder">Select environment…</span>
+                )}
+              </span>
+              <span className="env-trigger-chevron" aria-hidden="true">▾</span>
+            </button>
           </div>
           <div className="header-meta" id="meta">{meta}</div>
           <button
@@ -535,6 +561,16 @@ export function App() {
       </div>
 
       {stateLoading ? null : null}
+
+      {envPickerOpen ? (
+        <EnvironmentPickerModal
+          environments={shellData?.environments || []}
+          accounts={shellData?.accounts || []}
+          current={globalEnvironment}
+          onSelect={(alias) => setGlobalEnvironment(alias)}
+          onClose={() => setEnvPickerOpen(false)}
+        />
+      ) : null}
     </>
   );
 }

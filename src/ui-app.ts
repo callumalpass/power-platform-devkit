@@ -70,6 +70,37 @@ export function renderHtml(): string {
     .header-env select { max-width: 280px; }
     .header-meta { display: flex; gap: 12px; align-items: center; font-size: 0.75rem; color: var(--muted); flex-shrink: 0; }
 
+    .env-trigger { display: flex; align-items: center; gap: 8px; max-width: 360px; min-width: 200px; padding: 5px 10px; font-family: inherit; font-size: 0.8125rem; color: var(--ink); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; text-align: left; transition: border-color 120ms, background 120ms; }
+    .env-trigger:hover { border-color: var(--accent); background: var(--surface); }
+    .env-trigger:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.18); }
+    .env-trigger-text { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
+    .env-trigger-alias { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .env-trigger-account { font-size: 0.6875rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .env-trigger-placeholder { color: var(--muted); }
+    .env-trigger-chevron { font-size: 0.625rem; color: var(--muted); flex-shrink: 0; }
+
+    .env-picker-backdrop { align-items: flex-start; padding-top: 80px; }
+    .env-picker-modal { width: 560px; max-width: 90vw; max-height: 70vh; padding: 0; }
+    .env-picker-search { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .env-picker-search-icon { color: var(--muted); font-size: 0.9375rem; }
+    .env-picker-search input { flex: 1; border: none; outline: none; background: transparent; font-size: 0.9375rem; color: var(--ink); padding: 2px 0; }
+    .env-picker-count { font-size: 0.6875rem; color: var(--muted); font-family: var(--mono); flex-shrink: 0; }
+    .env-picker-list { overflow: auto; padding: 4px 0; flex: 1; min-height: 0; }
+    .env-picker-empty { padding: 24px 16px; text-align: center; color: var(--muted); font-size: 0.8125rem; }
+    .env-picker-item { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 14px; border: none; border-left: 2px solid transparent; background: transparent; color: var(--ink); cursor: pointer; text-align: left; transition: background 80ms; }
+    .env-picker-item.active { background: var(--accent-soft); border-left-color: var(--accent); }
+    .env-picker-item.current .env-picker-alias { color: var(--accent); }
+    .env-picker-item-main { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .env-picker-alias { font-size: 0.875rem; font-weight: 600; }
+    .env-picker-display { font-size: 0.75rem; color: var(--muted); }
+    .env-picker-badge { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+    .env-picker-badge.readonly { background: var(--warn-soft, var(--bg)); color: var(--muted); }
+    .env-picker-item-meta { display: flex; gap: 12px; font-size: 0.6875rem; color: var(--muted); font-family: var(--mono); }
+    .env-picker-host { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .env-picker-account { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .env-picker-footer { display: flex; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--border); font-size: 0.6875rem; color: var(--muted); }
+    .env-picker-footer kbd { font-family: var(--mono); font-size: 0.625rem; padding: 1px 5px; margin-right: 3px; border: 1px solid var(--border); border-radius: 3px; background: var(--bg); color: var(--ink); }
+
     /* Tabs */
     .tabs { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; overflow-x: auto; }
     .tabs-inner { max-width: 1400px; min-width: max-content; margin: 0 auto; display: flex; gap: 0; }
