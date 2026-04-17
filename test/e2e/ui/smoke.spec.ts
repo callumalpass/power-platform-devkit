@@ -1,7 +1,7 @@
 import { expect, openApp, test, visitSetupSubTab, visitTab } from './fixtures.js';
 
 const MAIN_TABS = ['Setup', 'Console', 'Dataverse', 'Automate', 'Apps', 'Platform'];
-const SETUP_SUB_TABS = ['Status', 'Accounts', 'Environments', 'My Access', 'MCP'];
+const SETUP_SUB_TABS = ['Accounts', 'Environments', 'My Access', 'Tools'];
 
 test('main navigation renders without console errors and returns valid API envelopes', async ({ page, audit }) => {
   await openApp(page);

@@ -9,7 +9,7 @@ test('setup account form switches credential modes without leaking stale fields'
   await addAccount.locator('summary').click();
   await expect(addAccount.locator('input[name="name"]')).toBeVisible();
 
-  await addAccount.getByRole('button', { name: /advanced options/i }).click();
+  await addAccount.getByRole('tab', { name: /advanced options/i }).click();
   const kind = addAccount.locator('select[name="kind"]');
 
   await kind.selectOption('client-secret');
