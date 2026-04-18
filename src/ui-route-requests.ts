@@ -5,7 +5,15 @@ import { readApiRequestInput } from './ui-request-parsing.js';
 import type { UiRequestContext } from './ui-routes.js';
 import { executeApiRequest } from './services/api.js';
 import { getEnvironment } from './config.js';
-import { createDiagnostic, fail } from './diagnostics.js';
+import { createDiagnostic, fail, type OperationResult } from './diagnostics.js';
+
+export interface ResponsePreview {
+  text: string;
+  truncated: boolean;
+  originalBytes: number;
+  shownBytes: number;
+  omittedBytes: number;
+}
 
 export async function handleRequestExecute(request: IncomingMessage, response: ServerResponse, context: UiRequestContext): Promise<void> {
   const body = await readJsonBody(request);
@@ -25,7 +33,7 @@ export async function handleRequestExecute(request: IncomingMessage, response: S
     responseType: 'json',
     readIntent: input.data.readIntent,
   }, context.configOptions, { allowInteractive: input.data.allowInteractive });
-  sendJson(response, result.success || softFail ? 200 : 400, result);
+  sendJson(response, result.success || softFail ? 200 : 400, applyResponsePreviewLimit(result, readNumber(body.data.maxResponseBytes)));
 }
 
 export async function handleCliRequestExecute(request: IncomingMessage, response: ServerResponse, context: UiRequestContext): Promise<void> {
@@ -84,6 +92,53 @@ export async function handleCliRequestExecute(request: IncomingMessage, response
     });
   }
   sendJson(response, result.success ? 200 : 400, result);
+}
+
+export function applyResponsePreviewLimit<T extends { response?: unknown }>(
+  result: OperationResult<T>,
+  maxResponseBytes: number | undefined,
+): OperationResult<T | (Omit<T, 'response'> & { responsePreview: ResponsePreview })> {
+  if (!result.success || !result.data || maxResponseBytes === undefined || maxResponseBytes <= 0) return result;
+  const preview = createResponsePreview(result.data.response, maxResponseBytes);
+  if (!preview.truncated) return result;
+  const { response: _response, ...rest } = result.data;
+  return {
+    ...result,
+    data: {
+      ...rest,
+      responsePreview: preview,
+    },
+    diagnostics: [
+      ...result.diagnostics,
+      createDiagnostic('info', 'UI_RESPONSE_PREVIEW_TRUNCATED', `Response preview was truncated to ${preview.shownBytes} bytes.`, {
+        source: 'pp/ui',
+        detail: `${preview.originalBytes} bytes returned; ${preview.omittedBytes} bytes omitted from the browser payload.`,
+      }),
+    ],
+  };
+}
+
+function createResponsePreview(value: unknown, maxBytes: number): ResponsePreview {
+  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  if (!text) return { text: '', truncated: false, originalBytes: 0, shownBytes: 0, omittedBytes: 0 };
+  const buffer = Buffer.from(text, 'utf8');
+  if (buffer.byteLength <= maxBytes) {
+    return {
+      text,
+      truncated: false,
+      originalBytes: buffer.byteLength,
+      shownBytes: buffer.byteLength,
+      omittedBytes: 0,
+    };
+  }
+  const shown = buffer.subarray(0, maxBytes);
+  return {
+    text: shown.toString('utf8'),
+    truncated: true,
+    originalBytes: buffer.byteLength,
+    shownBytes: shown.byteLength,
+    omittedBytes: buffer.byteLength - shown.byteLength,
+  };
 }
 
 function hasValidCliSecret(request: IncomingMessage, expected: string): boolean {

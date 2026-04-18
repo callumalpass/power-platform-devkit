@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { AuthSessionStore } from '../src/ui-auth-sessions.js';
 import { CanvasSessionStore } from '../src/ui-canvas-sessions.js';
 import { handleUiRequest, type UiRequestContext } from '../src/ui-routes.js';
+import { applyResponsePreviewLimit } from '../src/ui-route-requests.js';
 import { ok } from '../src/diagnostics.js';
 import { TemporaryTokenStore } from '../src/temporary-tokens.js';
 
@@ -84,6 +85,23 @@ test('handleUiRequest exposes UI status metadata', async () => {
   assert.equal(response.statusCode, 200);
   assert.match(response.body, /test-instance/);
   assert.match(response.body, /127\.0\.0\.1:4733/);
+});
+
+test('applyResponsePreviewLimit strips oversized response bodies from UI envelopes', () => {
+  const hugeValue = 'x'.repeat(10_000);
+  const limited = applyResponsePreviewLimit(ok({
+    request: { path: '/large' },
+    response: { value: hugeValue },
+    status: 200,
+    headers: {},
+  }), 512);
+
+  assert.equal(limited.success, true);
+  assert.equal((limited.data as any).response, undefined);
+  assert.equal((limited.data as any).responsePreview.truncated, true);
+  assert.equal((limited.data as any).responsePreview.shownBytes, 512);
+  assert.equal(JSON.stringify(limited).includes(hugeValue), false);
+  assert.equal(limited.diagnostics.at(-1)?.code, 'UI_RESPONSE_PREVIEW_TRUNCATED');
 });
 
 test('CanvasSessionStore keeps the UI session id stable after service start returns a server session id', async () => {
