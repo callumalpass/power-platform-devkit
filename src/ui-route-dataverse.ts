@@ -9,6 +9,7 @@ import { buildDataverseODataPath, buildFetchXml, createDataverseRecord, executeF
 export async function handleEntityList(url: URL, response: ServerResponse, context: UiRequestContext): Promise<void> {
   const environmentAlias = optionalString(url.searchParams.get('environment'));
   const allowInteractive = optionalBoolean(url.searchParams.get('allowInteractive')) ?? context.allowInteractiveAuth;
+  const softFail = optionalBoolean(url.searchParams.get('softFail')) ?? false;
   if (!environmentAlias) return void sendJson(response, 400, fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environment is required.', { source: 'pp/ui' })));
   const top = optionalInteger(url.searchParams.get('top'));
   const result = await listDataverseEntities({
@@ -17,7 +18,7 @@ export async function handleEntityList(url: URL, response: ServerResponse, conte
     search: optionalString(url.searchParams.get('search')),
     top: top ?? undefined,
   }, context.configOptions, { allowInteractive });
-  sendJson(response, result.success ? 200 : 400, result);
+  sendJson(response, result.success || softFail ? 200 : 400, result);
 }
 
 export async function handleEntityDetail(url: URL, response: ServerResponse, context: UiRequestContext): Promise<void> {
@@ -76,5 +77,5 @@ export async function handleFetchXmlIntellisense(request: IncomingMessage, respo
   if (!body.success || !body.data) return void sendJson(response, 400, body);
   const languageRequest = readFetchXmlLanguageRequest(body.data);
   if (!languageRequest.success || !languageRequest.data) return void sendJson(response, 400, languageRequest);
-  sendJson(response, 200, ok(await context.fetchXmlCatalog.analyze(languageRequest.data, context.configOptions)));
+  sendJson(response, 200, ok(await context.fetchXmlCatalog.analyze(languageRequest.data, context.configOptions, { allowInteractive: false })));
 }

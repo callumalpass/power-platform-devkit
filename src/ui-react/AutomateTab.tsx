@@ -27,6 +27,13 @@ import {
 import type { DiagnosticItem, FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowDynamicValueOption, FlowItem, FlowRun, ToastFn } from './ui-types.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
+import {
+  applyMonacoAppTheme,
+  attachMonacoVim,
+  MonacoVimToggle,
+  type MonacoVimAttachment,
+  useMonacoVimPreference,
+} from './monaco-support.js';
 
 type AutomateSubTab = 'definition' | 'runs' | 'outline';
 type FlowOperation = 'reload' | 'check-errors' | 'check-warnings' | 'save' | null;
@@ -91,6 +98,8 @@ export function AutomateTab(props: {
   const [flowOperation, setFlowOperation] = useState<FlowOperation>(null);
   const [showFlowDiff, setShowFlowDiff] = useState(false);
   const [flowFullscreen, setFlowFullscreen] = useState(false);
+  const [vimEnabled, setVimEnabled] = useMonacoVimPreference();
+  const [flowVimMode, setFlowVimMode] = useState('off');
   const [flowOutlineActiveKey, setFlowOutlineActiveKey] = useState('');
   const [flowOutlineActivePath, setFlowOutlineActivePath] = useState<string[]>([]);
   const [showAddAction, setShowAddAction] = useState(false);
@@ -574,6 +583,7 @@ export function AutomateTab(props: {
                       <button className="btn btn-ghost" type="button" onClick={() => setFlowFullscreen((value) => !value)}>{flowFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
                     </div>
                     <div className="fetchxml-editor-toolbar-right">
+                      <MonacoVimToggle enabled={vimEnabled} mode={flowVimMode} onToggle={setVimEnabled} />
                       <button className="btn btn-ghost" type="button" disabled={!isFlowEditable || flowBusy} onClick={() => void runFlowValidation('errors')}>{flowOperation === 'check-errors' ? 'Checking…' : 'Check Errors'}</button>
                       <button className="btn btn-ghost" type="button" disabled={!isFlowEditable || flowBusy} onClick={() => void runFlowValidation('warnings')}>{flowOperation === 'check-warnings' ? 'Checking…' : 'Check Warnings'}</button>
                       {hasBlockingServiceErrors ? (
@@ -591,6 +601,8 @@ export function AutomateTab(props: {
                         diagnostics={analysis?.diagnostics || []}
                         validation={flowValidation}
                         analysis={analysis}
+                        vimEnabled={vimEnabled}
+                        onVimMode={setFlowVimMode}
                         toast={toast}
                       />
                     </div>
@@ -809,22 +821,33 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
   diagnostics: DiagnosticItem[];
   validation: FlowValidationResult | null;
   analysis: FlowAnalysis | null;
+  vimEnabled: boolean;
+  onVimMode: (mode: string) => void;
   toast: ToastFn;
 }>((props, ref) => {
-  const { value, onChange, diagnostics, validation, analysis, toast } = props;
+  const { value, onChange, diagnostics, validation, analysis, vimEnabled, onVimMode, toast } = props;
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const vimStatusRef = useRef<HTMLSpanElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
+  const vimAttachmentRef = useRef<MonacoVimAttachment | null>(null);
   const valueRef = useRef(value);
+  const vimEnabledRef = useRef(vimEnabled);
   const onChangeRef = useRef(onChange);
+  const onVimModeRef = useRef(onVimMode);
   const diagnosticsRef = useRef(diagnostics);
   const validationRef = useRef(validation);
   const analysisRef = useRef(analysis);
 
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => { onVimModeRef.current = onVimMode; }, [onVimMode]);
   useEffect(() => { diagnosticsRef.current = diagnostics; }, [diagnostics]);
   useEffect(() => { validationRef.current = validation; }, [validation]);
   useEffect(() => { analysisRef.current = analysis; }, [analysis]);
+  useEffect(() => {
+    vimEnabledRef.current = vimEnabled;
+    vimAttachmentRef.current?.setEnabled(vimEnabled);
+  }, [vimEnabled]);
 
   useEffect(() => {
     valueRef.current = value;
@@ -929,6 +952,10 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
     });
     modelRef.current = model;
     editorRef.current = editor;
+    vimAttachmentRef.current = attachMonacoVim(editor, vimStatusRef.current, {
+      enabled: vimEnabledRef.current,
+      onModeChange: (mode) => onVimModeRef.current(mode),
+    });
 
     const themeObserver = new MutationObserver(() => applyMonacoAppTheme());
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
@@ -945,6 +972,8 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       contentSubscription.dispose();
       completionProvider.dispose();
       hoverProvider.dispose();
+      vimAttachmentRef.current?.dispose();
+      vimAttachmentRef.current = null;
       editor.dispose();
       model.dispose();
       editorRef.current = null;
@@ -952,86 +981,17 @@ const FlowCodeEditor = forwardRef<FlowEditorHandle, {
     };
   }, []);
 
-  return <div ref={mountRef} className="fetchxml-editor-mount" />;
+  return (
+    <>
+      <div className={`monaco-vim-status-line ${vimEnabled ? 'active' : ''}`}>
+        <span ref={vimStatusRef} className="monaco-vim-status-node" />
+      </div>
+      <div ref={mountRef} className="fetchxml-editor-mount" />
+    </>
+  );
 });
 
 FlowCodeEditor.displayName = 'FlowCodeEditor';
-
-function applyMonacoAppTheme() {
-  const computed = window.getComputedStyle(document.documentElement);
-  const bg = cssColor(computed, '--bg', '#f9fafb');
-  const surface = cssColor(computed, '--surface', '#ffffff');
-  const ink = cssColor(computed, '--ink', '#111111');
-  const muted = cssColor(computed, '--muted', '#6b7280');
-  const border = cssColor(computed, '--border', '#e5e7eb');
-  const accent = cssColor(computed, '--accent', '#2563eb');
-  const danger = cssColor(computed, '--danger', '#dc2626');
-  const isDark = document.documentElement.classList.contains('dark');
-
-  monaco.editor.defineTheme('pp-app', {
-    base: isDark ? 'vs-dark' : 'vs',
-    inherit: true,
-    rules: [
-      { token: 'string.key.json', foreground: stripHash(isDark ? '#93c5fd' : '#1d4ed8'), fontStyle: 'bold' },
-      { token: 'string.value.json', foreground: stripHash(isDark ? '#86efac' : '#047857') },
-      { token: 'number.json', foreground: stripHash(isDark ? '#fbbf24' : '#b45309') },
-      { token: 'keyword.json', foreground: stripHash(isDark ? '#c4b5fd' : '#7c3aed'), fontStyle: 'bold' },
-      { token: 'delimiter.bracket.json', foreground: stripHash(isDark ? '#cbd5e1' : '#475569') },
-      { token: 'delimiter.array.json', foreground: stripHash(isDark ? '#f9a8d4' : '#be185d') },
-      { token: 'delimiter.colon.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b') },
-      { token: 'delimiter.comma.json', foreground: stripHash(isDark ? '#64748b' : '#94a3b8') },
-      { token: 'comment.line.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b'), fontStyle: 'italic' },
-      { token: 'comment.block.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b'), fontStyle: 'italic' },
-    ],
-    colors: {
-      'editor.background': surface,
-      'editor.foreground': ink,
-      'editorLineNumber.foreground': muted,
-      'editorLineNumber.activeForeground': ink,
-      'editorCursor.foreground': ink,
-      'editor.selectionBackground': rgbaHex(accent, isDark ? 0.32 : 0.18),
-      'editor.inactiveSelectionBackground': rgbaHex(accent, isDark ? 0.18 : 0.10),
-      'editor.lineHighlightBackground': isDark ? '#1c1c1f' : '#f3f4f6',
-      'editorLineNumber.dimmedForeground': muted,
-      'editorGutter.background': bg,
-      'editorWidget.background': surface,
-      'editorWidget.foreground': ink,
-      'editorWidget.border': border,
-      'input.background': bg,
-      'input.foreground': ink,
-      'input.border': border,
-      'list.hoverBackground': rgbaHex(accent, isDark ? 0.18 : 0.10),
-      'list.activeSelectionBackground': rgbaHex(accent, isDark ? 0.28 : 0.14),
-      'list.activeSelectionForeground': ink,
-      'list.focusBackground': rgbaHex(accent, isDark ? 0.22 : 0.12),
-      'scrollbarSlider.background': rgbaHex(muted, isDark ? 0.30 : 0.20),
-      'scrollbarSlider.hoverBackground': rgbaHex(muted, isDark ? 0.42 : 0.32),
-      'scrollbarSlider.activeBackground': rgbaHex(muted, isDark ? 0.52 : 0.42),
-      'editorError.foreground': danger,
-      'editorWarning.foreground': isDark ? '#fbbf24' : '#d97706',
-      'editorInfo.foreground': accent,
-    },
-  });
-  monaco.editor.setTheme('pp-app');
-}
-
-function cssColor(computed: CSSStyleDeclaration, name: string, fallback: string) {
-  return computed.getPropertyValue(name).trim() || fallback;
-}
-
-function stripHash(color: string) {
-  return color.startsWith('#') ? color.slice(1) : color;
-}
-
-function rgbaHex(color: string, alpha: number) {
-  if (!color.startsWith('#')) return color;
-  const hex = color.length === 4
-    ? color.slice(1).split('').map((value) => value + value).join('')
-    : color.slice(1);
-  if (hex.length !== 6) return color;
-  const value = Math.round(alpha * 255).toString(16).padStart(2, '0');
-  return `#${hex}${value}`;
-}
 
 function updateFlowEditorMarkers(model: monaco.editor.ITextModel | null, diagnostics: DiagnosticItem[], validation: FlowValidationResult | null) {
   if (!model) return;
@@ -2625,6 +2585,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function FlowDiffModal(props: { original: string; modified: string; onClose: () => void }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const originalVimStatusRef = useRef<HTMLSpanElement | null>(null);
+  const modifiedVimStatusRef = useRef<HTMLSpanElement | null>(null);
+  const vimAttachmentsRef = useRef<MonacoVimAttachment[]>([]);
+  const [vimEnabled, setVimEnabled] = useMonacoVimPreference();
+  const [vimMode, setVimMode] = useState('off');
+  const vimEnabledRef = useRef(vimEnabled);
+
+  useEffect(() => {
+    vimEnabledRef.current = vimEnabled;
+    for (const attachment of vimAttachmentsRef.current) attachment.setEnabled(vimEnabled);
+  }, [vimEnabled]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -2642,7 +2613,19 @@ function FlowDiffModal(props: { original: string; modified: string; onClose: () 
       theme: 'pp-app',
     });
     editor.setModel({ original: originalModel, modified: modifiedModel });
+    vimAttachmentsRef.current = [
+      attachMonacoVim(editor.getOriginalEditor(), originalVimStatusRef.current, {
+        enabled: vimEnabledRef.current,
+        onModeChange: setVimMode,
+      }),
+      attachMonacoVim(editor.getModifiedEditor(), modifiedVimStatusRef.current, {
+        enabled: vimEnabledRef.current,
+        onModeChange: setVimMode,
+      }),
+    ];
     return () => {
+      for (const attachment of vimAttachmentsRef.current) attachment.dispose();
+      vimAttachmentsRef.current = [];
       editor.dispose();
       originalModel.dispose();
       modifiedModel.dispose();
@@ -2657,7 +2640,12 @@ function FlowDiffModal(props: { original: string; modified: string; onClose: () 
             <h2>Unsaved Changes</h2>
             <p className="desc" style={{ marginBottom: 0 }}>Review the loaded definition beside the current editor content.</p>
           </div>
-          <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
+          <div className="rt-modal-actions">
+            <MonacoVimToggle enabled={vimEnabled} mode={vimMode} onToggle={setVimEnabled} />
+            <span ref={originalVimStatusRef} className="monaco-vim-status-node" />
+            <span ref={modifiedVimStatusRef} className="monaco-vim-status-node" />
+            <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
+          </div>
         </div>
         <div ref={mountRef} className="flow-diff-editor" />
       </div>

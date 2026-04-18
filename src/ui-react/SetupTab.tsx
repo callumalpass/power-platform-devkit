@@ -192,7 +192,7 @@ export function SetupTab(props: SetupTabProps) {
       </div>
 
       <div className={`dv-subpanel ${setupSubTab === 'access' ? 'active' : ''}`}>
-        <AccessPanel environment={globalEnvironment} toast={toast} />
+        <AccessPanel active={active && setupSubTab === 'access'} environment={globalEnvironment} toast={toast} />
       </div>
 
       <div className={`dv-subpanel ${setupSubTab === 'tools' ? 'active' : ''}`}>

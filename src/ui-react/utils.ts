@@ -12,10 +12,15 @@ export class ApiRequestError extends Error {
   }
 }
 
-export async function api<T = any>(path: string, options?: RequestInit): Promise<T> {
+type ApiOptions = RequestInit & {
+  allowFailure?: boolean;
+};
+
+export async function api<T = any>(path: string, options?: ApiOptions): Promise<T> {
+  const { allowFailure = false, ...fetchOptions } = options ?? {};
   const response = await fetch(path, {
     headers: { 'content-type': 'application/json' },
-    ...options,
+    ...fetchOptions,
   });
   const text = await response.text();
   let data: any;
@@ -27,7 +32,7 @@ export async function api<T = any>(path: string, options?: RequestInit): Promise
       `Invalid JSON from ${path} (${response.status}). ${summarizeParseError(error, snippet)}`,
     );
   }
-  if (!response.ok || data.success === false) {
+  if (!response.ok || (!allowFailure && data.success === false)) {
     throw new ApiRequestError(summarizeError(data), data, response.status);
   }
   return data as T;

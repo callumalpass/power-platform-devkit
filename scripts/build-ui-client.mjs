@@ -20,6 +20,10 @@ async function buildClientBundle() {
     define: {
       'process.env.NODE_ENV': '"production"',
     },
+    alias: {
+      'monaco-editor/esm/vs/editor/editor.api': 'monaco-editor/esm/vs/editor/editor.api.js',
+      'monaco-editor/esm/vs/editor/common/commands/shiftCommand': 'monaco-editor/esm/vs/editor/common/commands/shiftCommand.js',
+    },
     loader: {
       '.css': 'text',
       '.ttf': 'dataurl',

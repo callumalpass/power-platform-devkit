@@ -77,6 +77,7 @@ export type DataverseRecordPage = {
 export type DataverseState = {
   entitiesEnvironment: string;
   entities: DataverseEntitySummary[];
+  entitiesLoadError?: string;
   currentEntity: DataverseEntitySummary | null;
   currentEntityDetail: DataverseEntityDetail | null;
   currentEntityDiagnostics?: DiagnosticItem[];

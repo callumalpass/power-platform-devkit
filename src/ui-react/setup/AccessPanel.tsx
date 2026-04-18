@@ -26,8 +26,8 @@ type AccessData = {
   };
 };
 
-export function AccessPanel(props: { environment: string; toast: ToastFn }) {
-  const { environment, toast } = props;
+export function AccessPanel(props: { active: boolean; environment: string; toast: ToastFn }) {
+  const { active, environment, toast } = props;
   const [data, setData] = useState<AccessData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +36,7 @@ export function AccessPanel(props: { environment: string; toast: ToastFn }) {
   async function dvGet(path: string) {
     const result = await api<any>('/api/request/execute', {
       method: 'POST',
-      body: JSON.stringify({ environment, api: 'dv', method: 'GET', path, headers: { Prefer: 'odata.include-annotations="*"' }, softFail: true }),
+      body: JSON.stringify({ environment, api: 'dv', method: 'GET', path, headers: { Prefer: 'odata.include-annotations="*"' }, allowInteractive: false, softFail: true }),
     });
     return result.data?.response;
   }
@@ -44,7 +44,7 @@ export function AccessPanel(props: { environment: string; toast: ToastFn }) {
   async function graphGet(path: string) {
     const result = await api<any>('/api/request/execute', {
       method: 'POST',
-      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, softFail: true }),
+      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true }),
     });
     return result.data?.response;
   }
@@ -53,7 +53,7 @@ export function AccessPanel(props: { environment: string; toast: ToastFn }) {
     const response = await fetch('/api/request/execute', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, softFail: true }),
+      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true }),
     });
     const result = await response.json();
     return result.success === false ? null : result.data?.response;
@@ -124,8 +124,8 @@ export function AccessPanel(props: { environment: string; toast: ToastFn }) {
   }
 
   useEffect(() => {
-    if (environment) void loadAccess();
-  }, [environment]);
+    if (active && environment) void loadAccess();
+  }, [active, environment]);
 
   if (!environment) {
     return <div className="panel"><p className="desc">Select an environment to view your access.</p></div>;

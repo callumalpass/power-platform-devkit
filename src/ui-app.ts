@@ -248,37 +248,16 @@ export function renderHtml(): string {
     .fetchxml-editor-toolbar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 12px; font-size: 0.6875rem; color: var(--muted); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 78%, var(--bg)); }
     .fetchxml-editor-toolbar-left,
     .fetchxml-editor-toolbar-right { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
-    .fetchxml-vim-mode { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 0.6875rem; }
-    .fetchxml-vim-mode.insert { border-color: var(--ok); color: var(--ok); }
-    .fetchxml-vim-mode.normal { border-color: var(--accent); color: var(--accent); }
-    .fetchxml-vim-mode.visual { border-color: #d97706; color: #d97706; }
-    .fetchxml-vim-mode.replace { border-color: var(--danger); color: var(--danger); }
-    .fetchxml-editor-mount .cm-editor { min-height: 320px; font-family: var(--mono); font-size: 0.8125rem; }
-    .fetchxml-editor-mount .cm-scroller { overflow: auto; }
-    .fetchxml-editor-mount .cm-content { padding: 12px; }
-    .fetchxml-editor-mount .cm-focused { outline: none; }
-    .fetchxml-editor-mount .cm-panels { background: var(--surface); color: var(--ink); border-color: var(--border); }
-    .fetchxml-editor-mount .cm-panel { background: var(--surface); color: var(--ink); }
-    .fetchxml-editor-mount .cm-tooltip { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,0.16); }
-    .fetchxml-editor-mount .cm-tooltip .cm-tooltip-arrow:before { border-top-color: var(--border); border-bottom-color: var(--border); }
-    .fetchxml-editor-mount .cm-tooltip .cm-tooltip-arrow:after { border-top-color: var(--surface); border-bottom-color: var(--surface); }
-    .fetchxml-editor-mount .cm-tooltip-autocomplete { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-    .fetchxml-editor-mount .cm-tooltip-autocomplete > ul { background: var(--surface); color: var(--ink); }
-    .fetchxml-editor-mount .cm-tooltip-autocomplete > ul > li { color: var(--ink); border-top: 1px solid transparent; border-bottom: 1px solid transparent; }
-    .fetchxml-editor-mount .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent-soft); color: var(--ink); }
-    .fetchxml-editor-mount .cm-completionIcon { color: var(--muted); opacity: 0.9; }
-    .fetchxml-editor-mount .cm-completionLabel { color: inherit; }
-    .fetchxml-editor-mount .cm-completionDetail,
-    .fetchxml-editor-mount .cm-completionInfo,
-    .fetchxml-editor-mount .cm-completionMatchedText { color: inherit; }
-    .fetchxml-editor-mount .cm-completionMatchedText { text-decoration-color: var(--accent); }
-    .fetchxml-editor-mount .cm-tooltip-lint ul { background: var(--surface); color: var(--ink); }
-    .fetchxml-editor-mount .cm-diagnostic { border-left: 3px solid var(--border); background: var(--surface); color: var(--ink); }
-    .fetchxml-editor-mount .cm-diagnostic-error { border-left-color: var(--danger); }
-    .fetchxml-editor-mount .cm-diagnostic-warning { border-left-color: #d97706; }
-    .fetchxml-editor-mount .cm-diagnostic-info { border-left-color: var(--accent); }
-    .fetchxml-editor-mount .cm-lintPoint-warning { border-bottom-color: #d97706; }
-    .fetchxml-editor-mount .cm-lintPoint-error { border-bottom-color: var(--danger); }
+    .monaco-vim-toggle { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 3px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--muted); font-family: var(--mono); font-size: 0.6875rem; cursor: pointer; }
+    .monaco-vim-toggle:hover { color: var(--ink); border-color: var(--accent); }
+    .monaco-vim-toggle.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+    .monaco-vim-toggle.active.insert { color: var(--ok); border-color: var(--ok); background: rgba(34,197,94,0.08); }
+    .monaco-vim-toggle.active.visual { color: #d97706; border-color: #d97706; background: rgba(217,119,6,0.10); }
+    .monaco-vim-toggle.active.replace { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+    .monaco-vim-status-line { display: none; align-items: center; min-height: 24px; padding: 3px 10px; border-bottom: 1px solid var(--border); background: var(--bg); color: var(--muted); font-family: var(--mono); font-size: 0.6875rem; }
+    .monaco-vim-status-line.active { display: flex; }
+    .monaco-vim-status-node { display: inline-flex; align-items: center; gap: 8px; min-height: 18px; color: var(--muted); font-family: var(--mono); font-size: 0.6875rem; }
+    .monaco-vim-status-node input { width: auto; min-width: 160px; padding: 2px 6px; font-family: var(--mono); font-size: 0.6875rem; }
     .fetchxml-editor-mount { min-height: 420px; }
     .fetchxml-editor-mount .monaco-editor,
     .fetchxml-editor-mount .monaco-editor-background,
@@ -286,7 +265,7 @@ export function renderHtml(): string {
     .fetchxml-editor-mount .monaco-editor { min-height: 420px; }
     .fetchxml-editor-mount .monaco-editor .margin { background: var(--bg); }
     .flow-editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 30%); align-items: stretch; min-height: 420px; }
-    .flow-editor-main { min-width: 0; min-height: 0; display: flex; }
+    .flow-editor-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     .flow-editor-main .fetchxml-editor-mount { flex: 1; height: 100%; min-height: 420px; }
     .flow-editor-main .fetchxml-editor-mount .monaco-editor { height: 100%; min-height: 420px; }
     .flow-outline-rail { border-left: 1px solid var(--border); background: var(--bg); min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -733,6 +712,8 @@ export function renderHtml(): string {
     html.dark .console-response-warning { background: rgba(217,119,6,0.14); color: #fbbf24; border-color: rgba(217,119,6,0.8); }
     .console-response-viewer { min-height: 360px; height: 60vh; max-height: 70vh; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); display: flex; flex-direction: column; }
     .console-response-viewer .empty-state { flex: 1; }
+    .json-viewer-shell { display: flex; flex-direction: column; min-height: 0; }
+    .json-viewer-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 78%, var(--bg)); }
     .json-viewer-mount { flex: 1; min-height: 0; }
     @media (max-width: 1100px) {
       .console-layout { grid-template-columns: 1fr; }
@@ -1407,10 +1388,10 @@ export function renderHtml(): string {
                   <div class="fetchxml-editor-toolbar">
                     <div class="fetchxml-editor-toolbar-left">
                       <span id="fetch-editor-status"><span class="fetchxml-status-dot"></span>IntelliSense ready</span>
-                      <span id="fetch-vim-mode" class="fetchxml-vim-mode normal">NORMAL</span>
+                      <span id="fetch-vim-mode" class="monaco-vim-toggle">Vim Off</span>
                     </div>
                     <div class="fetchxml-editor-toolbar-right">
-                      <span>Autocomplete for FetchXML structure, entities, attributes, operators, and join fields. Vim mode enabled.</span>
+                      <span>Autocomplete for FetchXML structure, entities, attributes, operators, and join fields.</span>
                     </div>
                   </div>
                   <div id="fetch-editor" class="fetchxml-editor-mount"></div>

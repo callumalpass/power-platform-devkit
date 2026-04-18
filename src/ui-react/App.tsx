@@ -158,6 +158,7 @@ export function App() {
   const [dataverse, setDataverse] = useState({
     entitiesEnvironment: '',
     entities: [] as any[],
+    entitiesLoadError: '',
     currentEntity: null as any,
     currentEntityDetail: null as any,
     currentEntityDiagnostics: [] as any[],
@@ -246,6 +247,7 @@ export function App() {
       ...current,
       entitiesEnvironment: '',
       entities: [],
+      entitiesLoadError: '',
       currentEntity: null,
       currentEntityDetail: null,
       selectedColumns: [],
@@ -298,9 +300,9 @@ export function App() {
 
   useEffect(() => {
     if (activeTab !== 'dataverse' || !globalEnvironment) return;
-    if (dataverse.entitiesEnvironment === globalEnvironment && dataverse.entities.length) return;
+    if (dataverse.entitiesEnvironment === globalEnvironment) return;
     void loadEntities();
-  }, [activeTab, dataverse.entities.length, dataverse.entitiesEnvironment, globalEnvironment]);
+  }, [activeTab, dataverse.entitiesEnvironment, globalEnvironment]);
 
   useEffect(() => {
     if (activeTab !== 'apps' || !globalEnvironment) return;
@@ -317,12 +319,27 @@ export function App() {
   async function loadEntities() {
     if (!globalEnvironment) return;
     try {
-      const payload = await api<any>(`/api/dv/entities?environment=${encodeURIComponent(globalEnvironment)}&allowInteractive=false`);
+      const payload = await api<any>(`/api/dv/entities?environment=${encodeURIComponent(globalEnvironment)}&allowInteractive=false&softFail=true`, { allowFailure: true });
+      if (payload.success === false) {
+        setDataverse((current) => ({
+          ...current,
+          entitiesEnvironment: globalEnvironment,
+          entities: [],
+          entitiesLoadError: summarizeError(payload),
+          currentEntity: null,
+          currentEntityDetail: null,
+          currentEntityDiagnostics: payload.diagnostics || [],
+          selectedColumns: [],
+          recordPreview: null,
+        }));
+        return;
+      }
       const entities = payload.data || [];
       setDataverse((current) => ({
         ...current,
         entitiesEnvironment: globalEnvironment,
         entities,
+        entitiesLoadError: '',
         currentEntity: null,
         currentEntityDetail: null,
         currentEntityDiagnostics: [],
@@ -331,7 +348,17 @@ export function App() {
       }));
       pushToast(`Loaded ${entities.length} entities`);
     } catch (error) {
-      pushToast(error instanceof Error ? error.message : String(error), true);
+      setDataverse((current) => ({
+        ...current,
+        entitiesEnvironment: globalEnvironment,
+        entities: [],
+        entitiesLoadError: error instanceof Error ? error.message : String(error),
+        currentEntity: null,
+        currentEntityDetail: null,
+        currentEntityDiagnostics: [],
+        selectedColumns: [],
+        recordPreview: null,
+      }));
     }
   }
 
@@ -540,6 +567,7 @@ export function App() {
             setDataverse={setDataverse}
             environment={globalEnvironment}
             environmentUrl={environmentUrl}
+            loadEntities={loadEntities}
             loadEntityDetail={loadEntityDetail}
             loadRecordPreview={loadRecordPreview}
             toast={pushToast}
@@ -1438,11 +1466,12 @@ function DataverseTab(props: {
   setDataverse: React.Dispatch<React.SetStateAction<any>>;
   environment: string;
   environmentUrl: string;
+  loadEntities: () => Promise<void>;
   loadEntityDetail: (logicalName: string) => Promise<void>;
   loadRecordPreview: () => Promise<void>;
   toast: (message: string, isError?: boolean) => void;
 }) {
-  const { dataverse, setDataverse, environment, environmentUrl, loadEntityDetail, loadRecordPreview, toast } = props;
+  const { dataverse, setDataverse, environment, environmentUrl, loadEntities, loadEntityDetail, loadRecordPreview, toast } = props;
   const [showCreateRecord, setShowCreateRecord] = useState(false);
   const [createdRecordId, setCreatedRecordId] = useState<string | null>(null);
   const detail = useRecordDetail();
@@ -1575,7 +1604,18 @@ function DataverseTab(props: {
                   </div>
                 </div>
               );
-            }) : <div className="entity-loading">Select an environment to load entities.</div>}
+            }) : (
+              <div className="entity-loading">
+                {dataverse.entitiesLoadError ? (
+                  <>
+                    <div>{dataverse.entitiesLoadError}</div>
+                    <button className="btn btn-ghost btn-sm" type="button" style={{ marginTop: 10 }} onClick={() => void loadEntities()}>Retry</button>
+                  </>
+                ) : (
+                  'Select an environment to load entities.'
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

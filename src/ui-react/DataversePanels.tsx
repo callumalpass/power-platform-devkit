@@ -1,12 +1,5 @@
-import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, startCompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { xml } from '@codemirror/lang-xml';
-import { bracketMatching } from '@codemirror/language';
-import { linter } from '@codemirror/lint';
-import { searchKeymap } from '@codemirror/search';
-import { Compartment, EditorState, Prec } from '@codemirror/state';
-import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers, type ViewUpdate } from '@codemirror/view';
-import { getCM, vim } from '@replit/codemirror-vim';
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution.js';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction, type WheelEvent as ReactWheelEvent } from 'react';
 import {
   formatDate,
@@ -34,6 +27,13 @@ import type {
   DiagnosticItem,
   ToastFn,
 } from './ui-types.js';
+import {
+  applyMonacoAppTheme,
+  attachMonacoVim,
+  MonacoVimToggle,
+  type MonacoVimAttachment,
+  useMonacoVimPreference,
+} from './monaco-support.js';
 
 type ConditionRow = { id: number; attribute: string; operator: string; value: string };
 type LinkRow = {
@@ -102,15 +102,6 @@ const SYSTEM_ENTITIES = new Set([
   'plugintracelog', 'sdkmessageprocessingstep', 'workflow', 'sla', 'slaitem',
 ]);
 
-const codeMirrorTheme = EditorView.theme({
-  '&': { fontSize: '13px' },
-  '.cm-content': { caretColor: 'var(--ink)' },
-  '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--ink)' },
-  '&.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(37,99,235,0.18)' },
-  '.cm-activeLine': { backgroundColor: 'rgba(37,99,235,0.06)' },
-  '.cm-gutters': { backgroundColor: 'var(--bg)', borderRight: '1px solid var(--border)', color: 'var(--muted)' },
-});
-
 function nextId() {
   return Date.now() + Math.floor(Math.random() * 1000);
 }
@@ -169,7 +160,8 @@ export function FetchXmlTab(props: {
   const [result, setResult] = useState<DataverseRecordPage | null>(null);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [vimMode, setVimMode] = useState('normal');
+  const [vimEnabled, setVimEnabled] = useMonacoVimPreference();
+  const [vimMode, setVimMode] = useState('off');
 
   const selectableAttributes = useMemo(
     (): DataverseAttribute[] => (entityDetail ? getSelectableAttributes(entityDetail) : []),
@@ -427,7 +419,7 @@ export function FetchXmlTab(props: {
                 </span>
               </div>
               <div className="fetchxml-editor-toolbar-right">
-                <span className={`fetchxml-vim-mode ${vimMode}`}>{vimMode.toUpperCase()}</span>
+                <MonacoVimToggle enabled={vimEnabled} mode={vimMode} onToggle={setVimEnabled} />
                 <span>Tab/Enter accept completions. Ctrl-Space opens suggestions.</span>
               </div>
             </div>
@@ -441,8 +433,8 @@ export function FetchXmlTab(props: {
                 setIsAnalyzing(false);
               }}
               onAnalyzeStart={() => setIsAnalyzing(true)}
+              vimEnabled={vimEnabled}
               onVimMode={setVimMode}
-              toast={toast}
             />
           </div>
           <div className="fetchxml-diagnostics">
@@ -475,13 +467,18 @@ function FetchXmlCodeEditor(props: {
   onChange: (value: string) => void;
   onAnalysis: (analysis: FetchXmlAnalysis) => void;
   onAnalyzeStart: () => void;
+  vimEnabled: boolean;
   onVimMode: (mode: string) => void;
-  toast: ToastFn;
 }) {
-  const { value, environment, rootEntityName, onChange, onAnalysis, onAnalyzeStart, onVimMode, toast } = props;
+  const { value, environment, rootEntityName, onChange, onAnalysis, onAnalyzeStart, vimEnabled, onVimMode } = props;
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef<EditorView | null>(null);
+  const vimStatusRef = useRef<HTMLSpanElement | null>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const modelRef = useRef<monaco.editor.ITextModel | null>(null);
+  const vimAttachmentRef = useRef<MonacoVimAttachment | null>(null);
+  const analysisTimerRef = useRef<number | null>(null);
   const valueRef = useRef(value);
+  const vimEnabledRef = useRef(vimEnabled);
   const requestRef = useRef(new Map<string, Promise<FetchXmlAnalysis>>());
   const onChangeRef = useRef(onChange);
   const onAnalysisRef = useRef(onAnalysis);
@@ -492,19 +489,48 @@ function FetchXmlCodeEditor(props: {
   useEffect(() => { onAnalysisRef.current = onAnalysis; }, [onAnalysis]);
   useEffect(() => { onAnalyzeStartRef.current = onAnalyzeStart; }, [onAnalyzeStart]);
   useEffect(() => { onVimModeRef.current = onVimMode; }, [onVimMode]);
+  useEffect(() => {
+    vimEnabledRef.current = vimEnabled;
+    vimAttachmentRef.current?.setEnabled(vimEnabled);
+  }, [vimEnabled]);
 
   useEffect(() => {
     valueRef.current = value;
-    const view = viewRef.current;
-    if (!view) return;
-    const current = view.state.doc.toString();
-    if (current === value) return;
-    view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
+    const model = modelRef.current;
+    if (!model) return;
+    if (model.getValue() !== value) {
+      const editor = editorRef.current;
+      if (editor) {
+        editor.executeEdits('external-set', [{ range: model.getFullModelRange(), text: value || '' }]);
+      } else {
+        model.setValue(value || '');
+      }
+    }
   }, [value]);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
+    applyMonacoAppTheme();
+    const model = monaco.editor.createModel(valueRef.current || '', 'xml', monaco.Uri.parse(`inmemory://pp/fetchxml-${Date.now()}.xml`));
+    const editor = monaco.editor.create(mount, {
+      model,
+      automaticLayout: true,
+      folding: true,
+      fontFamily: 'var(--mono)',
+      fontSize: 13,
+      glyphMargin: true,
+      lineNumbers: 'on',
+      minimap: { enabled: false },
+      quickSuggestions: { other: true, comments: false, strings: true },
+      renderWhitespace: 'selection',
+      scrollBeyondLastLine: false,
+      suggestOnTriggerCharacters: true,
+      tabSize: 2,
+      insertSpaces: true,
+      wordWrap: 'on',
+      theme: 'pp-app',
+    });
 
     const analyze = (source: string, cursor: number) => {
       const key = JSON.stringify({ source, cursor, environment, rootEntityName });
@@ -521,97 +547,157 @@ function FetchXmlCodeEditor(props: {
       return request;
     };
 
-    const acceptCompletionIfOpen = (view: EditorView) => completionStatus(view.state) === 'active' ? acceptCompletion(view) : false;
-    const completionSource = async (context: CompletionContext): Promise<CompletionResult | null> => {
-      const before = context.matchBefore(/[^\s<>"'=\/]*$/);
-      const triggerChar = context.pos > 0 ? context.state.sliceDoc(context.pos - 1, context.pos) : '';
-      if (!context.explicit && !before && !'<="/ '.includes(triggerChar)) return null;
-      const analysis = await analyze(context.state.doc.toString(), context.pos);
-      onAnalysisRef.current(analysis);
-      if (!analysis.completions.length) return null;
-      return {
-        from: analysis.context?.from ?? context.pos,
-        to: analysis.context?.to ?? context.pos,
-        options: analysis.completions.map(toCodeMirrorCompletion),
-      };
+    const refreshAnalysis = async () => {
+      const activeModel = modelRef.current;
+      const activeEditor = editorRef.current;
+      if (!activeModel || !activeEditor) return;
+      const source = activeModel.getValue();
+      if (!source.trim()) {
+        monaco.editor.setModelMarkers(activeModel, 'pp-fetchxml', []);
+        onAnalysisRef.current({ diagnostics: [], completions: [] });
+        return;
+      }
+      try {
+        const cursor = activeModel.getOffsetAt(activeEditor.getPosition() || new monaco.Position(1, 1));
+        const analysis = await analyze(source, cursor);
+        onAnalysisRef.current(analysis);
+        updateFetchXmlEditorMarkers(activeModel, analysis.diagnostics);
+      } catch {
+        monaco.editor.setModelMarkers(activeModel, 'pp-fetchxml', []);
+        onAnalysisRef.current({ diagnostics: [], completions: [] });
+      }
     };
 
-    const diagnosticSource = async (view: EditorView) => {
-      const analysis = await analyze(view.state.doc.toString(), view.state.selection.main.head);
-      onAnalysisRef.current(analysis);
-      return analysis.diagnostics.map((item) => ({
-        from: item.from ?? 0,
-        to: item.to ?? item.from ?? 0,
-        severity: item.level === 'error' ? 'error' as const : item.level === 'warning' ? 'warning' as const : 'info' as const,
-        message: item.message,
-        source: item.code,
-      }));
+    const scheduleAnalysis = () => {
+      if (analysisTimerRef.current !== null) window.clearTimeout(analysisTimerRef.current);
+      analysisTimerRef.current = window.setTimeout(() => {
+        analysisTimerRef.current = null;
+        void refreshAnalysis();
+      }, 250);
     };
 
-    const diagnosticsCompartment = new Compartment();
-    const view = new EditorView({
-      parent: mount,
-      state: EditorState.create({
-        doc: valueRef.current || '',
-        extensions: [
-          lineNumbers(),
-          history(),
-          drawSelection(),
-          highlightActiveLine(),
-          xml(),
-          vim(),
-          bracketMatching(),
-          closeBrackets(),
-          autocompletion({ override: [completionSource], activateOnTyping: true, defaultKeymap: false, icons: true }),
-          diagnosticsCompartment.of(linter(diagnosticSource, { delay: 250 })),
-          Prec.highest(keymap.of([
-            { key: 'Tab', run: acceptCompletionIfOpen },
-            { key: 'Enter', run: acceptCompletionIfOpen },
-          ])),
-          keymap.of([
-            indentWithTab,
-            ...closeBracketsKeymap,
-            ...defaultKeymap,
-            ...historyKeymap,
-            ...searchKeymap,
-            ...completionKeymap,
-          ]),
-          EditorView.updateListener.of((update: ViewUpdate) => {
-            if (update.docChanged) {
-              const next = update.state.doc.toString();
-              valueRef.current = next;
-              onChangeRef.current(next);
-              startCompletion(update.view);
-            }
-          }),
-          codeMirrorTheme,
-        ],
-      }),
+    const completionProvider = monaco.languages.registerCompletionItemProvider('xml', {
+      triggerCharacters: ['<', '/', '"', "'", '=', ' ', '-'],
+      provideCompletionItems: async (completionModel, position, context) => {
+        if (completionModel.uri.toString() !== model.uri.toString()) return { suggestions: [] };
+        const cursor = completionModel.getOffsetAt(position);
+        const triggerChar = context.triggerCharacter || completionModel.getValue().slice(Math.max(0, cursor - 1), cursor);
+        const word = completionModel.getWordUntilPosition(position);
+        if (context.triggerKind !== monaco.languages.CompletionTriggerKind.Invoke && !word.word && !'<="/ '.includes(triggerChar)) {
+          return { suggestions: [] };
+        }
+        try {
+          const analysis = await analyze(completionModel.getValue(), cursor);
+          onAnalysisRef.current(analysis);
+          updateFetchXmlEditorMarkers(completionModel, analysis.diagnostics);
+          return {
+            suggestions: analysis.completions.map((item) => toMonacoFetchXmlCompletion(item, completionModel, analysis, position)),
+          };
+        } catch {
+          return { suggestions: [] };
+        }
+      },
     });
 
-    viewRef.current = view;
-    const cm = getCM(view);
-    if (cm && typeof cm.on === 'function') {
-      cm.on('vim-mode-change', (event: { mode?: string }) => onVimModeRef.current(event.mode || 'normal'));
-    }
-    onVimModeRef.current('normal');
+    const themeObserver = new MutationObserver(() => applyMonacoAppTheme());
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+    const contentSubscription = model.onDidChangeContent(() => {
+      const next = model.getValue();
+      valueRef.current = next;
+      onChangeRef.current(next);
+      scheduleAnalysis();
+    });
+
+    modelRef.current = model;
+    editorRef.current = editor;
+    vimAttachmentRef.current = attachMonacoVim(editor, vimStatusRef.current, {
+      enabled: vimEnabledRef.current,
+      onModeChange: (mode) => onVimModeRef.current(mode),
+    });
+    scheduleAnalysis();
 
     return () => {
-      view.destroy();
-      viewRef.current = null;
+      if (analysisTimerRef.current !== null) window.clearTimeout(analysisTimerRef.current);
+      themeObserver.disconnect();
+      completionProvider.dispose();
+      contentSubscription.dispose();
+      vimAttachmentRef.current?.dispose();
+      vimAttachmentRef.current = null;
+      editor.dispose();
+      model.dispose();
+      editorRef.current = null;
+      modelRef.current = null;
     };
   }, [environment, rootEntityName]);
 
-  return <div ref={mountRef} className="fetchxml-editor-mount" />;
+  return (
+    <>
+      <div className={`monaco-vim-status-line ${vimEnabled ? 'active' : ''}`}>
+        <span ref={vimStatusRef} className="monaco-vim-status-node" />
+      </div>
+      <div ref={mountRef} className="fetchxml-editor-mount" />
+    </>
+  );
 }
 
-function toCodeMirrorCompletion(item: FetchXmlCompletionItem) {
+function toMonacoFetchXmlCompletion(
+  item: FetchXmlCompletionItem,
+  model: monaco.editor.ITextModel,
+  analysis: FetchXmlAnalysis,
+  position: monaco.Position,
+): monaco.languages.CompletionItem {
   return {
     label: item.label,
-    type: item.type,
+    kind: fetchXmlCompletionKind(item.type),
     detail: item.detail,
-    info: item.info,
-    apply: item.apply,
+    documentation: item.info ? { value: item.info } : undefined,
+    insertText: item.apply || item.label,
+    range: fetchXmlCompletionRange(model, analysis, position),
+  };
+}
+
+function fetchXmlCompletionRange(model: monaco.editor.ITextModel, analysis: FetchXmlAnalysis, position: monaco.Position): monaco.IRange {
+  if (analysis.context?.from !== undefined || analysis.context?.to !== undefined) {
+    const startOffset = Math.max(0, analysis.context.from ?? model.getOffsetAt(position));
+    const endOffset = Math.max(startOffset, analysis.context.to ?? startOffset);
+    const start = model.getPositionAt(startOffset);
+    const end = model.getPositionAt(endOffset);
+    return new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
+  }
+  const word = model.getWordUntilPosition(position);
+  return new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
+}
+
+function fetchXmlCompletionKind(type: string | undefined): monaco.languages.CompletionItemKind {
+  if (type === 'tag') return monaco.languages.CompletionItemKind.Class;
+  if (type === 'attribute') return monaco.languages.CompletionItemKind.Property;
+  if (type === 'operator') return monaco.languages.CompletionItemKind.Operator;
+  if (type === 'entity') return monaco.languages.CompletionItemKind.Reference;
+  return monaco.languages.CompletionItemKind.Value;
+}
+
+function updateFetchXmlEditorMarkers(model: monaco.editor.ITextModel, diagnostics: DiagnosticItem[]) {
+  monaco.editor.setModelMarkers(model, 'pp-fetchxml', diagnostics.map((item) => fetchXmlMarkerFromDiagnostic(model, item)));
+}
+
+function fetchXmlMarkerFromDiagnostic(model: monaco.editor.ITextModel, item: DiagnosticItem): monaco.editor.IMarkerData {
+  const startOffset = Math.max(0, Math.min(item.from ?? 0, model.getValueLength()));
+  const endOffset = Math.max(startOffset + 1, Math.min(item.to ?? startOffset + 1, model.getValueLength()));
+  const start = model.getPositionAt(startOffset);
+  const end = model.getPositionAt(endOffset);
+  return {
+    startLineNumber: start.lineNumber,
+    startColumn: start.column,
+    endLineNumber: end.lineNumber,
+    endColumn: end.column,
+    message: item.message,
+    source: item.code,
+    severity: item.level === 'error'
+      ? monaco.MarkerSeverity.Error
+      : item.level === 'warning'
+        ? monaco.MarkerSeverity.Warning
+        : monaco.MarkerSeverity.Info,
   };
 }
 
