@@ -316,6 +316,7 @@ export function FetchXmlTab(props: {
             </>
           ) : <span className="entity-context-empty">No entity selected. Pick one in Explorer or choose below.</span>}
         </div>
+        <div className="form-grid">
         <div className="form-row">
           <div className="field">
             <span className="field-label">Entity</span>
@@ -456,6 +457,7 @@ export function FetchXmlTab(props: {
         <div className="btn-group">
           <button className="btn btn-secondary" type="button" disabled={!canBuildFetchXml} onClick={() => void preview()}>Build from fields</button>
           <button className="btn btn-primary" type="button" disabled={!canRunFetchXml} onClick={() => void execute()}>Run FetchXML</button>
+        </div>
         </div>
       </div>
       <div className="panel">

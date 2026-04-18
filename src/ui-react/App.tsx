@@ -18,12 +18,18 @@ import { ResultView } from './ResultView.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 import { EnvironmentPickerModal } from './EnvironmentPickerModal.js';
+import { HeaderActions } from './HeaderActions.js';
+import { EmptyState } from './EmptyState.js';
+import { InventorySidebar } from './InventorySidebar.js';
+import { JsonViewer } from './JsonViewer.js';
+import { Icon } from './Icon.js';
 
 type TabName = 'setup' | 'console' | 'dataverse' | 'automate' | 'apps' | 'canvas' | 'platform';
 type DataverseSubTab = 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
 type ExplorerSubTab = 'metadata' | 'records';
 
-type ToastItem = { id: number; message: string; isError: boolean };
+type ToastItem = { id: number; message: string; isError: boolean; timestamp: number };
+type ToastLogItem = ToastItem;
 
 const APIS = [
   {
@@ -32,7 +38,7 @@ const APIS = [
     presets: [
       { label: 'WhoAmI', method: 'GET', path: '/WhoAmI', description: 'Current user identity' },
       { label: 'List Accounts', method: 'GET', path: '/accounts?$top=10&$select=name,accountid', description: 'Account records' },
-      { label: 'Entity Metadata', method: 'GET', path: '/EntityDefinitions?$top=10&$select=LogicalName,DisplayName,EntitySetName', description: 'Entity definitions' },
+      { label: 'Entity Metadata', method: 'GET', path: '/EntityDefinitions?$select=LogicalName,DisplayName,EntitySetName&LabelLanguages=1033', description: 'Entity definitions' },
       { label: 'Global Option Sets', method: 'GET', path: '/GlobalOptionSetDefinitions?$top=10', description: 'Global option set metadata' },
     ],
   },
@@ -89,6 +95,7 @@ const METHOD_COLORS: Record<string, string> = {
 
 function useToasts() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [log, setLog] = useState<ToastLogItem[]>([]);
   const timersRef = useRef<Map<number, number>>(new Map());
 
   function dismissToast(id: number) {
@@ -100,11 +107,17 @@ function useToasts() {
 
   function pushToast(message: string, isError = false) {
     const id = Date.now() + Math.floor(Math.random() * 1000);
-    setToasts((current) => [...current, { id, message, isError }]);
+    const item: ToastItem = { id, message, isError, timestamp: Date.now() };
+    setToasts((current) => [...current, item]);
+    setLog((current) => [item, ...current].slice(0, 50));
     const timer = window.setTimeout(() => {
       dismissToast(id);
     }, isError ? 5000 : 2500);
     timersRef.current.set(id, timer);
+  }
+
+  function clearLog() {
+    setLog([]);
   }
 
   useEffect(() => {
@@ -114,7 +127,7 @@ function useToasts() {
     };
   }, []);
 
-  return { toasts, pushToast, dismissToast };
+  return { toasts, pushToast, dismissToast, log, clearLog };
 }
 
 function currentTabFromHash(): TabName {
@@ -126,7 +139,9 @@ function currentTabFromHash(): TabName {
 }
 
 export function App() {
-  const { toasts, pushToast, dismissToast } = useToasts();
+  const { toasts, pushToast, dismissToast, log: toastLog, clearLog: clearToastLog } = useToasts();
+  const [toastTrayOpen, setToastTrayOpen] = useState(false);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabName>(currentTabFromHash());
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('pp-theme');
@@ -462,26 +477,25 @@ export function App() {
               <span className="env-trigger-chevron" aria-hidden="true">▾</span>
             </button>
           </div>
-          <div className="header-meta" id="meta">{meta}</div>
           <button
-            className="theme-toggle"
-            id="theme-toggle"
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+            type="button"
+            className="header-meta header-meta-button"
+            id="meta"
+            title="Open Setup"
+            onClick={() => setActiveTab('setup')}
           >
-            {theme === 'dark' ? '☀' : '☽'}
+            {meta}
           </button>
-          <button
-            className="theme-toggle"
-            id="shutdown-btn"
-            title="Stop pp UI server"
-            onClick={async () => {
-              if (!confirm('Stop the pp UI server?')) return;
-              try { await api('/api/ui/shutdown', { method: 'POST' }); } catch { /* server exits */ }
-            }}
-          >
-            {'⏻'}
-          </button>
+          <HeaderActions
+            theme={theme}
+            onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+            toastLog={toastLog}
+            clearToastLog={clearToastLog}
+            toastTrayOpen={toastTrayOpen}
+            setToastTrayOpen={setToastTrayOpen}
+            headerMenuOpen={headerMenuOpen}
+            setHeaderMenuOpen={setHeaderMenuOpen}
+          />
         </div>
       </header>
 
@@ -621,6 +635,107 @@ function FragmentTab(props: { index: number; tabName: TabName; activeTab: TabNam
   );
 }
 
+type ConsoleRequestTab = 'query' | 'headers' | 'body';
+type ConsoleRailTab = 'history' | 'saved';
+type ConsoleHistoryEntry = { api: string; method: string; path: string; status: number; elapsed: number };
+type ConsoleSavedEntry = { api: string; method: string; path: string };
+type ConsoleResponsePreview = {
+  text: string;
+  truncated: boolean;
+  originalBytes: number;
+  shownBytes: number;
+  omittedBytes: number;
+};
+type ConsoleResponseState = {
+  status: number | 'ERR' | '';
+  elapsed: string;
+  body: string;
+  headers: string;
+  size: string;
+  ok: boolean;
+  truncated?: boolean;
+  originalSize?: string;
+};
+
+const CONSOLE_RESPONSE_PREVIEW_BYTES = 512 * 1024;
+
+function readConsoleHistory(): ConsoleHistoryEntry[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('pp-console-history') || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(sanitizeHistoryEntry).filter((entry): entry is ConsoleHistoryEntry => Boolean(entry)).slice(0, 50);
+  } catch {
+    return [];
+  }
+}
+
+function readConsoleSaved(): ConsoleSavedEntry[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('pp-console-saved') || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(sanitizeSavedEntry).filter((entry): entry is ConsoleSavedEntry => Boolean(entry)).slice(0, 30);
+  } catch {
+    return [];
+  }
+}
+
+function persistConsoleItems(key: string, items: Array<ConsoleHistoryEntry | ConsoleSavedEntry>, limit: number) {
+  try {
+    localStorage.setItem(key, JSON.stringify(items.slice(0, limit)));
+  } catch {
+    // Large legacy history entries can exceed the browser quota. Dropping persistence
+    // is better than letting a storage exception blank the app.
+  }
+}
+
+function sanitizeHistoryEntry(value: any): ConsoleHistoryEntry | undefined {
+  const saved = sanitizeSavedEntry(value);
+  if (!saved) return undefined;
+  return {
+    ...saved,
+    status: Number.isFinite(Number(value.status)) ? Number(value.status) : 0,
+    elapsed: Number.isFinite(Number(value.elapsed)) ? Number(value.elapsed) : 0,
+  };
+}
+
+function sanitizeSavedEntry(value: any): ConsoleSavedEntry | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const api = typeof value.api === 'string' ? value.api : '';
+  const method = typeof value.method === 'string' ? value.method : '';
+  const path = typeof value.path === 'string' ? value.path : '';
+  if (!api || !method || !path) return undefined;
+  return { api, method, path };
+}
+
+function consoleResponseText(value: unknown, preview?: ConsoleResponsePreview): { body: string; bytes: number; truncated: boolean; originalBytes: number } {
+  if (preview && typeof preview.text === 'string') {
+    const notice = preview.truncated
+      ? `\n\n/* pp preview: response truncated to ${formatBytes(preview.shownBytes)} of ${formatBytes(preview.originalBytes)}. Narrow the request with $top/$select or use CLI jq for the full payload. */`
+      : '';
+    return {
+      body: `${preview.text}${notice}`,
+      bytes: preview.shownBytes,
+      truncated: preview.truncated,
+      originalBytes: preview.originalBytes,
+    };
+  }
+
+  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  return truncateConsoleText(text || '');
+}
+
+function truncateConsoleText(text: string): { body: string; bytes: number; truncated: boolean; originalBytes: number } {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(text);
+  if (bytes.byteLength <= CONSOLE_RESPONSE_PREVIEW_BYTES) {
+    return { body: text, bytes: bytes.byteLength, truncated: false, originalBytes: bytes.byteLength };
+  }
+  const shownBytes = bytes.slice(0, CONSOLE_RESPONSE_PREVIEW_BYTES);
+  const preview = new TextDecoder().decode(shownBytes);
+  const notice = `\n\n/* pp preview: response truncated to ${formatBytes(shownBytes.byteLength)} of ${formatBytes(bytes.byteLength)}. Narrow the request with $top/$select or use CLI jq for the full payload. */`;
+  return { body: `${preview}${notice}`, bytes: shownBytes.byteLength, truncated: true, originalBytes: bytes.byteLength };
+}
+
 function ConsoleTab(props: { active: boolean; environment: string; seed: any; clearSeed: () => void; toast: (message: string, isError?: boolean) => void }) {
   const { active, environment, seed, clearSeed, toast } = props;
   const [apiKey, setApiKey] = useState('dv');
@@ -629,13 +744,12 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
   const [queryRows, setQueryRows] = useState([{ key: '', value: '' }]);
   const [headerRows, setHeaderRows] = useState([{ key: '', value: '' }]);
   const [body, setBody] = useState('');
-  const [history, setHistory] = useState<any[]>(() => {
-    try { return JSON.parse(localStorage.getItem('pp-console-history') || '[]'); } catch { return []; }
-  });
-  const [saved, setSaved] = useState<any[]>(() => {
-    try { return JSON.parse(localStorage.getItem('pp-console-saved') || '[]'); } catch { return []; }
-  });
-  const [response, setResponse] = useState<any>({
+  const [requestTab, setRequestTab] = useState<ConsoleRequestTab>('query');
+  const [railTab, setRailTab] = useState<ConsoleRailTab>('history');
+  const [responseHeadersOpen, setResponseHeadersOpen] = useState(false);
+  const [history, setHistory] = useState<ConsoleHistoryEntry[]>(readConsoleHistory);
+  const [saved, setSaved] = useState<ConsoleSavedEntry[]>(readConsoleSaved);
+  const [response, setResponse] = useState<ConsoleResponseState>({
     status: '',
     elapsed: '',
     body: 'Send a request to see the response.',
@@ -647,10 +761,10 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
   const currentApi = APIS.find((item) => item.key === apiKey) || APIS[0];
 
   useEffect(() => {
-    localStorage.setItem('pp-console-history', JSON.stringify(history.slice(0, 50)));
+    persistConsoleItems('pp-console-history', history, 50);
   }, [history]);
   useEffect(() => {
-    localStorage.setItem('pp-console-saved', JSON.stringify(saved.slice(0, 30)));
+    persistConsoleItems('pp-console-saved', saved, 30);
   }, [saved]);
 
   useEffect(() => {
@@ -692,20 +806,27 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
           query: Object.keys(query).length ? query : undefined,
           headers: Object.keys(headers).length ? headers : undefined,
           body: parsedBody,
+          maxResponseBytes: CONSOLE_RESPONSE_PREVIEW_BYTES,
         }),
       });
       const elapsed = Math.round(performance.now() - started);
       const bodyValue = payload.data?.response;
-      const bodyText = typeof bodyValue === 'string' ? bodyValue : JSON.stringify(bodyValue, null, 2);
+      const preview = payload.data?.responsePreview as ConsoleResponsePreview | undefined;
+      const bodyResult = consoleResponseText(bodyValue, preview);
       setResponse({
         status: payload.data?.status || 200,
         elapsed: `${elapsed}ms`,
-        body: bodyText,
+        body: bodyResult.body,
         headers: payload.data?.headers ? Object.entries(payload.data.headers).map(([key, value]) => `${key}: ${value}`).join('\n') : '',
-        size: formatBytes(new Blob([bodyText]).size),
+        size: bodyResult.truncated
+          ? `${formatBytes(bodyResult.bytes)} shown`
+          : formatBytes(bodyResult.bytes),
         ok: (payload.data?.status || 200) >= 200 && (payload.data?.status || 200) < 300,
+        truncated: bodyResult.truncated,
+        originalSize: bodyResult.truncated ? formatBytes(bodyResult.originalBytes) : undefined,
       });
-      setHistory((current) => [{ api: apiKey, method, path, status: payload.data?.status || 200, elapsed, response: bodyValue }, ...current].slice(0, 50));
+      setHistory((current) => [{ api: apiKey, method, path, status: payload.data?.status || 200, elapsed }, ...current].slice(0, 50));
+      if (bodyResult.truncated) toast(`Large response previewed: ${formatBytes(bodyResult.bytes)} shown of ${formatBytes(bodyResult.originalBytes)}.`, false);
     } catch (error) {
       const elapsed = Math.round(performance.now() - started);
       const message = error instanceof Error ? error.message : String(error);
@@ -717,52 +838,72 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
         size: formatBytes(new Blob([message]).size),
         ok: false,
       });
-      setHistory((current) => [{ api: apiKey, method, path, status: 0, elapsed, response: { error: message } }, ...current].slice(0, 50));
+      setHistory((current) => [{ api: apiKey, method, path, status: 0, elapsed }, ...current].slice(0, 50));
       toast(message, true);
     }
   }
 
+  const supportsBody = method !== 'GET' && method !== 'DELETE';
+  const effectiveRequestTab: ConsoleRequestTab = !supportsBody && requestTab === 'body' ? 'query' : requestTab;
+
   return (
-    <>
-      <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2>API Console</h2>
-          <select id="console-preset" style={{ maxWidth: 260, fontSize: '0.8125rem' }} onChange={(event) => {
-            const preset = currentApi.presets.find((item) => item.label === event.target.value);
-            if (!preset) return;
-            setMethod(preset.method);
-            setPath(preset.path);
-            setBody('body' in preset ? String((preset as any).body || '') : '');
-          }}>
-            <option value="">Presets…</option>
-            {currentApi.presets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label} — {preset.description}</option>)}
-          </select>
-        </div>
-        <div className="console-bar">
-          <select id="console-api" value={apiKey} onChange={(event) => {
-            const nextApi = APIS.find((item) => item.key === event.target.value) || APIS[0];
-            setApiKey(nextApi.key);
-            setPath(nextApi.defaultPath);
-          }}>
-            {APIS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-          </select>
-          <select id="console-method" value={method} onChange={(event) => setMethod(event.target.value)} style={{ color: METHOD_COLORS[method] || 'var(--ink)' }}>
-            {METHODS.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <input type="text" id="console-path" placeholder="/WhoAmI" value={path} onChange={(event) => setPath(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void sendRequest(); } }} />
-          <CopyButton value={`${method} ${path}`} label="Copy" title="Copy request line" toast={toast} />
-          <button className="btn btn-primary" id="console-send" onClick={() => void sendRequest()}>Send</button>
-        </div>
-        <div className="console-scope-hint" id="console-scope-hint">
-          {currentApi.scope === 'account'
-            ? <><span className="console-scope-badge account">account-scoped</span> Uses environment’s account for auth, requests go to {currentApi.label} endpoints</>
-            : <><span className="console-scope-badge env">environment-scoped</span> Requests go through the selected environment</>}
-        </div>
-        <div className="console-sections">
-          <details>
-            <summary>Query Parameters</summary>
-            <div className="section-body">
-              <div id="console-query-params" className="kv-list">
+    <div className="console-layout">
+      <div className="console-main">
+        <div className="panel">
+          <div className="console-toolbar-row">
+            <h2>API Console</h2>
+            <select className="console-preset-select" onChange={(event) => {
+              const preset = currentApi.presets.find((item) => item.label === event.target.value);
+              if (!preset) return;
+              setMethod(preset.method);
+              setPath(preset.path);
+              setBody('body' in preset ? String((preset as any).body || '') : '');
+              event.target.value = '';
+            }}>
+              <option value="">Presets…</option>
+              {currentApi.presets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label} — {preset.description}</option>)}
+            </select>
+          </div>
+          <div className="console-bar">
+            <select id="console-api" value={apiKey} onChange={(event) => {
+              const nextApi = APIS.find((item) => item.key === event.target.value) || APIS[0];
+              setApiKey(nextApi.key);
+              setPath(nextApi.defaultPath);
+            }}>
+              {APIS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+            </select>
+            <select id="console-method" value={method} onChange={(event) => setMethod(event.target.value)} style={{ color: METHOD_COLORS[method] || 'var(--ink)' }}>
+              {METHODS.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <input type="text" id="console-path" placeholder="/WhoAmI" value={path} onChange={(event) => setPath(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void sendRequest(); } }} />
+            <CopyButton value={`${method} ${path}`} label="Copy" title="Copy request line" toast={toast} />
+            <button className="btn btn-primary" id="console-send" onClick={() => void sendRequest()}>Send</button>
+          </div>
+          <div className="console-scope-hint">
+            {currentApi.scope === 'account'
+              ? <><span className="console-scope-badge account">account-scoped</span> Uses environment’s account for auth, requests go to {currentApi.label} endpoints</>
+              : <><span className="console-scope-badge env">environment-scoped</span> Requests go through the selected environment</>}
+          </div>
+          <div className="console-request-tabs">
+            <button type="button" className={`console-request-tab ${effectiveRequestTab === 'query' ? 'active' : ''}`} onClick={() => setRequestTab('query')}>
+              Query{queryRows.filter((row) => row.key.trim()).length ? <span className="console-request-tab-count">{queryRows.filter((row) => row.key.trim()).length}</span> : null}
+            </button>
+            <button type="button" className={`console-request-tab ${effectiveRequestTab === 'headers' ? 'active' : ''}`} onClick={() => setRequestTab('headers')}>
+              Headers{headerRows.filter((row) => row.key.trim()).length ? <span className="console-request-tab-count">{headerRows.filter((row) => row.key.trim()).length}</span> : null}
+            </button>
+            <button
+              type="button"
+              className={`console-request-tab ${effectiveRequestTab === 'body' ? 'active' : ''}`}
+              disabled={!supportsBody}
+              onClick={() => supportsBody && setRequestTab('body')}
+              title={supportsBody ? '' : `${method} requests do not include a body.`}
+            >
+              Body{body.trim() && supportsBody ? <span className="console-request-tab-dot" aria-hidden="true" /> : null}
+            </button>
+          </div>
+          <div className="console-request-panel">
+            {effectiveRequestTab === 'query' ? (
+              <div className="kv-list">
                 {queryRows.map((row, index) => (
                   <div key={index} className="kv-row">
                     <input placeholder="key" value={row.key} onChange={(event) => setQueryRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
@@ -770,14 +911,10 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
                     <button type="button" className="condition-remove" onClick={() => setQueryRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
                   </div>
                 ))}
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setQueryRows((current) => [...current, { key: '', value: '' }])}>+ Add parameter</button>
               </div>
-              <button className="btn btn-ghost" id="console-add-query-param" type="button" style={{ marginTop: 6, padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setQueryRows((current) => [...current, { key: '', value: '' }])}>+ Add parameter</button>
-            </div>
-          </details>
-          <details>
-            <summary>Headers</summary>
-            <div className="section-body">
-              <div id="console-headers" className="kv-list">
+            ) : effectiveRequestTab === 'headers' ? (
+              <div className="kv-list">
                 {headerRows.map((row, index) => (
                   <div key={index} className="kv-row">
                     <input placeholder="key" value={row.key} onChange={(event) => setHeaderRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
@@ -785,93 +922,106 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
                     <button type="button" className="condition-remove" onClick={() => setHeaderRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
                   </div>
                 ))}
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setHeaderRows((current) => [...current, { key: '', value: '' }])}>+ Add header</button>
               </div>
-              <button className="btn btn-ghost" id="console-add-header" type="button" style={{ marginTop: 6, padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setHeaderRows((current) => [...current, { key: '', value: '' }])}>+ Add header</button>
+            ) : (
+              <textarea rows={8} placeholder='{ "key": "value" }' value={body} onChange={(event) => setBody(event.target.value)} />
+            )}
+          </div>
+        </div>
+
+        <div className="panel console-response-panel">
+          <div className="console-response-header">
+            <h2>Response <span className={`console-status-badge ${response.ok ? 'success' : response.status === 'ERR' ? 'error' : ''}`}>{response.status || '—'}</span></h2>
+            <div className="console-response-meta">
+              {response.elapsed ? <span className="response-size">{response.elapsed}</span> : null}
+              {response.size ? <span className="response-size">{response.size}</span> : null}
+              {response.body ? <CopyButton value={response.body} label="Copy" title="Copy response body" toast={toast} /> : null}
             </div>
-          </details>
-          {method !== 'GET' && method !== 'DELETE' ? (
-            <details id="console-body-section" open>
-              <summary>Request Body</summary>
-              <div className="section-body">
-                <textarea id="console-body" rows={8} placeholder='{ "key": "value" }' value={body} onChange={(event) => setBody(event.target.value)}></textarea>
-              </div>
-            </details>
+          </div>
+          {response.headers ? (
+            <div className="console-response-headers">
+              <button type="button" className="console-response-headers-toggle" onClick={() => setResponseHeadersOpen((current) => !current)}>
+                <span aria-hidden="true">{responseHeadersOpen ? '▾' : '▸'}</span> Response headers
+              </button>
+              {responseHeadersOpen ? (
+                <div className="console-response-headers-body">
+                  <div className="console-response-headers-toolbar">
+                    <CopyButton value={response.headers} label="Copy headers" title="Copy response headers" toast={toast} />
+                  </div>
+                  <pre className="viewer">{response.headers}</pre>
+                </div>
+              ) : null}
+            </div>
           ) : null}
-        </div>
-      </div>
-      <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2>Response <span id="console-response-status" className={`console-status-badge ${response.ok ? 'success' : response.status === 'ERR' ? 'error' : ''}`} style={{ marginLeft: 8 }}>{response.status}</span></h2>
-          <span id="console-response-time" style={{ fontSize: '0.75rem', color: 'var(--muted)', fontFamily: 'var(--mono)' }}>{response.elapsed}</span>
-        </div>
-        {response.headers ? (
-          <details style={{ marginBottom: 8 }} open>
-            <summary style={{ cursor: 'pointer', fontSize: '0.75rem', color: 'var(--muted)' }}>Response Headers</summary>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
-              <CopyButton value={response.headers} label="Copy headers" title="Copy response headers" toast={toast} />
+          {response.truncated ? (
+            <div className="console-response-warning">
+              Response preview truncated. Showing {response.size}{response.originalSize ? ` of ${response.originalSize}` : ''}.
             </div>
-            <pre className="viewer" id="console-response-headers-body" style={{ minHeight: 40, marginTop: 6 }}>{response.headers}</pre>
-          </details>
-        ) : null}
-        <div className="response-toolbar">
-          <div className="response-meta">
-            <span id="console-response-size" className="response-size">{response.size}</span>
+          ) : null}
+          <div className="console-response-viewer">
+            {response.body && response.body !== 'Send a request to see the response.' ? (
+              <JsonViewer value={response.body} />
+            ) : (
+              <EmptyState icon={<Icon name="refresh" size={18} />} title="No response yet" description="Pick an API, method and path above, then Send." compact />
+            )}
           </div>
-          <CopyButton value={response.body} label="Copy response" title="Copy response body" toast={toast} className="btn btn-ghost" />
         </div>
-        <pre className="viewer" id="console-response-body" dangerouslySetInnerHTML={{ __html: highlightJson(response.body) }}></pre>
       </div>
-      {saved.length ? (
-        <div className="panel" id="console-saved-panel">
-          <h2 style={{ marginBottom: 12 }}>Saved Requests</h2>
-          <div id="console-saved" className="card-list">
-            {saved.map((entry, index) => (
-              <div key={index} className="saved-item" onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}>
-                <div className="saved-item-main">
-                  <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
-                  <span className="saved-item-name">{entry.path}</span>
-                  <CopyButton value={`${entry.method} ${entry.path}`} label="Copy" title="Copy saved request" toast={toast} stopPropagation />
-                  <span className="history-api">{entry.api}</span>
-                </div>
-                <button className="pin-btn pinned" onClick={(event) => {
-                  event.stopPropagation();
-                  setSaved((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                }}>✖</button>
-              </div>
-            ))}
+
+      <aside className="console-rail">
+        <div className="panel console-rail-panel">
+          <div className="console-rail-tabs">
+            <button type="button" className={`console-rail-tab ${railTab === 'history' ? 'active' : ''}`} onClick={() => setRailTab('history')}>
+              History{history.length ? <span className="console-rail-tab-count">{Math.min(history.length, 50)}</span> : null}
+            </button>
+            <button type="button" className={`console-rail-tab ${railTab === 'saved' ? 'active' : ''}`} onClick={() => setRailTab('saved')}>
+              Saved{saved.length ? <span className="console-rail-tab-count">{saved.length}</span> : null}
+            </button>
           </div>
-        </div>
-      ) : null}
-      <div className="panel">
-        <h2 style={{ marginBottom: 12 }}>History</h2>
-        <div id="console-history" className="card-list">
-          {history.length ? history.slice(0, 20).map((entry, index) => {
-            const pinned = saved.some((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
-            return (
-              <div key={index} className="history-item" onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}>
-                <div className="history-item-main">
-                  <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
-                  <span className="history-path">{entry.path}</span>
-                </div>
-                <div className="history-item-meta">
-                  <span className={`console-status-badge small ${entry.status >= 200 && entry.status < 300 ? 'success' : entry.status >= 400 ? 'error' : ''}`}>{entry.status || 'ERR'}</span>
-                  <span className="history-time">{entry.elapsed}ms</span>
-                  <span className="history-api">{entry.api}</span>
-                  <button className={`pin-btn ${pinned ? 'pinned' : ''}`} onClick={(event) => {
+          <div className="console-rail-list">
+            {railTab === 'history' ? (
+              history.length ? history.slice(0, 20).map((entry, index) => {
+                const pinned = saved.some((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
+                return (
+                  <div key={index} className="history-item" onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}>
+                    <div className="history-item-main">
+                      <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
+                      <span className="history-path">{entry.path}</span>
+                    </div>
+                    <div className="history-item-meta">
+                      <span className={`console-status-badge small ${entry.status >= 200 && entry.status < 300 ? 'success' : entry.status >= 400 ? 'error' : ''}`}>{entry.status || 'ERR'}</span>
+                      <span className="history-time">{entry.elapsed}ms</span>
+                      <button className={`pin-btn ${pinned ? 'pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={(event) => {
+                        event.stopPropagation();
+                        setSaved((current) => {
+                          const existingIndex = current.findIndex((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
+                          if (existingIndex >= 0) return current.filter((_, itemIndex) => itemIndex !== existingIndex);
+                          return [{ api: entry.api, method: entry.method, path: entry.path }, ...current];
+                        });
+                      }}><Icon name={pinned ? 'star-filled' : 'star'} size={14} /></button>
+                    </div>
+                  </div>
+                );
+              }) : <EmptyState icon={<Icon name="reply" size={18} />} title="No requests yet" description="Send a request to see history." compact />
+            ) : (
+              saved.length ? saved.map((entry, index) => (
+                <div key={index} className="saved-item" onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}>
+                  <div className="saved-item-main">
+                    <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
+                    <span className="saved-item-name">{entry.path}</span>
+                  </div>
+                  <button className="pin-btn pinned" title="Remove" onClick={(event) => {
                     event.stopPropagation();
-                    setSaved((current) => {
-                      const existingIndex = current.findIndex((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
-                      if (existingIndex >= 0) return current.filter((_, itemIndex) => itemIndex !== existingIndex);
-                      return [{ api: entry.api, method: entry.method, path: entry.path }, ...current];
-                    });
-                  }}>☆</button>
+                    setSaved((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                  }}>✖</button>
                 </div>
-              </div>
-            );
-          }) : <div className="empty">No requests yet.</div>}
+              )) : <EmptyState icon={<Icon name="star" size={18} />} title="No saved requests" description="Pin requests from history to keep them here." compact />
+            )}
+          </div>
         </div>
-      </div>
-    </>
+      </aside>
+    </div>
   );
 }
 
@@ -1041,7 +1191,7 @@ function CreateRecordModal(props: {
           {selectedTarget ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto', gap: 6 }}>
               <input className="rt-edit-input" type="text" value={lookupState.query || ''} onChange={(e) => updateLookupSearch(key, { query: e.target.value, target: selectedTarget })} placeholder="Search by primary name" />
-              <button className="btn btn-secondary" type="button" onClick={() => void searchLookup(attr, selectedTarget)} disabled={lookupState.loading} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+              <button className="btn btn-secondary" type="button" onClick={() => void searchLookup(attr, selectedTarget)} disabled={lookupState.loading}>
                 {lookupState.loading ? 'Searching...' : 'Search'}
               </button>
             </div>
@@ -1150,8 +1300,8 @@ function CreateRecordModal(props: {
           </div>
           <div className="rt-modal-actions">
             <CopyButton value={advanced ? jsonText : JSON.stringify(values, null, 2)} label="Copy request" title="Copy create request body" toast={toast} />
-            <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Cancel</button>
-            <button className="btn btn-primary" type="button" onClick={() => void handleSubmit()} disabled={saving} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" type="button" onClick={() => void handleSubmit()} disabled={saving}>
               {saving ? 'Creating...' : 'Create'}
             </button>
           </div>
@@ -1442,9 +1592,7 @@ function DataverseTab(props: {
           <div className="panel" id="entity-detail-panel">
             {!dataverse.currentEntityDetail ? (
               <div id="entity-detail-empty">
-                <h2>Entity Detail</h2>
-                <p className="desc">Select an entity from the list to inspect its metadata and preview records.</p>
-                <div className="empty">No entity selected.</div>
+                <EmptyState icon={<Icon name="circle-dashed" size={18} />} title="Entity Detail" description="Select an entity from the list to inspect its metadata and preview records." />
               </div>
             ) : (
               <div id="entity-detail">
@@ -1521,10 +1669,10 @@ function DataverseTab(props: {
                 </div>
 
                 <div className={`sub-panel ${dataverse.explorerSubTab === 'records' ? 'active' : ''}`} id="subpanel-records">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div className="toolbar-row">
                     <h2>Record Preview</h2>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn btn-primary" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => setShowCreateRecord(true)}>Add Record</button>
+                      <button className="btn btn-primary btn-sm" type="button" onClick={() => setShowCreateRecord(true)}>Add Record</button>
                       <button className="btn btn-secondary" id="entity-refresh-records" type="button" onClick={() => void loadRecordPreview()}>Refresh</button>
                     </div>
                   </div>
@@ -1622,7 +1770,7 @@ function DataverseTab(props: {
             </form>
           </div>
           <div className="panel">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div className="toolbar-row tight">
               <h2>Generated Path</h2>
               <CopyButton value={dataverse.queryPreview} label="Copy path" title="Copy generated Dataverse path" toast={toast} />
             </div>
@@ -1654,48 +1802,45 @@ function orderByDefault(detail: any) {
 function AppsTab(props: { state: any; setState: React.Dispatch<React.SetStateAction<any>>; environment: string; reload: () => Promise<void>; openConsole: (path: string) => void; toast: (message: string, isError?: boolean) => void }) {
   const { state, setState, environment, reload, openConsole, toast } = props;
   const detail = useRecordDetail();
-  const filtered = state.filter
-    ? state.items.filter((item: any) => {
-        const name = prop(item, 'properties.displayName') || item.name || '';
-        return String(name).toLowerCase().includes(state.filter.toLowerCase());
-      })
-    : state.items;
 
   return (
     <>
-      <div className="inventory-sidebar">
-        <div className="panel">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <h2>Apps</h2>
-            <button className="btn btn-ghost" id="app-refresh" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void reload().then(() => toast('Apps refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}>Refresh</button>
-          </div>
-          <input type="text" id="app-filter" className="entity-filter" placeholder="Filter apps…" value={state.filter} onChange={(event) => setState((current: any) => ({ ...current, filter: event.target.value }))} />
-          <div id="app-count" className="entity-count">{state.items.length ? `${state.items.length} apps` : ''}</div>
-          <div id="app-list" className="entity-list">
-            {state.items.length ? filtered.map((item: any) => (
-              <div key={item.name} className={`entity-item ${state.current?.name === item.name ? 'active' : ''}`} data-app={item.name} onClick={() => setState((current: any) => ({ ...current, current: item }))}>
-                <div className="entity-item-name">{prop(item, 'properties.displayName') || item.name || 'Unnamed'}</div>
-                <div className="entity-item-logical">{item.name}</div>
-                {prop(item, 'properties.appType') ? <div className="entity-item-badges"><span className="entity-item-flag">{String(prop(item, 'properties.appType')).replace(/([a-z])([A-Z])/g, '$1 $2')}</span></div> : null}
-              </div>
-            )) : <div className="entity-loading">Select an environment to load apps.</div>}
-          </div>
-        </div>
-      </div>
+      <InventorySidebar
+        title="Apps"
+        countLabel="apps"
+        filterPlaceholder="Filter apps…"
+        items={state.items}
+        filter={state.filter}
+        onFilterChange={(next) => setState((current: any) => ({ ...current, filter: next }))}
+        matchItem={(item: any, query) => {
+          const name = String(prop(item, 'properties.displayName') || item.name || '').toLowerCase();
+          return name.includes(query);
+        }}
+        isSelected={(item: any) => state.current?.name === item.name}
+        itemKey={(item: any) => item.name}
+        onSelect={(item: any) => setState((current: any) => ({ ...current, current: item }))}
+        onRefresh={() => void reload().then(() => toast('Apps refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}
+        emptyHint="Select an environment to load apps."
+        renderItem={(item: any) => (
+          <>
+            <div className="entity-item-name">{prop(item, 'properties.displayName') || item.name || 'Unnamed'}</div>
+            <div className="entity-item-logical">{item.name}</div>
+            {prop(item, 'properties.appType') ? <div className="entity-item-badges"><span className="entity-item-flag">{String(prop(item, 'properties.appType')).replace(/([a-z])([A-Z])/g, '$1 $2')}</span></div> : null}
+          </>
+        )}
+      />
       <div className="detail-area">
         <div className="panel">
           {!state.current ? (
             <div id="app-detail-empty">
-              <h2>App Detail</h2>
-              <p className="desc">Select an app from the list to inspect its metadata and connections.</p>
-              <div className="empty">No app selected.</div>
+              <EmptyState icon={<Icon name="grid" size={18} />} title="App Detail" description="Select an app from the list to inspect its metadata and connections." />
             </div>
           ) : (
             <div id="app-detail">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div className="toolbar-row">
                 <div>
                   <h2 id="app-title">{prop(state.current, 'properties.displayName') || state.current.name}</h2>
-                  <p className="desc" id="app-subtitle" style={{ marginBottom: 0 }}>{prop(state.current, 'properties.description') || state.current.name}</p>
+                  <p className="desc no-mb" id="app-subtitle">{prop(state.current, 'properties.description') || state.current.name}</p>
                 </div>
                 <button className="btn btn-ghost" id="app-open-console" type="button" style={{ fontSize: '0.75rem' }} onClick={() => openConsole(`/apps/${state.current.name}`)}>Open in Console</button>
               </div>
@@ -1780,7 +1925,7 @@ function CanvasResultView(props: { result: any; endpoint: string; toast: (messag
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+      <div className="toolbar-row tight">
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {hasTable && (
             <div className="result-toggle">
@@ -2013,7 +2158,7 @@ function CanvasTab(props: {
         <div className="panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <h2>Canvas Apps</h2>
-            <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void loadApps().then(() => toast('Apps refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}>Refresh</button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => void loadApps().then(() => toast('Apps refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}>Refresh</button>
           </div>
           <input type="text" className="entity-filter" placeholder="Filter canvas apps…" value={filter} onChange={(e) => setFilter(e.target.value)} />
           <div className="entity-count">{canvasApps.length ? `${canvasApps.length} canvas apps` : ''}</div>
@@ -2040,27 +2185,23 @@ function CanvasTab(props: {
       <div className="detail-area">
         <div className="panel">
           {!selectedApp ? (
-            <>
-              <h2>Canvas Authoring</h2>
-              <p className="desc">Select a canvas app to start an authoring session, then explore its controls, data sources, APIs, and YAML source.</p>
-              <div className="empty">No app selected.</div>
-            </>
+            <EmptyState icon={<Icon name="pencil" size={18} />} title="Canvas Authoring" description="Select a canvas app to start an authoring session, then explore its controls, data sources, APIs, and YAML source." />
           ) : (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div className="toolbar-row">
                 <div>
                   <h2>{prop(selectedApp, 'properties.displayName') || selectedApp.name}</h2>
-                  <p className="desc" style={{ marginBottom: 0 }}>{prop(selectedApp, 'properties.description') || selectedApp.name}</p>
+                  <p className="desc no-mb">{prop(selectedApp, 'properties.description') || selectedApp.name}</p>
                 </div>
                 {activeSession ? (
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <span className="entity-item-flag" style={{ color: 'var(--ok)', borderColor: 'var(--ok)' }}>Session Active</span>
-                    <button className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '4px 10px', color: 'var(--danger)' }} onClick={() => void endSession(activeSession.id)}>End</button>
+                    <button className="btn btn-ghost btn-sm btn-danger-text" onClick={() => void endSession(activeSession.id)}>End</button>
                   </div>
                 ) : currentSession?.status === 'unknown' ? (
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <button className="btn" onClick={() => void probeSession(currentSession.id)}>Check Session</button>
-                    <button className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '4px 10px', color: 'var(--danger)' }} onClick={() => void endSession(currentSession.id)}>End</button>
+                    <button className="btn btn-ghost btn-sm btn-danger-text" onClick={() => void endSession(currentSession.id)}>End</button>
                   </div>
                 ) : (
                   <button
@@ -2137,7 +2278,6 @@ function CanvasTab(props: {
                       <button
                         key={ep.key}
                         className={`btn ${explorerEndpoint === ep.key ? '' : 'btn-ghost'}`}
-                        style={{ fontSize: '0.75rem', padding: '4px 10px' }}
                         disabled={explorerLoading}
                         onClick={() => void callEndpoint(ep.key)}
                       >
@@ -2156,7 +2296,6 @@ function CanvasTab(props: {
                     />
                     <button
                       className={`btn ${explorerEndpoint === 'yaml-fetch' ? '' : 'btn-ghost'}`}
-                      style={{ fontSize: '0.75rem', padding: '4px 10px' }}
                       disabled={yamlBusy || !yamlDir.trim()}
                       onClick={() => void fetchYaml()}
                     >
@@ -2164,7 +2303,6 @@ function CanvasTab(props: {
                     </button>
                     <button
                       className={`btn ${explorerEndpoint === 'yaml-validate' ? '' : 'btn-ghost'}`}
-                      style={{ fontSize: '0.75rem', padding: '4px 10px' }}
                       disabled={yamlBusy || !yamlDir.trim()}
                       onClick={() => void validateYaml()}
                     >
@@ -2188,47 +2326,48 @@ function CanvasTab(props: {
 
 function PlatformTab(props: { state: any; setState: React.Dispatch<React.SetStateAction<any>>; environment: string; reload: () => Promise<void>; openConsole: (path: string) => void; toast: (message: string, isError?: boolean) => void }) {
   const { state, setState, reload, openConsole, toast } = props;
-  const filtered = state.filter
-    ? state.items.filter((item: any) => {
-        const name = prop(item, 'properties.displayName') || item.name || '';
-        return String(name).toLowerCase().includes(state.filter.toLowerCase()) || String(item.name || '').toLowerCase().includes(state.filter.toLowerCase());
-      })
-    : state.items;
 
   return (
     <>
-      <div className="inventory-sidebar">
-        <div className="panel">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <h2>Environments</h2>
-            <button className="btn btn-ghost" id="plat-env-refresh" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => void reload().then(() => toast('Environments refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}>Refresh</button>
-          </div>
-          <input type="text" id="plat-env-filter" className="entity-filter" placeholder="Filter environments…" value={state.filter} onChange={(event) => setState((current: any) => ({ ...current, filter: event.target.value }))} />
-          <div id="plat-env-count" className="entity-count">{state.items.length ? `${state.items.length} environments` : ''}</div>
-          <div id="plat-env-list" className="entity-list">
-            {state.items.length ? filtered.map((item: any) => (
-              <div key={item.name} className={`entity-item ${state.current?.name === item.name ? 'active' : ''}`} data-plat-env={item.name} onClick={() => setState((current: any) => ({ ...current, current: item }))}>
-                <div className="entity-item-name"><span className={`health-dot ${prop(item, 'properties.states.management.id') === 'Ready' ? 'ok' : 'pending'}`} style={{ marginRight: 6 }}></span>{prop(item, 'properties.displayName') || item.name || 'Unnamed'}</div>
-                <div className="entity-item-logical">{item.name}</div>
-              </div>
-            )) : <div className="entity-loading">Select an environment to discover platform environments.</div>}
-          </div>
-        </div>
-      </div>
+      <InventorySidebar
+        title="Environments"
+        countLabel="environments"
+        filterPlaceholder="Filter environments…"
+        items={state.items}
+        filter={state.filter}
+        onFilterChange={(next) => setState((current: any) => ({ ...current, filter: next }))}
+        matchItem={(item: any, query) => {
+          const name = String(prop(item, 'properties.displayName') || item.name || '').toLowerCase();
+          const id = String(item.name || '').toLowerCase();
+          return name.includes(query) || id.includes(query);
+        }}
+        isSelected={(item: any) => state.current?.name === item.name}
+        itemKey={(item: any) => item.name}
+        onSelect={(item: any) => setState((current: any) => ({ ...current, current: item }))}
+        onRefresh={() => void reload().then(() => toast('Environments refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}
+        emptyHint="Select an environment to discover platform environments."
+        renderItem={(item: any) => (
+          <>
+            <div className="entity-item-name">
+              <span className={`health-dot ${prop(item, 'properties.states.management.id') === 'Ready' ? 'ok' : 'pending'}`} style={{ marginRight: 6 }}></span>
+              {prop(item, 'properties.displayName') || item.name || 'Unnamed'}
+            </div>
+            <div className="entity-item-logical">{item.name}</div>
+          </>
+        )}
+      />
       <div className="detail-area">
         <div className="panel">
           {!state.current ? (
             <div id="plat-env-detail-empty">
-              <h2>Environment Detail</h2>
-              <p className="desc">Select an environment from the list to inspect its platform metadata.</p>
-              <div className="empty">No environment selected.</div>
+              <EmptyState icon={<Icon name="circle" size={18} />} title="Environment Detail" description="Select an environment from the list to inspect its platform metadata." />
             </div>
           ) : (
             <div id="plat-env-detail">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div className="toolbar-row">
                 <div>
                   <h2 id="plat-env-title">{prop(state.current, 'properties.displayName') || state.current.name}</h2>
-                  <p className="desc" id="plat-env-subtitle" style={{ marginBottom: 0 }}>{state.current.name}</p>
+                  <p className="desc no-mb" id="plat-env-subtitle">{state.current.name}</p>
                 </div>
                 <button className="btn btn-ghost" id="plat-env-open-console" type="button" style={{ fontSize: '0.75rem' }} onClick={() => openConsole(`/environments/${state.current.name}`)}>Open in Console</button>
               </div>

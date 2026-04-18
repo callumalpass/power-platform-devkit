@@ -1,6 +1,7 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { api, formatDate, formatDateShort, highlightJson, prop } from './utils.js';
+import { Icon } from './Icon.js';
 import {
   analyzeFlowDocument,
   buildFlowDocument,
@@ -1557,7 +1558,7 @@ function AddFlowActionModal(props: {
                 {loading ? <span className="add-action-searching">Searching…</span> : null}
               </div>
               <div className="add-action-search">
-                <span className="add-action-search-icon" aria-hidden="true">⌕</span>
+                <span className="add-action-search-icon" aria-hidden="true"><Icon name="search" size={14} /></span>
                 <input
                   ref={searchRef}
                   type="text"
@@ -1590,7 +1591,7 @@ function AddFlowActionModal(props: {
           <div className="add-action-pane add-action-config">
             {!hasSelection ? (
               <div className="add-action-config-empty">
-                <div className="add-action-config-empty-icon" aria-hidden="true">＋</div>
+                <div className="add-action-config-empty-icon" aria-hidden="true"><Icon name="plus" size={22} /></div>
                 <div className="add-action-config-empty-title">Select an action to configure</div>
                 <div className="add-action-config-empty-desc">Pick a built-in template or search for a connector operation on the left. Its parameters will appear here.</div>
               </div>

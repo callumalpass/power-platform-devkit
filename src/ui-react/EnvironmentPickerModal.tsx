@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Icon } from './Icon.js';
 
 type EnvironmentEntry = {
   alias: string;
@@ -159,7 +160,7 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
     >
       <div className="rt-modal env-picker-modal">
         <div className="env-picker-search">
-          <span className="env-picker-search-icon" aria-hidden="true">⌕</span>
+          <span className="env-picker-search-icon" aria-hidden="true"><Icon name="search" size={14} /></span>
           <input
             ref={inputRef}
             type="text"
