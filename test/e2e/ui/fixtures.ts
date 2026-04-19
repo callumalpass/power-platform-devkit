@@ -50,6 +50,7 @@ export const test = base.extend<{ electronApp: ElectronApplication; page: Page; 
       args,
       env: {
         ...process.env,
+        PP_DESKTOP_E2E: '1',
         PP_DESKTOP_E2E_WINDOW_MODE: process.env.PP_DESKTOP_E2E_WINDOW_MODE
           ?? (process.env.PP_DESKTOP_E2E_SHOW_WINDOW === '1' ? 'visible' : 'hidden'),
       },
