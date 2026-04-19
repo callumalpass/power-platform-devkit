@@ -5,9 +5,11 @@ import {
   buildFlowDocument,
   checkFlowDefinition,
   flowIdentifier,
+  flowRunTriggerNames,
   flowValidationFromError,
   formatFlowDocument,
   loadActionDetail,
+  loadFlowCallbackUrl,
   loadFlowDefinitionDocument,
   loadFlowList,
   loadFlowRuns,
@@ -28,8 +30,26 @@ import { FlowOutlinePanel } from './automate/FlowOutlinePanel.js';
 import { FlowRunsPanel } from './automate/FlowRunsPanel.js';
 import { runActionRef, runActionRefForAction } from './automate/flow-run-outline.js';
 import { buildFlowProblems } from './automate/FlowProblemsPanel.js';
-import { buildOutlinePathTo, isActionLikeOutlineItem, outlineKey } from './automate/outline-utils.js';
+import { buildOutlinePathTo, findOutlineContainerTarget, isActionLikeOutlineItem, outlineKey, type OutlineContainerTarget } from './automate/outline-utils.js';
 import type { AutomateSubTab, FlowActionEditTarget, FlowEditorHandle, FlowOperation, FlowProblem } from './automate/types.js';
+
+type FlowCallbackUrlState = {
+  flowId: string;
+  status: 'idle' | 'loading' | 'loaded' | 'error';
+  value: string;
+  kind: 'signed' | 'authenticated';
+  error: string;
+  visible: boolean;
+};
+
+const EMPTY_CALLBACK_URL_STATE: FlowCallbackUrlState = {
+  flowId: '',
+  status: 'idle',
+  value: '',
+  kind: 'authenticated',
+  error: '',
+  visible: false,
+};
 
 export function AutomateTab(props: {
   active: boolean;
@@ -52,12 +72,14 @@ export function AutomateTab(props: {
   const [flowOperation, setFlowOperation] = useState<FlowOperation>(null);
   const [showFlowDiff, setShowFlowDiff] = useState(false);
   const [flowFullscreen, setFlowFullscreen] = useState(false);
+  const [flowCallbackUrl, setFlowCallbackUrl] = useState<FlowCallbackUrlState>(EMPTY_CALLBACK_URL_STATE);
   const [vimEnabled, setVimEnabled] = useMonacoVimPreference();
   const [flowVimMode, setFlowVimMode] = useState('off');
   const [flowOutlineActiveKey, setFlowOutlineActiveKey] = useState('');
   const [flowOutlineActivePath, setFlowOutlineActivePath] = useState<string[]>([]);
   const [showAddAction, setShowAddAction] = useState(false);
   const [addActionRunAfter, setAddActionRunAfter] = useState<string | undefined>(undefined);
+  const [addActionContainer, setAddActionContainer] = useState<OutlineContainerTarget | null>(null);
   const [editingAction, setEditingAction] = useState<FlowActionEditTarget | null>(null);
   const [runs, setRuns] = useState<FlowRun[]>([]);
   const [runFilter, setRunFilter] = useState('');
@@ -74,6 +96,7 @@ export function AutomateTab(props: {
   const [analyzing, setAnalyzing] = useState(false);
   const selectedRunRef = useRef<string | undefined>(undefined);
   const selectedActionRequestRef = useRef(0);
+  const callbackUrlRequestRef = useRef(0);
   const flowEditorRef = useRef<FlowEditorHandle | null>(null);
 
   useEffect(() => {
@@ -132,6 +155,7 @@ export function AutomateTab(props: {
       if (result.usedFallback) toast('Flow list API failed for this environment. Showing Dataverse workflow fallback instead.', true);
       setLoadedEnvironment(environment);
       setCurrentFlow(null);
+      resetFlowCallbackUrl(null);
       setRuns([]);
       setCurrentRun(null);
       setActions([]);
@@ -156,6 +180,7 @@ export function AutomateTab(props: {
 
   async function selectFlow(flow: FlowItem) {
     setCurrentFlow(flow);
+    resetFlowCallbackUrl(flow);
     setCurrentRun(null);
     selectedActionRequestRef.current += 1;
     setCurrentAction(null);
@@ -179,6 +204,51 @@ export function AutomateTab(props: {
     } finally {
       setLoadingRuns(false);
     }
+  }
+
+  function resetFlowCallbackUrl(flow: FlowItem | null) {
+    callbackUrlRequestRef.current += 1;
+    setFlowCallbackUrl({
+      ...EMPTY_CALLBACK_URL_STATE,
+      flowId: flowIdentifier(flow),
+    });
+  }
+
+  async function revealFlowCallbackUrl() {
+    if (!currentFlow) return;
+    if (currentFlow.source !== 'flow') {
+      toast('Trigger URL is only available for Flow API flows.', true);
+      return;
+    }
+    const flowId = flowIdentifier(currentFlow);
+    if (flowCallbackUrl.flowId === flowId && flowCallbackUrl.status === 'loaded' && flowCallbackUrl.value) {
+      setFlowCallbackUrl((state) => ({ ...state, visible: true }));
+      return;
+    }
+    const requestId = callbackUrlRequestRef.current + 1;
+    callbackUrlRequestRef.current = requestId;
+    setFlowCallbackUrl({ flowId, status: 'loading', value: '', kind: 'authenticated', error: '', visible: false });
+    try {
+      const result = await loadFlowCallbackUrl(environment, currentFlow, flowDocument);
+      if (callbackUrlRequestRef.current === requestId) {
+        setFlowCallbackUrl({ flowId, status: 'loaded', value: result.value, kind: result.kind, error: '', visible: true });
+      }
+    } catch (error) {
+      if (callbackUrlRequestRef.current === requestId) {
+        setFlowCallbackUrl({
+          flowId,
+          status: 'error',
+          value: '',
+          kind: 'authenticated',
+          error: error instanceof Error ? error.message : String(error),
+          visible: false,
+        });
+      }
+    }
+  }
+
+  function hideFlowCallbackUrl() {
+    setFlowCallbackUrl((state) => ({ ...state, visible: false }));
   }
 
   async function reloadFlowDefinition() {
@@ -215,10 +285,12 @@ export function AutomateTab(props: {
 
   function addActionToDocument(actionName: string, action: Record<string, unknown>) {
     try {
-      const next = addActionToFlowDocument(flowDocument, actionName, action, addActionRunAfter);
+      const next = addActionToFlowDocument(flowDocument, actionName, action, addActionRunAfter, addActionContainer ?? undefined);
       setFlowDocument(next);
       setFlowValidation(null);
       setShowAddAction(false);
+      setAddActionContainer(null);
+      setAddActionRunAfter(undefined);
       toast(`Added ${actionName}`);
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
@@ -296,6 +368,31 @@ export function AutomateTab(props: {
     } else {
       setAddActionRunAfter(item.name || undefined);
     }
+    setAddActionContainer(null);
+    setShowAddAction(true);
+  }
+
+  function handleHighlightJson(item: FlowAnalysisOutlineItem) {
+    if (item.from === undefined || item.to === undefined) {
+      toast('This outline node has no JSON range to highlight.', true);
+      return;
+    }
+    setFlowSubTab('definition');
+    const from = item.from;
+    const to = item.to;
+    window.setTimeout(() => flowEditorRef.current?.revealRange(from, to), 0);
+  }
+
+  function handleAddActionInside(item: FlowAnalysisOutlineItem) {
+    const container = findOutlineContainerTarget(analysis?.outline || [], item);
+    if (!container) {
+      toast('Could not determine where to insert the action.', true);
+      return;
+    }
+    const existing = (item.children || []).filter((c) => isActionLikeOutlineItem(c) && c.name);
+    const lastExisting = existing[existing.length - 1]?.name;
+    setAddActionContainer(container);
+    setAddActionRunAfter(lastExisting);
     setShowAddAction(true);
   }
 
@@ -331,8 +428,9 @@ export function AutomateTab(props: {
     const labels = { run: 'Running', start: 'Turning on', stop: 'Turning off' };
     toast(labels[action] + '...');
     try {
+      const runTriggerName = flowRunTriggerNames(currentFlow, flowDocument)[0] || 'manual';
       const paths: Record<string, string> = {
-        run: `/flows/${flowApiId}/triggers/manual/run`,
+        run: `/flows/${flowApiId}/triggers/${encodeURIComponent(runTriggerName)}/run`,
         start: `/flows/${flowApiId}/start`,
         stop: `/flows/${flowApiId}/stop`,
       };
@@ -495,10 +593,13 @@ export function AutomateTab(props: {
       <div className="detail-area">
         <FlowDetailHeader
           currentFlow={currentFlow}
+          callbackUrl={flowCallbackUrl.flowId === flowIdentifier(currentFlow) ? flowCallbackUrl : EMPTY_CALLBACK_URL_STATE}
           toast={toast}
           onOpenRecord={detail.open}
           onOpenConsole={openConsole}
           onFlowAction={(action) => { void flowAction(action); }}
+          onRevealCallbackUrl={() => { void revealFlowCallbackUrl(); }}
+          onHideCallbackUrl={hideFlowCallbackUrl}
         />
 
         {currentFlow ? (
@@ -535,8 +636,10 @@ export function AutomateTab(props: {
               toast={toast}
               vimEnabled={vimEnabled}
               flowVimMode={flowVimMode}
-              onAddAction={() => { setAddActionRunAfter(undefined); setShowAddAction(true); }}
+              onAddAction={() => { setAddActionRunAfter(undefined); setAddActionContainer(null); setShowAddAction(true); }}
               onAddAfter={handleAddActionAfter}
+              onAddInside={handleAddActionInside}
+              onHighlightJson={handleHighlightJson}
               onCheckErrors={() => { void runFlowValidation('errors'); }}
               onCheckWarnings={() => { void runFlowValidation('warnings'); }}
               onDocumentChange={updateFlowDocument}
@@ -584,6 +687,8 @@ export function AutomateTab(props: {
               flowOutlineActiveKey={flowOutlineActiveKey}
               flowOutlineActivePath={flowOutlineActivePath}
               onAddAfter={handleAddActionAfter}
+              onAddInside={handleAddActionInside}
+              onHighlightJson={handleHighlightJson}
               onEditAction={openActionEditor}
               onReorderAction={handleReorderAction}
               onSelectOutline={selectOutlineItem}
@@ -603,7 +708,8 @@ export function AutomateTab(props: {
           source={flowDocument}
           analysis={analysis}
           initialRunAfter={addActionRunAfter}
-          onClose={() => { setShowAddAction(false); setAddActionRunAfter(undefined); }}
+          containerTarget={addActionContainer}
+          onClose={() => { setShowAddAction(false); setAddActionRunAfter(undefined); setAddActionContainer(null); }}
           onAdd={addActionToDocument}
           toast={toast}
         />

@@ -13,6 +13,8 @@ import {
   resolveActionOperation,
   setPathValue,
 } from './flow-action-document.js';
+import { WDL_ACTION_TYPES } from './flow-built-in-templates.js';
+import { Combobox } from '../Select.js';
 import {
   connectorLocationLabel,
   expandDynamicSchemaFields,
@@ -24,21 +26,6 @@ import {
 } from './flow-dynamic-schema.js';
 
 type EditActionTab = 'fields' | 'json';
-
-const WDL_ACTION_TYPES = [
-  'ApiConnection',
-  'Compose',
-  'Foreach',
-  'Http',
-  'If',
-  'InitializeVariable',
-  'OpenApiConnection',
-  'Response',
-  'Scope',
-  'ServiceProvider',
-  'Switch',
-  'Until',
-] as const;
 
 export function EditFlowActionModal(props: {
   environment: string;
@@ -149,7 +136,7 @@ export function EditFlowActionModal(props: {
   const existingParameterFields = existingConnectorParameterFields(draft, connectorFields);
   const connectorFieldGroups = groupConnectorFields([...connectorFields, ...existingParameterFields]);
   const dynamicOptions = useFlowDynamicOptions(props.environment, draft, schema, operationRef, props.toast);
-  const hasConnectorSchema = actionLike && Boolean(operationRef.operationId);
+  const hasConnectorSchema = actionLike && Boolean(operationRef.apiRef && operationRef.operationId);
   const schemaLabel = schemaLoading
     ? 'Loading schema…'
     : schema
@@ -180,10 +167,13 @@ export function EditFlowActionModal(props: {
             {actionLike || type ? (
               <label>
                 <span>Type</span>
-                <input type="text" list="flow-action-type-options" value={type} onChange={(event) => updateDraft(['type'], event.target.value)} />
-                <datalist id="flow-action-type-options">
-                  {WDL_ACTION_TYPES.map((item) => <option key={item} value={item} />)}
-                </datalist>
+                <Combobox
+                  value={type}
+                  onChange={(next) => updateDraft(['type'], next)}
+                  options={WDL_ACTION_TYPES.map((item) => ({ value: item, label: item }))}
+                  placeholder="e.g. OpenApiConnection"
+                  aria-label="Action type"
+                />
               </label>
             ) : null}
           </div>

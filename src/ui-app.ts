@@ -294,6 +294,11 @@ export function renderHtml(): string {
     .pp-select-chevron { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); position: absolute; right: 10px; top: 50%; transform: translateY(-50%); transition: transform 120ms, color 120ms; pointer-events: none; }
     .pp-select.open .pp-select-chevron { transform: translateY(-50%) rotate(180deg); color: var(--ink); }
 
+    /* Combobox variant: trigger is an <input>, behaves like Select visually. */
+    .pp-combobox-input { width: 100%; font: inherit; font-size: 0.8125rem; text-align: left; cursor: text; }
+    .pp-combobox-input:focus { outline: none; }
+    .pp-select.pp-combobox .pp-select-chevron { pointer-events: none; }
+
     .pp-select-menu {
       position: absolute; left: 0; right: 0; z-index: 70;
       margin: 4px 0 0; padding: 4px; list-style: none;
@@ -424,7 +429,23 @@ export function renderHtml(): string {
     .flow-outline-problem-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
     .flow-outline-add-btn { padding: 0 4px; font-size: 11px; line-height: 18px; border: none; background: transparent; color: var(--muted); cursor: pointer; border-radius: 3px; font-weight: 600; flex-shrink: 0; }
     .flow-outline-add-btn:hover { color: var(--accent); background: var(--accent-soft); }
+    /* Overflow menu inline with an outline row — smaller trigger, faded until hovered/open. The
+       trigger stays in the DOM even when the row isn't hovered so moving the mouse from the
+       trigger into the popover can't unmount the menu mid-interaction. */
+    .flow-outline-menu { display: inline-flex; flex-shrink: 0; margin-left: auto; }
+    .flow-outline-menu .setup-overflow-trigger { width: 22px; height: 20px; font-size: 0.875rem; line-height: 1; opacity: 0; transition: opacity 100ms; }
+    .flow-outline-row:hover .flow-outline-menu .setup-overflow-trigger,
+    .flow-outline-row:focus-within .flow-outline-menu .setup-overflow-trigger,
+    .flow-outline-menu .setup-overflow-trigger[aria-expanded="true"] { opacity: 1; }
+    .flow-outline-menu .setup-overflow-menu { min-width: 200px; }
     .flow-outline-drop-line { height: 2px; background: var(--accent); margin: 0 8px; border-radius: 1px; pointer-events: none; }
+    .flow-callback-url { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .flow-callback-url-copy { min-width: 0; display: grid; gap: 3px; }
+    .flow-callback-url-label { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 700; }
+    .flow-callback-url-warning { color: var(--muted); font-size: 0.75rem; line-height: 1.4; }
+    .flow-callback-url-error { color: var(--danger); font-size: 0.75rem; line-height: 1.4; overflow-wrap: anywhere; }
+    .flow-callback-url-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; flex-wrap: wrap; }
+    .flow-callback-url-secret { max-width: min(620px, 56vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 3px 8px; }
     .flow-editor-shell-fullscreen { position: fixed; inset: 12px; z-index: 70; display: flex; flex-direction: column; box-shadow: 0 20px 80px rgba(0,0,0,0.35); }
     .flow-editor-shell-fullscreen .flow-editor-layout { flex: 1; height: auto; min-height: 0; }
     .flow-editor-shell-fullscreen .fetchxml-editor-mount,

@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
 import type { FlowAnalysisOutlineItem } from '../ui-types.js';
 import type { FlowProblem } from './types.js';
-import { INPUT_LABELS, KIND_DOT, isActionLikeOutlineItem, outlineKey, outlineTitle } from './outline-utils.js';
+import { INPUT_LABELS, KIND_DOT, canHoldChildActions, isActionLikeOutlineItem, isBranchOutlineItem, isSingleBodyContainer, outlineKey, outlineTitle } from './outline-utils.js';
+import { OverflowMenu, type OverflowItem } from '../setup/OverflowMenu.js';
 
 type OutlineProblemSummary = { error: number; warning: number; info: number };
 
@@ -16,6 +17,8 @@ export function FlowOutlineCanvas(props: {
   canSelect?: (item: FlowAnalysisOutlineItem) => boolean;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
+  onAddInside?: (item: FlowAnalysisOutlineItem) => void;
+  onHighlightJson?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
   const { items } = props;
@@ -44,6 +47,8 @@ export function FlowOutlineCanvas(props: {
             canSelect={props.canSelect}
             onEditAction={props.onEditAction}
             onAddAfter={props.onAddAfter}
+            onAddInside={props.onAddInside}
+            onHighlightJson={props.onHighlightJson}
             onReorder={props.onReorder}
           />
         ) : (
@@ -64,6 +69,8 @@ function OutlineNodeList(props: {
   canSelect?: (item: FlowAnalysisOutlineItem) => boolean;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
+  onAddInside?: (item: FlowAnalysisOutlineItem) => void;
+  onHighlightJson?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
   return (
@@ -80,6 +87,8 @@ function OutlineNodeList(props: {
           canSelect={props.canSelect}
           onEditAction={props.onEditAction}
           onAddAfter={props.onAddAfter}
+          onAddInside={props.onAddInside}
+          onHighlightJson={props.onHighlightJson}
           onReorder={props.onReorder}
         />
       ))}
@@ -99,15 +108,16 @@ function OutlineNode(props: {
   canSelect?: (item: FlowAnalysisOutlineItem) => boolean;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
+  onAddInside?: (item: FlowAnalysisOutlineItem) => void;
+  onHighlightJson?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
-  const { item, depth, problems, activeKey, activePath, onSelect, canSelect, onEditAction, onAddAfter, onReorder } = props;
+  const { item, depth, problems, activeKey, activePath, onSelect, canSelect, onEditAction, onAddAfter, onAddInside, onHighlightJson, onReorder } = props;
   const rowRef = useRef<HTMLDivElement | null>(null);
   const itemKey = outlineKey(item);
   const active = activeKey === itemKey;
   const inActivePath = activePath.includes(itemKey);
   const [manuallyOpen, setManuallyOpen] = useState(depth < 2);
-  const [hovered, setHovered] = useState(false);
   const [dragOver, setDragOver] = useState<'before' | 'after' | null>(null);
   const [dragging, setDragging] = useState(false);
   const hasChildren = Boolean(item.children?.length);
@@ -130,8 +140,40 @@ function OutlineNode(props: {
 
   const isAction = isActionLikeOutlineItem(item);
   const isActionsContainer = item.kind === 'action' && item.name === 'actions' && hasChildren;
-  const showRowActions = hovered || active;
-  const canAdd = (isAction || isActionsContainer) && Boolean(onAddAfter);
+  const canAddAfter = (isAction || isActionsContainer) && Boolean(onAddAfter) && !isBranchOutlineItem(item);
+  const canAddInside = canHoldChildActions(item) && Boolean(onAddInside);
+  const kindLower = String(item.kind || '').toLowerCase();
+  const isMultiBranchContainer = kindLower === 'condition' || kindLower === 'switch';
+  const branchChildren = isMultiBranchContainer && onAddInside
+    ? (item.children || []).filter(isBranchOutlineItem)
+    : [];
+  const menuItems: OverflowItem[] = [];
+  if (canAddAfter) {
+    menuItems.push({
+      label: isActionsContainer ? 'Add action' : 'Add action after',
+      onClick: () => onAddAfter?.(item),
+    });
+  }
+  if (canAddInside) {
+    const label = isSingleBodyContainer(item)
+      ? `Add action inside ${item.name || 'container'}`
+      : 'Add action inside this branch';
+    menuItems.push({ label, onClick: () => onAddInside?.(item) });
+  }
+  // Condition/Switch: offer one item per branch so users don't have to expand first.
+  for (const branch of branchChildren) {
+    const branchName = branch.name || 'branch';
+    menuItems.push({
+      label: `Add action to ${branchName}`,
+      onClick: () => onAddInside?.(branch),
+    });
+  }
+  if (editable) {
+    menuItems.push({ label: 'Edit action', onClick: () => onEditAction?.(item) });
+  }
+  if (onHighlightJson && item.from !== undefined && item.to !== undefined) {
+    menuItems.push({ label: 'Highlight JSON', onClick: () => onHighlightJson(item) });
+  }
   const draggable = isAction && !isActionsContainer && Boolean(onReorder) && Boolean(item.name);
   const isDropTarget = isAction && !isActionsContainer && Boolean(item.name);
 
@@ -153,8 +195,6 @@ function OutlineNode(props: {
         ref={rowRef}
         className={rowClasses}
         draggable={draggable}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
         onDragStart={(e) => {
           if (!draggable) return;
           e.dataTransfer.setData('application/x-outline-action', item.name || '');
@@ -211,18 +251,19 @@ function OutlineNode(props: {
             style={{ background: problemSummary.error ? 'var(--danger)' : problemSummary.warning ? '#d97706' : 'var(--accent)' }}
           />
         ) : null}
-        {showRowActions && canAdd ? (
-          <button
-            type="button"
-            className="flow-outline-add-btn"
-            title={isActionsContainer ? 'Add action' : 'Add action after'}
-            onClick={(e) => { e.stopPropagation(); onAddAfter?.(item); }}
-          >+</button>
+        {menuItems.length ? (
+          <span
+            className="flow-outline-menu"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <OverflowMenu items={menuItems} label="Action menu" />
+          </span>
         ) : null}
       </div>
       {dragOver === 'after' && <div className="flow-outline-drop-line" />}
       {open && hasChildren && (
-        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} canSelect={canSelect} onEditAction={onEditAction} onAddAfter={onAddAfter} onReorder={onReorder} />
+        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} canSelect={canSelect} onEditAction={onEditAction} onAddAfter={onAddAfter} onAddInside={onAddInside} onHighlightJson={onHighlightJson} onReorder={onReorder} />
       )}
     </>
   );

@@ -3,27 +3,109 @@ import type { FlowAnalysis, FlowAnalysisOutlineItem, FlowApiOperation, FlowApiOp
 import type { FlowActionEditTarget } from './types.js';
 import { isActionLikeOutlineItem } from './outline-utils.js';
 
-export function addActionToFlowDocument(source: string, actionName: string, action: Record<string, unknown>, insertAfter?: string): string {
+/**
+ * Points at a specific `actions` map inside a flow definition. Undefined means the top-level
+ * workflow actions map. For a nested action, `parentName` is the action that owns the container
+ * and `branchPath` is the sequence of keys from the parent action's value to the actions map
+ * itself. Examples:
+ *   - Scope / Foreach / Until body:   branchPath = ['actions']
+ *   - If 'then' branch:               branchPath = ['actions']
+ *   - If 'else' branch:               branchPath = ['else', 'actions']
+ *   - Switch case 'foo':              branchPath = ['cases', 'foo', 'actions']
+ *   - Switch default:                 branchPath = ['default', 'actions']
+ */
+export type ActionContainerRef = {
+  parentName: string;
+  branchPath: string[];
+  /** Human-readable target, shown in the Add Action modal header. */
+  label?: string;
+};
+
+export function addActionToFlowDocument(
+  source: string,
+  actionName: string,
+  action: Record<string, unknown>,
+  insertAfter?: string,
+  container?: ActionContainerRef,
+): string {
   const root = JSON.parse(source) as unknown;
   if (!isObject(root)) throw new Error('Flow definition JSON must be an object.');
-  const definition = findMutableWorkflowDefinition(root);
-  if (!definition) throw new Error('Could not find workflow definition actions.');
-  const actions = isObject(definition.actions) ? definition.actions : {};
-  definition.actions = actions;
-  if (Object.prototype.hasOwnProperty.call(actions, actionName)) {
+
+  let targetActions: Record<string, unknown>;
+  let assign: (next: Record<string, unknown>) => void;
+
+  if (container?.parentName) {
+    const parent = findMutableActionByName(root, container.parentName);
+    if (!parent) throw new Error(`Could not find action "${container.parentName}" to insert inside.`);
+    const resolved = ensurePathActions(parent, container.branchPath);
+    targetActions = resolved.container;
+    assign = resolved.assign;
+  } else {
+    const definition = findMutableWorkflowDefinition(root);
+    if (!definition) throw new Error('Could not find workflow definition actions.');
+    const actions = isObject(definition.actions) ? definition.actions : {};
+    definition.actions = actions;
+    targetActions = actions;
+    assign = (next) => { definition.actions = next; };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(targetActions, actionName)) {
     throw new Error(`${actionName} already exists.`);
   }
-  if (insertAfter && Object.prototype.hasOwnProperty.call(actions, insertAfter)) {
+  if (insertAfter && Object.prototype.hasOwnProperty.call(targetActions, insertAfter)) {
     const reordered: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(actions)) {
+    for (const [key, val] of Object.entries(targetActions)) {
       reordered[key] = val;
       if (key === insertAfter) reordered[actionName] = action;
     }
-    definition.actions = reordered;
+    assign(reordered);
   } else {
-    actions[actionName] = action;
+    targetActions[actionName] = action;
   }
   return JSON.stringify(root, null, 2);
+}
+
+/** Returns the action object itself (not its containing actions map). */
+function findMutableActionByName(root: unknown, name: string): Record<string, unknown> | null {
+  if (!isObject(root)) return null;
+  if (isObject(root.actions)) {
+    const actions = root.actions as Record<string, unknown>;
+    if (isObject(actions[name])) return actions[name] as Record<string, unknown>;
+    for (const val of Object.values(actions)) {
+      const found = findMutableActionByName(val, name);
+      if (found) return found;
+    }
+  }
+  for (const key of ['else', 'default', 'definition', 'properties'] as const) {
+    if (isObject(root[key])) {
+      const found = findMutableActionByName(root[key], name);
+      if (found) return found;
+    }
+  }
+  if (isObject(root.cases)) {
+    for (const val of Object.values(root.cases as Record<string, unknown>)) {
+      const found = findMutableActionByName(val, name);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function ensurePathActions(parent: Record<string, unknown>, branchPath: string[]): { container: Record<string, unknown>; assign: (next: Record<string, unknown>) => void } {
+  if (!branchPath.length) throw new Error('Container branch path must not be empty.');
+  let current: Record<string, unknown> = parent;
+  for (let i = 0; i < branchPath.length - 1; i++) {
+    const key = branchPath[i]!;
+    if (!isObject(current[key])) current[key] = {};
+    current = current[key] as Record<string, unknown>;
+  }
+  const lastKey = branchPath[branchPath.length - 1]!;
+  if (!isObject(current[lastKey])) current[lastKey] = {};
+  const container = current[lastKey] as Record<string, unknown>;
+  return {
+    container,
+    assign: (next) => { current[lastKey] = next; },
+  };
 }
 
 export function readOutlineEditTarget(source: string, item: FlowAnalysisOutlineItem): FlowActionEditTarget {

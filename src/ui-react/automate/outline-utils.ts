@@ -103,3 +103,89 @@ export function outlineMeta(item: FlowAnalysisOutlineItem) {
 export function isActionLikeOutlineItem(item: FlowAnalysisOutlineItem) {
   return ['action', 'scope', 'condition', 'foreach', 'switch', 'trigger'].includes(String(item.kind || ''));
 }
+
+/** Kinds that host a single nested `actions` map directly (no branch ambiguity). */
+export function isSingleBodyContainer(item: FlowAnalysisOutlineItem) {
+  const kind = String(item.kind || '').toLowerCase();
+  return kind === 'scope' || kind === 'foreach' || kind === 'until';
+}
+
+/** Branch / case / default child of a Condition or Switch. */
+export function isBranchOutlineItem(item: FlowAnalysisOutlineItem) {
+  const kind = String(item.kind || '').toLowerCase();
+  return kind === 'branch' || kind === 'case' || kind === 'default';
+}
+
+/** Outline items that own child actions and therefore can have "Add action inside" offered. */
+export function canHoldChildActions(item: FlowAnalysisOutlineItem) {
+  return isSingleBodyContainer(item) || isBranchOutlineItem(item);
+}
+
+export type OutlineContainerTarget = {
+  parentName: string;
+  branchPath: string[];
+  label: string;
+  /** Action names currently inside the container — used to populate the "Run after" dropdown. */
+  siblings: string[];
+};
+
+function extractContainerSiblings(item: FlowAnalysisOutlineItem): string[] {
+  const children = item.children || [];
+  // For container actions (Scope/Foreach/Until) the outline nests an 'actions' wrapper first;
+  // for branches/cases the children are the actions directly. Accept either shape.
+  const wrapper = children.find((entry) => entry.kind === 'action' && entry.name === 'actions' && (entry.children || []).length);
+  const actionish = (wrapper?.children || children).filter((entry) => isActionLikeOutlineItem(entry) && entry.name);
+  return actionish.map((entry) => entry.name!).filter(Boolean);
+}
+
+/**
+ * Given an outline item the user wants to add actions INSIDE, build the structural reference
+ * pointing at the underlying `actions` map. Walks ancestors when needed (branch nodes need the
+ * enclosing Condition/Switch name). Returns null when the item isn't a container.
+ */
+export function outlineContainerTarget(item: FlowAnalysisOutlineItem, ancestors: FlowAnalysisOutlineItem[]): OutlineContainerTarget | null {
+  const kind = String(item.kind || '').toLowerCase();
+  const name = item.name || '';
+  const siblings = extractContainerSiblings(item);
+  if (isSingleBodyContainer(item)) {
+    if (!name) return null;
+    return { parentName: name, branchPath: ['actions'], label: `${name} body`, siblings };
+  }
+  if (isBranchOutlineItem(item)) {
+    const parent = [...ancestors].reverse().find((entry) => {
+      const parentKind = String(entry.kind || '').toLowerCase();
+      return parentKind === 'condition' || parentKind === 'switch';
+    });
+    if (!parent?.name) return null;
+    const parentKind = String(parent.kind || '').toLowerCase();
+    if (parentKind === 'condition') {
+      const siblingBranches = (parent.children || []).filter(isBranchOutlineItem);
+      const index = siblingBranches.indexOf(item);
+      if (index === 0) return { parentName: parent.name, branchPath: ['actions'], label: `${parent.name} → then`, siblings };
+      return { parentName: parent.name, branchPath: ['else', 'actions'], label: `${parent.name} → else`, siblings };
+    }
+    if (parentKind === 'switch') {
+      if (kind === 'default' || name.toLowerCase() === 'default') {
+        return { parentName: parent.name, branchPath: ['default', 'actions'], label: `${parent.name} → default`, siblings };
+      }
+      const caseName = name.replace(/^case:\s*/i, '').trim() || name;
+      return { parentName: parent.name, branchPath: ['cases', caseName, 'actions'], label: `${parent.name} → case "${caseName}"`, siblings };
+    }
+  }
+  return null;
+}
+
+/**
+ * Convenience for resolving a container starting from the outline root. Walks the whole tree
+ * looking for `target` by reference equality and threads ancestors through.
+ */
+export function findOutlineContainerTarget(outline: FlowAnalysisOutlineItem[], target: FlowAnalysisOutlineItem, ancestors: FlowAnalysisOutlineItem[] = []): OutlineContainerTarget | null {
+  for (const item of outline) {
+    if (item === target) return outlineContainerTarget(item, ancestors);
+    if (item.children?.length) {
+      const found = findOutlineContainerTarget(item.children, target, [...ancestors, item]);
+      if (found) return found;
+    }
+  }
+  return null;
+}

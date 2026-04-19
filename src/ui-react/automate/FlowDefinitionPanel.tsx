@@ -29,6 +29,8 @@ export function FlowDefinitionPanel(props: {
   flowVimMode: string;
   onAddAction: () => void;
   onAddAfter: (item: FlowAnalysisOutlineItem) => void;
+  onAddInside: (item: FlowAnalysisOutlineItem) => void;
+  onHighlightJson: (item: FlowAnalysisOutlineItem) => void;
   onCheckErrors: () => void;
   onCheckWarnings: () => void;
   onDocumentChange: (value: string) => void;
@@ -93,6 +95,8 @@ export function FlowDefinitionPanel(props: {
                 onSelect={props.onSelectOutline}
                 onEditAction={props.onEditAction}
                 onAddAfter={props.onAddAfter}
+                onAddInside={props.onAddInside}
+                onHighlightJson={props.onHighlightJson}
                 onReorder={props.onReorderAction}
               />
               <div

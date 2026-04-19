@@ -3,8 +3,14 @@ import { loadFlowApiOperationSchema, loadFlowApiOperations } from '../automate-d
 import { Icon } from '../Icon.js';
 import { Select } from '../Select.js';
 import type { FlowAnalysis, FlowApiOperation, FlowApiOperationSchema, ToastFn } from '../ui-types.js';
-import { SchemaFieldEditor } from './FlowActionFieldEditors.js';
-import { buildBuiltInAction } from './flow-built-in-templates.js';
+import type { OutlineContainerTarget } from './outline-utils.js';
+import { CommonActionFields, SchemaFieldEditor } from './FlowActionFieldEditors.js';
+import {
+  BUILT_IN_ACTION_TEMPLATES,
+  BUILT_IN_CATEGORIES,
+  buildBuiltInAction,
+  type BuiltInActionTemplate,
+} from './flow-built-in-templates.js';
 import {
   buildApiOperationAction,
   buildRunAfter,
@@ -24,36 +30,13 @@ import {
   visibleConnectorSchemaFields,
 } from './flow-dynamic-schema.js';
 
-const BUILT_IN_ACTION_TEMPLATES = [
-  // Control flow
-  { key: 'condition', category: 'control', label: 'Condition', desc: 'Branch with if / else', name: 'Condition', action: () => ({ type: 'If', expression: { equals: ['', ''] }, actions: {}, else: { actions: {} } }) },
-  { key: 'apply-to-each', category: 'control', label: 'Apply to each', desc: 'Loop over items in an array', name: 'Apply_to_each', action: () => ({ type: 'Foreach', foreach: '@triggerBody()?[\'value\']', actions: {} }) },
-  { key: 'switch', category: 'control', label: 'Switch', desc: 'Branch on multiple values', name: 'Switch', action: () => ({ type: 'Switch', expression: '', cases: {}, default: { actions: {} } }) },
-  { key: 'do-until', category: 'control', label: 'Do until', desc: 'Loop until a condition is true', name: 'Do_until', action: () => ({ type: 'Until', expression: '@false', limit: { count: 60, timeout: 'PT1H' }, actions: {} }) },
-  { key: 'scope', category: 'control', label: 'Scope', desc: 'Group related actions', name: 'Scope', action: () => ({ type: 'Scope', actions: {} }) },
-  // Variables & data
-  { key: 'compose', category: 'data', label: 'Compose', desc: 'Transform or pass through a value', name: 'Compose', action: () => ({ type: 'Compose', inputs: '' }) },
-  { key: 'parse-json', category: 'data', label: 'Parse JSON', desc: 'Validate and extract fields from a JSON string', name: 'Parse_JSON', action: () => ({ type: 'ParseJson', inputs: { content: '', schema: {} } }) },
-  { key: 'init-variable', category: 'data', label: 'Initialize variable', desc: 'Declare a named variable (string, int, bool, array, object)', name: 'Initialize_variable', action: () => ({ type: 'InitializeVariable', inputs: { variables: [{ name: '', type: 'string', value: '' }] } }) },
-  { key: 'set-variable', category: 'data', label: 'Set variable', desc: 'Update a previously-initialized variable', name: 'Set_variable', action: () => ({ type: 'SetVariable', inputs: { name: '', value: '' } }) },
-  // Request / response
-  { key: 'http', category: 'request', label: 'HTTP', desc: 'Call any REST endpoint', name: 'HTTP', action: () => ({ type: 'Http', inputs: { method: 'GET', uri: '' } }) },
-  { key: 'response', category: 'request', label: 'Response', desc: 'Return an HTTP response to the caller', name: 'Response', action: () => ({ type: 'Response', kind: 'http', inputs: { statusCode: 200 } }) },
-] as const;
-
-type BuiltInActionTemplate = typeof BUILT_IN_ACTION_TEMPLATES[number];
-
-const BUILT_IN_CATEGORIES: Array<{ key: BuiltInActionTemplate['category']; label: string; hint: string }> = [
-  { key: 'control', label: 'Control flow', hint: 'Branch and loop without a connector' },
-  { key: 'data', label: 'Variables & data', hint: 'Shape data inside the flow' },
-  { key: 'request', label: 'Request & response', hint: 'Work with HTTP directly' },
-];
-
 export function AddFlowActionModal(props: {
   environment: string;
   source: string;
   analysis: FlowAnalysis | null;
   initialRunAfter?: string;
+  /** When set, the new action is inserted into a nested container instead of the top-level actions map. */
+  containerTarget?: OutlineContainerTarget | null;
   onClose: () => void;
   onAdd: (actionName: string, action: Record<string, unknown>) => void;
   toast: ToastFn;
@@ -72,6 +55,7 @@ export function AddFlowActionModal(props: {
   const searchRef = useRef<HTMLInputElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const topLevelActions = useMemo(() => topLevelActionNames(props.analysis), [props.analysis]);
+  const runAfterOptions = props.containerTarget ? props.containerTarget.siblings : topLevelActions;
   const propsRef = useRef(props);
   propsRef.current = props;
 
@@ -89,8 +73,8 @@ export function AddFlowActionModal(props: {
 
   useEffect(() => {
     if (props.initialRunAfter !== undefined) return;
-    if (!runAfter && topLevelActions.length) setRunAfter(topLevelActions[topLevelActions.length - 1] || '');
-  }, [runAfter, topLevelActions, props.initialRunAfter]);
+    if (!runAfter && runAfterOptions.length) setRunAfter(runAfterOptions[runAfterOptions.length - 1] || '');
+  }, [runAfter, runAfterOptions, props.initialRunAfter]);
 
   useEffect(() => {
     void doSearch('');
@@ -129,7 +113,7 @@ export function AddFlowActionModal(props: {
     setSelectedSchema(null);
     const initialName = uniqueActionName(props.source, sanitizeActionName(operation.summary || operation.name || 'Action'));
     setActionName(initialName);
-    if (operation.isBuiltIn || !operation.hasConnectorSchema) {
+    if (operation.isBuiltIn && !operation.hasConnectorSchema) {
       const builtIn = buildBuiltInAction(operation);
       if (builtIn) {
         setOperationDraft({ ...builtIn, runAfter: buildRunAfter(runAfter) });
@@ -143,17 +127,17 @@ export function AddFlowActionModal(props: {
     setSelectedTemplate(template);
     setSelectedOperation(null);
     setSelectedSchema(null);
-    setOperationDraft(null);
+    setOperationDraft({ ...template.action(), runAfter: buildRunAfter(runAfter) });
     setActionName(uniqueActionName(props.source, template.name));
   }
 
   useEffect(() => {
     let cancelled = false;
     if (!selectedOperation) return;
-    // Built-ins (Control, DataOperation, Variable, Http, Request, Schedule, ...) have no
+    // Non-connector built-ins (Control, DataOperation, Variable, Http, Request, Schedule, ...) have no
     // server-side schema — selectOperation already populates operationDraft from a hardcoded
     // WDL template, so skip the schema fetch and avoid the 404.
-    if (selectedOperation.isBuiltIn || !selectedOperation.hasConnectorSchema) return;
+    if (!selectedOperation.hasConnectorSchema) return;
     const apiRef = selectedOperation.apiId || selectedOperation.apiName;
     if (!apiRef || !selectedOperation.name) {
       setSelectedSchema(null);
@@ -188,7 +172,7 @@ export function AddFlowActionModal(props: {
       return;
     }
     if (selectedTemplate) {
-      props.onAdd(actionName, { ...selectedTemplate.action(), runAfter: runAfterValue });
+      props.onAdd(actionName, { ...(operationDraft || selectedTemplate.action()), runAfter: runAfterValue });
     }
   }
 
@@ -202,7 +186,11 @@ export function AddFlowActionModal(props: {
         <div className="rt-modal-header add-action-header">
           <div className="add-action-title">
             <h2>Add Action</h2>
-            <span className="add-action-subtitle">Pick a built-in template or a connector operation, then configure it.</span>
+            <span className="add-action-subtitle">
+              {props.containerTarget
+                ? <>Inserting into <strong>{props.containerTarget.label}</strong>. Pick a built-in template or connector operation.</>
+                : 'Pick a built-in template or a connector operation, then configure it.'}
+            </span>
           </div>
           <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
         </div>
@@ -339,7 +327,7 @@ export function AddFlowActionModal(props: {
                       onChange={setRunAfter}
                       options={[
                         { value: '', label: 'none' },
-                        ...topLevelActions.map((name) => ({ value: name, label: name })),
+                        ...runAfterOptions.map((name) => ({ value: name, label: name })),
                       ]}
                     />
                   </label>
@@ -348,7 +336,7 @@ export function AddFlowActionModal(props: {
                 {selectedOperation ? (
                   selectedOperation.isBuiltIn && !selectedOperation.hasConnectorSchema ? (
                     <div className="add-action-note">
-                      Built-in workflow action — inserts with its default shape (type <code>{String(operationDraft?.type || selectedOperation.operationType || '')}</code>). Fill in parameters in the JSON editor after insertion.
+                      Built-in workflow action — inserts as WDL type <code>{String(operationDraft?.type || selectedOperation.operationType || '')}</code>.
                     </div>
                   ) : (
                     <div className="add-action-note">
@@ -361,6 +349,13 @@ export function AddFlowActionModal(props: {
                           : 'No detailed operation metadata found.'}
                     </div>
                   )
+                ) : null}
+
+                {((selectedOperation?.isBuiltIn && !selectedOperation.hasConnectorSchema) || selectedTemplate) && operationDraft ? (
+                  <div className="add-action-config-params">
+                    <div className="add-action-section-label">Fields</div>
+                    <CommonActionFields action={operationDraft} includeTrailing={false} onChange={updateOperationDraft} />
+                  </div>
                 ) : null}
 
                 {selectedOperation && visibleSelectedSchemaFields.length && operationDraft ? (
