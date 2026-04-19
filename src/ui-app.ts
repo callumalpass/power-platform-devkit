@@ -133,7 +133,7 @@ export function renderHtml(): string {
     .env-trigger-chevron { font-size: 0.5625rem; color: var(--muted-2); flex-shrink: 0; align-self: center; margin-left: 2px; }
 
     .env-picker-backdrop { align-items: flex-start; padding-top: 88px; }
-    .env-picker-modal { width: 560px; max-width: 92vw; max-height: 70vh; padding: 0; }
+    .rt-modal.env-picker-modal { width: 560px; max-width: 92vw; max-height: 70vh; padding: 0; }
     .env-picker-search { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
     .env-picker-search-icon { color: var(--muted-2); font-size: 0.9375rem; display: inline-flex; }
     .env-picker-search input { flex: 1; border: none; outline: none; background: transparent; font-size: 1rem; font-family: var(--sans); letter-spacing: -0.015em; color: var(--ink); padding: 0; }
@@ -413,9 +413,9 @@ export function renderHtml(): string {
     .flow-editor-shell-fullscreen .flow-editor-layout { flex: 1; min-height: 0; }
     .flow-editor-shell-fullscreen .fetchxml-editor-mount,
     .flow-editor-shell-fullscreen .fetchxml-editor-mount .monaco-editor { min-height: 0; height: 100%; }
-    .flow-diff-modal { width: min(1180px, 94vw); height: min(820px, 88vh); max-height: 88vh; }
+    .rt-modal.flow-diff-modal { height: min(820px, 88vh); }
     .flow-diff-editor { flex: 1; min-height: 0; }
-    .add-action-modal { width: min(1320px, 96vw); height: min(760px, 92vh); max-height: 92vh; padding: 0; }
+    .rt-modal.add-action-modal { height: min(760px, 92vh); padding: 0; }
     .add-action-header { padding: 14px 20px; border-bottom: 1px solid var(--border); align-items: center; gap: 16px; }
     .add-action-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .add-action-title h2 { margin: 0; font-size: 0.9375rem; font-weight: 600; }
@@ -477,7 +477,7 @@ export function renderHtml(): string {
     .add-action-note { color: var(--muted); font-size: 0.75rem; line-height: 1.5; padding: 8px 12px; border-left: 2px solid var(--accent-soft); background: color-mix(in srgb, var(--accent) 4%, transparent); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
     .add-action-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--border); background: var(--surface); }
     .add-action-footer-hint { font-size: 0.75rem; color: var(--muted); flex: 1; min-width: 0; }
-    .flow-action-edit-modal { width: min(1200px, 94vw); height: min(760px, 92vh); max-height: 92vh; padding: 0; }
+    .rt-modal.flow-action-edit-modal { height: min(760px, 92vh); padding: 0; }
     .flow-action-edit-header { padding: 14px 20px; border-bottom: 1px solid var(--border); align-items: center; gap: 16px; }
     .flow-action-edit-body { padding: 0; display: flex; flex-direction: column; gap: 0; overflow: auto; flex: 1; min-height: 0; }
     .flow-action-edit-body > .flow-action-edit-section { padding: 0 20px; }
@@ -1093,7 +1093,14 @@ export function renderHtml(): string {
 
     /* Record detail modal */
     .rt-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 80; display: flex; align-items: center; justify-content: center; animation: fadeIn 120ms ease; }
-    .rt-modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 640px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2); animation: slideDown 150ms ease; }
+    /* Base shell — only the properties every modal shares. Sizing is picked by a size-* modifier
+       (see below); specific layout overrides should always use the .rt-modal.foo-modal compound
+       selector so source order can't silently override them. */
+    .rt-modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.2); animation: slideDown 150ms ease; }
+    .rt-modal.size-md  { width: 640px;               max-width: 92vw; max-height: 82vh; }
+    .rt-modal.size-lg  { width: min(980px, 94vw);   max-width: 94vw; max-height: 88vh; }
+    .rt-modal.size-xl  { width: min(1200px, 94vw);  max-width: 94vw; max-height: 92vh; }
+    .rt-modal.size-xxl { width: min(1320px, 96vw);  max-width: 96vw; max-height: 92vh; }
     .rt-modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 16px 20px; border-bottom: 1px solid var(--border); gap: 12px; }
     .rt-modal-title { font-size: 0.9375rem; font-weight: 600; margin: 0; }
     .rt-modal-id { font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); word-break: break-all; }
@@ -1400,7 +1407,7 @@ export function renderHtml(): string {
 
     /* Shortcut help modal */
     .shortcut-help-backdrop { align-items: flex-start; padding-top: 88px; }
-    .shortcut-help-modal { width: 620px; max-width: 92vw; padding: 0; display: flex; flex-direction: column; }
+    .rt-modal.shortcut-help-modal { width: 620px; max-width: 92vw; max-height: 82vh; padding: 0; }
     .shortcut-help-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
     .shortcut-help-header h2 { margin: 0; font-size: 1.25rem; }
     .shortcut-help-body { padding: 16px 20px; display: grid; gap: 18px; max-height: 60vh; overflow: auto; }

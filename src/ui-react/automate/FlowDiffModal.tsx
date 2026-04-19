@@ -59,7 +59,7 @@ export function FlowDiffModal(props: { original: string; modified: string; onClo
 
   return (
     <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
-      <div className="rt-modal flow-diff-modal">
+      <div className="rt-modal size-xl flow-diff-modal">
         <div className="rt-modal-header">
           <div>
             <h2>Unsaved Changes</h2>

@@ -183,7 +183,7 @@ export function RecordDetailModal(props: {
 
   return (
     <div className="rt-modal-backdrop" ref={backdropRef} onClick={(e) => { if (e.target === backdropRef.current) onClose(); }}>
-      <div className="rt-modal">
+      <div className="rt-modal size-md">
         <div className="rt-modal-header">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

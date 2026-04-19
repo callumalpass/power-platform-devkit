@@ -160,7 +160,7 @@ export function EditFlowActionModal(props: {
 
   return (
     <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
-      <div className="rt-modal flow-action-edit-modal">
+      <div className="rt-modal size-xl flow-action-edit-modal">
         <div className="rt-modal-header flow-action-edit-header">
           <div className="flow-action-edit-header-info">
             <div className="flow-action-edit-title-row">

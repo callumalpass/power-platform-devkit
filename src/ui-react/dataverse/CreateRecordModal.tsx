@@ -290,7 +290,7 @@ export function CreateRecordModal(props: {
 
   return (
     <div className="rt-modal-backdrop" ref={backdropRef} onClick={(e) => { if (e.target === backdropRef.current) onClose(); }}>
-      <div className="rt-modal">
+      <div className="rt-modal size-md">
         <div className="rt-modal-header">
           <div>
             <h3 className="rt-modal-title">New {entityDetail.displayName || entityDetail.logicalName}</h3>

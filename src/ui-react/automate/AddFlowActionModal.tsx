@@ -189,7 +189,7 @@ export function AddFlowActionModal(props: {
 
   return (
     <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
-      <div className="rt-modal add-action-modal">
+      <div className="rt-modal size-xxl add-action-modal">
         <div className="rt-modal-header add-action-header">
           <div className="add-action-title">
             <h2>Add Action</h2>
