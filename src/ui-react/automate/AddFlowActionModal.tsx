@@ -29,6 +29,13 @@ import {
   useFlowDynamicSchemaFields,
   visibleConnectorSchemaFields,
 } from './flow-dynamic-schema.js';
+import {
+  compatibleConnectionReferences,
+  connectorLabel,
+  setActionConnectionReference,
+  type FlowConnectionModel,
+  type FlowConnectionReference,
+} from './flow-connections.js';
 
 export function AddFlowActionModal(props: {
   environment: string;
@@ -37,6 +44,7 @@ export function AddFlowActionModal(props: {
   initialRunAfter?: string;
   /** When set, the new action is inserted into a nested container instead of the top-level actions map. */
   containerTarget?: OutlineContainerTarget | null;
+  connectionModel: FlowConnectionModel;
   onClose: () => void;
   onAdd: (actionName: string, action: Record<string, unknown>) => void;
   toast: ToastFn;
@@ -52,6 +60,7 @@ export function AddFlowActionModal(props: {
   const [operationDraft, setOperationDraft] = useState<Record<string, unknown> | null>(null);
   const [actionName, setActionName] = useState('');
   const [runAfter, setRunAfter] = useState(props.initialRunAfter || '');
+  const [selectedConnectionReferenceName, setSelectedConnectionReferenceName] = useState('');
   const searchRef = useRef<HTMLInputElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const topLevelActions = useMemo(() => topLevelActionNames(props.analysis), [props.analysis]);
@@ -108,6 +117,9 @@ export function AddFlowActionModal(props: {
   }
 
   function selectOperation(operation: FlowApiOperation) {
+    const compatibleRefs = compatibleConnectionReferences(props.connectionModel, operation);
+    const nextReferenceName = compatibleRefs[0]?.name || '';
+    setSelectedConnectionReferenceName(nextReferenceName);
     setSelectedOperation(operation);
     setSelectedTemplate(null);
     setSelectedSchema(null);
@@ -120,12 +132,13 @@ export function AddFlowActionModal(props: {
         return;
       }
     }
-    setOperationDraft(buildApiOperationAction(props.source, operation, buildRunAfter(runAfter)));
+    setOperationDraft(buildApiOperationAction(props.source, operation, buildRunAfter(runAfter), undefined, nextReferenceName || undefined));
   }
 
   function selectTemplate(template: BuiltInActionTemplate) {
     setSelectedTemplate(template);
     setSelectedOperation(null);
+    setSelectedConnectionReferenceName('');
     setSelectedSchema(null);
     setOperationDraft({ ...template.action(), runAfter: buildRunAfter(runAfter) });
     setActionName(uniqueActionName(props.source, template.name));
@@ -141,7 +154,7 @@ export function AddFlowActionModal(props: {
     const apiRef = selectedOperation.apiId || selectedOperation.apiName;
     if (!apiRef || !selectedOperation.name) {
       setSelectedSchema(null);
-      setOperationDraft(buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter)));
+      setOperationDraft(buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), undefined, selectedConnectionReferenceName || undefined));
       return;
     }
     setSchemaLoading(true);
@@ -149,12 +162,12 @@ export function AddFlowActionModal(props: {
       .then((schema) => {
         if (cancelled) return;
         setSelectedSchema(schema);
-        setOperationDraft(buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), schema || undefined));
+        setOperationDraft(buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), schema || undefined, selectedConnectionReferenceName || undefined));
       })
       .catch((error) => props.toast(error instanceof Error ? error.message : String(error), true))
       .finally(() => { if (!cancelled) setSchemaLoading(false); });
     return () => { cancelled = true; };
-  }, [props.environment, props.source, props.toast, selectedOperation]);
+  }, [props.environment, props.source, props.toast, selectedConnectionReferenceName, selectedOperation]);
 
   const operationDraftRef = useMemo(() => operationDraft ? resolveActionOperation(props.source, operationDraft) : {}, [props.source, operationDraft]);
   const operationDynamicOptions = useFlowDynamicOptions(props.environment, operationDraft, selectedSchema, operationDraftRef, props.toast);
@@ -164,10 +177,19 @@ export function AddFlowActionModal(props: {
     setOperationDraft((current) => current ? setPathValue(current, path, value) : current);
   }
 
+  function updateConnectionReference(referenceName: string) {
+    setSelectedConnectionReferenceName(referenceName);
+    setOperationDraft((current) => current && referenceName ? setActionConnectionReference(current, referenceName) : current);
+  }
+
   function addAction() {
     const runAfterValue = buildRunAfter(runAfter);
     if (selectedOperation) {
-      const action = operationDraft || buildApiOperationAction(props.source, selectedOperation, runAfterValue, selectedSchema || undefined);
+      if (selectedOperation.hasConnectorSchema && !selectedConnectionReferenceName) {
+        props.toast('Select or create a compatible connection reference before inserting this connector action.', true);
+        return;
+      }
+      const action = operationDraft || buildApiOperationAction(props.source, selectedOperation, runAfterValue, selectedSchema || undefined, selectedConnectionReferenceName || undefined);
       props.onAdd(actionName, { ...action, runAfter: runAfterValue });
       return;
     }
@@ -179,6 +201,12 @@ export function AddFlowActionModal(props: {
   const selectedSchemaFields = expandDynamicSchemaFields(selectedSchema?.fields || [], operationDynamicSchemaFields);
   const visibleSelectedSchemaFields = visibleConnectorSchemaFields(selectedSchemaFields);
   const hasSelection = Boolean(selectedOperation || selectedTemplate);
+  const compatibleReferences = useMemo(
+    () => selectedOperation ? compatibleConnectionReferences(props.connectionModel, selectedOperation) : [],
+    [props.connectionModel, selectedOperation],
+  );
+  const connectorNeedsReference = Boolean(selectedOperation && selectedOperation.hasConnectorSchema);
+  const canInsert = Boolean(actionName.trim() && hasSelection && (!connectorNeedsReference || selectedConnectionReferenceName));
 
   return (
     <div className="rt-modal-backdrop" role="dialog" aria-modal="true">
@@ -340,7 +368,7 @@ export function AddFlowActionModal(props: {
                     </div>
                   ) : (
                     <div className="add-action-note">
-                      Will use the matching connection reference when one exists, otherwise inserts a placeholder for {selectedOperation.apiDisplayName || selectedOperation.apiName || 'the connector'}.
+                      Select the connection reference this action should use. Create or repair references in the Connections tab.
                       {' '}
                       {schemaLoading
                         ? 'Loading operation metadata…'
@@ -349,6 +377,24 @@ export function AddFlowActionModal(props: {
                           : 'No detailed operation metadata found.'}
                     </div>
                   )
+                ) : null}
+
+                {connectorNeedsReference ? (
+                  <div className="add-action-config-params">
+                    <div className="add-action-section-label">Connection reference</div>
+                    {compatibleReferences.length ? (
+                      <Select
+                        aria-label="Connection reference"
+                        value={selectedConnectionReferenceName}
+                        onChange={updateConnectionReference}
+                        options={compatibleReferences.map(referenceOption)}
+                      />
+                    ) : (
+                      <div className="flow-connection-issue warning">
+                        No compatible reference exists for {selectedOperation?.apiDisplayName || selectedOperation?.apiName || 'this connector'}.
+                      </div>
+                    )}
+                  </div>
                 ) : null}
 
                 {((selectedOperation?.isBuiltIn && !selectedOperation.hasConnectorSchema) || selectedTemplate) && operationDraft ? (
@@ -381,9 +427,17 @@ export function AddFlowActionModal(props: {
         </div>
         <div className="add-action-footer">
           <span className="add-action-footer-hint">{hasSelection ? 'Inserts the action into the editor only — Check & Save when ready.' : 'Select an action to enable Insert.'}</span>
-          <button className="btn btn-primary" type="button" disabled={!actionName.trim() || !hasSelection} onClick={addAction}>Insert Action</button>
+          <button className="btn btn-primary" type="button" disabled={!canInsert} onClick={addAction}>Insert Action</button>
         </div>
       </div>
     </div>
   );
+}
+
+function referenceOption(reference: FlowConnectionReference) {
+  const connection = reference.connection ? ` -> ${reference.connection.displayName || reference.connection.name}` : '';
+  return {
+    value: reference.name,
+    label: `${reference.name} (${connectorLabel(reference)})${connection}`,
+  };
 }

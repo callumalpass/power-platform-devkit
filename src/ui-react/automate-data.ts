@@ -1,5 +1,6 @@
 import { ApiRequestError, api, prop } from './utils.js';
 import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowDynamicValueOption, FlowItem, FlowRun } from './ui-types.js';
+import type { FlowEnvironmentConnection } from './automate/flow-connections.js';
 
 const DATAVERSE_FLOW_FALLBACK_PATH = "/workflows?$filter=category eq 5&$select=name,workflowid,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200";
 const CONNECTIONS_FOR_ENVIRONMENT_PATH = "/connections?$filter=environment%20eq%20%27{environment}%27";
@@ -33,11 +34,10 @@ export type FlowValidationResult = {
   checkedAt: string;
 };
 
-type FlowApiConnection = {
-  name: string;
-  apiName?: string;
-  apiId?: string;
-  displayName?: string;
+export type FlowCallbackUrlResult = {
+  value: string;
+  kind: 'signed' | 'authenticated';
+  raw: unknown;
 };
 
 export async function loadFlowList(environment: string): Promise<FlowListResult> {
@@ -135,6 +135,135 @@ export async function saveFlowDefinition(environment: string, flow: FlowItem, so
   return normalizeFlowApiItem(result.response || flow);
 }
 
+export async function loadFlowCallbackUrl(environment: string, flow: FlowItem, source = ''): Promise<FlowCallbackUrlResult> {
+  const existing = extractFlowCallbackUrl(flow);
+  if (existing) return flowTriggerUrlResult(existing, flow);
+  const sourcePayload = parseJsonMaybe(source);
+  const sourceValue = extractFlowCallbackUrl(sourcePayload);
+  if (sourceValue) return flowTriggerUrlResult(sourceValue, sourcePayload);
+  const flowId = flowIdentifier(flow);
+  const triggerNames = flowCallbackTriggerNames(flow, source);
+  const attempts = [
+    ...triggerNames.map((triggerName) => ({
+      label: `trigger ${triggerName}`,
+      path: `/flows/${flowId}/triggers/${encodeURIComponent(triggerName)}/listCallbackUrl`,
+      query: { 'api-version': '1' },
+    })),
+    {
+      label: 'flow callback',
+      path: `/flows/${flowId}/listCallbackUrl`,
+      query: { 'api-version': '1' },
+    },
+  ];
+  const errors: string[] = [];
+  for (const attempt of attempts) {
+    try {
+      const result = await executeRequest<unknown>(
+        environment,
+        'flow',
+        attempt.path,
+        true,
+        'POST',
+        undefined,
+        attempt.query,
+      );
+      const value = extractFlowCallbackUrl(result.response);
+      if (value) return flowTriggerUrlResult(value, result.response);
+      errors.push(`${attempt.label}: response did not include a URL`);
+    } catch (error) {
+      errors.push(`${attempt.label}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  throw new Error(errors.length ? `Could not load flow callback URL. ${errors.join(' ')}` : 'Could not load flow callback URL.');
+}
+
+export function extractFlowCallbackUrl(response: unknown): string {
+  for (const candidate of [
+    prop(response, 'response.value'),
+    prop(response, 'value'),
+    prop(response, 'properties.flowTriggerUri'),
+    prop(response, 'flowTriggerUri'),
+  ]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate;
+  }
+  return '';
+}
+
+export function flowRunTriggerNames(flow: FlowItem, source = ''): string[] {
+  const names = flowDefinitionTriggerNames(flow, source);
+  const triggerName = flowTriggerNameFromUrl(extractFlowCallbackUrl(flow) || extractFlowCallbackUrl(parseJsonMaybe(source)));
+  if (triggerName && !names.includes(triggerName)) names.push(triggerName);
+  return names.length ? names : ['manual'];
+}
+
+export function flowCallbackTriggerNames(flow: FlowItem, source = ''): string[] {
+  const names = new Set(flowRunTriggerNames(flow, source));
+  names.add('manual');
+  return [...names];
+}
+
+function flowDefinitionTriggerNames(flow: FlowItem, source = ''): string[] {
+  const names = new Set<string>();
+  const addDefinition = (definition: unknown) => {
+    const triggers = prop(definition, 'triggers');
+    if (triggers && typeof triggers === 'object' && !Array.isArray(triggers)) {
+      for (const name of Object.keys(triggers)) {
+        if (name.trim()) names.add(name);
+      }
+    }
+  };
+
+  if (source.trim()) {
+    try {
+      const parsed = JSON.parse(source);
+      addDefinition(prop(parsed, 'properties.definition') || prop(parsed, 'definition') || parsed);
+    } catch {
+      // Ignore invalid editor content. The service call below will surface the real outcome.
+    }
+  }
+  addDefinition(prop(flow, 'properties.definition') || flow.definition);
+
+  const summaryTriggers = prop(flow, 'properties.definitionSummary.triggers');
+  if (Array.isArray(summaryTriggers)) {
+    for (const trigger of summaryTriggers) {
+      const name = prop(trigger, 'name');
+      if (typeof name === 'string' && name.trim()) names.add(name);
+    }
+  }
+
+  return [...names];
+}
+
+function flowTriggerNameFromUrl(value: string): string {
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const triggerIndex = parts.findIndex((part) => part.toLowerCase() === 'triggers');
+    return triggerIndex >= 0 ? decodeURIComponent(parts[triggerIndex + 1] || '') : '';
+  } catch {
+    const match = value.match(/\/triggers\/([^/]+)\/run(?:[/?#]|$)/i);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+}
+
+function flowTriggerUrlResult(value: string, raw: unknown): FlowCallbackUrlResult {
+  return {
+    value,
+    kind: isSignedTriggerUrl(value) ? 'signed' : 'authenticated',
+    raw,
+  };
+}
+
+function isSignedTriggerUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.searchParams.has('sig') || url.searchParams.has('code') || url.searchParams.has('sp');
+  } catch {
+    return /\b(sig|code|sp)=/i.test(value);
+  }
+}
+
 export async function loadFlowApiOperations(environment: string, search: string): Promise<FlowApiOperation[]> {
   const result = await executeRequest<{ value?: unknown[] }>(
     environment,
@@ -152,7 +281,7 @@ export async function loadFlowApiOperations(environment: string, search: string)
   return (result.response?.value || []).map(normalizeFlowApiOperation);
 }
 
-export async function loadFlowApiConnections(environment: string): Promise<FlowApiConnection[]> {
+export async function loadFlowApiConnections(environment: string): Promise<FlowEnvironmentConnection[]> {
   const result = await executeRequest<{ value?: unknown[] }>(
     environment,
     'powerapps',
@@ -313,6 +442,7 @@ async function executeRequest<T>(
   allowInteractive = true,
   method = 'GET',
   body?: unknown,
+  query?: Record<string, string>,
 ) {
   const result = await api<ApiEnvelope<ApiExecuteResponse<T>>>('/api/request/execute', {
     method: 'POST',
@@ -321,6 +451,7 @@ async function executeRequest<T>(
       api: apiKind,
       method,
       path,
+      ...(query ? { query } : {}),
       allowInteractive,
       softFail: !allowInteractive,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -344,6 +475,7 @@ export function buildFlowDocument(detail: FlowItem | Record<string, unknown>) {
       properties: {
         displayName: prop(detail, 'properties.displayName'),
         state: prop(detail, 'properties.state'),
+        flowTriggerUri: prop(detail, 'properties.flowTriggerUri'),
         connectionReferences,
         definition,
       },
@@ -432,14 +564,17 @@ function normalizeFlowApiOperation(value: unknown): FlowApiOperation {
   };
 }
 
-function normalizeFlowApiConnection(value: unknown): FlowApiConnection {
+function normalizeFlowApiConnection(value: unknown): FlowEnvironmentConnection {
   const connection = value as Record<string, unknown>;
   const apiId = firstString(prop(connection, 'properties.apiId'), prop(connection, 'properties.api.id'), prop(connection, 'apiId'));
   return {
     name: firstString(connection.name, connectionNameFromId(connection.id)) || '',
+    id: firstString(connection.id),
     apiId,
     apiName: firstString(prop(connection, 'properties.apiName'), prop(connection, 'properties.api.name'), apiNameFromId(apiId)),
     displayName: firstString(prop(connection, 'properties.displayName'), connection.displayName),
+    status: firstString(prop(connection, 'properties.statuses.0.status'), prop(connection, 'properties.overallStatus')),
+    raw: value,
   };
 }
 

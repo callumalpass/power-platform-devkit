@@ -7,11 +7,13 @@ import { FlowOutlineCanvas } from './FlowOutlineCanvas.js';
 import { FlowProblemsPanel } from './FlowProblemsPanel.js';
 import type { FlowEditorHandle, FlowOperation, FlowProblem } from './types.js';
 import { useResizableWidth } from '../setup/use-resizable-width.js';
+import { useFlowEditorSchemaIndex } from './flow-editor-schema-index.js';
 
 export function FlowDefinitionPanel(props: {
   active: boolean;
   analysis: FlowAnalysis | null;
   analyzing: boolean;
+  environment: string;
   flowBusy: boolean;
   flowDocument: string;
   flowEditorRef: RefObject<FlowEditorHandle | null>;
@@ -52,6 +54,12 @@ export function FlowDefinitionPanel(props: {
   const { width: outlineWidth, startDrag: startOutlineResize } = useResizableWidth(
     'pp-automate-outline-width',
     { min: 220, max: 640, initial: 320, edge: 'right' },
+  );
+  const schemaIndex = useFlowEditorSchemaIndex(
+    active ? props.environment : '',
+    props.flowDocument,
+    props.analysis,
+    props.toast,
   );
 
   return (
@@ -117,6 +125,7 @@ export function FlowDefinitionPanel(props: {
                 diagnostics={props.analysis?.diagnostics || []}
                 validation={props.flowValidation}
                 analysis={props.analysis}
+                schemaIndex={schemaIndex}
                 vimEnabled={props.vimEnabled}
                 onVimMode={props.onVimMode}
                 toast={props.toast}

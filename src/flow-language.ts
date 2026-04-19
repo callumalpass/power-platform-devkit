@@ -54,6 +54,7 @@ export interface FlowCompletionItem {
   detail?: string;
   info?: string;
   apply?: string;
+  snippet?: boolean;
   boost?: number;
 }
 
@@ -217,7 +218,7 @@ export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
     return {
       context: fallbackContext,
       diagnostics: parseResult.diagnostics,
-      completions: fallbackContext.kind === 'expression' ? completeExpression(fallbackContext.text, fallbackContext.to, [], [], []) : [],
+      completions: fallbackContext.kind === 'expression' ? completeExpression(fallbackContext.text, cursor - fallbackContext.from, [], [], [], []) : [],
       outline: [],
       symbols: [],
       references: [],
@@ -668,7 +669,7 @@ function readConnectorSummary(inputsNode: JsonObjectNode): { connector?: string;
 
 function buildCompletions(context: FlowCursorContext, model: FlowDocumentModel, source: string, cursor: number): FlowCompletionItem[] {
   if (context.kind === 'expression') {
-    return completeExpression(context.text, cursor - context.from, flattenActions(model.actions), model.variables, model.parameters);
+    return completeExpression(context.text, cursor - context.from, flattenActions(model.actions), model.triggers, model.variables, model.parameters);
   }
   if (context.kind === 'property-key') {
     if (context.path.length === 1) return FLOW_ROOT_PROPERTIES.map((item) => ({ label: item, type: 'property' as const, apply: `"${item}": ` }));
@@ -698,23 +699,177 @@ function completeExpression(
   text: string,
   relativeCursor: number,
   actions: FlowActionNode[],
+  triggers: FlowActionNode[],
   variables: FlowVariableNode[],
   parameters: FlowParameterNode[],
 ): FlowCompletionItem[] {
-  const before = text.slice(0, Math.max(0, relativeCursor));
-  const targetNamePrefixMatch = before.match(/(?:actions|body|outputs|items|variables|parameters)\(\s*'([^']*)$/i);
+  const before = text.slice(0, Math.min(text.length, Math.max(0, relativeCursor)));
+  const targetNamePrefixMatch = before.match(/(?:actions|body|outputs|items|variables|parameters|result)\(\s*'([^']*)$/i);
   if (targetNamePrefixMatch) {
     const prefix = targetNamePrefixMatch[1] ?? '';
     const functionName = before.match(/([A-Za-z_][A-Za-z0-9_]*)\(\s*'[^']*$/)?.[1]?.toLowerCase();
-    const items: FlowCompletionItem[] =
-      functionName === 'variables'
-        ? variables.map((item) => ({ label: item.name, type: 'variable' as const }))
-        : functionName === 'parameters'
-          ? parameters.map((item) => ({ label: item.name, type: 'parameter' as const }))
-          : actions.map((item) => ({ label: item.name, type: 'action' as const }));
-    return filterCompletionPrefix(items.map((item) => ({ ...item, apply: item.label })), prefix);
+    return filterCompletionPrefix(targetNameCompletions(functionName, actions, variables, parameters), prefix);
   }
-  return [];
+  if (isInsideExpressionString(before)) return [];
+  const functionPrefix = expressionFunctionPrefix(before);
+  if (functionPrefix === undefined) return [];
+  return filterCompletionPrefix(expressionFunctionCompletions(actions, triggers, variables, parameters), functionPrefix);
+}
+
+function targetNameCompletions(
+  functionName: string | undefined,
+  actions: FlowActionNode[],
+  variables: FlowVariableNode[],
+  parameters: FlowParameterNode[],
+): FlowCompletionItem[] {
+  if (functionName === 'variables') {
+    return variables.map((item) => ({
+      label: item.name,
+      type: 'variable',
+      detail: item.type,
+      info: item.declaredBy ? `Declared by ${item.declaredBy}.` : undefined,
+      apply: escapeWdlStringValue(item.name),
+    }));
+  }
+  if (functionName === 'parameters') {
+    return parameters.map((item) => ({
+      label: item.name,
+      type: 'parameter',
+      detail: item.type,
+      apply: escapeWdlStringValue(item.name),
+    }));
+  }
+  if (functionName === 'items') {
+    return loopActions(actions).map((item) => ({
+      label: item.name,
+      type: 'action',
+      detail: item.type,
+      info: 'Loop item source.',
+      apply: escapeWdlStringValue(item.name),
+    }));
+  }
+  if (functionName === 'result') {
+    return scopedResultActions(actions).map((item) => ({
+      label: item.name,
+      type: 'action',
+      detail: item.type,
+      info: 'Scoped action result source.',
+      apply: escapeWdlStringValue(item.name),
+    }));
+  }
+  return actions.map((item) => ({
+    label: item.name,
+    type: 'action',
+    detail: item.type,
+    apply: escapeWdlStringValue(item.name),
+  }));
+}
+
+function expressionFunctionCompletions(
+  actions: FlowActionNode[],
+  triggers: FlowActionNode[],
+  variables: FlowVariableNode[],
+  parameters: FlowParameterNode[],
+): FlowCompletionItem[] {
+  const actionChoice = expressionChoice(actions.map((item) => item.name), 'Action');
+  const loopChoice = expressionChoice(loopActions(actions).map((item) => item.name), 'Loop');
+  const scopedChoice = expressionChoice(scopedResultActions(actions).map((item) => item.name), 'Scope');
+  const variableChoice = expressionChoice(variables.map((item) => item.name), 'variableName');
+  const parameterChoice = expressionChoice(parameters.map((item) => item.name), 'parameterName');
+  const triggerChoice = expressionChoice(triggers.map((item) => item.name), 'triggerName');
+  return [
+    expressionSnippet('triggerBody()', 'triggerBody()', 'Trigger body', 'Return the trigger body.'),
+    expressionSnippet('triggerOutputs()', 'triggerOutputs()', 'Trigger outputs', 'Return the trigger outputs.'),
+    expressionSnippet('trigger()', 'trigger()', 'Trigger object', 'Return the trigger object.'),
+    expressionSnippet('workflow()', 'workflow()', 'Workflow object', 'Return workflow and run metadata.'),
+    expressionSnippet('outputs()', `outputs('${actionChoice}')`, 'Action outputs', 'Return an action output object.'),
+    expressionSnippet('body()', `body('${actionChoice}')`, 'Action body', 'Return an action body.'),
+    expressionSnippet('actions()', `actions('${actionChoice}')`, 'Action object', 'Return an action runtime object.'),
+    expressionSnippet('items()', `items('${loopChoice}')`, 'Loop item', 'Return the current item for a named loop.'),
+    expressionSnippet('item()', 'item()', 'Current item', 'Return the current item in the nearest repeating action.'),
+    expressionSnippet('variables()', `variables('${variableChoice}')`, 'Variable value', 'Return an initialized variable value.'),
+    expressionSnippet('parameters()', `parameters('${parameterChoice}')`, 'Parameter value', 'Return a workflow parameter value.'),
+    expressionSnippet('result()', `result('${scopedChoice}')`, 'Scoped action result', 'Return child action results from a scope or loop.'),
+    expressionSnippet('triggerFormDataValue()', "triggerFormDataValue('${1:key}')", 'Trigger form data value', 'Return one trigger form-data value.'),
+    expressionSnippet('triggerFormDataMultiValues()', "triggerFormDataMultiValues('${1:key}')", 'Trigger form data values', 'Return trigger form-data values.'),
+    expressionSnippet('listCallbackUrl()', `listCallbackUrl('${triggerChoice}')`, 'Callback URL', 'Return a callback URL for a trigger or action.'),
+    expressionSnippet('concat()', 'concat(${1:value}, ${2:value})', 'String or array concat', 'Combine strings or arrays.'),
+    expressionSnippet('coalesce()', 'coalesce(${1:value}, ${2:fallback})', 'First non-null value', 'Return the first non-null value.'),
+    expressionSnippet('empty()', 'empty(${1:value})', 'Empty check', 'Check whether a value is empty.'),
+    expressionSnippet('equals()', 'equals(${1:left}, ${2:right})', 'Equality check', 'Compare two values.'),
+    expressionSnippet('if()', 'if(${1:condition}, ${2:trueValue}, ${3:falseValue})', 'Conditional value', 'Return one of two values.'),
+    expressionSnippet('contains()', 'contains(${1:collection}, ${2:value})', 'Contains check', 'Check whether a collection contains a value.'),
+    expressionSnippet('length()', 'length(${1:value})', 'Length', 'Return string or array length.'),
+    expressionSnippet('json()', 'json(${1:value})', 'Parse JSON', 'Return a JSON value from a string or XML.'),
+    expressionSnippet('utcNow()', 'utcNow()', 'Current UTC time', 'Return the current UTC timestamp.'),
+    expressionSnippet('formatDateTime()', 'formatDateTime(${1:timestamp}, ${2:format})', 'Format timestamp', 'Format a timestamp.'),
+  ];
+}
+
+function expressionSnippet(label: string, apply: string, detail: string, info?: string): FlowCompletionItem {
+  return {
+    label,
+    type: 'function',
+    detail,
+    info,
+    apply,
+    snippet: true,
+  };
+}
+
+function expressionFunctionPrefix(before: string): string | undefined {
+  const match = before.match(/[A-Za-z_][A-Za-z0-9_]*$/);
+  const prefix = match?.[0] ?? '';
+  const prefixStart = before.length - prefix.length;
+  const previous = before[prefixStart - 1];
+  if (!prefix && before.length && !/[({[,\s@?:+\-*/]/.test(before[before.length - 1]!)) return undefined;
+  if (previous && !/[({[,\s@?:+\-*/]/.test(previous)) return undefined;
+  return prefix;
+}
+
+function isInsideExpressionString(before: string): boolean {
+  let inString = false;
+  for (let index = 0; index < before.length; index += 1) {
+    const char = before[index];
+    if (char !== '\'') continue;
+    if (inString && before[index + 1] === '\'') {
+      index += 1;
+      continue;
+    }
+    inString = !inString;
+  }
+  return inString;
+}
+
+function loopActions(actions: FlowActionNode[]): FlowActionNode[] {
+  return actions.filter((item) => {
+    const normalized = item.type.toLowerCase();
+    return normalized.includes('foreach') || normalized === 'until';
+  });
+}
+
+function scopedResultActions(actions: FlowActionNode[]): FlowActionNode[] {
+  return actions.filter((item) => {
+    const normalized = item.type.toLowerCase();
+    return normalized === 'scope' || normalized.includes('foreach') || normalized === 'until';
+  });
+}
+
+function expressionChoice(values: string[], fallback: string): string {
+  const choices = values
+    .filter((item) => item.trim())
+    .slice(0, 40)
+    .map((item) => escapeSnippetChoiceValue(escapeWdlStringValue(item)));
+  if (!choices.length) return `\${1:${fallback}}`;
+  return `\${1|${choices.join(',')}|}`;
+}
+
+function escapeWdlStringValue(value: string): string {
+  return value.replace(/'/g, '\'\'');
+}
+
+function escapeSnippetChoiceValue(value: string): string {
+  return value.replace(/[\\,|}$]/g, (char) => `\\${char}`);
 }
 
 function filterCompletionPrefix<T extends FlowCompletionItem>(items: T[], prefix: string): T[] {
@@ -785,10 +940,11 @@ function readFallbackContext(source: string, cursor: number): FlowCursorContext 
   const local = source.slice(windowStart, windowEnd);
   const exprStart = local.lastIndexOf('@');
   if (exprStart >= 0) {
+    const expressionOffset = local.startsWith('@{', exprStart) ? 2 : 1;
     return {
       kind: 'expression',
-      text: local.slice(exprStart).replace(/^@\{?/, '').replace(/\}?$/, ''),
-      from: windowStart + exprStart,
+      text: local.slice(exprStart + expressionOffset).replace(/\}?$/, ''),
+      from: windowStart + exprStart + expressionOffset,
       to: windowEnd,
       path: [],
     };

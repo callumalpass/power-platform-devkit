@@ -3,14 +3,26 @@ import { CopyButton } from '../CopyButton.js';
 import { formatDate, prop } from '../utils.js';
 import type { FlowItem, ToastFn } from '../ui-types.js';
 
+type FlowCallbackUrlState = {
+  flowId: string;
+  status: 'idle' | 'loading' | 'loaded' | 'error';
+  value: string;
+  kind: 'signed' | 'authenticated';
+  error: string;
+  visible: boolean;
+};
+
 export function FlowDetailHeader(props: {
   currentFlow: FlowItem | null;
+  callbackUrl: FlowCallbackUrlState;
   toast: ToastFn;
   onOpenRecord: (logicalName: string, entitySetName: string, id: string) => void;
   onOpenConsole: (seed: { api: string; method: string; path: string }) => void;
   onFlowAction: (action: 'run' | 'start' | 'stop') => void;
+  onRevealCallbackUrl: () => void;
+  onHideCallbackUrl: () => void;
 }) {
-  const { currentFlow, toast, onOpenRecord, onOpenConsole, onFlowAction } = props;
+  const { currentFlow, callbackUrl, toast, onOpenRecord, onOpenConsole, onFlowAction, onRevealCallbackUrl, onHideCallbackUrl } = props;
 
   return (
     <div className="panel">
@@ -56,8 +68,44 @@ export function FlowDetailHeader(props: {
             <div className="metric"><div className="metric-label">Actions</div><div className="metric-value">{String((prop(currentFlow, 'properties.definitionSummary.actions') || []).length || 0)}</div></div>
             <div className="metric"><div className="metric-label">Source</div><div className="metric-value">{currentFlow.source === 'dv' ? 'Dataverse fallback' : 'Flow API'}</div></div>
           </div>
+          {currentFlow.source === 'flow' ? (
+            <div className="flow-callback-url">
+              <div className="flow-callback-url-copy">
+                <div className="flow-callback-url-label">Trigger URL</div>
+                <div className="flow-callback-url-warning">
+                  {callbackUrl.status === 'loaded'
+                    ? callbackUrl.kind === 'signed' ? 'Anyone with this URL can trigger the flow.' : 'Requires an authenticated Flow API request.'
+                    : 'Reveal the URL to check how it can be used.'}
+                </div>
+                {callbackUrl.status === 'error' ? <div className="flow-callback-url-error">{callbackUrl.error}</div> : null}
+              </div>
+              <div className="flow-callback-url-actions">
+                {callbackUrl.status === 'loaded' && callbackUrl.visible ? (
+                  <>
+                    <code className="flow-callback-url-secret">{maskCallbackUrl(callbackUrl.value)}</code>
+                    <CopyButton value={callbackUrl.value} label="copy url" title="Copy full trigger URL" toast={toast} />
+                    <button className="btn btn-ghost btn-sm" type="button" onClick={onHideCallbackUrl}>Hide</button>
+                  </>
+                ) : (
+                  <button className="btn btn-ghost btn-sm" type="button" disabled={callbackUrl.status === 'loading'} onClick={onRevealCallbackUrl}>
+                    {callbackUrl.status === 'loading' ? 'Loading...' : callbackUrl.status === 'error' ? 'Retry' : 'Reveal trigger URL'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null}
         </>
       )}
     </div>
   );
+}
+
+function maskCallbackUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const sig = url.searchParams.get('sig');
+    return `${url.origin}${url.pathname}?...${sig ? `&sig=...${sig.slice(-4)}` : ''}`;
+  } catch {
+    return 'Trigger URL loaded';
+  }
 }

@@ -3,7 +3,9 @@ import { CopyButton } from '../CopyButton.js';
 import { Select } from '../Select.js';
 import { formatDate, highlightJson, prop } from '../utils.js';
 import type { FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowRun, ToastFn } from '../ui-types.js';
+import { FlowActionConnectionCard } from './FlowConnectionsPanel.js';
 import { FlowOutlineCanvas } from './FlowOutlineCanvas.js';
+import type { FlowConnectionModel } from './flow-connections.js';
 import {
   ActionIo,
   SummaryCard,
@@ -24,6 +26,7 @@ export function FlowRunsPanel(props: {
   actionDetail: FlowAction | null;
   actionStatusFilter: string;
   analysis: FlowAnalysis | null;
+  connectionModel: FlowConnectionModel;
   currentAction: FlowAction | null;
   currentRun: FlowRun | null;
   loadingActions: boolean;
@@ -195,6 +198,11 @@ export function FlowRunsPanel(props: {
                             </div>
                           ))}
                         </div>
+                        <FlowActionConnectionCard
+                          model={props.connectionModel}
+                          actionName={props.currentAction.name}
+                          toast={props.toast}
+                        />
                         <ActionIo detail={props.actionDetail} toast={props.toast} />
                       </div>
                     ) : null}

@@ -1,7 +1,8 @@
+import type { FlowConnectionIssue } from './flow-connections.js';
 import type { FlowValidationItem } from '../automate-data.js';
 import type { FlowAnalysisOutlineItem } from '../ui-types.js';
 
-export type AutomateSubTab = 'definition' | 'runs' | 'outline';
+export type AutomateSubTab = 'definition' | 'runs' | 'outline' | 'connections';
 export type FlowOperation = 'reload' | 'check-errors' | 'check-warnings' | 'save' | null;
 
 export type FlowEditorHandle = {
@@ -11,7 +12,7 @@ export type FlowEditorHandle = {
 };
 
 export type FlowProblem = {
-  source: 'local' | 'service';
+  source: 'local' | 'service' | 'connections';
   level: 'error' | 'warning' | 'info';
   code?: string;
   message: string;
@@ -20,6 +21,7 @@ export type FlowProblem = {
   path?: string;
   actionName?: string;
   validationItem?: FlowValidationItem;
+  connectionIssue?: FlowConnectionIssue;
 };
 
 export type FlowActionEditTarget = {

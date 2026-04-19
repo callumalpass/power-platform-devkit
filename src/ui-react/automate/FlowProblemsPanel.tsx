@@ -2,9 +2,10 @@ import { formatDate, highlightJson } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import type { FlowValidationResult } from '../automate-data.js';
 import type { DiagnosticItem, ToastFn } from '../ui-types.js';
+import type { FlowConnectionIssue } from './flow-connections.js';
 import type { FlowProblem } from './types.js';
 
-export function buildFlowProblems(diagnostics: DiagnosticItem[], validation: FlowValidationResult | null): FlowProblem[] {
+export function buildFlowProblems(diagnostics: DiagnosticItem[], validation: FlowValidationResult | null, connectionIssues: FlowConnectionIssue[] = []): FlowProblem[] {
   const local = diagnostics.map((item): FlowProblem => ({
     source: 'local',
     level: normalizeProblemLevel(item.level),
@@ -24,7 +25,16 @@ export function buildFlowProblems(diagnostics: DiagnosticItem[], validation: Flo
     actionName: item.actionName,
     validationItem: item,
   }));
-  return [...local, ...service].sort((a, b) => problemRank(a.level) - problemRank(b.level));
+  const connections = connectionIssues.map((item): FlowProblem => ({
+    source: 'connections',
+    level: normalizeProblemLevel(item.level),
+    code: item.code,
+    message: item.message,
+    path: item.path,
+    actionName: item.actionName,
+    connectionIssue: item,
+  }));
+  return [...local, ...service, ...connections].sort((a, b) => problemRank(a.level) - problemRank(b.level));
 }
 
 function normalizeProblemLevel(level: string | undefined): FlowProblem['level'] {

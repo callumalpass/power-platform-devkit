@@ -218,8 +218,9 @@ function readActionOperation(action: Record<string, unknown>): FlowActionOperati
     connectionReferenceName,
     connectionName: firstNonEmptyString(
       prop(host, 'connectionName'),
-      prop(host, 'connection.name'),
       connectionNameFromId(prop(host, 'connection.id')),
+      connectionNameFromId(prop(host, 'connection.name')),
+      prop(host, 'connection.name'),
     ),
     apiId: firstNonEmptyString(prop(host, 'apiId'), prop(action, 'inputs.apiId')),
     apiName: firstNonEmptyString(prop(host, 'apiName'), prop(action, 'inputs.apiName')),
@@ -235,19 +236,28 @@ function readConnectionReference(source: string, name: string): { apiId?: string
     const refs = isObject(properties.connectionReferences) ? properties.connectionReferences : isObject(root.connectionReferences) ? root.connectionReferences : {};
     const ref = isObject(refs[name]) ? refs[name] : undefined;
     if (!ref) return {};
+    const apiId = firstNonEmptyString(prop(ref, 'api.id'), prop(ref, 'apiId'), prop(ref, 'id'));
     return {
-      apiId: firstNonEmptyString(prop(ref, 'api.id'), prop(ref, 'apiId')),
-      apiName: firstNonEmptyString(prop(ref, 'api.name'), prop(ref, 'apiName'), prop(ref, 'api.displayName')),
+      apiId,
+      apiName: firstNonEmptyString(apiNameFromId(apiId), prop(ref, 'api.name'), prop(ref, 'apiName')),
       connectionName: firstNonEmptyString(
         prop(ref, 'connectionName'),
-        prop(ref, 'connection.name'),
         connectionNameFromId(prop(ref, 'connection.id')),
+        connectionNameFromId(prop(ref, 'connection.name')),
         connectionNameFromId(prop(ref, 'id')),
+        prop(ref, 'connection.name'),
       ),
     };
   } catch {
     return {};
   }
+}
+
+function apiNameFromId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const parts = value.split('/').filter(Boolean);
+  const index = parts.findIndex((part) => part.toLowerCase() === 'apis');
+  return index >= 0 ? parts[index + 1] : undefined;
 }
 
 function connectionNameFromId(value: unknown): string | undefined {
@@ -413,8 +423,8 @@ export function reorderActionInFlowDocument(source: string, actionName: string, 
   return JSON.stringify(root, null, 2);
 }
 
-export function buildApiOperationAction(source: string, operation: FlowApiOperation, runAfter: Record<string, string[]>, schema?: FlowApiOperationSchema): Record<string, unknown> {
-  const connectionReferenceName = findConnectionReferenceName(source, operation) || (operation.apiName ? `shared_${operation.apiName}` : 'shared_connector');
+export function buildApiOperationAction(source: string, operation: FlowApiOperation, runAfter: Record<string, string[]>, schema?: FlowApiOperationSchema, connectionReferenceNameOverride?: string): Record<string, unknown> {
+  const connectionReferenceName = connectionReferenceNameOverride || findConnectionReferenceName(source, operation) || (operation.apiName ? `shared_${operation.apiName}` : 'shared_connector');
   const host: Record<string, unknown> = {
     connectionReferenceName,
     operationId: operation.name,

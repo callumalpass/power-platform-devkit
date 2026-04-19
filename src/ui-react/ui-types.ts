@@ -170,6 +170,7 @@ export type FlowItem = {
     state?: FlowStatus;
     createdTime?: string;
     lastModifiedTime?: string;
+    flowTriggerUri?: string;
     creator?: { objectId?: string };
     definition?: unknown;
     connectionReferences?: unknown;
@@ -264,6 +265,14 @@ export type FlowAnalysis = {
   references?: Array<{ resolved?: boolean }>;
   diagnostics?: DiagnosticItem[];
   outline?: FlowAnalysisOutlineItem[];
-  completions?: Array<{ label: string; type?: string; detail?: string; info?: string; apply?: string }>;
-  context?: { from?: number; to?: number };
+  completions?: Array<{ label: string; type?: string; detail?: string; info?: string; apply?: string; snippet?: boolean }>;
+  context?: {
+    kind?: 'expression' | 'property-key' | 'property-value' | 'value' | 'unknown' | string;
+    text?: string;
+    from?: number;
+    to?: number;
+    path?: string[];
+    nearestAction?: string;
+    propertyName?: string;
+  };
 };

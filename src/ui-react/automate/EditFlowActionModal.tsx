@@ -14,7 +14,7 @@ import {
   setPathValue,
 } from './flow-action-document.js';
 import { WDL_ACTION_TYPES } from './flow-built-in-templates.js';
-import { Combobox } from '../Select.js';
+import { Combobox, Select } from '../Select.js';
 import {
   connectorLocationLabel,
   expandDynamicSchemaFields,
@@ -24,12 +24,20 @@ import {
   useFlowDynamicSchemaFields,
   visibleConnectorSchemaFields,
 } from './flow-dynamic-schema.js';
+import {
+  compatibleConnectionReferences,
+  connectorLabel,
+  setActionConnectionReference,
+  type FlowConnectionModel,
+  type FlowConnectionReference,
+} from './flow-connections.js';
 
 type EditActionTab = 'fields' | 'json';
 
 export function EditFlowActionModal(props: {
   environment: string;
   source: string;
+  connectionModel: FlowConnectionModel;
   target: FlowActionEditTarget;
   onApply: (target: FlowActionEditTarget, actionName: string, action: Record<string, unknown>) => void;
   onClose: () => void;
@@ -41,7 +49,7 @@ export function EditFlowActionModal(props: {
   const [tab, setTab] = useState<EditActionTab>(() => isActionLikeOutlineItem(props.target.item) ? 'fields' : 'json');
   const [schema, setSchema] = useState<FlowApiOperationSchema | null>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
-  const operationRef = useMemo(() => resolveActionOperation(props.source, props.target.value), [props.source, props.target.value]);
+  const operationRef = useMemo(() => resolveActionOperation(props.source, draft), [props.source, draft]);
   const rawError = useMemo(() => {
     try {
       JSON.parse(rawText);
@@ -86,6 +94,12 @@ export function EditFlowActionModal(props: {
 
   function updateDraft(path: string[], value: unknown) {
     const next = setPathValue(draft, path, value);
+    setDraft(next);
+    setRawText(JSON.stringify(next, null, 2));
+  }
+
+  function updateConnectionReference(referenceName: string) {
+    const next = setActionConnectionReference(draft, referenceName);
     setDraft(next);
     setRawText(JSON.stringify(next, null, 2));
   }
@@ -137,6 +151,10 @@ export function EditFlowActionModal(props: {
   const connectorFieldGroups = groupConnectorFields([...connectorFields, ...existingParameterFields]);
   const dynamicOptions = useFlowDynamicOptions(props.environment, draft, schema, operationRef, props.toast);
   const hasConnectorSchema = actionLike && Boolean(operationRef.apiRef && operationRef.operationId);
+  const compatibleReferences = useMemo(
+    () => compatibleConnectionReferences(props.connectionModel, { apiId: operationRef.apiId, apiName: operationRef.apiName }),
+    [operationRef.apiId, operationRef.apiName, props.connectionModel],
+  );
   const schemaLabel = schemaLoading
     ? 'Loading schema…'
     : schema
@@ -186,6 +204,29 @@ export function EditFlowActionModal(props: {
 
           {tab === 'fields' ? (
             <>
+              {hasConnectorSchema ? (
+                <div className="flow-action-edit-section">
+                  <h3>Connection reference</h3>
+                  {compatibleReferences.length ? (
+                    <Select
+                      aria-label="Connection reference"
+                      value={operationRef.connectionReferenceName || ''}
+                      onChange={updateConnectionReference}
+                      options={[
+                        ...(operationRef.connectionReferenceName && !compatibleReferences.some((reference) => reference.name === operationRef.connectionReferenceName)
+                          ? [{ value: operationRef.connectionReferenceName, label: `${operationRef.connectionReferenceName} (missing or incompatible)` }]
+                          : []),
+                        ...compatibleReferences.map(referenceOption),
+                      ]}
+                    />
+                  ) : (
+                    <div className="flow-connection-issue warning">
+                      No compatible reference exists for {operationRef.apiName || operationRef.apiId || 'this connector'}.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
               {hasConnectorSchema && (connectorFields.length || existingParameterFields.length) ? (
                 <div className="flow-action-edit-section">
                   <h3>Connector parameters</h3>
@@ -240,4 +281,12 @@ export function EditFlowActionModal(props: {
       </div>
     </div>
   );
+}
+
+function referenceOption(reference: FlowConnectionReference) {
+  const connection = reference.connection ? ` -> ${reference.connection.displayName || reference.connection.name}` : '';
+  return {
+    value: reference.name,
+    label: `${reference.name} (${connectorLabel(reference)})${connection}`,
+  };
 }

@@ -97,12 +97,12 @@ export function expandDynamicSchemaFields(fields: FlowApiOperationSchemaField[],
   });
 }
 
-function readConnectorParameters(action: Record<string, unknown> | null): Record<string, unknown> {
+export function readConnectorParameters(action: Record<string, unknown> | null): Record<string, unknown> {
   const parameters = prop(action || {}, 'inputs.parameters');
   return isObject(parameters) ? parameters : {};
 }
 
-function pickDynamicParameters(metadatas: unknown[], parameters: Record<string, unknown>): Record<string, unknown> {
+export function pickDynamicParameters(metadatas: unknown[], parameters: Record<string, unknown>): Record<string, unknown> {
   const refs = new Set<string>();
   for (const metadata of metadatas) {
     for (const ref of dynamicParameterReferences(metadata)) refs.add(ref);
@@ -114,7 +114,7 @@ function pickDynamicParameters(metadatas: unknown[], parameters: Record<string, 
   return result;
 }
 
-function dynamicParameterReferences(metadata: unknown): string[] {
+export function dynamicParameterReferences(metadata: unknown): string[] {
   const rawParameters = prop(metadata, 'parameters');
   if (!isObject(rawParameters)) return [];
   return Object.entries(rawParameters).flatMap(([name, raw]) => {

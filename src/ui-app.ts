@@ -446,6 +446,49 @@ export function renderHtml(): string {
     .flow-callback-url-error { color: var(--danger); font-size: 0.75rem; line-height: 1.4; overflow-wrap: anywhere; }
     .flow-callback-url-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; flex-wrap: wrap; }
     .flow-callback-url-secret { max-width: min(620px, 56vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 3px 8px; }
+    .flow-connections-panel { display: grid; gap: 16px; }
+    .flow-connections-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .flow-connections-metrics { margin-bottom: 0; }
+    .flow-connections-grid { display: grid; grid-template-columns: minmax(360px, 1.2fr) minmax(320px, 0.8fr); gap: 16px; align-items: start; }
+    .flow-connections-section { display: grid; gap: 10px; min-width: 0; }
+    .flow-connections-section-title { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .flow-connection-add-card,
+    .flow-connection-card,
+    .flow-environment-connection-row,
+    .flow-action-connection-card { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); padding: 12px 14px; }
+    .flow-connection-add-card { display: grid; grid-template-columns: minmax(180px, 0.7fr) minmax(320px, 1.3fr); gap: 12px; align-items: end; }
+    .flow-connection-add-controls,
+    .flow-connection-bind-row,
+    .flow-connection-repair-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(110px, auto) minmax(88px, auto); gap: 8px; align-items: center; }
+    .flow-connection-repair-row { grid-template-columns: minmax(140px, 1fr) auto; margin-top: 8px; }
+    .flow-connection-card { display: grid; gap: 10px; border-left: 3px solid var(--border); }
+    .flow-connection-card.status-ok { border-left-color: var(--ok); }
+    .flow-connection-card.status-error { border-left-color: var(--danger); }
+    .flow-connection-card.status-warning { border-left-color: var(--warn); }
+    .flow-connection-card-main,
+    .flow-environment-connection-row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; min-width: 0; }
+    .flow-connection-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+    .flow-connection-title { font-weight: 600; font-size: 0.8125rem; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+    .flow-connection-status { font-size: 0.625rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px 6px; color: var(--muted); }
+    .flow-connection-status.ok { color: var(--ok); border-color: var(--ok); }
+    .flow-connection-status.error { color: var(--danger); border-color: var(--danger); }
+    .flow-connection-status.warning { color: var(--warn); border-color: var(--warn); }
+    .flow-connection-meta,
+    .flow-connection-muted,
+    .flow-action-connection-note { color: var(--muted); font-size: 0.75rem; line-height: 1.45; overflow-wrap: anywhere; }
+    .flow-connection-meta code { font-family: var(--mono); font-size: 0.6875rem; }
+    .flow-connection-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .flow-connection-usages { display: flex; flex-wrap: wrap; gap: 6px; }
+    .flow-connection-usage { font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px 6px; background: var(--surface); }
+    .flow-connection-issues { display: grid; gap: 8px; }
+    .flow-connection-issues.compact { gap: 4px; }
+    .flow-connection-issue { font-size: 0.75rem; line-height: 1.45; padding: 8px 10px; border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); overflow-wrap: anywhere; }
+    .flow-connection-issue.error { border-left-color: var(--danger); }
+    .flow-connection-issue.warning { border-left-color: var(--warn); }
+    .flow-connection-issue.info { border-left-color: var(--muted); color: var(--muted); }
+    .flow-connection-issue-code { font-family: var(--mono); color: var(--muted); font-size: 0.625rem; margin-bottom: 3px; }
+    .flow-action-connection-card { display: grid; gap: 8px; margin-bottom: 12px; }
+    .flow-action-connection-card-title { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
     .flow-editor-shell-fullscreen { position: fixed; inset: 12px; z-index: 70; display: flex; flex-direction: column; box-shadow: 0 20px 80px rgba(0,0,0,0.35); }
     .flow-editor-shell-fullscreen .flow-editor-layout { flex: 1; height: auto; min-height: 0; }
     .flow-editor-shell-fullscreen .fetchxml-editor-mount,
@@ -567,16 +610,20 @@ export function renderHtml(): string {
       .flow-editor-layout { grid-template-columns: 1fr; }
       .flow-outline-rail { border-right: 0; border-bottom: 1px solid var(--border); max-height: 320px; }
       .flow-outline-resize-handle { display: none; }
+      .flow-connections-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 900px) {
       .add-action-body { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 40%) 1fr; }
       .add-action-picker { border-right: none; border-bottom: 1px solid var(--border); }
+      .flow-connection-add-card { grid-template-columns: 1fr; }
     }
     @media (max-width: 720px) {
       .add-action-config-form { grid-template-columns: 1fr; }
       .add-action-template-row { grid-template-columns: 1fr; }
       .flow-action-edit-grid,
       .flow-action-schema-field { grid-template-columns: 1fr; }
+      .flow-connection-add-controls,
+      .flow-connection-bind-row { grid-template-columns: 1fr; }
     }
     .fetchxml-diagnostics { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
     .fetchxml-diagnostic { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; background: var(--bg); }
@@ -1150,6 +1197,17 @@ export function renderHtml(): string {
     .rt-modal-body.body-flush { padding: 0; }
     .rt-modal-loading { padding: 32px 20px; text-align: center; color: var(--muted); font-size: 0.8125rem; }
     .rt-modal-error { padding: 16px 20px; color: var(--danger); font-size: 0.8125rem; }
+    .rt-modal.api-preview-modal { height: min(720px, 90vh); padding: 0; }
+    .rt-modal.api-preview-modal .rt-modal-body.body-flush { display: flex; flex-direction: column; }
+    .api-preview-req { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); word-break: break-all; }
+    .api-preview-method { font-weight: 700; color: var(--ink); letter-spacing: 0.04em; }
+    .api-preview-path { color: var(--muted); }
+    .api-preview-tabs { display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .api-preview-tab { font-size: 0.75rem; padding: 8px 12px; border: none; background: transparent; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .api-preview-tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+    .api-preview-tab:hover:not(.active) { color: var(--ink); }
+    .api-preview-json { flex: 1; min-height: 0; display: flex; }
+    .api-preview-json > * { flex: 1; min-height: 0; }
     .rt-detail-table { width: 100%; border-collapse: collapse; }
     .rt-detail-key { padding: 6px 12px; font-size: 0.6875rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; vertical-align: top; width: 1%; border-bottom: 1px solid var(--border); }
     .rt-detail-value { padding: 6px 12px; font-family: var(--mono); font-size: 0.75rem; word-break: break-all; border-bottom: 1px solid var(--border); }

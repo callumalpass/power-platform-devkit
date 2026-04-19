@@ -10,6 +10,7 @@ import {
   formatFlowDocument,
   loadActionDetail,
   loadFlowCallbackUrl,
+  loadFlowApiConnections,
   loadFlowDefinitionDocument,
   loadFlowList,
   loadFlowRuns,
@@ -25,12 +26,15 @@ import { useMonacoVimPreference } from './monaco-support.js';
 import { AddFlowActionModal, EditFlowActionModal, FlowDiffModal, addActionToFlowDocument, findSiblingActionNames, readOutlineEditTarget, removeActionFromFlowDocument, reorderActionInFlowDocument, replaceOutlineItemInFlowDocument } from './automate/FlowDefinitionModals.js';
 import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { FlowDefinitionPanel } from './automate/FlowDefinitionPanel.js';
+import { FlowConnectionsPanel, type FlowConnectionInspectSeed } from './automate/FlowConnectionsPanel.js';
+import { ApiResponseModal, useApiPreview } from './ApiResponseModal.js';
 import { FlowDetailHeader } from './automate/FlowDetailHeader.js';
 import { FlowInventorySidebar } from './automate/FlowInventorySidebar.js';
 import { FlowOutlinePanel } from './automate/FlowOutlinePanel.js';
 import { FlowRunsPanel } from './automate/FlowRunsPanel.js';
 import { runActionRef, runActionRefForAction } from './automate/flow-run-outline.js';
 import { buildFlowProblems } from './automate/FlowProblemsPanel.js';
+import { buildFlowConnectionModel, removeFlowConnectionReference, setFlowConnectionReference, type FlowConnectionReference, type FlowEnvironmentConnection } from './automate/flow-connections.js';
 import { buildOutlinePathTo, findOutlineContainerTarget, isActionLikeOutlineItem, outlineKey, type OutlineContainerTarget } from './automate/outline-utils.js';
 import type { AutomateSubTab, FlowActionEditTarget, FlowEditorHandle, FlowOperation, FlowProblem } from './automate/types.js';
 
@@ -61,6 +65,7 @@ export function AutomateTab(props: {
   const { active, environment, openConsole, toast } = props;
   const detail = useRecordDetail();
   const confirm = useConfirm();
+  const apiPreview = useApiPreview();
   const [flows, setFlows] = useState<FlowItem[]>([]);
   const [flowSource, setFlowSource] = useState<'flow' | 'dv'>('flow');
   const [loadedEnvironment, setLoadedEnvironment] = useState('');
@@ -75,6 +80,9 @@ export function AutomateTab(props: {
   const [showFlowDiff, setShowFlowDiff] = useState(false);
   const [flowFullscreen, setFlowFullscreen] = useState(false);
   const [flowCallbackUrl, setFlowCallbackUrl] = useState<FlowCallbackUrlState>(EMPTY_CALLBACK_URL_STATE);
+  const [environmentConnections, setEnvironmentConnections] = useState<FlowEnvironmentConnection[]>([]);
+  const [connectionsEnvironment, setConnectionsEnvironment] = useState('');
+  const [loadingConnections, setLoadingConnections] = useState(false);
   const [vimEnabled, setVimEnabled] = useMonacoVimPreference();
   const [flowVimMode, setFlowVimMode] = useState('off');
   const [flowOutlineActiveKey, setFlowOutlineActiveKey] = useState('');
@@ -108,6 +116,12 @@ export function AutomateTab(props: {
   }, [active, environment, flows.length, loadedEnvironment]);
 
   useEffect(() => {
+    if (!active || !environment) return;
+    if (connectionsEnvironment === environment) return;
+    void loadEnvironmentConnections(false);
+  }, [active, connectionsEnvironment, environment]);
+
+  useEffect(() => {
     if (!flowDocument.trim()) {
       setAnalysis(null);
       return;
@@ -134,7 +148,14 @@ export function AutomateTab(props: {
   const isFlowEditable = currentFlow?.source === 'flow';
   const isFlowDirty = Boolean(currentFlow && flowDocument !== loadedFlowDocument);
   const flowBusy = flowOperation !== null;
-  const flowProblems = useMemo(() => buildFlowProblems(analysis?.diagnostics || [], flowValidation), [analysis?.diagnostics, flowValidation]);
+  const connectionModel = useMemo(
+    () => buildFlowConnectionModel(flowDocument, environmentConnections),
+    [environmentConnections, flowDocument],
+  );
+  const flowProblems = useMemo(
+    () => buildFlowProblems(analysis?.diagnostics || [], flowValidation, currentFlow ? connectionModel.issues : []),
+    [analysis?.diagnostics, connectionModel.issues, currentFlow, flowValidation],
+  );
   const hasBlockingServiceErrors = Boolean(flowValidation?.kind === 'errors' && flowValidation.items.some((item) => item.level === 'error'));
 
   useEffect(() => {
@@ -177,6 +198,23 @@ export function AutomateTab(props: {
       setLoadedEnvironment(environment);
     } finally {
       setLoadingFlows(false);
+    }
+  }
+
+  async function loadEnvironmentConnections(force: boolean) {
+    if (!environment) return;
+    if (!force && connectionsEnvironment === environment) return;
+    setLoadingConnections(true);
+    try {
+      const connections = await loadFlowApiConnections(environment);
+      setEnvironmentConnections(connections);
+      setConnectionsEnvironment(environment);
+    } catch (error) {
+      setEnvironmentConnections([]);
+      setConnectionsEnvironment(environment);
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setLoadingConnections(false);
     }
   }
 
@@ -283,6 +321,36 @@ export function AutomateTab(props: {
   function updateFlowDocument(next: string) {
     setFlowDocument(next);
     if (flowValidation) setFlowValidation(null);
+  }
+
+  function bindConnectionReference(referenceName: string, connection: FlowEnvironmentConnection) {
+    try {
+      updateFlowDocument(setFlowConnectionReference(flowDocument, referenceName, connection));
+      toast(`Bound ${referenceName} to ${connection.displayName || connection.name}`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  function removeConnectionReference(reference: FlowConnectionReference) {
+    if (reference.usages.length) {
+      toast('Only unused connection references can be removed here.', true);
+      return;
+    }
+    confirm.open({
+      title: `Remove ${reference.name}?`,
+      destructive: true,
+      confirmLabel: 'Remove reference',
+      body: <>This removes the unused connection reference from the editor. The flow is not saved until you use Check &amp; Save.</>,
+      onConfirm: () => {
+        try {
+          updateFlowDocument(removeFlowConnectionReference(flowDocument, reference.name));
+          toast(`Removed ${reference.name}`);
+        } catch (error) {
+          toast(error instanceof Error ? error.message : String(error), true);
+        }
+      },
+    });
   }
 
   function addActionToDocument(actionName: string, action: Record<string, unknown>) {
@@ -452,6 +520,10 @@ export function AutomateTab(props: {
   }
 
   function jumpToProblem(problem: FlowProblem) {
+    if (problem.source === 'connections' && problem.from === undefined && problem.to === undefined && !problem.actionName) {
+      setFlowSubTab('connections');
+      return;
+    }
     setFlowSubTab('definition');
     window.setTimeout(() => {
       if (problem.validationItem && (problem.validationItem.from !== undefined || problem.validationItem.to !== undefined)) {
@@ -648,14 +720,14 @@ export function AutomateTab(props: {
         {currentFlow ? (
           <>
             <div className="dv-sub-nav">
-              {(['definition', 'runs', 'outline'] as AutomateSubTab[]).map((tabName) => (
+              {(['definition', 'runs', 'outline', 'connections'] as AutomateSubTab[]).map((tabName) => (
                 <button
                   key={tabName}
                   className={`sub-tab ${flowSubTab === tabName ? 'active' : ''}`}
                   type="button"
                   onClick={() => setFlowSubTab(tabName)}
                 >
-                  {tabName === 'definition' ? 'Definition' : tabName === 'runs' ? 'Runs' : 'Outline'}
+                  {tabName === 'definition' ? 'Definition' : tabName === 'runs' ? 'Runs' : tabName === 'outline' ? 'Outline' : 'Connections'}
                 </button>
               ))}
             </div>
@@ -664,6 +736,7 @@ export function AutomateTab(props: {
               active={flowSubTab === 'definition'}
               analysis={analysis}
               analyzing={analyzing}
+              environment={environment}
               flowBusy={flowBusy}
               flowDocument={flowDocument}
               flowEditorRef={flowEditorRef}
@@ -707,6 +780,7 @@ export function AutomateTab(props: {
               actionDetail={actionDetail}
               actionStatusFilter={actionStatusFilter}
               analysis={analysis}
+              connectionModel={connectionModel}
               currentAction={currentAction}
               currentRun={currentRun}
               loadingActions={loadingActions}
@@ -738,6 +812,18 @@ export function AutomateTab(props: {
               onReorderAction={handleReorderAction}
               onSelectOutline={selectOutlineItem}
             />
+
+            <FlowConnectionsPanel
+              active={flowSubTab === 'connections'}
+              source={flowDocument}
+              model={connectionModel}
+              loading={loadingConnections}
+              toast={toast}
+              onBindReference={bindConnectionReference}
+              onRemoveReference={removeConnectionReference}
+              onRefreshConnections={() => { void loadEnvironmentConnections(true); }}
+              onInspect={(seed: FlowConnectionInspectSeed) => apiPreview.open(seed)}
+            />
           </>
         ) : null}
       </div>
@@ -752,6 +838,7 @@ export function AutomateTab(props: {
           environment={environment}
           source={flowDocument}
           analysis={analysis}
+          connectionModel={connectionModel}
           initialRunAfter={addActionRunAfter}
           containerTarget={addActionContainer}
           onClose={() => { setShowAddAction(false); setAddActionRunAfter(undefined); setAddActionContainer(null); }}
@@ -763,6 +850,7 @@ export function AutomateTab(props: {
         <EditFlowActionModal
           environment={environment}
           source={flowDocument}
+          connectionModel={connectionModel}
           target={editingAction}
           onApply={applyActionEdit}
           onClose={() => setEditingAction(null)}
@@ -770,6 +858,15 @@ export function AutomateTab(props: {
         />
       ) : null}
       <ConfirmDialog request={confirm.request} onClose={confirm.close} />
+      {apiPreview.target && environment ? (
+        <ApiResponseModal
+          target={apiPreview.target}
+          environment={environment}
+          toast={toast}
+          onClose={apiPreview.close}
+          onOpenInConsole={(seed) => { apiPreview.close(); openConsole(seed); }}
+        />
+      ) : null}
     </div>
   );
 }
