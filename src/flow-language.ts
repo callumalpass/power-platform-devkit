@@ -192,6 +192,7 @@ const ACTION_PROPERTIES = ['type', 'inputs', 'runAfter', 'actions', 'else', 'exp
 const RUN_AFTER_STATUSES = ['Succeeded', 'Failed', 'Skipped', 'TimedOut'];
 const ACTION_TYPE_OPTIONS = [
   'ApiConnection',
+  'OpenApiConnection',
   'Compose',
   'Condition',
   'Foreach',
@@ -250,6 +251,13 @@ export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
       parameterCount: model.parameters.length,
     },
   };
+}
+
+export function completeFlowExpression(source: string, text: string, cursor = text.length): FlowCompletionItem[] {
+  const parseResult = parseJsonDocument(source);
+  if (!parseResult.root) return completeExpression(text, cursor, [], [], [], []);
+  const model = buildFlowModel(parseResult.root);
+  return completeExpression(text, cursor, flattenActions(model.actions), model.triggers, model.variables, model.parameters);
 }
 
 export function explainFlowSymbol(source: string, symbolName: string): FlowExplainResult {

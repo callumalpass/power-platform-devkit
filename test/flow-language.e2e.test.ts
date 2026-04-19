@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { analyzeFlow } from '../src/flow-language.js';
+import { analyzeFlow, completeFlowExpression } from '../src/flow-language.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -410,6 +410,51 @@ test('analyzeFlow completes expression target names by function context', () => 
 
   const parameterResult = analyzeFlow(source, source.indexOf("@parameters('tar") + "@parameters('tar".length);
   assert.ok(parameterResult.completions.some((item) => item.label === 'targetValue' && item.type === 'parameter'));
+});
+
+test('completeFlowExpression provides expression completions for modal field editors', () => {
+  const source = JSON.stringify({
+    definition: {
+      parameters: {
+        targetValue: {
+          type: 'String',
+        },
+      },
+      triggers: {
+        manual: {
+          type: 'Request',
+          inputs: {},
+        },
+      },
+      actions: {
+        InitCounter: {
+          type: 'InitializeVariable',
+          inputs: {
+            variables: [
+              {
+                name: 'counter',
+                type: 'integer',
+                value: 0,
+              },
+            ],
+          },
+          runAfter: {},
+        },
+        PrepareValue: {
+          type: 'Compose',
+          inputs: 12,
+          runAfter: {
+            InitCounter: ['Succeeded'],
+          },
+        },
+      },
+    },
+  }, null, 2);
+
+  assert.ok(completeFlowExpression(source, 'trig').some((item) => item.label === 'triggerBody()'));
+  assert.ok(completeFlowExpression(source, "outputs('Prep").some((item) => item.label === 'PrepareValue' && item.type === 'action'));
+  assert.ok(completeFlowExpression(source, "variables('cou").some((item) => item.label === 'counter' && item.type === 'variable'));
+  assert.ok(completeFlowExpression(source, "parameters('tar").some((item) => item.label === 'targetValue' && item.type === 'parameter'));
 });
 
 test('analyzeFlow leaves reference validation to canonical Power Automate checks', async () => {

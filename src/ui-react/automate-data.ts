@@ -791,7 +791,7 @@ function firstRecordOrUndefined(...values: unknown[]): Record<string, unknown> |
   return undefined;
 }
 
-function normalizeFlowApiOperationSchema(apiName: string, apiId: string | undefined, operationId: string, rawApi: unknown): FlowApiOperationSchema | null {
+export function normalizeFlowApiOperationSchema(apiName: string, apiId: string | undefined, operationId: string, rawApi: unknown): FlowApiOperationSchema | null {
   const api = rawApi as Record<string, unknown>;
   const properties = isRecord(api.properties) ? api.properties : {};
   const swagger = isRecord(properties.swagger) ? properties.swagger : {};
